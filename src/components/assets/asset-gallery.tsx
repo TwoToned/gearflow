@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ImageIcon, Plus, Search } from "lucide-react";
 
 import { cn, focusRing } from "@/lib/utils";
+import { AppImage } from "@/components/ui/app-image";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -189,14 +190,14 @@ function AssetCard({ asset }: { asset: AnyAsset }) {
       )}
     >
       {/* cover photo */}
-      <div className="aspect-[4/3] w-full overflow-hidden border-b-2 border-line bg-bg-inset">
+      <div className="relative aspect-[4/3] w-full overflow-hidden border-b-2 border-line bg-bg-inset">
         {src ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <AppImage
             src={src}
             alt={asset.model?.name ?? asset.assetTag}
-            loading="lazy"
-            className="h-full w-full object-cover"
+            fill
+            sizes="(max-width: 640px) 50vw, 180px"
+            className="object-cover"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">

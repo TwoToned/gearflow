@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-server";
 import { serialize } from "@/lib/serialize";
+import { isSiteAdmin } from "@/lib/admin-auth";
 
 /** Get pending invitations for the current user (by email). No org context needed. */
 export async function getMyPendingInvitations() {
@@ -41,14 +42,5 @@ export async function getInvitationEmail(invitationId: string): Promise<string |
 
 /** Check if the current user is a site admin. No org context needed. */
 export async function checkIsSiteAdmin(): Promise<boolean> {
-  try {
-    const session = await requireSession();
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
-    });
-    return user?.role === "admin";
-  } catch {
-    return false;
-  }
+  return isSiteAdmin();
 }

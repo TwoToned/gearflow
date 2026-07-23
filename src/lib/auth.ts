@@ -19,6 +19,7 @@ import { readOrgSettingsBlob, saveOrgSettings } from "./org-settings-read";
 import { handleSSOProvisioning } from "./sso-provisioning";
 import { getTheOrg } from "./single-org";
 import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL, JWKS_ALG } from "./convex-auth-constants";
+import { shouldUseSecureCookies } from "./cookie-security";
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -30,7 +31,7 @@ export const auth = betterAuth({
   // mark session cookies Secure and the browser would drop them over http,
   // breaking login (set-active → 401). Prod serves https, so cookies stay Secure.
   advanced: {
-    useSecureCookies: env.NEXT_PUBLIC_APP_URL.startsWith("https://"),
+    useSecureCookies: shouldUseSecureCookies(env.NEXT_PUBLIC_APP_URL),
   },
   account: {
     accountLinking: {

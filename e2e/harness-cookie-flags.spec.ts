@@ -4,7 +4,9 @@ import { expect, test } from "@playwright/test";
  * Session cookie hardening (POLICY.md R-8.4.5): asserts the Better Auth session
  * cookie carries HttpOnly + SameSite after login. Runs against the seeded harness
  * (E2E_HARNESS=1); over http (local) the Secure flag is intentionally off
- * (useSecureCookies is gated on https) — it is verified to be present in prod separately.
+ * (useSecureCookies is gated on https — src/lib/cookie-security.ts). That gating
+ * logic is unit-tested directly in src/lib/__tests__/cookie-security.test.ts,
+ * since this harness has no https server to assert Secure against.
  */
 test.describe("harness: session cookie flags", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness");

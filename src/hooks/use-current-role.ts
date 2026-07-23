@@ -26,11 +26,13 @@ export interface RoleData {
   role: string | null;
   roleName: string | null;
   permissions: PermissionMap | null;
+  /** Opaque org-membership cuid, for PostHog `identify()` (POLICY.md R-8.9.4). */
+  memberId: string | null;
 }
 
 async function fetchCurrentRole(): Promise<RoleData> {
   const res = await fetch("/api/current-role");
-  if (!res.ok) return { role: null, roleName: null, permissions: null };
+  if (!res.ok) return { role: null, roleName: null, permissions: null, memberId: null };
   return res.json();
 }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { z } from "zod";
+import { runWithRequestId } from "@/lib/request-context";
 
 type ValidatedBody<T> =
   | { ok: true; data: T }
@@ -69,6 +70,10 @@ export function withValidatedBody<T, C = undefined>(
   return async (request: Request, context?: C): Promise<Response> => {
     const parsed = await readValidatedBody(request, schema);
     if (!parsed.ok) return parsed.response;
-    return handler(parsed.data, request, context as C);
+    // Auto-thread the x-request-id correlation id (POLICY.md R-8.9.5) into every
+    // logger.* call the handler makes, without the handler passing it explicitly.
+    const requestId = request.headers.get("x-request-id");
+    if (!requestId) return handler(parsed.data, request, context as C);
+    return runWithRequestId(requestId, () => handler(parsed.data, request, context as C));
   };
 }

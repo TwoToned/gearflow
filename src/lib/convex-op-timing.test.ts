@@ -13,12 +13,18 @@ vi.mock("convex/server", () => ({
   getFunctionName: (ref: unknown) => getFunctionNameMock(ref),
 }));
 
+let ambientRequestId: string | undefined;
+vi.mock("@/lib/request-context", () => ({
+  getAmbientRequestId: () => ambientRequestId,
+}));
+
 describe("reportIfSlowConvexOp", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     phCapture.mockClear();
+    ambientRequestId = undefined;
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -26,6 +32,18 @@ describe("reportIfSlowConvexOp", () => {
   afterEach(() => {
     warnSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  it("correlates the PostHog event with the ambient x-request-id when present (R-8.9.6)", () => {
+    ambientRequestId = "req-abc-123";
+    reportIfSlowConvexOp("crewMembers:list", "query", SLOW_OP_MS + 1);
+    expect(phCapture).toHaveBeenCalledWith("convex_op_latency", {
+      name: "crewMembers:list",
+      kind: "query",
+      duration_ms: SLOW_OP_MS + 1,
+      incident: false,
+      request_id: "req-abc-123",
+    });
   });
 
   it("does nothing for an op at or under the slow line", () => {

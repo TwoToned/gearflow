@@ -38,7 +38,11 @@ type Props = Record<string, string | number | boolean | null | undefined>;
 declare global {
   interface Window {
     /** Set by posthog-provider.tsx after init; undefined until then / when unconfigured. */
-    posthog?: { capture: (event: string, properties?: Props) => void };
+    posthog?: {
+      capture: (event: string, properties?: Props) => void;
+      identify?: (distinctId: string) => void;
+      reset?: () => void;
+    };
   }
 }
 
@@ -52,4 +56,24 @@ export function capture(event: AnalyticsEventName, properties?: Props): void {
   const ph = window.posthog;
   if (!ph || typeof ph.capture !== "function") return;
   ph.capture(event, properties);
+}
+
+/**
+ * Identify the current PostHog person (POLICY.md R-8.9.4 — opaque actor id in
+ * error/observability context). `distinctId` MUST be an opaque cuid, never a
+ * name/email/phone (R-8.12.4) — see PostHogIdentify, the only call site.
+ */
+export function identify(distinctId: string): void {
+  if (typeof window === "undefined") return;
+  const ph = window.posthog;
+  if (!ph || typeof ph.identify !== "function") return;
+  ph.identify(distinctId);
+}
+
+/** Clear the identified person (sign-out) so a shared device doesn't carry the identity forward. */
+export function resetAnalyticsIdentity(): void {
+  if (typeof window === "undefined") return;
+  const ph = window.posthog;
+  if (!ph || typeof ph.reset !== "function") return;
+  ph.reset();
 }

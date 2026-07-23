@@ -9,6 +9,7 @@ import MiraContextProvider from "@/components/providers/mira-context-provider";
 import { getSession } from "@/lib/auth-server";
 import { getTheOrg } from "@/lib/single-org";
 import { OrgActivator } from "@/components/providers/org-activator";
+import { PostHogIdentify } from "@/components/providers/posthog-identify";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <BrandingProvider>
           <MiraContextProvider>
             <OrgActivator />
+            <PostHogIdentify />
             <DynamicFavicon />
             <AppSidebar />
             <SidebarInset className="min-h-0 min-w-0 overflow-x-clip">

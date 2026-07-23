@@ -67,7 +67,7 @@ export type CustomFieldDefinitionInput = z.input<typeof customFieldDefinitionSch
 /**
  * Update form — fieldKey + entityType are immutable once created, so this derives
  * from the same base via `.omit()` rather than re-declaring label/options/helpText/
- * sortOrder (the #747 duplication GearFlow issue #747 flagged by name).
+ * sortOrder (the #747 duplication that issue flagged by name).
  */
 export const customFieldDefinitionUpdateSchema = customFieldDefinitionBaseSchema
   .omit({ entityType: true, fieldKey: true })

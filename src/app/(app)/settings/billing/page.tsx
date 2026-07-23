@@ -8,10 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FormSection } from "@/components/layout/page-layouts";
-import {
-  updateOrganization,
-  type OrgSettings,
-} from "@/server/settings";
+import { updateOrganization } from "@/server/settings";
+import type { OrgSettings } from "@/lib/org-settings-types";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useServerMutation } from "@/hooks/use-server-mutation";

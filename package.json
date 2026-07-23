@@ -1,6 +1,6 @@
 {
   "name": "rvlt-flow",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "private": true,
   "packageManager": "pnpm@11.7.0",
   "scripts": {
@@ -10,6 +10,7 @@
     "lint": "eslint",
     "knip": "knip",
     "depcruise": "depcruise src convex --config .dependency-cruiser.cjs --ignore-known",
+    "depcruise-ratchet": "node scripts/depcruise-ratchet.mjs",
     "any-ratchet": "bash scripts/any-ratchet.sh",
     "collect-ratchet": "node scripts/collect-ratchet.mjs",
     "knip-ratchet": "node scripts/knip-ratchet.mjs",

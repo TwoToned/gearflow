@@ -6,7 +6,7 @@ import {
   type Resource,
   type PermissionMap,
 } from "./permissions";
-import type { ActorContext } from "./actor-context";
+import type { ActorContext } from "./actor-types";
 import { getAmbientActor } from "./request-actor";
 import { requireApiScope } from "./api-key";
 

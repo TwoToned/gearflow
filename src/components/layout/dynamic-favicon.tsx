@@ -6,7 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrganization } from "@/hooks/use-organization";
-import type { OrgBranding } from "@/server/settings";
+import type { OrgBranding } from "@/lib/org-settings-types";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 
 /**

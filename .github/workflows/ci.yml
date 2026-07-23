@@ -310,8 +310,8 @@ jobs:
       - name: Docs npm/npx contradiction check (new only, R-5.3)
         run: pnpm run check-docs-npm-npx
 
-      - name: Import-cycle check (new cycles only, R-3.5)
-        run: pnpm run depcruise
+      - name: Import-cycle ratchet (R-3.5 — blocking on any increase)
+        run: pnpm run depcruise-ratchet
 
       - name: Any-ratchet (R-8.2.2)
         run: pnpm run any-ratchet

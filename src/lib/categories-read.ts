@@ -1,8 +1,6 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
-import { getModelsByOrg } from "@/lib/models-read";
-import { getKitsByOrg } from "@/lib/kits-read";
 
 /**
  * Server-side read helpers for the Categories domain (Phase 3 cutover).
@@ -235,31 +233,7 @@ export async function getMappedCategoriesByOrg(orgId: string): Promise<MappedCat
   return docs.map(mapCategory);
 }
 
-/** `getCategories` from Convex: each category + parent + `_count {models, kits, children}`. */
-export async function listCategoriesWithCounts(orgId: string): Promise<CategoryWithCounts[]> {
-  const [cats, models, kits] = await Promise.all([
-    getMappedCategoriesByOrg(orgId),
-    getModelsByOrg(orgId),
-    getKitsByOrg(orgId),
-  ]);
-  return buildCategoriesWithCounts(cats, buildModelKitCounts(models, kits));
-}
-
-/** `getCategoryCounts` from Convex: categoryId → {models, kits}, as a plain record. */
-export async function getCategoryModelKitCounts(
-  orgId: string,
-): Promise<Record<string, { models: number; kits: number }>> {
-  const [models, kits] = await Promise.all([getModelsByOrg(orgId), getKitsByOrg(orgId)]);
-  const counts = buildModelKitCounts(models, kits);
-  const out: Record<string, { models: number; kits: number }> = {};
-  for (const [id, v] of counts) out[id] = v;
-  return out;
-}
-
-/** `getCategoryTree` from Convex: roots-first forest with `_count.models` + nested children. */
-export async function listCategoryTree(orgId: string): Promise<CategoryTreeNode[]> {
-  const [cats, models] = await Promise.all([getMappedCategoriesByOrg(orgId), getModelsByOrg(orgId)]);
-  const modelCounts = new Map<string, number>();
-  for (const m of models) if (m.categoryId) modelCounts.set(m.categoryId, (modelCounts.get(m.categoryId) ?? 0) + 1);
-  return buildCategoryTree(cats, modelCounts);
-}
+// `listCategoriesWithCounts` / `getCategoryModelKitCounts` / `listCategoryTree` live in
+// `@/lib/model-category-join` — they need both this module's categories AND
+// `models-read.ts`'s models, and putting a Model↔Category join in either domain
+// module would create a circular dependency between the two (POLICY.md R-3.5).

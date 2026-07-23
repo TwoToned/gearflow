@@ -1,4 +1,4 @@
-import { auth } from "./auth";
+import { convexServiceSigner } from "./convex-service-signer";
 import {
   SERVICE_SUBJECT,
   SERVICE_CLAIM,
@@ -13,9 +13,10 @@ import {
  * form of the old implicit "trust the caller." Server actions still run all real
  * authorization (requirePermission/validation/logActivity) BEFORE calling Convex.
  *
- * Minted in-process via Better Auth's `signJWT` (a path-less endpoint with no HTTP
- * route — see the design doc), signed by the same ES256 JWKS as user tokens, so
- * Convex's single customJwt provider validates both. The claims:
+ * Minted in-process via a dedicated minimal Better Auth instance's `signJWT` (a
+ * path-less endpoint with no HTTP route — see `convex-service-signer.ts` and the
+ * design doc), signed by the same ES256 JWKS as user tokens, so Convex's single
+ * customJwt provider validates both. The claims:
  *   • sub = "gearflow-service", svc = true  (strict pair the Convex side checks)
  *   • exp = now + 5 min                      (set on the payload directly)
  *   • iss / aud                              (from the jwt() plugin defaults)
@@ -38,7 +39,7 @@ export async function getConvexServiceToken(): Promise<string> {
   if (cached && now < cached.refreshAtMs) return cached.token;
 
   const exp = Math.floor(now / 1000) + TTL_SECONDS;
-  const result = await auth.api.signJWT({
+  const result = await convexServiceSigner.api.signJWT({
     body: {
       payload: {
         sub: SERVICE_SUBJECT,

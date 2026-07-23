@@ -5,9 +5,7 @@ import { useEffect, useState } from "react";
 
 import { FormSection } from "@/components/layout/page-layouts";
 import { BrandingSettings } from "@/components/settings/branding-settings";
-import {
-  type OrgSettings,
-} from "@/server/settings";
+import type { OrgSettings } from "@/lib/org-settings-types";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrganization } from "@/hooks/use-organization";
 import { FadeIn } from "@/components/ui/motion";

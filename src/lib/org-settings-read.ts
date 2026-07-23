@@ -1,6 +1,6 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import type { OrgSettings } from "@/server/settings";
+import type { OrgSettings } from "@/lib/org-settings-types";
 
 /**
  * Server-side read/write helpers for per-org BUSINESS settings (Phase 1

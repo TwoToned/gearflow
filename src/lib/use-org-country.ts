@@ -2,7 +2,7 @@
 
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrganization } from "@/hooks/use-organization";
-import { type OrgSettings } from "@/server/settings";
+import { type OrgSettings } from "@/lib/org-settings-types";
 
 /** Returns the org's configured country code (e.g. "AU"), or undefined. */
 export function useOrgCountry(): string | undefined {

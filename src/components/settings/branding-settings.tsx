@@ -8,7 +8,8 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshOrganization } from "@/hooks/use-organization";
 import { AppImage } from "@/components/ui/app-image";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { updateOrganization, type OrgSettings, type OrgBranding } from "@/server/settings";
+import { updateOrganization } from "@/server/settings";
+import type { OrgSettings, OrgBranding } from "@/lib/org-settings-types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 

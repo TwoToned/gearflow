@@ -98,6 +98,15 @@ in canonical order.
 
 ## UI primitives
 
+`LineItemData`/`GroupData`/`SubHireGroupData`/`MixedGroupSlot`/`CategoryData` are
+defined in `src/components/projects/equipment-row-types.ts` (pure types, no
+React/Convex imports) and re-exported from `equipment-rows.tsx` for existing
+consumers. `equipment-row-descriptors.ts` and `equipment-cards.tsx` import them
+directly from `equipment-row-types.ts`, not from `equipment-rows.tsx` — importing
+the component module there created a circular dependency with `equipment-rows.tsx`
+(which itself imports `describeRow`/`LineAssetsIndicator`/the card primitives from
+those two files). Fixed as part of the POLICY.md R-3.5 cycle burn-down (#730/#766).
+
 `src/components/projects/equipment-rows.tsx` exports four row primitives.
 Reordering is via **▲/▼ move buttons** (the former drag handle column) —
 drag-and-drop was removed (`chore/remove-pdf-builder-and-dnd`, `@dnd-kit`

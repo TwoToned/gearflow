@@ -26,3 +26,8 @@ export const SERVICE_TOKEN_TTL = "5m";
 
 /** User token TTL. Short — also the membership-change revocation window. */
 export const USER_TOKEN_TTL = "15m";
+
+/** JWKS signing algorithm. Convex's customJwt provider accepts only RS256/ES256
+ *  (not Better Auth's default EdDSA) — shared by `auth.ts`'s jwt plugin and
+ *  `convex-service-signer.ts`'s so both sign/verify against the same key type. */
+export const JWKS_ALG = "ES256";

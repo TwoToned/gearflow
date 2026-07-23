@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { formatDate } from "@/lib/formatters";
-import type { OrgSettings } from "@/server/settings";
+import type { OrgSettings } from "@/lib/org-settings-types";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 

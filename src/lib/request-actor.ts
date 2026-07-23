@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ActorContext } from "./actor-context";
+import type { ActorContext } from "./actor-types";
 
 /**
  * Ambient actor for non-session callers (the API + MCP layer).

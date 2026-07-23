@@ -7,12 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-07-23
+
 ### Fixed
 
+- Fixed all 19 of the repo's circular-dependency violations — POLICY.md R-3.5 now
+  reports zero (#730, #766):
+  - Extracted `equipment-row-types.ts`, `model-category-join.ts`, and `actor-types.ts`
+    so the equipment-tab components, the categories/models Convex reads, and the
+    ActorContext auth seam no longer import each other in a loop.
+  - Extracted `convex-service-signer.ts` — a separate, minimal Better Auth instance
+    (jwt plugin only) that mints the Convex SERVICE token, so `convex-auth.ts` no
+    longer needs the full `auth.ts` instance (whose hooks mirror data into Convex,
+    which needs the service token — the original bootstrap cycle).
+  - Extracted `org-settings-types.ts` so `org-settings-read.ts` no longer imports
+    `server/settings.ts` for the `OrgSettings`/`OrgBranding`/`TestTagSettings` shapes
+    while `server/settings.ts` imports real functions back from it.
+  - No behavior change in any of the above.
 - Stale npm-based instructions in `FEATUREDOCS/36-testing.md` and
   `convex/README.md` replaced with `pnpm`/`pnpm exec convex` (R-5.3, #731).
 - 68 FEATUREDOCS/docs files were missing an `Owner`/`Last reviewed` header (R-5.5,
   #732) — added, matching the existing README/CLAUDE.md/ARCHITECTURE.md convention.
+
+### Changed
+
+- Import-cycle CI check is now a ratchet (`depcruise-ratchet.mjs` / `.depcruise-baseline`),
+  matching the existing Knip dead-code ratchet: the total circular-dependency count is
+  blocking and may never increase, closing the gap where `--ignore-known` only caught
+  genuinely new cycles. Baseline is 0.
 
 ### Added
 

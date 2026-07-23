@@ -18,6 +18,12 @@
 #                          better-auth/next-pwa>next)  <0.35.0 — the direct
 #                          "sharp" entry in package.json is already >=0.35.0;
 #                          this only forces the nested copies under next.
+#   postcss               (next's own vendored copy — next@16.2.11 pins 8.4.31
+#                          internally; the project's own postcss, via
+#                          @tailwindcss/postcss, already resolves to a patched
+#                          8.5.21) <8.5.12 — GHSA-6g55-p6wh-862q
+#   find-my-way           (prisma dev tooling, @prisma/dev — local Postgres
+#                          emulation only, not shipped) <9.6.1 — GHSA-c96f-x56v-gq3h
 # NOT overridden: undici — its only consumer is jsdom@29 (test env only). It resolves
 # naturally to the patched 7.28.0, which jsdom is happy with; a forced override instead
 # flattens it in a way that breaks jsdom's resource dispatcher, so we leave it to the
@@ -30,6 +36,8 @@ overrides:
   js-yaml@<4.3.0: '>=4.3.0'
   fast-uri@<3.1.4: '>=3.1.4'
   sharp@<0.35.0: '>=0.35.0'
+  postcss: '>=8.5.12'
+  find-my-way: '>=9.6.1'
 
 # Packages allowed to run install/build lifecycle scripts (pnpm blocks these by default —
 # supports R-6.7 install-script hardening).

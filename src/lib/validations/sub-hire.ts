@@ -56,9 +56,11 @@ export const subHireOrderPricingSchema = z.object({
 
 export type SubHireOrderPricingFormValues = z.input<typeof subHireOrderPricingSchema>;
 
-export const subHirePlacementSchema = z.object({
-  targetCategoryId: z.string().optional().nullable(),
-  targetGroupId: z.string().optional().nullable(),
+// R-8.6.3: derived via `.pick()` from `subHireItemSchema` rather than
+// re-declared — identical targetCategoryId/targetGroupId shape.
+export const subHirePlacementSchema = subHireItemSchema.pick({
+  targetCategoryId: true,
+  targetGroupId: true,
 });
 
 export type SubHirePlacementFormValues = z.input<typeof subHirePlacementSchema>;

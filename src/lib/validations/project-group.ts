@@ -15,9 +15,11 @@ export const projectGroupSchema = z.object({
 
 export type ProjectGroupFormValues = z.input<typeof projectGroupSchema>;
 
-export const updateGroupPriceSchema = z.object({
-  price: z.coerce.number().min(0),
-});
+// R-8.6.3: derived from `projectGroupSchema` (`.pick()` + `.required()`)
+// rather than re-declared — same field/constraints, just mandatory here.
+export const updateGroupPriceSchema = projectGroupSchema
+  .pick({ price: true })
+  .required();
 
 export const moveLineItemSchema = z.object({
   lineItemId: z.string().min(1),

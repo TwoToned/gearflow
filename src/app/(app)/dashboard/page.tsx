@@ -116,8 +116,8 @@ export default function DashboardPage() {
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             <Button asChild variant="halo"><Link href="/projects/new"><Plus className="h-4 w-4" /> New job</Link></Button>
-            <Button asChild variant="line"><Link href="/warehouse"><ScanBarcode className="h-4 w-4" /> Warehouse</Link></Button>
-            <Button asChild variant="line"><Link href="/assets/registry/new"><Boxes className="h-4 w-4" /> Add gear</Link></Button>
+            <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/warehouse"><ScanBarcode className="h-4 w-4" /> Warehouse</Link></Button>
+            <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/assets/registry/new"><Boxes className="h-4 w-4" /> Add gear</Link></Button>
           </div>
         </div>
       </FadeIn>

@@ -16,10 +16,8 @@ import {
 } from "@/components/ui/select";
 import { FadeIn } from "@/components/ui/motion";
 import { cn } from "@/lib/utils";
-import {
-  updateOrganization,
-  type OrgSettings,
-} from "@/server/settings";
+import { updateOrganization } from "@/server/settings";
+import type { OrgSettings } from "@/lib/org-settings-types";
 import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";

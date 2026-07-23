@@ -16,10 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormSection } from "@/components/layout/page-layouts";
-import {
-  updateOrganization,
-  type OrgSettings,
-} from "@/server/settings";
+import { updateOrganization } from "@/server/settings";
+import type { OrgSettings } from "@/lib/org-settings-types";
 import { useCategoriesWithParent } from "@/hooks/use-categories";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";

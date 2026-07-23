@@ -18,7 +18,7 @@ import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { DEFAULT_SSO_SETTINGS, type OrgSSOSettings, type SSOGroupMapping } from "@/lib/sso-types";
 import { env } from "@/env";
 import { readOrgSettingsBlob, saveOrgSettings } from "@/lib/org-settings-read";
-import type { OrgSettings } from "./settings";
+import type { OrgSettings } from "@/lib/org-settings-types";
 
 // ─── Read helpers ────────────────────────────────────────────────────────────
 

@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrganization } from "@/hooks/use-organization";
 import { generatePrimaryPalette } from "@/lib/color-utils";
-import type { OrgBranding } from "@/server/settings";
+import type { OrgBranding } from "@/lib/org-settings-types";
 
 export function BrandingProvider({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();

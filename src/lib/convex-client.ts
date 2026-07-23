@@ -57,12 +57,17 @@ export async function getConvexClient(): Promise<ConvexHttpClient> {
  * a freshly-attached token if the first failure was a refresh-boundary race.
  *
  * READS ONLY. Never wrap a mutation — they are not safe to retry blindly.
+ *
+ * The backoff is jittered (R-9.6): a fixed delay means every request that failed
+ * in the same transient blip (e.g. a cold-start window) retries at exactly the
+ * same instant, turning one blip into a synchronized retry storm against Convex.
+ * Randomizing 100-200ms spreads the retries out instead.
  */
 export async function withConvexReadRetry<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch {
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await new Promise((resolve) => setTimeout(resolve, 100 + Math.random() * 100));
     return await run();
   }
 }

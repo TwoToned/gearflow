@@ -67,10 +67,22 @@ async function invokeCronRoute(
     }
 
     const url = `${baseUrl.replace(/\/+$/, "")}${path}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${secret}` },
-    });
+    // R-9.6: explicit timeout on every outbound call — no library-default
+    // infinities. 10s matches the T-22 default (src/lib/fetch-with-timeout.ts);
+    // duplicated here (not imported) since convex/ is a separate deployment
+    // bundle from src/.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${secret}` },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     const body = await res.text();
     if (!res.ok) {
       throw new Error(

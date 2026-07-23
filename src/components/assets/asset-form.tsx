@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { SmartFormActions } from "@/components/ui/smart-form";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -398,14 +399,14 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
           </section>
         </div>
 
-        <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+        <SmartFormActions>
           <Button type="button" variant="line" onClick={() => router.back()}>
             Cancel
           </Button>
           <Button type="submit" loading={mutation.isPending}>
             {isEditing ? "Update asset" : totalCount > 1 ? `Create ${totalCount} assets` : "Create asset"}
           </Button>
-        </div>
+        </SmartFormActions>
       </div>
 
       {/* ─── Helper rail ──────────────────────────────────────── */}

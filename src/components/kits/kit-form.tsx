@@ -30,7 +30,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -148,9 +148,7 @@ export function KitForm({ initialData }: KitFormProps) {
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     <StatusIndicator category="kit" value={v.status ?? "AVAILABLE"} label={statusLabel} variant="pill" />
-                    <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                      {checkModeLabel}
-                    </span>
+                    <SmartFormPreviewPill>{checkModeLabel}</SmartFormPreviewPill>
                   </div>
                 </div>
               </div>
@@ -356,14 +354,14 @@ export function KitForm({ initialData }: KitFormProps) {
         </section>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+      <SmartFormActions>
         <Button type="button" variant="line" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" loading={mutation.isPending}>
           {isEditing ? "Update kit" : "Create kit"}
         </Button>
-      </div>
+      </SmartFormActions>
 
       <QuickCreateLocation
         open={showCreateLocation}

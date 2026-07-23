@@ -31,7 +31,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions,
 } from "@/components/ui/smart-form";
 import { QuickCreateLocation } from "./quick-create-location";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -275,14 +275,14 @@ export function BulkAssetForm({ initialData, preselectedModelId }: BulkAssetForm
         </section>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+      <SmartFormActions>
         <Button type="button" variant="line" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" loading={mutation.isPending}>
           {isEditing ? "Update bulk asset" : "Create bulk asset"}
         </Button>
-      </div>
+      </SmartFormActions>
 
       <QuickCreateLocation
         open={showCreateLocation}

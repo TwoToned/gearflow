@@ -109,6 +109,30 @@ export function SmartFormSection({
 }
 
 /**
+ * SmartFormActions — the standard trailing Cancel/Submit button row (R-8.7.3).
+ * Divider-topped, right-aligned; pass the buttons as children.
+ */
+export function SmartFormActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * SmartFormPreviewPill — the small "type/category" meta pill shown under the
+ * entity name in a SmartFormPreview card (R-8.7.3).
+ */
+export function SmartFormPreviewPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
+      {children}
+    </span>
+  );
+}
+
+/**
  * SmartFormField — label + control + hint/error. Error text uses `text-t-out`
  * with no personality copy (DESIGN §9).
  */

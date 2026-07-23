@@ -40,7 +40,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -208,9 +208,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                     <StatusIndicator category="maintenance" value={statusValue || "SCHEDULED"} label={statusLabel} variant="pill" />
-                    <span className="inline-flex items-center rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                      {typeLabel}
-                    </span>
+                    <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
                   </div>
                 </div>
               </div>

@@ -22,7 +22,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField,
+  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions,
 } from "@/components/ui/smart-form";
 
 interface SupplierFormProps {
@@ -217,14 +217,14 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
         </section>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3 border-t border-line pt-4">
+      <SmartFormActions>
         <Button type="button" variant="line" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" loading={mutation.isPending}>
           {isEditing ? "Update supplier" : "Create supplier"}
         </Button>
-      </div>
+      </SmartFormActions>
     </SmartFormLayout>
   );
 }

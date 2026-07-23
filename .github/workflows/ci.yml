@@ -230,8 +230,8 @@ jobs:
           git fetch --no-tags --depth=100 origin main:refs/remotes/origin/main || git fetch --no-tags origin main
           pnpm run check-migration-drift
 
-      - name: Import-cycle check (new cycles only, R-3.5)
-        run: pnpm run depcruise
+      - name: Import-cycle ratchet (R-3.5 — blocking on any increase)
+        run: pnpm run depcruise-ratchet
 
       - name: Any-ratchet (R-8.2.2)
         run: pnpm run any-ratchet

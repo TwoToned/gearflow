@@ -62,12 +62,11 @@ export const assetBulkChildSchema = z.object({
 export type AssetBulkChildFormValues = z.input<typeof assetBulkChildSchema>;
 
 /** Attach a bulk asset as a default accessory on a Model — every asset of
- * that model inherits it. Bulk only at the model level; always SHIPS_WITH. */
-export const modelBulkAccessorySchema = z.object({
-  bulkAssetId: z.string().min(1, "Bulk asset is required"),
-  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
-  notes: z.string().max(500).optional(),
-});
+ * that model inherits it. Bulk only at the model level; always SHIPS_WITH.
+ * Same bulkAssetId/quantity/notes shape as assetBulkChildSchema, minus
+ * allocationMode (model-level accessories are always SHIPS_WITH) — derived via
+ * `.omit()` (R-8.6.3) rather than re-declared. */
+export const modelBulkAccessorySchema = assetBulkChildSchema.omit({ allocationMode: true });
 
 export type ModelBulkAccessoryFormValues = z.input<typeof modelBulkAccessorySchema>;
 

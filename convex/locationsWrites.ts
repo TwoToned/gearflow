@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
+import { assertStrLen } from "./lib/fieldGuards";
 
 /**
  * Native LOCATION write mutations (Phase 3 browser-direct — replaces createLocation/
@@ -15,9 +16,25 @@ import * as enums from "./lib/validators";
  * re-implemented (no FK cascades): single-default-per-org (clear other defaults before
  * setting one), delete-guards (children / assets / bulkAssets block), and the dropped
  * locationMedia Cascade (remove the location's media rows on delete).
+ *
+ * `useLocationWrites()` runs `locationSchema` (src/lib/validations/asset.ts) client-side
+ * before calling `createNative`/`updateNative` directly (no server action in this path);
+ * `assertLocationFields` re-enforces the same string-length bounds + the
+ * latitude/longitude both-or-neither `.refine()` here so a caller invoking the mutation
+ * directly can't skip them (R-8.6.1/R-8.6.2).
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/** Mirrors locationSchema (src/lib/validations/asset.ts), including its `.refine()`. */
+function assertLocationFields(f: { name?: string; address?: string; notes?: string; latitude?: number | null; longitude?: number | null }): void {
+  assertStrLen(f.name, "name", { min: 1, max: 200 });
+  assertStrLen(f.address, "address", { max: 500 });
+  assertStrLen(f.notes, "notes", { max: 1000 });
+  if ((f.latitude != null) !== (f.longitude != null)) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: "Both latitude and longitude must be provided together." });
+  }
+}
 
 export const locationFields = {
   name: v.string(),
@@ -58,6 +75,7 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "location", "create");
     const actor = await resolveActor(ctx, a.actor);
+    assertLocationFields(a);
 
     const dup = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Location already exists");
@@ -85,6 +103,7 @@ export const updateNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "location", "update");
     const actor = await resolveActor(ctx, a.actor);
+    assertLocationFields(a);
 
     const doc = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Location not found");
@@ -112,6 +131,7 @@ export const updateNotesNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "location", "update");
     await resolveActor(ctx, a.actor); // pins identity (no audit row in the original notes path)
+    assertStrLen(a.notes, "notes", { max: 1000 });
 
     const doc = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Location not found");

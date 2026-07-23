@@ -9,6 +9,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 
 /**
  * Native BULK-ASSET write mutations (Phase 3 browser-direct — replaces
@@ -48,16 +49,18 @@ type BulkArgs = {
   locationId?: string; status?: string; notes?: string; isActive?: boolean; tags?: string[];
 };
 
+/**
+ * Mirrors bulkAssetSchema (src/lib/validations/asset.ts). `useBulkAssetWrites()` runs
+ * that schema client-side before calling createNative/updateNative directly (no server
+ * action in this path); this re-enforces the same string-length/quantity/price bounds
+ * here so a caller invoking the mutation directly can't skip them (R-8.6.1/R-8.6.2).
+ */
 function validateBulk(a: BulkArgs) {
-  if (!a.modelId || a.modelId.length < 1) throw new ConvexError("Model is required");
-  if (!a.assetTag || a.assetTag.length < 1) throw new ConvexError("Asset tag is required");
-  if (a.assetTag.length > 50) throw new ConvexError("Asset tag is too long");
-  const q = a.totalQuantity ?? 0;
-  if (!Number.isInteger(q) || q < 0) throw new ConvexError("Quantity must be 0 or more");
-  if (a.purchasePricePerUnit != null && (!Number.isFinite(a.purchasePricePerUnit) || a.purchasePricePerUnit < 0)) {
-    throw new ConvexError("Purchase price must be zero or positive");
-  }
-  if (a.notes && a.notes.length > 2000) throw new ConvexError("Notes are too long");
+  assertStrLen(a.modelId, "modelId", { min: 1 });
+  assertStrLen(a.assetTag, "assetTag", { min: 1, max: 50 });
+  assertNumRange(a.totalQuantity ?? 0, "totalQuantity", { min: 0, integer: true });
+  assertNumRange(a.purchasePricePerUnit, "purchasePricePerUnit", { min: 0 });
+  assertStrLen(a.notes, "notes", { max: 2000 });
 }
 
 async function logBulk(ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; id: string; assetTag: string; summary: string; details?: unknown }) {

@@ -62,6 +62,15 @@ describe("assetAccessoriesWrites — serialized", () => {
     await t.run(async (ctx) => { const p = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "parent")).first(); if (p) await ctx.db.patch(p._id, { organizationId: OTHER }); });
     await expect(t.withIdentity(asUser).mutation(api.assetAccessoriesWrites.addSerializedNative, { parentAssetId: "parent", orgId: ORG, childAssetId: "child", now: NOW, actor, auditId: "a1" })).rejects.toThrow(/not found/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing assetSerializedChildSchema.parse() in
+  // the browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects an over-long notes field on addSerializedNative", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.assetAccessoriesWrites.addSerializedNative, { parentAssetId: "parent", orgId: ORG, childAssetId: "child", notes: "x".repeat(501), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/notes/i);
+  });
 });
 
 describe("assetAccessoriesWrites — bulk pool atomicity", () => {
@@ -91,6 +100,22 @@ describe("assetAccessoriesWrites — bulk pool atomicity", () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.assetAccessoriesWrites.addBulkNative, { id: "bc1", parentAssetId: "parent", orgId: ORG, bulkAssetId: "ba1", quantity: 1, allocationMode: "SHIPS_WITH", now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Forbidden|permission/i);
+  });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing assetBulkChildSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects a non-integer/negative quantity on addBulkNative", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.assetAccessoriesWrites.addBulkNative, { id: "bc1", parentAssetId: "parent", orgId: ORG, bulkAssetId: "ba1", quantity: 0, allocationMode: "SHIPS_WITH", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/quantity/i);
+  });
+
+  test("rejects an over-long notes field on addBulkNative", async () => {
+    const t = makeT(); await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.assetAccessoriesWrites.addBulkNative, { id: "bc1", parentAssetId: "parent", orgId: ORG, bulkAssetId: "ba1", quantity: 1, allocationMode: "SHIPS_WITH", notes: "x".repeat(501), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/notes/i);
   });
 });
 

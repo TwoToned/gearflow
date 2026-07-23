@@ -80,6 +80,13 @@ describe("modelBulkAccessoriesWrites", () => {
     await expect(add(t, { notes: "x".repeat(501) })).rejects.toThrow(/500 characters/i);
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing modelBulkAccessorySchema.parse() in
+  // the browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects an empty bulkAssetId before the DB lookup", async () => {
+    const t = makeT(); await seed(t);
+    await expect(add(t, { bulkAssetId: "" })).rejects.toThrow(/bulkAssetId/);
+  });
+
   test("rejects a model in another org", async () => {
     const t = makeT(); await seed(t, { modelOrg: OTHER });
     await expect(add(t)).rejects.toThrow(/Model not found/i);

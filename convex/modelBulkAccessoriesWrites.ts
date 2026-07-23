@@ -4,6 +4,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 
 /**
  * Native MODEL-BULK-ACCESSORY write mutations (Phase 3 browser-direct — replaces the
@@ -11,12 +12,21 @@ import { writeActivityLog } from "./lib/audit";
  * src/server/model-accessories.ts). Model-level default accessories: "every asset of
  * this model ships with N of this bulk asset". Gates on `model:update`. Standard shape:
  * 4 guards + per-row org re-check on the model AND the bulk asset AND the accessory row
- * + the dup-guard + sortOrder computation moved INTO the mutation + atomic audit. The
- * form's modelBulkAccessorySchema (quantity int ≥1, notes ≤500) runs client-side; the
- * quantity invariant is re-checked here since this is now the public boundary.
+ * + the dup-guard + sortOrder computation moved INTO the mutation + atomic audit.
+ * `useModelAccessoryWrites()` runs `modelBulkAccessorySchema` (bulkAssetId non-empty,
+ * quantity int ≥1, notes ≤500) client-side before calling `addNative` directly (no
+ * server action in this path); `assertModelBulkAccessoryFields` re-enforces the same
+ * bounds here since this is the public boundary (R-8.6.1/R-8.6.2).
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/** Mirrors modelBulkAccessorySchema (src/lib/validations/asset.ts). */
+function assertModelBulkAccessoryFields(f: { bulkAssetId?: string; quantity?: number; notes?: string }): void {
+  assertStrLen(f.bulkAssetId, "bulkAssetId", { min: 1 });
+  assertNumRange(f.quantity, "quantity", { min: 1, integer: true });
+  assertStrLen(f.notes, "notes", { max: 500 });
+}
 
 export const addNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -36,13 +46,7 @@ export const addNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "model", "update");
     const actor = await resolveActor(ctx, suppliedActor);
-
-    if (!Number.isInteger(quantity) || quantity < 1) {
-      throw new ConvexError("Quantity must be a whole number of at least 1");
-    }
-    if (notes !== undefined && notes.length > 500) {
-      throw new ConvexError("Notes must be 500 characters or fewer");
-    }
+    assertModelBulkAccessoryFields({ bulkAssetId, quantity, notes });
 
     const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
     if (!model || model.organizationId !== orgId) throw new ConvexError("Model not found");

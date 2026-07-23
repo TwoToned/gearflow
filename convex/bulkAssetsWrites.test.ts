@@ -99,6 +99,37 @@ describe("bulkAssetsWrites", () => {
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.bulkAssetsWrites.createNative, { ...base, id: "bk9", assetTag: "X", auditId: "a9" })).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing bulkAssetSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects an assetTag over the 50-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.bulkAssetsWrites.createNative, { ...base, assetTag: "X".repeat(51) }),
+    ).rejects.toThrow(/assetTag/);
+  });
+
+  test("rejects a negative purchasePricePerUnit", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.bulkAssetsWrites.createNative, { ...base, purchasePricePerUnit: -1 }),
+    ).rejects.toThrow(/purchasePricePerUnit/);
+  });
+
+  test("rejects a notes field over the 2000-char bound on updateNative", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.withIdentity(asUser).mutation(api.bulkAssetsWrites.createNative, base);
+    await expect(
+      t.withIdentity(asUser).mutation(api.bulkAssetsWrites.updateNative, { ...base, notes: "x".repeat(2001), now: NOW + 1, auditId: "a2" }),
+    ).rejects.toThrow(/notes/i);
+  });
+
+  test("rejects a negative totalQuantity", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.bulkAssetsWrites.createNative, { ...base, totalQuantity: -1 }),
+    ).rejects.toThrow(/totalQuantity/);
+  });
 });
 
 describe("bulkAssets reads", () => {

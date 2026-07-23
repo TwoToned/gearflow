@@ -68,6 +68,38 @@ describe("locationsWrites", () => {
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.locationsWrites.createNative, { id: "l1", orgId: ORG, name: "X", now: NOW, actor, auditId: "a2" })).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  // R-8.6.2 — a direct-mutation caller (bypassing locationSchema.parse() in the browser
+  // hook) must still hit the same business-constraint bounds server-side.
+  test("rejects a name over the 200-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.locationsWrites.createNative, { id: "l1", orgId: ORG, name: "X".repeat(201), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/name/i);
+  });
+
+  test("rejects an over-long notes field on updateNative", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => { await ctx.db.insert("locations", { id: "l1", organizationId: ORG, name: "WH", createdAt: NOW, updatedAt: NOW }); });
+    await expect(
+      t.withIdentity(asUser).mutation(api.locationsWrites.updateNative, { id: "l1", orgId: ORG, name: "WH", notes: "x".repeat(1001), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/notes/i);
+  });
+
+  test("rejects latitude supplied without longitude (the refine cross-field check)", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.locationsWrites.createNative, { id: "l1", orgId: ORG, name: "WH", latitude: 1.23, now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/latitude and longitude/i);
+  });
+
+  test("rejects an over-long notes field on updateNotesNative", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => { await ctx.db.insert("locations", { id: "l1", organizationId: ORG, name: "WH", createdAt: NOW, updatedAt: NOW }); });
+    await expect(
+      t.withIdentity(asUser).mutation(api.locationsWrites.updateNotesNative, { id: "l1", orgId: ORG, notes: "x".repeat(1001), now: NOW, actor }),
+    ).rejects.toThrow(/notes/i);
+  });
 });
 
 describe("locations.detail + listSimple", () => {

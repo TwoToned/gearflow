@@ -12,22 +12,24 @@
  *
  * Usage: node scripts/check-docs-npm-npx.mjs [baseRef]
  */
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const base = process.argv[2] || "origin/main";
-function git(cmd) {
-  return execSync(`git ${cmd}`, { encoding: "utf8", maxBuffer: 1024 * 1024 * 20 });
+// execFileSync (argv array, no shell) — base/file are passed as literal argv
+// entries, never interpolated into a shell string, so they can't inject shell
+// metacharacters. --end-of-options also stops them being read as git flags.
+function git(args) {
+  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 1024 * 1024 * 20 });
 }
 
-let range;
+let fromRef;
 try {
-  const mergeBase = git(`merge-base ${base} HEAD`).trim();
-  range = `${mergeBase} HEAD`;
+  fromRef = git(["merge-base", "--end-of-options", base, "HEAD"]).trim();
 } catch {
-  range = `${base} HEAD`;
+  fromRef = base;
 }
 
-const changedMdFiles = git(`diff --name-only ${range} -- '*.md'`)
+const changedMdFiles = git(["diff", "--name-only", "--end-of-options", fromRef, "HEAD", "--", "*.md"])
   .split("\n")
   .filter(Boolean)
   .filter((f) => !/^(\.agents|\.claude|node_modules)\//.test(f));
@@ -39,7 +41,7 @@ const violations = [];
 for (const file of changedMdFiles) {
   let diff;
   try {
-    diff = git(`diff --unified=0 ${range} -- ${JSON.stringify(file)}`);
+    diff = git(["diff", "--unified=0", "--end-of-options", fromRef, "HEAD", "--", file]);
   } catch {
     continue; // file deleted or renamed away — nothing to check
   }

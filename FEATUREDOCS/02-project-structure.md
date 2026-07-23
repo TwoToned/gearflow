@@ -14,7 +14,8 @@
 convex/                  # PRIMARY domain/business data layer (Convex Cloud)
 ├── schema.ts             # All domain table definitions (103 tables)
 ├── lib/                  # Shared guards/helpers: availabilityCore, moneyGuards,
-│                          # orgRef, writeGuard, blockingCommentsGate, counters, etc.
+│                          # fieldGuards, orgRef, writeGuard, blockingCommentsGate,
+│                          # counters, etc.
 ├── <domain>.ts            # Queries per domain (assets, projects, kits, crew, ...)
 ├── <domain>Writes.ts       # Browser-direct mutations per domain (the write
 │                          # security boundary — see FEATUREDOCS/54)

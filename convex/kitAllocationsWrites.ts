@@ -13,12 +13,26 @@ import { getKitByCuid } from "./lib/kits";
  * Gates on `kit:update`. Standard shape: 4 guards (assertWritesEnabled +
  * enforceBrowserWriteLimit + requireOrgPermission + resolveActor) + per-row org re-check
  * on the kit + atomic audit. The money invariants (every model in the kit, split sums
- * to 100, in range, no dup) are enforced at the mutation boundary — no matter who calls,
- * a split the allocation engine would later reject can't be persisted. The panel's
- * kitAllocationSchema (2-decimal precision) runs client-side before submit.
+ * to 100, in range, no dup, 2-decimal precision) are enforced at the mutation boundary
+ * — no matter who calls, a split the allocation engine would later reject can't be
+ * persisted. A direct-mutation caller bypassing the panel's `kitAllocationSchema`
+ * (R-8.6.2) would otherwise be able to save e.g. `33.333%` rows that individually pass
+ * the 0-100 range + sum-to-100 checks but silently round differently than the column
+ * (numeric(5,2)) stores them, drifting the persisted split from what summed to 100.
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Reject a percent with more than 2 decimal places — mirrors `kitAllocationRowSchema`'s
+ * refine in src/lib/validations/kit-allocation.ts (epsilon-compared, not
+ * `Number.isInteger(Math.round(...))`, which is unconditionally true and never fires).
+ */
+function assertTwoDecimalPercent(value: number, field: string): void {
+  if (Math.abs(value * 100 - Math.round(value * 100)) >= 1e-9) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: `${field} may have at most 2 decimal places.` });
+  }
+}
 
 export const replaceNative = mutation({
   returns: v.object({ ok: v.boolean(), count: v.number() }),
@@ -50,6 +64,7 @@ export const replaceNative = mutation({
           // sum checks (every comparison against NaN is false) and persist junk.
           throw new ConvexError(`allocationPercent out of range for model ${r.modelId}`);
         }
+        assertTwoDecimalPercent(r.allocationPercent, `allocationPercent for model ${r.modelId}`);
       }
       if (new Set(rows.map((r) => r.modelId)).size !== rows.length) {
         throw new ConvexError(`duplicate model in allocation for kit ${kitId}`);

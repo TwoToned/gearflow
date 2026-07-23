@@ -82,11 +82,25 @@ export async function attachLocation<T extends { locationId: string | null }>(
 // no isTemplate filter).
 // ---------------------------------------------------------------------------
 
-/** A location mapped from its flat Convex doc to the Prisma-row business shape. */
-export interface MappedLocation {
-  id: string;
-  organizationId: string;
-  name: string;
+/**
+ * A location mapped from its flat Convex doc to the Prisma-row business shape.
+ * Derived from `Doc<"locations">` (R-8.2.4) so schema drift is a compile error.
+ */
+export type MappedLocation = Omit<
+  ConvexLocation,
+  | "_id"
+  | "_creationTime"
+  | "address"
+  | "latitude"
+  | "longitude"
+  | "type"
+  | "isDefault"
+  | "parentId"
+  | "notes"
+  | "tags"
+  | "createdAt"
+  | "updatedAt"
+> & {
   address: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -97,7 +111,7 @@ export interface MappedLocation {
   tags: string[];
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
 /** Pure: Convex location doc → Prisma-row business shape (epoch-ms→Date, defaults coerced, `_id`/`_creationTime` stripped). */
 export function mapLocation(doc: ConvexLocation): MappedLocation {

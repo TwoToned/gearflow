@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wooCommerceIntegrationSchema } from "./woocommerce";
+import { wooCommerceIntegrationSchema, wooOrderSchema } from "./woocommerce";
 
 describe("wooCommerceIntegrationSchema", () => {
   // ---------------------------------------------------------------------------
@@ -282,5 +282,119 @@ describe("wooCommerceIntegrationSchema", () => {
     if (result.success) {
       expect((result.data as Record<string, unknown>)["unknownField"]).toBeUndefined();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// wooOrderSchema — the webhook trust-boundary schema (POLICY.md R-8.2.3)
+// ---------------------------------------------------------------------------
+describe("wooOrderSchema", () => {
+  const validOrder = {
+    id: 123,
+    number: "123",
+    status: "processing",
+    billing: {
+      first_name: "Jane",
+      last_name: "Doe",
+      email: "jane@example.com",
+    },
+    line_items: [
+      { name: "Widget", quantity: 2, price: "10.00" },
+    ],
+  };
+
+  it("accepts a minimal valid order", () => {
+    const result = wooOrderSchema.safeParse(validOrder);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a full order with meta_data and optional billing fields", () => {
+    const result = wooOrderSchema.safeParse({
+      ...validOrder,
+      customer_note: "Leave at the loading dock",
+      meta_data: [{ key: "_rental_start", value: "2026-08-01" }],
+      billing: {
+        ...validOrder.billing,
+        company: "Acme Co",
+        phone: "0400000000",
+        address_1: "1 Example St",
+        city: "Sydney",
+        state: "NSW",
+        postcode: "2000",
+        country: "AU",
+      },
+      line_items: [
+        {
+          name: "Widget",
+          sku: "WID-1",
+          quantity: 2,
+          price: "10.00",
+          meta_data: [{ key: "_variation", value: "Blue" }],
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("strips unknown top-level and nested fields instead of rejecting", () => {
+    const result = wooOrderSchema.safeParse({
+      ...validOrder,
+      totally_unknown_field: "ignored",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.data as Record<string, unknown>)["totally_unknown_field"]).toBeUndefined();
+    }
+  });
+
+  it("coerces a non-string meta_data value instead of rejecting", () => {
+    const result = wooOrderSchema.safeParse({
+      ...validOrder,
+      meta_data: [{ key: "_quantity_hint", value: 5 }],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.meta_data?.[0].value).toBe("5");
+    }
+  });
+
+  it("rejects a payload missing required id", () => {
+    const { id: _id, ...withoutId } = validOrder;
+    const result = wooOrderSchema.safeParse(withoutId);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a payload missing required billing", () => {
+    const { billing: _billing, ...withoutBilling } = validOrder;
+    const result = wooOrderSchema.safeParse(withoutBilling);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a payload missing required line_items", () => {
+    const { line_items: _lineItems, ...withoutLineItems } = validOrder;
+    const result = wooOrderSchema.safeParse(withoutLineItems);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a payload with a malformed line item (missing price)", () => {
+    const result = wooOrderSchema.safeParse({
+      ...validOrder,
+      line_items: [{ name: "Widget", quantity: 1 }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a payload where billing is missing a required field", () => {
+    const result = wooOrderSchema.safeParse({
+      ...validOrder,
+      billing: { first_name: "Jane", last_name: "Doe" }, // missing email
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a non-object payload", () => {
+    expect(wooOrderSchema.safeParse(null).success).toBe(false);
+    expect(wooOrderSchema.safeParse("order").success).toBe(false);
+    expect(wooOrderSchema.safeParse(42).success).toBe(false);
   });
 });

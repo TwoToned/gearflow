@@ -6,6 +6,7 @@ import { RotateCcw, Upload, X, Image as ImageIcon } from "lucide-react";
 
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshOrganization } from "@/hooks/use-organization";
+import { AppImage } from "@/components/ui/app-image";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings, OrgBranding } from "@/lib/org-settings-types";
@@ -309,10 +310,12 @@ function LogoUpload({
         <div className="relative flex h-16 w-24 items-center justify-center rounded-md border border-dashed border-input bg-bg-inset/30">
           {url ? (
             <>
-              <img
+              <AppImage
                 src={url}
                 alt={label}
-                className="h-full w-full rounded-md object-contain p-1"
+                fill
+                sizes="96px"
+                className="rounded-md object-contain p-1"
               />
               <button
                 type="button"

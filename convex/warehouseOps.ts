@@ -16,6 +16,7 @@ import {
   checkinAccessoryChildren,
 } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
+import { getKitByCuid as kitByCuid } from "./lib/kits";
 
 /**
  * Warehouse checkout / check-in — Convex port of warehouse.ts checkOutItems /
@@ -339,9 +340,6 @@ async function linesByAsset(ctx: Ctx, assetId: string, organizationId: string) {
 
 // ── Kit checkout / checkin helpers ───────────────────────────────────────────
 
-async function kitByCuid(ctx: Ctx, id: string) {
-  return await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-}
 async function kitParentLine(ctx: Ctx, projectId: string, organizationId: string, kitId: string) {
   const rows = await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect();
   return rows.find((r) => r.projectId === projectId && r.organizationId === organizationId && !r.isKitChild) ?? null;

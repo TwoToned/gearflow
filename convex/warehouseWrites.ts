@@ -32,6 +32,7 @@ import {
   defaultLocationId,
 } from "./warehouseOps";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
+import { getKitByCuid } from "./lib/kits";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 
 /**
@@ -79,7 +80,7 @@ async function requireLineInProject(ctx: MutationCtx, lineItemId: string, orgId:
 }
 
 async function requireKitInOrg(ctx: MutationCtx, kitId: string, orgId: string): Promise<void> {
-  const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+  const k = await getKitByCuid(ctx, kitId);
   if (!k || k.organizationId !== orgId) throw new ConvexError("Kit not found");
 }
 
@@ -108,7 +109,7 @@ async function loadAssetInOrg(ctx: MutationCtx, assetId: string, orgId: string) 
 }
 
 async function loadKitInOrg(ctx: MutationCtx, kitId: string, orgId: string) {
-  const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+  const kit = await getKitByCuid(ctx, kitId);
   if (!kit || kit.organizationId !== orgId) throw new ConvexError("Kit not found");
   return kit;
 }
@@ -809,7 +810,7 @@ export const forceReturnKits = mutation({
     // simply has no name) BEFORE the batch — names are unchanged by the force-return.
     const nameById = new Map<string, string>();
     for (const kitId of unique) {
-      const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+      const k = await getKitByCuid(ctx, kitId);
       if (k && k.organizationId === a.orgId) nameById.set(k.id, `${k.assetTag} - ${k.name}`);
     }
 

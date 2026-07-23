@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { getKitByCuid } from "./lib/kits";
 
 
 /**
@@ -48,7 +49,7 @@ async function readWarehouseDetail(ctx: QueryCtx, projectId: string, orgId: stri
   const [assetDocs, bulkDocs, kitDocs, modelDocs, supplierDocs] = await Promise.all([
     pr(refAssetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     pr(refBulkIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
-    pr(refKitIds.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    pr(refKitIds.map((id) => getKitByCuid(ctx, id))),
     pr(refModelIds.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
     pr(refSupplierIds.map((id) => ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
   ]);

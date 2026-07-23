@@ -10,6 +10,7 @@ import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { getKitByCuid } from "./lib/kits";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 
@@ -585,7 +586,7 @@ export const deleteNative = mutation({
     // Step 2 — free checked-out kits inline (status AVAILABLE + location; kits have
     // no counter). Leave the kit's location untouched when there's no default.
     for (const kitId of checkedOutKitIds) {
-      const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).first();
+      const kit = await getKitByCuid(ctx, kitId);
       if (!kit || kit.organizationId !== orgId) continue;
       await ctx.db.patch(kit._id, {
         status: "AVAILABLE",

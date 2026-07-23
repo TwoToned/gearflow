@@ -72,6 +72,11 @@ Plus, on every mutation:
 - **Per-row org re-check on GLOBAL-index fetches.** `by_cuid`, `by_modelId`, and
   friends are *global* indexes; a fetched doc's `organizationId` must be re-checked
   against the caller's org or you have a cross-tenant read/write.
+- **Kit-by-cuid goes through `getKitByCuid` (`convex/lib/kits.ts`), never an inlined
+  `ctx.db.query("kits").withIndex("by_cuid", ...)`.** One accessor for a global index
+  means one place to get the org re-check right, instead of ~30 independent chances
+  to forget it (R-8.3.4). Callers still MUST check the returned doc's
+  `organizationId` — the helper doesn't scope by org.
 - **Client-supplied FKs are org-validated** via `convex/lib/orgRef.ts`
   (`assertRefInOrg` / `assertMemberInOrg`). Because the service-token server reads
   bypass read-side org scoping, **write-side FK validation is the only reliable
@@ -123,3 +128,12 @@ duplicated:
   prod Convex directly, so a breaking signature change breaks prod until redeploy.
 - `by_cuid` / `by_modelId` are **global** indexes; `requireOrgPermission` authorises
   the *caller's* org, not the *row's* — re-check `organizationId` on every such fetch.
+- **Derive `Mapped*`/Prisma-row-shaped types from `Doc<"table">`, never hand-duplicate
+  them field-by-field** (POLICY.md R-8.2.4): `Omit<Doc<"table">, "_id" | "_creationTime"
+  | "<transformed fields>"> & { "<transformed fields with their coerced/converted
+  types>" }`. A hand-copied interface silently drifts the moment the Convex schema
+  gains/renames a field — the compiler has no way to catch it. See
+  `src/lib/categories-read.ts` (`MappedCategory`), `src/lib/crew-scheduling-read.ts`,
+  `src/lib/locations-read.ts`, `src/lib/project-line-item-read.ts`,
+  `src/lib/suppliers-read.ts`, `src/lib/assets-read.ts`, and
+  `src/lib/custom-fields-read.ts` for the pattern.

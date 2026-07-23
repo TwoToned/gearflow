@@ -1,6 +1,7 @@
 "use client";
 
 import { ImageIcon } from "lucide-react";
+import { AppImage } from "@/components/ui/app-image";
 
 interface MediaThumbnailProps {
   url?: string | null;
@@ -38,11 +39,12 @@ export function MediaThumbnail({
       style={{ width: size, height: size }}
       onClick={onClick}
     >
-      <img
+      <AppImage
         src={src}
         alt={alt}
+        width={size}
+        height={size}
         className="h-full w-full object-cover"
-        loading="lazy"
       />
     </div>
   );

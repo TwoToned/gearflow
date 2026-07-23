@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { pick, USER_PUBLIC_FIELDS, FILE_URL_FIELDS } from "./lib/dto";
+import { getKitByCuid } from "./lib/kits";
 
 /**
  * BROWSER-facing composite for the KIT detail page (Phase 2 native reads). Returns
@@ -15,7 +16,7 @@ import { pick, USER_PUBLIC_FIELDS, FILE_URL_FIELDS } from "./lib/dto";
  * page never renders them). Returns null when the kit is missing / cross-org.
  */
 async function readKitDetail(ctx: QueryCtx, kitId: string, orgId: string) {
-  const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", kitId)).unique();
+  const kit = await getKitByCuid(ctx, kitId);
   if (!kit || kit.organizationId !== orgId) return null;
 
   const [serialized, bulk, lineItemsAll, scanLogsAll, media] = await Promise.all([

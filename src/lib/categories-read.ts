@@ -51,11 +51,24 @@ export async function getCategoryMap(orgId: string): Promise<Map<string, ConvexC
 // and `_creationTime` are stripped.
 // ---------------------------------------------------------------------------
 
-/** A category mapped from its flat Convex doc to the Prisma-row business shape. */
-export interface MappedCategory {
-  id: string;
-  organizationId: string;
-  name: string;
+/**
+ * A category mapped from its flat Convex doc to the Prisma-row business shape.
+ * Derived from `Doc<"categories">` (R-8.2.4) so a schema change (new/renamed
+ * field) is a compile error here instead of a silently-stale duplicate.
+ */
+export type MappedCategory = Omit<
+  ConvexCategory,
+  | "_id"
+  | "_creationTime"
+  | "parentId"
+  | "description"
+  | "icon"
+  | "sortOrder"
+  | "tags"
+  | "suggestedCrewRoles"
+  | "createdAt"
+  | "updatedAt"
+> & {
   parentId: string | null;
   description: string | null;
   icon: string | null;
@@ -64,7 +77,7 @@ export interface MappedCategory {
   suggestedCrewRoles: string[];
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
 /** Pure: Convex category doc → Prisma-row business shape (epoch-ms→Date, defaults coerced, `_id`/`_creationTime` stripped). */
 export function mapCategory(doc: ConvexCategory): MappedCategory {

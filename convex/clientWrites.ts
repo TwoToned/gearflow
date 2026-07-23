@@ -5,6 +5,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -12,12 +13,47 @@ import * as enums from "./lib/validators";
  * createClient/updateClient/updateClientNotes/archiveClient server actions in
  * src/server/clients.ts). Clients are plain CRUD (no counters/cascades/money), so each
  * mutation is the standard shape: 4 guards (assertWritesEnabled + enforceBrowserWriteLimit
- * + requireOrgPermission + resolveActor) + per-row org re-check + atomic audit. The
- * client form's zodResolver(clientSchema) validates before submit; the v.* arg validators
- * enforce the shape at the boundary.
+ * + requireOrgPermission + resolveActor) + per-row org re-check + atomic audit.
+ *
+ * There is no server action in this path — `useNativeClientWrites()`
+ * (src/hooks/use-native-client-writes.ts) runs `clientSchema.parse()` client-side
+ * before calling these mutations directly; `assertClientFields` re-enforces the same
+ * string-length/numeric bounds here so a caller invoking the mutation directly (valid
+ * session, bypassing the UI) can't skip them (R-8.6.1/R-8.6.2 — the v.* arg validators
+ * only enforce shape, not these bounds).
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Mirrors `clientSchema` (src/lib/validations/client.ts) string-length/numeric
+ * bounds — `v.string()`/`v.number()` only enforce type, not these business
+ * constraints, so a browser-direct caller bypassing the client Zod parse would
+ * otherwise skip them entirely (R-8.6.2).
+ */
+function assertClientFields(f: {
+  name?: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  billingAddress?: string;
+  shippingAddress?: string;
+  taxId?: string;
+  paymentTerms?: string;
+  defaultDiscount?: number;
+  notes?: string;
+}): void {
+  assertStrLen(f.name, "name", { min: 1, max: 200 });
+  assertStrLen(f.contactName, "contactName", { max: 200 });
+  assertStrLen(f.contactEmail, "contactEmail", { max: 200 });
+  assertStrLen(f.contactPhone, "contactPhone", { max: 50 });
+  assertStrLen(f.billingAddress, "billingAddress", { max: 500 });
+  assertStrLen(f.shippingAddress, "shippingAddress", { max: 500 });
+  assertStrLen(f.taxId, "taxId", { max: 50 });
+  assertStrLen(f.paymentTerms, "paymentTerms", { max: 100 });
+  assertNumRange(f.defaultDiscount, "defaultDiscount", { min: 0, max: 100 });
+  assertStrLen(f.notes, "notes", { max: 2000 });
+}
 
 export const clientFields = {
   name: v.string(),
@@ -61,6 +97,7 @@ export const createNative = mutation({
     // makes another org's getById .unique() crash (and makes a retried create non-idempotent).
     const dup = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
     if (dup) throw new ConvexError("Client already exists");
+    assertClientFields(fields);
 
     await ctx.db.insert("clients", fields);
 
@@ -102,6 +139,7 @@ export const updateNative = mutation({
     const doc = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Client not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    assertClientFields(patch);
 
     await ctx.db.patch(doc._id, { ...sanitizeClientSet(patch), updatedAt: now });
 

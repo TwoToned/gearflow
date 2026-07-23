@@ -145,6 +145,57 @@ describe("maintenanceWrites.createNative — state machine", () => {
   });
 });
 
+// R-8.6.2 — a direct-mutation caller (bypassing maintenanceSchema.parse() in the
+// browser hook) must still hit the same business-constraint bounds server-side.
+describe("maintenanceWrites — field bounds (R-8.6.2)", () => {
+  test("rejects a title over the 200-char bound on create", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await expect(
+      t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, {
+        ...baseCreate, status: "SCHEDULED", title: "T".repeat(201),
+      }),
+    ).rejects.toThrow(/title/);
+  });
+
+  test("rejects a negative cost on create", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await expect(
+      t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, {
+        ...baseCreate, status: "SCHEDULED", cost: -1,
+      }),
+    ).rejects.toThrow(/cost/);
+  });
+
+  test("rejects more than 20 photos on create", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await expect(
+      t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, {
+        ...baseCreate, status: "SCHEDULED", photos: Array.from({ length: 21 }, (_, i) => `https://x/${i}.jpg`),
+      }),
+    ).rejects.toThrow(/photos/);
+  });
+
+  test("rejects partsUsed over the 2000-char bound on create", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await expect(
+      t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, {
+        ...baseCreate, status: "SCHEDULED", partsUsed: "p".repeat(2001),
+      }),
+    ).rejects.toThrow(/partsUsed/);
+  });
+
+  test("rejects a description over the 5000-char bound on the update patch", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, status: "SCHEDULED" });
+    await expect(
+      t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, {
+        orgId: ORG, id: "rec1", type: "REPAIR", status: "SCHEDULED", title: "Fix drill",
+        description: "d".repeat(5001), assetLinks: [{ id: "lnk1", assetId: "as1" }], now: NOW, actor, auditId: "a2",
+      }),
+    ).rejects.toThrow(/description/);
+  });
+});
+
 describe("maintenanceWrites.createNative — webhook gating", () => {
   async function seedHook(t: T) {
     await t.run(async (ctx) => {

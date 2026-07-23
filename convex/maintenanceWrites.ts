@@ -8,6 +8,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
+import { assertStrLen, assertNumRange, assertArrayMax } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -40,6 +41,26 @@ import * as enums from "./lib/validators";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Mirrors `maintenanceSchema` (src/lib/validations/maintenance.ts) string-length/
+ * numeric/array bounds — `v.string()`/`v.number()`/`v.array()` only enforce type,
+ * not these business constraints, so a browser-direct caller bypassing the client
+ * Zod parse would otherwise skip them entirely (R-8.6.2).
+ */
+function assertMaintenanceFields(f: {
+  title?: string;
+  description?: string;
+  cost?: number;
+  partsUsed?: string;
+  photos?: string[];
+}): void {
+  assertStrLen(f.title, "title", { min: 1, max: 200 });
+  assertStrLen(f.description, "description", { max: 5000 });
+  assertNumRange(f.cost, "cost", { min: 0 });
+  assertStrLen(f.partsUsed, "partsUsed", { max: 2000 });
+  assertArrayMax(f.photos, "photos", 20);
+}
 
 /** Statuses where the asset is physically in the workshop's hands. */
 const HOLDING_STATUSES = ["AWAITING_PARTS", "IN_PROGRESS", "QA"];
@@ -220,6 +241,7 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "maintenance", "create");
     const actor = await resolveActor(ctx, a.actor);
+    assertMaintenanceFields(a);
 
     // Client-supplied reporter/assignee user FKs — validate org membership (the Better-Auth
     // user table has no org column; a foreign user id would leak that user's name on reads).
@@ -357,6 +379,7 @@ export const updateNative = mutation({
     if (!record || record.organizationId !== a.orgId) {
       throw new ConvexError("Maintenance record not found");
     }
+    assertMaintenanceFields(a);
 
     // Validate reporter/assignee membership only when CHANGED, so a record whose original
     // reporter/assignee has since left the org can still be edited/re-saved.

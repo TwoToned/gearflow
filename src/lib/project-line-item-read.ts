@@ -66,12 +66,69 @@ function msToDate(n: number | null | undefined): Date | null {
   return n == null ? null : new Date(n);
 }
 
-/** A line item mapped from its Convex doc into the Prisma row shape getProject
- *  expects (every scalar present, dates as `Date`, nullable absent → `null`). */
-export interface MappedLineItem {
-  id: string;
-  organizationId: string;
-  projectId: string;
+/**
+ * A line item mapped from its Convex doc into the Prisma row shape getProject
+ * expects (every scalar present, dates as `Date`, nullable absent → `null`).
+ * Derived from `Doc<"projectLineItems">` (R-8.2.4) so a schema change is a
+ * compile error here instead of a silently-stale duplicate.
+ */
+export type MappedLineItem = Omit<
+  LineItemDoc,
+  | "_id"
+  | "_creationTime"
+  | "type"
+  | "modelId"
+  | "assetId"
+  | "bulkAssetId"
+  | "kitId"
+  | "isKitChild"
+  | "childKind"
+  | "parentLineItemId"
+  | "pricingMode"
+  | "description"
+  | "quantity"
+  | "unitPrice"
+  | "pricingType"
+  | "duration"
+  | "discount"
+  | "lineTotal"
+  | "priceBreakdown"
+  | "priceOverridden"
+  | "overrideReason"
+  | "sortOrder"
+  | "groupName"
+  | "categoryId"
+  | "groupId"
+  | "notes"
+  | "isOptional"
+  | "status"
+  | "checkedOutQuantity"
+  | "returnedQuantity"
+  | "assignedQuantity"
+  | "packedQuantity"
+  | "damagedQuantity"
+  | "lostQuantity"
+  | "checkedOutAt"
+  | "checkedOutById"
+  | "returnedAt"
+  | "returnedById"
+  | "returnCondition"
+  | "returnNotes"
+  | "prepStatus"
+  | "prepContainer"
+  | "isContainerLineItem"
+  | "isCustomItem"
+  | "returnStatus"
+  | "showSubhireOnDocs"
+  | "supplierId"
+  | "subhireOrderNumber"
+  | "supplierOrderId"
+  | "subHireId"
+  | "subHireItemId"
+  | "subHireGroupId"
+  | "createdAt"
+  | "updatedAt"
+> & {
   type: string;
   modelId: string | null;
   assetId: string | null;
@@ -124,7 +181,7 @@ export interface MappedLineItem {
   subHireGroupId: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
 /** Map a Convex `projectLineItems` doc → the full Prisma line-item row shape. */
 export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
@@ -187,13 +244,34 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
   };
 }
 
-/** A unit mapped from its Convex doc (dates → `Date`). `asset` / `bulkAsset`
- *  ({ id, assetTag }) are attached separately in {@link buildProjectEquipmentTree}. */
-export interface MappedUnit {
-  id: string;
-  organizationId: string;
-  lineItemId: string;
-  ordinal: number;
+/**
+ * A unit mapped from its Convex doc (dates → `Date`). `asset` / `bulkAsset`
+ * ({ id, assetTag }) are attached separately in {@link buildProjectEquipmentTree}.
+ * Derived from `Doc<"projectLineItemUnits">` (R-8.2.4) so schema drift is a
+ * compile error instead of a silently-stale duplicate.
+ */
+export type MappedUnit = Omit<
+  UnitDoc,
+  | "_id"
+  | "_creationTime"
+  | "assetId"
+  | "bulkAssetId"
+  | "parentUnitAssetId"
+  | "quantity"
+  | "returnedQuantity"
+  | "status"
+  | "prepStatus"
+  | "prepContainer"
+  | "checkedOutAt"
+  | "checkedOutById"
+  | "returnedAt"
+  | "returnedById"
+  | "returnCondition"
+  | "returnStatus"
+  | "returnNotes"
+  | "createdAt"
+  | "updatedAt"
+> & {
   assetId: string | null;
   bulkAssetId: string | null;
   parentUnitAssetId: string | null;
@@ -211,7 +289,7 @@ export interface MappedUnit {
   returnNotes: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
 /** Map a Convex `projectLineItemUnits` doc → the Prisma unit row shape. */
 export function mapUnitDoc(d: UnitDoc): MappedUnit {
@@ -240,15 +318,12 @@ export function mapUnitDoc(d: UnitDoc): MappedUnit {
   };
 }
 
-export interface MappedCategory {
-  id: string;
-  organizationId: string;
-  projectId: string;
-  name: string;
+/** Derived from `Doc<"projectCategories">` (R-8.2.4) so schema drift is a compile error. */
+export type MappedCategory = Omit<CategoryDoc, "_id" | "_creationTime" | "sortOrder" | "createdAt" | "updatedAt"> & {
   sortOrder: number;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
 export function mapCategoryDoc(d: CategoryDoc): MappedCategory {
   return {
@@ -262,12 +337,23 @@ export function mapCategoryDoc(d: CategoryDoc): MappedCategory {
   };
 }
 
-export interface MappedGroup {
-  id: string;
-  organizationId: string;
-  projectId: string;
+/** Derived from `Doc<"projectGroups">` (R-8.2.4) so schema drift is a compile error. */
+export type MappedGroup = Omit<
+  GroupDoc,
+  | "_id"
+  | "_creationTime"
+  | "categoryId"
+  | "description"
+  | "quantity"
+  | "price"
+  | "suggestedPrice"
+  | "rentalPeriod"
+  | "rentalQuantity"
+  | "sortOrder"
+  | "createdAt"
+  | "updatedAt"
+> & {
   categoryId: string | null;
-  title: string;
   description: string | null;
   quantity: number;
   price: number | null;
@@ -277,7 +363,7 @@ export interface MappedGroup {
   sortOrder: number;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
 export function mapGroupDoc(d: GroupDoc): MappedGroup {
   return {

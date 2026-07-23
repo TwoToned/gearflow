@@ -32,10 +32,26 @@ export type ConvexSupplier = Doc<"suppliers">;
  * non-null (`tags: []`, `isActive: true`), and absent optionals as `null`. The
  * Convex system fields (`_id`/`_creationTime`) are stripped.
  */
-export interface MappedSupplier {
-  id: string;
-  organizationId: string;
-  name: string;
+export type MappedSupplier = Omit<
+  ConvexSupplier,
+  | "_id"
+  | "_creationTime"
+  | "contactName"
+  | "email"
+  | "phone"
+  | "website"
+  | "address"
+  | "latitude"
+  | "longitude"
+  | "notes"
+  | "accountNumber"
+  | "paymentTerms"
+  | "defaultLeadTime"
+  | "tags"
+  | "isActive"
+  | "createdAt"
+  | "updatedAt"
+> & {
   contactName: string | null;
   email: string | null;
   phone: string | null;
@@ -51,7 +67,7 @@ export interface MappedSupplier {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
 /** Map a raw Convex supplier doc back to the Prisma-row shape (see MappedSupplier). */
 export function mapSupplier(doc: ConvexSupplier): MappedSupplier {

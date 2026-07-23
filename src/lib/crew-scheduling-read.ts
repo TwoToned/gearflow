@@ -32,11 +32,37 @@ export type ConvexCrewAvailability = Doc<"crewAvailabilities">;
 export type ConvexCrewTimeEntry = Doc<"crewTimeEntries">;
 
 // ─── Mapped (Prisma-shaped) types ────────────────────────────────────────────
-export interface MappedCrewAssignment {
-  id: string;
-  organizationId: string;
-  projectId: string;
-  crewMemberId: string;
+// Derived from the raw Convex doc types above (R-8.2.4) rather than hand-
+// duplicated field-by-field, so a schema change (new/renamed field) is a
+// compile error here instead of a silently-stale duplicate.
+export type MappedCrewAssignment = Omit<
+  ConvexCrewAssignment,
+  | "_id"
+  | "_creationTime"
+  | "crewRoleId"
+  | "status"
+  | "phase"
+  | "isProjectManager"
+  | "startDate"
+  | "startTime"
+  | "endDate"
+  | "endTime"
+  | "rateOverride"
+  | "rateType"
+  | "estimatedHours"
+  | "estimatedCost"
+  | "notes"
+  | "internalNotes"
+  | "responseToken"
+  | "offeredAt"
+  | "respondedAt"
+  | "responseNote"
+  | "confirmedAt"
+  | "confirmedById"
+  | "serviceId"
+  | "createdAt"
+  | "updatedAt"
+> & {
   crewRoleId: string | null;
   status: string;
   phase: string | null;
@@ -60,11 +86,12 @@ export interface MappedCrewAssignment {
   serviceId: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
-export interface MappedCrewShift {
-  id: string;
-  assignmentId: string;
+export type MappedCrewShift = Omit<
+  ConvexCrewShift,
+  "_id" | "_creationTime" | "date" | "callTime" | "endTime" | "breakMinutes" | "location" | "notes" | "status"
+> & {
   date: Date;
   callTime: string | null;
   endTime: string | null;
@@ -72,11 +99,23 @@ export interface MappedCrewShift {
   location: string | null;
   notes: string | null;
   status: string;
-}
+};
 
-export interface MappedCrewAvailability {
-  id: string;
-  crewMemberId: string;
+export type MappedCrewAvailability = Omit<
+  ConvexCrewAvailability,
+  | "_id"
+  | "_creationTime"
+  | "organizationId"
+  | "startDate"
+  | "endDate"
+  | "type"
+  | "reason"
+  | "isAllDay"
+  | "startTime"
+  | "endTime"
+  | "createdAt"
+  | "updatedAt"
+> & {
   organizationId: string | null;
   startDate: Date;
   endDate: Date;
@@ -87,17 +126,27 @@ export interface MappedCrewAvailability {
   endTime: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
-export interface MappedCrewTimeEntry {
-  id: string;
-  organizationId: string;
+export type MappedCrewTimeEntry = Omit<
+  ConvexCrewTimeEntry,
+  | "_id"
+  | "_creationTime"
+  | "assignmentId"
+  | "description"
+  | "date"
+  | "breakMinutes"
+  | "totalHours"
+  | "status"
+  | "approvedById"
+  | "approvedAt"
+  | "notes"
+  | "createdAt"
+  | "updatedAt"
+> & {
   assignmentId: string | null;
-  crewMemberId: string;
   description: string | null;
   date: Date;
-  startTime: string;
-  endTime: string;
   breakMinutes: number;
   totalHours: number | null;
   status: string;
@@ -106,7 +155,7 @@ export interface MappedCrewTimeEntry {
   notes: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
-}
+};
 
 // ─── Map helpers (epoch -> Date, absent -> null, defaulted -> non-null) ───────
 const toDate = (ms: number | null | undefined): Date | null =>

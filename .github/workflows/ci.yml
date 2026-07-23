@@ -150,14 +150,28 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  # `e2e-harness` (seeded-auth E2E over the primary revenue path, POLICY.md R-8.8.3,
-  # #621) is TEMPORARILY REMOVED — it was broken (docker-in-CI networking to the
-  # backend's JWKS endpoint never went green) and consistently failing/timing out,
-  # which was slowing PRs down for no signal (it already ran continue-on-error, so
-  # the failures weren't even blocking). Registered as a dated exception in
-  # docs/exceptions.md (R-8.8.3). See docs/e2e-harness.md to restore it — the specs
-  # (e2e/harness-*.spec.ts) and scripts (scripts/e2e-harness-{up,down}.sh) are
-  # untouched, only this job definition was pulled.
+  # `e2e-harness` (seeded-auth E2E over the primary revenue path, POLICY.md
+  # R-8.8.3, #621) is REMOVED AGAIN (2026-07-23) — still broken, for a different
+  # reason than originally suspected. Progress made this pass:
+  #   - Root-caused the ORIGINAL red runs (#725) as a Next dev-server crash under
+  #     `next dev` (not the docker-in-CI JWKS networking path first suspected) and
+  #     fixed it: playwright.config.ts runs a prebuilt `next start` for this job
+  #     via E2E_PROD_SERVER=1. Confirmed on a GitHub-hosted runner: the crash is
+  #     gone, and 5-6 of 7 harness specs pass reliably now.
+  #   - Wrote the 3 remaining unwritten critical flows (#3, #4, #10):
+  #     e2e/harness-sign-out.spec.ts, e2e/harness-onboarding.spec.ts,
+  #     e2e/harness-create-inventory.spec.ts.
+  #   - Found a SECOND, distinct bug: e2e/harness-revenue-path.spec.ts's warehouse
+  #     "Prep" step leaves a dialog open that intercepts pointer events for every
+  #     click afterward, so the test hangs retrying a swallowed click for its full
+  #     timeout (up to 3 attempts x 240s) instead of failing fast — not yet
+  #     root-caused. This job was pulled again rather than left burning ~15-20 CI
+  #     minutes on every PR for a guaranteed-red job with no gating value (it was
+  #     already continue-on-error: true, so it wasn't even blocking).
+  # See docs/e2e-harness.md to restore it — the specs (e2e/harness-*.spec.ts) and
+  # scripts (scripts/e2e-harness-{up,down}.sh) are untouched, only this job
+  # definition was pulled. Registered as a dated exception in docs/exceptions.md
+  # (R-8.8.3).
 
   integration:
     # Integration tests against a real migrated Postgres (POLICY.md R-10.1, R-8.8).

@@ -78,15 +78,15 @@ One CI job in `.github/workflows/ci.yml`:
 
 - **`e2e`** — smoke + a11y (critical-flows #1) against a dummy Convex URL, blocking.
 
-Seeded-auth flows (critical-flows #2, #5-9: sign-in through the primary revenue
-path — project → line items → availability → check-out → return) exist as
-`e2e/harness-*.spec.ts` against a real self-hosted Convex backend stood up in Docker
-(`scripts/e2e-harness-up.sh`) and pass locally, but the **`e2e-harness` CI job that
-ran them is temporarily removed** — the docker-in-CI networking path never went
-green on a GitHub-hosted runner and was failing/timing out on every PR with no
-gating value (it already ran `continue-on-error: true`). Registered as a dated
-exception in `docs/exceptions.md` (R-8.8.3). See `docs/e2e-harness.md` and
-`docs/critical-flows.md` for the full flow list and status.
+Seeded-auth flows (critical-flows #2-10: sign-in, onboarding, sign-out,
+create-inventory, through the primary revenue path — project → line items →
+availability → check-out → return) exist as `e2e/harness-*.spec.ts` against a real
+self-hosted Convex backend stood up in Docker (`scripts/e2e-harness-up.sh`) and pass
+locally, but the **`e2e-harness` CI job that ran them is removed again** — the
+original dev-server-crash cause (#725) was root-caused and fixed, but a second,
+distinct stuck-dialog bug in the revenue-path spec makes the job guaranteed-red.
+Registered as a dated exception in `docs/exceptions.md` (R-8.8.3). See
+`docs/e2e-harness.md` and `docs/critical-flows.md` for the full flow list and status.
 
 ## CI Integration
 

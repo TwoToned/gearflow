@@ -14,6 +14,7 @@ import {
 import { MediaLightbox, useLightbox } from "@/components/media/media-lightbox";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useIsViewer } from "@/lib/use-permissions";
+import { AppImage } from "@/components/ui/app-image";
 
 export interface MediaItem {
   id: string;
@@ -77,9 +78,11 @@ function MediaItemRow({
           className="h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-md bg-bg-inset"
           onClick={onImageClick}
         >
-          <img
+          <AppImage
             src={item.file.thumbnailUrl || item.file.url}
             alt={item.displayName || item.file.fileName}
+            width={64}
+            height={64}
             className="h-full w-full object-cover"
           />
         </div>
@@ -252,9 +255,11 @@ export function MediaUploader({
                     );
                   }}
                 >
-                  <img
+                  <AppImage
                     src={item.file.thumbnailUrl || item.file.url}
                     alt={item.displayName || item.file.fileName}
+                    width={64}
+                    height={64}
                     className="h-full w-full object-cover"
                   />
                 </div>

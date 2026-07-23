@@ -5,7 +5,8 @@ import { expect, test } from "@playwright/test";
  * Accessibility smoke (POLICY.md R-8.1.7 — WCAG 2.2 AA target). Runs axe against
  * critical-flow pages and fails on serious/critical violations. Automated axe
  * checks do NOT prove full AA conformance (a manual checklist pass is still
- * required per R-8.1.7) — this gate catches regressions on the covered pages.
+ * required per R-8.1.7 — see docs/a11y-manual-checklist.md) — this gate catches
+ * regressions on the covered pages.
  */
 test.describe("a11y: axe", () => {
   test("login page has no serious/critical WCAG 2 A/AA violations", async ({

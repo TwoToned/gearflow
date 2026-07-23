@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { AppImage } from "@/components/ui/app-image";
 
 interface LightboxImage {
   url: string;
@@ -77,12 +78,18 @@ export function MediaLightbox({ images, initialIndex = 0, open, onClose }: Media
       )}
 
       {/* Image */}
-      <img
-        src={current.url}
-        alt={current.alt || ""}
-        className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+      <div
+        className="relative h-[90vh] w-[90vw] max-h-[90vh] max-w-[90vw]"
         onClick={(e) => e.stopPropagation()}
-      />
+      >
+        <AppImage
+          src={current.url}
+          alt={current.alt || ""}
+          fill
+          sizes="90vw"
+          className="rounded-lg object-contain"
+        />
+      </div>
 
       {/* Counter */}
       {images.length > 1 && (

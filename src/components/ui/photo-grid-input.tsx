@@ -195,11 +195,12 @@ export function PhotoGridInput({
             key={photo.previewUrl}
             className="relative aspect-square overflow-hidden rounded-md border bg-bg-inset"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <AppImage
               src={photo.previewUrl}
               alt=""
-              className="h-full w-full object-cover"
+              fill
+              sizes="(max-width: 768px) 50vw, 200px"
+              className="object-cover"
             />
             {photo.uploading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white">

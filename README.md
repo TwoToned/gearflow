@@ -298,6 +298,7 @@ overrides and project-specific (§13B) values:
 | T-P5 Max flaky-quarantine size | **10 tests** | Quarantine caps at 10; beyond that the suite is failing, not flaky. |
 | T-P6 Per-endpoint p95 SLOs | **300 ms API · 1 s page** | Interactive-endpoint targets. Instrumented (`src/lib/convex-op-timing.ts`, R-9.11/R-8.9.6/#623) — emits `convex_op_latency` past 300 ms, flags `incident` past 1 s. **Alerted in PostHog**: "convex_op_latency p95 above 1000ms" fires if the p95 duration of already-slow ops crosses the 1 s incident line. |
 | T-P7 Queue lag/age alert | **> 5 minutes** | Instrumented (`src/lib/queue-lag-timing.ts`, wired into the webhook delivery cron, R-9.10/#623) — emits `queue_lag` to PostHog past the 5-min threshold. **PostHog alert not created yet**: pending confirmed live ingestion, same pattern as the CWV alerts (created only after confirming real event flow, not speculatively before). |
+| T-13 Crash-free sessions | **default** (≥ 99.5%) | Accept the §13 default. **Measured** via the "Crash-free sessions (T-13)" PostHog insight (`(1 - unique_session($exception) / unique_session($pageview)) * 100`, R-8.9.4/#776). **Alert not created**: the project's PostHog plan is at its 5-alert cap (see `docs/convex-observability-runbook.md`) — needs a plan upgrade or an existing alert freed before the T-13 threshold alert can be added. |
 
 Values marked ⚠ *provisional* satisfy the R-0.4 registration requirement but carry business/legal
 judgment — the owner should confirm them. Registration binds the value; several rules still require

@@ -378,7 +378,7 @@ export function CommentThreadPanel({
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger>
+      <SheetTrigger asChild>
         {children ?? (
           <Button size="sm" variant="ghost" className="relative h-7 gap-1 px-2 text-xs">
             <MessageCircle className="h-3.5 w-3.5" />

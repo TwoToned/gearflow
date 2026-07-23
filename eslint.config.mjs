@@ -170,11 +170,17 @@ const eslintConfig = [
   {
     // Vendor SDKs must be imported only from their adapter module (POLICY.md R-8.10.1):
     // maps → @/lib/maps-sdk; Resend → src/lib/email.ts (Next) or convex/emailActions.ts
-    // (Convex — two runtimes, one adapter each). Sentry is exempt: Next dictates its
-    // config-file locations (sentry.*.config.ts / instrumentation*.ts), which are the
-    // sanctioned error-capture boundary (§8.9).
+    // (Convex — two runtimes, one adapter each); PostHog → posthog-provider.tsx (client)
+    // or posthog-server.ts (server) — the sanctioned error/analytics capture boundary
+    // (§8.9/§8.10).
     files: ["src/**/*.{ts,tsx}", "convex/**/*.ts"],
-    ignores: ["src/lib/maps-sdk.ts", "src/lib/email.ts", "convex/emailActions.ts"],
+    ignores: [
+      "src/lib/maps-sdk.ts",
+      "src/lib/email.ts",
+      "convex/emailActions.ts",
+      "src/components/providers/posthog-provider.tsx",
+      "src/lib/posthog-server.ts",
+    ],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -188,6 +194,15 @@ const eslintConfig = [
               name: "resend",
               message:
                 "Use the email adapter (src/lib/email.ts or convex/emailActions.ts) (R-8.10.1).",
+            },
+            {
+              name: "posthog-js",
+              message:
+                "Use the analytics adapter (src/lib/analytics.ts / posthog-provider.tsx) (R-8.10.1).",
+            },
+            {
+              name: "posthog-node",
+              message: "Use the server adapter (src/lib/posthog-server.ts) (R-8.10.1).",
             },
           ],
         },

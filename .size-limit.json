@@ -1,7 +1,7 @@
 [
   {
     "name": "CSS (gzip) — POLICY.md R-8.7.5 / T-8",
-    "path": [".next/static/css/*.css"],
+    "path": [".next/static/chunks/*.css"],
     "limit": "50 KB",
     "gzip": true
   }

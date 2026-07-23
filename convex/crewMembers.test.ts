@@ -16,6 +16,7 @@ type T = TestConvex<typeof schema>;
 const ORG = "org_1";
 const USER = "user_1";
 const asUser = { subject: USER, orgId: ORG };
+const SERVICE = { subject: "gearflow-service", svc: true };
 
 function makeT(): T {
   const t = convexTest(schema, modules);
@@ -109,5 +110,49 @@ describe("crewMembers.listPage", () => {
     });
     const result = await t.withIdentity({ subject: "user_2", orgId: "org_2" }).query(api.crewMembers.listPage, { orgId: "org_2" });
     expect(result.items).toEqual([]);
+  });
+});
+
+describe("crewMembers.scrubUserRefs (R-8.12.2, #614)", () => {
+  test("clears userId on every crew-member row linked to the erased account, across orgs", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(
+        (await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "CM1")).unique())!._id,
+        { userId: "erased-user" },
+      );
+      // Second org, same erased user linked to a different crew profile.
+      await ctx.db.insert("members", { id: "m2", organizationId: "org_2", userId: "erased-user", role: "owner" });
+      await ctx.db.insert("crewMembers", {
+        id: "CM3", organizationId: "org_2", firstName: "Cara", lastName: "Lee",
+        userId: "erased-user",
+      });
+    });
+
+    const result = await t.withIdentity(SERVICE).mutation(api.crewMembers.scrubUserRefs, { userId: "erased-user" });
+    expect(result.scrubbed).toBe(2);
+
+    const stillLinked = await t.withIdentity(SERVICE).query(api.crewMembers.existsByUserId, { userId: "erased-user" });
+    expect(stillLinked).toBe(false);
+
+    // Unrelated crew member (CM2, no userId) is untouched.
+    const cm2 = await t.run((ctx) => ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "CM2")).unique());
+    expect(cm2?.userId).toBeUndefined();
+  });
+
+  test("is a no-op when no crew member is linked to the user", async () => {
+    const t = makeT();
+    await seed(t);
+    const result = await t.withIdentity(SERVICE).mutation(api.crewMembers.scrubUserRefs, { userId: "nobody" });
+    expect(result.scrubbed).toBe(0);
+  });
+
+  test("rejects a non-service caller", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.crewMembers.scrubUserRefs, { userId: USER }),
+    ).rejects.toThrow();
   });
 });

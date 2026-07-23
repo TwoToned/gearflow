@@ -30,7 +30,7 @@ import {
  * completed. Try again later."}` — the real reason only ever lands in the Convex
  * backend logs. `ConvexError`'s payload IS delivered to the caller, so an
  * auth failure on a server-action read surfaces its actual message ("Unauthorized…"
- * / "Forbidden…") in the Next.js log + Sentry instead of the unactionable mask.
+ * / "Forbidden…") in the Next.js log + PostHog instead of the unactionable mask.
  */
 
 const SERVICE_SUBJECT = "gearflow-service";

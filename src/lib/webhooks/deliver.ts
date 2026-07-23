@@ -3,6 +3,7 @@ import { api } from "../../../convex/_generated/api";
 import { buildEnvelope, type WebhookEvent } from "./events";
 import { signWebhookPayload } from "./sign";
 import { hostResolvesToPrivate } from "./resolve-guard";
+import { reportIfQueueLagged } from "../queue-lag-timing";
 
 /**
  * The delivery worker. Claims pending deliveries whose backoff has elapsed, POSTs
@@ -201,6 +202,15 @@ export async function deliverPendingWebhooks(opts: {
     now: batchNow.getTime(),
     limit: opts.limit ?? 50,
   });
+
+  // T-P7 queue-lag check (R-9.10, #623): `dueDeliveries` is already ordered by
+  // nextAttemptAt ascending, so this batch's oldest-by-createdAt is a cheap,
+  // no-extra-query proxy for "how stuck is the queue" — no need for a
+  // dedicated unbounded scan just to measure lag.
+  if (due.length > 0) {
+    const oldestAgeMs = Math.max(...due.map((d) => batchNow.getTime() - d.createdAt));
+    reportIfQueueLagged(oldestAgeMs, due.length);
+  }
 
   const outcomes: DeliveryOutcome[] = [];
   for (const delivery of due) {

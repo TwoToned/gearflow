@@ -158,6 +158,21 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 **Google Maps:**
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` — API key with Maps JavaScript API + Places API (New) enabled
 
+**Analytics + error tracking (PostHog, optional):**
+- `NEXT_PUBLIC_POSTHOG_KEY` — public write-only ingestion key (`phc_…`); analytics +
+  exception capture are inert if unset. Must be the `NEXT_PUBLIC_` copy so it's inlined
+  into the browser bundle.
+- `NEXT_PUBLIC_POSTHOG_HOST` — ingest host (default `https://us.i.posthog.com`)
+- `POSTHOG_CLI_TOKEN` / `POSTHOG_CLI_ENV_ID` — sourcemap upload for readable error-tracking
+  stack traces (`next.config.ts`, `@posthog/nextjs-config`). **Deploy pipeline only** — not
+  needed for local dev (`pnpm dev`/`pnpm build` never require them). The real deploy build
+  (Dockerfile) hardcodes `POSTHOG_SOURCEMAPS_REQUIRED=true`, so a missing token/env-id there
+  fails the build loudly rather than silently skipping the upload (R-8.9.2).
+- Registered budgets/SLOs (README.md budget registry, R-0.4) are alerted through PostHog
+  where the underlying event exists today — Core Web Vitals (T-7) has three p75 alerts
+  ("CWV p75 — LCP/INP/CLS" insights, R-8.1.5). The provider is PII-hardened (no
+  autocapture/replay; cuid-only event props) — see `docs/pii-inventory.md`.
+
 **Other:**
 - `PASSKEY_RP_ID` — WebAuthn relying party ID (default: `localhost`)
 - `PLATFORM_NAME` — Display name (default: `RVLT Flow`)

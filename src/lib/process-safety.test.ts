@@ -4,14 +4,15 @@ import {
   __resetProcessSafetyNetForTests,
 } from "./process-safety";
 
-const captureException = vi.fn<(...args: unknown[]) => void>();
-const flush = vi.fn<(...args: unknown[]) => Promise<boolean>>(() =>
-  Promise.resolve(true),
+const phCapture = vi.fn<(...args: unknown[]) => Promise<void>>(() =>
+  Promise.resolve(),
 );
-vi.mock("@sentry/nextjs", () => ({
-  captureException: (...args: unknown[]) => captureException(...args),
-  flush: (...args: unknown[]) => flush(...args),
+vi.mock("@/lib/posthog-server", () => ({
+  captureServerException: (...args: unknown[]) => phCapture(...args),
 }));
+
+// Let all queued microtasks (Promise.allSettled(...).finally(exit)) drain.
+const drain = () => new Promise((r) => setTimeout(r, 0));
 
 describe("installProcessSafetyNet", () => {
   const handlers: Record<string, (arg: unknown) => void> = {};
@@ -20,8 +21,7 @@ describe("installProcessSafetyNet", () => {
 
   beforeEach(() => {
     __resetProcessSafetyNetForTests();
-    captureException.mockClear();
-    flush.mockClear();
+    phCapture.mockClear();
     for (const k of Object.keys(handlers)) delete handlers[k];
     onSpy = vi
       .spyOn(process, "on")
@@ -53,7 +53,7 @@ describe("installProcessSafetyNet", () => {
     handlers.unhandledRejection?.(new Error("boom"));
 
     expect(errSpy).toHaveBeenCalledWith("[web] unhandledRejection:", expect.any(Error));
-    expect(captureException).toHaveBeenCalledTimes(1);
+    expect(phCapture).toHaveBeenCalledTimes(1);
     expect(exitSpy).not.toHaveBeenCalled(); // the whole point: do not crash the server
     exitSpy.mockRestore();
   });
@@ -61,7 +61,7 @@ describe("installProcessSafetyNet", () => {
   it("wraps a non-Error rejection reason in an Error before reporting", () => {
     installProcessSafetyNet("web");
     handlers.unhandledRejection?.("string reason");
-    const reported = captureException.mock.calls[0]?.[0];
+    const reported = phCapture.mock.calls[0]?.[0];
     expect(reported).toBeInstanceOf(Error);
     expect((reported as Error).message).toBe("string reason");
   });
@@ -72,11 +72,10 @@ describe("installProcessSafetyNet", () => {
 
     handlers.uncaughtException?.(new Error("fatal"));
 
-    expect(captureException).toHaveBeenCalledTimes(1);
-    expect(flush).toHaveBeenCalled();
-    // flush().finally(() => process.exit(1)) resolves on a later tick — wait for
-    // it so the exit happens while the spy is still installed (no leak).
-    await flush.mock.results[0]!.value;
+    expect(phCapture).toHaveBeenCalledTimes(1);
+    // exit is gated on captureServerException(...).finally(exit), which resolves
+    // on a later tick — drain the queue before asserting (no leak).
+    await drain();
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
   });

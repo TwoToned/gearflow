@@ -11,6 +11,13 @@
 #   serialize-javascript  (next-pwa build)   <7.0.3
 #   hono                  (prisma dev tools)  <4.12.25
 #   ws                    (convex runtime)    8.0.0–8.20.x
+#   brace-expansion       (next-pwa/eslint/shadcn transitive) multiple ranges <5.0.7
+#   js-yaml               (shadcn>cosmiconfig)  <4.3.0
+#   fast-uri              (better-auth>prisma)  <3.1.4
+#   sharp                 (next's own optional dep, pulled in nested under
+#                          better-auth/next-pwa>next)  <0.35.0 — the direct
+#                          "sharp" entry in package.json is already >=0.35.0;
+#                          this only forces the nested copies under next.
 # NOT overridden: undici — its only consumer is jsdom@29 (test env only). It resolves
 # naturally to the patched 7.28.0, which jsdom is happy with; a forced override instead
 # flattens it in a way that breaks jsdom's resource dispatcher, so we leave it to the
@@ -19,13 +26,17 @@ overrides:
   serialize-javascript@<7.0.3: '>=7.0.3'
   hono@<4.12.25: '>=4.12.25'
   ws@>=8.0.0 <8.21.0: '>=8.21.0'
+  brace-expansion@<5.0.7: '>=5.0.7'
+  js-yaml@<4.3.0: '>=4.3.0'
+  fast-uri@<3.1.4: '>=3.1.4'
+  sharp@<0.35.0: '>=0.35.0'
 
 # Packages allowed to run install/build lifecycle scripts (pnpm blocks these by default —
 # supports R-6.7 install-script hardening).
 allowBuilds:
+  '@posthog/cli': true
   '@prisma/client': true
   '@prisma/engines': true
-  '@sentry/cli': true
   canvas: true
   core-js: true
   esbuild: true

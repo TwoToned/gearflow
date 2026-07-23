@@ -72,7 +72,11 @@ export const auth = betterAuth({
   },
   plugins: [
     organization({
-      allowUserToCreateOrganization: false,
+      // Single-org app (organizationLimit below): self-serve org creation is
+      // only for the one-time bootstrap (src/app/(auth)/onboarding/page.tsx),
+      // never for adding a second org once one exists — otherwise no user
+      // could ever get past onboarding on a fresh deployment (R-8.4 auth).
+      allowUserToCreateOrganization: async () => !(await getTheOrg()),
       organizationLimit: 1,
       creatorRole: "owner",
       memberRoleHierarchy: ["owner", "admin", "manager", "member", "warehouse", "viewer"],

@@ -69,6 +69,32 @@ describe("suppliersWrites", () => {
     await expect(t.withIdentity(asUser).mutation(api.suppliersWrites.createNative, { id: "s2", orgId: ORG, name: "N", latitude: 1, now: NOW, actor, auditId: "a2" })).rejects.toThrow(/latitude and longitude/i);
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing supplierSchema.parse() in the browser
+  // hook) must still hit the same business-constraint bounds server-side. `validateSupplier`
+  // already mirrors these (pre-existing, not new in this change) — locking them in with
+  // explicit coverage.
+  test("rejects a name over the 200-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.suppliersWrites.createNative, { id: "s1", orgId: ORG, name: "X".repeat(201), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/too long/i);
+  });
+
+  test("rejects a name patch missing/blank on update", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.withIdentity(asUser).mutation(api.suppliersWrites.createNative, { id: "s1", orgId: ORG, name: "Acme", now: NOW, actor, auditId: "a1" });
+    await expect(
+      t.withIdentity(asUser).mutation(api.suppliersWrites.updateNative, { id: "s1", orgId: ORG, name: "   ", now: NOW + 1, actor, auditId: "a2" }),
+    ).rejects.toThrow(/Name is required/i);
+  });
+
+  test("rejects notes over the 2000-char bound", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(
+      t.withIdentity(asUser).mutation(api.suppliersWrites.createNative, { id: "s1", orgId: ORG, name: "N", notes: "X".repeat(2001), now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/too long/i);
+  });
+
   test("update rejects a supplier in another org; RBAC rejects a viewer", async () => {
     const t = makeT(); await seedMember(t);
     await t.run(async (ctx) => { await ctx.db.insert("suppliers", { id: "sX", organizationId: OTHER, name: "T", createdAt: NOW, updatedAt: NOW }); });

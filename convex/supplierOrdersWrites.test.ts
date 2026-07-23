@@ -73,6 +73,23 @@ describe("supplierOrdersWrites.createNative", () => {
     await expect(create(t, { projectId: "Pother" })).rejects.toThrow(/Project not found/i);
   });
 
+  // R-8.6.2 — a direct-mutation caller (bypassing supplierOrderSchema.parse() in the
+  // browser hook) must still hit the same business-constraint bounds server-side.
+  test("rejects an orderNumber over the 100-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(create(t, { orderNumber: "X".repeat(101) })).rejects.toThrow(/orderNumber/);
+  });
+
+  test("rejects an empty orderNumber", async () => {
+    const t = makeT(); await seed(t);
+    await expect(create(t, { orderNumber: "" })).rejects.toThrow(/orderNumber/);
+  });
+
+  test("rejects notes over the 2000-char bound", async () => {
+    const t = makeT(); await seed(t);
+    await expect(create(t, { notes: "X".repeat(2001) })).rejects.toThrow(/notes/);
+  });
+
   test("RBAC: a viewer (no supplier:create) is rejected", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {

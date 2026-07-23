@@ -7,11 +7,11 @@ RVLT Flow uses **Vitest** for unit/integration tests and **Playwright** for E2E 
 ## Commands
 
 ```bash
-npm test              # Run all unit tests once
-npm run test:watch    # Run tests in watch mode
-npm run test:coverage # Run tests with coverage report
-npm run test:e2e      # Run Playwright E2E tests (requires running app)
-npm run test:e2e:ui   # Run E2E tests with Playwright UI
+pnpm test              # Run all unit tests once
+pnpm test:watch        # Run tests in watch mode
+pnpm test:coverage     # Run tests with coverage report
+pnpm test:e2e          # Run Playwright E2E tests (requires running app)
+pnpm test:e2e:ui       # Run E2E tests with Playwright UI
 ```
 
 ## Configuration
@@ -84,13 +84,13 @@ Two CI jobs in `.github/workflows/ci.yml`:
 
 ## CI Integration
 
-The GitHub Actions deploy pipeline runs `npm test` after Prisma client generation and before migrations/build. Deploys fail fast if any test fails.
+The GitHub Actions deploy pipeline runs `pnpm test` after Prisma client generation and before migrations/build. Deploys fail fast if any test fails.
 
 ## Adding New Tests
 
 1. Create `*.test.ts` next to the source file
 2. Import from `vitest`: `import { describe, it, expect } from "vitest"`
-3. Run `npm test` to verify
+3. Run `pnpm test` to verify
 4. Tests are auto-discovered by Vitest via the `src/**/*.test.ts` glob
 
 ## Future Expansion

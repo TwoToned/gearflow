@@ -31,7 +31,8 @@
     "prepare": "husky || true",
     "check-client-routes": "node scripts/check-client-routes.mjs",
     "bundle-ratchet": "node scripts/bundle-ratchet.mjs",
-    "check-migration-drift": "node scripts/check-migration-drift.mjs"
+    "check-migration-drift": "node scripts/check-migration-drift.mjs",
+    "check-docs-npm-npx": "node scripts/check-docs-npm-npx.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

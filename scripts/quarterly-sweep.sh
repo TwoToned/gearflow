@@ -32,6 +32,7 @@ section "4. Migration-residue check (R-4.5)"
 echo "- Legacy write paths gated by NATIVE_* flags — delete once each domain is native in prod (see docs/feature-flags.md)."
 
 section "5. Docs-contradiction grep (R-5.3)"
+echo "New npm/npx references are blocked in CI (\`pnpm run check-docs-npm-npx\`, .github/workflows/ci.yml \`hygiene\` job). This full-repo sweep also surfaces pre-existing debt that predates the gate:"
 bad=$(grep -rnE "npm run|npx " --include='*.md' \
   --exclude-dir=.agents --exclude-dir=.claude --exclude-dir=node_modules . 2>/dev/null \
   | grep -viE "never .?npm|not .?npx|pnpm|node_modules" || true)

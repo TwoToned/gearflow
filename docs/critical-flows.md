@@ -41,3 +41,10 @@ pnpm test:e2e:ui      # Playwright UI
 
 E2E requires a reachable Postgres + Convex (the app reads site/SSO settings during render),
 seeded auth for flows 2+, and installed Playwright browsers (`pnpm exec playwright install`).
+
+## Accessibility
+
+Automated axe checks (above) are necessary but not sufficient for WCAG 2.2 AA (POLICY.md
+R-8.1.7). A manual keyboard/focus/screen-reader-label checklist pass against this flow list is
+required each release — see [`docs/a11y-manual-checklist.md`](./a11y-manual-checklist.md) for
+the criteria, procedure, and results log.

@@ -3,6 +3,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../../../../convex/_generated/api";
 import { getProjectById } from "@/lib/projects-read";
 import { getCrewMemberById, getCrewRoleById } from "@/lib/crew-read";
+import { escapeHtml } from "@/lib/email-layout";
 
 /**
  * GET /api/crew/respond/[token]?action=accept|decline
@@ -57,7 +58,7 @@ export async function GET(
           : assignment.status;
     return htmlResponse(
       "Already Responded",
-      `You have already ${statusText} this offer for <strong>${projectDisplayName}</strong>.`,
+      `You have already ${statusText} this offer for <strong>${escapeHtml(projectDisplayName)}</strong>.`,
       "info"
     );
   }
@@ -66,7 +67,7 @@ export async function GET(
   if (assignment.status !== "OFFERED") {
     return htmlResponse(
       "Offer Updated",
-      `This offer is no longer pending a response. Current status: <strong>${assignment.status}</strong>.`,
+      `This offer is no longer pending a response. Current status: <strong>${escapeHtml(assignment.status ?? "")}</strong>.`,
       "info"
     );
   }
@@ -84,9 +85,11 @@ export async function GET(
     clear: ["responseToken"], // Invalidate token after use
   });
 
-  const crewName = `${crewMember?.firstName ?? ""} ${crewMember?.lastName ?? ""}`.trim();
-  const projectName = `${project?.projectNumber ?? ""} — ${projectDisplayName}`;
-  const roleName = crewRole?.name || "Crew";
+  const crewName = escapeHtml(
+    `${crewMember?.firstName ?? ""} ${crewMember?.lastName ?? ""}`.trim(),
+  );
+  const projectName = `${escapeHtml(project?.projectNumber ?? "")} — ${escapeHtml(projectDisplayName)}`;
+  const roleName = escapeHtml(crewRole?.name || "Crew");
 
   if (action === "accept") {
     return htmlResponse(

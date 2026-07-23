@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 
 import { cn, focusRing } from "@/lib/utils";
+import { isSiteAdminRole } from "@/lib/admin-role";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
@@ -370,7 +371,7 @@ export default function AccountPage() {
         year: "numeric",
       })
     : null;
-  const roleLabel = profile?.role === "admin" ? "Site admin" : "Member";
+  const roleLabel = isSiteAdminRole(profile?.role) ? "Site admin" : "Member";
 
   return (
     <FadeIn className="mx-auto max-w-3xl space-y-8 pb-16">
@@ -416,7 +417,7 @@ export default function AccountPage() {
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="t-title truncate text-ink">{displayName}</h1>
-              {profile?.role === "admin" && (
+              {isSiteAdminRole(profile?.role) && (
                 <Badge status="overbooked">Site admin</Badge>
               )}
             </div>

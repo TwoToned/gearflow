@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth-server";
+import { isSiteAdminRole } from "@/lib/admin-role";
 
 /**
  * Single source of truth for the site-admin authorization check
@@ -15,7 +16,7 @@ export async function requireSiteAdmin() {
     where: { id: session.user.id },
     select: { id: true, role: true },
   });
-  if (!user || user.role !== "admin") {
+  if (!user || !isSiteAdminRole(user.role)) {
     throw new Error("Access denied. Site admin required.");
   }
   return session;

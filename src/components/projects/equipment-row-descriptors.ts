@@ -5,9 +5,11 @@
  * pulling in the component's Convex/React imports. `equipment-rows.tsx`
  * re-exports these so existing consumers import from one place.
  *
- * `LineItemData` is imported type-only (erased at runtime → no component load).
+ * `LineItemData` is imported type-only (erased at runtime → no component load)
+ * from the pure types module, not from `equipment-rows.tsx` — importing the
+ * component module here would create a circular dependency (POLICY.md R-3.5).
  */
-import type { LineItemData } from "./equipment-rows";
+import type { LineItemData } from "./equipment-row-types";
 
 // ─── Row descriptor (cross-type unification) ─────────────────────────────────
 //

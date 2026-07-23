@@ -51,108 +51,15 @@ import type { MarkerStatus } from "@/components/collaboration/review-marker-badg
 import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";
 import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { toast } from "sonner";
+import type { LineItemData, GroupData, SubHireGroupData, CategoryData } from "./equipment-row-types";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface LineItemData {
-  id: string;
-  modelId?: string | null;
-  description: string | null;
-  quantity: number;
-  unitPrice: unknown;
-  lineTotal: unknown;
-  pricingType?: string;
-  duration?: number;
-  discount?: unknown;
-  notes?: string | null;
-  isOptional?: boolean;
-  type?: string;
-  priceBreakdown?: string | null;
-  priceOverridden?: boolean;
-  // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
-  isCustomItem?: boolean;
-  isKitChild?: boolean;
-  subHireId?: string | null;
-  /** Sub-hire group this synthetic line item belongs to. Used by the
-   *  flat-list filter to suppress sub-hire group parent rows now that
-   *  SubHireGroupRow renders the group itself (Phase 5c). */
-  subHireGroupId?: string | null;
-  kitId?: string | null;
-  /** Child discriminator: KIT (kit member) vs ACCESSORY (permanently attached
-   *  to a parent asset). Drives the "Accessory" badge on child rows. */
-  childKind?: string | null;
-  pricingMode?: string | null;
-  status?: string;
-  prepStatus?: string | null;
-  supplier?: { name: string } | null;
-  model?: { name: string; dailyRate?: unknown; weeklyRate?: unknown; monthlyRate?: unknown } | null;
-  asset?: { assetTag?: string | null } | null;
-  /** Post-cutover per-unit assignments. Source of truth for which
-   *  physical assets a multi-quantity line is using. `status` /
-   *  `returnCondition` drive the per-unit fulfillment badge (Deployed /
-   *  Returned) — RETURNED units are retained as the "what went out" history. */
-  units?: Array<{
-    id: string;
-    ordinal: number;
-    status?: string | null;
-    returnCondition?: string | null;
-    asset?: { id: string; assetTag: string } | null;
-    bulkAsset?: { id: string; assetTag: string } | null;
-  }>;
-  kit?: { name?: string } | null;
-  childLineItems?: LineItemData[];
-  /** Optimistic-concurrency baseline — Prisma `updatedAt` (serialised). Sent
-   *  back on save so the server can reject stale writes (collaboration). */
-  updatedAt?: string | Date | number | null;
-}
-
-export interface GroupData {
-  id: string;
-  title: string;
-  description: string | null;
-  quantity: number;
-  price: unknown;
-  suggestedPrice: unknown;
-  rentalPeriod: string | null;
-  rentalQuantity: number | null;
-  sortOrder: number;
-  lineItems?: LineItemData[];
-}
-
-export interface SubHireGroupData {
-  id: string;
-  title: string;
-  quantity: number;
-  cost: unknown;
-  charge: unknown;
-  sortOrder: number;
-  targetCategoryId: string | null;
-  showOnQuote?: boolean;
-  showOnDocs?: boolean;
-  subHire: {
-    id: string;
-    orderNumber: string;
-    status: string;
-    supplier?: { id: string; name: string } | null;
-  };
-  items?: Array<{
-    id: string;
-    description?: string | null;
-    quantity: number;
-    unitCost?: unknown;
-    unitCharge?: unknown;
-  }>;
-  /** Synthetic parent ProjectLineItem(s) — usually 0 or 1. The parent's
-   *  childLineItems are what the row renders when expanded. */
-  lineItems?: LineItemData[];
-}
-
-/** Discriminated slot used by equipment-tab to iterate the mixed
- *  ProjectGroup + SubHireGroup list inside a category in CategorySlot
- *  order (Phase 5b). */
-export type MixedGroupSlot =
-  | { kind: "project"; sortOrder: number; projectGroupId: string }
-  | { kind: "subHire"; sortOrder: number; subHireGroupId: string };
+export type {
+  LineItemData,
+  GroupData,
+  SubHireGroupData,
+  MixedGroupSlot,
+  CategoryData,
+} from "./equipment-row-types";
 
 /**
  * Drop Matrix 8C from the cross-type unification plan. Returns a reason
@@ -185,16 +92,6 @@ export function getDisallowedDropReason(
     return "Sub-hire groups can't be nested inside a project group.";
   }
   return null;
-}
-
-export interface CategoryData {
-  id: string;
-  name: string;
-  sortOrder: number;
-  groups: GroupData[];
-  subHireGroupTargets?: SubHireGroupData[];
-  mixedGroups?: MixedGroupSlot[];
-  lineItems?: LineItemData[];
 }
 
 // ─── Reorder move buttons ────────────────────────────────────────────────────

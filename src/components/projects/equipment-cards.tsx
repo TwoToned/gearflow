@@ -4,7 +4,7 @@ import * as React from "react";
 import { ChevronRight, Container, Handshake, Plus } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters";
-import { type LineItemData } from "./equipment-rows";
+import { type LineItemData } from "./equipment-row-types";
 
 /**
  * Presentational card primitives for the project equipment tab on mobile. Mirrors

@@ -1,11 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
+import { withValidatedBody } from "@/lib/api-validation";
 import { buildSampleDocumentData } from "@/lib/pdfme/sample-document-data";
 import { generatePdfFromSettings, generatePdfFromSections } from "@/lib/pdfme/generate-pdf";
-import type { DocumentType } from "@/lib/pdfme/types";
 import type { TemplateSettings } from "@/lib/pdfme/template-settings";
 import type { TemplateSection } from "@/lib/pdfme/section-types";
+import { templatePreviewRequestSchema } from "@/lib/validations/template-section";
+
+const preview = withValidatedBody(
+  templatePreviewRequestSchema,
+  async ({ docType, sections, docColor, footerText, footerSecondLine, settings }, _request, organizationId: string) => {
+    try {
+      const sampleData = await buildSampleDocumentData(organizationId);
+      let pdf: Uint8Array;
+
+      // Section-based preview (new builder)
+      if (sections) {
+        pdf = await generatePdfFromSections(
+          sampleData,
+          docType,
+          sections as TemplateSection[],
+          docColor,
+          footerText,
+          footerSecondLine,
+        );
+      }
+      // Legacy settings-based preview
+      else if (settings) {
+        pdf = await generatePdfFromSettings(sampleData, docType, settings as unknown as TemplateSettings);
+      } else {
+        return NextResponse.json(
+          { error: "Missing sections or settings" },
+          { status: 400 }
+        );
+      }
+
+      return new NextResponse(Buffer.from(pdf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": "inline; filename=preview.pdf",
+          "Cache-Control": "no-store",
+        },
+      });
+    } catch (err) {
+      logger.error("Template preview generation failed", { error: err });
+      return NextResponse.json(
+        { error: "Failed to generate preview" },
+        { status: 500 }
+      );
+    }
+  },
+);
 
 export async function POST(request: NextRequest) {
   let session;
@@ -15,53 +62,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  try {
-    const body = await request.json();
-    const docType = body.docType as DocumentType;
-
-    if (!docType) {
-      return NextResponse.json({ error: "Missing docType" }, { status: 400 });
-    }
-
-    const sampleData = await buildSampleDocumentData(session.organizationId);
-    let pdf: Uint8Array;
-
-    // Section-based preview (new builder)
-    if (body.sections) {
-      const sections = body.sections as TemplateSection[];
-      pdf = await generatePdfFromSections(
-        sampleData,
-        docType,
-        sections,
-        body.docColor,
-        body.footerText,
-        body.footerSecondLine,
-      );
-    }
-    // Legacy settings-based preview
-    else if (body.settings) {
-      const settings = body.settings as TemplateSettings;
-      pdf = await generatePdfFromSettings(sampleData, docType, settings);
-    } else {
-      return NextResponse.json(
-        { error: "Missing sections or settings" },
-        { status: 400 }
-      );
-    }
-
-    return new NextResponse(Buffer.from(pdf), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": "inline; filename=preview.pdf",
-        "Cache-Control": "no-store",
-      },
-    });
-  } catch (err) {
-    logger.error("Template preview generation failed", { error: err });
-    return NextResponse.json(
-      { error: "Failed to generate preview" },
-      { status: 500 }
-    );
-  }
+  return preview(request, session.organizationId);
 }

@@ -39,3 +39,36 @@ export async function readValidatedBody<T>(
   }
   return { ok: true, data: parsed.data };
 }
+
+/**
+ * Structural counterpart to `readValidatedBody` (POLICY.md R-8.6.4): wraps a
+ * route handler so the schema is REQUIRED by the function signature, not just
+ * available. `readValidatedBody` still lets a route read `request.json()`
+ * directly and skip it by accident; a handler built with `withValidatedBody`
+ * physically cannot run without a schema — the body is parsed + validated
+ * before `handler` is ever called, so an unvalidated route is a compile error
+ * (missing the wrapper call), not a discipline lapse.
+ *
+ * Any pre-body checks (rate limiting, CSRF, auth) stay in the exported route
+ * function — call the wrapped handler from there once those pass:
+ *
+ *   const create = withValidatedBody(createSchema, async (body, request) => {
+ *     ...
+ *     return NextResponse.json({ ok: true });
+ *   });
+ *   export async function POST(request: NextRequest) {
+ *     const csrfError = validateCsrfOrigin(request);
+ *     if (csrfError) return csrfError;
+ *     return create(request);
+ *   }
+ */
+export function withValidatedBody<T, C = undefined>(
+  schema: z.ZodType<T>,
+  handler: (body: T, request: Request, context: C) => Promise<Response>,
+) {
+  return async (request: Request, context?: C): Promise<Response> => {
+    const parsed = await readValidatedBody(request, schema);
+    if (!parsed.ok) return parsed.response;
+    return handler(parsed.data, request, context as C);
+  };
+}

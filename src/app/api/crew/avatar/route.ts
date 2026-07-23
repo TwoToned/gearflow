@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth-server";
-import { readValidatedBody } from "@/lib/api-validation";
+import { withValidatedBody } from "@/lib/api-validation";
 import { validateCsrfOrigin } from "@/lib/csrf";
 import { uploadToS3, deleteFromS3, ensureBucket, storageKeyFromUrl } from "@/lib/storage";
 import { getOrgContext } from "@/lib/org-context";
@@ -101,6 +101,37 @@ export async function POST(request: NextRequest) {
   }
 }
 
+const removeAvatar = withValidatedBody(
+  z.object({ crewMemberId: z.string().min(1) }),
+  async ({ crewMemberId }) => {
+    try {
+      const { organizationId } = await getOrgContext();
+      const member = await getCrewMemberById(crewMemberId);
+      if (!member || member.organizationId !== organizationId) {
+        return NextResponse.json({ error: "Crew member not found" }, { status: 404 });
+      }
+
+      if (member.image) {
+        const key = storageKeyFromUrl(member.image);
+        if (key) {
+          try { await deleteFromS3(key); } catch { /* ignore */ }
+        }
+      }
+
+      await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
+        id: crewMemberId,
+        set: { updatedAt: Date.now() },
+        clear: ["image"],
+      });
+
+      return NextResponse.json({ success: true });
+    } catch (error) {
+      logger.error("Crew avatar delete error", { error: error });
+      return NextResponse.json({ error: "Failed to remove image." }, { status: 500 });
+    }
+  },
+);
+
 export async function DELETE(request: NextRequest) {
   const csrfError = validateCsrfOrigin(request);
   if (csrfError) return csrfError;
@@ -111,37 +142,5 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { organizationId } = await getOrgContext();
-
-  try {
-    const parsed = await readValidatedBody(
-      request,
-      z.object({ crewMemberId: z.string().min(1) }),
-    );
-    if (!parsed.ok) return parsed.response;
-    const { crewMemberId } = parsed.data;
-
-    const member = await getCrewMemberById(crewMemberId);
-    if (!member || member.organizationId !== organizationId) {
-      return NextResponse.json({ error: "Crew member not found" }, { status: 404 });
-    }
-
-    if (member.image) {
-      const key = storageKeyFromUrl(member.image);
-      if (key) {
-        try { await deleteFromS3(key); } catch { /* ignore */ }
-      }
-    }
-
-    await (await getConvexClient()).mutation(api.crewMembers.patchMember, {
-      id: crewMemberId,
-      set: { updatedAt: Date.now() },
-      clear: ["image"],
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    logger.error("Crew avatar delete error", { error: error });
-    return NextResponse.json({ error: "Failed to remove image." }, { status: 500 });
-  }
+  return removeAvatar(request);
 }

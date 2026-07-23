@@ -169,7 +169,11 @@ jobs:
     # `next start` instead, sidestepping the on-demand compilation entirely.
     name: E2E (seeded harness — revenue path)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 20, not the usual 15: the revenue-path test alone can take up to 3
+    # attempts (2 retries) at up to 240s each under CI load — see its
+    # test.setTimeout comment. A hard job timeout here would cancel the whole
+    # job mid-run rather than let it report a clean pass/fail.
+    timeout-minutes: 20
     # NOT blocking yet: re-added after root-causing the prior red runs (#725) as
     # a Next dev-server crash rather than docker networking (see comment above),
     # but that fix hasn't been proven on a GitHub-hosted runner yet. Flip this off

@@ -16,6 +16,13 @@ test.describe("harness: create inventory", () => {
   test("create a model -> create a serialized asset -> asset tag generated", async ({
     page,
   }) => {
+    // Playwright's default test timeout is 30s for the WHOLE test, not per
+    // step — this chains register -> onboard -> model -> asset across 4 page
+    // loads, each hitting Postgres + Convex; under CI's observed latency that
+    // can exceed 30s even though each step alone fits its own 20s expect
+    // (see the identical comment/timeout on harness-revenue-path.spec.ts).
+    test.setTimeout(120_000);
+
     const unique = Date.now();
     const email = `e2e+inventory-${unique}@harness.local`;
     const modelName = `E2E Inventory Model ${unique}`;

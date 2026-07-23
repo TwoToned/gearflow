@@ -14,7 +14,14 @@ test.describe("harness: sign out", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
 
   test("authenticated -> sign out -> session invalidated", async ({ page }) => {
-    const email = `e2e+signout-${Date.now()}@harness.local`;
+    // Playwright's default test timeout is 30s for the WHOLE test — this can
+    // chain register -> create org -> sign-out -> a revisit-check across up to
+    // 4 page loads when run standalone against a fresh harness (see the
+    // identical comment/timeout on harness-revenue-path.spec.ts).
+    test.setTimeout(90_000);
+
+    const unique = Date.now();
+    const email = `e2e+signout-${unique}@harness.local`;
     await page.goto("/register");
     await page.getByLabel(/name/i).first().fill("Sign Out Test");
     await page.getByLabel(/email/i).first().fill(email);
@@ -24,6 +31,15 @@ test.describe("harness: sign out", () => {
       .first()
       .click();
     await expect(page).toHaveURL(/\/(dashboard|onboarding)\b/, { timeout: 20000 });
+
+    // Run standalone against a fresh harness, this is the first-ever user, so
+    // the (app) layout redirects to /onboarding (no org yet) — which has no
+    // UserNav, so "Account menu" below wouldn't exist without this.
+    if (new URL(page.url()).pathname === "/onboarding") {
+      await page.getByLabel("Organization name").fill(`Sign Out Org ${unique}`);
+      await page.getByRole("button", { name: "Create organization" }).click();
+      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+    }
 
     await page.getByRole("button", { name: "Account menu" }).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();

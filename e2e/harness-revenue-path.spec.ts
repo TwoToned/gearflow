@@ -27,8 +27,13 @@ test.describe("harness: primary revenue path", () => {
     // check -> warehouse pipeline across several page loads, each hitting
     // Postgres + Convex; under this environment's demonstrated latency (100-
     // 300ms even for simple queries) that easily exceeds 30s in total even
-    // though every individual step is fast enough on its own.
-    test.setTimeout(180_000);
+    // though every individual step is fast enough on its own. 240s (not the
+    // original 180s): the first GitHub-hosted-runner run (#725/#753) hit the
+    // 180s ceiling on its first attempt running last in the harness job, after
+    // ~6 prior tests had already been driving the same shared Postgres +
+    // self-hosted Convex backend on a 2-core runner — this is genuinely
+    // slower than the local dev machine this was first tuned against.
+    test.setTimeout(240_000);
 
     const unique = Date.now();
     const email = `e2e+revenue-${unique}@harness.local`;

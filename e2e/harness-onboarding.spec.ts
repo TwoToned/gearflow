@@ -14,6 +14,13 @@ test.describe("harness: register / onboarding", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
 
   test("new account -> create org -> onboarding completes", async ({ page }) => {
+    // Playwright's default test timeout is 30s for the WHOLE test — this
+    // chains register -> create org -> a revisit-check across 3 page loads,
+    // each with its own 20s expect; under CI's observed latency the total can
+    // exceed 30s even though each step alone fits (see the identical
+    // comment/timeout on harness-revenue-path.spec.ts).
+    test.setTimeout(90_000);
+
     const unique = Date.now();
     const email = `e2e+onboarding-${unique}@harness.local`;
     const orgName = `Onboarding Test Org ${unique}`;

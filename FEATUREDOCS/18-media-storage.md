@@ -14,6 +14,23 @@
 vendor responses are untrusted input (POLICY.md R-8.10.3), same pattern as
 `resendSendResponseSchema` in `email.ts` and `placeResultSchema` in `address-input.tsx`.
 
+## Upload Retry (POLICY.md R-8.10.3)
+`uploadToS3()` wraps the mint-URL + POST-bytes round trip in `retryWithBackoff`
+(`src/lib/retry-with-backoff.ts`, shared with `email.ts`'s `sendEmail()`): 3 attempts,
+jittered exponential backoff. A fresh upload URL is minted on **every** attempt — Convex
+upload URLs are one-time-use, so re-POSTing a URL from a failed attempt isn't safe to
+assume works. Only transient failures retry (network errors, 429, 5xx); a 4xx other than
+429 fails immediately via `HttpStatusError`/`isRetryableHttpStatus`. `deleteFromS3` /
+`getServeInfo` are not retried — read/delete calls aren't on the same auth-critical,
+synchronous request path the upload retry was added to close.
+
+## Test Fake
+`src/lib/storage-fake.ts`'s `createFakeStorage()` is the deterministic, inspectable
+counterpart to `uploadToS3`/`deleteFromS3`/`getServeInfo` for unit tests (POLICY.md
+R-8.10.4) — an in-memory `storageKey -> bytes` map, mirroring the `email-fake.ts` pattern.
+It is not wired into `storage.ts` via dependency injection; tests that need a fake import
+it directly in place of the real functions.
+
 ## File Proxy (`GET /api/files/[...path]`)
 - Record-based auth (replaced the old S3 org-prefixed-key path check): looks up the
   file's org via `getServeInfo(storageKey)` (`src/lib/storage.ts`, backed by the

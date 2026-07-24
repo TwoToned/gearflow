@@ -3,6 +3,7 @@ import { z } from "zod";
 import { env } from "@/env";
 import { logger } from "@/lib/logger";
 import { reportVendorUsage } from "@/lib/vendor-cost-tracking";
+import { withTimeout } from "@/lib/fetch-with-timeout";
 
 // Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
 const resendSendResponseSchema = z.object({ id: z.string().min(1) });
@@ -54,20 +55,27 @@ export async function sendEmail({
     return { id: "dev-mock" };
   }
 
-  const { data, error } = await getResend().emails.send({
-    from: env.EMAIL_FROM,
-    to,
-    subject,
-    html,
-    attachments: attachments?.map((a) => ({
-      filename: a.filename,
-      content:
-        typeof a.content === "string"
-          ? Buffer.from(a.content, "utf8")
-          : a.content,
-      contentType: a.contentType,
-    })),
-  });
+  // R-9.6: the Resend SDK exposes no timeout/AbortSignal option of its own —
+  // bound how long we wait rather than relying on its library-default
+  // (potentially infinite) behavior.
+  const { data, error } = await withTimeout(
+    getResend().emails.send({
+      from: env.EMAIL_FROM,
+      to,
+      subject,
+      html,
+      attachments: attachments?.map((a) => ({
+        filename: a.filename,
+        content:
+          typeof a.content === "string"
+            ? Buffer.from(a.content, "utf8")
+            : a.content,
+        contentType: a.contentType,
+      })),
+    }),
+    10_000,
+    "resend.emails.send",
+  );
 
   if (error) {
     logger.error("[Email] send failed", { error: error.message });

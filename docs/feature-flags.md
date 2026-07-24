@@ -10,7 +10,7 @@ reviewed at the quarterly sweep (R-12.1).
 These gate the Convex-native (browser-direct) write path per domain. While a flag is off, writes
 run through the legacy `src/server/*` server actions; when on, they run through the native
 `convex/*Writes.ts` mutations. They exist only for the duration of the Prisma→Convex migration
-(see [[convex-native-phase-progress]] in project notes).
+(see the per-domain removal conditions in the table below).
 
 **Removal condition (all):** once the domain's native write path is confirmed in prod, remove the
 flag AND delete the corresponding legacy server-action path (this also closes R-4.5 migration

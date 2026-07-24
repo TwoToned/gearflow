@@ -59,7 +59,7 @@ src/
 │                           # HMAC/external API, email/iCal, CSV/Node — full list in
 │                           # FEATUREDOCS/54). NOT a place for new domain CRUD; new
 │                           # entities get a Convex table + *Writes.ts mutations instead.
-├── generated/prisma/       # Prisma generated client (gitignored, run `npx prisma generate`)
+├── generated/prisma/       # Prisma generated client (gitignored, run `pnpm exec prisma generate`)
 └── middleware.ts           # Auth check, route protection
 
 prisma/schema.prisma        # Better Auth + audit models ONLY (16 models) — the

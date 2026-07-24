@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { IconPicker } from "@/components/admin/icon-picker";
 import { DynamicIcon } from "@/components/ui/dynamic-icon";
 import { getSiteSettings, updateSiteSettings } from "@/server/site-admin";
+import { SettingsCard } from "@/components/layout/page-layouts";
 
 export default function AdminSettingsPage() {
   const { data: settings, refetch } = useServerQuery({
@@ -68,7 +69,7 @@ export default function AdminSettingsPage() {
           </p>
         </div>
 
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <div className="mb-4">
             <h3 className="t-heading">Branding</h3>
             <p className="text-sm text-fg-3">
@@ -116,9 +117,9 @@ export default function AdminSettingsPage() {
               </p>
             </div>
           </div>
-        </div>
+        </SettingsCard>
 
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <div className="mb-4">
             <h3 className="t-heading">Registration</h3>
             <p className="text-sm text-fg-3">
@@ -156,9 +157,9 @@ export default function AdminSettingsPage() {
               </span>
             </div>
           </div>
-        </div>
+        </SettingsCard>
 
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <div className="mb-4">
             <h3 className="t-heading">Defaults</h3>
             <p className="text-sm text-fg-3">
@@ -197,7 +198,7 @@ export default function AdminSettingsPage() {
               </div>
             </div>
           </div>
-        </div>
+        </SettingsCard>
 
         <div className="flex justify-end">
           <Button

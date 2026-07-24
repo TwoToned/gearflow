@@ -112,7 +112,7 @@ to the originating Next.js request (POLICY.md R-8.9.6). A true W3C `traceparent`
 the Convex function body itself would need threading a trace id through every query/mutation's
 args across all ~43 `*Writes.ts` domain modules — out of scope here.
 
-## Vendor cost budget tracking (T-P4, R-9.12/#764)
+## Vendor cost budget tracking (T-P4, R-9.12/#764, #831)
 
 The README.md R-0.4 budget registry registers a $15/mo ceiling each for Resend and Google
 Maps (plus a Convex plan cap), but until #764 nothing measured usage against them — a Major
@@ -120,29 +120,43 @@ compliance gap (zero enforcement/alerting). `src/lib/vendor-cost-tracking.ts` ad
 `vendor_usage` PostHog event (`AnalyticsEvent.VendorUsage`, `{ vendor, operation, units }`) as
 the per-unit signal for the top spend drivers:
 
-- **Resend** — `reportVendorUsage("resend", "send")` fires from `src/lib/email.ts`'s
-  `sendEmail()` after every real (non-dev-mock) send.
+- **Resend, direct send path** — `reportVendorUsage("resend", "send")` fires from
+  `src/lib/email.ts`'s `sendEmail()` after every real (non-dev-mock) send.
+- **Resend, Convex-scheduled send path** — `convex/emailActions.ts`'s `deliver` (the Node-runtime
+  action `emails.enqueue` schedules) fires `reportConvexVendorUsage("resend", "send")` after
+  every real (non-mock) confirmed send. This is a **separate** helper
+  (`convex/lib/vendorUsage.ts`), not `src/lib/vendor-cost-tracking.ts` re-exported — Convex
+  actions run in Convex Cloud's own deployment, a different runtime from `src/`, so they can't
+  import `posthog-server.ts` (Next-only `posthog-node` singleton). It's a raw `fetch` POST to
+  PostHog's `/capture/` HTTP API instead, mirroring `errorReporting.ts`'s pattern, emitting the
+  same `vendor_usage` event name so both paths land in one insight. Until #831 this path was
+  invisible to the tracked metric — a real send routed through the Convex-scheduled path (crew
+  offers, timesheets, etc.) spent budget with zero visibility.
 - **Google Maps** — `capture(AnalyticsEvent.VendorUsage, { vendor: "maps", operation: ... })`
   fires client-side from `src/components/ui/address-input.tsx` for the two billable Places API
   (New) operations it makes: `"autocomplete"` (`fetchAutocompleteSuggestions`) and
   `"place_details"` (`place.fetchFields`).
 
-**What this does NOT do (and why):** compute a live $ total or auto-alert at 80%. Either
-needs a way to read usage back over a monthly window — a persistent counter (out of scope:
-no Convex deploy credentials available when this landed, and a new Postgres table would be
-scope creep beyond the Better-Auth/audit models Postgres is limited to post-migration) or a
-PostHog **query-capable** personal API key (the app only holds the public write-only
-ingestion key). `vendor-cost-tracking.ts`'s doc comment carries the target reference lines
-for whichever lands first — Resend 2,400 sends/mo (80% of a 3,000/mo free-tier estimate),
-Maps $12/mo (80% of the $15 budget, priced off Places API Essentials list pricing) — so the
-next engineer has concrete numbers instead of a blank slate. Separately, the PostHog plan's
-5-alert cap is already fully allocated (see `docs/convex-observability-runbook.md`), so even
-a computed ratio would need a freed slot before it could page anyone automatically.
+**What this does NOT do (and why):** compute a live $ total, auto-alert at 80%, or stand up
+the "reviewed monthly with a named owner" insight yet. All three need a way to read usage back
+over a monthly window — a persistent counter (out of scope: no Convex deploy credentials
+available when #764 landed, and a new Postgres table would be scope creep beyond the
+Better-Auth/audit models Postgres is limited to post-migration) or a PostHog **query-capable**
+personal API key (the app only holds the public write-only ingestion key) — plus, for alerting
+specifically, a freed slot under the PostHog plan's already fully-allocated 5-alert cap (see
+`docs/convex-observability-runbook.md`). `vendor-cost-tracking.ts`'s doc comment carries the
+target reference lines for whichever lands first — Resend 2,400 sends/mo (80% of a 3,000/mo
+free-tier estimate), Maps $12/mo (80% of the $15 budget, priced off Places API Essentials list
+pricing) — so the next engineer has concrete numbers instead of a blank slate.
 
-Once deployed and emitting live volume, a "Vendor usage (T-P4)" PostHog insight should be
-created from the `vendor_usage` event (same precedent as the CWV insights above — created
-only after confirming live event volume, not speculatively before) for the named owner
-(Jayden Nawotka, matching R-9.12) to review monthly.
+Both the 80%-alert and the monthly-review insight/cadence are covered by the dated §15
+exception in `docs/exceptions.md` (R-9.12, expires 2026-10-23) rather than being silently
+unimplemented — as of this writing the `vendor_usage` event hasn't yet accumulated meaningful
+volume in PostHog, so creating the "Vendor usage (T-P4)" insight now would ship an empty chart
+nobody reviews. Once deployed and emitting live volume from both Resend paths, create the
+insight (same precedent as the CWV/crash-free insights above — created only after confirming
+live event volume, not speculatively before) for the named owner (Jayden Nawotka, matching
+R-9.12) to review monthly, and extend/replace the exception accordingly.
 
 ## Convex job/cron error forwarding
 
@@ -158,7 +172,18 @@ masks the real failure). Requires `POSTHOG_KEY` set on the **Convex** deployment
 convex env set POSTHOG_KEY <phc_...>` — separate from the Next.js `.env`); inert until set.
 `invokeCronRoute`'s `fetch` also carries an explicit 10s `AbortController` timeout (R-9.6/#763)
 — previously an unbounded call, so a hung executor route could pin a Convex action's execution
-budget indefinitely instead of failing fast into the reporting path above.
+budget indefinitely instead of failing fast into the reporting path above. `reportConvexJobError`
+itself gained the same 10s timeout on its own outbound POST to PostHog (R-9.6/#830) — until then
+it was the one remaining unbounded call in the cron-failure path, sitting right in the reporting
+leg `invokeCronRoute`'s own timeout was added to protect.
+
+Both Resend send paths' outbound calls also carry an explicit 10s timeout (R-9.6/#830): the SDK
+exposes no `AbortSignal`/timeout option of its own, so `src/lib/email.ts` and
+`convex/emailActions.ts` each wrap `resend.emails.send(...)` in a `withTimeout()` helper
+(`src/lib/fetch-with-timeout.ts` / `convex/lib/promiseTimeout.ts` — duplicated, not imported,
+same reason as `errorReporting.ts` above) that races the SDK call against a timer. This can't
+cancel the underlying in-flight request the way an `AbortController` can, but it bounds how long
+the caller waits instead of relying on the SDK's library-default (potentially infinite) behavior.
 
 **Scope note:** this covers the two cron executors, not the other 43 `*Writes.ts` domain
 mutation modules. See `docs/convex-observability-runbook.md` for the optional blanket
@@ -196,3 +221,14 @@ See `CLAUDE.md` → Environment Variables → Analytics + error tracking.
   registered with zero enforcement). Live $ computation and 80%-threshold alerting are
   deferred pending a persistent monthly counter or a query-capable PostHog key; see "Vendor
   cost budget tracking" above for the concrete target numbers already worked out.
+- v6 (#830, #831): `errorReporting.ts`'s outbound PostHog POST gained the same 10s
+  `AbortController` timeout `invokeCronRoute`'s fetch already had (R-9.6); both Resend SDK send
+  paths (`src/lib/email.ts`, `convex/emailActions.ts`) wrapped in an explicit `withTimeout()`
+  since the SDK exposes no timeout of its own. `convex/emailActions.ts`'s `deliver` — the
+  second, Convex-scheduled Resend send path — now reports T-P4 vendor usage too (previously
+  invisible to the tracked metric), via a new Convex-native `reportConvexVendorUsage` helper
+  (`convex/lib/vendorUsage.ts`, mirroring `errorReporting.ts`'s raw-fetch pattern since `convex/`
+  can't import the Next-only PostHog client). The R-9.12 §15 exception (`docs/exceptions.md`)
+  was extended to explicitly cover the "reviewed monthly with a named owner" clause alongside
+  80%-alerting — both share the same "needs live event volume + a query-capable key or counter"
+  blocker, and the `vendor_usage` event has no meaningful volume yet as of this landing.

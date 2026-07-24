@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Closed the two POLICY.md §9B remediation-verification findings (#830, #831), tracked under
+  #841:
+  - **R-9.6** — `convex/lib/errorReporting.ts`'s outbound POST to PostHog now carries the same
+    explicit 10s `AbortController` timeout `invokeCronRoute`'s fetch already had, closing the
+    one remaining unbounded call in the cron-failure reporting path. Both Resend SDK send paths
+    (`src/lib/email.ts`, `convex/emailActions.ts`) — which have no timeout option of their
+    own — are now wrapped in a `withTimeout()` helper (`src/lib/fetch-with-timeout.ts` /
+    `convex/lib/promiseTimeout.ts`) that bounds how long the caller waits.
+  - **R-9.12** — `convex/emailActions.ts`'s `deliver` (the second, Convex-scheduled Resend send
+    path) now reports T-P4 vendor-cost usage via a new `convex/lib/vendorUsage.ts` helper, so
+    spend routed through it is no longer invisible to the tracked `vendor_usage` metric. The
+    "reviewed monthly with a named owner" clause, which had no operative mechanism, is now
+    explicitly covered by the dated §15 exception in `docs/exceptions.md` (R-9.12) alongside
+    80%-threshold alerting, rather than left as unstated intent.
+
 ## [0.25.4] - 2026-07-23
 
 ### Fixed

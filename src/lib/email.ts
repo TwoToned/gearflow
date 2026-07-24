@@ -2,6 +2,7 @@ import { Resend } from "resend";
 import { z } from "zod";
 import { env } from "@/env";
 import { logger } from "@/lib/logger";
+import { retryWithBackoff } from "@/lib/retry-with-backoff";
 import { reportVendorUsage } from "@/lib/vendor-cost-tracking";
 
 // Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
@@ -32,6 +33,57 @@ export interface EmailAttachment {
   contentType?: string;
 }
 
+/**
+ * Bounded retry with backoff (POLICY.md R-8.10.3) — this is the DEFAULT inline send
+ * path used directly by auth.ts/sso.ts/org-members.ts/settings.ts/site-admin.ts/
+ * test-tag-reminders.ts, including auth-critical flows (password reset, invitations,
+ * SSO approval). Previously a single transient Resend blip failed the whole request;
+ * only the newer Convex-scheduled path (convex/emailActions.ts) had retry.
+ */
+async function sendViaResend(args: {
+  to: string;
+  subject: string;
+  html: string;
+  attachments?: EmailAttachment[];
+}): Promise<unknown> {
+  try {
+    return await retryWithBackoff(
+      async () => {
+        const result = await getResend().emails.send({
+          from: env.EMAIL_FROM,
+          to: args.to,
+          subject: args.subject,
+          html: args.html,
+          attachments: args.attachments?.map((a) => ({
+            filename: a.filename,
+            content:
+              typeof a.content === "string"
+                ? Buffer.from(a.content, "utf8")
+                : a.content,
+            contentType: a.contentType,
+          })),
+        });
+        if (result.error) {
+          throw new Error(`Failed to send email: ${result.error.message}`);
+        }
+        return result.data;
+      },
+      {
+        onRetry: (error, attempt) =>
+          logger.warn("[Email] send failed, retrying", {
+            attempt,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      },
+    );
+  } catch (error) {
+    logger.error("[Email] send failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
 export async function sendEmail({
   to,
   subject,
@@ -54,25 +106,7 @@ export async function sendEmail({
     return { id: "dev-mock" };
   }
 
-  const { data, error } = await getResend().emails.send({
-    from: env.EMAIL_FROM,
-    to,
-    subject,
-    html,
-    attachments: attachments?.map((a) => ({
-      filename: a.filename,
-      content:
-        typeof a.content === "string"
-          ? Buffer.from(a.content, "utf8")
-          : a.content,
-      contentType: a.contentType,
-    })),
-  });
-
-  if (error) {
-    logger.error("[Email] send failed", { error: error.message });
-    throw new Error(`Failed to send email: ${error.message}`);
-  }
+  const data = await sendViaResend({ to, subject, html, attachments });
 
   const parsed = resendSendResponseSchema.safeParse(data);
   if (!parsed.success) {

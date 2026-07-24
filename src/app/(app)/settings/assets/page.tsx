@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { useCategoriesWithParent } from "@/hooks/use-categories";
@@ -62,7 +62,7 @@ export default function AssetsSettingsPage() {
   return (
     <FadeIn>
     <div className="space-y-6">
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <SettingsCard>
         <div className="space-y-6">
           <FormSection title="Asset Tags" description="Configure auto-incrementing asset tag format.">
             <div className="space-y-2">
@@ -145,10 +145,10 @@ export default function AssetsSettingsPage() {
             </Button>
           </div>
         )}
-      </div>
+      </SettingsCard>
 
       {canEdit && (
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <div className="space-y-6">
             <FormSection title="Categories" description="Organize your equipment into categories and subcategories.">
               <div>
@@ -174,7 +174,7 @@ export default function AssetsSettingsPage() {
               </div>
             </FormSection>
           </div>
-        </div>
+        </SettingsCard>
       )}
     </div>
     </FadeIn>

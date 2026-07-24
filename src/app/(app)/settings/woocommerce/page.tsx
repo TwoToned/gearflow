@@ -42,7 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import {
   Select,
   SelectContent,
@@ -201,7 +201,7 @@ export default function WooCommerceSettingsPage() {
 
       <form onSubmit={form.handleSubmit((d) => saveMutation.mutate(d))} className="space-y-6">
         {/* Enable/Disable */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6 flex items-center justify-between">
+        <SettingsCard className="flex items-center justify-between">
           <div>
             <Label>Enable Integration</Label>
             <p className="text-xs text-fg-3">
@@ -215,10 +215,10 @@ export default function WooCommerceSettingsPage() {
               <Switch checked={field.value} onCheckedChange={field.onChange} />
             )}
           />
-        </div>
+        </SettingsCard>
 
         {/* Connection */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <FormSection title="Connection" description="Configure the webhook connection between WooCommerce and RVLT Flow.">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
@@ -294,10 +294,10 @@ export default function WooCommerceSettingsPage() {
             </div>
             </div>
           </FormSection>
-        </div>
+        </SettingsCard>
 
         {/* Product Matching */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <FormSection title="Product Matching" description="How to match WooCommerce products to RVLT Flow models.">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
@@ -336,10 +336,10 @@ export default function WooCommerceSettingsPage() {
             )}
             </div>
           </FormSection>
-        </div>
+        </SettingsCard>
 
         {/* Date Field Mapping */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <FormSection
             title="Date Field Mapping"
             description="Map WooCommerce order meta fields to project dates."
@@ -437,10 +437,10 @@ export default function WooCommerceSettingsPage() {
             </div>
             </div>
           </FormSection>
-        </div>
+        </SettingsCard>
 
         {/* Location Mapping */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <FormSection title="Location Mapping" description="Map a WooCommerce order meta field to a project location. If the value matches an existing location it will be used; otherwise a new venue location is created automatically.">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
@@ -488,10 +488,10 @@ export default function WooCommerceSettingsPage() {
             </div>
             </div>
           </FormSection>
-        </div>
+        </SettingsCard>
 
         {/* Project Defaults */}
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <FormSection title="Project Defaults">
             <div className="sm:col-span-2 space-y-4">
             <div className="space-y-2">
@@ -535,7 +535,7 @@ export default function WooCommerceSettingsPage() {
             </div>
             </div>
           </FormSection>
-        </div>
+        </SettingsCard>
 
         {/* WordPress Setup Guide */}
         <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
@@ -605,7 +605,7 @@ export default function WooCommerceSettingsPage() {
       </form>
 
       {/* Order Logs */}
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <SettingsCard>
         <FormSection title="Recent Orders" description="Webhook deliveries and processing results.">
           <div className="sm:col-span-2">
           {!orderLogs?.items?.length ? (
@@ -660,7 +660,7 @@ export default function WooCommerceSettingsPage() {
           )}
           </div>
         </FormSection>
-      </div>
+      </SettingsCard>
     </div>
     </FadeIn>
   );

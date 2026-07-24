@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useIsViewer } from "@/lib/use-permissions";
+import { SettingsCard } from "@/components/layout/page-layouts";
 
 interface NotesEditorProps {
   title?: string;
@@ -45,17 +46,17 @@ export function NotesEditor({
 
   if (isViewer) {
     return (
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <SettingsCard>
         <h3 className="t-heading text-fg mb-4">{title}</h3>
         <p className="whitespace-pre-wrap text-sm text-fg-3">
           {initialNotes || "No notes."}
         </p>
-      </div>
+      </SettingsCard>
     );
   }
 
   return (
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <SettingsCard>
       <div className="flex items-center justify-between mb-4">
         <h3 className="t-heading text-fg">{title}</h3>
         <Button
@@ -74,6 +75,6 @@ export function NotesEditor({
         placeholder={placeholder}
         className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-fg-3 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
       />
-    </div>
+    </SettingsCard>
   );
 }

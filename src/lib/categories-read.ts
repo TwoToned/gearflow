@@ -3,18 +3,13 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
 /**
- * Server-side read helpers for the Categories domain (Phase 3 cutover).
+ * Server-side read helpers for the Categories domain (post Prisma-decommission).
  *
- * Categories are dual-written like Suppliers/Locations/Models: every
- * create/update/delete writes BOTH the Prisma `category` row (the durable FK
- * anchor — `model.categoryId` and `kit.categoryId` carry a live, nullable FK, and
- * the self-referential `parentId`) AND the Convex `categories` doc (the reactive
- * read source). A Convex-only category would FK-fail the moment it's assigned to a
- * model or kit, so Prisma stays the anchor. Reads that want reactivity — the
- * category manager — go through Convex via this helper / the `use-categories`
- * hooks. Cross-domain `category` joins and the dropdowns in cross-domain-composing
- * forms stay on the always-fresh Prisma mirror and migrate at decommission.
- * See FEATUREDOCS/54.
+ * Convex is the sole owner of category data — the Prisma `category` table (and
+ * the `model.categoryId`/`kit.categoryId` FKs and self-referential `parentId` it
+ * anchored) was dropped at cutover. All reads, including cross-domain `category`
+ * joins and dropdowns, go through Convex via this helper / the `use-categories`
+ * hooks. See FEATUREDOCS/54.
  */
 export type ConvexCategory = Doc<"categories">;
 
@@ -38,10 +33,10 @@ export async function getCategoryMap(orgId: string): Promise<Map<string, ConvexC
 // Primary reads — list / tree / counts / case-category walk (Phase A)
 //
 // These replace the pure Prisma list/tree/filter reads in server/categories.ts.
-// Categories are dual-written, so the Convex list is the read source. The
-// self-referential parent/children hierarchy is rebuilt CLIENT-side in JS from
-// the flat Convex list via a Map, and the cross-domain model/kit counts are
-// aggregated in JS from the (also-dual-written) Convex model/kit lists.
+// Convex is the sole read source. The self-referential parent/children
+// hierarchy is rebuilt CLIENT-side in JS from the flat Convex list via a Map,
+// and the cross-domain model/kit counts are aggregated in JS from the Convex
+// model/kit lists.
 //
 // MAPPING: a Convex doc carries the same business fields as the Prisma row plus
 // `_id`/`_creationTime` and numeric `createdAt`/`updatedAt`. `serialize()` keeps

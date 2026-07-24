@@ -169,6 +169,24 @@ export function FormSection({
   );
 }
 
+interface SettingsCardProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+/**
+ * Surface-ringed card wrapper for settings-page sections — the single
+ * source of truth for the "rounded-lg bg-bg-surface p-5 surface-ring sm:p-6"
+ * style used across settings and admin pages.
+ */
+export function SettingsCard({ children, className }: SettingsCardProps) {
+  return (
+    <div className={cn("rounded-lg bg-bg-surface p-5 surface-ring sm:p-6", className)}>
+      {children}
+    </div>
+  );
+}
+
 interface FormPageLayoutProps {
   title: string;
   description?: string;
@@ -191,14 +209,14 @@ export function FormPageLayout({
   return (
     <div className={cn("space-y-4", className)}>
       <PageHeader title={title} description={description} />
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <SettingsCard>
         <div className="space-y-6">{children}</div>
         {actions && (
           <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
             {actions}
           </div>
         )}
-      </div>
+      </SettingsCard>
     </div>
   );
 }

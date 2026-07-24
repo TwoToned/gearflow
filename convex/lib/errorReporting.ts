@@ -18,6 +18,9 @@
  * failure. Callers still throw/propagate the real error themselves (Convex's
  * own dashboard cron-run log is the durable record; this is the forwarding leg
  * that was missing).
+ *
+ * Carries an explicit 10s `AbortController` timeout (POLICY.md R-9.6) — this
+ * was previously the one outbound call in the cron-failure path without one.
  */
 export async function reportConvexJobError(
   source: string,
@@ -32,6 +35,12 @@ export async function reportConvexJobError(
   const type = error instanceof Error ? error.name || "Error" : "Error";
   const stack = error instanceof Error ? error.stack : undefined;
 
+  // R-9.6: explicit timeout on every outbound call — no library-default
+  // infinities. 10s matches the T-22 default / convex/scheduledJobs.ts's
+  // invokeCronRoute (duplicated, not imported — convex/ is a separate
+  // deployment bundle from src/).
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     await fetch(`${host}/capture/`, {
       method: "POST",
@@ -57,8 +66,11 @@ export async function reportConvexJobError(
           ...context,
         },
       }),
+      signal: controller.signal,
     });
   } catch {
     // Best-effort — must never mask the original job failure.
+  } finally {
+    clearTimeout(timer);
   }
 }

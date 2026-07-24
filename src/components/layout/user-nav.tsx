@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { LogOut, User, ChevronsUpDown, Shield, HardHat } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isSiteAdminRole } from "@/lib/admin-role";
 import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProfile } from "@/hooks/use-profile";
@@ -30,7 +31,9 @@ export function UserNav() {
   const collapsed = state === "collapsed" && !isMobile;
 
   const user = session?.user;
-  const isSiteAdmin = (user as Record<string, unknown>)?.role === "admin";
+  const isSiteAdmin = isSiteAdminRole(
+    (user as { role?: string } | undefined)?.role,
+  );
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
 

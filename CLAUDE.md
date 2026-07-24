@@ -52,6 +52,7 @@ pricing/quotes are internal, not processed payments).
 - **`PROMPT.md`** — Full product spec
 - **`docs/ROADMAP.md`** — Prioritised roadmap: phases, sequencing, effort
 - **`docs/designs/`** — Per-initiative design docs (one per major feature/program)
+- **`docs/glossary.md`** — Core domain terms and documented aliases (POLICY.md R-3.10)
 
 **When making changes**: Read the relevant `FEATUREDOCS/` file(s) for the feature you're touching. Update them after. Don't read everything — just what's relevant. The [Integration Checklist](./FEATUREDOCS/29-integration-checklist.md) tells you what to wire up for new features.
 

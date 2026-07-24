@@ -223,8 +223,8 @@ jobs:
   hygiene:
     # Hygiene gates. BLOCKING: dependency vuln scan (R-6.6), secret scan (R-7.3),
     # import-cycle (R-3.5), any-ratchet (R-8.2.2), unbounded-read ratchet (R-9.8),
-    # dead-code ratchet (Knip, R-4.2 — blocking on any increase), new-dependency
-    # justification (R-6.3). NOT in build's `needs`.
+    # dead-code ratchet (Knip, R-4.2), complexity ratchet (R-3.6), new-dependency
+    # justification (R-6.3 — blocking on any increase). NOT in build's `needs`.
     name: Hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -278,6 +278,9 @@ jobs:
         # just needs to resolve (no connection).
         env:
           DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+
+      - name: Complexity ratchet (R-3.6 — blocking on any increase)
+        run: pnpm run complexity-ratchet
 
       - name: Client-boundary justification (R-8.1.1)
         run: pnpm run check-client-routes

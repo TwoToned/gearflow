@@ -89,6 +89,9 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 60 | [Assets on a Job](./FEATUREDOCS/60-assets-on-a-job.md) | Project Equipment tab shows which specific serialised assets are prepped/deployed/returned on a job (inline tag for single, expandable per-unit rows + status badge for multi-qty, kit-member tags), with a per-unit "reassign to another same-model line" picker to correct the scan auto-pick. RETURNED units are retained through check-in/close-out (+ deprep guard + `assetScanLog` backstop), so a finished job still shows what went out. Extends [line-item-fulfillment-model](./docs/designs/archive/line-item-fulfillment-model.md). |
 | 61 | [Observability](./FEATUREDOCS/61-observability.md) | Analytics + error tracking on PostHog (`posthog-js`/`posthog-node`), PII-hardened. Replaced Sentry entirely (#650) — client/server exception capture, Core Web Vitals, and deploy-pipeline sourcemap upload (`@posthog/nextjs-config`, BuildKit-secret-mounted CLI token) that hard-fails the build if misconfigured rather than silently skipping. |
 
+See also [`docs/glossary.md`](./docs/glossary.md) for core domain terms and documented
+aliases (POLICY.md R-3.10).
+
 **When making changes**: Read the relevant feature doc(s) first, follow documented patterns, and update the relevant doc(s) after. If no doc exists for the feature you're working on, create a new numbered file in `FEATUREDOCS/` and add it to the table above.
 
 All new features and non-trivial changes must go on a dedicated branch — never commit feature work directly to `main`.

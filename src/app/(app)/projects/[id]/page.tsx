@@ -244,7 +244,7 @@ export default function ProjectDetailPage({
 
   return (
     <RequirePermission resource="project" action="read">
-      <PageMeta title={project ? `${project.projectNumber} ${project.name}` : undefined} />
+      <PageMeta title={`${project.projectNumber} ${project.name}`} />
       <FadeIn>
         <div className="space-y-6">
           {/* ── Hero card (breadcrumb + identity/actions + lifecycle) ─ */}

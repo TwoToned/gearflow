@@ -168,7 +168,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
         <p className="text-caption text-muted">
           {data.unitsOwned === 0
             ? "No units of this model are in the fleet, so there is no capital to measure against."
-            : "Set a replacement cost on this model to see how far it is from paying for itself."}
+            : "Set a purchase price on this model's assets, or a default purchase price / replacement cost on the model, to see how far it is from paying for itself."}
         </p>
       ) : (
         <Panel>

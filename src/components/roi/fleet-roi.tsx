@@ -89,7 +89,7 @@ export function FleetRoi() {
           <Stat bright figure={formatCurrency(data.totalRevenue)} label="Revenue attributed" />
         </Panel>
         <Panel>
-          <Stat figure={formatCurrency(data.totalFleetCost)} label="Fleet replacement cost" />
+          <Stat figure={formatCurrency(data.totalFleetCost)} label="Fleet cost" />
         </Panel>
         <Panel>
           <Stat figure={`${earning}`} label={`Models earning (of ${data.rows.length})`} />

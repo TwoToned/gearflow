@@ -20,6 +20,46 @@ test.describe("harness: primary revenue path", () => {
     "requires the seeded Convex harness (E2E_HARNESS=1)",
   );
 
+  /**
+   * Root cause of the R-8.8.3 "stuck dialog after Prep" bug (docs/e2e-harness.md):
+   * clicking Prep/Deploy can open an "Assign assets" dialog (pick the specific
+   * serial via a combobox) even when there's only one candidate asset — its own
+   * action button stays disabled until a selection is made. This test never
+   * filled it, so the dialog sat open forever, swallowing every click behind it.
+   * Its appearance is timing-sensitive (looks tied to an async per-item
+   * availability check, not the click itself), so callers race it against the
+   * next interaction rather than checking once right after the triggering click.
+   */
+  async function resolveAssignAssetsDialogIfPresent(page: import("@playwright/test").Page) {
+    const assignDialog = page.getByRole("dialog", { name: "Assign assets" });
+    if (!(await assignDialog.isVisible({ timeout: 2000 }).catch(() => false))) return false;
+    const combobox = assignDialog.getByRole("combobox").first();
+    await combobox.click();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    const actionBtn = assignDialog.getByRole("button", { name: /^(Prep|Deploy)$/ });
+    await expect(actionBtn).toBeEnabled({ timeout: 5000 });
+    await actionBtn.click();
+    await expect(assignDialog).toBeHidden({ timeout: 10000 });
+    return true;
+  }
+
+  async function clickRacingAssignDialog(
+    page: import("@playwright/test").Page,
+    locator: ReturnType<import("@playwright/test").Page["locator"]>,
+  ) {
+    for (let i = 0; i < 10; i++) {
+      if (await resolveAssignAssetsDialogIfPresent(page)) continue;
+      try {
+        await locator.click({ timeout: 2000 });
+        return;
+      } catch {
+        // keep racing the dialog
+      }
+    }
+    await locator.click({ timeout: 5000 });
+  }
+
   test("project -> line item -> availability -> check-out -> return", async ({ page }) => {
     // Playwright's default test timeout is 30s — a budget for the WHOLE test,
     // not per test.step. This flow chains register -> onboard -> model ->
@@ -99,11 +139,24 @@ test.describe("harness: primary revenue path", () => {
       await projectCodeInput.fill(`E2E-${unique}`);
 
       // Basics -> Schedule -> Site -> Review: every other field is optional, so
-      // three plain "Continue" clicks get through from here.
-      await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByRole("button", { name: "Create job" }).click();
+      // three plain "Continue" activations get through from here.
+      //
+      // .focus()+Enter, not .click(): a raw .click() on this exact 3x-Continue
+      // sequence is prone to a Playwright locator-retry race against the
+      // wizard's step-transition unmount (the just-clicked button detaches
+      // mid-retry, so .click() times out waiting for a stable target even
+      // though the underlying action — and the project creation itself —
+      // already succeeded). Root-caused chasing #858/R-8.8.3; this sidesteps
+      // it without masking the real (tracked separately, #894) step-transition
+      // focus-loss bug.
+      await page.getByRole("button", { name: "Continue" }).focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Continue" }).focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Continue" }).focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Create job" }).focus();
+      await page.keyboard.press("Enter");
       // NOT /\/projects\/[^/]+$/ — that trivially matches the literal
       // "/projects/new" creation page itself (the segment "new" satisfies
       // "one or more non-slash characters" just as well as a real id), so the
@@ -151,10 +204,12 @@ test.describe("harness: primary revenue path", () => {
       await page.getByRole("tab", { name: /^Pick/ }).click();
       await page.locator("table thead").getByRole("checkbox").click();
       await page.getByRole("button", { name: /^Prep/ }).click();
+      await resolveAssignAssetsDialogIfPresent(page);
 
       await page.getByRole("tab", { name: /^Prepped/ }).click();
-      await page.locator("table thead").getByRole("checkbox").click();
-      await page.getByRole("button", { name: /^Deploy/ }).click();
+      await clickRacingAssignDialog(page, page.locator("table thead").getByRole("checkbox"));
+      await clickRacingAssignDialog(page, page.getByRole("button", { name: /^Deploy/ }));
+      await resolveAssignAssetsDialogIfPresent(page);
 
       await expect(page.getByRole("tab", { name: /^Deployed \(1\)/ })).toBeVisible();
     });

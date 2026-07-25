@@ -83,10 +83,17 @@ describe("statusesForScope", () => {
 });
 
 describe("defaultRoiWindow", () => {
-  test("is the trailing twelve months", () => {
+  test("earned scope is the trailing twelve months, capped at now", () => {
     const now = new Date("2026-07-10T00:00:00Z").getTime();
-    const { from, to } = defaultRoiWindow(now);
+    const { from, to } = defaultRoiWindow("earned", now);
     expect(to).toBe(now);
+    expect(new Date(from).toISOString()).toBe("2025-07-10T00:00:00.000Z");
+  });
+
+  test("booked scope leaves `to` open so future bookings aren't hidden", () => {
+    const now = new Date("2026-07-10T00:00:00Z").getTime();
+    const { from, to } = defaultRoiWindow("booked", now);
+    expect(to).toBeUndefined();
     expect(new Date(from).toISOString()).toBe("2025-07-10T00:00:00.000Z");
   });
 });

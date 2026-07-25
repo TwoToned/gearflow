@@ -277,6 +277,89 @@ export const fleetRevenue = query({
 });
 
 /**
+ * Groups in counted-status projects that carry real gear but have no flat price.
+ *
+ * `recalcProjectTotals` bills grouped equipment as `group.price × group.quantity` —
+ * a grouped line item's own `lineTotal` never reaches revenue (see
+ * FEATUREDOCS/57-revenue-allocation-roi.md). An unpriced group containing gear
+ * therefore reports $0 for that gear in BOTH the project's own total AND ROI — this
+ * is the #1 cause of "ROI is lower than what we actually sold". It's the single
+ * most actionable data-quality signal for this report, so it gets its own query
+ * rather than being buried in a per-project drill-down.
+ *
+ * `suggestedPrice` (cost-weighted, computed the same way the group-price UI
+ * suggests one) is returned as a hint of what the group is probably worth — never
+ * treated as the answer, since it's a cost proxy, not what the client was actually
+ * charged.
+ */
+export const zeroPricedGroups = query({
+  args: {
+    orgId: v.string(),
+    statuses: v.array(v.string()),
+  },
+  handler: async (ctx, { orgId, statuses }) => {
+    await requireOrgRead(ctx, orgId);
+    const counted = countableStatuses(statuses);
+
+    const scanned = await ctx.db
+      .query("projects")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .order("desc")
+      .take(PROJECT_SCAN_CAP);
+
+    const inScope = scanned.filter((p) => !p.isTemplate && counted.has(p.status ?? ""));
+
+    const rows: {
+      projectId: string;
+      projectNumber: string;
+      projectName: string;
+      groupId: string;
+      groupTitle: string;
+      gearLineCount: number;
+      suggestedPrice: number | null;
+    }[] = [];
+    let rowsRead = 0;
+    let truncated = scanned.length === PROJECT_SCAN_CAP;
+
+    for (const p of inScope) {
+      if (rowsRead >= ROLLUP_READ_BUDGET) {
+        truncated = true;
+        break;
+      }
+      const [groups, lines] = await Promise.all([
+        ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).collect(),
+        ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).collect(),
+      ]);
+      rowsRead += groups.length + lines.length;
+
+      for (const g of groups) {
+        if (Number(g.price ?? 0) > 0) continue;
+        const gearLines = lines.filter(
+          (l) =>
+            l.groupId === g.id &&
+            l.status !== "CANCELLED" &&
+            l.isOptional !== true &&
+            l.isCustomItem !== true &&
+            l.modelId != null,
+        );
+        if (gearLines.length === 0) continue;
+        rows.push({
+          projectId: p.id,
+          projectNumber: p.projectNumber,
+          projectName: p.name,
+          groupId: g.id,
+          groupTitle: g.title,
+          gearLineCount: gearLines.length,
+          suggestedPrice: g.suggestedPrice ?? null,
+        });
+      }
+    }
+
+    return { rows, truncated };
+  },
+});
+
+/**
  * The capital side: every active model and how many units of it we own.
  *
  * Scans assets org-wide ONCE and tallies, rather than per-model, so models with

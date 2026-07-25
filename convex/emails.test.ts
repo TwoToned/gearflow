@@ -7,9 +7,13 @@ import { api, internal } from "./_generated/api";
 // The delivery action constructs `new Resend(apiKey)` only when RESEND_API_KEY is
 // set. `resendSendMock` defaults to failing (exercises the retry path); tests that
 // want the mock (no-key) path simply leave RESEND_API_KEY unset, and the success
-// path overrides it with `mockResolvedValueOnce`.
+// path overrides it with `mockResolvedValueOnce`. Explicit return type so
+// mockResolvedValueOnce can switch between the success/error shapes (both fields
+// are otherwise inferred as `null`/`{ message: string }` only, from the default impl).
 const { resendSendMock } = vi.hoisted(() => ({
-  resendSendMock: vi.fn(async () => ({ data: null, error: { message: "boom" } })),
+  resendSendMock: vi.fn<
+    (...args: unknown[]) => Promise<{ data: { id: string } | null; error: { message: string } | null }>
+  >(async () => ({ data: null, error: { message: "boom" } })),
 }));
 vi.mock("resend", () => ({
   // A `function`, not an arrow function: `new Resend(apiKey)` in emailActions.ts

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { useCanDo } from "@/lib/use-permissions";
 import { FadeIn } from "@/components/ui/motion";
+import { SettingsCard } from "@/components/layout/page-layouts";
 import {
   getDisplayTokens,
   createDisplayToken,
@@ -281,7 +282,7 @@ export default function DisplaySettingsPage() {
 
   return (
     <FadeIn>
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <SettingsCard>
       <div className="mb-4">
         <h3 className="t-heading text-fg flex items-center gap-2">
           <MonitorPlay className="h-4 w-4" />
@@ -595,7 +596,7 @@ export default function DisplaySettingsPage() {
         }}
         pending={regenerateMutation.isPending}
       />
-    </div>
+    </SettingsCard>
     </FadeIn>
   );
 }

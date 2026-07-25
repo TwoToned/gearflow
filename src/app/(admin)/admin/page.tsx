@@ -5,6 +5,7 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { getAdminDashboardStats } from "@/server/site-admin";
 import { Users, Building2, Shield } from "lucide-react";
+import { SettingsCard } from "@/components/layout/page-layouts";
 
 export default function AdminDashboardPage() {
   const { data } = useServerQuery({
@@ -53,7 +54,7 @@ export default function AdminDashboardPage() {
 
         <div className="grid gap-6 md:grid-cols-2">
           {/* Recent Users */}
-          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <SettingsCard>
             <h3 className="t-heading mb-4">Recent Registrations</h3>
             {data?.recentUsers?.length === 0 ? (
               <p className="text-sm text-fg-3">No users yet.</p>
@@ -74,10 +75,10 @@ export default function AdminDashboardPage() {
                 )}
               </div>
             )}
-          </div>
+          </SettingsCard>
 
           {/* Recent Orgs */}
-          <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+          <SettingsCard>
             <h3 className="t-heading mb-4">Recent Organizations</h3>
             {data?.recentOrgs?.length === 0 ? (
               <p className="text-sm text-fg-3">
@@ -100,7 +101,7 @@ export default function AdminDashboardPage() {
                 )}
               </div>
             )}
-          </div>
+          </SettingsCard>
         </div>
       </div>
     </AdminShell>

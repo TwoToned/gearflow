@@ -13,7 +13,7 @@ import { ChevronRight, ShieldCheck, Copy, Trash2, Plus, ExternalLink, Pencil } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import {
@@ -64,7 +64,7 @@ export default function TestTagSettingsPage() {
 
   return (
     <FadeIn>
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <SettingsCard>
       <div className="space-y-6">
         <FormSection title="Test & Tag" description="Configure test tag ID format and testing defaults.">
           <div className="space-y-2">
@@ -201,7 +201,7 @@ export default function TestTagSettingsPage() {
           </Button>
         </div>
       )}
-    </div>
+    </SettingsCard>
     </FadeIn>
   );
 }

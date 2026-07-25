@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { useCanDo } from "@/lib/use-permissions";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -119,7 +119,7 @@ export default function CalendarSettingsPage() {
 
   return (
     <FadeIn>
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <SettingsCard>
       <FormSection
         title="Calendar Feeds"
         description="Subscribe to iCal feeds from Google Calendar, Apple Calendar, Outlook, or any calendar app. All feeds share a single token — regenerating invalidates all URLs."
@@ -187,7 +187,7 @@ export default function CalendarSettingsPage() {
           )}
         </div>
       </FormSection>
-    </div>
+    </SettingsCard>
     <DeleteDialog
       open={regenerateOpen}
       onOpenChange={setRegenerateOpen}

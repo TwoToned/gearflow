@@ -52,6 +52,7 @@ banner comment warning not to revert it to `@base-ui/react/popover`.
 Shared layout components live in `src/components/layout/page-layouts.tsx`:
 
 - **ListPageLayout** / **FormPageLayout** / **DetailPageLayout** — page-level shells (header + content).
+- **SettingsCard** (`children`, `className?`) — the surface-ringed card wrapper (`rounded-lg bg-bg-surface p-5 surface-ring sm:p-6`) used to group settings/admin page sections; `FormPageLayout` is built on it. Single source of truth for that style (POLICY.md R-8.7.3) — never hand-write the class string, use `<SettingsCard>` instead, passing `className` for any extra layout classes (e.g. `flex items-center justify-between`).
 - **DetailLayout** + **DetailMain** + **DetailSidebar** — the two-column body of a detail page: a flexible main column beside a fixed-width (`lg:w-[340px]`) sticky sidebar, stacking below `lg`. All 10 detail pages use these — never hand-roll the `flex flex-col gap-6 lg:flex-row` shell.
 - **SidebarSection** (`title`, `divider?`) — one block inside a `DetailSidebar`: a `SectionHeader` plus content with a bottom divider. Pass `divider={false}` on the last section to drop the trailing rule.
 - **SectionHeader** — teal overline label chip.

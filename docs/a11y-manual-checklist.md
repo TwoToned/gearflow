@@ -94,3 +94,77 @@ instance of the app (local dev, staging, or prod):
 **Follow-up:** flows 3–10 need a run against a real authenticated session (seeded e2e harness or
 staging) — track alongside the `e2e-harness` CI job going green (`docs/critical-flows.md`). Next
 release's pass should cover the full list.
+
+### 2026-07-25 — closing #824 (R-8.1.7 remediation, flows 3–10)
+
+**Run by:** Claude (keyboard-driven pass against the seeded local harness —
+`scripts/e2e-harness-up.sh`, self-hosted Convex + fresh Postgres — via a mix of a Playwright
+keyboard-walk script and direct browser driving for the two flows that hit the known
+`harness-revenue-path` "Prep" stuck-dialog issue documented below).
+
+| Flow | Method | Result |
+|------|--------|--------|
+| 3. Sign out | Keyboard: `Enter` opens Account menu, `ArrowDown` navigates, `Enter` activates | ✅ Clean — see notes |
+| 4. Onboarding (create org) | Playwright keyboard walk of the create-org form | ✅ Clean — see notes |
+| 5. Create project (Basics step) | Playwright keyboard walk | ✅ Clean — see notes |
+| 6. Add line item dialog | Playwright keyboard walk + live accessible-name check | 🔧 Finding — **fixed this pass** |
+| 7. Availability check (inline in the same dialog) | Live accessible-name / aria-live check | 🔧 Minor finding — **fixed this pass** |
+| 8. Warehouse check-out (Pick → Prep → Deploy) | Keyboard walk + live accessible-name check | 🔧 Finding — **fixed this pass** |
+| 9. Warehouse check-in / return | Keyboard walk + live accessible-name check | 🔧 Finding — **fixed this pass** |
+| 10. Create inventory (model + serialized asset) | Playwright keyboard walk | ✅ Clean — see notes |
+
+**Findings (all fixed in this pass, not just logged):**
+
+1. **Unlabeled Quantity/Unit price/Discount/Notes fields** in the equipment "Add item" dialog
+   (flow 6). The shared `Field` label wrapper in `src/components/projects/equipment-add-form.tsx`
+   rendered a `<Label>` next to each `<Input>` but never passed `htmlFor`, so there was no
+   programmatic association — Quantity had no accessible name at all, and Unit price/Discount only
+   got a weak placeholder-derived name ("Auto" / "0", not "Unit price"). Fixed by adding an
+   `htmlFor` prop to `Field` and passing each field's input `id` at every call site. Verified live
+   post-fix: all four fields now expose the correct accessible name.
+2. **Unlabeled row/select-all checkboxes** in the warehouse Pick/Prepped/Deployed/Returned tables
+   (flows 8–9). Every `<Checkbox>` in `src/components/warehouse/pick-prep-tab.tsx`,
+   `deploy-tab.tsx`, `return-tab.tsx`, and the shared `renderGroupHeader` group-select checkbox in
+   `src/app/(app)/warehouse/[projectId]/page.tsx` had no accessible name — a screen reader would
+   announce bare "checkbox, not checked" with no indication of which item, or that the header one
+   selects all. The equivalent project equipment table (`equipment-tab.tsx`/`equipment-rows.tsx`)
+   already does this correctly (`aria-label="Select all items"` / `"Select item"`); the warehouse
+   tables were simply missing the same pattern. Fixed by adding matching `aria-label`s across all
+   four files. Verified live post-fix.
+3. **Availability-check result not in an `aria-live` region** (flow 7, minor). The async
+   "N available out of M" text and any overbook warning rendered into the DOM with no live region,
+   so a screen reader user wouldn't be proactively notified when the check resolves — they'd have
+   to explore forward manually to find it. Fixed by adding `aria-live="polite"` to the panel's
+   wrapping element in `equipment-add-form.tsx`. Minor because the text is still reachable, just
+   not announced.
+
+**Notes:**
+
+- **Flow 3 (sign out):** Radix `DropdownMenuItem` doesn't use the shared `focusRing`
+  box-shadow utility — it highlights via a `data-highlighted` background-color change instead
+  (confirmed: highlighted item background differs from idle items, e.g.
+  `rgb(26,22,19)` vs `rgba(0,0,0,0)`). Both are valid visible-focus mechanisms per WCAG 2.4.7 (any
+  visible indicator qualifies, not specifically outline/box-shadow) — noting this so a future pass
+  doesn't flag it as a false positive from a box-shadow-only check. Session invalidation confirmed
+  server-side: a direct post-sign-out visit to `/dashboard` bounces to `/login`, not just a
+  client-side redirect.
+- **Flows 8–9 (warehouse):** reproduced the known `e2e/harness-revenue-path.spec.ts` "Prep" stuck
+  dialog (`docs/e2e-harness.md`, `docs/exceptions.md` R-8.8.3) — clicking "Prep" opens a per-row
+  "Select an asset…" confirmation dialog the harness spec doesn't fill in. Confirmed this is a
+  real, keyboard-operable, correctly-labeled step (`combobox` "Select an asset...", `Cancel`,
+  `Prep`, `Close`, all reachable and named) — not itself an accessibility defect, just a step the
+  existing E2E spec doesn't handle. Out of scope to fix the spec here; noted for whoever next picks
+  up R-8.8.3.
+- **Flows 4, 5, 10:** clean on all five criteria — keyboard operability, focus order, focus
+  visibility (box-shadow ring via the shared `focusRing` utility), accessible names, and
+  `prefers-reduced-motion: reduce` rendering (checked via `page.emulateMedia`).
+- **Known accepted exception (carried over, not retested):** brand-red contrast on primary CTAs is
+  a registered §15 exception (`docs/exceptions.md`, R-8.1.7, expires 2026-10-18) — out of scope for
+  this manual pass (contrast is covered by the automated axe gate).
+
+**Findings:** 3 real WCAG gaps found — all fixed in this same pass (typecheck + lint clean, fixes
+verified live against the running app post-fix). Zero serious/critical issues remain open on any
+of the ten critical flows.
+
+**Coverage:** 10/10 critical flows now walked (up from 2/10 in the prior pass) — R-8.1.7 fully
+satisfied this release.

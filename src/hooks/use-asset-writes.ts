@@ -55,6 +55,8 @@ export function useAssetWrites() {
     setOrClear("purchasePrice", p.purchasePrice != null ? Number(p.purchasePrice) : null);
     setOrClear("purchaseSupplier", p.purchaseSupplier);
     setOrClear("supplierId", p.supplierId);
+    setOrClear("purchaseOrderNumber", p.purchaseOrderNumber);
+    setOrClear("supplierOrderId", p.supplierOrderId);
     setOrClear("warrantyExpiry", p.warrantyExpiry ? new Date(p.warrantyExpiry).getTime() : null);
     setOrClear("notes", p.notes);
     setOrClear("locationId", p.locationId);
@@ -76,6 +78,7 @@ export function useAssetWrites() {
         purchasePrice: p.purchasePrice != null ? Number(p.purchasePrice) : undefined,
         purchaseSupplier: p.purchaseSupplier || undefined, supplierId: p.supplierId || undefined,
         purchaseOrderNumber: p.purchaseOrderNumber || undefined,
+        supplierOrderId: p.supplierOrderId || undefined,
         warrantyExpiry: p.warrantyExpiry ? new Date(p.warrantyExpiry).getTime() : undefined,
         notes: p.notes || undefined, locationId: p.locationId || undefined, customFieldValues: cf,
         barcode: p.barcode || p.assetTag, qrCode: p.assetTag, images: p.images || undefined,
@@ -96,6 +99,8 @@ export function useAssetWrites() {
         purchaseDate: p.purchaseDate ? new Date(p.purchaseDate).getTime() : undefined,
         purchasePrice: p.purchasePrice != null ? Number(p.purchasePrice) : undefined,
         purchaseSupplier: p.purchaseSupplier || undefined, supplierId: p.supplierId || undefined,
+        purchaseOrderNumber: p.purchaseOrderNumber || undefined,
+        supplierOrderId: p.supplierOrderId || undefined,
         warrantyExpiry: p.warrantyExpiry ? new Date(p.warrantyExpiry).getTime() : undefined,
         notes: p.notes || undefined, locationId: p.locationId || undefined, customFieldValues: cf,
         barcode: p.barcode || tag, qrCode: tag, images: p.images || undefined,

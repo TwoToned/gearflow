@@ -16,7 +16,7 @@ import { supplierOrderSchema, type SupplierOrderFormValues } from "@/lib/validat
 import { useSupplierOrderWrites } from "@/hooks/use-supplier-order-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../../../convex/_generated/api";
-import { supplierOrderStatusLabels } from "@/lib/status-labels";
+import { supplierOrderStatusLabels, supplierOrderTypeLabels } from "@/lib/status-labels";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
@@ -40,13 +40,6 @@ import {
   SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 
-const ORDER_TYPE_LABELS: Record<string, string> = {
-  PURCHASE: "Purchase",
-  SUBHIRE: "Subhire",
-  REPAIR: "Repair",
-  LABOUR: "Labour",
-  OTHER: "Other",
-};
 const ORDER_TYPE_ORDER = ["PURCHASE", "SUBHIRE", "REPAIR", "LABOUR", "OTHER"] as const;
 const ORDER_STATUS_ORDER = ["DRAFT", "ORDERED", "PARTIAL", "RECEIVED", "CANCELLED"] as const;
 
@@ -117,7 +110,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
 
   const v = form.watch();
   const orderRef = (v.orderNumber || "").trim();
-  const typeLabel = ORDER_TYPE_LABELS[v.type ?? "PURCHASE"] ?? "Purchase";
+  const typeLabel = supplierOrderTypeLabels[v.type ?? "PURCHASE"] ?? "Purchase";
   const statusLabel = supplierOrderStatusLabels[v.status ?? "DRAFT"] ?? "Draft";
   const expectedDate = v.expectedDate ? String(v.expectedDate) : "";
 
@@ -201,11 +194,11 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
                   <Controller control={form.control} name="type" render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger>
-                        <SelectValue>{ORDER_TYPE_LABELS[field.value ?? "PURCHASE"] ?? "Purchase"}</SelectValue>
+                        <SelectValue>{supplierOrderTypeLabels[field.value ?? "PURCHASE"] ?? "Purchase"}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {ORDER_TYPE_ORDER.map((t) => (
-                          <SelectItem key={t} value={t}>{ORDER_TYPE_LABELS[t]}</SelectItem>
+                          <SelectItem key={t} value={t}>{supplierOrderTypeLabels[t]}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

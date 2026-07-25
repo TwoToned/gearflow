@@ -91,6 +91,17 @@ export const supplierOrderStatusLabels: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
+// --- Supplier Order Type --- (single source of truth — R-3.1; was hand-copied as
+// a local ORDER_TYPE_LABELS/orderTypeLabels const in the new-order page, the
+// supplier detail page's Orders tab, and now the asset-form order combobox)
+export const supplierOrderTypeLabels: Record<string, string> = {
+  PURCHASE: "Purchase",
+  SUBHIRE: "Subhire",
+  REPAIR: "Repair",
+  LABOUR: "Labour",
+  OTHER: "Other",
+};
+
 export const subHireStatusLabels: Record<string, string> = {
   DRAFT: "Draft",
   CONFIRMED: "Confirmed",

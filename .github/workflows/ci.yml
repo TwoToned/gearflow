@@ -150,28 +150,111 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  # `e2e-harness` (seeded-auth E2E over the primary revenue path, POLICY.md
-  # R-8.8.3, #621) is REMOVED AGAIN (2026-07-23) — still broken, for a different
-  # reason than originally suspected. Progress made this pass:
-  #   - Root-caused the ORIGINAL red runs (#725) as a Next dev-server crash under
-  #     `next dev` (not the docker-in-CI JWKS networking path first suspected) and
-  #     fixed it: playwright.config.ts runs a prebuilt `next start` for this job
-  #     via E2E_PROD_SERVER=1. Confirmed on a GitHub-hosted runner: the crash is
-  #     gone, and 5-6 of 7 harness specs pass reliably now.
-  #   - Wrote the 3 remaining unwritten critical flows (#3, #4, #10):
-  #     e2e/harness-sign-out.spec.ts, e2e/harness-onboarding.spec.ts,
-  #     e2e/harness-create-inventory.spec.ts.
-  #   - Found a SECOND, distinct bug: e2e/harness-revenue-path.spec.ts's warehouse
-  #     "Prep" step leaves a dialog open that intercepts pointer events for every
-  #     click afterward, so the test hangs retrying a swallowed click for its full
-  #     timeout (up to 3 attempts x 240s) instead of failing fast — not yet
-  #     root-caused. This job was pulled again rather than left burning ~15-20 CI
-  #     minutes on every PR for a guaranteed-red job with no gating value (it was
-  #     already continue-on-error: true, so it wasn't even blocking).
-  # See docs/e2e-harness.md to restore it — the specs (e2e/harness-*.spec.ts) and
-  # scripts (scripts/e2e-harness-{up,down}.sh) are untouched, only this job
-  # definition was pulled. Registered as a dated exception in docs/exceptions.md
-  # (R-8.8.3).
+  e2e-harness:
+    # Seeded-auth E2E over the primary revenue path (POLICY.md R-8.8.3, #621):
+    # sign-in/register, onboarding, sign-out, create-inventory, project -> line
+    # items -> availability -> check-out -> return. Needs a REAL Convex backend
+    # (unlike the `e2e` job's dummy Convex URL) because these flows write and read
+    # actual domain data. Runs a self-hosted Convex backend in Docker against its
+    # own Postgres db on the same service Postgres instance, exactly as documented
+    # in docs/e2e-harness.md / scripts/e2e-harness-up.sh.
+    #
+    # RESTORED (2026-07-25, #858): both prior blockers are now fixed.
+    #   - Original red runs (#725): root-caused as a Next dev-server crash under
+    #     `next dev` (not the docker-in-CI JWKS networking path first suspected).
+    #     E2E_PROD_SERVER (playwright.config.ts) runs a prebuilt `next start`
+    #     instead, sidestepping the on-demand compilation entirely.
+    #   - Second bug (#753): e2e/harness-revenue-path.spec.ts's warehouse "Prep"/
+    #     "Deploy" steps could leave an "Assign assets" dialog open (a combobox to
+    #     pick the specific serial, appearing even with only one candidate asset,
+    #     on timing that looks tied to an async per-item check) that intercepted
+    #     pointer events for every click afterward. The spec now handles the
+    #     dialog for real instead of never filling it. A separate Playwright
+    #     locator-retry race on the project-creation wizard's rapid 3x-Continue
+    #     `.click()` sequence (unrelated to the dialog — the project was already
+    #     being created successfully, `.click()` just never resolved) is sidestepped
+    #     with `.focus()+Enter`. Verified with 4 consecutive clean local runs
+    #     (~10s each, vs. the previous 240s timeouts) before restoring this job.
+    name: E2E (seeded harness — revenue path)
+    runs-on: ubuntu-latest
+    # 20, not the usual 15: the revenue-path test alone can take up to 3
+    # attempts (2 retries) at up to 240s each under CI load — see its
+    # test.setTimeout comment. A hard job timeout here would cancel the whole
+    # job mid-run rather than let it report a clean pass/fail.
+    timeout-minutes: 20
+    # NOT blocking yet: re-added after fixing the stuck-dialog bug that made it
+    # guaranteed-red, but that fix hasn't been proven on a GitHub-hosted runner
+    # yet (only verified locally, 4/4 clean runs). Flip this off once a run
+    # (ideally a few in a row) has gone green here.
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gearflow_harness
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/gearflow_harness
+      BETTER_AUTH_SECRET: ci-e2e-harness-secret-string-at-least-32-chars
+      BETTER_AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      APP_DB: gearflow_harness
+      E2E_PROD_SERVER: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Sync schema to throwaway DB
+        run: pnpm exec prisma db push
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Stand up the seeded Convex harness
+        # Writes NEXT_PUBLIC_CONVEX_URL to .env.local — MUST run before the build
+        # step below, since NEXT_PUBLIC_* vars are inlined into the client bundle
+        # at build time, not read at server start.
+        run: bash scripts/e2e-harness-up.sh
+
+      - name: Build (prebuilt `next start` for the harness — see job comment)
+        run: pnpm run build
+
+      - name: Run E2E (seeded harness, chromium)
+        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-onboarding.spec.ts e2e/harness-sign-out.spec.ts e2e/harness-create-inventory.spec.ts e2e/harness-revenue-path.spec.ts
+        env:
+          E2E_HARNESS: "1"
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-harness-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Tear down the seeded Convex harness
+        if: always()
+        run: bash scripts/e2e-harness-down.sh
 
   integration:
     # Integration tests against a real migrated Postgres (POLICY.md R-10.1, R-8.8).

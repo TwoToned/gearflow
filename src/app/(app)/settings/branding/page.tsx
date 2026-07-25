@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { BrandingSettings } from "@/components/settings/branding-settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -28,7 +28,7 @@ export default function BrandingSettingsPage() {
 
   return (
     <FadeIn>
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <SettingsCard>
       <FormSection
         title="Branding & Colors"
         description="Customize your organization's colors across the UI and PDF documents."
@@ -41,7 +41,7 @@ export default function BrandingSettingsPage() {
           />
         </div>
       </FormSection>
-    </div>
+    </SettingsCard>
     </FadeIn>
   );
 }

@@ -128,7 +128,11 @@ export async function reserveTestTagIds(count = 1): Promise<string[]> {
   return reserveTestTagIdsConvex(organizationId, count);
 }
 
-/** @deprecated Use peekNextAssetTags for preview, reserveAssetTags for creation */
+/**
+ * @deprecated Use peekNextAssetTags for preview, reserveAssetTags for creation.
+ * Removal condition: delete once no callers remain (grep `getNextAssetTag`). Tracked:
+ * POLICY.md R-4.4.
+ */
 export async function getNextAssetTag(): Promise<string> {
   const tags = await peekNextAssetTags(1);
   return tags[0];

@@ -1,3 +1,5 @@
+import { isDangerousObjectKey } from "@/lib/safe-object-key";
+
 /**
  * Recursively convert Prisma Decimal fields to plain numbers
  * so data can be passed from server actions to client components.
@@ -15,6 +17,7 @@ export function serialize<T>(data: T): T {
   if (typeof data === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
+      if (isDangerousObjectKey(key)) continue;
       result[key] = serialize(value);
     }
     return result as T;

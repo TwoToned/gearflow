@@ -90,6 +90,25 @@ describe("testTagAssetsWrites", () => {
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.testTagAssetsWrites.createNative, { id: "z", orgId: ORG, description: "d", now: NOW, actor, auditId: "a2" })).rejects.toThrow(/Forbidden|permission/i);
   });
 
+  test("create rejects out-of-bounds fields (R-8.6.2 server-side mirror of testTagAssetSchema)", async () => {
+    const t = makeT(); await seedMember(t);
+    await expect(t.withIdentity(asUser).mutation(api.testTagAssetsWrites.createNative, { id: "tt1", orgId: ORG, testTagId: "x".repeat(51), description: "d", now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Test Tag ID/i);
+    await expect(t.withIdentity(asUser).mutation(api.testTagAssetsWrites.createNative, { id: "tt1", orgId: ORG, description: "x".repeat(501), now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Description/i);
+    await expect(t.withIdentity(asUser).mutation(api.testTagAssetsWrites.createNative, { id: "tt1", orgId: ORG, description: "d", make: "x".repeat(201), now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Make/i);
+    await expect(t.withIdentity(asUser).mutation(api.testTagAssetsWrites.createNative, { id: "tt1", orgId: ORG, description: "d", testIntervalMonths: 121, now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Test interval/i);
+    await expect(t.withIdentity(asUser).mutation(api.testTagAssetsWrites.createNative, { id: "tt1", orgId: ORG, description: "d", outletCount: 0, now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Outlet count/i);
+    await expect(t.withIdentity(asUser).mutation(api.testTagAssetsWrites.createNative, { id: "tt1", orgId: ORG, description: "d", notes: "x".repeat(2001), now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Notes/i);
+  });
+
+  test("update rejects out-of-bounds patch fields; clearing with null is unaffected", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => { await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, testTagId: "T1", description: "d", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", status: "NOT_YET_TESTED", isActive: true }); });
+    await expect(t.withIdentity(asUser).mutation(api.testTagAssetsWrites.updateNative, { id: "tt1", orgId: ORG, patch: { location: "x".repeat(201) }, now: NOW })).rejects.toThrow(/Location/i);
+    // null (clear) is not length-checked
+    await t.withIdentity(asUser).mutation(api.testTagAssetsWrites.updateNative, { id: "tt1", orgId: ORG, patch: { location: null }, now: NOW });
+    expect((await tta(t, "tt1"))?.location).toBeUndefined();
+  });
+
   test("backfill registers T&T for a T&T-model asset", async () => {
     const t = makeT(); await seedMember(t);
     await t.run(async (ctx) => {

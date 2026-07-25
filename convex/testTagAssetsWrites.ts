@@ -8,6 +8,7 @@ import { writeActivityLog } from "./lib/audit";
 import { reserveTestTagIdCounter } from "./lib/testTagIdCounter";
 import { backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -58,6 +59,17 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "testTag", "create");
     const actor = await resolveActor(ctx, a.actor);
     if (!a.description || a.description.trim().length < 1) throw new ConvexError("Description is required");
+    // R-8.6.2: mirror testTagAssetSchema's bounds (client Zod validation is bypassable
+    // by any caller hitting this Native mutation directly).
+    assertStrLen(a.testTagId, "Test Tag ID", { max: 50 });
+    assertStrLen(a.description, "Description", { max: 500 });
+    assertStrLen(a.make, "Make", { max: 200 });
+    assertStrLen(a.modelName, "Model", { max: 200 });
+    assertStrLen(a.serialNumber, "Serial number", { max: 200 });
+    assertStrLen(a.location, "Location", { max: 200 });
+    assertNumRange(a.testIntervalMonths, "Test interval", { min: 1, max: 120, integer: true });
+    assertNumRange(a.outletCount, "Outlet count", { min: 1, max: 50, integer: true });
+    assertStrLen(a.notes, "Notes", { max: 2000 });
 
     const dupId = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dupId) throw new ConvexError("Test tag asset already exists");
@@ -126,6 +138,11 @@ export const createFromBulkNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "testTag", "create");
     const actor = await resolveActor(ctx, a.actor);
     if (a.ids.length === 0) throw new ConvexError("Count must be at least 1");
+    assertStrLen(a.description, "Description", { max: 500 });
+    assertStrLen(a.make, "Make", { max: 200 });
+    assertStrLen(a.modelName, "Model", { max: 200 });
+    assertStrLen(a.location, "Location", { max: 200 });
+    assertNumRange(a.testIntervalMonths, "Test interval", { min: 1, max: 120, integer: true });
 
     const bulk = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.bulkAssetId)).first();
     if (!bulk || bulk.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
@@ -185,6 +202,16 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc || doc.organizationId !== orgId) throw new ConvexError("Test tag asset not found");
+
+    // R-8.6.2: mirror testTagAssetSchema's bounds (null/undefined = leave-or-clear, skipped).
+    assertStrLen(patch.description, "Description", { max: 500 });
+    assertStrLen(patch.make, "Make", { max: 200 });
+    assertStrLen(patch.modelName, "Model", { max: 200 });
+    assertStrLen(patch.serialNumber, "Serial number", { max: 200 });
+    assertStrLen(patch.location, "Location", { max: 200 });
+    assertNumRange(patch.testIntervalMonths, "Test interval", { min: 1, max: 120, integer: true });
+    assertNumRange(patch.outletCount, "Outlet count", { min: 1, max: 50, integer: true });
+    assertStrLen(patch.notes, "Notes", { max: 2000 });
 
     // Org-validate client-supplied FKs when SET to a non-empty value (by_cuid is GLOBAL —
     // cross-org refs leak). A null/"" is a clear and needs no check.

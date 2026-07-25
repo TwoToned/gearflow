@@ -53,14 +53,23 @@ domain entity means adding a Convex table + `*Writes.ts` mutations, not a Prisma
   indexed/status-narrowed read or `.paginate()`/`.take()` over `ctx.db.query(...).collect()`
   on a table that grows with usage. The CI-blocking ratchet recursively scans every
   non-test `convex/**/*.ts` file (including `convex/lib/`, not just the top-level
-  directory) and tracks two numbers: the full non-test `.collect()` count
-  (`.collect-ratchet-full-baseline`) and, within that, org-wide-index-only or
-  no-index unjustified collects (`.collect-ratchet-baseline`, target 0). A `.collect()`
+  directory) and tracks three numbers: the full non-test `.collect()` count
+  (`.collect-ratchet-full-baseline`); within that, org-wide-index-only or no-index
+  unjustified collects (`.collect-ratchet-baseline`, target 0); and, independent of
+  hazard shape, `r9.8-ok` markers that aren't backed by a real `docs/exceptions.md`
+  row (`.collect-ratchet-unregistered-baseline`, target 0 — #901). A `.collect()`
   that genuinely needs the whole set (an aggregation, a reconciliation job, or a
   small platform/roster-scale table) is marked `// r9.8-ok: <reason>` on the query
   line — but per R-15.1 a bare comment alone is not a valid exception once it's
   load-bearing; register it in `docs/exceptions.md` too and have the comment point
-  there (see the `R-8.3.3` rows for the pattern).
+  there (see the `R-8.3.3` rows for the pattern). A marker only counts as
+  "registered" for metric 3 if the comment names `docs/exceptions.md` **and** that
+  file actually mentions the source filename — round-4 audit (#901) found 211 of 225
+  markers were bare inline reasons with no exceptions.md row at all, which the old
+  hazard-shape-only "0 unjustified" metric couldn't see. Raising
+  `.collect-ratchet-full-baseline` via `--write` now requires `--reason "..."` and is
+  logged to `docs/collect-ratchet-log.md` — a baseline bump with no recorded reason
+  was round 4's own finding (665→671 framed as remediation).
 
 ## Writes
 

@@ -36,7 +36,7 @@ Run a daily export off-provider (S3/GCS/R2 bucket the Convex account can't itsel
 
 ```bash
 # needs CONVEX_DEPLOY_KEY for the PROD deployment in the environment
-npx convex export --prod --path "convex-snapshot-$(date -u +%Y%m%dT%H%M%SZ).zip"
+pnpm exec convex export --prod --path "convex-snapshot-$(date -u +%Y%m%dT%H%M%SZ).zip"
 # then upload the zip to cold storage (aws s3 cp / rclone / gcloud storage cp)
 ```
 
@@ -51,13 +51,13 @@ A backup you've never restored is a hope, not a recovery plan. Drill it into a *
 ```bash
 # 1. Create/point at a throwaway dev/preview deployment (NOT prod).
 # 2. Import the latest cold-storage snapshot:
-npx convex import --path convex-snapshot-<latest>.zip     # to the scratch deployment
+pnpm exec convex import --path convex-snapshot-<latest>.zip     # to the scratch deployment
 # (use --replace-all only against the scratch deployment)
 ```
 
 Then **verify**, don't assume:
 - Row counts per table match the source. No standing `convex-parity-check.ts`
-  script exists today — compare `npx convex data <table>` counts (or the
+  script exists today — compare `pnpm exec convex data <table>` counts (or the
   Convex dashboard's table view) between source and restored deployment
   table-by-table, or write a one-off script following the pattern in
   `scripts/convex-auth-roundtrip.ts` if you need this repeatedly.

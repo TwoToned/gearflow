@@ -16,8 +16,12 @@ const nextConfig: NextConfig = {
   turbopack: {},
   // Dev-only: allow HMR / dev-resource access when the app is reached via the
   // box hostname (not just localhost). Next 16 blocks cross-origin dev requests
-  // by default. Has no effect on production builds.
-  allowedDevOrigins: ["roger"],
+  // by default. Has no effect on production builds. "host.docker.internal" is
+  // needed by the self-hosted Convex container (docs/e2e-harness.md) to fetch
+  // /api/auth/jwks from the host's `next dev` — without it every request from
+  // the container 404s (Host header doesn't match the allow-list) and every
+  // harness sign-up/sign-in fails with InvalidAuthHeader.
+  allowedDevOrigins: ["roger", "host.docker.internal"],
   // Keep the Postgres driver as require()-at-runtime on the server so Next never
   // traces it into client bundles.
   serverExternalPackages: [

@@ -3,14 +3,14 @@
  * Replicates the current @react-pdf/renderer checkbox (bordered square with rotated lines for checkmark).
  */
 import type { Plugin, Schema, PDFRenderProps } from "@pdfme/common";
-import { getLayoutProps, hexToRgb, getHelveticaFonts, stubUiRender, stubPropPanel } from "./helpers";
+import { getLayoutProps, hexToRgb, stubUiRender, stubPropPanel } from "./helpers";
 
 interface CheckboxSchema extends Schema {
   type: "gearflowCheckbox";
 }
 
 async function pdfRender(arg: PDFRenderProps<CheckboxSchema>) {
-  const { schema, page, pdfLib, pdfDoc, _cache } = arg;
+  const { schema, page, pdfLib, _cache } = arg;
   const value = arg.value || "{}";
   const config = JSON.parse(value) as { checked?: boolean; size?: number };
 

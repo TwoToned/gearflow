@@ -5,20 +5,18 @@ import type { Doc } from "../../convex/_generated/dataModel";
 /**
  * Server-side read helpers for the Suppliers domain (Phase 3 cutover).
  *
- * Suppliers are dual-written: every create/update/delete in the server actions
- * writes BOTH the Prisma `supplier` row (the durable FK anchor — `asset`,
- * `bulk_asset`, `project_line_item`, `sub_hire`, `supplier_order`, and
- * `supplier_model_rate` all carry a real FK to it, two of them required +
- * Cascade) AND the Convex `suppliers` doc (the reactive read source the browser
- * subscribes to). Reads that want reactivity — the supplier list, the supplier
- * dropdowns, the edit form — go through Convex via this helper / the
- * `use-suppliers` hooks. Cross-domain joins that only render `supplier.name`
- * deep inside warehouse / category / PDF pipelines stay on the (dual-write-fresh)
- * Prisma mirror for now; migrating those to Convex attach is deferred to the
- * Prisma-decommission phase. See FEATUREDOCS/54.
+ * Suppliers are Convex-only: `prisma/schema.prisma` has no `supplier` model, and
+ * there are no `prisma.supplier.*` writes anywhere in `src/` — the Convex
+ * `suppliers` doc is the sole store, and every FK relationship (`asset`,
+ * `bulk_asset`, `project_line_item`, `sub_hire`, `supplier_order`,
+ * `supplier_model_rate`) resolves against the Convex `id`, not a Postgres row. All
+ * reads — the supplier list, the supplier dropdowns, the edit form, and the
+ * cross-domain joins that render `supplier.name` inside warehouse / category / PDF
+ * pipelines — go through Convex via this helper / the `use-suppliers` hooks.
+ * See FEATUREDOCS/54.
  *
- * The Convex supplier doc carries the same business fields as the Prisma row
- * (name, contact*, address, lat/long, tags, notes, accountNumber, paymentTerms,
+ * The Convex supplier doc carries the same business fields the old Prisma row used
+ * to (name, contact*, address, lat/long, tags, notes, accountNumber, paymentTerms,
  * defaultLeadTime, isActive) plus the preserved cuid `id` and numeric
  * `createdAt`/`updatedAt`.
  */

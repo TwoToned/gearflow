@@ -65,7 +65,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { type SearchResult, type SearchResultType } from "@/lib/search-types";
 import { useGlobalSearch } from "@/hooks/use-global-search";
-import { matchPageCommands, PAGE_COMMANDS, type PageCommand } from "@/lib/page-commands";
+import { matchPageCommands, type PageCommand } from "@/lib/page-commands";
 import { matchSlashCommands, extractEntityId, type SlashCommand } from "@/lib/slash-commands";
 import { signOut } from "@/lib/auth-client";
 import { useCurrentRole } from "@/lib/use-permissions";

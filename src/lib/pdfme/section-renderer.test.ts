@@ -9,7 +9,6 @@ import {
 import type { DocumentData, DocumentLineItem, CrewEntry } from "./types";
 import type { TemplateSection } from "./section-types";
 import {
-  TABLE_ROW_HEIGHT_MM,
   CREW_ROW_HEIGHT_MM,
   SECTION_HEIGHT_ESTIMATES,
   getDefaultSections,
@@ -535,8 +534,6 @@ describe("estimateSectionHeight", () => {
 // ─── computePageLayout ────────────────────────────────────────────────────────
 
 describe("computePageLayout", () => {
-  const CONTENT_HEIGHT = PAGE_HEIGHT - MARGIN - FOOTER_HEIGHT;
-
   describe("single page", () => {
     it("places a few small sections on one page", () => {
       const sections: TemplateSection[] = [

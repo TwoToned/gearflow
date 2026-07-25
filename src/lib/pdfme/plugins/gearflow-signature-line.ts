@@ -3,7 +3,7 @@
  * "Returned By: _____ Date: _____ Signature: _____"
  */
 import type { Plugin, Schema, PDFRenderProps } from "@pdfme/common";
-import { getLayoutProps, hexToRgb, getHelveticaFonts, stubUiRender, stubPropPanel, mm2pt } from "./helpers";
+import { getLayoutProps, hexToRgb, getHelveticaFonts, stubUiRender, stubPropPanel } from "./helpers";
 import type { SignatureLineConfig } from "../types";
 
 interface SignatureLineSchema extends Schema {

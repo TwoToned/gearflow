@@ -31,8 +31,6 @@ import {
   Crown,
   Package,
   Boxes,
-  FolderKanban,
-  BoxIcon,
   UserPlus,
   Trash2,
 } from "lucide-react";

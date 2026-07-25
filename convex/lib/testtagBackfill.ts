@@ -88,10 +88,14 @@ export async function backfillTestTagAssetsCore(
   organizationId: string,
   now: number,
 ): Promise<{ created: number; retired: number }> {
+  // Reconciliation (create-missing + retire-orphaned) is inherently whole-set: a
+  // bounded/paginated read here would treat assets or T&T rows outside the fetched
+  // page as "missing"/"orphaned" and act on them incorrectly. Real, dated §15
+  // exception — see docs/exceptions.md R-8.3.3 testtagBackfill-reconciliation.
   const [allOrgAssets, allModels, allTTAssets] = await Promise.all([
-    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(),
-    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(),
-    ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(),
+    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 testtagBackfill-reconciliation
+    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 testtagBackfill-reconciliation
+    ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 testtagBackfill-reconciliation
   ]);
 
   const modelMap = new Map(allModels.map((m) => [m.id, m]));

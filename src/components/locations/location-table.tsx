@@ -144,7 +144,7 @@ export function LocationTable() {
     sortBy, sortOrder, pageSize, page,
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
-    filters, setFilter, clearFilters,
+    filters, setFilter,
     currentConfig, applyConfig,
   } = useTablePreferences("locations", { sortBy: "name", sortOrder: "asc" });
 

@@ -26,16 +26,12 @@ async function pdfRender(arg: PDFRenderProps<FinancialSummarySchema>) {
   // Right-aligned totals block
   const blockWidth = 200;
   const blockX = x + width - blockWidth;
-  const labelWidth = 120;
-  const valueWidth = 80;
 
   let currentY = y + height;
   const rowHeight = 14;
 
   function drawRow(label: string, value: string, opts?: { bold?: boolean; divider?: boolean; fontSize?: number }) {
     const fontSize = opts?.fontSize || 9;
-    const font = opts?.bold ? fonts.bold : fonts.regular;
-    const color = opts?.bold ? textColor : labelColor;
 
     if (opts?.divider) {
       // Draw divider line

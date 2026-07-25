@@ -6,9 +6,6 @@ import type { PDFPage, PDFFont, PDFDocument } from "@pdfme/pdf-lib";
 import type { Schema } from "@pdfme/common";
 import { mm2pt } from "@pdfme/common";
 
-// Re-export mm2pt for convenience
-export { mm2pt };
-
 /**
  * Convert schema mm position to PDF pt coordinates.
  * PDF Y-axis is from bottom-left; pdfme schemas use top-left origin.

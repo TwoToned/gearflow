@@ -18,7 +18,7 @@ export function getClientSessionId(): string {
   const key = "__collab_session_id__";
   let id = sessionStorage.getItem(key);
   if (!id) {
-    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    id = crypto.randomUUID();
     sessionStorage.setItem(key, id);
   }
   return id;

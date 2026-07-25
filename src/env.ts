@@ -38,6 +38,11 @@ const serverEnvSchema = z.object({
   // Email (optional — logs to console if unset)
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("RVLT Flow <flow@rvlt.app>"),
+  // Phase 6b flag — see src/lib/native-writes.ts. Read directly via process.env
+  // there (not via `env.NATIVE_EMAIL_SIDEEFFECTS`) so the schema's only job is
+  // catching a typo'd/undocumented var name; the boolean coercion stays local
+  // to the call site.
+  NATIVE_EMAIL_SIDEEFFECTS: z.string().optional(),
 
   // (File storage moved to Convex `_storage`; the S3/Garage env vars were removed.)
 

@@ -1,7 +1,6 @@
 "use server";
 
 import { getOrgContext } from "@/lib/org-context";
-import { readOrgDefaultTaxRate } from "@/lib/org-settings-read";
 import { serialize } from "@/lib/serialize";
 import type { ActorContext } from "@/lib/actor-context";
 import { getConvexClient } from "@/lib/convex-client";
@@ -12,20 +11,7 @@ import { getModelWithCategoryMap } from "@/lib/model-category-join";
 import { getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById } from "@/lib/kits-read";
-import { getSubHiresByProject } from "@/lib/sub-hire-read";
-import { getProjectServicesByOrg } from "@/lib/project-services-read";
 import { getLocationById } from "@/lib/locations-read";
-import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
-
-/**
- * Org default tax rate from Postgres (the source of truth — the Convex `organizations`
- * mirror has no writer, so it can be stale). Passed into the native write mutations so
- * their in-transaction recalc uses the authoritative rate for the no-override fallback.
- */
-async function orgDefaultTaxRateFor(orgId: string): Promise<number | null> {
-  // Org default tax lives in the Convex org-settings row (Phase 1 inversion).
-  return readOrgDefaultTaxRate(orgId);
-}
 
 export async function checkAvailability(
   modelId: string,

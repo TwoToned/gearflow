@@ -49,6 +49,18 @@ domain entity means adding a Convex table + `*Writes.ts` mutations, not a Prisma
   dedicated `*-join.ts` module (`model-category-join.ts`), not in either domain's
   own read file — putting the join in either one creates a circular import between
   the two domain modules (POLICY.md R-3.5).
+- **Unbounded-read ratchet (R-9.8, `scripts/collect-ratchet.mjs`)**: prefer an
+  indexed/status-narrowed read or `.paginate()`/`.take()` over `ctx.db.query(...).collect()`
+  on a table that grows with usage. The CI-blocking ratchet recursively scans every
+  non-test `convex/**/*.ts` file (including `convex/lib/`, not just the top-level
+  directory) and tracks two numbers: the full non-test `.collect()` count
+  (`.collect-ratchet-full-baseline`) and, within that, org-wide-index-only or
+  no-index unjustified collects (`.collect-ratchet-baseline`, target 0). A `.collect()`
+  that genuinely needs the whole set (an aggregation, a reconciliation job, or a
+  small platform/roster-scale table) is marked `// r9.8-ok: <reason>` on the query
+  line — but per R-15.1 a bare comment alone is not a valid exception once it's
+  load-bearing; register it in `docs/exceptions.md` too and have the comment point
+  there (see the `R-8.3.3` rows for the pattern).
 
 ## Writes
 

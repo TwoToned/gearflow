@@ -166,10 +166,41 @@ calls — no server action in between; `src/server/roi.ts` doesn't exist).
 
 Both cap their scans and return `truncated`, which the UI surfaces as a banner. A capped scan that
 silently under-reports looks exactly like a fleet that isn't earning. When the caps start biting,
-the fix is a scheduled org-level aggregate, not a bigger cap.
+the fix is a scheduled org-level aggregate, not a bigger cap. In practice this doesn't bite a small
+org — `PROJECT_SCAN_CAP` (1500) and `ROLLUP_READ_BUDGET` (10,000 rollup rows) are both far above
+what a few hundred projects ever produce, so if a fleet report looks short on a small org, the
+`truncated` banner is not why — see "Why revenue looks low" below.
 
 `projectModelRevenues` is a **pure cache** — safe to delete and rebuild from the line items at any
 time by re-running the backfill.
+
+### Why revenue looks low
+
+The #1 cause: **an unpriced group carrying real gear.** `recalcProjectTotals` bills grouped
+equipment as `group.price × group.quantity` — a grouped line item's own `lineTotal` never reaches
+revenue (see "Why it was needed" above). If a group's `price` is `0`/unset, the gear inside it
+reports $0 in **both** the project's own total **and** ROI — restructuring a project into groups
+(e.g. a historical-data backfill done through the app) fixes the *shape* of the data but not the
+*price*, and it's easy to move gear into a group without noticing the group itself was never given
+a flat price.
+
+`api.roi.zeroPricedGroups` (`convex/roi.ts`) finds these: every group in a counted-status project
+with `price ?? 0 === 0` that still contains a non-cancelled, non-optional, non-custom line with a
+`modelId`. It returns the group's `suggestedPrice` (the same cost-weighted hint the group-price UI
+shows) as a hint of what it's probably worth — never treated as the answer, since it's a cost
+proxy, not what the client was actually charged. Surfaced as a collapsible banner on `/assets/roi`
+(`useZeroPricedGroups`, `src/hooks/use-roi.ts`) linking straight to the offending project — that's
+the fix, not a bigger cap or a recompute; the number is faithfully reporting $0 because the group
+really has no price on file.
+
+The #2 cause: **scope/window, not data.** The default view is `earned` (COMPLETED + INVOICED
+only) over the trailing 12 months — a fleet mostly sitting in `CONFIRMED`/`CHECKED_OUT` or with a
+lot of history outside the last year will look emptier than "all the money we've made". Switch to
+"Including booked work" + "All time" before assuming the allocation itself is wrong.
+
+Related gotcha: `defaultRoiWindow(scope)` leaves `to` **open** for `booked` scope specifically —
+capping it at `now` (as `earned` does) would hide the future-dated `CONFIRMED`/`PREPPING` bookings
+that scope exists to show, forcing a second switch to "All time" just to see next week's job.
 
 ## Files
 
@@ -179,7 +210,7 @@ time by re-running the backfill.
 | `convex/lib/recalc.ts` | Calls it, at the tail of every project recompute. |
 | `convex/revenueAllocation.ts` | Standalone recompute (legacy path + backfill) and paginated project ids. |
 | `convex/kitAllocations.ts` | Kit split: composition view, replace-all, clear. |
-| `convex/roi.ts` | `getModelRoi`, `fleetRevenue`, `fleetInventory`. |
+| `convex/roi.ts` | `getModelRoi`, `fleetRevenue`, `fleetInventory`, `zeroPricedGroups`. |
 | `src/lib/roi.ts` | `computeRoi`, status scopes, window, formatting. |
 | `src/hooks/use-roi.ts` | Browser-direct: joins the two fleet queries client-side (one-shot, not reactive — a ROI report has no liveness need). |
 | `convex/kitAllocationsWrites.ts` | Browser-direct RBAC + validation + audit for the kit split. |

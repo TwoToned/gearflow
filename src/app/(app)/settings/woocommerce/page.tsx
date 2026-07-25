@@ -12,7 +12,6 @@ import {
   EyeOff,
   Loader2,
   RefreshCw,
-  ExternalLink,
   CheckCircle2,
   XCircle,
   AlertTriangle,

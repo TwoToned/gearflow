@@ -41,12 +41,23 @@ export const ROI_SCOPE_LABELS: Record<RoiScope, string> = {
   booked: "Including booked work",
 };
 
-/** Trailing-12-months window, the default the reports open on. */
-export function defaultRoiWindow(now: number = Date.now()): { from: number; to: number } {
-  const to = now;
+/**
+ * Trailing-12-months window, the default the reports open on.
+ *
+ * `to` is left open (undefined) for `booked` scope: that scope exists specifically
+ * to surface committed FUTURE work (a CONFIRMED shoot next month), and capping `to`
+ * at `now` would hide exactly the rows it's for — a user would have to also switch
+ * to "All time" to see next week's booking, which reads as "the number is wrong"
+ * rather than "the window is wrong". `earned` scope is inherently historical
+ * (COMPLETED/INVOICED), so it keeps the `to: now` cap.
+ */
+export function defaultRoiWindow(
+  scope: RoiScope,
+  now: number = Date.now(),
+): { from: number; to?: number } {
   const d = new Date(now);
   d.setFullYear(d.getFullYear() - 1);
-  return { from: d.getTime(), to };
+  return scope === "booked" ? { from: d.getTime() } : { from: d.getTime(), to: now };
 }
 
 export interface RoiMetrics {

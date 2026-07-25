@@ -18,6 +18,7 @@ import {
   getFailedOrderLogById,
 } from "@/lib/woocommerce-order-logs-read";
 import { getWooCommerceIntegrationByOrg } from "@/lib/woocommerce-integration-read";
+import { isDangerousObjectKey } from "@/lib/safe-object-key";
 import {
   wooCommerceIntegrationSchema,
   type WooCommerceIntegrationFormValues,
@@ -338,10 +339,9 @@ export async function processWooCommerceOrder(
       updatedAt: projectCreatedAt,
     });
     let createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(projectNumber));
-    let finalProjectNumber = projectNumber;
     if (!createResult.created) {
-      finalProjectNumber = `${projectNumber}-${Date.now().toString(36).slice(-4)}`;
-      createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(finalProjectNumber));
+      const retryProjectNumber = `${projectNumber}-${Date.now().toString(36).slice(-4)}`;
+      createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(retryProjectNumber));
       if (!createResult.created) throw new Error("Could not allocate a unique web-order project number");
     }
     const project = await getProjectByIdMapped(projectId, orgId);
@@ -705,7 +705,7 @@ function extractDates(order: WooOrder, integration: WooCommerceIntegrationConfig
   const format = integration.dateFormat;
 
   function parseDate(key: string | null): Date | null {
-    if (!key) return null;
+    if (!key || isDangerousObjectKey(key)) return null;
     const value = meta.get(key);
     if (!value) return null;
     raw[key] = value;

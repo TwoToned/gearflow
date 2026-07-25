@@ -12,11 +12,6 @@ function hexToRgb(hex: string): [number, number, number] {
   ];
 }
 
-/** Linear RGB to sRGB */
-function linearToSrgb(c: number): number {
-  return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-}
-
 /** sRGB to linear RGB */
 function srgbToLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -59,11 +54,6 @@ export function hexToOklch(hex: string): { l: number; c: number; h: number } {
 /** Format OKLCH values as a CSS string */
 export function oklchString(l: number, c: number, h: number): string {
   return `oklch(${l.toFixed(3)} ${c.toFixed(4)} ${h.toFixed(1)})`;
-}
-
-/** Determine if a color is "light" (needs dark foreground) */
-function isLightColor(l: number): boolean {
-  return l > 0.6;
 }
 
 /**

@@ -1674,7 +1674,8 @@ export default defineSchema({
     .index("by_serviceId", ["serviceId"])
     .index("by_responseToken", ["responseToken"])
     .index("by_crewMemberId_startDate", ["crewMemberId", "startDate"])
-    .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"]),
+    .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"])
+    .index("by_organizationId_status", ["organizationId", "status"]),
 
   // CrewShift
   crewShifts: defineTable({

@@ -287,7 +287,7 @@ export async function checkSubHireOpportunity(
   rentalStartDate?: string | null,
   rentalEndDate?: string | null,
 ) {
-  const { organizationId } = await getOrgContext();
+  await getOrgContext();
 
   // Use the existing checkAvailability function
   const { checkAvailability } = await import("@/server/line-items");

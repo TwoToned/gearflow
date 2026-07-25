@@ -14,27 +14,27 @@
  *
  * Usage: node scripts/check-migration-drift.mjs [baseRef]
  */
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 const base = process.argv[2] || "origin/main";
-function git(cmd) {
-  return execSync(`git ${cmd}`, { encoding: "utf8" }).trim();
+function git(...args) {
+  return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
 let range;
 try {
-  const mergeBase = git(`merge-base ${base} HEAD`);
-  range = `${mergeBase} HEAD`;
+  const mergeBase = git("merge-base", base, "HEAD");
+  range = [mergeBase, "HEAD"];
 } catch {
-  range = `${base} HEAD`;
+  range = [base, "HEAD"];
 }
-const changed = git(`diff --name-only ${range}`).split("\n").filter(Boolean);
+const changed = git("diff", "--name-only", ...range).split("\n").filter(Boolean);
 
 const schemaChanged = changed.some((f) => f === "prisma/schema.prisma");
 const migrationAdded = changed.some((f) => /^prisma\/migrations\/.+\/migration\.sql$/.test(f));
 
 if (schemaChanged && !migrationAdded) {
-  const lastMsg = git("log -1 --format=%B");
+  const lastMsg = git("log", "-1", "--format=%B");
   if (lastMsg.includes("[skip-migration-check]")) {
     console.log("[migration-drift] schema.prisma changed but [skip-migration-check] set — OK.");
     process.exit(0);

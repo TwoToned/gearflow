@@ -24,16 +24,20 @@ import {
  * org-wide (it must see every booking), so these collect the org's line items / units /
  * assets / projects / models by `by_organizationId`; they're ONE-SHOT reads (the
  * conflicts banner has no liveness need — Appendix B), never a reactive subscription.
+ * A bounded/paginated read here would silently miss conflicts outside the fetched
+ * page, which is worse than a slow query for a safety-critical double-booking check —
+ * so this is a real, dated §15 exception rather than pagination: see
+ * docs/exceptions.md R-8.3.3 reservationConflicts-orgGraph.
  */
 
 /** Collect the org-wide inputs both queries need, keyed for O(1) lookup. */
 async function loadOrgGraph(ctx: QueryCtx, orgId: string) {
   const [lineItems, units, assets, projects, models] = await Promise.all([
-    ctx.db.query("projectLineItems").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-    ctx.db.query("projectLineItemUnits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+    ctx.db.query("projectLineItems").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 reservationConflicts-orgGraph
+    ctx.db.query("projectLineItemUnits").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 reservationConflicts-orgGraph
+    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 reservationConflicts-orgGraph
+    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 reservationConflicts-orgGraph
+    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 reservationConflicts-orgGraph
   ]);
   return {
     lineItems: lineItems as CLine[],

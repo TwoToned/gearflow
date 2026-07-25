@@ -294,7 +294,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
     // Check if any items in this group will actually be rendered
     // (skip group header if all items are before startIndex)
-    const groupStartIdx = globalIdx + 1;
     const groupEndIdx = globalIdx + groupItems.length;
     const hasVisibleItems = groupEndIdx > startIndex;
 
@@ -306,7 +305,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       // their items continuing onto the next page (Eng review finding).
       const minBodyRowHeight = fontSize + rowPadding * 2;
       if (currentY - (ghHeight + minBodyRowHeight) < bottomBoundary) {
-        overflow = true;
         break;
       }
       page.drawRectangle({
@@ -734,7 +732,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
                 // Child badges
                 if (config.showBadges && child.isOverbooked) {
-                  const badgeLabel = child.overbookedReducedOnly ? "REDUCED STOCK" : "OVERBOOKED";
                   const badgeStyle = child.overbookedReducedOnly ? BADGE_STYLES.reducedStock : BADGE_STYLES.overbooked;
                   const nameWidth = font.widthOfTextAtSize(displayName, childFontSize);
                   drawBadge(page, fonts, pdfLib, badgeStyle, childCellX + indent + nameWidth + 4, childTextY, badgeFontSize);

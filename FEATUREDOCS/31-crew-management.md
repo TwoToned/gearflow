@@ -245,6 +245,7 @@ create/update permission gates.
 - If shifts exist, one event per shift; otherwise one event per assignment
 - Events include: project name, role, phase, location, site contact, notes
 - Token can be regenerated (invalidates old URL) or feed can be disabled
+- **Response caching:** `Cache-Control: private, max-age=300` (changed 2026-07-25, R-8.9.3 finding #862 — was `no-cache, no-store, must-revalidate`). Calendar clients (Google/Apple/Outlook) already poll a feed URL on their own multi-minute-to-hourly cadence, not per user action, so a short cache window is safe and avoids re-running the full `getByIcalToken` + assignments + shifts + per-project-lookup chain on every external poll. This is deliberately narrower than the sibling no-cache token-feed routes (`/api/warehouse/display/[token]`, `/api/auditor/[token]`) — those are live status views that must stay uncached; only this feed's pull-based, client-controlled refresh cadence justifies caching.
 
 ### Schema Fields (CrewMember)
 - `icalEnabled` — Boolean, default false
@@ -334,6 +335,7 @@ read permission.
 ## Crew Dashboard (`convex/crewDashboard.ts`)
 - Manager/admin/owner only — users with `crew.update` permission see the dashboard; others see the crew table
 - **Stats**: active crew, assignments, pending offers, submitted timesheets, hours (7d), expiring certs
+- **Read pattern (R-9.8)**: `crewAssignments` has a `by_organizationId_status` compound index — `stats`/`activeAssignmentsSummary`/`pendingOffers` query it per-status (`assignmentsByStatus()`) instead of collecting every assignment in the org and filtering in JS; `crewTimeEntries` already had the equivalent index, used the same way for `stats`'s submitted/hours-this-week counts. `crewLookups()` (members/roles/projects) stays a full per-org collect — those are roster/fleet-scale tables, not transaction-volume ones — and `allOrgAssignments()` (shared by `pickerList`'s full per-member history and `upcomingShifts`'s assignment-id scoping, since `crewShifts` has no `organizationId` column) also stays full-collect by necessity. Both are registered §15 exceptions, not bare comments — see `docs/exceptions.md` (R-8.3.3 `crewDashboard-lookups` / `crewDashboard-fullAssignments`).
 - **Four list boxes** (pending timesheets, active assignments, upcoming shifts, pending offers) use a shared `DashboardListCard`: fixed header (title + count chip + optional action) over a **height-capped, internally scrolling body** (`max-h-[19rem] overflow-y-auto`). Caps each box so a long list (e.g. lots of pending offers) can't grow to swallow the page and hide its siblings; all four stay balanced. Error / loading / empty states handled inside the card.
 - **Pending Timesheets**: approve/dispute individual or bulk from dashboard
 - **Active Assignments**: links to project detail

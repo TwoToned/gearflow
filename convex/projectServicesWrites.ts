@@ -909,7 +909,7 @@ export const generateServicesNative = mutation({
     for (const tmpl of templatesToUse) {
       const { date, endDate } = getServiceDateForType(tmpl.type, dateBundle);
       if (date == null) continue;
-      if (tmpl.type === "LABOUR" && date != null && endDate != null && endDate > date) {
+      if (tmpl.type === "LABOUR" && endDate != null && endDate > date) {
         for (let cur = date; cur <= endDate; cur += DAY) {
           const key = `${tmpl.type}:${dayKeyOf(cur)}`;
           if (!existingKey.has(key)) {

@@ -724,7 +724,6 @@ describe("structureLineItems — Phase 0 baseline", () => {
   });
 
   it("multiple sub-hire groups each get their own section, with supplier per group", () => {
-    const categories: CategoryForStructuring[] = [];
     const subHireGroups: SubHireGroupForStructuring[] = [
       { id: "shg-a", title: "Trussing", sortOrder: 0, supplierName: "Steeldeck" },
       { id: "shg-b", title: "Power Distro", sortOrder: 1, supplierName: "BTR Sparks" },

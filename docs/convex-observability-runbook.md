@@ -21,10 +21,10 @@ mutation must call `assertWritesEnabled(ctx, "<domain>")` first**
 today (43 files) — add the call to any new one as it's created. Flip:
 
 ```bash
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts on  "incident #123"        # kill ALL browser writes
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts on  "asset abuse" asset    # kill one domain
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts off                          # restore
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts status
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts on  "incident #123"        # kill ALL browser writes
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts on  "asset abuse" asset    # kill one domain
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts off                          # restore
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts status
 ```
 
 ## Observability
@@ -104,6 +104,16 @@ just no longer auto-alerting. To restore it: create an alert on the existing
 `"queue_lag p95 duration (T-P7, R-9.10, #623)"` insight, condition `absolute_value`, bounds
 `{upper: 300000}`, type `absolute`, `TrendsAlertConfig` `series_index: 0` — after freeing
 another slot or upgrading the plan.
+
+### Current firing state (R-8.9.3, round-3 audit #862)
+
+| Alert | Firing since | Root cause (triaged via PostHog SQL, 2026-07-25) | Next action | Owner |
+|---|---|---|---|---|
+| LCP p75 | 2026-07-22 | Real, not noise (4,388-sample `convex_op_latency` population + per-page web-vitals breakdown corroborate it). Worst pages: `/crew` 4830ms, `/warehouse/*` ~2.7-3.1s, `/dashboard` 3074ms — all fully-client-rendered dashboards (`"use client"`, no SSR/streaming) whose largest element waits on a chain of `useServerQuery`/Convex round-trips. Compounded by `RequirePermission` (56 call sites) flashing "Access Denied" — the false-negative default while `useCanDo`'s permission query is loading — before swapping to real content, a spurious late LCP candidate; **fixed** in #862 (renders nothing while loading instead). | The remaining gap — converting these client-rendered dashboards to SSR/streaming so first paint doesn't wait on a Convex round-trip — is bigger than one PR cycle; tracked as a dated exception (`docs/exceptions.md`, R-8.9.3) rather than left silently failing. | Jayden Nawotka |
+| convex_op_latency p95 | 2026-07-22 | Real. Baseline per-op latency clusters ~480-520ms across nearly every query regardless of shape (network/infra round-trip to Convex Cloud, not a query bug) — since `reportIfSlowConvexOp` only ever emits past 300ms (`src/lib/convex-op-timing.ts`), that baseline alone sits inside the reported population. On top of it, `crewMembers:getByIcalToken` was the single worst hotspot (51% of its 202 samples over the 1000ms incident line, p95 1457ms, max 5616ms) — the public iCal feed route (`src/app/api/crew/calendar/[token]/route.ts`) had `Cache-Control: no-cache, no-store, must-revalidate`, so every external calendar-client poll re-ran the full getByIcalToken + assignments + shifts + per-project-lookup chain. **Fixed** in #862: `private, max-age=300` (calendar clients already poll on their own multi-minute+ cadence, so this is a safe, non-scope-creeping fix limited to this one feed route — the sibling no-cache token routes, e.g. `warehouse/display`, are live status views that must stay uncached). | Re-check the p95 after the cache fix has a few days of traffic; the residual ~500ms infra baseline (not `getByIcalToken`-specific) is covered by the same exception as the LCP row above. | Jayden Nawotka |
+
+See `docs/exceptions.md` (R-8.9.3 row) for the dated exception covering the residual baseline
+latency / SSR-streaming follow-up that didn't fit this cycle.
 
 ## Remaining ops steps (not code)
 

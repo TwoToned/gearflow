@@ -81,7 +81,7 @@ export function toConvexValue(value: unknown): unknown {
   if (value === null || value === undefined) return undefined;
   if (value instanceof Date) return value.getTime();
   // Prisma Decimal exposes toNumber(); duck-type it without importing the type.
-  if (typeof value === "object" && value !== null && "toNumber" in value && typeof (value as { toNumber: unknown }).toNumber === "function") {
+  if (typeof value === "object" && "toNumber" in value && typeof (value as { toNumber: unknown }).toNumber === "function") {
     return (value as { toNumber: () => number }).toNumber();
   }
   return value;

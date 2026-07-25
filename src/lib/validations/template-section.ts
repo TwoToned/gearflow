@@ -311,7 +311,7 @@ export const createBrandTemplateSchema = z.object({
 
 // R-8.6.3: derived from the create schema (`.partial()` + `id`) rather than
 // re-declared — every field becomes optional on update, plus the `id`.
-export const updateBrandTemplateSchema = createBrandTemplateSchema
+const updateBrandTemplateSchema = createBrandTemplateSchema
   .partial()
   .extend({ id: z.string().min(1) });
 

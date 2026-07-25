@@ -98,5 +98,11 @@ describe("env validation", () => {
     const { env } = await loadEnv({});
     expect(env.RESEND_API_KEY).toBeUndefined();
     expect(env.CRON_SECRET).toBeUndefined();
+    expect(env.NATIVE_EMAIL_SIDEEFFECTS).toBeUndefined();
+  });
+
+  it("accepts NATIVE_EMAIL_SIDEEFFECTS when set", async () => {
+    const { env } = await loadEnv({ NATIVE_EMAIL_SIDEEFFECTS: "true" });
+    expect(env.NATIVE_EMAIL_SIDEEFFECTS).toBe("true");
   });
 });

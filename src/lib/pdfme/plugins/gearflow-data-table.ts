@@ -7,7 +7,7 @@ import type { Plugin, Schema, PDFRenderProps } from "@pdfme/common";
 import type { PDFFont } from "@pdfme/pdf-lib";
 import {
   getLayoutProps, hexToRgb, lightenHex, getHelveticaFonts,
-  formatDate, stubUiRender, stubPropPanel,
+  stubUiRender, stubPropPanel,
 } from "./helpers";
 
 interface DataTableSchema extends Schema {
@@ -121,7 +121,7 @@ export const gearflowDataTable: Plugin<DataTableSchema> = {
           }
         }
       } else if (config.rows) {
-        currentY = drawRows(page, config.rows, config, colWidths, x, currentY, width, regular, bold, pdfLib, 0);
+        drawRows(page, config.rows, config, colWidths, x, currentY, width, regular, bold, pdfLib, 0);
       }
     })();
   },

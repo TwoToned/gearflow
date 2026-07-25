@@ -1,6 +1,6 @@
 "use client";
 
-import { useCurrentRole, useCanDo, useIsViewer } from "@/lib/use-permissions";
+import { useCanDo, useIsViewer } from "@/lib/use-permissions";
 import type { Resource } from "@/lib/permissions";
 
 /**

@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useFleetRoi, type FleetRoiData } from "@/hooks/use-roi";
+import { useFleetRoi, useZeroPricedGroups, type FleetRoiData } from "@/hooks/use-roi";
 import { formatCurrency } from "@/lib/formatters";
 import { defaultRoiWindow, ROI_SCOPE_LABELS, type RoiScope } from "@/lib/roi";
 import { PaybackBar } from "@/components/roi/payback-bar";
@@ -58,9 +58,10 @@ export function FleetRoi() {
   const [asc, setAsc] = useState(false);
   const [q, setQ] = useState("");
 
-  const window = useMemo(() => (allTime ? undefined : defaultRoiWindow()), [allTime]);
+  const window = useMemo(() => (allTime ? undefined : defaultRoiWindow(scope)), [allTime, scope]);
 
   const { data, isLoading } = useFleetRoi({ scope, from: window?.from, to: window?.to });
+  const { data: zeroPriced } = useZeroPricedGroups(scope);
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -109,6 +110,42 @@ export function FleetRoi() {
             {data.projectsCounted} projects. Narrow the window for exact figures.
           </p>
         </div>
+      )}
+
+      {zeroPriced && zeroPriced.rows.length > 0 && (
+        <details className="rounded-md border border-warn/40 bg-warn-soft">
+          <summary className="flex cursor-pointer list-none items-start gap-3 p-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+            <span className="text-caption text-ink-2">
+              {zeroPriced.rows.length} group{zeroPriced.rows.length === 1 ? "" : "s"} with real
+              gear but no price set — that gear is reporting $0 revenue here (and on the
+              project itself).{" "}
+              <span className="text-link">Show groups</span>
+              {zeroPriced.truncated && " (partial — hit the scan limit)"}
+            </span>
+          </summary>
+          <ul className="space-y-1 border-t border-warn/40 px-3 py-2">
+            {zeroPriced.rows.map((r) => (
+              <li
+                key={`${r.projectId}:${r.groupId}`}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 text-caption text-ink-2"
+              >
+                <span>
+                  <Link href={`/projects/${r.projectId}`} className="text-link hover:underline">
+                    {r.projectNumber} — {r.projectName}
+                  </Link>{" "}
+                  · &ldquo;{r.groupTitle}&rdquo; ({r.gearLineCount} gear line
+                  {r.gearLineCount === 1 ? "" : "s"})
+                </span>
+                <span className="text-faint">
+                  {r.suggestedPrice != null
+                    ? `suggested ${formatCurrency(r.suggestedPrice)}`
+                    : "no suggested price"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <div className="flex flex-wrap items-center gap-2">

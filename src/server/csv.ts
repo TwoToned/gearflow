@@ -379,7 +379,6 @@ export async function importAssetsCSV(csvContent: string): Promise<ImportResult>
   if (rows.length === 0) throw new Error("CSV is empty");
 
   const headers = rows[0].map((h) => h.trim().toLowerCase());
-  const tagIdx = headers.indexOf("assettag") !== -1 ? headers.indexOf("assettag") : headers.indexOf("asset_tag");
   const modelIdx = headers.indexOf("modelname") !== -1 ? headers.indexOf("modelname") : headers.indexOf("model_name");
   if (modelIdx === -1) throw new Error('CSV must have a "modelName" column');
 

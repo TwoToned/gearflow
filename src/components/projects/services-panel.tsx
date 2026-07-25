@@ -83,13 +83,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { AddressInput } from "@/components/ui/address-input";
 import type { PlaceResult } from "@/lib/address-autocomplete";
 

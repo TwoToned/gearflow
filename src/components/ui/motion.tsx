@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { motion } from "framer-motion";
 import { createContext, useContext, type ReactNode } from "react";
 
 const EASE: [number, number, number, number] = [0.2, 0, 0, 1];

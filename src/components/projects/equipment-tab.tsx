@@ -65,7 +65,6 @@ import { AddGroupToolbarDialog } from "./add-group-toolbar-dialog";
 import { EditLineItemDialog } from "./edit-line-item-dialog";
 import { SubHireExpandedItems } from "./sub-hire-expanded-items";
 import { SubHireOrderDialog } from "./sub-hire-order-dialog";
-import { getSubHires } from "@/server/sub-hires";
 import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { ArrowLeftRight, ChevronDown } from "lucide-react";

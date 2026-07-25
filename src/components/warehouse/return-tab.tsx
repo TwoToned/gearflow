@@ -204,6 +204,7 @@ export function ReturnTab({
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
+                      aria-label="Select all items"
                       checked={
                         allInKeys.length === 0
                           ? false
@@ -262,6 +263,7 @@ export function ReturnTab({
                             <TableRow className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
+                                  aria-label="Select item"
                                   checked={selectedIn.has(item.id)}
                                   onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
                                 />
@@ -317,6 +319,7 @@ export function ReturnTab({
                             <TableRow key={key} className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
+                                  aria-label="Select item"
                                   checked={selectedIn.has(key)}
                                   onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, key)}
                                 />
@@ -362,6 +365,7 @@ export function ReturnTab({
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox
+                              aria-label="Select item"
                               checked={selectedIn.has(entry.item.id)}
                               onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, entry.item.id)}
                             />
@@ -428,6 +432,7 @@ export function ReturnTab({
                     <TableRow>
                       <TableCell>
                         <Checkbox
+                          aria-label="Select item"
                           checked={selectedIn.has(item.id)}
                           onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, item.id)}
                         />

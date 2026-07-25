@@ -2363,6 +2363,7 @@ function WarehouseProjectPage({
       >
         <TableCell onClick={(e) => e.stopPropagation()}>
           <Checkbox
+            aria-label={`Select all ${name}`}
             checked={allChecked ? true : someChecked ? "indeterminate" : false}
             onCheckedChange={() => toggleGroupSelection(selection, setSelection, childKeys)}
           />

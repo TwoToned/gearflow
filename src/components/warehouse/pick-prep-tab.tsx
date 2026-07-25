@@ -167,6 +167,7 @@ export function PickPrepTab({
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
+                      aria-label="Select all items"
                       checked={
                         allPrepKeys.length === 0
                           ? false
@@ -207,6 +208,7 @@ export function PickPrepTab({
                             <TableRow className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
+                                  aria-label="Select item"
                                   checked={selectedPrep.has(item.id)}
                                   onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
                                 />
@@ -260,6 +262,7 @@ export function PickPrepTab({
                             <TableRow key={key} className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
+                                  aria-label="Select item"
                                   checked={selectedPrep.has(key)}
                                   onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, key)}
                                 />
@@ -301,6 +304,7 @@ export function PickPrepTab({
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox
+                              aria-label="Select item"
                               checked={selectedPrep.has(entry.item.id)}
                               onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, entry.item.id)}
                             />
@@ -359,6 +363,7 @@ export function PickPrepTab({
                     <TableRow>
                       <TableCell>
                         <Checkbox
+                          aria-label="Select item"
                           checked={selectedPrep.has(item.id)}
                           onCheckedChange={() => toggleSelection(selectedPrep, setSelectedPrep, item.id)}
                         />

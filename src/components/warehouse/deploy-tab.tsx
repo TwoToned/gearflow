@@ -217,6 +217,7 @@ export function DeployTab({
                 <TableRow>
                   <TableHead className="w-10">
                     <Checkbox
+                      aria-label="Select all items"
                       checked={
                         allOutKeys.length === 0
                           ? false
@@ -289,6 +290,7 @@ export function DeployTab({
                             <TableRow className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
+                                  aria-label="Select item"
                                   checked={selectedOut.has(item.id)}
                                   onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
                                 />
@@ -343,6 +345,7 @@ export function DeployTab({
                             <TableRow key={key} className="bg-paper-2/40">
                               <TableCell>
                                 <Checkbox
+                                  aria-label="Select item"
                                   checked={selectedOut.has(key)}
                                   onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, key)}
                                 />
@@ -388,6 +391,7 @@ export function DeployTab({
                         >
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox
+                              aria-label="Select item"
                               checked={selectedOut.has(entry.item.id)}
                               onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, entry.item.id)}
                             />
@@ -452,6 +456,7 @@ export function DeployTab({
                     <TableRow>
                       <TableCell>
                         <Checkbox
+                          aria-label="Select item"
                           checked={selectedOut.has(item.id)}
                           onCheckedChange={() => toggleSelection(selectedOut, setSelectedOut, item.id)}
                         />

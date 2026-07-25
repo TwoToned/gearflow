@@ -228,7 +228,7 @@ export interface TemplateSection {
 // ─── Default Sections per Document Type ──────────────────────────────────────
 
 /** Generate a unique section ID */
-export function generateSectionId(): string {
+function generateSectionId(): string {
   return `sec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 

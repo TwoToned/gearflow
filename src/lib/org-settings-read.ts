@@ -50,11 +50,6 @@ export async function readOrgSettingsBlob(organizationId: string): Promise<OrgSe
   return (await readOrgSettings(organizationId)).settings;
 }
 
-/** The org's default tax rate (or null). Standalone read for line-item tax. */
-export async function readOrgDefaultTaxRate(organizationId: string): Promise<number | null> {
-  return (await readOrgSettings(organizationId)).defaultTaxRate;
-}
-
 /**
  * Persist the full settings blob (+ optional defaultTaxRate). The denormalised
  * `icalToken` lookup key is derived here: set only while the feed is enabled.

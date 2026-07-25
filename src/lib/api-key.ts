@@ -40,7 +40,17 @@ export class ApiKeyAuthError extends Error {
   }
 }
 
-/** SHA-256 hex of a raw key — the only representation we persist or look up by. */
+/**
+ * SHA-256 hex of a raw key — the only representation we persist or look up by.
+ *
+ * Deliberately a fast digest, not a slow password KDF (bcrypt/argon2/scrypt): `rawToken`
+ * is always `generateApiKey()`'s 192-bit CSPRNG secret, never a human-chosen password, so
+ * there's no low-entropy guess space for a slow hash to protect against — a fast digest is
+ * the standard pattern for high-entropy API-key lookup (same approach as GitHub/Stripe/AWS
+ * keys). Do not "fix" this by switching to a slow KDF; that only adds latency to every
+ * API-key-authenticated request. CodeQL js/insufficient-password-hash flags this because it
+ * pattern-matches "hash of a generated credential" generically — see alert #2 dismissal.
+ */
 export function hashApiKey(rawToken: string): string {
   return createHash("sha256").update(rawToken).digest("hex");
 }

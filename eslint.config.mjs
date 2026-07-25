@@ -90,10 +90,17 @@ const eslintConfig = [
         "warn",
         { max: 60, skipBlankLines: true, skipComments: true, IIFEs: true },
       ],
+      // `any` stays "warn": the count is ratcheted instead of lint-banned outright
+      // (R-8.2.2 explicitly allows "count ratcheted (never grows)" as the interim
+      // control — see docs/exceptions.md R-8.2.2, expiry 2026-10-23). CI enforcement
+      // is `scripts/any-ratchet.sh` (`pnpm run any-ratchet`), not this lint level.
       "@typescript-eslint/no-explicit-any": "warn",
-      // Ban @ts-ignore / @ts-nocheck; allow described @ts-expect-error (R-8.2.2).
+      // Ban @ts-ignore / @ts-nocheck outright (R-8.2.2 has no ratchet allowance for
+      // these — count is 0, so "error" costs nothing and closes the gap where "warn"
+      // let a future PR add one without failing CI). Described @ts-expect-error stays
+      // allowed.
       "@typescript-eslint/ban-ts-comment": [
-        "warn",
+        "error",
         {
           "ts-ignore": true,
           "ts-nocheck": true,

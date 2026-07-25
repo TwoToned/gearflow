@@ -57,7 +57,6 @@ const gearflowCallSheetInfo: Plugin<Schema> = {
     const labelSize = 7;
     const valueSize = 9;
     const lineHeight = 12;
-    const accentColor = hexToRgb(config.documentColor || "#0d4f4f", pdfLib);
     const labelColor = hexToRgb("#666666", pdfLib);
     const valueColor = hexToRgb("#1a1a1a", pdfLib);
     const dividerColor = hexToRgb("#dddddd", pdfLib);

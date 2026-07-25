@@ -5,7 +5,6 @@ import {
   sectionTypeSchema,
   visibilityConditionSchema,
   createBrandTemplateSchema,
-  updateBrandTemplateSchema,
   saveTemplateSectionsSchema,
   saveTemplateBlocksSchema,
   templateExportSchema,

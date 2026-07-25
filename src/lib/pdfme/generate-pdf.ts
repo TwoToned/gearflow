@@ -16,7 +16,6 @@ import { renderPdfTemplate } from "./pdf-render";
 import { buildDocumentData } from "./build-document-data";
 import { getTemplateBuilder, getTtReportBuilder } from "./templates";
 import { renderSections } from "./section-renderer";
-import { getDefaultSections } from "./section-types";
 import type { TemplateSection } from "./section-types";
 import type { DocumentType, DocumentData, TestTagReportType } from "./types";
 import { resolveTemplateSettings, type StoredTemplateSettings, type TemplateSettings } from "./template-settings";

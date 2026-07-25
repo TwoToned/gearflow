@@ -15,15 +15,6 @@ const PAGE_HEIGHT = 297;
 const MARGIN = 14;
 const CONTENT_W = PAGE_WIDTH - MARGIN * 2; // 182mm
 
-const STATUS_LABELS: Record<string, string> = {
-  CURRENT: "Current",
-  DUE_SOON: "Due Soon",
-  OVERDUE: "Overdue",
-  FAILED: "Failed",
-  NOT_YET_TESTED: "Not Tested",
-  RETIRED: "Retired",
-};
-
 interface OrgData {
   name: string;
   email?: string;

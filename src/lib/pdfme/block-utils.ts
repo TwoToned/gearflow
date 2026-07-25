@@ -16,7 +16,7 @@ import type {
   LayoutHint,
   BlockStyling,
 } from "./section-types";
-import { generateSectionId, SECTION_TYPES } from "./section-types";
+import { SECTION_TYPES } from "./section-types";
 import { SECTION_MIN_WIDTHS, MAX_COLUMNS_PER_ROW } from "./template-constants";
 
 // ─── Block → Section (flatten) ───────────────────────────────────────────────

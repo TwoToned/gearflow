@@ -38,10 +38,8 @@ import type {
 } from "./section-types";
 import {
   SECTION_HEIGHT_ESTIMATES,
-  TABLE_ROW_HEIGHT_MM,
   CREW_ROW_HEIGHT_MM,
   getDefaultCallSheetInfoSettings,
-  getDefaultDayHeaderSettings,
 } from "./section-types";
 import {
   PAGE_WIDTH,
@@ -969,7 +967,6 @@ function getSectionX(section: TemplateSection): number {
   if (columnCount > 1) {
     // Even split fallback — works for most cases
     // Real width comes from columnWidth percentage
-    const colWidthMm = (CONTENT_WIDTH * columnWidth) / 100;
     // Offset: for column 0, x = MARGIN. For column 1, x = MARGIN + col0Width, etc.
     // Without knowing col0's width, approximate with even splits for offset
     const evenColWidth = CONTENT_WIDTH / columnCount;

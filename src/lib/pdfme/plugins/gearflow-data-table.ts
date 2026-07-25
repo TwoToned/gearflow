@@ -7,7 +7,7 @@ import type { Plugin, Schema, PDFRenderProps } from "@pdfme/common";
 import type { PDFFont } from "@pdfme/pdf-lib";
 import {
   getLayoutProps, hexToRgb, lightenHex, getHelveticaFonts,
-  formatDate, stubUiRender, stubPropPanel,
+  stubUiRender, stubPropPanel,
 } from "./helpers";
 
 interface DataTableSchema extends Schema {

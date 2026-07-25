@@ -10,6 +10,7 @@ import {
   adminGetTheOrg,
   adminGetOrganizationDetails,
 } from "@/server/site-admin";
+import { SettingsCard } from "@/components/layout/page-layouts";
 
 export default function AdminOrganizationsPage() {
   const { data: theOrg, isLoading: orgLoading } = useServerQuery({
@@ -55,7 +56,7 @@ export default function AdminOrganizationsPage() {
         ) : (
           <>
             {/* Org Overview */}
-            <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+            <SettingsCard>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary text-sm font-bold">
@@ -104,7 +105,7 @@ export default function AdminOrganizationsPage() {
                   </p>
                 </div>
               )}
-            </div>
+            </SettingsCard>
           </>
         )}
       </div>

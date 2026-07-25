@@ -11,8 +11,12 @@
 #   serialize-javascript  (next-pwa build)   <7.0.3
 #   hono                  (prisma dev tools)  <4.12.25
 #   ws                    (convex runtime)    8.0.0–8.20.x
-#   brace-expansion       (next-pwa/eslint/shadcn transitive) multiple ranges <5.0.7
-#   js-yaml               (shadcn>cosmiconfig)  <4.3.0
+#   brace-expansion       (next-pwa/eslint/shadcn transitive) multiple ranges <5.0.8
+#                          — GHSA-mh99-v99m-4gvg (2026-07-24 audit, supersedes the
+#                          earlier <5.0.7 floor, which a new advisory caught up to)
+#   js-yaml               (shadcn>cosmiconfig)  <5.2.2 — GHSA-pm4m-ph32-ghv5
+#                          (2026-07-24 audit, supersedes the earlier <4.3.0 floor —
+#                          cosmiconfig has since moved to a js-yaml 5.x requirement)
 #   fast-uri              (better-auth>prisma)  <3.1.4
 #   sharp                 (next's own optional dep, pulled in nested under
 #                          better-auth/next-pwa>next)  <0.35.0 — the direct
@@ -32,8 +36,8 @@ overrides:
   serialize-javascript@<7.0.3: '>=7.0.3'
   hono@<4.12.25: '>=4.12.25'
   ws@>=8.0.0 <8.21.0: '>=8.21.0'
-  brace-expansion@<5.0.7: '>=5.0.7'
-  js-yaml@<4.3.0: '>=4.3.0'
+  brace-expansion@<5.0.8: '>=5.0.8'
+  js-yaml@<5.2.2: '>=5.2.2'
   fast-uri@<3.1.4: '>=3.1.4'
   sharp@<0.35.0: '>=0.35.0'
   postcss: '>=8.5.12'

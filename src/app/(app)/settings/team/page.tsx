@@ -4,7 +4,7 @@
 import { Separator } from "@/components/ui/separator";
 import { InviteMember } from "@/components/settings/invite-member";
 import { MemberList } from "@/components/settings/member-list";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { useCanDo } from "@/lib/use-permissions";
 import { FadeIn } from "@/components/ui/motion";
 
@@ -14,7 +14,7 @@ export default function TeamSettingsPage() {
   return (
     <FadeIn>
     <div className="space-y-6">
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <SettingsCard>
         <FormSection
           title="Team Members"
           description="Invite and manage members of your organization."
@@ -29,7 +29,7 @@ export default function TeamSettingsPage() {
             <MemberList />
           </div>
         </FormSection>
-      </div>
+      </SettingsCard>
     </div>
     </FadeIn>
   );

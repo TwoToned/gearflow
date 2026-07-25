@@ -13,7 +13,7 @@ import { SSOProvisioningSection } from "@/components/settings/sso-provisioning";
 import { SSOGroupMappingSection } from "@/components/settings/sso-group-mapping";
 import { SSOLoginBehaviorSection } from "@/components/settings/sso-login-behavior";
 import { SSOPendingApprovals } from "@/components/settings/sso-pending-approvals";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { FadeIn } from "@/components/ui/motion";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 import { toast } from "sonner";
@@ -52,7 +52,7 @@ export default function SSOSettingsPage() {
   return (
     <FadeIn>
     <div className="space-y-6">
-      <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+      <SettingsCard>
         <div className="space-y-6">
           <FormSection
             title="Single Sign-On"
@@ -81,10 +81,10 @@ export default function SSOSettingsPage() {
             </div>
           </FormSection>
         </div>
-      </div>
+      </SettingsCard>
 
       {sso?.enabled && (
-        <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+        <SettingsCard>
           <div className="space-y-6">
             <FormSection
               title="User Provisioning"
@@ -142,7 +142,7 @@ export default function SSOSettingsPage() {
               </FormSection>
             )}
           </div>
-        </div>
+        </SettingsCard>
       )}
     </div>
     </FadeIn>

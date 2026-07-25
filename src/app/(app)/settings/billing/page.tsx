@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FormSection } from "@/components/layout/page-layouts";
+import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { useCanDo } from "@/lib/use-permissions";
@@ -48,7 +48,7 @@ export default function BillingSettingsPage() {
 
   return (
     <FadeIn>
-    <div className="rounded-lg bg-bg-surface p-5 surface-ring sm:p-6">
+    <SettingsCard>
       <div className="space-y-6">
         <FormSection title="Billing" description="Currency and tax configuration for quotes and invoices.">
           <div className="space-y-2">
@@ -93,7 +93,7 @@ export default function BillingSettingsPage() {
           </Button>
         </div>
       )}
-    </div>
+    </SettingsCard>
     </FadeIn>
   );
 }

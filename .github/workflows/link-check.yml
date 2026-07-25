@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: "0 6 * * 1"
 
+# Least-privilege default (OSSF Scorecard Token-Permissions).
+permissions:
+  contents: read
+
 jobs:
   linkcheck:
     runs-on: ubuntu-latest

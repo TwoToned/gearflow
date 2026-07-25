@@ -17,6 +17,11 @@ concurrency:
 env:
   REGISTRY: ghcr.io
 
+# Least-privilege default (OSSF Scorecard Token-Permissions); build-and-deploy
+# already declares the elevated scope (packages: write) it actually needs.
+permissions:
+  contents: read
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest

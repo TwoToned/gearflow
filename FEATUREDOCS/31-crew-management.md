@@ -333,6 +333,7 @@ read permission.
 
 ## Crew Dashboard (`convex/crewDashboard.ts`)
 - Manager/admin/owner only — users with `crew.update` permission see the dashboard; others see the crew table
+- Reads are bounded, not org-wide (R-8.3.3): `activeAssignmentsSummary`/`pendingOffers` range-scan the `by_organizationId_status` index for just the 2 statuses each cares about instead of collecting the org's whole assignment history, and every project attached to an assignment (`{id, name, projectNumber}`) is fetched by `by_cuid` only for the ids actually referenced, not the org's full projects table. `pickerList` (per-member assignment history) and `upcomingShifts` (must scope `crewShifts`'s org-less rows via every assignment id the org owns) still read the org's full assignment set — a reviewed, bounded-by-domain exception (`r9.8-ok`), not an oversight.
 - **Stats**: active crew, assignments, pending offers, submitted timesheets, hours (7d), expiring certs
 - **Four list boxes** (pending timesheets, active assignments, upcoming shifts, pending offers) use a shared `DashboardListCard`: fixed header (title + count chip + optional action) over a **height-capped, internally scrolling body** (`max-h-[19rem] overflow-y-auto`). Caps each box so a long list (e.g. lots of pending offers) can't grow to swallow the page and hide its siblings; all four stay balanced. Error / loading / empty states handled inside the card.
 - **Pending Timesheets**: approve/dispute individual or bulk from dashboard

@@ -464,6 +464,8 @@ The project detail page shows the costs panel in the Financials tab (`src/compon
 ## Reservation Conflict Resolution
 When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone.
 
+`projectConflicts`/`swapCandidates` read bounded, indexed subsets, not the org's whole booking history (R-8.3.3): the anchor project/line's own rows via `by_projectId`/`by_lineItemId`, overlap-candidate projects range-scanned via `by_organizationId_rentalStartDate`, and booking history for the specific assets involved via `by_assetId` — the same bounded pattern `swapLineItemAsset`'s atomic re-check already used. The pure conflict-math helpers in `convex/lib/reservationConflicts.ts` are unchanged; only what gets fetched into them is scoped.
+
 ## Future-Proofing
 - **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income — see [42. Asset Utilization](./42-asset-utilization.md)
 - **Xero Integration**: Groups as line items + ungrouped standalone assets as separate line items

@@ -144,6 +144,7 @@ describe("supplierOrders.getDetail", () => {
       await ctx.db.insert("fileUploads", { id: "f1", organizationId: ORG, fileName: "invoice.pdf", fileSize: 100, mimeType: "application/pdf", storageKey: "sk1", url: "/api/files/sk1", uploadedById: USER });
     });
     const res = await t.withIdentity(asUser).query(api.supplierOrders.getDetail, { orgId: ORG, id: "o1" });
+    if (!res) throw new Error("expected order");
     expect(res.orderNumber).toBe("PO-1");
     expect(res.supplier).toEqual({ id: "s1", name: "Acme" });
     expect(res.project).toEqual({ id: "P1", name: "Gig", projectNumber: "P1" });

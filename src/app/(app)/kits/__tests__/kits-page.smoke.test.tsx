@@ -23,7 +23,12 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 vi.mock("@/lib/use-permissions", () => ({
   useCanDo: () => true,
-  useCurrentRole: () => "owner",
+  useCurrentRole: () => ({
+    role: "owner",
+    roleName: "Owner",
+    permissions: { kit: ["read", "create", "update", "delete"] },
+    isLoading: false,
+  }),
   useIsViewer: () => false,
 }));
 vi.mock("@/hooks/use-locations", () => ({ useLocations: () => [] }));

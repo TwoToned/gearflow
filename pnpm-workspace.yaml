@@ -28,6 +28,11 @@
 #                          8.5.21) <8.5.12 — GHSA-6g55-p6wh-862q
 #   find-my-way           (prisma dev tooling, @prisma/dev — local Postgres
 #                          emulation only, not shipped) <9.6.1 — GHSA-c96f-x56v-gq3h
+#   @hono/node-server     (shadcn>@modelcontextprotocol/sdk, CLI dev tool only,
+#                          not shipped) <2.0.5 — GHSA-frvp-7c67-39w9 (Windows-only
+#                          path traversal in serve-static)
+#   valibot               (prisma dev tooling, @prisma/dev) <=1.4.1 —
+#                          GHSA-5qjj-4xww-7phc
 # NOT overridden: undici — its only consumer is jsdom@29 (test env only). It resolves
 # naturally to the patched 7.28.0, which jsdom is happy with; a forced override instead
 # flattens it in a way that breaks jsdom's resource dispatcher, so we leave it to the
@@ -42,6 +47,8 @@ overrides:
   sharp@<0.35.0: '>=0.35.0'
   postcss: '>=8.5.12'
   find-my-way: '>=9.6.1'
+  '@hono/node-server': '>=2.0.5'
+  valibot: '>=1.4.2'
 
 # Packages allowed to run install/build lifecycle scripts (pnpm blocks these by default —
 # supports R-6.7 install-script hardening).

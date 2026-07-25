@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exceeds the T-2 400-LOC SHOULD-level target. No retroactive action was needed for #850
   itself.
 
+- **R-3.1** (#854, tracked under #866) — `src/app/(admin)/admin/users/page.tsx`'s Site Admin
+  badge now uses the shared `isSiteAdminRole()` helper (`src/lib/admin-role.ts`) instead of a
+  4th inline `role === "admin"` comparison, closing the recurrence #817's fix missed.
+
 - Closed the two POLICY.md §9B remediation-verification findings (#830, #831), tracked under
   #841:
   - **R-9.6** — `convex/lib/errorReporting.ts`'s outbound POST to PostHog now carries the same

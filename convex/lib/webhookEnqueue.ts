@@ -48,9 +48,12 @@ export async function enqueueWebhookEvent(
   data: Record<string, unknown>,
   now: number,
 ): Promise<number> {
+  // Webhook endpoints are an admin-configured integration table, bounded by how many
+  // endpoints an org sets up (not by transaction volume) — small platform-wide table.
+  // Real, dated §15 exception — see docs/exceptions.md R-8.3.3 webhookEnqueue-endpoints.
   const endpoints = await ctx.db
     .query("webhooks")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)) // r9.8-ok: see docs/exceptions.md R-8.3.3 webhookEnqueue-endpoints
     .collect();
   const matching = endpoints.filter(
     (w) => w.isActive === true && parseEvents(w.events ?? "[]").includes(event),

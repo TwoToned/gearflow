@@ -11,20 +11,19 @@ import { mapGalleryFile, type GalleryFile } from "@/lib/media-read";
 /**
  * Server-side read helpers for the Locations domain (Phase 3 cutover).
  *
- * Locations are dual-written like Suppliers: every create/update/delete writes
- * BOTH the Prisma `location` row (the durable FK anchor — `asset`, `bulk_asset`,
- * `kit`, `project`, `warehouse_dashboard_token` carry a nullable FK, and
- * `location_media` carries a **required + Cascade** FK; plus the
- * self-referential `parentId`) AND the Convex `locations` doc (the reactive read
- * source the browser subscribes to). Reads that want reactivity — the location
- * list, the location dropdowns, the edit form — go through Convex via this helper
- * / the `use-locations` hooks. Cross-domain joins and the parent/children
- * hierarchy composition stay on the (dual-write-fresh) Prisma mirror for now and
- * migrate at Prisma-decommission. See FEATUREDOCS/54.
+ * Locations are Convex-only, like Suppliers: `prisma/schema.prisma` has no
+ * `location` model, and there are no `prisma.location.*` writes anywhere in
+ * `src/` — the Convex `locations` doc is the sole store, and every FK
+ * relationship (`asset`, `bulk_asset`, `kit`, `project`,
+ * `warehouse_dashboard_token`, `location_media`, plus the self-referential
+ * `parentId`) resolves against the Convex `id`, not a Postgres row. All reads —
+ * the location list, the location dropdowns, the edit form, cross-domain joins,
+ * and the parent/children hierarchy composition — go through Convex via this
+ * helper / the `use-locations` hooks. See FEATUREDOCS/54.
  *
- * The Convex location doc carries the same business fields as the Prisma row
- * (name, address, lat/long, type, isDefault, parentId, notes, tags) plus the
- * preserved cuid `id` and numeric `createdAt`/`updatedAt`.
+ * The Convex location doc carries the same business fields the old Prisma row
+ * used to (name, address, lat/long, type, isDefault, parentId, notes, tags) plus
+ * the preserved cuid `id` and numeric `createdAt`/`updatedAt`.
  */
 export type ConvexLocation = Doc<"locations">;
 
@@ -67,12 +66,12 @@ export async function attachLocation<T extends { locationId: string | null }>(
 // ---------------------------------------------------------------------------
 // Primary reads — paginated/filtered/sorted list (Phase A)
 //
-// Replaces the pure Prisma list read in server/locations.ts (`getLocations`).
-// Locations are dual-written, so the Convex list is the read source. The
+// Replaces the pure Prisma list read server/locations.ts (`getLocations`) used to
+// have. Locations are Convex-only, so the Convex list is the (only) read source. The
 // self-referential parent (name only) and the per-location relation counts
-// (assets, bulkAssets, kits, projects from their dual-written Convex lists;
+// (assets, bulkAssets, kits, projects from their own Convex-only lists;
 // children from this list) are computed CLIENT-side in JS; filter/sort/paginate
-// replicate the Prisma `where`/`orderBy`/`skip`/`take` exactly.
+// replicate the old Prisma `where`/`orderBy`/`skip`/`take` exactly.
 //
 // MAPPING: `serialize()` keeps Date intact, so the old action returned Dates —
 // we convert epoch-ms → Date. Prisma-defaulted columns (type=WAREHOUSE,
@@ -311,7 +310,7 @@ export async function listLocations(
 // (parent, children + their _count, assets/bulkAssets/kits/projects, media+file,
 // and a top-level _count). Dropping the inbound Location FKs (Phase B) removed
 // every one of those Prisma relations, so the composite is rebuilt here from the
-// dual-written Convex domain lists. Shape is faithful to the prior serialized
+// Convex-only domain lists. Shape is faithful to the prior serialized
 // output the detail page consumes:
 //   - parent  { id, name, address, latitude, longitude } | null
 //   - children [{ id, name, _count: { assets, bulkAssets } }]  (name asc)

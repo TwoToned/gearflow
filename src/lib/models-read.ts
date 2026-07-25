@@ -5,18 +5,16 @@ import type { Doc } from "../../convex/_generated/dataModel";
 /**
  * Server-side read helpers for the Models domain (Phase 3 cutover).
  *
- * Models are dual-written like Suppliers/Locations: every create/update/delete
- * writes BOTH the Prisma `model` row (the durable FK anchor — `asset` and
- * `bulk_asset` carry a **required + Restrict** FK; `model_media`,
- * `model_check_item`, `supplier_model_rate`, `model_bulk_accessory` carry a
- * **required + Cascade** FK; `project_line_item`, `supplier_order_item`,
- * `group_template_item`, `sub_hire_item` carry nullable FKs) AND the Convex
- * `models` doc (the reactive read source the browser subscribes to). Reads that
- * want reactivity — the model list, the model dropdowns, the edit form — go
- * through Convex via this helper / the `use-models` hooks. Cross-domain
- * `model.*` joins (~200 sites across assets / line-items / availability / the
- * PDF pipeline) stay on the always-fresh Prisma mirror and migrate at
- * Prisma-decommission. See FEATUREDOCS/54.
+ * Models are Convex-only, like Suppliers/Locations/Categories: `prisma/schema.prisma`
+ * has no `model` model, and there are no `prisma.model.*` writes anywhere in `src/`
+ * — the Convex `models` doc is the sole store, and every FK relationship (`asset`,
+ * `bulk_asset`, `model_media`, `model_check_item`, `supplier_model_rate`,
+ * `model_bulk_accessory`, `project_line_item`, `supplier_order_item`,
+ * `group_template_item`, `sub_hire_item`) resolves against the Convex `id`, not a
+ * Postgres row. All reads — the model list, the model dropdowns, the edit form, and
+ * the ~200 cross-domain `model.*` joins across assets / line-items / availability /
+ * the PDF pipeline — go through Convex via this helper / the `use-models` hooks.
+ * See FEATUREDOCS/54.
  */
 export type ConvexModel = Doc<"models">;
 
@@ -55,11 +53,11 @@ export async function attachModel<T extends { modelId: string | null }>(
 /* ------------------------------------------------------------------------- *
  * getModels list read — pure filter/sort/paginate over the Convex model list
  *
- * Replaces the Prisma `model.findMany` + `model.count` in
- * `server/models.ts#getModels`. The Convex `models.list({orgId})` query returns
- * ALL of an org's models (active + archived), so the Prisma `where`
+ * Replaces the Prisma `model.findMany` + `model.count` server/models.ts#getModels
+ * used to have. The Convex `models.list({orgId})` query returns
+ * ALL of an org's models (active + archived), so the old Prisma `where`
  * (isActive / categoryId / assetType / search) and `orderBy` are re-applied in
- * JS here. Cross-domain `category` (dual-written) is attached via
+ * JS here. Cross-domain `category` (Convex-only) is attached via
  * getModelWithCategoryMap; per-model asset/bulk counts + primary photo come off
  * the already-Convex getModelCounts (assets/bulkAssets mirror + modelMedia
  * mirror). No Prisma fallback on a Convex map miss.

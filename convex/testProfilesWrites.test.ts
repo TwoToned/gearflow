@@ -77,6 +77,14 @@ describe("testProfile writes", () => {
     expect(seedRes.created).toBe(1); // "Base" skipped
   });
 
+  test("create/update reject out-of-bounds fields (R-8.6.2 server-side mirror of testProfileSchema)", async () => {
+    const t = makeT(); await seedMember(t); await seedProfile(t, "p1");
+    await expect(t.withIdentity(asUser).mutation(api.testProfilesWrites.createNative, { id: "p2", orgId: ORG, name: "x".repeat(201), ...CHECKS, now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Name/i);
+    await expect(t.withIdentity(asUser).mutation(api.testProfilesWrites.createNative, { id: "p2", orgId: ORG, name: "Ok", subTestLabel: "x".repeat(51), ...CHECKS, now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Sub-test label/i);
+    await expect(t.withIdentity(asUser).mutation(api.testProfilesWrites.createNative, { id: "p2", orgId: ORG, name: "Ok", defaultSubTestCount: 51, ...CHECKS, now: NOW, actor, auditId: "a1" })).rejects.toThrow(/Default sub-test count/i);
+    await expect(t.withIdentity(asUser).mutation(api.testProfilesWrites.updateNative, { id: "p1", orgId: ORG, name: "x".repeat(201), now: NOW, actor, auditId: "a2" })).rejects.toThrow(/Name/i);
+  });
+
   test("cross-org update rejected; viewer RBAC rejected", async () => {
     const t = makeT(); await seedMember(t); await seedProfile(t, "pX", {}, OTHER);
     await expect(t.withIdentity(asUser).mutation(api.testProfilesWrites.updateNative, { id: "pX", orgId: ORG, name: "hijack", now: NOW, actor, auditId: "a1" })).rejects.toThrow(/not found/i);

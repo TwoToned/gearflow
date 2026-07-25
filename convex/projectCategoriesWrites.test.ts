@@ -18,7 +18,6 @@ function makeT() {
 const ORG = "org_1";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
-const SERVICE = { subject: "gearflow-service", svc: true };
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 const ACTOR = { userId: USER, userName: "Alice" };
 

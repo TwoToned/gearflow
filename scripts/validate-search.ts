@@ -75,7 +75,6 @@ async function main() {
   }
 
   // Latency sample
-  const t0 = Date.now();
   await searchTop(orgId, "e");
   const t1 = Date.now();
   await searchTop(orgId, "pro");

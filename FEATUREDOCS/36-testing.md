@@ -82,10 +82,10 @@ Seeded-auth flows (critical-flows #2-10: sign-in, onboarding, sign-out,
 create-inventory, through the primary revenue path — project → line items →
 availability → check-out → return) exist as `e2e/harness-*.spec.ts` against a real
 self-hosted Convex backend stood up in Docker (`scripts/e2e-harness-up.sh`) and pass
-locally, but the **`e2e-harness` CI job that ran them is removed again** — the
-original dev-server-crash cause (#725) was root-caused and fixed, but a second,
-distinct stuck-dialog bug in the revenue-path spec makes the job guaranteed-red.
-Registered as a dated exception in `docs/exceptions.md` (R-8.8.3). See
+locally, and the **`e2e-harness` CI job that runs them is restored** (2026-07-25,
+#858) — both the original dev-server-crash cause (#725) and a second, distinct
+stuck-dialog bug in the revenue-path spec are root-caused and fixed. Still
+`continue-on-error: true` until proven green on a GitHub-hosted runner. See
 `docs/e2e-harness.md` and `docs/critical-flows.md` for the full flow list and status.
 
 ## CI Integration

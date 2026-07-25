@@ -1669,7 +1669,11 @@ export default defineSchema({
     .index("by_serviceId", ["serviceId"])
     .index("by_responseToken", ["responseToken"])
     .index("by_crewMemberId_startDate", ["crewMemberId", "startDate"])
-    .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"]),
+    .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"])
+    // Range-scan an org's assignments by status (e.g. the CONFIRMED/ACCEPTED "active"
+    // set, or PENDING/OFFERED "pending offers") instead of collecting the whole org's
+    // assignment history — crewDashboard.activeAssignmentsSummary / pendingOffers (R-9.8).
+    .index("by_organizationId_status", ["organizationId", "status"]),
 
   // CrewShift
   crewShifts: defineTable({

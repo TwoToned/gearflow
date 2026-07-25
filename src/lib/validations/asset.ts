@@ -12,6 +12,7 @@ export const assetSchema = z.object({
   purchaseSupplier: z.string().max(200).optional(),
   supplierId: z.string().optional(),
   purchaseOrderNumber: z.string().max(100).optional(),
+  supplierOrderId: z.string().optional(),
   warrantyExpiry: z.union([z.literal(""), z.coerce.date()]).optional().transform(v => v === "" ? undefined : v),
   notes: z.string().max(2000).optional(),
   locationId: z.string().optional(),

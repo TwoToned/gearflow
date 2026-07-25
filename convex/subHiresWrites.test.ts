@@ -165,6 +165,23 @@ describe("createSubHireNative", () => {
       }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  test("rejects out-of-bounds supplierReference/notes (R-8.6.2 server-side mirror of subHireSchema)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedSupplier(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireNative, {
+        id: "sh1", orgId: ORG, supplierId: "sup1", projectId: "p1", showOnDocs: false, supplierReference: "x".repeat(201), now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/Supplier reference/i);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireNative, {
+        id: "sh1", orgId: ORG, supplierId: "sup1", projectId: "p1", showOnDocs: false, notes: "x".repeat(2001), now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/Notes/i);
+  });
 });
 
 // ─── updateSubHireNative ──────────────────────────────────────────────────────
@@ -212,6 +229,18 @@ describe("updateSubHireNative", () => {
         id: "sh1", orgId: ORG, supplierId: "sup1", showOnDocs: false, now: NOW, actor: ACTOR, auditId: "logu",
       }),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects out-of-bounds supplierReference/notes", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireNative, {
+        id: "sh1", orgId: ORG, supplierId: "sup1", showOnDocs: false, supplierReference: "x".repeat(201), now: NOW, actor: ACTOR, auditId: "logu",
+      }),
+    ).rejects.toThrow(/Supplier reference/i);
   });
 });
 
@@ -404,6 +433,19 @@ describe("addSubHireItemNative", () => {
       }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  test("rejects an out-of-bounds description (R-8.6.2 server-side mirror of subHireItemSchema)", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.addSubHireItemNative, {
+        id: "it1", orgId: ORG, subHireId: "sh1", ...itemInput, description: "x".repeat(501), now: NOW, actor: ACTOR, auditId: "loga",
+      }),
+    ).rejects.toThrow(/Description/i);
+  });
 });
 
 // ─── updateSubHireItemNative ──────────────────────────────────────────────────
@@ -563,6 +605,17 @@ describe("createSubHireGroupNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireGroupNative, { id: "g1", orgId: ORG, subHireId: "sh1", title: "Kit", now: NOW, actor: ACTOR, auditId: "logg" }),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects an out-of-bounds title (R-8.6.2 server-side mirror of subHireGroupSchema)", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.createSubHireGroupNative, { id: "g1", orgId: ORG, subHireId: "sh1", title: "x".repeat(201), now: NOW, actor: ACTOR, auditId: "logg" }),
+    ).rejects.toThrow(/Group title/i);
   });
 });
 

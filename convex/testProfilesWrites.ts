@@ -5,6 +5,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -57,6 +58,11 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "testTag", "create");
     const actor = await resolveActor(ctx, a.actor);
     if (!a.name || a.name.trim().length < 1) throw new ConvexError("Name is required");
+    // R-8.6.2: mirror testProfileSchema's bounds (client Zod validation is bypassable
+    // by any caller hitting this Native mutation directly).
+    assertStrLen(a.name, "Name", { max: 200 });
+    assertStrLen(a.subTestLabel, "Sub-test label", { min: 1, max: 50 });
+    assertNumRange(a.defaultSubTestCount, "Default sub-test count", { min: 1, max: 50, integer: true });
 
     if ((await orgProfiles(ctx, a.orgId)).some((p) => p.name === a.name)) throw new ConvexError(`A profile named "${a.name}" already exists`);
     const dup = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
@@ -91,6 +97,9 @@ export const updateNative = mutation({
 
     const doc = await orgProfile(ctx, a.orgId, a.id);
     if (!doc) throw new ConvexError("Test profile not found");
+    assertStrLen(a.name, "Name", { min: 1, max: 200 });
+    assertStrLen(a.subTestLabel, "Sub-test label", { min: 1, max: 50 });
+    assertNumRange(a.defaultSubTestCount, "Default sub-test count", { min: 1, max: 50, integer: true });
     if (a.name && a.name !== doc.name && (await orgProfiles(ctx, a.orgId)).some((p) => p.id !== a.id && p.name === a.name)) {
       throw new ConvexError(`A profile named "${a.name}" already exists`);
     }
@@ -172,6 +181,9 @@ export const seedDefaultsNative = mutation({
     let firstId = "";
     let created = 0;
     for (const p of a.profiles) {
+      assertStrLen(p.name, "Name", { min: 1, max: 200 });
+      assertStrLen(p.subTestLabel, "Sub-test label", { min: 1, max: 50 });
+      assertNumRange(p.defaultSubTestCount, "Default sub-test count", { min: 1, max: 50, integer: true });
       if (seen.has(p.name)) continue;
       const dupId = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", p.id)).first();
       if (dupId) continue;

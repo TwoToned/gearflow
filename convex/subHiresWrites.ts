@@ -10,6 +10,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { recalcSubHireTotals, upsertSupplierModelRate } from "./lib/subHireTotals";
 import { regenerateSubHireLines } from "./lib/subHireLineGen";
 import { reserveSubHireOrderNumberCounter } from "./lib/subHireOrderCounter";
+import { assertStrLen } from "./lib/fieldGuards";
 import { createId } from "@paralleldrive/cuid2";
 import * as enums from "./lib/validators";
 
@@ -201,6 +202,10 @@ export const createSubHireNative = mutation({
     // FK: supplier + (optional) project must be the caller's org; default placement
     // targets must belong to that project (no cross-tenant/-project dangling reference).
     const supplier = await requireSupplierInOrg(ctx, a.supplierId, a.orgId);
+    // R-8.6.2: mirror subHireSchema's bounds (client Zod validation is bypassable by
+    // any caller hitting this Native mutation directly).
+    assertStrLen(a.supplierReference, "Supplier reference", { max: 200 });
+    assertStrLen(a.notes, "Notes", { max: 2000 });
     const projectId = a.projectId || null;
     if (projectId) await requireProjectInOrg(ctx, projectId, a.orgId);
     if (a.defaultTargetGroupId) await assertTargetGroup(ctx, a.defaultTargetGroupId, a.orgId, projectId);
@@ -276,6 +281,8 @@ export const updateSubHireNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const existing = await requireSubHireInOrg(ctx, a.id, a.orgId);
+    assertStrLen(a.supplierReference, "Supplier reference", { max: 200 }); // R-8.6.2: mirror subHireSchema
+    assertStrLen(a.notes, "Notes", { max: 2000 });
 
     // FK: new supplier. projectId is NOT changed here (see the safe-merge note below), so any
     // placement default is validated against the sub-hire's EXISTING project.
@@ -473,6 +480,7 @@ const itemInputArgs = {
 
 function assertItemMoney(a: { description: string; quantity: number; unitCost: number; unitCharge: number; duration: number; discount: number }) {
   if (!a.description) throw new ConvexError("Description is required");
+  assertStrLen(a.description, "Description", { max: 500 }); // R-8.6.2: mirror subHireItemSchema
   assertIntMin1(a.quantity, "Quantity");
   assertFiniteMin0(a.unitCost, "Cost");
   assertFiniteMin0(a.unitCharge, "Charge");
@@ -716,6 +724,7 @@ const groupInputArgs = {
 
 function assertGroupMoney(a: { title: string; quantity?: number; cost?: number | null; charge?: number | null; discount?: number }) {
   if (!a.title) throw new ConvexError("Group title is required");
+  assertStrLen(a.title, "Group title", { max: 200 }); // R-8.6.2: mirror subHireGroupSchema
   assertIntMin1(a.quantity ?? 1, "Quantity");
   if (a.cost != null) assertFiniteMin0(a.cost, "Cost");
   if (a.charge != null) assertFiniteMin0(a.charge, "Charge");

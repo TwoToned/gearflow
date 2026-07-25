@@ -163,6 +163,19 @@ describe("testTagRecordsWrites.createNative", () => {
       ...base, nextDueDate: NOW + DAY,
     })).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  test("rejects out-of-bounds fields (R-8.6.2 server-side mirror of testTagRecordSchema/subTestRecordSchema)", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t);
+    await expect(t.withIdentity(asUser).mutation(api.testTagRecordsWrites.createNative, {
+      ...base, nextDueDate: NOW + DAY, testerName: "x".repeat(201),
+    })).rejects.toThrow(/Tester name/i);
+    await expect(t.withIdentity(asUser).mutation(api.testTagRecordsWrites.createNative, {
+      ...base, nextDueDate: NOW + DAY, failureNotes: "x".repeat(2001),
+    })).rejects.toThrow(/Failure notes/i);
+    await expect(t.withIdentity(asUser).mutation(api.testTagRecordsWrites.createNative, {
+      ...base, nextDueDate: NOW + DAY, subTests: [{ id: "s1", label: "x".repeat(101), sortOrder: 0 }],
+    })).rejects.toThrow(/Sub-test label/i);
+  });
 });
 
 describe("testTagRecords reads", () => {

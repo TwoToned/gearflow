@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertRefInOrg } from "./lib/orgRef";
+import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
@@ -117,6 +118,17 @@ export const createNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "testTag", "create");
     const actor = await resolveActor(ctx, a.actor);
+
+    // R-8.6.2: mirror testTagRecordSchema/subTestRecordSchema's bounds (client Zod
+    // validation is bypassable by any caller hitting this Native mutation directly).
+    assertStrLen(a.testerName, "Tester name", { max: 200 });
+    assertStrLen(a.visualNotes, "Visual notes", { max: 2000 });
+    assertStrLen(a.functionalTestNotes, "Functional test notes", { max: 2000 });
+    assertStrLen(a.failureNotes, "Failure notes", { max: 2000 });
+    for (const st of a.subTests ?? []) {
+      assertStrLen(st.label, "Sub-test label", { max: 100 });
+      assertStrLen(st.notes, "Sub-test notes", { max: 2000 });
+    }
 
     // 2) Fetch the parent T&T asset + per-row org re-check (by_cuid is GLOBAL).
     const asset = await ctx.db

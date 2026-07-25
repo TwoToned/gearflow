@@ -63,8 +63,7 @@ export function defaultRoiWindow(
 export interface RoiMetrics {
   revenue: number;
   unitsOwned: number;
-  replacementCost: number | null;
-  /** replacementCost × unitsOwned. Null when we can't know it. */
+  /** What it cost to acquire the units owned. Null when we can't know it. */
   fleetCost: number | null;
   /** revenue ÷ fleetCost. Null when there's no capital to measure against. */
   payback: number | null;
@@ -76,32 +75,36 @@ export interface RoiMetrics {
 }
 
 /**
- * ROI is measured against the capital actually deployed — replacement cost times
- * the number of units OWNED, not the cost of one unit. Dividing fleet revenue by a
- * single unit's cost overstates ROI by exactly the unit count, and overstates it
- * most for the models bought in the largest numbers: precisely the ones this report
- * exists to scrutinise.
+ * ROI is measured against the capital actually deployed, not the cost of one unit
+ * times a count: `fleetCost` arrives here PRE-SUMMED by the caller (`convex/roi.ts`
+ * `fleetCapitalFor` / `fleetInventory`), one asset's real purchase price at a time
+ * for serialised gear — falling back to the model's general purchase price, then its
+ * replacement cost, per asset — with bulk stock still `replacementCost ×
+ * totalQuantity` (see gearflow#798 / FEATUREDOCS/57-revenue-allocation-roi.md for
+ * why the chain, not a single scalar). This function has no opinion on any of
+ * that — it's pure division over whatever total it's handed.
  *
- * A model with no replacement cost, or none left in the fleet, has no ROI. Say so
- * with null — not 0 (looks like a dud) and not Infinity (looks like a triumph).
+ * A model with no fleet cost, or none left in the fleet, has no ROI. Say so with
+ * null — not 0 (looks like a dud) and not Infinity (looks like a triumph). A
+ * pre-summed total of exactly $0 is indistinguishable from "nothing priced it", so
+ * it's treated the same as null here — the caller already resolved that ambiguity
+ * per-asset; this is just the last line of defence.
  */
 export function computeRoi(
   revenue: number,
   unitsOwned: number,
-  replacementCost: number | null | undefined,
+  fleetCost: number | null | undefined,
 ): RoiMetrics {
-  const cost = replacementCost != null && replacementCost > 0 ? replacementCost : null;
-  const fleetCost = cost != null && unitsOwned > 0 ? cost * unitsOwned : null;
+  const cost = fleetCost != null && fleetCost > 0 && unitsOwned > 0 ? fleetCost : null;
 
   return {
     revenue,
     unitsOwned,
-    replacementCost: cost,
-    fleetCost,
-    payback: fleetCost ? revenue / fleetCost : null,
+    fleetCost: cost,
+    payback: cost ? revenue / cost : null,
     revenuePerUnit: unitsOwned > 0 ? revenue / unitsOwned : null,
-    costRecovered: fleetCost ? Math.min(1, Math.max(0, revenue / fleetCost)) : null,
-    stillToRecover: fleetCost ? Math.max(0, fleetCost - revenue) : null,
+    costRecovered: cost ? Math.min(1, Math.max(0, revenue / cost)) : null,
+    stillToRecover: cost ? Math.max(0, cost - revenue) : null,
   };
 }
 

@@ -8,16 +8,17 @@ import {
 } from "./roi";
 
 describe("computeRoi", () => {
-  test("measures against the whole fleet's capital, not one unit's", () => {
-    // The bug this exists to prevent: 8 receivers at $2,000 is $16,000 deployed.
-    // Dividing by a single unit's cost would report 12× instead of 1.5×.
-    const roi = computeRoi(24_000, 8, 2_000);
+  // `fleetCost` arrives PRE-SUMMED now (convex/roi.ts `fleetCapitalFor` does the
+  // per-asset/bulk mixing — see its own tests in convex/roi.test.ts). computeRoi is
+  // just division over whatever total it's handed.
+  test("payback is revenue over the pre-summed fleet cost", () => {
+    const roi = computeRoi(24_000, 8, 16_000);
     expect(roi.fleetCost).toBe(16_000);
     expect(roi.payback).toBe(1.5);
     expect(roi.revenuePerUnit).toBe(3_000);
   });
 
-  test("no replacement cost means no ROI — not zero, not infinity", () => {
+  test("no fleet cost means no ROI — not zero, not infinity", () => {
     const roi = computeRoi(5_000, 4, null);
     expect(roi.revenue).toBe(5_000);
     expect(roi.fleetCost).toBeNull();
@@ -32,8 +33,9 @@ describe("computeRoi", () => {
     expect(roi.revenuePerUnit).toBeNull();
   });
 
-  test("a zero replacement cost is treated as unknown, not as free capital", () => {
+  test("a zero (or negative) fleet cost is treated as unknown, not as free capital", () => {
     expect(computeRoi(100, 2, 0).payback).toBeNull();
+    expect(computeRoi(100, 2, -50).payback).toBeNull();
   });
 
   test("cost recovered clamps at 100% but payback keeps counting", () => {

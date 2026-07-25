@@ -135,13 +135,37 @@ ROI is measured against the capital actually deployed:
 
 ```
 unitsOwned = active assets + SUM(active bulkAssets.totalQuantity)
-fleetCost  = replacementCost × unitsOwned
-payback    = revenue / fleetCost
+
+# Serialised: SUM per asset — not a uniform multiply. Each unit's own purchase
+# price wins if it has one; models bought at different times/prices are not
+# forced onto one number (gearflow#798).
+serialisedCost = SUM over each owned asset of:
+  asset.purchasePrice
+  else model.defaultPurchasePrice
+  else model.replacementCost
+  else 0                              -- no signal for this unit
+
+# Bulk: unchanged — one rate for the whole stock line, out of scope for #798
+# (bulkAssets.purchasePricePerUnit is a separate, already-per-unit field a
+# future issue can wire up).
+bulkCost  = replacementCost × SUM(active bulkAssets.totalQuantity)
+
+fleetCost = (serialisedCost + bulkCost), or NULL if unitsOwned == 0 or the sum is $0
+payback   = revenue / fleetCost
 ```
 
-Not `revenue / replacementCost` — that overstates ROI by exactly the unit count, worst for the
-models bought in the largest numbers. A model with no replacement cost, or none left in the fleet,
-reports `—`: not `0` (looks like a dud), not `∞` (looks like a triumph).
+Not `revenue / replacementCost × unitsOwned` — that overstates ROI by exactly the unit count
+(worst for the models bought in the largest numbers) AND assumes every unit cost the same, which
+is untrue the moment a model's assets were bought at different prices over time. A model with no
+cost signal anywhere — no asset purchase price, no model-level purchase price or replacement
+cost — or none left in the fleet, reports `—`: not `0` (looks like a dud), not `∞` (looks like a
+triumph). A raw per-asset/bulk sum of exactly `$0` is treated identically to "no signal" — it's
+indistinguishable from "nothing priced it" and the alternative (reporting $0 fleet cost) reads as
+infinite ROI on a progress bar.
+
+The fallback chain is per-ASSET, not per-model: two units of the same model can legitimately
+resolve through different rungs of the chain (one has its own `purchasePrice`, the sibling falls
+back to `model.replacementCost`) and both contribute to the same model's `fleetCost` total.
 
 ### Surfaces
 
@@ -202,6 +226,27 @@ Related gotcha: `defaultRoiWindow(scope)` leaves `to` **open** for `booked` scop
 capping it at `now` (as `earned` does) would hide the future-dated `CONFIRMED`/`PREPPING` bookings
 that scope exists to show, forcing a second switch to "All time" just to see next week's job.
 
+### Fleet cost fallback chain (gearflow#798)
+
+Serialised-asset fleet cost is a per-asset chain, not a single model-wide scalar:
+`asset.purchasePrice ?? model.defaultPurchasePrice ?? model.replacementCost`. The middle rung was
+a deliberate choice, not a guess (POLICY.md R-3.1 — recorded here so it isn't re-litigated):
+`defaultPurchasePrice` is the semantically correct fallback ("what we generally pay for this
+model" vs. `replacementCost`'s "what it'd cost to replace it today"), but falling through further
+to `replacementCost` when `defaultPurchasePrice` is also unset matters — `replacementCost` is the
+field every other ROI/allocation surface already populates (kit-allocation weighting, the
+allocation engine's `rateFactor` derivation), so skipping it would silently regress models that
+report a real fleet cost today back to `—` purely because `defaultPurchasePrice` was never
+backfilled.
+
+Every rung is treated as "no signal" when it's `≤ 0`, not just when it's unset — the long-standing
+"a zero replacement cost is unknown, not free capital" rule (`src/lib/roi.test.ts`), now applied
+uniformly across the whole chain (`positiveCost` in `convex/roi.ts`).
+
+`bulkAssets` are explicitly out of scope: their fleet cost stays `replacementCost × totalQuantity`
+(`bulkAssets.purchasePricePerUnit` is a separate, already-per-unit field a future issue could wire
+up the same way).
+
 ## Files
 
 | Path | Role |
@@ -210,7 +255,7 @@ that scope exists to show, forcing a second switch to "All time" just to see nex
 | `convex/lib/recalc.ts` | Calls it, at the tail of every project recompute. |
 | `convex/revenueAllocation.ts` | Standalone recompute (legacy path + backfill) and paginated project ids. |
 | `convex/kitAllocations.ts` | Kit split: composition view, replace-all, clear. |
-| `convex/roi.ts` | `getModelRoi`, `fleetRevenue`, `fleetInventory`, `zeroPricedGroups`. |
+| `convex/roi.ts` | `getModelRoi`, `fleetRevenue`, `fleetInventory`, `zeroPricedGroups`, `fleetCapitalFor` (the per-asset fleet-cost chain). |
 | `src/lib/roi.ts` | `computeRoi`, status scopes, window, formatting. |
 | `src/hooks/use-roi.ts` | Browser-direct: joins the two fleet queries client-side (one-shot, not reactive — a ROI report has no liveness need). |
 | `convex/kitAllocationsWrites.ts` | Browser-direct RBAC + validation + audit for the kit split. |

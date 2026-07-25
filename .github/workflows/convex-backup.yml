@@ -19,6 +19,10 @@ concurrency:
   group: convex-backup
   cancel-in-progress: false
 
+# Least-privilege default (OSSF Scorecard Token-Permissions).
+permissions:
+  contents: read
+
 jobs:
   export:
     runs-on: ubuntu-latest

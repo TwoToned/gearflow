@@ -45,6 +45,10 @@ on:
         required: false
         type: string
 
+# Least-privilege default (OSSF Scorecard Token-Permissions).
+permissions:
+  contents: read
+
 jobs:
   migrate:
     name: ${{ inputs.script }} (${{ inputs.apply && 'APPLY' || 'dry-run' }})

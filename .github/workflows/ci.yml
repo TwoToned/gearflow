@@ -8,6 +8,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default (OSSF Scorecard Token-Permissions). Jobs that need
+# more (e.g. hygiene's PR-comment posting) declare their own override below.
+permissions:
+  contents: read
+
 jobs:
   brand-guard:
     name: Brand Guard (no legacy brand)

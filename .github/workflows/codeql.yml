@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: "32 4 * * 1"
 
+# Least-privilege default (OSSF Scorecard Token-Permissions); analyze already
+# declares the elevated scopes it actually needs.
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

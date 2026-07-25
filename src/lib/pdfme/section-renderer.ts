@@ -941,7 +941,7 @@ function getSectionX(section: TemplateSection): number {
     return MARGIN;
   }
 
-  const { columnIndex, columnWidth, columnCount } = section.layoutHint;
+  const { columnIndex, columnCount } = section.layoutHint;
 
   // Calculate X from preceding columns' widths
   // We need all columns' widths in this row, but we only have this section's info.

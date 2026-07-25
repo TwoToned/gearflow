@@ -25,6 +25,10 @@ concurrency:
   group: postgres-backup
   cancel-in-progress: false
 
+# Least-privilege default (OSSF Scorecard Token-Permissions).
+permissions:
+  contents: read
+
 jobs:
   dump:
     runs-on: self-hosted

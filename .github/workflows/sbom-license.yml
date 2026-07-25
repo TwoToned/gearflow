@@ -9,6 +9,10 @@ on:
   schedule:
     - cron: "0 5 * * 1"
 
+# Least-privilege default (OSSF Scorecard Token-Permissions).
+permissions:
+  contents: read
+
 jobs:
   sbom:
     name: SBOM (CycloneDX)

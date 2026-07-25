@@ -18,7 +18,7 @@ import {
   getFailedOrderLogById,
 } from "@/lib/woocommerce-order-logs-read";
 import { getWooCommerceIntegrationByOrg } from "@/lib/woocommerce-integration-read";
-import { isDangerousObjectKey } from "@/lib/safe-object-key";
+import { DANGEROUS_OBJECT_KEYS } from "@/lib/safe-object-key";
 import {
   wooCommerceIntegrationSchema,
   type WooCommerceIntegrationFormValues,
@@ -705,7 +705,7 @@ function extractDates(order: WooOrder, integration: WooCommerceIntegrationConfig
   const format = integration.dateFormat;
 
   function parseDate(key: string | null): Date | null {
-    if (!key || isDangerousObjectKey(key)) return null;
+    if (!key || DANGEROUS_OBJECT_KEYS.includes(key)) return null;
     const value = meta.get(key);
     if (!value) return null;
     raw[key] = value;

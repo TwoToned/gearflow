@@ -16,6 +16,7 @@ function makeT() {
   return t;
 }
 const ORG = "org_1";
+const OTHER = "org_2";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
 
@@ -321,6 +322,32 @@ describe("assetWrites.createNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, notes: "x".repeat(2001) }),
     ).rejects.toThrow(/notes/);
   });
+
+  // issue #789 — supplierOrderId is a client-supplied FK (by_cuid is GLOBAL), so a
+  // cross-org id must be rejected the same way supplierId/locationId/kitId already are.
+  test("rejects a supplierOrderId belonging to another org", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" });
+      await ctx.db.insert("supplierOrders", { id: "so1", organizationId: OTHER, supplierId: "sX", orderNumber: "PO-X", type: "PURCHASE", createdAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, supplierOrderId: "so1" }),
+    ).rejects.toThrow(/not found in your organization/i);
+  });
+
+  test("accepts a supplierOrderId in the same org and persists it", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" });
+      await ctx.db.insert("supplierOrders", { id: "so1", organizationId: ORG, supplierId: "sX", orderNumber: "PO-1", type: "PURCHASE", createdAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.createNative, { ...createArgs, supplierOrderId: "so1" });
+    const asset = await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "new1")).first());
+    expect(asset?.supplierOrderId).toBe("so1");
+  });
 });
 
 describe("assetWrites.updateNative", () => {
@@ -376,6 +403,17 @@ describe("assetWrites.updateNative", () => {
     await expect(
       t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, { ...updArgs, set: { ...updArgs.set, purchasePrice: -50 } }),
     ).rejects.toThrow(/purchasePrice/);
+  });
+
+  test("rejects a supplierOrderId patch belonging to another org", async () => {
+    const t = makeT();
+    await seedAsset(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "so1", organizationId: OTHER, supplierId: "sX", orderNumber: "PO-X", type: "PURCHASE", createdAt: NOW });
+    });
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, { ...updArgs, set: { ...updArgs.set, supplierOrderId: "so1" } }),
+    ).rejects.toThrow(/not found in your organization/i);
   });
 });
 

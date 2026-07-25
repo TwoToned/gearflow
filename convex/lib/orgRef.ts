@@ -18,11 +18,13 @@ export async function assertRefInOrg(
     | "clients"
     | "locations"
     | "suppliers"
+    | "supplierOrders"
     | "kits"
     | "categories"
     | "testProfiles"
     | "crewRoles"
-    | "projectServices",
+    | "projectServices"
+    | "fileUploads",
   id: string,
   orgId: string,
 ): Promise<void> {

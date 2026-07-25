@@ -385,6 +385,11 @@ export default defineSchema({
     createdById: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
+    // Invoice attachment (issue #789) — single-file 1:1 FK to fileUploads, not a
+    // *Media join table: an order has at most one invoice, so the reorder/
+    // multi-file/primary-photo machinery in convex/mediaWrites.ts would be
+    // over-engineering for this shape (R-3.1 — model the actual cardinality).
+    invoiceFileId: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])

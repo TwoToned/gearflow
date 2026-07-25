@@ -19,6 +19,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
 import type { ModelFormValues } from "@/lib/validations/model";
 
 export default function EditModelPage({ params }: { params: Promise<{ id: string }> }) {
@@ -100,10 +101,7 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit model</h1>
-          <p className="mt-1 text-ui-text text-muted">{model.name}</p>
-        </div>
+        <PageHeader title="Edit model" description={model.name} />
         <ModelForm initialData={initialData} />
       </div>
     </FadeIn>

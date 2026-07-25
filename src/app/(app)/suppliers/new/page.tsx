@@ -5,6 +5,7 @@ import Link from "next/link";
 import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -30,12 +31,7 @@ export default function NewSupplierPage() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div>
-            <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New supplier</h1>
-            <p className="mt-1 text-ui-text text-muted">
-              Add a new supplier to your directory.
-            </p>
-          </div>
+          <PageHeader title="New supplier" description="Add a new supplier to your directory." />
           <SupplierForm />
         </div>
       </FadeIn>

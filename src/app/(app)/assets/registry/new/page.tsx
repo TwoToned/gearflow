@@ -9,6 +9,7 @@ import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -40,14 +41,14 @@ function NewAssetContent() {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">{title}</h1>
-          <p className="mt-1 text-ui-text text-muted">
-            {type === "bulk"
+        <PageHeader
+          title={title}
+          description={
+            type === "bulk"
               ? "Create a bulk stock entry tracked by quantity."
-              : "Create a serialised asset tracked individually."}
-          </p>
-        </div>
+              : "Create a serialised asset tracked individually."
+          }
+        />
         {type === "bulk" ? (
           <BulkAssetForm preselectedModelId={modelId} />
         ) : (

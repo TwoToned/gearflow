@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CrewMemberForm } from "@/components/crew/crew-member-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -30,12 +31,7 @@ export default function NewCrewMemberPage() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div>
-            <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New crew member</h1>
-            <p className="mt-1 text-ui-text text-muted">
-              Add a freelancer, employee, or contractor to your roster.
-            </p>
-          </div>
+          <PageHeader title="New crew member" description="Add a freelancer, employee, or contractor to your roster." />
           <CrewMemberForm />
         </div>
       </FadeIn>

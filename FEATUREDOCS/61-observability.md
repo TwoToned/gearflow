@@ -69,6 +69,14 @@ fixed `"server"` distinctId (no user PII). `instrumentation.ts`'s `onRequestErro
 `src/lib/process-safety.ts`'s uncaught-exception/unhandled-rejection net both report through
 it. Dynamically imported so it never loads in the edge runtime (posthog-node is Node-only).
 
+## Test Fake
+
+`src/lib/posthog-fake.ts`'s `createFakePostHog()` is the deterministic, inspectable
+counterpart to `captureServerException`/`captureServerEvent` for unit tests (POLICY.md
+R-8.10.4) — an in-memory capture recorder, mirroring the `email-fake.ts` pattern. It is
+not wired into `posthog-server.ts` via dependency injection; tests that need a fake import
+it directly in place of the real functions.
+
 ## Sourcemaps (readable stack traces)
 
 `next.config.ts` wraps the Next config with `withPostHogConfig` from `@posthog/nextjs-config`
@@ -196,3 +204,6 @@ See `CLAUDE.md` → Environment Variables → Analytics + error tracking.
   registered with zero enforcement). Live $ computation and 80%-threshold alerting are
   deferred pending a persistent monthly counter or a query-capable PostHog key; see "Vendor
   cost budget tracking" above for the concrete target numbers already worked out.
+- v6 (#829): `posthog-fake.ts` added — the PostHog server adapter had no fake/local
+  implementation for tests, unlike `email-fake.ts`/`maps-fake.ts` (R-8.10.4 is a per-adapter
+  clause).

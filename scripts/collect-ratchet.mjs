@@ -63,7 +63,7 @@
  *
  * Usage: node scripts/collect-ratchet.mjs [--write] [--reason "why the full baseline moved"]
  */
-import { readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, basename } from "node:path";
 
 const CONVEX_DIR = "convex";
@@ -112,8 +112,16 @@ function isMarkerRegistered(line, sourceFileName, exceptionsText) {
   return exceptionsText.includes(basename(sourceFileName));
 }
 
+function readFileIfExists(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 function countCollects() {
-  const exceptionsText = existsSync(EXCEPTIONS_FILE) ? readFileSync(EXCEPTIONS_FILE, "utf8") : "";
+  const exceptionsText = readFileIfExists(EXCEPTIONS_FILE) ?? "";
   let fullCount = 0;
   let hazardTotal = 0;
   let unjustified = 0;
@@ -177,7 +185,10 @@ function readReason() {
 }
 
 function logBaselineChange(oldValue, newValue, reason) {
-  if (!existsSync(LOG_FILE)) {
+  // Atomic create-if-missing: "wx" fails with EEXIST if the file is already there
+  // instead of a separate existsSync check-then-writeFileSync race (CodeQL
+  // js/file-system-race).
+  try {
     writeFileSync(
       LOG_FILE,
       "# Collect-ratchet full-baseline change log\n\n" +
@@ -186,7 +197,10 @@ function logBaselineChange(oldValue, newValue, reason) {
         "remediation — the point is to make \"scope widened, ceiling raised\" visually\n" +
         "distinct from \"debt paid down\" instead of both looking like the same baseline commit.\n\n" +
         "| Date | Old | New | Delta | Reason |\n|------|-----|-----|-------|--------|\n",
+      { flag: "wx" },
     );
+  } catch (err) {
+    if (err.code !== "EEXIST") throw err;
   }
   const date = new Date().toISOString().slice(0, 10);
   const delta = newValue - oldValue;
@@ -196,7 +210,8 @@ function logBaselineChange(oldValue, newValue, reason) {
 }
 
 if (process.argv.includes("--write")) {
-  const priorFullBaseline = existsSync(FULL_BASELINE_FILE) ? parseInt(readFileSync(FULL_BASELINE_FILE, "utf8").trim(), 10) : null;
+  const priorFullBaselineText = readFileIfExists(FULL_BASELINE_FILE);
+  const priorFullBaseline = priorFullBaselineText === null ? null : parseInt(priorFullBaselineText.trim(), 10);
   const reason = readReason();
   if (priorFullBaseline !== null && fullCount > priorFullBaseline && !reason) {
     console.error(

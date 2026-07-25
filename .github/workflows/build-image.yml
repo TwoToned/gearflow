@@ -34,6 +34,12 @@ jobs:
       - name: Compute image name
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
+      # R-2.4: the released artifact (image) must carry the SemVer version too,
+      # not just :latest/:sha — otherwise a running deployment can't be traced
+      # to a version without a manual SHA->CHANGELOG lookup.
+      - name: Read package version
+        run: echo "PACKAGE_VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -69,6 +75,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v${{ env.PACKAGE_VERSION }}
           # Persist layer cache between runs (GitHub Actions cache backend).
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **R-2.4** (#851, tracked under #865) — `build-image.yml` now also tags the released Docker
+  image `v${package.json version}` (alongside the existing `:latest`/`:${sha}` tags), so a
+  running deployment can be traced to a SemVer version without a manual SHA→CHANGELOG lookup.
+
 - Closed the two POLICY.md §9B remediation-verification findings (#830, #831), tracked under
   #841:
   - **R-9.6** — `convex/lib/errorReporting.ts`'s outbound POST to PostHog now carries the same

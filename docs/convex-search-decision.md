@@ -45,7 +45,7 @@ that entity — a silent recall gap. This is documented in-code and here.
 
 `scripts/validate-search.ts` is a repeatable, data-driven harness: it pulls a real
 entity name per type, derives a query term, and asserts the entity is found — plus
-data-agnostic invariants. Run against **prod** (`docker exec <app> npx tsx
+data-agnostic invariants. Run against **prod** (`docker exec <app> pnpm exec tsx
 scripts/validate-search.ts <orgId>`):
 
 ```

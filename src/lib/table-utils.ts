@@ -3,6 +3,8 @@
  * Used by server actions to translate DataTable filter state into Prisma queries.
  */
 
+import { DANGEROUS_OBJECT_KEYS } from "@/lib/safe-object-key";
+
 export type FilterType = "enum" | "text" | "date" | "number" | "boolean";
 
 export type FilterValue =
@@ -88,7 +90,7 @@ export function buildFilterWhere(
 function setNestedWhere(obj: Record<string, unknown>, path: string, value: unknown) {
   const parts = path.split(".");
   if (parts.length === 1) {
-    if (path === "__proto__" || path === "constructor" || path === "prototype") return;
+    if (DANGEROUS_OBJECT_KEYS.includes(path)) return;
     obj[path] = value;
     return;
   }
@@ -96,13 +98,13 @@ function setNestedWhere(obj: Record<string, unknown>, path: string, value: unkno
   let current = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
-    if (part === "__proto__" || part === "constructor" || part === "prototype") return;
+    if (DANGEROUS_OBJECT_KEYS.includes(part)) return;
     if (!current[part] || typeof current[part] !== "object") {
       current[part] = {};
     }
     current = current[part] as Record<string, unknown>;
   }
   const lastKey = parts[parts.length - 1];
-  if (lastKey === "__proto__" || lastKey === "constructor" || lastKey === "prototype") return;
+  if (DANGEROUS_OBJECT_KEYS.includes(lastKey)) return;
   current[lastKey] = value;
 }

@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **R-5.3** (#900, tracked under #905) — Fixed `scripts/check-docs-npm-npx.mjs`'s detection
+  logic itself, the actual root cause of this rule's 4th recurrence (#731, #820, #856 only ever
+  fixed scope/diff-vs-full-repo). `BAD`'s `npm run` branch required a non-whitespace char with
+  zero separator right after "npm run", which real prose never satisfies — the check silently
+  never matched a single `npm run`/`npm install`/`npm test`/`npm ci` instruction; now
+  `/\bnpm (run|install|ci|test|start|exec)\b|\bnpx\s/`. `ALLOW` was tested against the whole
+  line, so any line that happened to mention "pnpm" anywhere whitelisted an unrelated npm
+  command elsewhere on that same line; now a per-match ±40-char proximity window. Fixing the
+  `npm run` branch made `\bnpx\b` newly match "npx" inside filenames like this script's own
+  `check-docs-npm-npx.mjs` — narrowed to `\bnpx\s` (a real invocation always has a trailing
+  space; a filename substring doesn't). Added `CHANGELOG.md` to `EXCLUDE` alongside
+  `docs/audits/`/`docs/designs/archive/` — changelog entries are dated historical record, not
+  live instructions, and the fixed `npm run` detection now matches historical entries like this
+  changelog's own record of a since-deleted migration script. Corrected the 6 live violations
+  the broken detection had let through: `docs/efficiency-billing-session-prompt.md`,
+  `docs/designs/rvlt-flow-rebrand-migration.md`, `docs/designs/rvlt-polish-sweep.md` (×2),
+  `docs/designs/ux-ui-redesign.md`, `NEWFEATURES/10-user-customisation.md`, and
+  `FEATUREDOCS/19-mobile-pwa.md` now use `pnpm`/`pnpm exec`/`pnpm add`. Also reworded
+  `CLAUDE.md`'s "never `npx convex`" line (redundant repeated `npx convex` mention pushed the
+  second occurrence out of the `never`/`pnpm` proximity window) and `FEATUREDOCS/13-pdfs.md`'s
+  reference to a deleted one-time migration script (dropped the redundant `npm run` invocation
+  alongside the already-given `.ts` path). Mirrored the `npm run`/`npm install`/etc. coverage
+  and the `CHANGELOG.md` exclusion into `scripts/quarterly-sweep.sh` §5's belt-and-braces grep
+  for consistency with the CI gate.
+
 - **R-2.4** (#851, tracked under #865) — `build-image.yml` now also tags the released Docker
   image `v${package.json version}` (alongside the existing `:latest`/`:${sha}` tags), so a
   running deployment can be traced to a SemVer version without a manual SHA→CHANGELOG lookup.

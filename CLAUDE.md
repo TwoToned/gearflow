@@ -105,8 +105,8 @@ After this, `pnpm dev`, `pnpm test`, and `pnpm build` will all work.
 
 ### Convex Dev in Worktrees
 
-**Always use `pnpm exec convex` — never `npx convex`.** `npx convex` runs a global
-CLI copy that can't resolve `convex/server` from local `node_modules`, causing an
+**Always use `pnpm exec convex` — never `npx convex`**, which runs a global CLI
+copy that can't resolve `convex/server` from local `node_modules`, causing an
 esbuild failure. `pnpm exec convex` uses the locally installed version.
 
 **When Claude Code edits `convex/*.ts` files**, push the changes immediately after:

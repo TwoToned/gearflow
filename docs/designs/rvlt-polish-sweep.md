@@ -410,11 +410,11 @@ Original fix list (both reviews agreed; label-map findings already fixed in comm
   (~33 consumers). `ring-<token>/20` resolves via the registered `--color-*` tokens.
 - ✅ **status-colors.test.ts** (commit d7280a7c): updated the getStatusColor assertions off the legacy
   bg-success/text-success scheme to the current values (bg-ok/text-ok/bg-ok-soft, text-red, text-t-out,
-  text-warn, text-blue). `npm test -- status-colors` green.
+  text-warn, text-blue). `pnpm test -- status-colors` green.
 - **Recurring DEFER:** detail-page hand-built overflow sub-tables → mobile card lists + left-edge red row
   hover (clients/suppliers/locations/assets detail). DataTable `emptyPreset` is ignored (shared) — list
   pages need explicit emptyTitle/description.
-- **Run full `npm test` + `npm run build` before shipping** — several agents updated/added tests; confirm green.
+- **Run full `pnpm test` + `pnpm build` before shipping** — several agents updated/added tests; confirm green.
 
 ## Reinvention pass (post-"bar") — apply the approved project-detail patterns to deep surfaces
 The project detail page is the approved bar (see memory project-detail-page-patterns + commits

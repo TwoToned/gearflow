@@ -33,10 +33,11 @@ echo "- Legacy write paths gated by NATIVE_* flags — delete once each domain i
 
 section "5. Docs-contradiction grep (R-5.3)"
 echo "CI already blocks npm/npx doc contradictions repo-wide on every run (\`pnpm run check-docs-npm-npx\`, .github/workflows/ci.yml \`hygiene\` job — full-repo scan, not diff-scoped). This sweep re-runs the same grep as a belt-and-braces cross-check:"
-bad=$(grep -rnE "npm run|npx " --include='*.md' \
+bad=$(grep -rnE "npm (run|install|ci|test|start|exec)\b|npx " --include='*.md' \
   --exclude-dir=.agents --exclude-dir=.claude --exclude-dir=.hermes --exclude-dir=node_modules \
   --exclude-dir=archive . 2>/dev/null \
   | grep -v "docs/audits/" \
+  | grep -v "^\./CHANGELOG.md:" \
   | grep -viE "never .?npm|not .?npx|pnpm|node_modules" || true)
 if [ -n "$bad" ]; then echo "⚠ Possible npm/npx references on a pnpm repo:"; echo '```'; echo "$bad"; echo '```'; else echo "- No npm/npx contradictions found."; fi
 

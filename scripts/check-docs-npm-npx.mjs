@@ -9,8 +9,9 @@
  * every run (not diff-scoped) — a diff-scoped check only catches *new* lines, so
  * pre-existing contradictions stayed structurally invisible to it and recurred
  * across three audit rounds (#731, #820, #856). Excludes tool-scratch dirs and
- * directories that are an intentionally-frozen historical record (an audit report
- * or archived/shipped design doc quoting a past command isn't a live instruction).
+ * directories/files that are an intentionally-frozen historical record (an audit
+ * report, a changelog entry, or an archived/shipped design doc quoting a past
+ * command isn't a live instruction).
  *
  * Usage: node scripts/check-docs-npm-npx.mjs
  */
@@ -23,15 +24,23 @@ function git(args) {
   return execFileSync("git", args, { encoding: "utf8", maxBuffer: 1024 * 1024 * 20 });
 }
 
-const EXCLUDE = /^(\.agents|\.claude|\.hermes|node_modules|docs\/audits|docs\/designs\/archive)\//;
+const EXCLUDE = /^(\.agents|\.claude|\.hermes|node_modules|docs\/audits|docs\/designs\/archive|CHANGELOG\.md)/;
 
 const mdFiles = git(["ls-files", "--end-of-options", "*.md"])
   .split("\n")
   .filter(Boolean)
   .filter((f) => !EXCLUDE.test(f));
 
-const BAD = /\b(npm run|npx )\S/;
+// `npx` requires a trailing space to count as an invocation — otherwise it
+// also matches inside filenames/paths that happen to contain the substring
+// "npx" (e.g. this very script's own name, `check-docs-npm-npx.mjs`).
+const BAD = /\bnpm (run|install|ci|test|start|exec)\b|\bnpx\s/g;
 const ALLOW = /(never .?npm|not .?npx|pnpm|node_modules)/i;
+// How far (in chars) around a BAD match to look for an ALLOW marker. Keeps the
+// allowlist a per-match proximity check instead of a whole-line one — a line
+// mentioning "pnpm" once no longer whitelists an unrelated npm command later
+// on the same line.
+const ALLOW_PROXIMITY = 40;
 
 const violations = [];
 for (const file of mdFiles) {
@@ -42,8 +51,16 @@ for (const file of mdFiles) {
     continue; // file deleted/renamed since ls-files snapshot — nothing to check
   }
   lines.forEach((text, i) => {
-    if (BAD.test(text) && !ALLOW.test(text)) {
-      violations.push(`${file}:${i + 1}: ${text.trim()}`);
+    BAD.lastIndex = 0;
+    let match;
+    while ((match = BAD.exec(text)) !== null) {
+      const windowStart = Math.max(0, match.index - ALLOW_PROXIMITY);
+      const windowEnd = Math.min(text.length, match.index + match[0].length + ALLOW_PROXIMITY);
+      const window = text.slice(windowStart, windowEnd);
+      if (!ALLOW.test(window)) {
+        violations.push(`${file}:${i + 1}: ${text.trim()}`);
+        break; // one violation per line is enough
+      }
     }
   });
 }

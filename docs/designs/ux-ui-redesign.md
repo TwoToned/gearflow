@@ -883,7 +883,7 @@ AppSidebar permission gates            NO        RISK: manual per-page review
 MobileNav IA matches AppSidebar        NO        RISK: must sync manually
 Auth wrappers preserved per page       NO        RISK: manual code review
 NavLink preserved (not std Link)       NO        RISK: grep check (DOM crash)
-PDF pipeline unaffected                YES       Run: npm run build
+PDF pipeline unaffected                YES       Run: pnpm build
 overlay-lock-reset test                YES       CI: vitest already runs this
 dark: variants under forced dark       NO        RISK: 20 files, manual audit
 ```

@@ -95,6 +95,111 @@ describe("getModelRoi — status + date filtering", () => {
   });
 });
 
+/**
+ * The gearflow#798 fallback chain: `asset.purchasePrice ?? model.defaultPurchasePrice
+ * ?? model.replacementCost`, decided per asset — not a uniform `replacementCost ×
+ * unitsOwned` multiply. `getModelRoi` and `fleetInventory` share this via
+ * `fleetCapitalFor`/`assetCost`, so both are exercised here.
+ */
+describe("fleet cost — per-asset purchase-price chain (gearflow#798)", () => {
+  test("sums each asset's OWN purchase price — not a uniform multiply", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 999 });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "rx", assetTag: "A1", purchasePrice: 1000 });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "rx", assetTag: "A2", purchasePrice: 1500 });
+      await ctx.db.insert("assets", { id: "a3", organizationId: ORG, modelId: "rx", assetTag: "A3", purchasePrice: 2000 });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.fleetCost).toBe(4500); // 1000 + 1500 + 2000, NOT 999 × 3
+
+    const inv = await asService(t).query(api.roi.fleetInventory, { orgId: ORG });
+    expect(inv.rows.find((r) => r.modelId === "rx")?.fleetCost).toBe(4500);
+  });
+
+  test("falls back to model.defaultPurchasePrice before model.replacementCost", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", {
+        id: "rx", organizationId: ORG, name: "Receiver", defaultPurchasePrice: 800, replacementCost: 500,
+      });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "rx", assetTag: "A1" });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.fleetCost).toBe(800); // defaultPurchasePrice wins, not replacementCost
+  });
+
+  test("falls all the way to replacementCost when defaultPurchasePrice is also unset", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 300 });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "rx", assetTag: "A1" });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.fleetCost).toBe(300);
+  });
+
+  test("mixes real purchase prices with fallbacks within the same model", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 100 });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "rx", assetTag: "A1", purchasePrice: 900 });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "rx", assetTag: "A2" }); // falls back to 100
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.fleetCost).toBe(1000);
+  });
+
+  test("no cost signal anywhere reports fleetCost null, not $0 — units are owned but unpriced", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver" });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "rx", assetTag: "A1" });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.unitsOwned).toBe(1);
+    expect(roi.fleetCost).toBeNull();
+
+    const inv = await asService(t).query(api.roi.fleetInventory, { orgId: ORG });
+    expect(inv.rows.find((r) => r.modelId === "rx")?.fleetCost).toBeNull();
+  });
+
+  test("a zero or negative value at any rung of the chain is treated as no signal, not free capital", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", {
+        id: "rx", organizationId: ORG, name: "Receiver", defaultPurchasePrice: -5, replacementCost: 250,
+      });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "rx", assetTag: "A1", purchasePrice: 0 });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.fleetCost).toBe(250); // 0 and -5 both skipped; replacementCost is the first real signal
+  });
+
+  test("bulk stock is unchanged: replacementCost × totalQuantity, purchasePricePerUnit ignored", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 50 });
+      // purchasePricePerUnit set but out of scope for #798 — must not affect the sum.
+      await ctx.db.insert("bulkAssets", {
+        id: "b1", organizationId: ORG, modelId: "rx", assetTag: "B1", totalQuantity: 4, purchasePricePerUnit: 9999,
+      });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.fleetCost).toBe(200); // 50 × 4, not 9999 × 4
+  });
+
+  test("zero units owned reports fleetCost null even with a real replacementCost on file", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 500 });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.unitsOwned).toBe(0);
+    expect(roi.fleetCost).toBeNull();
+  });
+});
+
 describe("fleetRevenue — status + date filtering", () => {
   test("aggregates by model across counted projects only, tracking projectCount", async () => {
     const t = convexTest(schema, modules);

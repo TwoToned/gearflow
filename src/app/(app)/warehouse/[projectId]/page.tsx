@@ -112,6 +112,7 @@ import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { isInternalStockLine } from "@/lib/warehouse-subhire-filter";
 
 const statusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -1399,7 +1400,7 @@ function WarehouseProjectPage({
   const equipmentItems = lineItems.filter((item) => {
     if (item.type !== "EQUIPMENT") return false;
     if (item.isContainerLineItem) return false;
-    if (item.isKitChild && !item.subHireId != null) return false; // real kit children stay hidden
+    if (item.isKitChild && isInternalStockLine(item.subHireId)) return false; // real kit children stay hidden
     // Hide sub-hire group parent wrappers — children show individually
     if (item.subHireId != null && !item.isKitChild && !item.kitId && (item.childLineItems?.length ?? 0) > 0) return false;
     return true;
@@ -1732,7 +1733,7 @@ function WarehouseProjectPage({
       const actualBulkItems: typeof bulkItems = [];
       for (const bi of bulkItems) {
         const li = lineItems.find((l) => l.id === bi.lineItemId);
-        if (li && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && !li.subHireId != null) {
+        if (li && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && isInternalStockLine(li.subHireId)) {
           // Multi-qty serialized item — needs asset picker
           items.push({ lineItemId: bi.lineItemId, quantity: bi.quantity });
         } else {
@@ -1750,7 +1751,7 @@ function WarehouseProjectPage({
         const li = lineItems.find((l) => l.id === item.lineItemId);
         // `!== "BULK"` (not `=== "SERIALIZED"`) so a mirror-omitted assetType
         // still routes to the picker rather than the whole-line prep path.
-        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && !li.subHireId != null) {
+        if (li && !li.assetId && !li.bulkAssetId && li.model?.assetType !== "BULK" && li.modelId && isInternalStockLine(li.subHireId)) {
           needsAssetPicker.push(item);
         } else {
           readyItems.push(item);

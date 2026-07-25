@@ -8,10 +8,10 @@
  *  B. NO-INDEX — a query with no `.withIndex(...)` at all, i.e. "read every row in
  *     the table" platform-wide. Strictly broader/riskier than (A): not even
  *     narrowed to one org. (#740 — the original org-index-only check covered only
- *     a narrow slice of the repo's 665 non-test `.collect()` calls; this is the
- *     first widening called for there. Other non-org, non-pure-scan `.collect()`s
- *     — e.g. narrowed by a compound org index's second key, or by a parent id —
- *     stay out of scope: those are bounded-by-domain reads, not the R-9.8 hazard,
+ *     a narrow slice of the repo's non-test `.collect()` calls; this was the first
+ *     widening called for there. Other non-org, non-pure-scan `.collect()`s — e.g.
+ *     narrowed by a compound org index's second key, or by a parent id — stay out
+ *     of the GATE below: those are bounded-by-domain reads, not the R-9.8 hazard,
  *     and flagging them needs case-by-case review this pattern-match can't do.)
  *
  * Like the any-ratchet and dependency-cruiser baselines, this is a RATCHET: the
@@ -28,14 +28,48 @@
  * collects — closing #625/#740 means driving that to 0 (every org-wide or
  * whole-table collect is either bounded/paginated or marked).
  *
+ * #825 (2026-07-23 audit): the remediation for #740 narrowed what this script even
+ * LOOKS at down to the 222 category-A/B matches, out of 665 total non-test
+ * `.collect()` calls repo-wide — every audit since then reported progress "of 222",
+ * silently hiding the other 443 the pattern-match doesn't examine (some genuinely
+ * bounded, some org-scoped-and-growable via a compound index this heuristic can't
+ * safely flag without false positives). The GATE stays scoped to categories A/B —
+ * widening it to every `.collect()` would flag legitimately-bounded parent-id/
+ * single-doc reads and break CI for no safety gain — but `totalCollectCalls` below
+ * is now tracked and reported alongside every result so an audit can see genuine
+ * repo-wide movement (e.g. reservationConflicts.ts/crewDashboard.ts's #825 fixes
+ * REMOVED org-wide collects while ADDING several small bounded ones — total went up
+ * even though real unbounded-scan risk went down; the two numbers answer different
+ * questions and both are now visible, instead of one masquerading as the other).
+ *
  * Usage: node scripts/collect-ratchet.mjs [--write]
  */
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 
 const CONVEX_DIR = "convex";
 const BASELINE_FILE = ".collect-ratchet-baseline";
 const MARKER = "r9.8-ok";
+// `_generated` is Convex-authored scaffolding, not hand-written app code — excluded
+// from both counts. Everything else under convex/ (including lib/) is in scope: the
+// original non-recursive walk here silently missed convex/lib/*.ts's own `.collect()`
+// calls, part of the ratchet-scope narrowing #825 flagged.
+const SKIP_DIRS = new Set(["_generated"]);
+
+/** All non-test `.ts` files under `dir`, recursing into subdirectories (skipping SKIP_DIRS). */
+function listTsFiles(dir) {
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    if (SKIP_DIRS.has(name)) continue;
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      out.push(...listTsFiles(full));
+    } else if (name.endsWith(".ts") && !name.endsWith(".test.ts")) {
+      out.push(full);
+    }
+  }
+  return out;
+}
 
 function isJustified(lines, i) {
   // Justification must be line-precise — on the matched line itself or the line
@@ -47,11 +81,19 @@ function isJustified(lines, i) {
 function countUnboundedCollects() {
   let total = 0;
   let unjustified = 0;
+  let totalCollectCalls = 0;
   const perFile = {};
-  for (const name of readdirSync(CONVEX_DIR)) {
-    if (!name.endsWith(".ts") || name.endsWith(".test.ts")) continue;
-    const lines = readFileSync(join(CONVEX_DIR, name), "utf8").split("\n");
+  for (const path of listTsFiles(CONVEX_DIR)) {
+    const name = relative(CONVEX_DIR, path);
+    const lines = readFileSync(path, "utf8").split("\n");
     for (let i = 0; i < lines.length; i++) {
+      // Honest repo-wide denominator (#825): every `.collect()` call, regardless of
+      // shape — not just the category A/B hazard pattern the GATE below reasons
+      // about. A line with two `.collect()` calls (rare, but happens in a ternary)
+      // counts both.
+      const perLineCollects = lines[i].match(/\.collect\(\)/g);
+      if (perLineCollects) totalCollectCalls += perLineCollects.length;
+
       // Category A — only the PURE org index (`by_organizationId"`, exact) is an
       // unbounded org-wide scan. A compound `by_organizationId_x` index is narrowed
       // by that second key (one asset / one status / …) by design — bounded, not
@@ -83,14 +125,15 @@ function countUnboundedCollects() {
       }
     }
   }
-  return { total, unjustified, perFile };
+  return { total, unjustified, totalCollectCalls, perFile };
 }
 
-const { total, unjustified, perFile } = countUnboundedCollects();
+const { total, unjustified, totalCollectCalls, perFile } = countUnboundedCollects();
+const totalsSuffix = `of ${total} org-wide/whole-table shape, ${totalCollectCalls} total .collect() calls repo-wide`;
 
 if (process.argv.includes("--write")) {
   writeFileSync(BASELINE_FILE, `${unjustified}\n`);
-  console.log(`[collect-ratchet] wrote baseline: ${unjustified} unjustified (of ${total} unbounded-shape)`);
+  console.log(`[collect-ratchet] wrote baseline: ${unjustified} unjustified (${totalsSuffix})`);
   process.exit(0);
 }
 
@@ -105,7 +148,7 @@ try {
 if (unjustified > baseline) {
   console.error(
     `[collect-ratchet] FAIL: unjustified unbounded .collect() scans rose to ${unjustified} ` +
-      `(baseline ${baseline}, of ${total} org-wide/whole-table total).\n` +
+      `(baseline ${baseline}, ${totalsSuffix}).\n` +
       `New unbounded reads are not allowed (R-9.8). Bound them (parent index, .take,\n` +
       `pagination via convex/lib/pagination.ts), or if the full org/table set is genuinely\n` +
       `needed add a "r9.8-ok: <reason>" comment. Offenders by file:`,
@@ -117,13 +160,7 @@ if (unjustified > baseline) {
 }
 
 if (unjustified < baseline) {
-  console.log(
-    `[collect-ratchet] improved: ${unjustified} unjustified < baseline ${baseline} ` +
-      `(of ${total} org-wide/whole-table). Lower the baseline: node scripts/collect-ratchet.mjs --write`,
-  );
+  console.log(`[collect-ratchet] improved: ${unjustified} unjustified < baseline ${baseline} (${totalsSuffix}). Lower the baseline: node scripts/collect-ratchet.mjs --write`);
 } else {
-  console.log(
-    `[collect-ratchet] OK: ${unjustified} unjustified unbounded .collect() scans ` +
-      `(baseline ${baseline}, of ${total} org-wide/whole-table total). Target: 0.`,
-  );
+  console.log(`[collect-ratchet] OK: ${unjustified} unjustified unbounded .collect() scans (baseline ${baseline}, ${totalsSuffix}). Target: 0.`);
 }

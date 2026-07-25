@@ -50,7 +50,7 @@ export async function enqueueWebhookEvent(
 ): Promise<number> {
   const endpoints = await ctx.db
     .query("webhooks")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)) // r9.8-ok: small org-configured table (webhook endpoints), not growable with usage
     .collect();
   const matching = endpoints.filter(
     (w) => w.isActive === true && parseEvents(w.events ?? "[]").includes(event),

@@ -89,9 +89,9 @@ export async function backfillTestTagAssetsCore(
   now: number,
 ): Promise<{ created: number; retired: number }> {
   const [allOrgAssets, allModels, allTTAssets] = await Promise.all([
-    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(),
-    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(),
-    ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(),
+    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(), // r9.8-ok: reconciliation backfill — must see every asset to find orphaned/missing T&T rows
+    ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(), // r9.8-ok: reconciliation backfill — needs every model to know which assets require T&T
+    ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)).collect(), // r9.8-ok: reconciliation backfill — must see every T&T row to retire orphaned ones
   ]);
 
   const modelMap = new Map(allModels.map((m) => [m.id, m]));

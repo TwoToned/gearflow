@@ -132,3 +132,121 @@ describe("supplierOrders.listBySupplier", () => {
     ).rejects.toThrow(/Forbidden|organization/i);
   });
 });
+
+describe("supplierOrders.getDetail", () => {
+  test("returns header + supplier + project + items (with model/asset) + linked assets + invoice", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", status: "ORDERED", projectId: "P1", total: 100, createdAt: NOW, invoiceFileId: "f1" });
+      await ctx.db.insert("models", { id: "mo1", organizationId: ORG, name: "Console" });
+      await ctx.db.insert("assets", { id: "as1", organizationId: ORG, modelId: "mo1", assetTag: "TAG-1", status: "AVAILABLE", supplierOrderId: "o1" });
+      await ctx.db.insert("supplierOrderItems", { id: "i1", orderId: "o1", description: "Console x1", quantity: 1, modelId: "mo1", assetId: "as1", sortOrder: 0 });
+      await ctx.db.insert("fileUploads", { id: "f1", organizationId: ORG, fileName: "invoice.pdf", fileSize: 100, mimeType: "application/pdf", storageKey: "sk1", url: "/api/files/sk1", uploadedById: USER });
+    });
+    const res = await t.withIdentity(asUser).query(api.supplierOrders.getDetail, { orgId: ORG, id: "o1" });
+    if (!res) throw new Error("expected order");
+    expect(res.orderNumber).toBe("PO-1");
+    expect(res.supplier).toEqual({ id: "s1", name: "Acme" });
+    expect(res.project).toEqual({ id: "P1", name: "Gig", projectNumber: "P1" });
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0]).toMatchObject({ description: "Console x1", model: { id: "mo1", name: "Console" }, asset: { id: "as1", assetTag: "TAG-1" } });
+    expect(res.assets).toEqual([{ id: "as1", assetTag: "TAG-1", status: "AVAILABLE", model: { id: "mo1", name: "Console" } }]);
+    expect(res.invoice).toEqual({ id: "f1", fileName: "invoice.pdf", fileSize: 100, mimeType: "application/pdf", url: "/api/files/sk1" });
+  });
+
+  test("cross-tenant: another org's caller gets null (not a thrown error — reactively consumed)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", createdAt: NOW });
+    });
+    const res = await t.withIdentity({ subject: "intruder", orgId: OTHER }).query(api.supplierOrders.getDetail, { orgId: OTHER, id: "o1" });
+    expect(res).toBeNull();
+  });
+
+  test("returns null for a missing order", async () => {
+    const t = makeT(); await seed(t);
+    const res = await t.withIdentity(asUser).query(api.supplierOrders.getDetail, { orgId: ORG, id: "nope" });
+    expect(res).toBeNull();
+  });
+});
+
+describe("supplierOrdersWrites.attachInvoiceNative / removeInvoiceNative", () => {
+  async function seedOrderAndFiles(t: T) {
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", createdAt: NOW });
+      await ctx.db.insert("fileUploads", { id: "f1", organizationId: ORG, fileName: "invoice1.pdf", fileSize: 10, mimeType: "application/pdf", storageKey: "sk1", url: "/api/files/sk1", uploadedById: USER });
+      await ctx.db.insert("storedFiles", { storageId: "sk1", organizationId: ORG });
+      await ctx.db.insert("fileUploads", { id: "f2", organizationId: ORG, fileName: "invoice2.pdf", fileSize: 20, mimeType: "application/pdf", storageKey: "sk2", url: "/api/files/sk2", uploadedById: USER });
+      await ctx.db.insert("storedFiles", { storageId: "sk2", organizationId: ORG });
+    });
+  }
+
+  test("attach links the file + audits", async () => {
+    const t = makeT(); await seedOrderAndFiles(t);
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "o1", orgId: ORG, fileId: "f1", now: NOW, actor, auditId: "a1" });
+    const order = await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first());
+    expect(order?.invoiceFileId).toBe("f1");
+    const log = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "a1")).first());
+    expect(log?.summary).toBe("Attached invoice to order PO-1");
+  });
+
+  test("re-attaching a different file deletes the superseded file's bytes + row", async () => {
+    const t = makeT(); await seedOrderAndFiles(t);
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "o1", orgId: ORG, fileId: "f1", now: NOW, actor, auditId: "a1" });
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "o1", orgId: ORG, fileId: "f2", now: NOW, actor, auditId: "a2" });
+    const order = await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first());
+    expect(order?.invoiceFileId).toBe("f2");
+    const oldFile = await t.run(async (ctx) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "f1")).first());
+    expect(oldFile).toBeNull();
+  });
+
+  test("rejects a file belonging to another org", async () => {
+    const t = makeT(); await seedOrderAndFiles(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("fileUploads", { id: "fX", organizationId: OTHER, fileName: "x.pdf", fileSize: 1, mimeType: "application/pdf", storageKey: "skX", url: "/api/files/skX", uploadedById: USER });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "o1", orgId: ORG, fileId: "fX", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/File not found/i);
+  });
+
+  test("rejects an order belonging to another org", async () => {
+    const t = makeT(); await seedOrderAndFiles(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "oOther", organizationId: OTHER, supplierId: "sX", orderNumber: "PO-X", type: "PURCHASE", createdAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "oOther", orgId: ORG, fileId: "f1", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/Order not found/i);
+  });
+
+  test("RBAC: a viewer (no supplier:update) is rejected", async () => {
+    const t = makeT(); await seedOrderAndFiles(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      if (m) await ctx.db.patch(m._id, { role: "viewer" });
+    });
+    await expect(
+      t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "o1", orgId: ORG, fileId: "f1", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/Forbidden|permission/i);
+  });
+
+  test("remove deletes the file's bytes + row, clears invoiceFileId, and audits", async () => {
+    const t = makeT(); await seedOrderAndFiles(t);
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "o1", orgId: ORG, fileId: "f1", now: NOW, actor, auditId: "a1" });
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.removeInvoiceNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "a2" });
+    const order = await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first());
+    expect(order?.invoiceFileId).toBeUndefined();
+    const file = await t.run(async (ctx) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "f1")).first());
+    expect(file).toBeNull();
+    const log = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "a2")).first());
+    expect(log?.summary).toBe("Removed invoice from order PO-1");
+  });
+
+  test("remove is idempotent when there's no invoice", async () => {
+    const t = makeT(); await seedOrderAndFiles(t);
+    const res = await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.removeInvoiceNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "a1" });
+    expect(res).toEqual({ id: "o1" });
+  });
+});

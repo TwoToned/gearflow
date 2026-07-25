@@ -23,14 +23,19 @@ export function useSupplierOrderWrites() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const createM = useMutation(api.supplierOrdersWrites.createNative);
+  const attachInvoiceM = useMutation(api.supplierOrdersWrites.attachInvoiceNative);
+  const removeInvoiceM = useMutation(api.supplierOrdersWrites.removeInvoiceNative);
+
+  const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
+  const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
 
   return {
     create: async (data: SupplierOrderFormValues): Promise<{ id: string }> => {
-      if (!orgId) throw new Error("No active organization");
+      const org = requireOrg();
       const parsed = supplierOrderSchema.parse(data);
       return await createM({
         id: createId(),
-        orgId,
+        orgId: org,
         supplierId: parsed.supplierId,
         orderNumber: parsed.orderNumber,
         type: parsed.type,
@@ -41,9 +46,13 @@ export function useSupplierOrderWrites() {
         projectId: parsed.projectId || undefined,
         notes: parsed.notes || undefined,
         now: Date.now(),
-        actor: { userId: session?.user.id ?? "", userName: session?.user.name ?? "" },
+        actor: actor(),
         auditId: createId(),
       });
     },
+    attachInvoice: async (orderId: string, fileId: string): Promise<{ id: string }> =>
+      await attachInvoiceM({ id: orderId, orgId: requireOrg(), fileId, now: Date.now(), actor: actor(), auditId: createId() }),
+    removeInvoice: async (orderId: string): Promise<{ id: string }> =>
+      await removeInvoiceM({ id: orderId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),
   };
 }

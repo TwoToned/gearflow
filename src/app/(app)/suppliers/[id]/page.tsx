@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { useSupplierWrites } from "@/hooks/use-supplier-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { assetStatusLabels, supplierOrderStatusLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
+import { assetStatusLabels, supplierOrderStatusLabels, supplierOrderTypeLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -51,13 +51,6 @@ import {
 } from "@/components/ui/table";
 
 
-const orderTypeLabels: Record<string, string> = {
-  PURCHASE: "Purchase",
-  SUBHIRE: "Subhire",
-  REPAIR: "Repair",
-  LABOUR: "Labour",
-  OTHER: "Other",
-};
 
 // Order statuses that mean "money is still in motion" — open/live with this
 // supplier. Used for the at-a-glance "open orders" figure.
@@ -167,7 +160,11 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
       id: "orderNumber",
       header: "Order #",
       mobile: "title",
-      cell: (order) => <span className="t-mono font-medium text-ink">{order.orderNumber}</span>,
+      cell: (order) => (
+        <Link href={`/suppliers/${id}/orders/${order.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
+          {order.orderNumber}
+        </Link>
+      ),
     },
     {
       id: "status",
@@ -185,7 +182,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
       id: "type",
       header: "Type",
       mobile: "meta",
-      cell: (order) => <Badge status="neutral">{orderTypeLabels[order.type] || order.type}</Badge>,
+      cell: (order) => <Badge status="neutral">{supplierOrderTypeLabels[order.type] || order.type}</Badge>,
     },
     {
       id: "project",
@@ -467,10 +464,12 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                           {orders.map((order) => (
                             <TableRow key={order.id}>
                               <TableCell>
-                                <span className="t-mono font-medium text-ink">{order.orderNumber}</span>
+                                <Link href={`/suppliers/${id}/orders/${order.id}`} className={cn("rounded-sm t-mono font-medium text-ink hover:underline", focusRing)}>
+                                  {order.orderNumber}
+                                </Link>
                               </TableCell>
                               <TableCell>
-                                <Badge status="neutral">{orderTypeLabels[order.type] || order.type}</Badge>
+                                <Badge status="neutral">{supplierOrderTypeLabels[order.type] || order.type}</Badge>
                               </TableCell>
                               <TableCell>
                                 <StatusIndicator category="supplierOrder" value={order.status} label={supplierOrderStatusLabels[order.status] || formatLabel(order.status)} />

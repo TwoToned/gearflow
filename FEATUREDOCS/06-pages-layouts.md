@@ -17,6 +17,23 @@ div.app-shell (fixed inset-0 on mobile, relative on desktop)
 └── MobileNav (shrink-0, hidden on md+)
 ```
 
+**`MobileNav` (`src/components/layout/mobile-nav.tsx`) single-flight navigation guard.**
+Mobile bug: rapidly tapping one bottom-nav tab then a different one could snap the
+user back to the first tab — the App Router doesn't guarantee two overlapping soft
+navigations resolve in the order they were triggered (vercel/next.js#83386), and
+mobile's higher latency widens the race window a lot versus desktop. This is a
+distinct bug class from the `useServerMutation` stale-navigation guard (see
+FEATUREDOCS/54 — that one gates a mutation's `onSuccess` `router.push` on the
+triggering view still being mounted; this one guards two competing plain
+navigations). `useSingleFlightNavClick` replaces `next/link`'s `<Link>` with a
+`router.push`-driven `<a onClick>` (same reason `app-sidebar.tsx`'s desktop
+`NavLink` isn't a plain `<Link>`, though for a different underlying bug) that
+tracks one pending destination in a ref: a second tap on a *different* tab while
+a navigation is still in flight is dropped, and a 1.5s safety-valve timeout clears
+the guard if a navigation stalls so the bar never gets stuck. Tapping the
+already-pending or already-active tab is always a no-op. Regression test:
+`src/components/layout/__tests__/mobile-nav.test.tsx`.
+
 **Admin Layout** (`src/app/(admin)/admin/layout.tsx`): Server-side role check + `AdminShell` component with own responsive sidebar
 
 **Auth Layout** (`src/app/(auth)/layout.tsx`): Centered card, no sidebar

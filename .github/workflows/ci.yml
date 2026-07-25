@@ -311,6 +311,9 @@ jobs:
     name: Hygiene
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # soft PR-size comment (R-2.8) needs to post/update a comment
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -376,6 +379,37 @@ jobs:
 
       - name: Secret scan (gitleaks)
         run: gitleaks detect --source . --no-git --redact -c .gitleaks.toml
+
+      # SHOULD-level (R-2.8, T-2), non-blocking: reports changed LOC and flags
+      # PRs over the ≤400-LOC target with a soft comment instead of a CI gate.
+      - name: PR size check (R-2.8)
+        id: pr-size
+        run: pnpm run pr-size-check
+
+      - name: Comment on oversized PR (R-2.8 — advisory only)
+        if: steps.pr-size.outputs.over_budget == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- pr-size-check -->";
+            const changedLoc = "${{ steps.pr-size.outputs.changed_loc }}";
+            const body = `${marker}\n**PR size:** ${changedLoc} changed LOC — over the POLICY.md ` +
+              "R-2.8 / T-2 SHOULD-level target (≤ 400 LOC, target 200-400 LOC, excluding R-0.5 " +
+              "exclusions). This is advisory only, not a gate — consider splitting if practical, " +
+              "or note a size rationale in the PR body.";
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
   build:
     name: Build

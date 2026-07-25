@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { toast } from "sonner";
+import { isSiteAdminRole } from "@/lib/admin-role";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -253,7 +254,7 @@ export default function AdminUsersPage() {
                         </div>
                       </td>
                       <td className="p-3">
-                        {user.role === "admin" ? (
+                        {isSiteAdminRole(user.role) ? (
                           <Badge className="bg-red-500/10 text-red-500 border-red-500/20">
                             Site Admin
                           </Badge>

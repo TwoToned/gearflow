@@ -377,6 +377,7 @@ export const createNative = mutation({
     await assertRefInOrg(ctx, "models", fields.modelId, fields.organizationId);
     if (fields.locationId) await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
     if (fields.supplierId) await assertRefInOrg(ctx, "suppliers", fields.supplierId, fields.organizationId);
+    if (fields.supplierOrderId) await assertRefInOrg(ctx, "supplierOrders", fields.supplierOrderId, fields.organizationId);
     if (fields.parentAssetId) await assertRefInOrg(ctx, "assets", fields.parentAssetId, fields.organizationId);
     if (fields.kitId) await assertRefInOrg(ctx, "kits", fields.kitId, fields.organizationId);
 
@@ -460,6 +461,7 @@ export const updateNative = mutation({
     if (typeof set.modelId === "string") await assertRefInOrg(ctx, "models", set.modelId, orgId);
     if (typeof set.locationId === "string") await assertRefInOrg(ctx, "locations", set.locationId, orgId);
     if (typeof set.supplierId === "string") await assertRefInOrg(ctx, "suppliers", set.supplierId, orgId);
+    if (typeof set.supplierOrderId === "string") await assertRefInOrg(ctx, "supplierOrders", set.supplierOrderId, orgId);
     if (typeof set.parentAssetId === "string") await assertRefInOrg(ctx, "assets", set.parentAssetId, orgId);
     if (typeof set.kitId === "string") await assertRefInOrg(ctx, "kits", set.kitId, orgId);
 
@@ -541,6 +543,8 @@ export const createManyNative = mutation({
       purchasePrice: v.optional(v.number()),
       purchaseSupplier: v.optional(v.string()),
       supplierId: v.optional(v.string()),
+      purchaseOrderNumber: v.optional(v.string()),
+      supplierOrderId: v.optional(v.string()),
       warrantyExpiry: v.optional(v.number()),
       notes: v.optional(v.string()),
       locationId: v.optional(v.string()),
@@ -571,6 +575,7 @@ export const createManyNative = mutation({
       await assertRefInOrg(ctx, "models", a.modelId, orgId);
       if (a.locationId) await assertRefInOrg(ctx, "locations", a.locationId, orgId);
       if (a.supplierId) await assertRefInOrg(ctx, "suppliers", a.supplierId, orgId);
+      if (a.supplierOrderId) await assertRefInOrg(ctx, "supplierOrders", a.supplierOrderId, orgId);
       const { auditId: _auditId, ...assetFields } = a;
       const fields = { ...assetFields, organizationId: orgId, createdAt: now, updatedAt: now };
       await ctx.db.insert("assets", fields);

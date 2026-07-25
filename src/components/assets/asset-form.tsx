@@ -13,11 +13,12 @@ import { cn } from "@/lib/utils";
 import { assetSchema, type AssetFormValues } from "@/lib/validations/asset";
 import { useAssetWrites } from "@/hooks/use-asset-writes";
 import { peekNextAssetTags } from "@/server/settings";
-import { assetStatusLabels, conditionLabels } from "@/lib/status-labels";
+import { assetStatusLabels, conditionLabels, supplierOrderTypeLabels, supplierOrderStatusLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useModels } from "@/hooks/use-models";
 import { useLocations } from "@/hooks/use-locations";
 import { useSuppliers } from "@/hooks/use-suppliers";
+import { useSupplierOrdersBySupplier } from "@/hooks/use-supplier-orders";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { TagInput } from "@/components/ui/tag-input";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import {
 } from "@/components/ui/accordion";
 import { QuickCreateLocation } from "./quick-create-location";
 import { QuickCreateSupplier } from "./quick-create-supplier";
+import { QuickCreateSupplierOrder } from "./quick-create-supplier-order";
 import { CustomFieldsInput } from "@/components/custom-fields/custom-fields-input";
 
 interface AssetFormProps {
@@ -51,6 +53,7 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   const isEditing = !!initialData;
   const [showCreateLocation, setShowCreateLocation] = useState(false);
   const [showCreateSupplier, setShowCreateSupplier] = useState(false);
+  const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [extraAssets, setExtraAssets] = useState<{ tag: string; serialNumber: string }[]>([]);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -101,6 +104,10 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
   });
 
   const v = form.watch();
+
+  // Reactive orders for the currently-selected supplier (issue #789 — the
+  // order-number combobox is scoped to that supplier's own SupplierOrders).
+  const supplierOrders = useSupplierOrdersBySupplier(orgId, v.supplierId || undefined)?.orders ?? [];
 
   // Auto-populate asset tag for new assets (preview only, no counter increment)
   useEffect(() => {
@@ -330,7 +337,16 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
                 <Controller control={form.control} name="supplierId" render={({ field }) => (
                   <ComboboxPicker
                     value={field.value || ""}
-                    onChange={field.onChange}
+                    onChange={(val) => {
+                      field.onChange(val);
+                      if (val !== field.value) {
+                        // A different (or cleared) supplier invalidates any order
+                        // link from the previous one — the combobox below is
+                        // scoped to the selected supplier's own orders.
+                        form.setValue("supplierOrderId", "");
+                        form.setValue("purchaseOrderNumber", "");
+                      }
+                    }}
                     options={(suppliers as Array<{ id: string; name: string; contactName?: string | null }>).map((s) => ({
                       value: s.id,
                       label: s.name,
@@ -346,8 +362,45 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
                 )} />
               </Field>
               {v.supplierId && (
-                <Field label="Purchase order #">
-                  <Input {...form.register("purchaseOrderNumber")} placeholder="e.g. PO-2024-001" />
+                <Field
+                  label="Order #"
+                  hint={
+                    !v.supplierOrderId && v.purchaseOrderNumber
+                      ? `Previously recorded as "${v.purchaseOrderNumber}" — pick or create a linked order above.`
+                      : undefined
+                  }
+                >
+                  <Controller control={form.control} name="supplierOrderId" render={({ field }) => (
+                    <ComboboxPicker
+                      value={field.value || ""}
+                      onChange={(val) => {
+                        field.onChange(val);
+                        const order = supplierOrders.find((o) => o.id === val);
+                        if (order) {
+                          form.setValue("purchaseOrderNumber", order.orderNumber);
+                          if (!form.getValues("purchasePrice") && order.total != null) {
+                            form.setValue("purchasePrice", Number(order.total));
+                          }
+                          if (!form.getValues("purchaseDate") && order.orderDate) {
+                            form.setValue("purchaseDate", new Date(order.orderDate).toISOString().slice(0, 10));
+                          }
+                        } else if (!val) {
+                          form.setValue("purchaseOrderNumber", "");
+                        }
+                      }}
+                      options={supplierOrders.map((o) => ({
+                        value: o.id,
+                        label: o.orderNumber,
+                        description: `${supplierOrderTypeLabels[o.type] ?? o.type} · ${supplierOrderStatusLabels[o.status] ?? o.status}`,
+                      }))}
+                      placeholder="No order"
+                      searchPlaceholder="Search orders…"
+                      emptyMessage="No orders for this supplier yet."
+                      onCreateNew={() => setShowCreateOrder(true)}
+                      createNewLabel="New order"
+                      allowClear
+                    />
+                  )} />
                 </Field>
               )}
               <Field label="Warranty expiry">
@@ -457,6 +510,17 @@ export function AssetForm({ initialData, preselectedModelId }: AssetFormProps) {
         onOpenChange={setShowCreateSupplier}
         onCreated={(id) => form.setValue("supplierId", id)}
       />
+      {v.supplierId && (
+        <QuickCreateSupplierOrder
+          open={showCreateOrder}
+          onOpenChange={setShowCreateOrder}
+          supplierId={v.supplierId}
+          onCreated={(order) => {
+            form.setValue("supplierOrderId", order.id);
+            form.setValue("purchaseOrderNumber", order.orderNumber);
+          }}
+        />
+      )}
     </form>
   );
 }

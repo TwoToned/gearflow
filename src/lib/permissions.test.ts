@@ -149,11 +149,15 @@ describe("rolePermissions", () => {
     expect(managerSettings).not.toContain("update");
   });
 
-  it("member has no org settings or members access", () => {
+  it("member has no org settings access but can read org members", () => {
+    // member can create/edit projects (project:create/update), and the
+    // create-project wizard's manager-picker needs orgMembers:read — see
+    // convex/lib/permissionsCore.ts. Read-only, matching manager's existing
+    // orgMembers:["read"]; no invite/remove/update_role rights.
     const memberSettings = rolePermissions.member.orgSettings as readonly string[];
     const memberMembers = rolePermissions.member.orgMembers as readonly string[];
     expect(memberSettings).toEqual([]);
-    expect(memberMembers).toEqual([]);
+    expect(memberMembers).toEqual(["read"]);
   });
 
   it("staff role is removed (consolidated into member in Wave 2)", () => {

@@ -19,7 +19,6 @@ import { DEFAULT_SSO_SETTINGS, type OrgSSOSettings, type SSOGroupMapping } from 
 import { env } from "@/env";
 import { readOrgSettingsBlob, saveOrgSettings } from "@/lib/org-settings-read";
 import type { OrgSettings } from "@/lib/org-settings-types";
-import { isDangerousObjectKey } from "@/lib/safe-object-key";
 
 // ─── Read helpers ────────────────────────────────────────────────────────────
 
@@ -217,7 +216,7 @@ export async function updateSSOProviderMeta(
   meta: { displayName?: string; icon?: string },
 ) {
   const { organizationId } = await requirePermission("orgSettings", "update");
-  if (isDangerousObjectKey(providerId)) {
+  if (providerId === "__proto__" || providerId === "constructor" || providerId === "prototype") {
     throw new Error("Invalid provider id");
   }
 

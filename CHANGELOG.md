@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   badge now uses the shared `isSiteAdminRole()` helper (`src/lib/admin-role.ts`) instead of a
   4th inline `role === "admin"` comparison, closing the recurrence #817's fix missed.
 
+- **R-9.8** — Bumped `.collect-ratchet-full-baseline` 667 → 669: PR #887 added two new
+  `.collect()` calls in `convex/roi.ts` (project-group/line-item rollup), both narrowed by
+  `withIndex("by_projectId", ...)` and additionally bounded by the surrounding
+  `ROLLUP_READ_BUDGET`/`PROJECT_SCAN_CAP` guards — not the R-9.8 org-wide/whole-table hazard
+  shape, but the full-count ratchet (`scripts/collect-ratchet.mjs`) still counts every
+  `.collect()` and the baseline wasn't bumped when #887 merged, breaking CI on `main` for
+  every subsequent PR.
+
 - Closed the POLICY.md §5 R-5.3 finding (#856, tracked under #868): stale non-pnpm CLI
   invocations (Convex, Prisma, tsx, shadcn) in `docs/convex-backup-restore-runbook.md`,
   `docs/efficiency-billing-session-prompt.md`, `docs/convex-observability-runbook.md`,

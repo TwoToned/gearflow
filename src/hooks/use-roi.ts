@@ -125,6 +125,52 @@ export function useFleetRoi(opts: {
   return { data, isLoading: data === undefined };
 }
 
+export type ZeroPricedGroupsData = (typeof api.roi.zeroPricedGroups)["_returnType"];
+
+/**
+ * The "why is my ROI low" diagnostic: groups in counted-status projects that carry
+ * real gear but have no flat price, so that gear silently reports $0. Scoped to
+ * `scope` (earned/booked) like the fleet report, but NOT date-windowed — a
+ * mispriced group is a data problem regardless of which window happens to be
+ * selected, and hiding it behind "Last 12 months" would just resurface the same
+ * confusion the next time someone narrows the window.
+ */
+export function useZeroPricedGroups(scope: RoiScope): {
+  data: ZeroPricedGroupsData | undefined;
+  isLoading: boolean;
+} {
+  const convex = useConvex();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
+  const key = `${orgId ?? ""}|${scope}`;
+
+  const [raw, setRaw] = useState<{ key: string; value: ZeroPricedGroupsData } | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    if (!orgId) {
+      setRaw(undefined);
+      return;
+    }
+    let cancelled = false;
+    convex
+      .query(api.roi.zeroPricedGroups, { orgId, statuses: statusesForScope(scope) })
+      .then((value) => {
+        if (!cancelled) setRaw({ key, value });
+      })
+      .catch(() => {
+        /* report read is best-effort; leave loading state */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [convex, orgId, scope, key]);
+
+  const data = raw && raw.key === key ? raw.value : undefined;
+  return { data, isLoading: data === undefined };
+}
+
 type ModelRoiQuery = (typeof api.roi.getModelRoi)["_returnType"];
 
 export type ModelRoiData = ModelRoiQuery & {

@@ -46,7 +46,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
   const [scope, setScope] = useState<RoiScope>("earned");
   const [allTime, setAllTime] = useState(false);
 
-  const window = useMemo(() => (allTime ? undefined : defaultRoiWindow()), [allTime]);
+  const window = useMemo(() => (allTime ? undefined : defaultRoiWindow(scope)), [allTime, scope]);
 
   const { data, isLoading } = useModelRoi(modelId, { scope, from: window?.from, to: window?.to });
 

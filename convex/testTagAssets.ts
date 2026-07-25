@@ -1,7 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireService, requireOrgRead, requireOrgReadDoc } from "./lib/auth";
+import { requireService, requireOrgRead } from "./lib/auth";
 import * as enums from "./lib/validators";
 
 // ── Pure filter/sort helpers ported from src/lib/test-tag-read.ts (byte-for-byte;

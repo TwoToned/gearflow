@@ -39,7 +39,6 @@ export function ElectricalStep({
   dispatch: React.Dispatch<WizardAction>;
 }) {
   const enabledTests = (state.profile?.electricalTests || []).filter(t => t.enabled);
-  const thresholds = state.profile?.thresholds || {};
 
   // Auto-calculate electrical result
   useEffect(() => {

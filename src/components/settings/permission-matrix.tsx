@@ -54,29 +54,6 @@ export function PermissionMatrix({
     });
   };
 
-  const toggleColumn = (actionKey: string) => {
-    // Check if all resources that have this action are checked
-    const resourcesWithAction = RESOURCES.filter((r) =>
-      PERMISSION_REGISTRY[r].actions.some((a) => a.key === actionKey),
-    );
-    const allChecked = resourcesWithAction.every((r) =>
-      (permissions[r] ?? []).includes(actionKey),
-    );
-
-    const updated = { ...permissions };
-    for (const r of resourcesWithAction) {
-      const current = [...(updated[r] ?? [])];
-      if (allChecked) {
-        const idx = current.indexOf(actionKey);
-        if (idx >= 0) current.splice(idx, 1);
-      } else if (!current.includes(actionKey)) {
-        current.push(actionKey);
-      }
-      updated[r] = current;
-    }
-    onChange(updated);
-  };
-
   const selectAll = () => {
     const full: PermissionMap = {};
     for (const r of RESOURCES) {
@@ -91,12 +68,6 @@ export function PermissionMatrix({
       empty[r] = [];
     }
     onChange(empty);
-  };
-
-  const resourceHasAction = (resource: string, actionKey: string) => {
-    return PERMISSION_REGISTRY[resource as keyof typeof PERMISSION_REGISTRY].actions.some(
-      (a) => a.key === actionKey,
-    );
   };
 
   return (

@@ -16,7 +16,6 @@ import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, focusRing } from "@/lib/utils";
-import { getStatusColor } from "@/lib/status-colors";
 import { testTagResultLabels, equipmentClassLabels } from "@/lib/status-labels";
 import {
   Table,

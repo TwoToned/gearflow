@@ -28,7 +28,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -49,8 +48,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 import {
@@ -425,7 +422,7 @@ function SubHireCreateView({
   const [supplierReference, setSupplierReference] = useState("");
   const [hireStart, setHireStart] = useState("");
   const [hireEnd, setHireEnd] = useState("");
-  const [showOnDocs, setShowOnDocs] = useState(false);
+  const [showOnDocs] = useState(false);
   const [notes, setNotes] = useState("");
 
   // Reactive supplier list from Convex; active-only (matches old getSuppliers).

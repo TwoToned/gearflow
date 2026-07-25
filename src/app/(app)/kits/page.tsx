@@ -163,7 +163,7 @@ export default function KitsPage() {
     sortBy, sortOrder, pageSize, page,
     setPage, setPageSize, handleSort,
     columnVisibility, toggleColumnVisibility, resetPreferences,
-    filters, setFilter, clearFilters,
+    filters, setFilter,
     currentConfig, applyConfig,
   } = useTablePreferences("kits", { sortBy: "assetTag", sortOrder: "asc" });
 

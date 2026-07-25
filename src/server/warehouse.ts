@@ -1,6 +1,5 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { getClientById } from "@/lib/clients-read";

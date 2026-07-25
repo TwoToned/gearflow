@@ -169,6 +169,6 @@ Literal zero is infeasible without disproportionate cost: the worktree path itse
 
 ## Test / verification plan
 
-- Phase 1: `npm run build` (typecheck) + `npm run lint` + `npm test`; grep asserts zero `gearflow` outside Category-C keep-list.
+- Phase 1: `pnpm build` (typecheck) + `pnpm lint` + `pnpm test`; grep asserts zero `gearflow` outside Category-C keep-list.
 - Phase 2: send a test email through Resend from the new domain; enroll a fresh TOTP and confirm issuer label.
 - Phase 3: post-transfer, force a deploy and poll `flow.rvlt.app` for 200/307; confirm a PR preview still builds.

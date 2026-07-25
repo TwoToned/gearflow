@@ -7,7 +7,7 @@ Those sections are the spec; this file records how the app implements them.
 
 ## Automated compliance guard
 
-`src/lib/__tests__/mobile-compliance.test.ts` runs in normal CI (`npm test`) and
+`src/lib/__tests__/mobile-compliance.test.ts` runs in normal CI (`pnpm test`) and
 statically enforces three §15 rules that **typecheck, lint and `next build` all
 pass on when violated** — they only show up when you open the app on a phone:
 

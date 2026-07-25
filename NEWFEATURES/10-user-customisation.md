@@ -96,7 +96,7 @@ Better Auth provides passkeys via `@better-auth/passkey`, powered by SimpleWebAu
 
 **Install:**
 ```bash
-npm install @better-auth/passkey
+pnpm add @better-auth/passkey
 ```
 
 **Server config (`src/lib/auth.ts`):**

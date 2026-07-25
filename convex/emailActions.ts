@@ -4,6 +4,8 @@ import { v } from "convex/values";
 import { Resend } from "resend";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { withTimeout } from "./lib/promiseTimeout";
+import { reportConvexVendorUsage } from "./lib/vendorUsage";
 
 /**
  * Phase 6b — the Node-runtime delivery action for Convex-scheduled emails.
@@ -25,6 +27,12 @@ import { internal } from "./_generated/api";
  * mock-logs and records the ledger row (parity with the `src/lib/email.ts`
  * dev-mock, which "succeeds" without sending) — so wiring a send site through
  * here is inert until the deployment env is configured.
+ *
+ * On a confirmed real send, reports T-P4 vendor-cost telemetry via
+ * `reportConvexVendorUsage` (R-9.12/#831) — this is the second Resend send
+ * path (`src/lib/email.ts`'s `sendEmail()` covers the direct one), and was
+ * previously invisible to the tracked `vendor_usage` metric. Not reported on
+ * the no-key mock path, mirroring `sendEmail()`'s dev-mock convention.
  */
 
 const MAX_ATTEMPTS = 3;
@@ -75,9 +83,13 @@ export const deliver = internalAction({
       // duplicate send (a retry after a crash post-accept, or a rare concurrent
       // re-invocation) — closing the exactly-once gap the local ledger can't,
       // since the ledger is written only after the external call returns.
-      const { error } = await resend.emails.send(
-        { from, to, subject, html },
-        { idempotencyKey },
+      // R-9.6: the Resend SDK exposes no timeout/AbortSignal option of its
+      // own — bound how long we wait rather than relying on its
+      // library-default (potentially infinite) behavior.
+      const { error } = await withTimeout(
+        resend.emails.send({ from, to, subject, html }, { idempotencyKey }),
+        10_000,
+        "resend.emails.send",
       );
       if (error) throw new Error(`Resend failed: ${error.message}`);
 
@@ -87,6 +99,9 @@ export const deliver = internalAction({
         subject,
         now: Date.now(),
       });
+      // T-P4 cost tracking, R-9.12/#831 — this is the second (Convex-scheduled)
+      // Resend send path; src/lib/email.ts covers the direct path.
+      await reportConvexVendorUsage("resend", "send");
       return { sent: true };
     } catch (e) {
       // Transient failure — retry with backoff (no ledger row written, so the

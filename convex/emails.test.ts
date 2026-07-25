@@ -5,12 +5,29 @@ import schema from "./schema";
 import { api, internal } from "./_generated/api";
 
 // The delivery action constructs `new Resend(apiKey)` only when RESEND_API_KEY is
-// set; this mock makes that send fail so the retry path is exercised. Tests that
-// want the mock (no-key) path simply leave RESEND_API_KEY unset.
+// set. `resendSendMock` defaults to failing (exercises the retry path); tests that
+// want the mock (no-key) path simply leave RESEND_API_KEY unset, and the success
+// path overrides it with `mockResolvedValueOnce`. Explicit return type so
+// mockResolvedValueOnce can switch between the success/error shapes (both fields
+// are otherwise inferred as `null`/`{ message: string }` only, from the default impl).
+const { resendSendMock } = vi.hoisted(() => ({
+  resendSendMock: vi.fn<
+    (...args: unknown[]) => Promise<{ data: { id: string } | null; error: { message: string } | null }>
+  >(async () => ({ data: null, error: { message: "boom" } })),
+}));
 vi.mock("resend", () => ({
-  Resend: vi.fn().mockImplementation(() => ({
-    emails: { send: vi.fn(async () => ({ data: null, error: { message: "boom" } })) },
-  })),
+  // A `function`, not an arrow function: `new Resend(apiKey)` in emailActions.ts
+  // constructs this mock, and arrow functions can't be used as constructors.
+  Resend: vi.fn().mockImplementation(function () {
+    return { emails: { send: resendSendMock } };
+  }),
+}));
+
+const { reportConvexVendorUsageMock } = vi.hoisted(() => ({
+  reportConvexVendorUsageMock: vi.fn(async () => {}),
+}));
+vi.mock("./lib/vendorUsage", () => ({
+  reportConvexVendorUsage: reportConvexVendorUsageMock,
 }));
 
 const modules = import.meta.glob("./**/*.ts");
@@ -25,6 +42,10 @@ const args = {
   subject: "You have a crew offer",
   html: "<p>hi</p>",
 };
+
+beforeEach(() => {
+  reportConvexVendorUsageMock.mockClear();
+});
 
 function ledgerRows(t: ReturnType<typeof convexTest>, key: string) {
   // Full-scan + JS filter (test data is tiny). Avoids `.withIndex` here, which
@@ -117,6 +138,8 @@ describe("emailActions.deliver — mock delivery + dedupe", () => {
 
     const again = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k2", attempt: 1 });
     expect(again).toEqual({ skipped: true });
+    // Mock (no-key) sends aren't real spend — mirrors sendEmail()'s dev-mock convention.
+    expect(reportConvexVendorUsageMock).not.toHaveBeenCalled();
   });
 
   test("skips delivery for an already-delivered key", async () => {
@@ -129,6 +152,26 @@ describe("emailActions.deliver — mock delivery + dedupe", () => {
     });
     const res = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k3", attempt: 1 });
     expect(res).toEqual({ skipped: true });
+  });
+});
+
+describe("emailActions.deliver — real send success", () => {
+  const savedKey = process.env.RESEND_API_KEY;
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = "re_realish_key";
+    resendSendMock.mockResolvedValueOnce({ data: { id: "re_123" }, error: null });
+  });
+  afterEach(() => {
+    if (savedKey === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = savedKey;
+  });
+
+  test("reports T-P4 vendor usage on a confirmed real send (R-9.12/#831)", async () => {
+    const t = convexTest(schema, modules);
+    const res = await t.action(internal.emailActions.deliver, { ...args, idempotencyKey: "k6", attempt: 1 });
+    expect(res).toEqual({ sent: true });
+    expect(await ledgerRows(t, "k6")).toHaveLength(1);
+    expect(reportConvexVendorUsageMock).toHaveBeenCalledWith("resend", "send");
   });
 });
 

@@ -4,6 +4,7 @@ import { env } from "@/env";
 import { logger } from "@/lib/logger";
 import { retryWithBackoff } from "@/lib/retry-with-backoff";
 import { reportVendorUsage } from "@/lib/vendor-cost-tracking";
+import { withTimeout } from "@/lib/fetch-with-timeout";
 
 // Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
 const resendSendResponseSchema = z.object({ id: z.string().min(1) });
@@ -49,20 +50,28 @@ async function sendViaResend(args: {
   try {
     return await retryWithBackoff(
       async () => {
-        const result = await getResend().emails.send({
-          from: env.EMAIL_FROM,
-          to: args.to,
-          subject: args.subject,
-          html: args.html,
-          attachments: args.attachments?.map((a) => ({
-            filename: a.filename,
-            content:
-              typeof a.content === "string"
-                ? Buffer.from(a.content, "utf8")
-                : a.content,
-            contentType: a.contentType,
-          })),
-        });
+        // R-9.6: the Resend SDK exposes no timeout/AbortSignal option of its
+        // own — bound each attempt rather than relying on its library-default
+        // (potentially infinite) behavior. Timing out an attempt is a normal
+        // retryable failure here, same as a rejected send.
+        const result = await withTimeout(
+          getResend().emails.send({
+            from: env.EMAIL_FROM,
+            to: args.to,
+            subject: args.subject,
+            html: args.html,
+            attachments: args.attachments?.map((a) => ({
+              filename: a.filename,
+              content:
+                typeof a.content === "string"
+                  ? Buffer.from(a.content, "utf8")
+                  : a.content,
+              contentType: a.contentType,
+            })),
+          }),
+          10_000,
+          "resend.emails.send",
+        );
         if (result.error) {
           throw new Error(`Failed to send email: ${result.error.message}`);
         }

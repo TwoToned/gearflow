@@ -62,17 +62,45 @@ const ATTRIBUTABLE_STATUSES = new Set([
 const countableStatuses = (requested: readonly string[]): Set<string> =>
   new Set(requested.filter((s) => ATTRIBUTABLE_STATUSES.has(s)));
 
+/** A cost field is only a signal if it's a real positive number — mirrors the
+ * long-standing "a zero replacement cost is unknown, not free capital" rule
+ * (src/lib/roi.test.ts), now applied uniformly to every field in the fallback chain. */
+const positiveCost = (v: number | null | undefined): number | null => (v != null && v > 0 ? v : null);
+
+type CostModel = { defaultPurchasePrice?: number | null; replacementCost?: number | null } | null | undefined;
+
 /**
- * Units of a model we actually own — serialised assets plus bulk stock on hand.
+ * One serialised asset's contribution to fleet cost: what we actually paid for it,
+ * else the model's general purchase price, else its replacement cost. Falls
+ * through to 0 (no signal) rather than inventing a number — see FEATUREDOCS/57 and
+ * gearflow#798 for why this chain, not `replacementCost` alone.
+ */
+const assetCost = (asset: { purchasePrice?: number | null }, model: CostModel): number =>
+  positiveCost(asset.purchasePrice) ?? positiveCost(model?.defaultPurchasePrice) ?? positiveCost(model?.replacementCost) ?? 0;
+
+/**
+ * Units of a model we actually own, and what it cost to acquire them.
+ *
+ * Serialised assets sum their OWN cost (mixed sources allowed — some units priced,
+ * some falling back). Bulk stock is unchanged: `replacementCost × totalQuantity`,
+ * out of scope for gearflow#798 (`bulkAssets.purchasePricePerUnit` is a separate,
+ * already-per-unit field a future issue can wire up).
+ *
+ * `fleetCost` is `null`, never `0`, when there is no capital to measure — no units
+ * owned, or units owned but not one of them (nor the model) carries any cost
+ * signal. A raw sum of $0 contributions is indistinguishable from "unpriced"; this
+ * is the ONE place that ambiguity gets resolved, so every caller downstream just
+ * sees a trustworthy null.
  *
  * `by_modelId` is NOT org-scoped. Every row it returns must be filtered on
  * `organizationId` or this counts another tenant's fleet.
  */
-async function unitsOwnedFor(
+async function fleetCapitalFor(
   ctx: QueryCtx,
   orgId: string,
   modelId: string,
-): Promise<{ unitsOwned: number; truncated: boolean }> {
+  model: CostModel,
+): Promise<{ unitsOwned: number; fleetCost: number | null; truncated: boolean }> {
   // Bounded: `.collect()` on a global index is unbounded, and blowing the read limit
   // throws the whole report. An undercounted denominator OVERSTATES payback, so a
   // truncated count has to be visible rather than quietly optimistic.
@@ -82,12 +110,21 @@ async function unitsOwnedFor(
   ]);
   const mine = <T extends { organizationId: string; isActive?: boolean }>(r: T) =>
     r.organizationId === orgId && r.isActive !== false;
+  const myAssets = assets.filter(mine);
+  const myBulk = bulk.filter(mine);
+
   // totalQuantity, not availableQuantity: ROI is about the capital we bought, not
   // how much of it happens to be on the shelf right now.
+  const bulkUnits = myBulk.reduce((s, b) => s + (b.totalQuantity ?? 0), 0);
+  const unitsOwned = myAssets.length + bulkUnits;
+
+  const assetCostSum = myAssets.reduce((s, a) => s + assetCost(a, model), 0);
+  const bulkCostSum = (positiveCost(model?.replacementCost) ?? 0) * bulkUnits;
+  const fleetCostRaw = assetCostSum + bulkCostSum;
+
   return {
-    unitsOwned:
-      assets.filter(mine).length +
-      bulk.filter(mine).reduce((s, b) => s + (b.totalQuantity ?? 0), 0),
+    unitsOwned,
+    fleetCost: unitsOwned > 0 && fleetCostRaw > 0 ? fleetCostRaw : null,
     truncated: assets.length === UNIT_SCAN_CAP || bulk.length === UNIT_SCAN_CAP,
   };
 }
@@ -153,16 +190,17 @@ export const getModelRoi = query({
 
     projects.sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
     const revenueCents = projects.reduce((s, p) => s + Math.round(p.revenue * 100), 0);
-    const units = await unitsOwnedFor(ctx, orgId, modelId);
+    const capital = await fleetCapitalFor(ctx, orgId, modelId, model);
 
     return {
       modelId,
       modelName: model?.name ?? "Unknown model",
       replacementCost: model?.replacementCost ?? null,
-      unitsOwned: units.unitsOwned,
+      unitsOwned: capital.unitsOwned,
+      fleetCost: capital.fleetCost,
       revenue: revenueCents / 100,
       projects,
-      truncated: rollupsTruncated || units.truncated,
+      truncated: rollupsTruncated || capital.truncated,
     };
   },
 });
@@ -360,11 +398,12 @@ export const zeroPricedGroups = query({
 });
 
 /**
- * The capital side: every active model and how many units of it we own.
+ * The capital side: every active model, how many units of it we own, and what it
+ * cost to acquire them (see `fleetCapitalFor` for the per-asset/bulk cost chain).
  *
- * Scans assets org-wide ONCE and tallies, rather than per-model, so models with
- * zero revenue still appear. Those rows are the point of the report as much as the
- * earners are — dead capital doesn't announce itself.
+ * Scans assets org-wide ONCE and tallies per model, rather than querying per model,
+ * so models with zero revenue still appear. Those rows are the point of the report
+ * as much as the earners are — dead capital doesn't announce itself.
  */
 export const fleetInventory = query({
   args: { orgId: v.string() },
@@ -376,28 +415,38 @@ export const fleetInventory = query({
       ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).take(ASSET_CAP),
       ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).take(BULK_ASSET_CAP),
     ]);
+    const modelsById = new Map(models.map((m) => [m.id, m]));
 
     const units = new Map<string, number>();
+    const costRaw = new Map<string, number>();
     for (const a of assets) {
       if (!a.modelId || a.isActive === false) continue;
       units.set(a.modelId, (units.get(a.modelId) ?? 0) + 1);
+      costRaw.set(a.modelId, (costRaw.get(a.modelId) ?? 0) + assetCost(a, modelsById.get(a.modelId)));
     }
     for (const b of bulk) {
       if (!b.modelId || b.isActive === false) continue;
-      units.set(b.modelId, (units.get(b.modelId) ?? 0) + (b.totalQuantity ?? 0));
+      const qty = b.totalQuantity ?? 0;
+      units.set(b.modelId, (units.get(b.modelId) ?? 0) + qty);
+      const rate = positiveCost(modelsById.get(b.modelId)?.replacementCost) ?? 0;
+      costRaw.set(b.modelId, (costRaw.get(b.modelId) ?? 0) + rate * qty);
     }
 
     return {
       rows: models
         .filter((m) => m.isActive !== false)
-        .map((m) => ({
-          modelId: m.id,
-          modelName: m.name,
-          manufacturer: m.manufacturer ?? null,
-          categoryId: m.categoryId ?? null,
-          replacementCost: m.replacementCost ?? null,
-          unitsOwned: units.get(m.id) ?? 0,
-        })),
+        .map((m) => {
+          const unitsOwned = units.get(m.id) ?? 0;
+          const raw = costRaw.get(m.id) ?? 0;
+          return {
+            modelId: m.id,
+            modelName: m.name,
+            manufacturer: m.manufacturer ?? null,
+            categoryId: m.categoryId ?? null,
+            fleetCost: unitsOwned > 0 && raw > 0 ? raw : null,
+            unitsOwned,
+          };
+        }),
       truncated:
         models.length === MODEL_CAP ||
         assets.length === ASSET_CAP ||

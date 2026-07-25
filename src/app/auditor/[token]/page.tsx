@@ -199,7 +199,6 @@ export default function AuditorPortalPage({
   // Theme classes
   const bg = dark ? "bg-gray-950" : "bg-gray-50";
   const headerBg = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
-  const cardBg = dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200";
   const textPrimary = dark ? "text-gray-100" : "text-gray-900";
   const textSecondary = dark ? "text-gray-400" : "text-gray-500";
   const textMuted = dark ? "text-gray-500" : "text-gray-400";

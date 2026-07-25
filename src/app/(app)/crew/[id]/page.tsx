@@ -63,7 +63,7 @@ import {
   crewTimeEntrySchema,
   type CrewTimeEntryFormValues,
 } from "@/lib/validations/crew";
-import { useActiveOrganization, useSession } from "@/lib/auth-client";
+import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
 import { useCanDo } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
@@ -176,7 +176,6 @@ export default function CrewMemberDetailPage({
   const caConvex = useConvex();
   const { isAuthenticated: caAuthed } = useConvexAuth();
   const availWrites = useCrewAvailabilityWrites();
-  const { data: session } = useSession();
   const canReadCrew = useCanDo("crew", "read");
 
   const [tabValue, setTabValue] = useState("assignments");

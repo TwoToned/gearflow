@@ -70,7 +70,7 @@ Cross-check DESIGN.md against `RVLT-Labs/rvlt-designlanguage` canonical source i
 **All UI components must come from the RVLT Flow registry first. Never build bespoke components when a registry equivalent exists.**
 
 Registry: `https://rvlt-labs.github.io/rvlt-designlanguage`
-Install: `npx shadcn add https://rvlt-labs.github.io/rvlt-designlanguage/r/<name>.json` (shadcn 4.10.0 resolves directly — `@canary` no longer required). Use `--overwrite` to refresh an audited component.
+Install: `pnpm dlx shadcn add https://rvlt-labs.github.io/rvlt-designlanguage/r/<name>.json` (shadcn 4.10.0 resolves directly — `@canary` no longer required). Use `--overwrite` to refresh an audited component.
 
 ### Currently DEPLOYED registry components (29 — verified live 2026-06-18):
 `theme` `utils` `button` `badge` `card` `input` `textarea` `label` `checkbox` `switch`

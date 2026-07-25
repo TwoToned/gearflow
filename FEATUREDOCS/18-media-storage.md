@@ -39,6 +39,8 @@ it directly in place of the real functions.
 - Returns 403 if org mismatch (prevents unauthorized access); 404 if no matching file record
 - Exception: `organizationId === "avatars"` allowed without org validation (global)
 - Streams file from S3
+- Upstream fetch to the Convex file-storage URL uses `fetchWithTimeout` (`src/lib/fetch-with-timeout.ts`,
+  R-9.6) so a hung storage host can't hold the Node-runtime route open indefinitely
 
 ## Photo Resolution Cascade
 - `resolveAssetPhotoUrl(asset, model)`: asset primary photo → model primary photo → null

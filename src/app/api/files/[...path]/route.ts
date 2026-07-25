@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
 import { getServeInfo } from "@/lib/storage";
+import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 export const runtime = "nodejs";
 
@@ -36,7 +37,7 @@ export async function GET(
   }
 
   try {
-    const upstream = await fetch(info.url);
+    const upstream = await fetchWithTimeout(info.url);
     if (!upstream.ok || !upstream.body) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }

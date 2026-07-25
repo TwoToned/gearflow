@@ -77,7 +77,7 @@ The `.t-*` classes in `globals.css` (`t-display`, `t-title`, etc.) are app-level
 ### Approach
 Dark espresso is the default app surface (`--paper: #141210`). Light "Paper" mode (`.light`) is opt-in. The single accent is RVLT red (`--red: #E0363D`).
 
-**Token source of truth:** `globals.css` generated from the RVLT Flow registry (`https://rvlt-labs.github.io/rvlt-designlanguage/r/theme.json`). Do not edit by hand — reinstall via `npx shadcn@canary add .../theme.json` when tokens change.
+**Token source of truth:** `globals.css` generated from the RVLT Flow registry (`https://rvlt-labs.github.io/rvlt-designlanguage/r/theme.json`). Do not edit by hand — reinstall via `pnpm dlx shadcn@canary add .../theme.json` when tokens change.
 
 ### Canonical Token Names (espresso dark `:root`)
 | Token | Value | Tailwind class | Usage |

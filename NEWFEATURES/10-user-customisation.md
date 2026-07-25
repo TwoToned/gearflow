@@ -124,7 +124,7 @@ export const authClient = createAuthClient({
 });
 ```
 
-**Database migration:** Run `npx @better-auth/cli migrate` or add the `passkey` table to the Prisma schema manually based on the plugin's schema requirements.
+**Database migration:** Run `pnpm dlx @better-auth/cli migrate` or add the `passkey` table to the Prisma schema manually based on the plugin's schema requirements.
 
 ### Registration Flow
 

@@ -32,9 +32,11 @@ section "4. Migration-residue check (R-4.5)"
 echo "- Legacy write paths gated by NATIVE_* flags — delete once each domain is native in prod (see docs/feature-flags.md)."
 
 section "5. Docs-contradiction grep (R-5.3)"
-echo "New npm/npx references are blocked in CI (\`pnpm run check-docs-npm-npx\`, .github/workflows/ci.yml \`hygiene\` job). This full-repo sweep also surfaces pre-existing debt that predates the gate:"
+echo "CI already blocks npm/npx doc contradictions repo-wide on every run (\`pnpm run check-docs-npm-npx\`, .github/workflows/ci.yml \`hygiene\` job — full-repo scan, not diff-scoped). This sweep re-runs the same grep as a belt-and-braces cross-check:"
 bad=$(grep -rnE "npm run|npx " --include='*.md' \
-  --exclude-dir=.agents --exclude-dir=.claude --exclude-dir=node_modules . 2>/dev/null \
+  --exclude-dir=.agents --exclude-dir=.claude --exclude-dir=.hermes --exclude-dir=node_modules \
+  --exclude-dir=archive . 2>/dev/null \
+  | grep -v "docs/audits/" \
   | grep -viE "never .?npm|not .?npx|pnpm|node_modules" || true)
 if [ -n "$bad" ]; then echo "⚠ Possible npm/npx references on a pnpm repo:"; echo '```'; echo "$bad"; echo '```'; else echo "- No npm/npx contradictions found."; fi
 
@@ -56,7 +58,13 @@ if [ -f docs/exceptions.md ]; then
   echo "- Exceptions with expiry dates in the past (convert to failures): ${expired:-none}"
 else echo "- docs/exceptions.md missing"; fi
 
-section "9. Critical-doc review cadence (R-5.5 / T-14)"
+section "9. Churn × complexity hotspots (R-11.2)"
+if command -v pnpm >/dev/null; then
+  node scripts/hotspots.mjs --days=180 --top=10 2>&1 | sed 's/^/  /' || echo "  hotspots script unavailable"
+else echo "- pnpm unavailable — run \`node scripts/hotspots.mjs\` manually"; fi
+echo "Use this to prioritize refactoring — highest score = most churn × most complex."
+
+section "10. Critical-doc review cadence (R-5.5 / T-14)"
 if command -v pnpm >/dev/null; then
   pnpm run check-docs-review-cadence 2>&1 | sed 's/^/  /' || true
 else
@@ -64,7 +72,7 @@ else
 fi
 echo "(This workflow's own CI step — .github/workflows/quarterly-sweep.yml — fails the run, not just this report, when a critical doc is stale.)"
 
-section "10. Manual review checklist"
+section "11. Manual review checklist"
 cat <<'EOF'
 - [ ] Alert-rule audit + flaky-quarantine review (R-8.9.3 / R-8.8.4)
 - [ ] Backup-restore test (R-8.11.5) — record the drill result in the runbook

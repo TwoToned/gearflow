@@ -121,7 +121,7 @@ export const gearflowDataTable: Plugin<DataTableSchema> = {
           }
         }
       } else if (config.rows) {
-        currentY = drawRows(page, config.rows, config, colWidths, x, currentY, width, regular, bold, pdfLib, 0);
+        drawRows(page, config.rows, config, colWidths, x, currentY, width, regular, bold, pdfLib, 0);
       }
     })();
   },

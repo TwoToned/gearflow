@@ -305,7 +305,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       // their items continuing onto the next page (Eng review finding).
       const minBodyRowHeight = fontSize + rowPadding * 2;
       if (currentY - (ghHeight + minBodyRowHeight) < bottomBoundary) {
-        overflow = true;
         break;
       }
       page.drawRectangle({

@@ -339,10 +339,9 @@ export async function processWooCommerceOrder(
       updatedAt: projectCreatedAt,
     });
     let createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(projectNumber));
-    let finalProjectNumber = projectNumber;
     if (!createResult.created) {
-      finalProjectNumber = `${projectNumber}-${Date.now().toString(36).slice(-4)}`;
-      createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(finalProjectNumber));
+      const retryProjectNumber = `${projectNumber}-${Date.now().toString(36).slice(-4)}`;
+      createResult = await convex.mutation(api.projects.createWithUniqueNumber, buildProjectArgs(retryProjectNumber));
       if (!createResult.created) throw new Error("Could not allocate a unique web-order project number");
     }
     const project = await getProjectByIdMapped(projectId, orgId);

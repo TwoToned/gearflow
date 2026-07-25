@@ -9,7 +9,7 @@ import { isDangerousObjectKey } from "@/lib/safe-object-key";
  */
 export function serialize<T>(data: T): T {
   if (data === null || data === undefined) return data;
-  if (typeof data === "object" && data !== null && "toNumber" in data && typeof (data as Record<string, unknown>).toNumber === "function") {
+  if (typeof data === "object" && "toNumber" in data && typeof (data as Record<string, unknown>).toNumber === "function") {
     return (data as unknown as { toNumber(): number }).toNumber() as T;
   }
   if (data instanceof Date) return data;

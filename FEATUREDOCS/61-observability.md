@@ -69,6 +69,14 @@ fixed `"server"` distinctId (no user PII). `instrumentation.ts`'s `onRequestErro
 `src/lib/process-safety.ts`'s uncaught-exception/unhandled-rejection net both report through
 it. Dynamically imported so it never loads in the edge runtime (posthog-node is Node-only).
 
+## Test Fake
+
+`src/lib/posthog-fake.ts`'s `createFakePostHog()` is the deterministic, inspectable
+counterpart to `captureServerException`/`captureServerEvent` for unit tests (POLICY.md
+R-8.10.4) — an in-memory capture recorder, mirroring the `email-fake.ts` pattern. It is
+not wired into `posthog-server.ts` via dependency injection; tests that need a fake import
+it directly in place of the real functions.
+
 ## Sourcemaps (readable stack traces)
 
 `next.config.ts` wraps the Next config with `withPostHogConfig` from `@posthog/nextjs-config`
@@ -184,6 +192,9 @@ exposes no `AbortSignal`/timeout option of its own, so `src/lib/email.ts` and
 same reason as `errorReporting.ts` above) that races the SDK call against a timer. This can't
 cancel the underlying in-flight request the way an `AbortController` can, but it bounds how long
 the caller waits instead of relying on the SDK's library-default (potentially infinite) behavior.
+In `email.ts`'s `sendViaResend` (#828 added `retryWithBackoff` there), the timeout wraps each
+individual attempt, not the whole retry loop — a timed-out attempt is just a normal retryable
+failure, so a hung single attempt can't eat the entire retry budget.
 
 **Scope note:** this covers the two cron executors, not the other 43 `*Writes.ts` domain
 mutation modules. See `docs/convex-observability-runbook.md` for the optional blanket
@@ -221,10 +232,15 @@ See `CLAUDE.md` → Environment Variables → Analytics + error tracking.
   registered with zero enforcement). Live $ computation and 80%-threshold alerting are
   deferred pending a persistent monthly counter or a query-capable PostHog key; see "Vendor
   cost budget tracking" above for the concrete target numbers already worked out.
-- v6 (#830, #831): `errorReporting.ts`'s outbound PostHog POST gained the same 10s
+- v6 (#829): `posthog-fake.ts` added — the PostHog server adapter had no fake/local
+  implementation for tests, unlike `email-fake.ts`/`maps-fake.ts` (R-8.10.4 is a per-adapter
+  clause).
+- v7 (#830, #831): `errorReporting.ts`'s outbound PostHog POST gained the same 10s
   `AbortController` timeout `invokeCronRoute`'s fetch already had (R-9.6); both Resend SDK send
   paths (`src/lib/email.ts`, `convex/emailActions.ts`) wrapped in an explicit `withTimeout()`
-  since the SDK exposes no timeout of its own. `convex/emailActions.ts`'s `deliver` — the
+  since the SDK exposes no timeout of its own — in `email.ts` this wraps each individual
+  `retryWithBackoff` attempt (#828 added retry there), not the whole retry loop, so a timed-out
+  attempt is just a normal retryable failure. `convex/emailActions.ts`'s `deliver` — the
   second, Convex-scheduled Resend send path — now reports T-P4 vendor usage too (previously
   invisible to the tracked metric), via a new Convex-native `reportConvexVendorUsage` helper
   (`convex/lib/vendorUsage.ts`, mirroring `errorReporting.ts`'s raw-fetch pattern since `convex/`

@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { getConvexClient } from "@/lib/convex-client";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import { logger } from "@/lib/logger";
+import {
+  HttpStatusError,
+  isRetryableHttpStatus,
+  retryWithBackoff,
+} from "@/lib/retry-with-backoff";
 import { api } from "../../convex/_generated/api";
 
 // Vendor responses are untrusted input (POLICY.md R-8.10.3): validate the shape.
@@ -43,14 +49,36 @@ export async function uploadToS3(
   },
 ): Promise<UploadResult> {
   const convex = await getConvexClient();
-  const uploadUrl = await convex.mutation(api.files.generateUploadUrl, {});
-  const res = await fetchWithTimeout(uploadUrl, {
-    method: "POST",
-    headers: { "Content-Type": options.mimeType },
-    // Buffer isn't in the DOM BodyInit types; a plain Uint8Array view is.
-    body: new Uint8Array(file),
-  });
-  if (!res.ok) throw new Error(`Convex storage upload failed: ${res.status}`);
+  // Bounded retry with backoff (POLICY.md R-8.10.3) — the upload URL is minted
+  // fresh on every attempt (it's one-time-use, so re-POSTing a URL that already
+  // failed isn't safe to assume works) and the whole mint+POST round trip is
+  // retried on a transient failure. 3 attempts, jittered exponential backoff.
+  // Only retry transient failures: network errors (no status) and 429/5xx: a
+  // 4xx other than 429 is the caller's fault and retrying won't help.
+  const res = await retryWithBackoff(
+    async () => {
+      const uploadUrl = await convex.mutation(api.files.generateUploadUrl, {});
+      const r = await fetchWithTimeout(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": options.mimeType },
+        // Buffer isn't in the DOM BodyInit types; a plain Uint8Array view is.
+        body: new Uint8Array(file),
+      });
+      if (!r.ok) {
+        throw new HttpStatusError(`Convex storage upload failed: ${r.status}`, r.status);
+      }
+      return r;
+    },
+    {
+      shouldRetry: (error) =>
+        !(error instanceof HttpStatusError) || isRetryableHttpStatus(error.status),
+      onRetry: (error, attempt) =>
+        logger.warn("[Storage] upload failed, retrying", {
+          attempt,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+    },
+  );
   const parsed = convexUploadResponseSchema.safeParse(await res.json());
   if (!parsed.success) {
     throw new Error(`Unexpected Convex upload response: ${parsed.error.message}`);

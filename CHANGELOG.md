@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Closed the POLICY.md §5 R-5.3 finding (#856, tracked under #868): stale non-pnpm CLI
+  invocations (Convex, Prisma, tsx, shadcn) in `docs/convex-backup-restore-runbook.md`,
+  `docs/efficiency-billing-session-prompt.md`, `docs/convex-observability-runbook.md`,
+  `docs/convex-search-decision.md`, `DESIGN.md`, `docs/designs/ux-ui-redesign.md`, and
+  `NEWFEATURES/10-user-customisation.md` now use `pnpm exec`/`pnpm dlx`, matching the repo's
+  pnpm-only convention. `scripts/check-docs-npm-npx.mjs` now scans every tracked `*.md` file on
+  every run instead of only newly-changed diff lines — the diff-scoped check structurally
+  couldn't see pre-existing contradictions, which is why this exact rule recurred across three
+  audit rounds (#731, #820, #856). Excludes `docs/audits/` and `docs/designs/archive/` (frozen
+  historical records that quote past commands, not live instructions) and `.hermes/` (agent
+  planning scratch) alongside the existing `.agents`/`.claude`/`node_modules` exclusions.
+  `scripts/quarterly-sweep.sh` §5's grep mirrors the same exclusions and its message now
+  reflects that CI is full-repo, not diff-scoped.
+
 - Closed the two POLICY.md §9B remediation-verification findings (#830, #831), tracked under
   #841:
   - **R-9.6** — `convex/lib/errorReporting.ts`'s outbound POST to PostHog now carries the same

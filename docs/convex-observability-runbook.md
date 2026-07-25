@@ -21,10 +21,10 @@ mutation must call `assertWritesEnabled(ctx, "<domain>")` first**
 today (43 files) — add the call to any new one as it's created. Flip:
 
 ```bash
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts on  "incident #123"        # kill ALL browser writes
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts on  "asset abuse" asset    # kill one domain
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts off                          # restore
-docker exec <app> npx tsx scripts/toggle-write-killswitch.ts status
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts on  "incident #123"        # kill ALL browser writes
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts on  "asset abuse" asset    # kill one domain
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts off                          # restore
+docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts status
 ```
 
 ## Observability

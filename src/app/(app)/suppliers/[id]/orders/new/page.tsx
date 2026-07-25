@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -138,12 +139,7 @@ function NewSupplierOrderContent({ params }: { params: Promise<{ id: string }> }
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New order</h1>
-          <p className="mt-1 text-ui-text text-muted">
-            Create a purchase order for {supplier.name}.
-          </p>
-        </div>
+        <PageHeader title="New order" description={`Create a purchase order for ${supplier.name}.`} />
 
         <SmartFormLayout
           onSubmit={form.handleSubmit((d) => mutation.mutate(d))}

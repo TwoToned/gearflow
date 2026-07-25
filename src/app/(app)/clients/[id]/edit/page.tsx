@@ -8,6 +8,7 @@ import { ClientForm } from "@/components/clients/client-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -82,10 +83,7 @@ function EditClientContent({ params }: { params: Promise<{ id: string }> }) {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit client</h1>
-          <p className="mt-1 text-ui-text text-muted">{client.name}</p>
-        </div>
+        <PageHeader title="Edit client" description={client.name} />
         <EditLockGate entityType="client" entityId={id}>
           <ClientForm initialData={initialData} />
         </EditLockGate>

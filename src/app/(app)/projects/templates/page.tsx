@@ -14,7 +14,7 @@ import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageHeader } from "@/components/layout/page-header";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { FadeIn } from "@/components/ui/motion";

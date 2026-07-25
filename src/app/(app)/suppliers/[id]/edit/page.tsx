@@ -8,6 +8,7 @@ import { SupplierForm } from "@/components/suppliers/supplier-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
 import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 import {
   Breadcrumb,
@@ -61,12 +62,7 @@ function EditSupplierContent({ params }: { params: Promise<{ id: string }> }) {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit supplier</h1>
-          <p className="mt-1 text-ui-text text-muted">
-            Update supplier details.
-          </p>
-        </div>
+        <PageHeader title="Edit supplier" description="Update supplier details." />
         <EditLockGate entityType="supplier" entityId={id}>
           <SupplierForm initialData={{
             id,

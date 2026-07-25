@@ -32,6 +32,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { FlowMascot } from "@/components/ui/flow-mascot";
+import { PageHeader } from "@/components/layout/page-header";
 import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
@@ -104,22 +105,20 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* ── Hero + quick actions ── */}
       <FadeIn>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">
-              {greeting}{firstName ? `, ${firstName}` : ""}
-            </h1>
-            <p className="t-body text-muted">{format(now, "EEEE, d MMMM yyyy")}</p>
-            {aside && (asideOverdue
-              ? <p className="mt-1.5 text-ui-text font-medium text-t-out">{aside}</p>
-              : <p className="mt-1.5 font-hand text-[15px] text-t-out">{aside}</p>)}
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button asChild variant="halo"><Link href="/projects/new"><Plus className="h-4 w-4" /> New job</Link></Button>
-            <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/warehouse"><ScanBarcode className="h-4 w-4" /> Warehouse</Link></Button>
-            <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/assets/registry/new"><Boxes className="h-4 w-4" /> Add gear</Link></Button>
-          </div>
-        </div>
+        <PageHeader
+          title={`${greeting}${firstName ? `, ${firstName}` : ""}`}
+          description={format(now, "EEEE, d MMMM yyyy")}
+          meta={aside && (asideOverdue
+            ? <p className="text-ui-text font-medium text-t-out">{aside}</p>
+            : <p className="font-hand text-[15px] text-t-out">{aside}</p>)}
+          actions={
+            <>
+              <Button asChild variant="halo"><Link href="/projects/new"><Plus className="h-4 w-4" /> New job</Link></Button>
+              <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/warehouse"><ScanBarcode className="h-4 w-4" /> Warehouse</Link></Button>
+              <Button asChild variant="line" className="hidden sm:inline-flex"><Link href="/assets/registry/new"><Boxes className="h-4 w-4" /> Add gear</Link></Button>
+            </>
+          }
+        />
       </FadeIn>
 
       {/* ── Bento board ── */}

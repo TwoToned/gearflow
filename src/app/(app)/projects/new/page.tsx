@@ -6,6 +6,7 @@ import { ProjectWizard } from "@/components/projects/project-wizard";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -32,10 +33,7 @@ export default function NewProjectPage() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div>
-            <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New job</h1>
-            <p className="t-body text-muted">A gig, show, or event — from enquiry to invoice.</p>
-          </div>
+          <PageHeader title="New job" description="A gig, show, or event — from enquiry to invoice." />
           <ProjectWizard />
         </div>
       </FadeIn>

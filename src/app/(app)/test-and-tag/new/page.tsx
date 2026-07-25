@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/smart-form";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { PageHeader } from "@/components/layout/page-header";
 
 const EQUIPMENT_CLASS_ORDER = ["CLASS_I", "CLASS_II", "CLASS_II_DOUBLE_INSULATED", "LEAD_CORD_ASSEMBLY"] as const;
 const APPLIANCE_TYPE_ORDER = [
@@ -223,10 +224,7 @@ function NewTestTagAssetInner() {
           <span className="text-faint">/</span>
           <span className="text-ink">New item</span>
         </div>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New test &amp; tag item</h1>
-          <p className="mt-1 text-ui-text text-muted">Register a new item in the test &amp; tag registry.</p>
-        </div>
+        <PageHeader title="New test & tag item" description="Register a new item in the test & tag registry." />
 
         <SmartFormLayout
           onSubmit={form.handleSubmit((d) => mutation.mutate(d))}

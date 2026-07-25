@@ -11,6 +11,7 @@ import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -86,10 +87,7 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div>
-            <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit bulk asset</h1>
-            <p className="mt-1 t-mono text-ui-text text-muted">{ba.assetTag}</p>
-          </div>
+          <PageHeader title="Edit bulk asset" description={ba.assetTag} />
           <EditLockGate entityType="asset" entityId={id}>
             <BulkAssetForm initialData={initialData} />
           </EditLockGate>
@@ -152,10 +150,7 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit asset</h1>
-          <p className="mt-1 t-mono text-ui-text text-muted">{asset.assetTag}</p>
-        </div>
+        <PageHeader title="Edit asset" description={asset.assetTag} />
         <EditLockGate entityType="asset" entityId={id}>
           <AssetForm initialData={initialData} />
         </EditLockGate>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ModelForm } from "@/components/assets/model-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -30,12 +31,7 @@ export default function NewModelPage() {
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">New equipment model</h1>
-          <p className="mt-1 text-ui-text text-muted">
-            Create a model template that assets will be based on.
-          </p>
-        </div>
+        <PageHeader title="New equipment model" description="Create a model template that assets will be based on." />
         <ModelForm />
       </div>
     </FadeIn>

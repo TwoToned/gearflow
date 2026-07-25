@@ -11,6 +11,7 @@ import { CrewMemberForm } from "@/components/crew/crew-member-form";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -71,10 +72,7 @@ function EditCrewMemberContent({ params }: { params: Promise<{ id: string }> }) 
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div>
-          <h1 className="font-display text-page-title font-extrabold tracking-tight text-ink">Edit crew member</h1>
-          <p className="mt-1 text-ui-text text-muted">Update crew member details.</p>
-        </div>
+        <PageHeader title="Edit crew member" description="Update crew member details." />
         <CrewMemberForm initialData={{
           id,
           firstName: member.firstName,

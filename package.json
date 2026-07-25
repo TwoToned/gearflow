@@ -36,7 +36,8 @@
     "check-migration-drift": "node scripts/check-migration-drift.mjs",
     "check-docs-npm-npx": "node scripts/check-docs-npm-npx.mjs",
     "check-dependency-justification": "node scripts/check-dependency-justification.mjs",
-    "check-docs-review-cadence": "node scripts/check-docs-review-cadence.mjs"
+    "check-docs-review-cadence": "node scripts/check-docs-review-cadence.mjs",
+    "pr-size-check": "node scripts/pr-size-check.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

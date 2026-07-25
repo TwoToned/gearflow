@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alone. Recorded a dated §15 exception in `docs/exceptions.md` rather than merging broken
   code or leaving it silently stale.
 
+- **R-2.8** (#853, tracked under #865) — Added a non-blocking PR-size advisory:
+  `scripts/pr-size-check.mjs` (wired into the CI `hygiene` job) computes changed LOC against
+  the merge-base, excluding R-0.5 exclusions, and posts/updates a soft PR comment when a PR
+  exceeds the T-2 400-LOC SHOULD-level target. No retroactive action was needed for #850
+  itself.
+
 - Closed the two POLICY.md §9B remediation-verification findings (#830, #831), tracked under
   #841:
   - **R-9.6** — `convex/lib/errorReporting.ts`'s outbound POST to PostHog now carries the same

@@ -194,7 +194,14 @@ export async function GET(
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
       "Content-Disposition": `inline; filename="${member.firstName}-${member.lastName}.ics"`,
-      "Cache-Control": "no-cache, no-store, must-revalidate",
+      // Calendar clients (Google/Apple/Outlook) already poll this on their own
+      // multi-minute-to-hourly cadence, not on every user action — unlike the
+      // other token-feed routes (warehouse display, auditor) this isn't a
+      // live status view, so a short cache window is safe and cuts repeated
+      // full Convex round-trips (getByIcalToken + assignments/shifts/project
+      // resolution) from external pollers hitting the same token back-to-back
+      // (R-8.9.3 finding, #862).
+      "Cache-Control": "private, max-age=300",
     },
   });
 }

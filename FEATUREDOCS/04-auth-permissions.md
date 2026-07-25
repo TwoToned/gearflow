@@ -89,6 +89,7 @@ Actions per resource: `create, read, update, delete` (varies by resource)
 - `useCurrentRole()` hook from `src/lib/use-permissions.ts` — returns `{ permissions, isLoading }`
 - `hasAccess(resource)` in sidebar checks if user has ANY permission for a resource
 - `PermissionGate` component conditionally renders children
+- **`RequirePermission` (`src/components/auth/require-permission.tsx`) reads `useCurrentRole()` directly, not `useCanDo`.** `useCanDo` returns `false` while its permissions query is still loading (a deliberate safe default for gating individual write buttons — see `useIsViewer`'s doc comment). A page-level gate built on it would flash "Access Denied" for every authorized user on every gated route before flipping to the real content once the query resolves — a false negative, and a spurious late LCP/CLS candidate on data-heavy dashboards (fixed 2026-07-25, R-8.9.3 finding #862). `RequirePermission` renders nothing while `isLoading` (or `permissions` is still null), the denial only once the check has actually run.
 
 ## Server-Side Enforcement
 ```typescript

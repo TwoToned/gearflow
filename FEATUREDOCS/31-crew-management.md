@@ -245,6 +245,7 @@ create/update permission gates.
 - If shifts exist, one event per shift; otherwise one event per assignment
 - Events include: project name, role, phase, location, site contact, notes
 - Token can be regenerated (invalidates old URL) or feed can be disabled
+- **Response caching:** `Cache-Control: private, max-age=300` (changed 2026-07-25, R-8.9.3 finding #862 — was `no-cache, no-store, must-revalidate`). Calendar clients (Google/Apple/Outlook) already poll a feed URL on their own multi-minute-to-hourly cadence, not per user action, so a short cache window is safe and avoids re-running the full `getByIcalToken` + assignments + shifts + per-project-lookup chain on every external poll. This is deliberately narrower than the sibling no-cache token-feed routes (`/api/warehouse/display/[token]`, `/api/auditor/[token]`) — those are live status views that must stay uncached; only this feed's pull-based, client-controlled refresh cadence justifies caching.
 
 ### Schema Fields (CrewMember)
 - `icalEnabled` — Boolean, default false

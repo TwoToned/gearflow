@@ -114,6 +114,16 @@ a second, higher line) and are never allowed to throw or alter the wrapped call'
 
 Both events feed p95 alerts in PostHog once real traffic is flowing (same pattern as the CWV
 alerts in R-8.1.5 — created only after confirming live event volume, not speculatively before).
+
+**2026-07-25 round-3 audit finding (#862, R-8.9.3):** the LCP p75 and `convex_op_latency` p95
+alerts had been firing continuously since 2026-07-22. Triaged via direct PostHog SQL against
+both events rather than guessing — confirmed real (not low-sample noise), found two concrete,
+fixed contributors (an uncached public iCal feed re-running its full Convex read chain on every
+external poll; `RequirePermission` flashing a false "Access Denied" while its permissions query
+loaded, on every one of its 56 gated routes), and a residual client-rendering-architecture /
+infra-baseline-latency gap too large for one cycle, registered as a dated exception. Full
+breakdown: `docs/convex-observability-runbook.md`'s "Current firing state" table and
+`docs/exceptions.md`'s R-8.9.3 row.
 `convex-op-timing.ts` additionally tags both the log line and the PostHog event with the ambient
 `x-request-id` (above) when one is present — a de facto trace id correlating the Convex leg back
 to the originating Next.js request (POLICY.md R-8.9.6). A true W3C `traceparent` propagated into

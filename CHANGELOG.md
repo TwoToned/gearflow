@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image `v${package.json version}` (alongside the existing `:latest`/`:${sha}` tags), so a
   running deployment can be traced to a SemVer version without a manual SHA→CHANGELOG lookup.
 
+- **R-2.5** (#852, tracked under #865) — Closed Dependabot PR #608 (`typescript` 6.0.3 →
+  7.0.2), open 7 days past the 3-day trunk-based budget and failing CI on the major bump
+  alone. Recorded a dated §15 exception in `docs/exceptions.md` rather than merging broken
+  code or leaving it silently stale.
+
 - Closed the two POLICY.md §9B remediation-verification findings (#830, #831), tracked under
   #841:
   - **R-9.6** — `convex/lib/errorReporting.ts`'s outbound POST to PostHog now carries the same

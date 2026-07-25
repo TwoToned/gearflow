@@ -33,6 +33,18 @@ export const auth = betterAuth({
   advanced: {
     useSecureCookies: shouldUseSecureCookies(env.NEXT_PUBLIC_APP_URL),
   },
+  // Better Auth's own default is `enabled: isProduction` — no override needed
+  // for real prod traffic. But the seeded e2e harness (docs/e2e-harness.md)
+  // runs a prebuilt `next start` (NODE_ENV=production) to sidestep a `next
+  // dev` crash class, which means the harness's several specs registering
+  // users back-to-back now also trip Better Auth's production sign-up rate
+  // limit (observed: 3 successful registrations, then a 429 on the 4th,
+  // stalling the whole test on a swallowed submit with no visible error).
+  // E2E_HARNESS is only ever set by scripts/e2e-harness-up.sh and the CI
+  // harness job — never in a real deploy — so this can't relax production.
+  rateLimit: {
+    enabled: !process.env.E2E_HARNESS,
+  },
   account: {
     accountLinking: {
       enabled: true,

@@ -1,6 +1,6 @@
 # Manual WCAG 2.2 AA Checklist
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-25 (review quarterly — POLICY.md R-5.5)_
 
 POLICY.md **R-8.1.7** requires *both* automated axe/Playwright-axe checks (`e2e/a11y.spec.ts`,
 `e2e/harness-a11y.spec.ts`, CI-blocking) **and** a manual WCAG 2.2 AA checklist pass on the
@@ -94,3 +94,85 @@ instance of the app (local dev, staging, or prod):
 **Follow-up:** flows 3–10 need a run against a real authenticated session (seeded e2e harness or
 staging) — track alongside the `e2e-harness` CI job going green (`docs/critical-flows.md`). Next
 release's pass should cover the full list.
+
+### 2026-07-25 — closing #858 / #870 (R-8.1.7 remediation, flows 3–10)
+
+**Run by:** Claude, full local access (Docker/OrbStack + the self-hosted Convex harness,
+`docs/e2e-harness.md`) — `E2E_HARNESS=1` against a prebuilt `next start` server, scripted
+keyboard-driven Playwright pass (same "a scripted Tab-walk counts as manual" pattern as the
+2026-07-23 entry above). Unlike a pure tab-walk, this pass also drove real widget semantics
+directly (Escape/Arrow-key menu navigation, dialog interactions, `document.activeElement`
+assertions) and cross-checked every "not reachable by Tab" signal against a live re-test before
+treating it as a finding — several were test-harness artifacts (see notes below), not app bugs.
+
+| Flow | Method | Result |
+|------|--------|--------|
+| 3. Sign out | Dashboard nav walk; account menu opened with `Enter`, closed with `Escape` (focus returns to trigger), re-opened and navigated to "Sign out" with real `ArrowDown` presses, activated with `Enter`; confirmed the session is actually invalidated (a post-sign-out visit to `/dashboard` bounces to `/login`) | ✅ Clean |
+| 4. Register / onboarding | Registration form and the org-creation form both filled and submitted keyboard-only (`Tab` between fields, `Enter` to submit); confirmed onboarding actually completes (revisiting `/onboarding` redirects to `/dashboard`) | ✅ Clean |
+| 5. Create a project (revenue path) | Keyboard walk through the 4-step wizard (Basics → Schedule → Site → Review → Create job) | ⚠️ One confirmed finding — see below (filed as #894) |
+| 6. Add line items + pricing (revenue path) | Keyboard-only: "Add" menu (`Enter` + `ArrowDown` + `Enter`), item dialog (tab-strip + form fields), model search combobox, "Add to project" | ✅ Clean now — one finding found and **fixed** in this PR, see below |
+| 7. Availability check (revenue path) | Inline availability panel (async Convex query) renders "1 available" with no overbook warning, exercised as part of the same keyboard flow as flow 6 | ✅ Clean |
+| 8. Warehouse check-out | Pick tab, header checkbox (`Space`), Prep | ✅ Clean once the interaction was scripted correctly — see the "Assign assets" dialog root-cause below |
+| 9. Warehouse check-in / return | Deployed tab, header checkbox, Return; confirmed item moves from Deployed(0)→Returned(1) | ✅ Clean |
+| 10. Create inventory | Model creation + serialized asset creation, both keyboard-only; server-generated asset tag confirmed visible on the detail page | ✅ Clean |
+
+**Finding — flow 5, Create-project wizard loses focus on every step transition (open, filed as
+[#894](https://github.com/TwoToned/gearflow/issues/894)):** clicking "Continue" unmounts the
+just-clicked button; nothing moves focus to the new step, so `document.activeElement` falls back
+to `<body>`. Confirmed directly (not inferred from a tab-walk diff) — a script read
+`document.activeElement` immediately before and after a `Continue` click and observed the drop
+to `body`. A keyboard/screen-reader user loses their place after every step and must re-navigate
+from the top of the page. Criterion 3 (focus never silently lost). Not a hard blocker (Tab still
+reaches the content eventually) but a real, repeated disorientation in the primary revenue path.
+
+**Finding — flow 6, unlabeled equipment-dialog fields (FIXED in this PR):**
+`equipment-add-form.tsx`'s local `Field` wrapper rendered `<Label>` with no `htmlFor`, so the
+Quantity, Unit price, Discount, and Notes inputs in the primary "Add equipment to project"
+dialog — the core revenue-path action — had no programmatic label; a screen reader would
+announce them only as an unlabeled number/text field. Confirmed via computed accessible-name
+inspection, then traced to source. Fixed: `Field` now accepts and forwards an `htmlFor` prop,
+wired to each field's existing `id` (`eq-quantity`, `eq-unitPrice`, `eq-discount`, `eq-notes`).
+Criterion 4 (screen-reader labels).
+
+**Root-caused (not new) — flow 8, the `docs/e2e-harness.md` "stuck dialog after Prep" bug:**
+fully characterized this pass: an "Assign assets" dialog (a combobox to choose the specific
+serial) appears — with timing that looks tied to an async per-item check rather than the click
+itself — around the Prep/Deploy actions, even when there's exactly one candidate asset. Its own
+action button stays disabled until a selection is made. Once reached, the dialog **is** fully
+keyboard-operable (combobox opens on `Enter`, `ArrowDown` navigates, `Enter` selects, the action
+button enables and completes the step) — this is a UX/timing bug, not a keyboard-accessibility
+failure, so it doesn't affect the R-8.1.7 pass/fail call for flow 8. Root cause and current
+status logged in `docs/e2e-harness.md` and the R-8.8.3 exception in `docs/exceptions.md`.
+
+**Test-harness artifacts, NOT app findings (verified and ruled out before writing this up):**
+- Elements below the sidebar's visible fold showed as "not reachable by Tab" in an early pass —
+  false positive from fingerprinting elements by viewport-relative position, which breaks when
+  the sidebar auto-scrolls mid-walk. A step-by-step live trace confirmed all sidebar links,
+  including the ones flagged, are reached correctly and in order.
+- Radix menus (account menu, "Add item" menu) don't advance on plain `Tab` while open — this is
+  correct ARIA menu behavior (arrow keys are the intended in-menu navigation; `Escape`/selection
+  close and return focus to the trigger). Confirmed via real `Escape` and `ArrowDown` interaction
+  (flow 3), not just a synthetic tab-walk artifact.
+- Tabs (Equipment / Labour & logistics / Financials / Tasks / Notes / Files) use roving
+  `tabindex` — the correct ARIA tablist pattern (only the active tab is a Tab stop; siblings are
+  reached via arrow keys) — not a defect.
+
+**Reduced motion:** verified rendering correctly with `prefers-reduced-motion: reduce` emulated
+on: `/login` (post sign-out), the line-items dialog's parent project-detail screen, the warehouse
+return screen, and the asset-detail screen.
+
+**Infrastructure notes (local environment, not app bugs, but worth recording):** the seeded
+harness needed one real repo fix to run under Docker/OrbStack (rather than Docker Desktop, which
+the harness docs were originally written against): `next.config.ts`'s `allowedDevOrigins` didn't
+include `host.docker.internal`, so Next 16's cross-origin dev-resource guard blocked the
+self-hosted Convex container's JWKS fetch — fixed in this PR. The documented `next dev`
+Turbopack-crash class (`docs/e2e-harness.md`) reproduced live mid-pass; switched to a prebuilt
+`next start` (`E2E_PROD_SERVER=1`) for the rest of the run, matching what the CI harness job
+already does.
+
+**Compliance:** POLICY.md R-8.1.7's manual-checklist requirement is now met for all 10 critical
+flows — flows 1-2 (2026-07-23 entry above) plus flows 3-10 (this entry). One WCAG finding fixed
+in this PR (flow 6 labels); one tracked as a follow-up ([#894](https://github.com/TwoToned/gearflow/issues/894),
+flow 5 focus loss) rather than blocking closure — it's a real but non-blocking finding, exactly
+the "log it and file a follow-up" path this checklist's procedure calls for. Closing #858 and
+#870.

@@ -124,7 +124,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     location: ["read"],
     document: ["generate"],
     orgSettings: [],
-    orgMembers: [],
+    orgMembers: ["read"],
     supplier: ["read"],
     subHire: ["create", "read"],
     crew: ["read"],

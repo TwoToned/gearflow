@@ -4,13 +4,14 @@ The missing piece for authenticated E2E (POLICY.md R-8.8.3 / #621): a local
 **self-hosted Convex** backend the app can talk to, so tests can exercise
 authenticated, data-backed flows — not just the client-rendered `/login` page.
 
-**Status: proven working locally; CI job removed again (2026-07-23, see
-`docs/exceptions.md` R-8.8.3).** `scripts/e2e-harness-up.sh` stands up Convex, pushes
-the schema, and wires auth; `e2e/harness-auth.spec.ts` then registers a user and
-reaches the authenticated dashboard (verified locally). A `e2e-harness` job in
-`.github/workflows/ci.yml` used to run the same script + the full harness spec set
+**Status: RESTORED to CI (2026-07-25, #858).** `scripts/e2e-harness-up.sh` stands up
+Convex, pushes the schema, and wires auth; `e2e/harness-auth.spec.ts` then registers
+a user and reaches the authenticated dashboard (verified locally). The `e2e-harness`
+job in `.github/workflows/ci.yml` runs the same script + the full harness spec set
 (auth, a11y, cookie flags, onboarding, sign-out, create-inventory, and the primary
-revenue path) with `continue-on-error: true`.
+revenue path) with `continue-on-error: true` — kept non-blocking until it's proven
+green on a GitHub-hosted runner (see below), even though both prior blockers are now
+fixed and verified locally.
 
 **Root cause of the ORIGINAL red runs (#725, investigated 2026-07-23) — fixed:** NOT
 the docker-in-CI JWKS networking path — `docker-compose.convex.yml` already maps
@@ -31,21 +32,29 @@ and `harness-auth`, `harness-a11y`, `harness-cookie-flags`, `harness-onboarding`
 and `harness-sign-out` all passed reliably (`harness-create-inventory` was flaky
 once on a too-tight timeout, fixed by adding `test.setTimeout`).
 
-**A SECOND, distinct bug — not yet root-caused:** `e2e/harness-revenue-path.spec.ts`
-hangs in the warehouse "Prep" step. After clicking the "Prep" button, some dialog is
-left open (`role="dialog"`, `data-state="open"`) that intercepts pointer events for
-every click afterward, so the very next click (`getByRole("tab", { name: /^Prepped/
-})`) retries hundreds of times against a swallowed click instead of failing fast —
-burning the test's full timeout (up to 3 attempts × 240s) on every run rather than
-failing quickly. Playwright's error-context trace shows the dialog contains a
-`combobox`, suggesting "Prep" opens a confirmation dialog requiring a selection that
-the test doesn't fill in — needs a trace review (`playwright-harness-report`
-artifact on the CI run) to confirm. The `e2e-harness` job was pulled again rather
-than burning ~15-20 CI minutes on every PR for a job that's guaranteed red on this
-one test (it was already `continue-on-error: true`, so removing it costs no gating
-value). To restore: fix the harness-revenue-path "Prep" step (either the test needs
-to handle the dialog, or it's a real product bug), confirm a green run, then re-add
-the job (see git history) with `continue-on-error: true` initially.
+**A SECOND, distinct bug — root-caused and fixed (2026-07-25, #858):**
+`e2e/harness-revenue-path.spec.ts` used to hang in the warehouse "Prep" step. Fully
+characterized this pass: clicking "Prep" (and sometimes "Deploy") can open an
+**"Assign assets" dialog** — a combobox to pick the specific serial to deploy —
+even when there's exactly one candidate asset for the line item. Its own action
+button (`Prep`/`Deploy`) stays disabled until a selection is made in the combobox.
+The test never filled it, so the dialog sat open forever, and the very next click
+(`getByRole("tab", { name: /^Prepped/ })`) retried hundreds of times against a
+swallowed click instead of failing fast — burning the test's full timeout (up to 3
+attempts × 240s) on every run. The dialog's appearance is timing-sensitive (looks
+tied to an async per-item availability check, not the click itself), so the fix
+races it against every subsequent interaction rather than checking once right after
+the triggering click — see `resolveAssignAssetsDialogIfPresent`/
+`clickRacingAssignDialog` in `e2e/harness-revenue-path.spec.ts`. The dialog itself
+**is** fully keyboard-operable once reached (combobox opens on `Enter`, `ArrowDown`
+navigates, `Enter` selects, the action button enables) — this was a test-coverage
+gap, not a product accessibility bug (see `docs/a11y-manual-checklist.md`'s
+2026-07-25 entry). A separate, unrelated Playwright locator-retry race on the
+project-creation wizard's rapid 3x-Continue `.click()` sequence was also found and
+fixed (switched to `.focus()+Enter` — the project was already being created
+successfully, `.click()` just never resolved cleanly against the wizard's
+step-transition DOM churn). Verified with 4 consecutive clean local runs (~10s
+each, vs. the previous 240s timeouts) before restoring the CI job.
 
 ## How it works
 
@@ -78,15 +87,13 @@ bootstraps as admin.
 
 ## Remaining finish (scoped)
 
-1. **CI automation** — **temporarily removed again** (2026-07-23). A dedicated
-   `e2e-harness` job (separate from the dummy-Convex `e2e` job) ran
-   `scripts/e2e-harness-up.sh` then the harness spec set with `E2E_HARNESS=1` against
-   a prebuilt `next start` server, tearing down via `scripts/e2e-harness-down.sh` in
-   an `if: always()` step — but `harness-revenue-path.spec.ts`'s stuck-dialog bug
-   (see the root-cause writeup above) makes it guaranteed-red, so it was pulled
-   again rather than burning ~15-20 CI minutes on every PR with no gating value
-   (it was already `continue-on-error: true`). See `docs/critical-flows.md` and
-   `docs/exceptions.md` (R-8.8.3) for status.
+1. **CI automation** — **restored (2026-07-25, #858)**. A dedicated `e2e-harness`
+   job (separate from the dummy-Convex `e2e` job) runs `scripts/e2e-harness-up.sh`
+   then the harness spec set with `E2E_HARNESS=1` against a prebuilt `next start`
+   server, tearing down via `scripts/e2e-harness-down.sh` in an `if: always()` step.
+   Still `continue-on-error: true` until proven green on a GitHub-hosted runner —
+   flip that off once a run (ideally a few in a row) goes green in CI. See
+   `docs/critical-flows.md` for flow-coverage status.
 2. **Seed domain data + write the revenue-path specs** — done:
    `e2e/harness-revenue-path.spec.ts` covers project → line-items → availability →
    check-out → return (critical-flows #5-9), creating its own model + serialized

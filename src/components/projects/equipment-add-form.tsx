@@ -538,7 +538,7 @@ export function EquipmentAddForm({
         {/* Pricing */}
         <section className="space-y-4 border-t border-line pt-5">
           <SectionTitle title="Pricing" hint="Quantity and rate. Leave the price blank to auto-price." />
-          <Field label="Quantity">
+          <Field label="Quantity" htmlFor="eq-quantity">
             <Input
               id="eq-quantity"
               type="number"
@@ -549,7 +549,7 @@ export function EquipmentAddForm({
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Unit price ($)">
+            <Field label="Unit price ($)" htmlFor="eq-unitPrice">
               <Input
                 id="eq-unitPrice"
                 type="number"
@@ -562,7 +562,7 @@ export function EquipmentAddForm({
                 <p className="t-micro text-warn">Overrides auto-pricing</p>
               )}
             </Field>
-            <Field label="Discount">
+            <Field label="Discount" htmlFor="eq-discount">
               <div className="flex gap-1.5">
                 <Input
                   id="eq-discount"
@@ -609,7 +609,7 @@ export function EquipmentAddForm({
             />
           ) : null}
 
-          <Field label="Notes">
+          <Field label="Notes" htmlFor="eq-notes">
             <Textarea id="eq-notes" {...form.register("notes")} placeholder="Additional notes" rows={2} />
           </Field>
 
@@ -673,13 +673,13 @@ function SectionTitle({ title, hint }: { title: string; hint?: string }) {
 }
 
 function Field({
-  label, required, children,
+  label, htmlFor, required, children,
 }: {
-  label: string; required?: boolean; children: React.ReactNode;
+  label: string; htmlFor?: string; required?: boolean; children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
+      <Label htmlFor={htmlFor}>{label}{required && <span className="text-red"> *</span>}</Label>
       {children}
     </div>
   );

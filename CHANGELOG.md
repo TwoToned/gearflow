@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **R-2.4** (#851, tracked under #865) — `build-image.yml` now also tags the released Docker
+  image `v${package.json version}` (alongside the existing `:latest`/`:${sha}` tags), so a
+  running deployment can be traced to a SemVer version without a manual SHA→CHANGELOG lookup.
+
+- **R-2.5** (#852, tracked under #865) — Closed Dependabot PR #608 (`typescript` 6.0.3 →
+  7.0.2), open 7 days past the 3-day trunk-based budget and failing CI on the major bump
+  alone. Recorded a dated §15 exception in `docs/exceptions.md` rather than merging broken
+  code or leaving it silently stale.
+
+- **R-2.8** (#853, tracked under #865) — Added a non-blocking PR-size advisory:
+  `scripts/pr-size-check.mjs` (wired into the CI `hygiene` job) computes changed LOC against
+  the merge-base, excluding R-0.5 exclusions, and posts/updates a soft PR comment when a PR
+  exceeds the T-2 400-LOC SHOULD-level target. No retroactive action was needed for #850
+  itself.
+
+- **R-3.1** (#854, tracked under #866) — `src/app/(admin)/admin/users/page.tsx`'s Site Admin
+  badge now uses the shared `isSiteAdminRole()` helper (`src/lib/admin-role.ts`) instead of a
+  4th inline `role === "admin"` comparison, closing the recurrence #817's fix missed.
+
 - **R-9.8** — Bumped `.collect-ratchet-full-baseline` 667 → 669: PR #887 added two new
   `.collect()` calls in `convex/roi.ts` (project-group/line-item rollup), both narrowed by
   `withIndex("by_projectId", ...)` and additionally bounded by the surrounding

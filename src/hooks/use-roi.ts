@@ -92,7 +92,7 @@ export function useFleetRoi(opts: {
         manufacturer: m.manufacturer,
         categoryId: m.categoryId,
         projectCount: earned?.projectCount ?? 0,
-        ...computeRoi(earned?.revenue ?? 0, m.unitsOwned, m.replacementCost),
+        ...computeRoi(earned?.revenue ?? 0, m.unitsOwned, m.fleetCost),
       };
     });
 
@@ -214,7 +214,7 @@ export function useModelRoi(
     return {
       ...raw.value,
       scope,
-      ...computeRoi(raw.value.revenue, raw.value.unitsOwned, raw.value.replacementCost),
+      ...computeRoi(raw.value.revenue, raw.value.unitsOwned, raw.value.fleetCost),
     };
   }, [raw, key, scope]);
 

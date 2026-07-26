@@ -1227,7 +1227,12 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_assetId", ["assetId"])
     .index("by_fileId", ["fileId"])
-    .index("by_assetId_fileId", ["assetId", "fileId"]),
+    .index("by_assetId_fileId", ["assetId", "fileId"])
+    // Hand-added (not emitted by the CRUD generator, R-9.8/#901): narrows
+    // registryPhotos' org-wide primary-photo scan to just the isPrimary rows —
+    // `isPrimary` is a plain boolean (no "default when absent" semantics, unlike
+    // status/date fields elsewhere), so an exact-match index is safe here.
+    .index("by_organizationId_isPrimary", ["organizationId", "isPrimary"]),
 
   // KitMedia
   kitMedia: defineTable({

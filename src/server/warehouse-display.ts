@@ -10,6 +10,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { getLocationById, getLocationMap } from "@/lib/locations-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
+import { getProjectWindow } from "@/lib/project-window";
 import {
   getDisplayServices,
   getDisplayLineItems,
@@ -366,49 +367,44 @@ export async function getWarehouseDisplayData(
   const matchesLocation = (p: (typeof allProjects)[0]): boolean =>
     !locationId || p.locationId === locationId;
 
-  // Date-based dispatch projects: loadInDate or rentalStartDate falls today
+  // WS2 (#941) — dispatch/return/prep dates read the PROJECT window (falls back
+  // to rental when unset), replacing the separate loadInDate/loadOutDate-or-
+  // rentalStartDate/rentalEndDate OR-checks below.
+
+  // Date-based dispatch projects: project window start falls today
   const dispatchByDate = allProjects.filter((p) => {
     if (p.isTemplate || !activeStatusSet.has(p.status ?? "") || !matchesLocation(p)) return false;
-    const inDate = p.loadInDate as number | undefined;
-    const startDate = p.rentalStartDate as number | undefined;
-    return (
-      (inDate != null && inDate >= todayMs && inDate < tomorrowMs) ||
-      (startDate != null && startDate >= todayMs && startDate < tomorrowMs)
-    );
+    const start = getProjectWindow(p).start;
+    return start != null && start >= todayMs && start < tomorrowMs;
   });
 
-  // Date-based return projects: loadOutDate or rentalEndDate falls today
+  // Date-based return projects: project window end falls today
   const returnsByDate = allProjects.filter((p) => {
     if (p.isTemplate || !returnStatusSet.has(p.status ?? "") || !matchesLocation(p)) return false;
-    const outDate = p.loadOutDate as number | undefined;
-    const endDate = p.rentalEndDate as number | undefined;
-    return (
-      (outDate != null && outDate >= todayMs && outDate < tomorrowMs) ||
-      (endDate != null && endDate >= todayMs && endDate < tomorrowMs)
-    );
+    const end = getProjectWindow(p).end;
+    return end != null && end >= todayMs && end < tomorrowMs;
   });
 
-  // Prepping projects (CONFIRMED/PREPPING), sorted by loadInDate asc, limit 12
+  // Prepping projects (CONFIRMED/PREPPING), sorted by project window start asc, limit 12
   const preppingRaw = allProjects
     .filter((p) => {
       if (p.isTemplate || !matchesLocation(p)) return false;
       return p.status === "CONFIRMED" || p.status === "PREPPING";
     })
     .sort((a, b) => {
-      const aMs = (a.loadInDate as number | undefined) ?? Infinity;
-      const bMs = (b.loadInDate as number | undefined) ?? Infinity;
+      const aMs = getProjectWindow(a).start ?? Infinity;
+      const bMs = getProjectWindow(b).start ?? Infinity;
       return aMs - bMs;
     })
     .slice(0, 12);
 
-  // Overdue returns: CHECKED_OUT or ON_SITE with past-due loadOutDate/rentalEndDate
+  // Overdue returns: CHECKED_OUT or ON_SITE with a past-due project window end
   const overdueRaw = allProjects
     .filter((p) => {
       if (p.isTemplate || !matchesLocation(p)) return false;
       if (p.status !== "CHECKED_OUT" && p.status !== "ON_SITE") return false;
-      const outDate = p.loadOutDate as number | undefined;
-      const endDate = p.rentalEndDate as number | undefined;
-      return (outDate != null && outDate < todayMs) || (endDate != null && endDate < todayMs);
+      const end = getProjectWindow(p).end;
+      return end != null && end < todayMs;
     })
     .slice(0, 5);
 
@@ -496,7 +492,7 @@ export async function getWarehouseDisplayData(
         id: p.id,
         projectNumber: p.projectNumber,
         name: p.name,
-        deliveryTime: (p.loadInTime as string | undefined) || null,
+        deliveryTime: (p.projectStartTime as string | undefined) || (p.loadInTime as string | undefined) || null,
         destination: null,
         vehicle: null,
         status: p.status ?? "",
@@ -526,7 +522,7 @@ export async function getWarehouseDisplayData(
         id: p.id,
         projectNumber: p.projectNumber,
         name: p.name,
-        dueTime: (p.loadOutTime as string | undefined) || null,
+        dueTime: (p.projectEndTime as string | undefined) || (p.loadOutTime as string | undefined) || null,
         expectedItems: checkedOutCountMap.get(p.id) ?? 0,
       });
     }
@@ -557,25 +553,15 @@ export async function getWarehouseDisplayData(
 
     const dispatchCount = allProjects.filter((p) => {
       if (p.isTemplate || !activeStatusSet.has(p.status ?? "") || !matchesLocation(p)) return false;
-      const inDate = p.loadInDate as number | undefined;
-      const startDate = p.rentalStartDate as number | undefined;
-      return (
-        (inDate != null && inDate >= dayStartMs && inDate < dayEndMs) ||
-        (startDate != null && startDate >= dayStartMs && startDate < dayEndMs) ||
-        daySvcDispatch.has(p.id)
-      );
+      const start = getProjectWindow(p).start;
+      return (start != null && start >= dayStartMs && start < dayEndMs) || daySvcDispatch.has(p.id);
     }).length;
 
     const returnCount = allProjects.filter((p) => {
       if (p.isTemplate || !returnOrActiveStatusSet.has(p.status ?? "") || !matchesLocation(p))
         return false;
-      const outDate = p.loadOutDate as number | undefined;
-      const endDate = p.rentalEndDate as number | undefined;
-      return (
-        (outDate != null && outDate >= dayStartMs && outDate < dayEndMs) ||
-        (endDate != null && endDate >= dayStartMs && endDate < dayEndMs) ||
-        daySvcPickup.has(p.id)
-      );
+      const end = getProjectWindow(p).end;
+      return (end != null && end >= dayStartMs && end < dayEndMs) || daySvcPickup.has(p.id);
     }).length;
 
     upcoming.push({

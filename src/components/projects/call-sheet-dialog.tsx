@@ -84,13 +84,16 @@ export function CallSheetDialog({
       }
     }
 
-    // Fall back to project milestone dates if no service dates
+    // Fall back to project milestone dates if no service dates. WS2 (#941): the
+    // four load/event moments collapsed to the project WINDOW (start/end) +
+    // RENTAL dates — offer all four so a project with only rental dates set (no
+    // divergent project window) still gets its days.
     if (dateSet.size === 0 && datesQuery.data) {
-      const { loadInDate, eventStartDate, eventEndDate, loadOutDate } = datesQuery.data;
-      if (loadInDate) dateSet.add(formatDateKey(new Date(loadInDate)));
-      if (eventStartDate) dateSet.add(formatDateKey(new Date(eventStartDate)));
-      if (eventEndDate) dateSet.add(formatDateKey(new Date(eventEndDate)));
-      if (loadOutDate) dateSet.add(formatDateKey(new Date(loadOutDate)));
+      const { windowStart, windowEnd, rentalStartDate, rentalEndDate } = datesQuery.data;
+      if (windowStart) dateSet.add(formatDateKey(new Date(windowStart)));
+      if (windowEnd) dateSet.add(formatDateKey(new Date(windowEnd)));
+      if (rentalStartDate) dateSet.add(formatDateKey(new Date(rentalStartDate)));
+      if (rentalEndDate) dateSet.add(formatDateKey(new Date(rentalEndDate)));
     }
 
     return Array.from(dateSet).sort();

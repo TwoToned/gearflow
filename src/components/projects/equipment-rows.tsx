@@ -43,6 +43,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { formatCurrency } from "@/lib/formatters";
+import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
 import { cn, focusRing } from "@/lib/utils";
 import { useRowShortcuts } from "./use-row-shortcuts";
 import { targetKey, lineItemTarget } from "@/lib/collaboration-targets";
@@ -1529,6 +1530,15 @@ export function LineItemRow({
         {item.discount != null && Number(item.discount) > 0 && (
           <p className="text-micro text-ok">-{formatCurrency(Number(item.discount))} disc.</p>
         )}
+        {(() => {
+          // #943 — derived billing weeks/days breakdown for an auto-priced
+          // line, e.g. "2 wk @ $150.00 + 3 d @ $30.00" / "charged as 1 wk
+          // (capped)". Nothing renders for a manually-priced line (no stored
+          // breakdown) or malformed/legacy data (parsePriceBreakdown -> null).
+          const breakdown = parsePriceBreakdown(item.priceBreakdown);
+          const label = breakdown ? formatPriceBreakdown(breakdown) : "";
+          return label ? <p className="text-micro text-faint">{label}</p> : null;
+        })()}
       </TableCell>
       {showCostColumn && (
         <TableCell className="text-right whitespace-nowrap t-data text-faint">

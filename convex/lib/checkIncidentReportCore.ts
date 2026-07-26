@@ -14,7 +14,7 @@
  * existing `prepStatus=FLAGGED_FAULTY` transition (set by the calling mutation) is
  * the operative signal here.
  *
- * Atomic like its sibling: any error rolls the whole check back. All ids
+ * Atomic like its sibling — an error here rolls the whole check back. All ids
  * (maintenanceId / link id / auditId) are CLIENT-minted, one bundle per DISTINCT
  * failed check item id. ConvexError only.
  */

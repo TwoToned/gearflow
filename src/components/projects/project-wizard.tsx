@@ -158,7 +158,7 @@ export function ProjectWizard({
   const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
   const locationOptions = rawLocations.map((l) => ({ value: l.id, label: l.parentId ? `${locNameById.get(l.parentId) ?? ""} → ${l.name}` : l.name, description: l.address || undefined }));
   const orgTags = useOrgTags(orgId);
-  const { data: membersData } = useServerQuery({ queryKey: ["org-members", orgId], queryFn: () => getOrgMembers({ pageSize: 200 }) });
+  const { data: membersData, error: membersError } = useServerQuery({ queryKey: ["org-members", orgId], queryFn: () => getOrgMembers({ pageSize: 200 }) });
   const memberOptions = (membersData?.members || []).map((m) => ({ value: m.user.id, label: m.user.name || m.user.email, description: m.user.name ? m.user.email : undefined }));
 
   const form = useForm<ProjectFormValues>({
@@ -354,7 +354,7 @@ export function ProjectWizard({
                     onCreateNew={() => setQuickClient(true)} createNewLabel="New client" emptyMessage="No clients found." />
                 )} />
               </Field>
-              <Field label="Project manager(s)">
+              <Field label="Project manager(s)" error={membersError ? "Couldn't load org members — you may not have permission to view them." : undefined}>
                 <ComboboxPicker value="" onChange={(id) => { if (id && !managerIds.includes(id)) setManagerIds((p) => [...p, id]); }}
                   options={memberOptions.filter((m) => !managerIds.includes(m.value))} placeholder="Add manager…" searchPlaceholder="Search members…" emptyMessage="No members found." />
                 {managerIds.length > 0 && (

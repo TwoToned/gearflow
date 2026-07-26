@@ -185,6 +185,8 @@ import type * as projectUnlockSessionsWrites from "../projectUnlockSessionsWrite
 import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
 import type * as reservationConflicts from "../reservationConflicts.js";
+import type * as returnsLookup from "../returnsLookup.js";
+import type * as returnsWrites from "../returnsWrites.js";
 import type * as revenueAllocation from "../revenueAllocation.js";
 import type * as roi from "../roi.js";
 import type * as savedTableViews from "../savedTableViews.js";
@@ -226,6 +228,7 @@ import type * as warehouseDashboardTokens from "../warehouseDashboardTokens.js";
 import type * as warehouseDetail from "../warehouseDetail.js";
 import type * as warehouseList from "../warehouseList.js";
 import type * as warehouseOps from "../warehouseOps.js";
+import type * as warehouseReturns from "../warehouseReturns.js";
 import type * as warehouseWrites from "../warehouseWrites.js";
 import type * as webhooks from "../webhooks.js";
 import type * as wooCommerceActions from "../wooCommerceActions.js";
@@ -417,6 +420,8 @@ declare const fullApi: ApiFromModules<{
   projectWrites: typeof projectWrites;
   projects: typeof projects;
   reservationConflicts: typeof reservationConflicts;
+  returnsLookup: typeof returnsLookup;
+  returnsWrites: typeof returnsWrites;
   revenueAllocation: typeof revenueAllocation;
   roi: typeof roi;
   savedTableViews: typeof savedTableViews;
@@ -458,6 +463,7 @@ declare const fullApi: ApiFromModules<{
   warehouseDetail: typeof warehouseDetail;
   warehouseList: typeof warehouseList;
   warehouseOps: typeof warehouseOps;
+  warehouseReturns: typeof warehouseReturns;
   warehouseWrites: typeof warehouseWrites;
   webhooks: typeof webhooks;
   wooCommerceActions: typeof wooCommerceActions;

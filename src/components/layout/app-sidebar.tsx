@@ -27,6 +27,7 @@ import {
   HardHat,
   Clock,
   MoreHorizontal,
+  Undo2,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -119,7 +120,10 @@ const RAIL: RailItem[] = [
       { title: "Fleet ROI", url: "/assets/roi", icon: TrendingUp, resource: "model" },
     ],
   },
-  { title: "Warehouse", url: "/warehouse", icon: Warehouse, hue: "teal", resource: "warehouse" },
+  {
+    title: "Warehouse", url: "/warehouse", icon: Warehouse, hue: "teal", resource: "warehouse",
+    subs: [{ title: "Returns", url: "/warehouse/returns", icon: Undo2, resource: "warehouse" }],
+  },
   {
     title: "Test & Tag", url: "/test-and-tag", icon: ShieldCheck, hue: "teal", resource: "testTag",
     subs: [

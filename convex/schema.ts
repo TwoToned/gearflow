@@ -1107,6 +1107,11 @@ export default defineSchema({
     // of collecting ALL of a project's lines and JS-filtering. Used by
     // warehouseOps.checkInBulkTotals (the hottest status-filtered read).
     .index("by_projectId_status", ["projectId", "status"])
+    // Composite: range-scan an org's CHECKED_OUT lines ORG-WIDE (no project
+    // pre-selection) instead of collecting the whole org's lines and JS-filtering.
+    // Used by warehouseReturns.bundle (WS5 returns station board, issue #944) —
+    // capped read, see docs/exceptions.md R-9.8 (returns-board-orgwide-checkedout).
+    .index("by_organizationId_status", ["organizationId", "status"])
     .index("by_modelId", ["modelId"])
     .index("by_assetId", ["assetId"])
     .index("by_bulkAssetId", ["bulkAssetId"])

@@ -217,9 +217,11 @@ same gap, tracked as a follow-up, not fixed by this change). Regression:
 The project-wide accessory-totals check-in tab was **removed from the warehouse UI**
 (accessories are no longer surfaced as a separate warehouse concern — they cascade
 silently with their parent). `src/server/bulk-checkin.ts`, its int test, and the
-`bulk-checkin-tab.tsx` component are gone; only the pure helper library
-`src/lib/bulk-checkin.ts` (+ its unit tests) remains, dormant. See
-[Bulk Check-In Totals](./52-bulk-checkin.md) for the dormant backend.
+`bulk-checkin-tab.tsx` component are gone. The engine survives as Convex-native
+code (`convex/lib/bulkCheckin.ts` → `warehouseOps.checkInBulkTotals`) with a live
+caller as of issue #944 — the returns station's bulk-tag scan
+(`returnsWrites.returnBulkNative`, see [Returns Station](#returns-station) below).
+See [Bulk Check-In Totals](./52-bulk-checkin.md) for the full engine writeup.
 
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
@@ -273,6 +275,143 @@ distinct from a resolved-but-rejected scan result) always plays `error`.
 **Partial return of identical units.** A single order line of N identical serialised units (e.g. "SM58 x4") has no line-level `assetId` and no `bulkAssetId` — the assets live on the per-unit `ProjectLineItemUnit` rows. Ticking some-but-not-all units in the return tab sends `{ lineItemId, quantity: K }` with no `assetId`, which lands in `returnLineUnits`' whole-line branch. That branch honours `quantity`: it flips exactly K still-out units (lowest ordinal first) and leaves the rest deployed; omitting `quantity` flips every still-out unit ("return whole line"). Bug history: the branch used to ignore `quantity` and flip all N units, so ticking one of four returned all four (fixed + regression-tested in `line-item-fulfillment.int.test.ts`). The checkout side already honoured the count via `expandPrepUnitAssignments`.
 
 4. Returning a parent asset cascades the return to its permanent accessories via `checkinAccessoryChildren` (`line-item-fulfillment.ts`) — shared, so both `checkInItems` AND the **check-and-store** flow (`completeCheckAndStore`) release the accessories; de-prep also clears them from the deploy-staging board. On a multi-quantity model line, the cascade is **scoped to the returned unit** (`returnedAssetId`): serialised accessories return only with their own host asset, and the shared bulk accessory clears one unit's share per return, fully releasing once every host unit is back. The cascade only fires when the parent return actually flipped a unit (`unitsFlipped > 0`), so re-scanning an already-returned unit can't double-return the shared accessory. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+
+## Returns Station
+
+`/warehouse/returns` (issue #944 WS5) — an **org-wide, project-less** returns
+desk: one scan field resolving each tag to its active deployment(s), with no
+project pre-selection. Complements the per-project Return Tab above (which
+still exists and is the right tool when you already know the job) — the
+returns station is for "gear is coming back through the dock, figure out which
+job(s) it belongs to as you go."
+
+### Board query — `convex/warehouseReturns.ts`
+- `bundle(orgId)` range-reads **every CHECKED_OUT `projectLineItems` row across
+  the whole org** via a new `by_organizationId_status` composite index (not
+  `by_projectId_status` — there is no project to scope by), capped at
+  `MAX_ROWS` (registered bounded-read exception, see `docs/exceptions.md`
+  R-9.8 "returns-board-orgwide-checkedout"). Groups the results by project,
+  ordered **overdue-first** (a server-side port of `getProjectUrgency` from
+  `src/app/(app)/warehouse/page.tsx`'s "The floor" landing page — kept in
+  lockstep deliberately, not imported, since that file is a client component).
+- **One-shot fetch, not a live subscription.** The `/warehouse/*` route group's
+  LCP budget is already over its registered threshold
+  (`docs/exceptions.md` R-8.9.3) — a whole-org reactive subscription here would
+  make that worse. The client (`useReturnsBoard`, `src/hooks/use-returns.ts`)
+  fetches once, keeps a session-local list, and refetches on a manual refresh
+  button + after every mutation.
+- Top-level rows are standalone/sub-hire/custom/kit-parent lines
+  (`isKitChild` false). ACCESSORY children cascade attached to their parent row
+  (not independent rows — mirrors the PDF pipeline's parent/child convention,
+  see CLAUDE.md's PDF section). Kit MEMBER lines roll up under the kit
+  parent — a kit always returns as a whole via `checkInKit`, never
+  member-by-member. Sub-hire and custom lines are **display-only**
+  (`scannable: false`) — there's no asset/bulk tag to scan for either. Partial
+  returns are included by construction: `returnLineUnits` only flips a line's
+  own `status` to RETURNED once every unit is back, so a partially-returned
+  line is still CHECKED_OUT and lands in the same range-read.
+- `unitsForLine(orgId, lineItemId)` expands one line's CHECKED_OUT units
+  (asset tag chips) **on demand** when a row is opened — the board query
+  deliberately stays line-level to keep the initial payload small.
+
+### Scan resolution — `convex/returnsLookup.ts`
+`resolve({orgId, value})` (SAFE_TAG pattern, same shape as `convex/scanLookup.ts`)
+resolves a scanned tag: asset/bulk/kit tag lookup → the org-wide
+`projectLineItemUnits.by_organizationId_assetId_status` /
+`by_organizationId_bulkAssetId_status` indexes → CHECKED_OUT unit(s) → line →
+project. This is the project-less twin of `src/server/warehouse.ts`'s
+`lookupAssetForScan` (which is hard-wired to one `projectId` — the returns
+station has no project to wire it to). Guards, matching `lookupAssetForScan`'s:
+
+| Scan result | Response `kind` | UI behaviour |
+|---|---|---|
+| Kit member asset | `guard_kit_member` | "Part of a kit — scan the kit instead" |
+| Permanent accessory child | `guard_accessory_child` | "Returns with its parent" |
+| Retired asset/bulk/kit | `exception` (`retired`) | Logged to the session exceptions list, never blocks |
+| No active deployment anywhere | `exception` (`no_active_deployment`) | Same — logged, not blocking |
+| Unknown tag | `not_found` | Same — logged, not blocking |
+| Asset checked out on exactly 1 project | `asset` | Returns immediately, condition GOOD |
+| Asset checked out on >1 project | `asset_multi` | Disambiguation dialog — **never auto-picks** |
+| Bulk tag out on exactly 1 project | `bulk` | Returns the full outstanding quantity immediately |
+| Bulk tag out on >1 project | `bulk_multi` | Per-project quantity prompt |
+| Kit tag, exactly 1 CHECKED_OUT parent line | `kit` | Whole-kit return via `checkInKit` |
+
+**Exceptions never block the dock.** Every non-return outcome above is pushed
+onto a session-local React exceptions list (not a new table — `assetScanLogs`
+remains the durable backstop, written by the normal check-in path when a
+return does succeed) and the operator keeps scanning.
+
+### Mutations — `convex/returnsWrites.ts`
+- **`returnScanNative`** — single scan-and-return for a known `lineItemId`
+  (+ optional `assetId`). Derives `projectId` from the line **server-side**
+  (`loadLineInOrg`, org-checked by_cuid) — there is no `projectId` argument
+  anywhere in this mutation for a client to spoof. Delegates the actual state
+  transition to `warehouseOps.checkinItemsCore` (the same core
+  `warehouseWrites.checkInItems` uses), so behaviour (condition routing, scan
+  log, accessory cascade, rollup) is identical to the per-project Return Tab.
+- **`returnBulkNative`** — bulk-tag scan resolved to one project. See
+  [Bulk Check-In Totals](./52-bulk-checkin.md) for the distribution engine.
+- **`returnBatchNative`** — multi-select batch return, cap 100 (server-enforced,
+  not just a client UI limit), per-item try/catch with labelled
+  `{lineItemId, success, error?}` results — one bad item never fails the rest
+  of the batch, matching the "exceptions never block the dock" principle at
+  the write layer too. One batch-summary audit row when ≥1 item succeeds.
+- **`correctReturnConditionNative`** — the post-hoc "mark damaged / missing"
+  action on an already-returned session row. Condition defaults to GOOD at
+  scan time and is **never prompted mid-scan** (spec decision — speed over
+  per-item friction). By the time an operator marks a row damaged, the unit is
+  already RETURNED (not CHECKED_OUT), so re-running `checkinItemsCore` would be
+  a silent no-op (`returnLineUnits` only flips units that are still
+  CHECKED_OUT) — this mutation instead patches the already-returned
+  unit/line's `returnCondition`/`returnNotes` directly and re-derives the
+  asset's status from the corrected condition.
+- **Auto-advance side effect.** When a project's LAST outstanding CHECKED_OUT
+  line just returned, the project auto-advances to `RETURNED` (existing
+  status-mutation semantics — feeds batch close-out same as today). Patches
+  the project directly inside the same `warehouse:check_in`-authorized
+  transaction rather than calling `projectWrites.updateStatusNative` (which
+  separately gates on `project:update` — the dedicated `warehouse` role has
+  `check_in` but only `project:read`, so routing through that mutation would
+  make the auto-advance silently fail for exactly the role this station is
+  built for). No new webhook event for v1.
+
+### Raise repair
+A damaged row's session-list entry gets a **"Raise repair"** action (gated on
+`maintenance:create` — the dedicated `warehouse` role does NOT have it, only
+`maintenance:read`, so the button doesn't render for that role) → calls the
+existing `maintenanceWrites.createNative` mutation (extended with an optional
+`projectId` arg for this — org-checked via `assertProjectInOrg`) with
+`{type: REPAIR, status: SCHEDULED, projectId, title: "Damaged on return —
+{model} {tag}", description: returnNotes}` + an asset link. Explicit operator
+action, never automatic.
+
+### Known gap — DAMAGED bulk returns still restore availability
+Carried over from the existing behaviour documented above
+("Standalone bulk checkout/checkin now maintains `bulkAssets.availableQuantity`"):
+a bulk asset has no per-unit condition bucket, so `returnLineUnits`' bulk
+branch restores `availableQuantity` **unconditionally regardless of
+`returnCondition`** — a damaged bulk return through the returns station (same
+as through the per-project Return Tab) still silently makes that quantity look
+available again. Explicitly OUT OF SCOPE for issue #944 — filed as a follow-up,
+not fixed here.
+
+### Nav
+Sidebar: a "Returns" sub-item under Warehouse. Warehouse landing page
+(`/warehouse`): a hub card linking to `/warehouse/returns`. **Not** in the
+mobile bottom nav (Warehouse's own bottom-nav entry still points at the
+project-scoped `/warehouse` list — see DESIGN.md §16 for what belongs in the
+bottom nav vs. the sidebar).
+
+### Audio feedback
+`src/lib/scan-feedback.ts` — a minimal local Web Audio API beep helper
+(success/error/exception tones), built inline per the issue's own instruction
+because the sibling quick-wins tracking issue (#937, "QW-1 shared beep") hadn't
+landed a shared `useScanFeedback` helper yet when this was built. Follows the
+one existing precedent in the codebase (`playBeep()` in
+`src/app/(app)/test-and-tag/quick-test/page.tsx`), extended from binary
+success/fail to the three outcomes the returns station has. **Consolidation
+TODO:** once #937 lands, replace this file's usage with the shared helper and
+delete it — don't let two beep helpers coexist long-term.
 
 ## Kit Verification
 Before deploying or returning a kit (or prep-kit) with unverified items:

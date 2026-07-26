@@ -303,6 +303,12 @@ interface MultiComboboxPickerProps {
   emptyMessage?: string
   className?: string
   disabled?: boolean
+  /**
+   * Render the selected-items chip row below the trigger. Defaults to true.
+   * Set false when the caller already renders the selection elsewhere (e.g.
+   * a table listing the same items) — showing both is duplicate information.
+   */
+  showSelectedTags?: boolean
 }
 
 function MultiComboboxPicker({
@@ -314,6 +320,7 @@ function MultiComboboxPicker({
   emptyMessage = "No results found.",
   className,
   disabled = false,
+  showSelectedTags = true,
 }: MultiComboboxPickerProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
@@ -436,7 +443,7 @@ function MultiComboboxPicker({
         </PopoverPrimitive.Portal>
       </PopoverPrimitive.Root>
 
-      {selectedLabels.length > 0 && (
+      {showSelectedTags && selectedLabels.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {values.map((v) => {
             const opt = options.find((o) => o.value === v)

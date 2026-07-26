@@ -12,17 +12,6 @@ import { requireOrgRead, requireOrgReadDoc, requireOrgPermission, requireService
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
-export const list = query({
-  args: { orgId: v.string() },
-  handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
-    return await ctx.db
-      .query("warehouseCloses")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-      .collect();
-  },
-});
-
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
@@ -185,17 +174,24 @@ export const closeOutSummary = query({
       (li) => li.organizationId === orgId && li.type === "EQUIPMENT" && li.isKitChild !== true,
     );
 
+    // Point-read only the models/assets/bulkAssets this project's line items actually
+    // reference, not the whole org — mirrors dashboardActivity.ts's join-map pattern.
+    const modelIds = [...new Set(lineItems.map((li) => li.modelId).filter((id): id is string => id != null))];
+    const assetIds = [...new Set(lineItems.map((li) => li.assetId).filter((id): id is string => id != null))];
+    const bulkAssetIds = [...new Set(lineItems.map((li) => li.bulkAssetId).filter((id): id is string => id != null))];
+    const [modelDocs, assetDocs, bulkAssetDocs] = await Promise.all([
+      Promise.all(modelIds.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+      Promise.all(assetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+      Promise.all(bulkAssetIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    ]);
     const modelMap = new Map(
-      (await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: aggregation — per-org tallies need the full set
-        .map((m) => [m.id, m.name]),
+      modelDocs.filter((m): m is NonNullable<typeof m> => m != null && m.organizationId === orgId).map((m) => [m.id, m.name]),
     );
     const assetTagMap = new Map(
-      (await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: aggregation — per-org tallies need the full set
-        .map((a) => [a.id, a.assetTag]),
+      assetDocs.filter((a): a is NonNullable<typeof a> => a != null && a.organizationId === orgId).map((a) => [a.id, a.assetTag]),
     );
     const bulkAssetTagMap = new Map(
-      (await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: aggregation — per-org tallies need the full set
-        .map((b) => [b.id, b.assetTag]),
+      bulkAssetDocs.filter((b): b is NonNullable<typeof b> => b != null && b.organizationId === orgId).map((b) => [b.id, b.assetTag]),
     );
 
     let storedCount = 0;

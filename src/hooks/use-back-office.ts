@@ -18,8 +18,12 @@ export type SavedTableViewDoc = Doc<"savedTableViews">;
 export function useSupplierOrders(orgId: string | undefined): SupplierOrderDoc[] | undefined {
   return useAuthedQuery(api.supplierOrders.list, orgId ? { orgId } : "skip");
 }
-export function useWarehouseCloses(orgId: string | undefined): WarehouseCloseDoc[] | undefined {
-  return useAuthedQuery(api.warehouseCloses.list, orgId ? { orgId } : "skip");
+/** Reactive per-project close-out record (cross-tab sync) — not the whole org's table. */
+export function useWarehouseCloseForProject(
+  orgId: string | undefined,
+  projectId: string | undefined,
+): WarehouseCloseDoc | null | undefined {
+  return useAuthedQuery(api.warehouseCloses.getByProject, orgId && projectId ? { orgId, projectId } : "skip");
 }
 export function useSavedTableViews(orgId: string | undefined): SavedTableViewDoc[] | undefined {
   return useAuthedQuery(api.savedTableViews.list, orgId ? { orgId } : "skip");
@@ -32,12 +36,10 @@ export function fingerprintSupplierOrders(rows: SupplierOrderDoc[] | undefined):
     .sort()
     .join("|");
 }
-export function fingerprintWarehouseCloses(rows: WarehouseCloseDoc[] | undefined): string | undefined {
-  if (!rows) return undefined;
-  return rows
-    .map((c) => `${c.id}:${c.closedAt ?? 0}:${c.projectId ?? ""}:${c.storedCount ?? ""}:${c.damagedCount ?? ""}:${c.lostCount ?? ""}`)
-    .sort()
-    .join("|");
+export function fingerprintWarehouseClose(doc: WarehouseCloseDoc | null | undefined): string | undefined {
+  if (doc === undefined) return undefined;
+  if (doc === null) return "none";
+  return `${doc.id}:${doc.closedAt ?? 0}:${doc.projectId ?? ""}:${doc.storedCount ?? ""}:${doc.damagedCount ?? ""}:${doc.lostCount ?? ""}`;
 }
 export function fingerprintSavedTableViews(rows: SavedTableViewDoc[] | undefined, tableId?: string): string | undefined {
   if (!rows) return undefined;

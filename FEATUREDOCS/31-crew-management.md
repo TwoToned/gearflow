@@ -122,7 +122,11 @@ names below.
 | `getCrewAvailabilityStatus(ids[], start, end)` | crew.read | Status map for visual indicators |
 
 ## Rate Cascade
-Assignment rate is resolved in this order:
+Assignment rate is resolved in this order (pure function, `convex/lib/crewRate.ts`
+`resolveRate` — the ONE implementation; reused server-side by both
+`convex/crewAssignmentsWrites.ts` and `convex/projectServicesWrites.ts`, and reused
+client-side by `src/lib/project-service-read.ts`/`services-panel.tsx` for the live
+preview — no duplicated cascade math):
 1. `rateOverride` on the assignment (if set and > 0)
 2. `crewMember.defaultDayRate` (daily) or `crewMember.defaultHourlyRate` (hourly)
 3. `crewRole.defaultRate` (with role's rate type)
@@ -132,6 +136,32 @@ Assignment rate is resolved in this order:
 - **DAILY**: rate × number of days (start to end inclusive)
 - **HOURLY**: rate × estimatedHours
 - **FLAT**: rate (fixed amount)
+- `calculateEstimatedCost()` (same file) turns the resolved rate into
+  `CrewAssignment.estimatedCost`, computed on every write that can change it —
+  from either side (see "Project Detail Integration" below, issue #796).
+
+## Service ↔ Crew Cost Linkage (issue #796)
+A `CrewAssignment` with a `serviceId` is "owned" by that `ProjectService`: its
+resolved cost rolls up into the service's own `costTotal`, which is what feeds the
+service's line item and the project's `serviceCostTotal`. This is enforced from
+**both** write paths so the two surfaces can never disagree:
+- **Service-side** (`convex/projectServicesWrites.ts`): adding a crew member to a
+  service (or editing crew there) runs the rate cascade immediately (no more "silently
+  $0 until someone edits it from the crew side") and calls
+  `recalcServiceCostFromCrew()` (`convex/lib/serviceCost.ts`) after every
+  create/update crew reconcile.
+- **Assignment-side** (`convex/crewAssignmentsWrites.ts`): editing an assignment's
+  rate/hours, or creating/deleting one with a `serviceId` set, calls the SAME
+  `recalcServiceCostFromCrew()` (and `recalcProjectTotals`) so a rate change made
+  from the crew UI is reflected on the owning service too.
+- **Double-counting**: `recalcProjectTotals`'s `labourCostTotal`
+  (`convex/lib/recalc.ts`) only sums assignments with **no** `serviceId` — a
+  service-linked assignment's cost is already inside `serviceCostTotal` via the
+  service's own `costTotal`. Standalone assignments (rare now — see below) still
+  roll up through `labourCostTotal` as before.
+- A **crew-less** service keeps whatever `costTotal` was last set manually (e.g. a
+  vehicle/transport-only service with no crew) — `recalcServiceCostFromCrew()` only
+  takes over once the service has 1+ crew.
 
 ## Pages
 | Path | Component | Description |
@@ -200,12 +230,38 @@ create/update permission gates.
 - `getCrewMemberById` returns `isOwnProfile: true` when the logged-in user matches the crew member's `userId`
 
 ## Project Detail Integration
-- **Crew tab** on project detail page (`/projects/[id]`) via `CrewPanel` component
-- Assignment list with phase grouping, PM highlighting
-- Add/edit assignment dialogs with crew picker, role, phase, dates, rate override
-- Status dropdown (Pending → Offered → Accepted → Confirmed → Completed)
-- **Labour cost** shown in project financial summary
-- **Call Sheet** button in crew tab and Documents dropdown
+There is **no separate "Crew" tab** — the "Labour & logistics" tab on the project
+detail page (`/projects/[id]`) is entirely owned by `ServicesPanel`
+(`src/components/projects/services-panel.tsx`), which is now the **sole crew UI**
+on the page (issue #796 — "put all crew management on the services"):
+- **Crew is added per-service**: the service edit dialog's Crew section has a crew
+  member picker plus a **per-crew rate table** (`CrewRateTable`) — one row per
+  assigned member showing name, resolved rate (live preview of the same cascade the
+  server runs), an overridable rate/rate-type/hours, and that row's cost. The
+  service's "Cost to Business" total becomes a read-only auto-calculated sum of that
+  table once any crew is assigned (see "Service ↔ Crew Cost Linkage" above); a
+  crew-less service keeps the old manually-typed cost field.
+- **`CrewPanel`** (`src/components/projects/crew-panel.tsx`) is rendered FROM
+  INSIDE `ServicesPanel` (not mounted separately by the page) as a "Project crew"
+  section below the service list — every crew member across every service on the
+  project, in one table, for viewing/status-changing/messaging/call-sheets. It no
+  longer has an "Add crew" entry point or an add-mode dialog: crew are only ever
+  *created* via a service's rate table now; `CrewPanel`'s `AssignmentDialog` is
+  edit-only (rate override, dates, role, phase, status, notes) for assignments that
+  already exist, whichever side created them.
+- Assignment list with phase grouping, PM highlighting; status dropdown (Pending →
+  Offered → Accepted → Confirmed → Completed); bulk status/delete; offer-all;
+  bulk/individual messaging; call sheet button — all unchanged from before, just
+  reached through `ServicesPanel` instead of a page-level sibling.
+- **Known gap (follow-up, not done in #796)**: the crew-picker inside the service
+  dialog does not show live availability-conflict badges the way `CrewPanel`'s old
+  "Add crew" flow did (`crewAvailability.conflicts`) — conflict detection still
+  exists and runs in `CrewPanel`'s edit dialog, just not at the point of adding
+  someone to a service.
+- **Labour cost** shown in project financial summary (via `labourCostTotal` +
+  `serviceCostTotal`, see "Service ↔ Crew Cost Linkage" above)
+- **Call Sheet** button lives with the crew section (moved along with `CrewPanel`)
+  and in the Documents dropdown
 
 ## Call Sheet PDF
 - `generateCallSheetPdf()` in `src/lib/pdfme/generate-pdf.ts`, using the pdfme templates

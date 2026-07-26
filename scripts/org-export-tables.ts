@@ -27,7 +27,7 @@
 
 export const SCHEMA_VERSION = "1";
 
-/** 76 tables, each with a `by_organizationId` index. */
+/** 73 tables, each with a `by_organizationId` index. */
 export const DIRECT_TABLES = [
   "activityLogs",
   "apiKeys",
@@ -35,7 +35,6 @@ export const DIRECT_TABLES = [
   "assetMedia",
   "assets",
   "assetScanLogs",
-  "brandTemplates",
   "bulkAssets",
   "categories",
   "checkItems",
@@ -50,7 +49,6 @@ export const DIRECT_TABLES = [
   "crewTimeEntries",
   "customFieldDefinitions",
   "dashboardCounters",
-  "documentTemplates",
   "fileUploads",
   "groupTemplateItems",
   "groupTemplates",
@@ -86,7 +84,6 @@ export const DIRECT_TABLES = [
   "projectServices",
   "projectTasks",
   "savedTableViews",
-  "sectionPresets",
   "serviceTemplates",
   "ssoProviders",
   "subHireMedia",
@@ -172,7 +169,7 @@ export const EXCLUDED_TABLES: string[] = [
 /** Full classified set — the coverage guard asserts this equals the schema. */
 export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABLES];
 
-export const EXPECTED_TABLE_COUNT = 102;
+export const EXPECTED_TABLE_COUNT = 99;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

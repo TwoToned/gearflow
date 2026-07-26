@@ -1825,59 +1825,6 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"]),
 
-  // BrandTemplate
-  brandTemplates: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    headerSettings: v.string(),
-    footerSettings: v.string(),
-    accentColor: v.optional(v.string()),
-    isDefault: v.optional(v.boolean()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"]),
-
-  // DocumentTemplate
-  documentTemplates: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    type: v.string(),
-    basePdf: v.optional(v.string()),
-    schemas: v.optional(v.string()),
-    settings: v.optional(v.string()),
-    sections: v.optional(v.string()),
-    brandTemplateId: v.optional(v.string()),
-    thumbnailData: v.optional(v.string()),
-    isDefault: v.optional(v.boolean()),
-    isDraft: v.optional(v.boolean()),
-    version: v.optional(v.number()),
-    thumbnailUrl: v.optional(v.string()),
-    publishedAt: v.optional(v.number()),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"])
-    .index("by_brandTemplateId", ["brandTemplateId"])
-    .index("by_organizationId_type", ["organizationId", "type"]),
-
-  // SectionPreset
-  sectionPresets: defineTable({
-    id: v.string(),
-    organizationId: v.string(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    sections: v.string(),
-    createdAt: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"]),
-
   // WarehouseDashboardToken
   warehouseDashboardTokens: defineTable({
     id: v.string(),

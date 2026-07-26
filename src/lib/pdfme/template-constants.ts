@@ -1,7 +1,7 @@
 /**
  * Shared constants for PDF template rendering.
  * Single source of truth for dimensions, font sizes, and spacing used by
- * both the height estimator (section-renderer.ts) and PDF plugins.
+ * both the pagination engine (document-composer.ts) and PDF plugins.
  */
 
 // ─── Page Dimensions (mm) ───────────────────────────────────────────────────
@@ -80,54 +80,3 @@ export const CREW_ROW_HEIGHT_MM = 5;
 
 /** Header/footer repeated on continuation pages (mm) */
 export const CONTINUATION_OVERHEAD_MM = 20;
-
-// ─── Section Type Min Widths (%) ─────────────────────────────────────────────
-
-import type { SectionType } from "./section-types";
-
-/**
- * Minimum column width percentage per section type.
- * Sections that require full width (tables, page breaks) are 100%.
- * Text-based sections can be narrower.
- */
-export const SECTION_MIN_WIDTHS: Record<SectionType, number> = {
-  table: 100,
-  "crew-table": 100,
-  "call-sheet-info": 100,
-  "day-header": 100,
-  "page-break": 100,
-  totals: 50,
-  header: 50,
-  signature: 33,
-  "client-details": 33,
-  "project-details": 33,
-  "custom-text": 25,
-  notes: 25,
-  spacer: 25,
-};
-
-/**
- * Approximate section heights in mm — used by the HTML preview for proportional sizing.
- * Not used for actual PDF pagination (that uses estimateSectionHeight with real data).
- */
-export const SECTION_HEIGHT_ESTIMATES: Record<SectionType, number> = {
-  header: 30,
-  "client-details": 25,
-  "project-details": 25,
-  table: 80,
-  totals: 20,
-  notes: 15,
-  signature: 20,
-  "custom-text": 10,
-  "crew-table": 60,
-  "call-sheet-info": 35,
-  "day-header": 14,
-  spacer: 5,
-  "page-break": 0,
-};
-
-/** Maximum number of columns per row */
-export const MAX_COLUMNS_PER_ROW = 4;
-
-/** Maximum nesting depth (rows -> columns -> content) */
-export const MAX_BLOCK_DEPTH = 2;

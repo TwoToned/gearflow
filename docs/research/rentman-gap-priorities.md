@@ -226,6 +226,13 @@ the dormant bulk check-in totals backend.
 
 ## Quick wins (days, not weeks — batch into one hygiene pass)
 
+> **Update 2026-07-26 (tracking issue #937):** QW-1 and QW-3 accepted — QW-3
+> widened into a dashboard overhaul (my work first, org risk second, counters/
+> activity demoted; still a fixed layout, no widget boards). QW-4 re-reviewed:
+> only `Client.defaultDiscount` gets wired now; the deposit/invoice fields are
+> **reserved for the #934 WS1 finance model** and must not be deleted. QW-2 not
+> scheduled this round.
+
 - **QW-1 — Scan beep in warehouse flows** (#30): the audio-feedback code exists in the
   T&T wizard; lift it into prep/deploy/return scanning. Head-down scanning needs ears.
 - **QW-2 — Per-project QR on warehouse hub cards** (#32): QR generation exists

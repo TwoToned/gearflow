@@ -68,7 +68,6 @@ import { useOptimisticProjectNotes, useNativeProjectStatus, useProjectWrites } f
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
-import { DateRangeBar } from "@/components/ui/sparkline";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
@@ -218,18 +217,11 @@ export default function ProjectDetailPage({
     );
   }
 
-  // Compute date range bar reference window (1 week before start to 1 week after end)
   const rentalStart = project.rentalStartDate
     ? new Date(project.rentalStartDate as unknown as string)
     : null;
   const rentalEnd = project.rentalEndDate
     ? new Date(project.rentalEndDate as unknown as string)
-    : null;
-  const rangeStart = rentalStart
-    ? new Date(rentalStart.getTime() - 7 * 24 * 60 * 60 * 1000)
-    : null;
-  const rangeEnd = rentalEnd
-    ? new Date(rentalEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
     : null;
 
   return (
@@ -619,15 +611,6 @@ export default function ProjectDetailPage({
                 {/* Schedule */}
                 {!project.isTemplate && (
                   <SidebarSection title="Schedule">
-                    {rentalStart && rentalEnd && rangeStart && rangeEnd && (
-                      <DateRangeBar
-                        start={rentalStart}
-                        end={rentalEnd}
-                        rangeStart={rangeStart}
-                        rangeEnd={rangeEnd}
-                        className="mb-2"
-                      />
-                    )}
                     <div className="space-y-1 text-ui-text">
                       <div className="flex justify-between gap-2">
                         <span className="text-muted flex items-center gap-1">

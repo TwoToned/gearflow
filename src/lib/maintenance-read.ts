@@ -58,6 +58,12 @@ export interface MaintenanceRecordRow {
   result: MaintenanceResult | null;
   nextDueDate: Date | null;
   tags: string[];
+  /** Set only on records created via "Report Issue" / an immediate check-item
+   *  FAIL (GitHub #898, FEATUREDOCS/64) — null on ordinary manually-created
+   *  maintenance records. */
+  incidentType: "BROKEN_DAMAGED" | "LOST_MISSING" | "NEEDS_SERVICE" | null;
+  incidentSeverity: "MINOR" | "MAJOR" | null;
+  lineItemId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -96,6 +102,9 @@ export function mapMaintenanceRecord(doc: ConvexMaintenanceDoc): MaintenanceReco
     result: (doc.result ?? null) as MaintenanceResult | null,
     nextDueDate: toDate(doc.nextDueDate),
     tags: doc.tags ?? [],
+    incidentType: (doc.incidentType ?? null) as MaintenanceRecordRow["incidentType"],
+    incidentSeverity: (doc.incidentSeverity ?? null) as MaintenanceRecordRow["incidentSeverity"],
+    lineItemId: doc.lineItemId ?? null,
     createdAt: toDate(doc.createdAt) ?? new Date(doc._creationTime),
     updatedAt: toDate(doc.updatedAt) ?? new Date(doc._creationTime),
   };

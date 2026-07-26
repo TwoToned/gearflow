@@ -205,12 +205,22 @@ Projects are the core operational unit — representing a gig, show, event, inst
 - `description`
 - `venue` (name/address of event location)
 - `venueContactName`, `venueContactPhone`, `venueContactEmail`
-- `loadInDate`, `loadInTime`
-- `eventStartDate`, `eventStartTime`
-- `eventEndDate`, `eventEndTime`
-- `loadOutDate`, `loadOutTime`
-- `rentalStartDate` (when equipment leaves warehouse — billing period start)
-- `rentalEndDate` (when equipment returns — billing period end)
+- **Two windows only (WS2 #941 — locked decision):**
+  - `rentalStartDate`, `rentalEndDate` — the **chargeable** window (billing
+    period start/end). Pricing reads this directly.
+  - `projectStartDate`, `projectStartTime`, `projectEndDate`, `projectEndTime`
+    — the **gear-committed** window (when equipment actually leaves/returns
+    the warehouse — the old load-in/load-out role). Blank by default; falls
+    back to the rental window when unset (`getProjectWindow`, read-time
+    coalesce, not stored duplication). **Availability and conflict detection
+    read this window**, never the rental window directly.
+  - `loadInDate`/`loadInTime`/`loadOutDate`/`loadOutTime`/`eventStartDate`/
+    `eventStartTime`/`eventEndDate`/`eventEndTime` are **deprecated** — kept
+    on the schema, unwritten by any current consumer, for one rollout cycle.
+    `loadInDate`/`loadOutDate` are backfilled into `projectStartDate`/
+    `projectEndDate`; the event pair has no replacement and is dropped, not
+    migrated. See [FEATUREDOCS/11](./FEATUREDOCS/11-availability.md) for the
+    full design and the six parity-pinned overlap-math sites this touches.
 - `projectManagerId` → User
 - `crewNotes` (notes visible to crew/technicians)
 - `internalNotes` (notes visible only to office/management)

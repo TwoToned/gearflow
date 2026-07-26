@@ -19,6 +19,7 @@ import {
   type ICalEvent,
 } from "@/lib/ical";
 import { readOrgSettingsBlob, orgIdForIcalToken } from "@/lib/org-settings-read";
+import { getProjectWindow } from "@/lib/project-window";
 
 const VALID_FEEDS = ["projects", "services", "maintenance", "crew"] as const;
 type FeedType = (typeof VALID_FEEDS)[number];
@@ -77,26 +78,22 @@ async function buildProjectsFeed(
   const events: ICalEvent[] = [];
 
   for (const p of projects) {
-    // Determine event span: loadIn→loadOut > rental > event dates
-    const startDate = p.loadInDate || p.rentalStartDate || p.eventStartDate;
-    const endDate = p.loadOutDate || p.rentalEndDate || p.eventEndDate;
+    // WS2 (#941) — event span is the PROJECT window, falling back to rental
+    // (getProjectWindow); the event* pair is gone, dropped from this fallback.
+    const window = getProjectWindow(p);
+    const startDate = window.start;
+    const endDate = window.end;
 
     if (!startDate) continue; // Skip projects with no dates
 
-    const startTime = p.loadInDate
-      ? p.loadInTime
-      : p.rentalStartDate
-        ? null
-        : p.eventStartTime;
-    const endTime = p.loadOutDate
-      ? p.loadOutTime
-      : p.rentalEndDate
-        ? null
-        : p.eventEndTime;
+    // A time only applies when the date it's paired with actually supplied the
+    // window side — the rental pair has no time fields.
+    const startTime = p.projectStartDate != null ? p.projectStartTime : null;
+    const endTime = p.projectEndDate != null ? p.projectEndTime : null;
 
     // Convex dates are numbers (ms since epoch) — convert to Date for buildDateTime.
-    const dtstart = buildDateTime(new Date(startDate as number), startTime, tzid);
-    let dtend = buildDateTime(new Date((endDate || startDate) as number), endTime, tzid);
+    const dtstart = buildDateTime(new Date(startDate), startTime, tzid);
+    let dtend = buildDateTime(new Date(endDate ?? startDate), endTime, tzid);
     // No times anywhere → treat as an all-day event in the org's tz.
     const allDay = !startTime && !endTime;
 

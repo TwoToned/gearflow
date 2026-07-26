@@ -58,7 +58,15 @@ describe("availabilityCore stock math == overbooking-core (byte-for-byte pin)", 
 // ─── (b) computeModelAvailability fixtures ────────────────────────────────────
 
 type L = { projectId: string; quantity?: number; status?: string; subHireId?: string | null };
-type P = { id: string; rentalStartDate?: number | null; rentalEndDate?: number | null; status?: string; isTemplate?: boolean };
+type P = {
+  id: string;
+  rentalStartDate?: number | null;
+  rentalEndDate?: number | null;
+  projectStartDate?: number | null;
+  projectEndDate?: number | null;
+  status?: string;
+  isTemplate?: boolean;
+};
 
 function mkBundle(opts: {
   assetType?: "SERIALIZED" | "BULK";
@@ -103,6 +111,32 @@ describe("computeModelAvailability", () => {
       projects: [
         { id: "thisP", rentalStartDate: START, rentalEndDate: END, status: "CONFIRMED" },
         { id: "otherP", rentalStartDate: START + 100, rentalEndDate: END + 100, status: "CONFIRMED" },
+      ],
+    });
+    const r = computeModelAvailability(b, { rentalStart: START, rentalEnd: END, excludeProjectId: "thisP" });
+    expect(r).toMatchObject({ totalStock: 3, booked: 7, available: 0 });
+  });
+
+  // WS2 (#941) — candidate overlap reads the PROJECT window, not the rental window.
+  test("dated: a candidate's PROJECT window (not its rental window) decides overlap", () => {
+    const b = mkBundle({
+      assets: [{ status: "AVAILABLE" }, { status: "AVAILABLE" }, { status: "AVAILABLE" }],
+      lines: [
+        { projectId: "thisP", quantity: 2 },
+        { projectId: "otherP", quantity: 5 },
+      ],
+      projects: [
+        { id: "thisP", rentalStartDate: START, rentalEndDate: END, status: "CONFIRMED" },
+        // otherP's RENTAL window doesn't overlap [START, END], but its PROJECT
+        // window (e.g. an earlier load-in) does — must still count as booked.
+        {
+          id: "otherP",
+          rentalStartDate: END + 1_000,
+          rentalEndDate: END + 2_000,
+          projectStartDate: START,
+          projectEndDate: END,
+          status: "CONFIRMED",
+        },
       ],
     });
     const r = computeModelAvailability(b, { rentalStart: START, rentalEnd: END, excludeProjectId: "thisP" });

@@ -782,6 +782,13 @@ export default defineSchema({
     result: v.optional(enums.MaintenanceResult),
     nextDueDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
+    // Incident-report fields (FEATUREDOCS/64) — set only on records created via the
+    // "Report Issue" flow or an immediate check-item FAIL; absent on ordinary
+    // manually-created maintenance records. lineItemId links back to the specific
+    // ProjectLineItem the issue was reported against, when there was one.
+    incidentType: v.optional(enums.IncidentType),
+    incidentSeverity: v.optional(enums.IncidentSeverity),
+    lineItemId: v.optional(v.string()),
     // WS6 #945 — recurring preventative maintenance. Absent on every pre-existing
     // row (ad-hoc REPAIR/INSPECTION/etc. records, and the dead-end nextDueDate
     // above) = not schedule-generated (zero-migration, back-compat).
@@ -802,6 +809,7 @@ export default defineSchema({
     .index("by_assignedToId", ["assignedToId"])
     .index("by_status", ["status"])
     .index("by_scheduledDate", ["scheduledDate"])
+    .index("by_lineItemId", ["lineItemId"])
     // Range-scan an org's OPEN maintenance whose scheduledDate has arrived
     // (dashboardStats.maintenanceDue) — bounds the reactive read-set to the due
     // records instead of collecting the whole org's maintenance table.
@@ -949,6 +957,18 @@ export default defineSchema({
     eventEndTime: v.optional(v.string()),
     loadOutDate: v.optional(v.number()),
     loadOutTime: v.optional(v.string()),
+    // WS2 (#941) — the two-window date model. `projectStartDate`/`projectEndDate`
+    // are the "gear committed" window availability/conflicts read; they default to
+    // the rental window at READ TIME via `getProjectWindow` (src/lib/project-window.ts
+    // + convex/lib/projectWindow.ts) — NOT stored duplication (R-3.1). loadIn/loadOut
+    // and event* are DEPRECATED (kept for one rollout cycle — see FEATUREDOCS/10):
+    // loadInDate/Time → projectStartDate/Time, loadOutDate/Time → projectEndDate/Time
+    // is the intended replacement; eventStartDate/eventEndDate have no replacement
+    // (dropped, not migrated). Do not add new writers of the deprecated fields.
+    projectStartDate: v.optional(v.number()),
+    projectStartTime: v.optional(v.string()),
+    projectEndDate: v.optional(v.number()),
+    projectEndTime: v.optional(v.string()),
     rentalStartDate: v.optional(v.number()),
     rentalEndDate: v.optional(v.number()),
     projectManagerId: v.optional(v.string()),
@@ -995,6 +1015,11 @@ export default defineSchema({
     // overdueReturns) — bounds the reactive read-set to past-end-date projects
     // instead of collecting the whole org's projects table.
     .index("by_organizationId_rentalEndDate", ["organizationId", "rentalEndDate"])
+    // WS2 (#941) — range-scan an org's BACKFILLED projectStartDate (the availability
+    // candidate scan in convex/overbooking.ts). Only catches projects with
+    // projectStartDate explicitly set; the scan pairs this with a rental-index
+    // fallback for projects where it's still unset (getProjectWindow's coalesce).
+    .index("by_organizationId_projectStartDate", ["organizationId", "projectStartDate"])
     .index("by_isTemplate", ["isTemplate"])
     .index("by_organizationId_status", ["organizationId", "status"]),
   // (No project search index: the app never picks a project in a combobox — projects
@@ -2184,6 +2209,7 @@ export default defineSchema({
     pendingOffers: v.optional(v.boolean()),
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
+    incidentReport: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])

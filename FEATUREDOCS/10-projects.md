@@ -91,15 +91,24 @@ retired). Routes:
   effect — its Name field already carries `autoFocus`, which re-fires on every
   (re)mount (the step content is conditionally rendered, so returning to step 0
   remounts the field) and would otherwise race the heading-focus effect.
-- **Schedule step — one calendar, not six pickers.** The hire window is a single
-  date range chosen via `RangeCalendar` (`src/components/ui/range-calendar.tsx`,
-  a custom date-fns range calendar — no external calendar dep) plus duration
-  preset chips (1 day / 2 days / Weekend / 1 week). The range writes
-  `rentalStartDate`/`rentalEndDate`; load-in, show-start, show-end and load-out
-  **dates derive from the window** (fill-if-empty, never clobbering an explicit
-  edit). Per-moment dates + times live in an optional "Load-in, show & load-out
-  times" accordion so the common case is "tap a preset, done". All ten underlying
-  fields are preserved for `createProject()`.
+- **Schedule step — two windows (WS2 #941).** Two `RangeCalendar` blocks
+  (`src/components/ui/range-calendar.tsx`, a custom date-fns range calendar — no
+  external calendar dep): **Rental** (the chargeable window, `rentalStartDate`/
+  `rentalEndDate` — duration preset chips: 1 day / 2 days / Weekend / 1 week) and
+  **Project** (the gear-committed window, `projectStartDate`/`projectEndDate`).
+  Project is **blank by default** with "(same as rental)" ghost text — it stays
+  genuinely unset in the form/DB unless the user explicitly diverges it (an
+  earlier load-in, a later strike); there is no auto-copy from the rental range
+  (R-3.1 — a duplicated-but-in-sync value is still a defect). Per-window
+  start/end times live in an optional "Project window" fine-tune accordion
+  (`projectStartTime`/`projectEndTime`). A **soft (non-blocking)** hint appears
+  when the project window doesn't fully contain the rental window
+  (`projectStart > rentalStart` or `projectEnd < rentalEnd`) — shown inline,
+  never registered as a form error, so it can't block Continue/submit. The
+  legacy `loadInDate`/`loadOutDate`/`eventStartDate`/`eventEndDate` fields are
+  **DEPRECATED** — the wizard reads them (pre-migration projects) but never
+  writes them. See [11-availability.md](./11-availability.md) for the full
+  two-window design and `getProjectWindow`.
 
 ### Discount default cascade (QW-4 / #953)
 
@@ -488,15 +497,24 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - Date auto-fills based on service type
 
 ### Service Auto-Generation
-- `generateServicesNative` (`convex/projectServicesWrites.ts`) creates services from project dates + service templates
+- `generateServicesNative` (`convex/projectServicesWrites.ts`) creates services
+  from the project's **window** (`getProjectWindow` — WS2 #941) + service
+  templates, not `loadInDate`/`loadOutDate`/`eventStartDate`/`eventEndDate`
+  directly (deprecated). DELIVERY/BUMP_IN sit at the window start (the old
+  load-in role), BUMP_OUT/PICKUP at the window end (the old load-out role),
+  LABOUR/MISC span the whole window (the old event-start..event-end role — the
+  closest single replacement now that the event pair is gone).
 - Idempotent: checks existing services by type+date key to avoid duplicates on re-run (intra-batch dedup too, to avoid inflated totals)
 - Uses `isAutoAdded` templates; falls back to all active templates if none marked
-- Default set if no templates: DELIVERY, BUMP_IN, BUMP_OUT, PICKUP (+ LABOUR show days if event dates)
-- Multi-day events create one LABOUR service per day
+- Default set if no templates: DELIVERY, BUMP_IN, BUMP_OUT, PICKUP (+ LABOUR
+  show days whenever the project has a resolvable window — there's no longer a
+  separate "explicit event date" signal to gate on)
+- A multi-day window creates one LABOUR service per day
 
 ### Service Cloning
 - `cloneServicesNative` (`convex/projectServicesWrites.ts`) copies services between projects
-- Calculates date offset from first service date difference
+- Calculates the date offset from the source/target **project window start**
+  (`getProjectWindow`, WS2 #941), not `loadInDate ?? eventStartDate`
 - Resets status to PLANNED, preserves crew preferences but not assignments; drops stale/foreign crew member+role FKs
 
 ### Crew Notifications
@@ -608,7 +626,7 @@ an unbuilt, undesigned feature — WS7 explicitly deferred it (sub-hire order to
 also do NOT feed the P&L; see [22-suppliers](./22-suppliers.md#supplier-orders-purchase-orders)).
 
 ## Reservation Conflict Resolution
-When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone. Both reads `.collect()` the org's full line-item/unit/asset/project/model graph (`loadOrgGraph()`) rather than paginating — correctness requires comparing against every booking anywhere in the org, so a bounded read would silently miss conflicts outside the fetched page. This is a registered §15 exception, not an oversight — see `docs/exceptions.md` (R-8.3.3 `reservationConflicts-orgGraph`).
+When a serialized asset is booked on this project AND on another live project whose PROJECT window overlaps (WS2 #941 — `getProjectWindow`, falls back to rental when unset), an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone. Both reads `.collect()` the org's full line-item/unit/asset/project/model graph (`loadOrgGraph()`) rather than paginating — correctness requires comparing against every booking anywhere in the org, so a bounded read would silently miss conflicts outside the fetched page. This is a registered §15 exception, not an oversight — see `docs/exceptions.md` (R-8.3.3 `reservationConflicts-orgGraph`).
 
 ## Future-Proofing
 - **ROI Tracking**: Asset.purchasePrice supports revenue attribution against rental income — see [42. Asset Utilization](./42-asset-utilization.md)

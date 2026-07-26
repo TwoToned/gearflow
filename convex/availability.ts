@@ -90,6 +90,8 @@ function toBookingProject(d: Doc<"projects">): BookingProject {
     isTemplate: d.isTemplate ?? false,
     rentalStartMs: d.rentalStartDate ?? null,
     rentalEndMs: d.rentalEndDate ?? null,
+    projectStartMs: d.projectStartDate ?? null,
+    projectEndMs: d.projectEndDate ?? null,
   };
 }
 

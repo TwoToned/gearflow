@@ -465,6 +465,9 @@ export const updateNative = mutation({
     // double-booking guard for this project's future line-item adds.
     assertFinite(typeof setObj.rentalStartDate === "number" ? setObj.rentalStartDate : undefined, "rentalStartDate");
     assertFinite(typeof setObj.rentalEndDate === "number" ? setObj.rentalEndDate : undefined, "rentalEndDate");
+    // projectStartDate/projectEndDate (WS2 #941) — same NaN hazard via getProjectWindow.
+    assertFinite(typeof setObj.projectStartDate === "number" ? setObj.projectStartDate : undefined, "projectStartDate");
+    assertFinite(typeof setObj.projectEndDate === "number" ? setObj.projectEndDate : undefined, "projectEndDate");
 
     // Org-validate a reassigned clientId — `set` is v.any(), and clientId is read via a
     // GLOBAL by_cuid index (src/lib/clients-read.ts getClientById), never re-checked
@@ -582,6 +585,11 @@ export const createNative = mutation({
     // See updateNative's comment — NaN here defeats the double-booking overlap check.
     assertFinite(fields.rentalStartDate, "rentalStartDate");
     assertFinite(fields.rentalEndDate, "rentalEndDate");
+    // projectStartDate/projectEndDate (WS2 #941) feed getProjectWindow, which now
+    // backs the SAME overlap checks rentalStartDate/rentalEndDate do — same NaN
+    // hazard, same guard.
+    assertFinite(fields.projectStartDate, "projectStartDate");
+    assertFinite(fields.projectEndDate, "projectEndDate");
 
     // Bound-check the string fields projectSchema constrains — same rationale as
     // updateNative's assertProjectFields call.

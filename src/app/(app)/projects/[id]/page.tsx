@@ -34,6 +34,7 @@ import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
+import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
@@ -273,6 +274,7 @@ export default function ProjectDetailPage({
                       label={projectStatusLabels[project.status] || formatLabel(project.status)}
                     />
                   )}
+                  {!project.isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
@@ -502,10 +504,31 @@ export default function ProjectDetailPage({
                       projectAddress={project.location?.address || ""}
                       projectLatitude={project.location?.latitude ?? null}
                       projectLongitude={project.location?.longitude ?? null}
-                      projectLoadInDate={project.loadInDate ? new Date(project.loadInDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectLoadOutDate={project.loadOutDate ? new Date(project.loadOutDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
+                      // WS2 (#941): fed from the PROJECT window (falling back to the
+                      // deprecated loadIn/loadOut fields for a project the backfill
+                      // hasn't reached yet) — ServicesPanel's own loadIn/eventStart
+                      // fallback-of-a-fallback logic is unchanged, so both props
+                      // carrying the same window value is harmless.
+                      projectLoadInDate={
+                        (project.projectStartDate ?? project.loadInDate)
+                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectLoadOutDate={
+                        (project.projectEndDate ?? project.loadOutDate)
+                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectEventStartDate={
+                        (project.projectStartDate ?? project.loadInDate)
+                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectEventEndDate={
+                        (project.projectEndDate ?? project.loadOutDate)
+                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
                     />
                   </div>
                 </TabsContent>
@@ -668,18 +691,25 @@ export default function ProjectDetailPage({
                           {formatDate(project.rentalEndDate as string | null)}
                         </span>
                       </div>
-                      {/* Load in/out + event rows render only when set — no stack
-                          of "—" placeholders. If all four are unset, show one
-                          faint line instead. */}
+                      {/* WS2 (#941) — the PROJECT window rows render only when set (no
+                          stack of "—" placeholders); loadIn/loadOut are the deprecated
+                          fallback for a project the backfill hasn't reached yet. If
+                          nothing is set at all, show one faint line instead. */}
                       {(() => {
                         const scheduleRows = [
-                          { label: "Load in", date: project.loadInDate, time: project.loadInTime },
-                          { label: "Load out", date: project.loadOutDate, time: project.loadOutTime },
-                          { label: "Event start", date: project.eventStartDate, time: project.eventStartTime },
-                          { label: "Event end", date: project.eventEndDate, time: project.eventEndTime },
+                          {
+                            label: "Project starts",
+                            date: project.projectStartDate ?? project.loadInDate,
+                            time: project.projectStartTime ?? project.loadInTime,
+                          },
+                          {
+                            label: "Project ends",
+                            date: project.projectEndDate ?? project.loadOutDate,
+                            time: project.projectEndTime ?? project.loadOutTime,
+                          },
                         ].filter((r) => r.date != null);
                         if (scheduleRows.length === 0) {
-                          return <p className="text-caption text-faint">No load-in/out times set</p>;
+                          return <p className="text-caption text-faint">No project window set — same as rental</p>;
                         }
                         return scheduleRows.map((r) => (
                           <div key={r.label} className="flex justify-between gap-2">

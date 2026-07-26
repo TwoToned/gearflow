@@ -33,6 +33,7 @@ const ALL_ON = {
   pendingOffers: true,
   pendingTimesheets: true,
   flaggedAsset: true,
+  incidentReport: true,
 };
 
 function makeT() {
@@ -160,7 +161,7 @@ describe("notificationPreferences parity (convex/lib mirrors src/lib)", () => {
     expect(convexResolve({ overdueMaintenance: false, upcomingProject: true })).toEqual(
       srcResolve({ overdueMaintenance: false, upcomingProject: true } as never),
     );
-    const full = { overdueMaintenance: false, overdueReturn: false, upcomingProject: true, pendingInvitation: false, pendingOffers: true, pendingTimesheets: true, flaggedAsset: false };
+    const full = { overdueMaintenance: false, overdueReturn: false, upcomingProject: true, pendingInvitation: false, pendingOffers: true, pendingTimesheets: true, flaggedAsset: false, incidentReport: false };
     expect(convexResolve(full)).toEqual(srcResolve(full as never));
   });
 });

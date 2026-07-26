@@ -8,13 +8,21 @@ import type { ClientFormValues } from "@/lib/validations/client";
  */
 export type ClientFieldsInput = Partial<ClientFormValues> & { name: string };
 
+/**
+ * WS9 #948 — `contactName`/`contactEmail`/`contactPhone` are deliberately OMITTED
+ * here even though `ClientFormValues` still carries them (the Zod schema/Convex
+ * arg keep the fields for the widen-migrate-narrow window — narrowing them off is
+ * a separate follow-up). The child `clientContacts` table is now the single
+ * write path for a client's contact info ("no dual-write" — see
+ * FEATUREDOCS/62-client-contacts.md); callers that collect a primary contact at
+ * create-time (ClientForm, QuickCreateClient) write it via a SEPARATE
+ * `clientContactWrites.addNative` call after the client itself is created — see
+ * `useClientWrites().create()`.
+ */
 export function toClientFields(parsed: ClientFieldsInput) {
   return {
     name: parsed.name,
     type: parsed.type,
-    contactName: parsed.contactName || undefined,
-    contactEmail: parsed.contactEmail || undefined,
-    contactPhone: parsed.contactPhone || undefined,
     billingAddress: parsed.billingAddress || undefined,
     billingLatitude: parsed.billingLatitude == null ? undefined : Number(parsed.billingLatitude),
     billingLongitude: parsed.billingLongitude == null ? undefined : Number(parsed.billingLongitude),

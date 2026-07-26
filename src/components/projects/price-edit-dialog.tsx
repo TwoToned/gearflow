@@ -18,7 +18,6 @@
 
 import { useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
@@ -213,8 +212,7 @@ function PriceEditDialogBody({
         <Button variant="line" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={isPending}>
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Button onClick={handleSubmit} loading={isPending}>
           Save
         </Button>
       </DialogFooter>

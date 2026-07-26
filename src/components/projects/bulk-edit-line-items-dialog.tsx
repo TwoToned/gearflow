@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,8 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
 import type { BulkLineItemPatch } from "@/hooks/use-line-item-writes";
+import { DiscountField, type DiscountMode } from "@/components/projects/line-item-form-fields";
 
 const PRICING_LABELS: Record<string, string> = {
   PER_DAY: "Per day",
@@ -61,7 +60,7 @@ export function BulkEditLineItemsDialog({
 
   const [discountOn, setDiscountOn] = React.useState(false);
   const [discount, setDiscount] = React.useState("");
-  const [discountMode, setDiscountMode] = React.useState<"$" | "%">("$");
+  const [discountMode, setDiscountMode] = React.useState<DiscountMode>("$");
 
   const [notesOn, setNotesOn] = React.useState(false);
   const [notes, setNotes] = React.useState("");
@@ -158,31 +157,20 @@ export function BulkEditLineItemsDialog({
               className="mt-1"
             />
             <div className="flex-1 space-y-1.5">
-              <Label htmlFor="bulk-discount">Discount</Label>
-              <div className="flex gap-1">
-                <Input
-                  id="bulk-discount"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  placeholder="0"
-                  value={discount}
-                  onChange={(e) => {
+              <DiscountField
+                id="bulk-discount"
+                label="Discount"
+                mode={discountMode}
+                onModeChange={setDiscountMode}
+                disabled={!discountOn}
+                inputProps={{
+                  value: discount,
+                  onChange: (e) => {
                     setDiscount(e.target.value);
                     setDiscountOn(true);
-                  }}
-                  disabled={!discountOn}
-                  className="flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={() => setDiscountMode(discountMode === "$" ? "%" : "$")}
-                  disabled={!discountOn}
-                  className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
-                >
-                  {discountMode}
-                </button>
-              </div>
+                  },
+                }}
+              />
               <p className="text-caption text-muted">
                 Clears the discount when left blank or zero.
                 {discountMode === "%" &&
@@ -246,8 +234,7 @@ export function BulkEditLineItemsDialog({
           <Button variant="line" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={!anyEnabled || isPending}>
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Button onClick={handleSave} loading={isPending} disabled={!anyEnabled}>
             Apply to {count} item{count === 1 ? "" : "s"}
           </Button>
         </DialogFooter>

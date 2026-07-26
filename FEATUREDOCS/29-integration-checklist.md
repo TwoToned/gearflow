@@ -8,7 +8,7 @@ When implementing a new feature, ensure it integrates with ALL existing systems.
 |--------|-----------|
 | **Convex write** | New domain entity → Convex table in `convex/schema.ts` + `<domain>Writes.ts` mutations, NOT a Prisma model or server action. Every public mutation: `assertWritesEnabled` → `enforceBrowserWriteLimit` → `requireOrgPermission` → `resolveActor`. See FEATUREDOCS/28 and FEATUREDOCS/54. |
 | **Permissions** | Add resource to `src/lib/permissions.ts` (RBAC map used by both `requirePermission()` server-action carve-outs and Convex's `requireOrgPermission`). |
-| **Sidebar** | Add nav item to `src/components/layout/app-sidebar.tsx` with `resource` for gating. |
+| **Sidebar** | Add nav item to `src/components/layout/app-sidebar.tsx` with `resource` for gating. Exception: a **personal-scope** page (the user's own data, not an org resource — e.g. `/my-tasks`) omits `resource` entirely rather than gating on an unrelated resource; that avoids the fail-open gating flash and keeps the item visible to every role regardless of their org-resource permissions. Sidebar-only items are NOT automatically mirrored into `mobile-nav.tsx` — that file is deliberately capped at the 5 daily-operator workflows (DESIGN.md §16); check DESIGN.md before adding anything there. |
 | **Top bar** | Add segment label to `segmentLabels` in `src/components/layout/top-bar.tsx`. |
 | **Search** | Add entity search to `convex/globalSearch.ts`. Add to both `typeMap` objects and `typeIcons`/`typeLabels`/`pageIcons` in `src/components/layout/command-search.tsx`. |
 | **Page commands** | Add to `PAGE_COMMANDS` in `src/lib/page-commands.ts` for @ navigation. |

@@ -42,3 +42,21 @@ export function flexibleDateParse(value: string, preferredFormat: string = "auto
 
   return null;
 }
+
+/**
+ * QW-4 (#953): the project-assembly discount seed for a WooCommerce order.
+ *
+ * Both Woo assembly paths (`convex/wooCommerceActions.ts`'s `processOrder` action
+ * and this file's caller, `src/server/woocommerce.ts`'s legacy twin) build a new
+ * project directly — neither goes through `projectWrites.createNative`, so
+ * neither gets its in-mutation `defaultDiscount` cascade for free. This is the
+ * canonical definition (R-3.1 single source of truth); `convex/wooCommerceActions.ts`
+ * carries a verbatim copy (same pattern as `flexibleDateParse` in that file —
+ * Convex's function bundler can't reach into `src/`, see its comment). Keep both
+ * copies byte-identical on change. Woo orders never carry an explicit discount of
+ * their own, so there's no "explicit value wins" case here (unlike `createNative`,
+ * which also has to arbitrate a caller-supplied discount).
+ */
+export function resolveWooDiscountPercent(client: { defaultDiscount?: number | null }): number | undefined {
+  return client.defaultDiscount != null ? client.defaultDiscount : undefined;
+}

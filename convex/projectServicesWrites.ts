@@ -15,6 +15,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
 import * as enums from "./lib/validators";
+import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 
 /**
  * Native PROJECT-SERVICE write mutations (Phase 3 browser-direct — replaces the
@@ -390,7 +391,7 @@ async function insertServiceAssignment(
 
 async function logService(
   ctx: MutationCtx,
-  a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string; projectId?: string; entityType?: string },
+  a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string; projectId?: string; entityType?: string; metadata?: Record<string, unknown> },
 ): Promise<void> {
   await writeActivityLog(ctx, {
     id: a.auditId,
@@ -402,6 +403,7 @@ async function logService(
     userId: a.actor.userId,
     userName: a.actor.userName,
     summary: a.summary,
+    metadata: a.metadata,
     projectId: a.projectId,
     createdAt: a.now,
   });
@@ -429,6 +431,8 @@ export const createServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -437,7 +441,15 @@ export const createServiceNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     if (!a.title) throw new ConvexError("Title is required");
-    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    const svcProject = await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    // #791: adding a crew-less service while locked defaults costTotal to $0
+    // (server-enforced) — a crew-attached service's cost keeps auto-deriving from
+    // the crew rate table below regardless (issue #796 single source of truth).
+    // #793: adding is a structural mutation at JUSTIFY+.
+    const guard = await assertLifecycleGuard(ctx, svcProject, { kind: "structural", justification: a.justification });
+    if (guard.defaultToZero && (!a.crew || a.crew.length === 0)) {
+      a.costTotal = 0;
+    }
     // Validate the default crew role even when no crew members are attached (it's stored
     // on the service regardless — line ~406).
     if (a.crewRoleId) await assertCrewRoleInOrg(ctx, a.crewRoleId, a.orgId);
@@ -537,6 +549,7 @@ export const createServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "created", entityId: a.id, entityName: a.title,
       summary: `Created ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: a.projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -565,6 +578,8 @@ export const updateServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #791/#793: required (one or the other, never both) once locked.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -574,6 +589,19 @@ export const updateServiceNative = mutation({
 
     if (!a.title) throw new ConvexError("Title is required");
     const existing = await requireServiceInOrg(ctx, a.id, a.orgId);
+
+    // #791/#793 lock gate: this mutation resends the WHOLE service form (incl.
+    // unchanged pricing) on every save, so "touches money" means the incoming
+    // price fields actually DIFFER from the stored row, not merely present.
+    const moneyChanged =
+      (a.unitPrice ?? null) !== (existing.unitPrice ?? null) ||
+      (a.discount ?? null) !== (existing.discount ?? null) ||
+      (a.costTotal ?? null) !== (existing.costTotal ?? null);
+    const svcUpdateProject = await requireProjectInOrg(ctx, existing.projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, svcUpdateProject, {
+      kind: moneyChanged ? "financial" : "structural",
+      justification: a.justification,
+    });
 
     const { fields, serviceDate, serviceEndDate } = buildServiceFields(a);
 
@@ -706,6 +734,7 @@ export const updateServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "updated", entityId: a.id, entityName: a.title,
       summary: `Updated ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: existing.projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -717,7 +746,11 @@ export const updateServiceNative = mutation({
 // ─────────────────────────────────────────────────────────────────────────────
 export const deleteServiceNative = mutation({
   returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
     await enforceBrowserWriteLimit(ctx);
@@ -726,6 +759,8 @@ export const deleteServiceNative = mutation({
 
     const service = await requireServiceInOrg(ctx, a.id, a.orgId);
     const { projectId, title, type } = service;
+    const delSvcProject = await requireProjectInOrg(ctx, projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, delSvcProject, { kind: "structural", justification: a.justification });
     await cascadeDeleteService(ctx, service, a.orgId);
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -735,6 +770,7 @@ export const deleteServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "deleted", entityId: a.id, entityName: title,
       summary: `Deleted ${SERVICE_TYPE_LABELS[type]} service "${title}"`, projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };

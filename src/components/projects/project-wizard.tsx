@@ -208,8 +208,35 @@ export function ProjectWizard({
   });
 
   const v = form.watch();
-  // Resolve the selected client's label directly (it may not be in the current search page).
-  const selectedClientName = useClient(v.clientId || undefined)?.name;
+  // Resolve the selected client directly (it may not be in the current search page) —
+  // used for the display label AND the discount-default prefill below.
+  const selectedClient = useClient(v.clientId || undefined);
+  const selectedClientName = selectedClient?.name;
+
+  // QW-4 (#953): prefill Discount from the selected client's `defaultDiscount` — a
+  // UX convenience only; the server-authoritative snapshot happens in
+  // `projectWrites.createNative` (R-9.3) regardless of what the wizard sends. Re-
+  // prefills each time the client changes, but ONLY while the user hasn't touched
+  // the field themselves — once they type a value (including an explicit 0), their
+  // choice wins and further client changes leave it alone. Never fires on initial
+  // load of an existing project (editing doesn't retroactively re-apply the
+  // client's CURRENT default over whatever discount was actually saved).
+  const discountTouchedRef = useRef(false);
+  const prefilledDiscountForClientId = useRef(project?.clientId ?? "");
+  useEffect(() => {
+    const currentClientId = v.clientId || "";
+    if (!currentClientId) return;
+    if (discountTouchedRef.current) return;
+    if (prefilledDiscountForClientId.current === currentClientId) return;
+    if (selectedClient === undefined || selectedClient?.id !== currentClientId) return; // still loading / stale
+    prefilledDiscountForClientId.current = currentClientId;
+    form.setValue(
+      "discountPercent",
+      selectedClient?.defaultDiscount != null ? Number(selectedClient.defaultDiscount) : undefined,
+      { shouldDirty: false },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.clientId, selectedClient]);
 
   // Per-project contact picker (WS9 #948) — the client's contacts, reactively.
   // Changing clientId invalidates any previously-picked contact (it belonged to a
@@ -386,6 +413,19 @@ export function ProjectWizard({
                   )} />
                 </Field>
               )}
+              <Field
+                label="Discount (%)"
+                hint={
+                  selectedClient?.defaultDiscount != null
+                    ? "From client default — edit anytime. Won't retroactively change if you switch clients again after saving."
+                    : undefined
+                }
+              >
+                <Input
+                  type="number" step="0.01" min="0" max="100" placeholder="0"
+                  {...form.register("discountPercent", { onChange: () => { discountTouchedRef.current = true; } })}
+                />
+              </Field>
               <Field label="Project manager(s)" error={membersError ? "Couldn't load org members — you may not have permission to view them." : undefined}>
                 <ComboboxPicker value="" onChange={(id) => { if (id && !managerIds.includes(id)) setManagerIds((p) => [...p, id]); }}
                   options={memberOptions.filter((m) => !managerIds.includes(m.value))} placeholder="Add manager…" searchPlaceholder="Search members…" emptyMessage="No members found." />
@@ -457,7 +497,12 @@ export function ProjectWizard({
                   <div className="space-y-3 border-t border-line pt-4 sm:col-span-2">
                     <p className="t-overline text-faint">Financial</p>
                   </div>
-                  <Field label="Discount (%)"><Input type="number" step="0.01" min="0" max="100" {...form.register("discountPercent")} placeholder="0" /></Field>
+                  {/* RESERVED for #940 (WS1 — deposit/invoicing workflow). These are
+                      hand-typed inputs with no server-side math behind them yet (see
+                      the schema.ts reservation comment on depositPercent/depositPaid/
+                      invoicedTotal) — #940 owns wiring them up. Discount (%) moved to
+                      the Basics step (QW-4 / #953) since it's now applied at project
+                      creation and needed visible + editable there, not edit-only. */}
                   <Field label="Deposit (%)"><Input type="number" step="0.01" min="0" max="100" {...form.register("depositPercent")} placeholder="0" /></Field>
                   <Field label="Deposit paid ($)"><Input type="number" step="0.01" min="0" {...form.register("depositPaid")} placeholder="0.00" /></Field>
                   <Field label="Invoiced total ($)"><Input type="number" step="0.01" min="0" {...form.register("invoicedTotal")} placeholder="0.00" /></Field>

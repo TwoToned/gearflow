@@ -968,6 +968,10 @@ export default defineSchema({
     discountAmount: v.optional(v.number()),
     taxAmount: v.optional(v.number()),
     total: v.optional(v.number()),
+    // RESERVED for #940 (WS1 — deposit/invoicing workflow). Hand-typed wizard inputs
+    // today (project-wizard.tsx), applied nowhere server-side — do NOT wire deposit
+    // math or delete these as dead fields in a hygiene pass; #940 owns them. See
+    // issue #953 (QW-4) re-review, which scoped `defaultDiscount` wiring separately.
     depositPercent: v.optional(v.number()),
     depositPaid: v.optional(v.number()),
     invoicedTotal: v.optional(v.number()),
@@ -2267,7 +2271,8 @@ export default defineSchema({
     .index("by_createdById", ["createdById"])
     .index("by_organizationId_projectId", ["organizationId", "projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_assigneeUserId_status", ["assigneeUserId", "status"]),
+    .index("by_assigneeUserId_status", ["assigneeUserId", "status"])
+    .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"]),
 
   // SavedTableView
   savedTableViews: defineTable({
@@ -2452,5 +2457,77 @@ export default defineSchema({
     // a loading state) until reconcileIfStale re-seeds on first view.
     shardsSeededAt: v.optional(v.number()),
   }).index("by_organizationId", ["organizationId"]),
+
+  // ── Project lifecycle locking & versioning (#957/#791/#792/#793) ────────────
+  //
+  // ProjectSnapshot — whole-project version, parent row. Captured at the
+  // forward →CONFIRMED / →COMPLETED transitions and at every unlock-session
+  // open (the discard target). Never overwritten — a re-crossing takes a NEW
+  // row, so the list is a full version history. See convex/lib/projectSnapshots.ts.
+  projectSnapshots: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    reason: v.union(v.literal("CONFIRMED"), v.literal("COMPLETED"), v.literal("UNLOCK")),
+    takenAt: v.number(),
+    takenBy: v.string(),
+    takenByName: v.optional(v.string()),
+    statusFrom: v.optional(v.string()),
+    statusTo: v.optional(v.string()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_takenAt", ["projectId", "takenAt"]),
+
+  // ProjectSnapshotEntry — one row per captured entity (project/category/group/
+  // lineItem/service/crewAssignment), not a single JSON blob — avoids Convex's
+  // ~1MB doc limit on large projects and makes diffing a queryable join instead
+  // of a client-side JSON walk. `data` is the entity's field snapshot (no _id/
+  // _creationTime — see captureProjectSnapshot).
+  projectSnapshotEntries: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    snapshotId: v.string(),
+    entityType: v.union(
+      v.literal("project"),
+      v.literal("category"),
+      v.literal("group"),
+      v.literal("lineItem"),
+      v.literal("service"),
+      v.literal("crewAssignment"),
+    ),
+    entityId: v.string(),
+    data: v.any(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_snapshotId", ["snapshotId"])
+    .index("by_snapshotId_entityType", ["snapshotId", "entityType"])
+    .index("by_snapshotId_entityId", ["snapshotId", "entityId"]),
+
+  // ProjectUnlockSession — at most one OPEN row per project (enforced in the
+  // open mutation). `scope: "FINANCIAL"` is #791's finance-only unlock;
+  // `scope: "FULL"` is #792's hard-lock override (restricted audience). Both
+  // share this table/lifecycle — see convex/projectUnlockSessionsWrites.ts.
+  projectUnlockSessions: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    scope: v.union(v.literal("FINANCIAL"), v.literal("FULL")),
+    justification: v.string(),
+    openedBy: v.string(),
+    openedByName: v.optional(v.string()),
+    openedAt: v.number(),
+    snapshotId: v.string(),
+    outcome: v.union(v.literal("OPEN"), v.literal("COMMITTED"), v.literal("DISCARDED")),
+    closedAt: v.optional(v.number()),
+    closedBy: v.optional(v.string()),
+    closeNote: v.optional(v.string()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_outcome", ["projectId", "outcome"]),
 
 });

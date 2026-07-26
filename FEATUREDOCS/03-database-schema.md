@@ -64,14 +64,17 @@ Grouped by area (table names are the Convex identifiers, e.g. `assets`,
   `supplierOrderItems`, `supplierModelRates`, `subHires`, `subHireItems`,
   `subHireGroups`.
 - **Projects & line items** — `projects` (incl. `clientContactId`, the per-project
-  contact picker — see [FEATUREDOCS/62](./62-client-contacts.md)), `projectLineItems`,
+  contact picker — see [FEATUREDOCS/63](./63-client-contacts.md)), `projectLineItems`,
   `projectLineItemUnits` (the per-unit fulfillment model — see
   `docs/designs/archive/line-item-fulfillment-model.md`), `lineItemMergeMaps`,
   `projectCategories`, `categorySlots`, `projectGroups`, `projectManagers`,
   `projectModelRevenues`, `groupTemplates` + `groupTemplateItems`,
   `projectTasks`, `projectNumberSequences`.
 - **Clients** — `clients`, `clientContacts` (multiple contacts per client — see
-  [FEATUREDOCS/62](./62-client-contacts.md)).
+  [FEATUREDOCS/63](./63-client-contacts.md)). `defaultDiscount` snapshots onto
+  `Project.discountPercent` at project-create time only (server-side in
+  `projectWrites.createNative`, plus the WooCommerce order-assembly path) — see
+  FEATUREDOCS/10 "Discount default cascade".
 - **Crew** — `crewMembers`, `crewRoles`, `crewSkills`, `crewAssignments`,
   `crewShifts`, `crewAvailabilities`, `crewTimeEntries`.
 - **Project services** — `projectServices`, `serviceTemplates`.

@@ -31,7 +31,7 @@ async function member(t: ReturnType<typeof convexTest>, role: string) {
 async function seedProject(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
-      id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
+      id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "QUOTED",
       defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 999,
     });
   });
@@ -99,6 +99,7 @@ describe("projectGroupsWrites.createGroupNative", () => {
   test("rejects an empty title", async () => {
     const t = makeT();
     await member(t, "member");
+    await seedProject(t);
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, title: "" }),
     ).rejects.toThrow(/title is required/i);

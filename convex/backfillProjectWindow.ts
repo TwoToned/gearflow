@@ -20,8 +20,8 @@ import { requireService } from "./lib/auth";
  * `eventStartDate`/`eventEndDate` are DROPPED, not migrated — there is no
  * replacement field for them in the two-window model (the decision doc is
  * explicit: "event start/end dates deleted"). A project whose ONLY dates were
- * event dates ends up with no project-window override, same as any project that
- * never had load-in/out — its window falls back to `rentalStartDate`/
+ * event dates ends up with no project-window override, the same outcome as
+ * a project that never had load-in/out — its window falls back to `rentalStartDate`/
  * `rentalEndDate` at read time via `getProjectWindow`, exactly as intended.
  *
  * Idempotent: `projectStartDate`/`projectEndDate` already set means "the

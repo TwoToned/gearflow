@@ -517,3 +517,7 @@ export function computeCrewDoubleBookings(
 
   return rows.sort((x, y) => (x.severity === y.severity ? 0 : x.severity === "hard" ? -1 : 1));
 }
+
+// Confirm-time gate (computeConfirmImpactModels / countUnconfirmedCrewForProject)
+// lives in ./overbookingConfirmImpact.ts — split out to stay under the
+// file's line budget; it reuses computeGearShortageBoard above directly.

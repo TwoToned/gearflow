@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { getProjectWindow } from "./lib/projectWindow";
 import type { Doc } from "./_generated/dataModel";
 import {
   candidateBoardProjects,
@@ -10,6 +11,7 @@ import {
   computeUnconfirmedCrew,
   computeCrewDoubleBookings,
 } from "./lib/overbookingBoard";
+import { computeConfirmImpactModels, countUnconfirmedCrewForProject } from "./lib/overbookingConfirmImpact";
 
 /** Mirrors convex/overbooking.ts's own MIN_TS — see that file's comment for why
  *  an unbounded-below range scan needs this floor (undefined sorts before all
@@ -189,6 +191,61 @@ export const bundle = query({
       servicesMissingCrew,
       unconfirmedCrew,
       crewDoubleBookings,
+    };
+  },
+});
+
+/**
+ * Confirm-time gate preview (spec decision, WS3 #942, non-blocking): "if I
+ * confirm THIS project right now, how many models would go hard-overbooked,
+ * and how much crew is still unconfirmed?" Called from the UI right before a
+ * status change into CONFIRMED, to show a warn+confirm dialog — the caller
+ * decides whether to proceed regardless of the answer; this query never
+ * blocks the write itself (that stays `projectWrites.updateStatusNative`,
+ * untouched). `requireOrgPermission("project", "read")` — same read gate as
+ * `bundle` above.
+ */
+export const confirmImpact = query({
+  args: { orgId: v.string(), projectId: v.string() },
+  handler: async (ctx, { orgId, projectId }) => {
+    await requireOrgPermission(ctx, orgId, "project", "read");
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    }
+
+    const { start, end } = getProjectWindow(project);
+    const emptyImpact = { hardOverbookingModelCount: 0, hardOverbookingQty: 0, unconfirmedCrewCount: 0 };
+    if (start == null || end == null) {
+      // Dateless project — no window to compare other bookings against, so
+      // there's nothing for the gear side of the preview to say; crew can
+      // still be checked below.
+      const ownAssignments = (
+        await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+      ).filter((a) => a.organizationId === orgId);
+      return { ...emptyImpact, unconfirmedCrewCount: countUnconfirmedCrewForProject(ownAssignments) };
+    }
+    const range = { start, end };
+
+    const projectDocsById = await fetchCandidateProjects(ctx, orgId, end);
+    projectDocsById.set(project.id, project); // ensure present even if its own window predates any candidate scan bound
+    const candidateProjects = candidateBoardProjects([...projectDocsById.values()], range).map((p) =>
+      p.id === projectId ? { ...p, status: "CONFIRMED" } : p,
+    );
+    const candidateProjectIds = candidateProjects.map((p) => p.id);
+
+    const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds);
+    const { modelCount, qty } = computeConfirmImpactModels(projectId, range, candidateProjects, lineItems, models, assets, bulkAssetsForModels);
+
+    const ownAssignments = (
+      await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+    ).filter((a) => a.organizationId === orgId);
+
+    return {
+      hardOverbookingModelCount: modelCount,
+      hardOverbookingQty: qty,
+      unconfirmedCrewCount: countUnconfirmedCrewForProject(ownAssignments),
     };
   },
 });

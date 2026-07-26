@@ -9,8 +9,8 @@
 import { describe, it, expect } from "vitest";
 import { composeDocument, type ComposeResult } from "./document-composer";
 import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
-import { makeLineItem } from "./plugins/test-utils";
-import type { DocumentData, DocumentLineItem } from "./types";
+import { makeLineItem, runTablePlugin } from "./plugins/test-utils";
+import type { DocumentData, DocumentLineItem, TablePluginConfig } from "./types";
 
 function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
   return {
@@ -313,5 +313,68 @@ describe("composeDocument — org document settings (footer, T&Cs, quote validit
     const result = composeDocument("quote", soloData({ quote_valid_until: "2026-09-15" }), "#0d4f4f");
     const validitySchema = result.template.schemas[0].find((s) => String(s.name).startsWith("quoteValidityNote"))!;
     expect(result.inputs[0][validitySchema.name as string]).toBe("This quote is valid until 2026-09-15.");
+  });
+});
+
+describe("composeDocument — quote content audit (#790 Phase 4)", () => {
+  function tableItemsAndConfig(result: ComposeResult): { items: DocumentLineItem[]; config: TablePluginConfig } {
+    const tableSchema = result.template.schemas[0].find((s) => s.type === "gearflowTable")!;
+    return JSON.parse(result.inputs[0][tableSchema.name as string]) as { items: DocumentLineItem[]; config: TablePluginConfig };
+  }
+
+  function totalsConfig(result: ComposeResult): { discountAmount: number; discountPercent: number } {
+    const totalsSchema = result.template.schemas[0].find((s) => s.type === "gearflowFinancialSummary")!;
+    return JSON.parse(result.inputs[0][totalsSchema.name as string]);
+  }
+
+  it("quote table hides the '/day' (or other period) price suffix; other doc types are unaffected", () => {
+    const { config: quoteConfig } = tableItemsAndConfig(composeDocument("quote", makeData({ line_items: [] }), "#0d4f4f"));
+    expect(quoteConfig.hidePricingPeriodSuffix).toBe(true);
+
+    const { config: invoiceConfig } = tableItemsAndConfig(composeDocument("invoice", makeData({ line_items: [] }), "#0d4f4f"));
+    expect(invoiceConfig.hidePricingPeriodSuffix).toBe(false);
+  });
+
+  it("the price suffix is actually suppressed at render time on the quote", async () => {
+    const item = makeLineItem({ id: "priced", status: "CONFIRMED", unitPrice: 100, pricingType: "PER_DAY", model: { name: "Priced Item" } });
+    const { items, config } = tableItemsAndConfig(composeDocument("quote", makeData({ line_items: [item] }), "#0d4f4f"));
+    const calls = await runTablePlugin(items, config);
+    const text = calls.drawText.map((c) => c.text).join("\n");
+    expect(text).not.toContain("/day");
+  });
+
+  it("discount renders on the quote totals block when set", () => {
+    const config = totalsConfig(composeDocument("quote", makeData({ discount_percent: 10, discount_amount: 50 }), "#0d4f4f"));
+    expect(config.discountAmount).toBe(50);
+    expect(config.discountPercent).toBe(10);
+  });
+
+  it("discount is zero (not rendered) when the project has none", () => {
+    const config = totalsConfig(composeDocument("quote", makeData({ discount_percent: 0, discount_amount: 0 }), "#0d4f4f"));
+    expect(config.discountAmount).toBe(0);
+  });
+
+  it("item notes reach the rendered quote table", async () => {
+    const item = makeLineItem({ id: "noted-item", status: "CONFIRMED", notes: "Fragile — handle with care", model: { name: "Glass Case" } });
+    const { items, config } = tableItemsAndConfig(composeDocument("quote", makeData({ line_items: [item] }), "#0d4f4f"));
+    const calls = await runTablePlugin(items, config);
+    const text = calls.drawText.map((c) => c.text).join("\n");
+    expect(text).toContain("Fragile");
+  });
+
+  it("Project Group descriptions (carried as .notes) reach the rendered quote table", async () => {
+    const group = makeLineItem({
+      id: "group-1",
+      isGroupRow: true,
+      groupName: "Lighting Package",
+      notes: "Includes rigging and truss",
+      model: { name: "Lighting Package" },
+      quantity: 1,
+      status: "CONFIRMED",
+    });
+    const { items, config } = tableItemsAndConfig(composeDocument("quote", makeData({ line_items: [group] }), "#0d4f4f"));
+    const calls = await runTablePlugin(items, config);
+    const text = calls.drawText.map((c) => c.text).join("\n");
+    expect(text).toContain("Includes rigging and truss");
   });
 });

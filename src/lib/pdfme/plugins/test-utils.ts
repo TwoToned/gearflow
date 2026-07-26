@@ -60,6 +60,7 @@ const DEFAULT_CONFIG: TablePluginConfig = {
   showRowNumbers: false,
   filterOptional: false,
   filterByStatus: null,
+  hidePricingPeriodSuffix: false,
 };
 
 /**

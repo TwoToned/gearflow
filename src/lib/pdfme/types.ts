@@ -249,6 +249,8 @@ export interface TablePluginConfig {
   showRowNumbers: boolean;
   filterOptional: boolean;
   filterByStatus: string[] | null;
+  /** Suppress the "/day" (or other period) price suffix — quote layout only (#790 Phase 4). */
+  hidePricingPeriodSuffix: boolean;
 }
 
 /** Config for financial summary plugin */

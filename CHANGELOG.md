@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **#790** — Org-level document settings (footer text, terms & conditions, quote
+  validity days) on a new "Documents" card at `/settings/branding`. Quotes now show
+  a T&Cs block (omitted when unset) and a real computed "valid until" date instead
+  of a static "valid for 30 days" blurb.
+
 ### Fixed
+
+- **#790** — The quote layout no longer shows a "/day" (or other rental-period)
+  suffix next to prices. Audited discount/item-notes/group-notes rendering on the
+  quote end-to-end and confirmed they already flow correctly through the new
+  pipeline (regression-tested in `document-composer.test.ts`).
 
 - **#790** — Project documents (quote, invoice, pull slip, delivery docket, return sheet)
   longer than one page silently dropped their tail: since no stored `DocumentTemplate` could

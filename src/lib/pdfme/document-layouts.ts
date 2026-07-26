@@ -128,7 +128,7 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
     blocks: [
       { kind: "header", title: "QUOTE" },
       { kind: "detailsRow", client: defaultClientDetails, project: defaultProjectDetails },
-      { kind: "table", config: defaultTable },
+      { kind: "table", config: { ...defaultTable, hidePricingPeriodSuffix: true } },
       { kind: "totals", config: defaultTotals },
       { kind: "clientNotes" },
       { kind: "termsAndConditions" },

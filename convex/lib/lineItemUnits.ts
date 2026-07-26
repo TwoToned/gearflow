@@ -75,7 +75,10 @@ export function deriveOrderLinePrepStatus(
   if (currentPrepStatus === "FLAGGED_FAULTY" || currentPrepStatus === "FLAGGED_TT_OVERDUE") {
     return currentPrepStatus;
   }
-  if (units.some((u) => u.prepStatus === "PACKED")) return "PACKED";
+  // RETURNED/CANCELLED units keep their prepStatus as return-time history (return
+  // never clears it) — they must not re-promote the line to PACKED after a deprep
+  // has just reset it, or Returned→De-prepped can never complete (gearflow#797).
+  if (units.some((u) => u.prepStatus === "PACKED" && u.status !== "RETURNED" && u.status !== "CANCELLED")) return "PACKED";
   return currentPrepStatus;
 }
 

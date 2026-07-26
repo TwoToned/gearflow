@@ -67,6 +67,21 @@ pool's quantity (matches how bulk deploy/return create whole unit rows). Legacy 
 lines (deployed via `checkOutDeployWholeLine`) restore their line counters directly and skip
 the unit rollup (which would otherwise zero them).
 
+**Footgun (fixed, gearflow#797): a RETURNED unit's `prepStatus` is stale history, never
+"live" state.** Returning a unit (`returnLineUnits`) flips its `status` to `RETURNED` but
+deliberately leaves `prepStatus` untouched (still `PACKED` from prep) — that field is kept
+as a record of what was packed, not a live flag. `deprepItemInner` (the "no check items
+configured on this model" direct-deprep path — see `warehouse-check-policy.ts`) resets the
+*line's* `prepStatus` to `PENDING` and then calls `syncLineItemRollup`, which re-derives
+`prepStatus` from the unit rows via `deriveOrderLinePrepStatus`. That helper used to promote
+the line back to `PACKED` the instant **any** unit had `prepStatus === "PACKED"` — including
+the just-returned unit whose `PACKED` was stale — silently reverting the deprep in the same
+mutation call (toast says "removed from prep"; the item never leaves the Returned tab).
+Fixed by excluding `RETURNED`/`CANCELLED` units from that check in both copies of the helper
+(`convex/lib/lineItemUnits.ts`, `src/lib/line-item-units.ts`). Reproduced 100% of the time
+for any returned item whose model has zero check items configured (models with check items
+route through `completeCheckAndDeprepLineCore` instead, which never calls the rollup).
+
 (Internal `TabsTrigger`/`TabsContent` values are unchanged — `pick-prep`, `check-out`,
 `check-in`, `deprep`, `deprepped` — only the visible labels are the stage names.) Items are
 **prepped** (packed) before being **deployed** (checked out), and **de-prepped** (return checks

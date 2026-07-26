@@ -54,7 +54,7 @@ export interface BlendedCharge {
 }
 
 /** Best-price-capped blended charge — see src/lib/billing-derivation.ts for the
- *  full formula writeup. Byte-parity: any change here must be mirrored there. */
+ *  full formula writeup. Byte-parity: every change here must be mirrored there. */
 export function computeBlendedCharge(params: {
   chargeableDays: number;
   dailyRate: number | null | undefined;

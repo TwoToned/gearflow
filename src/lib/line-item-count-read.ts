@@ -10,8 +10,8 @@ import { mapLineItemDoc, type MappedLineItem } from "@/lib/project-line-item-rea
  * to count / filter the flat `projectLineItems` rows, NOT the nested kit/unit tree.
  *
  * Everything here is computed in JS over the dual-written Convex `projectLineItems`
- * table (fetched via `projectLineItems.list({orgId})` or `listByProjectIds`),
- * replicating the original Prisma `where` clauses EXACTLY:
+ * table (fetched via `listByProjectIds`), replicating the original Prisma `where`
+ * clauses EXACTLY:
  *   - `type === "EQUIPMENT"` where the Prisma `where` filtered on it
  *   - `status !== "CANCELLED"` where the Prisma `where` had `status: { not: "CANCELLED" }`
  *   - `status === "CHECKED_OUT"` for the overdue-return count
@@ -23,12 +23,6 @@ import { mapLineItemDoc, type MappedLineItem } from "@/lib/project-line-item-rea
  * Convex miss — a missing row reads as "not counted", same as a Prisma join against
  * a deleted row.
  */
-
-/** Fetch ALL of an org's line items (raw Convex docs → mapped Prisma-shape rows). */
-export async function getLineItemsByOrg(orgId: string): Promise<MappedLineItem[]> {
-  const docs = await (await getConvexClient()).query(api.projectLineItems.list, { orgId });
-  return docs.map(mapLineItemDoc);
-}
 
 /** Fetch the line items for a fixed set of projects (single round trip). */
 export async function getLineItemsByProjectIds(

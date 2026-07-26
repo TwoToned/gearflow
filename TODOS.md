@@ -110,6 +110,25 @@ the file list below before picking this back up.
 **Estimate:** human ~1 week / CC ~30 min
 **Priority:** P2
 
+### SHIPS_WITH Accessory Bulk Children Don't Adjust `bulkAssets.availableQuantity`
+**What:** `FEATUREDOCS/48-child-assets-accessories.md` documents that SHIPS_WITH
+accessory bulk children are "drawn from the live pool at prep/checkout (a normal
+booking)", implying `bulkAssets.availableQuantity` should decrement/restore as they
+deploy/return with their parent. In code, `checkoutAccessoryChildren` /
+`checkinAccessoryChildren` (`warehouseOps.ts` / `convex/lib/fulfillment.ts`) only
+flip unit status directly — neither calls `adjustBulkAvailability`. So a SHIPS_WITH
+bulk accessory (e.g. "2 clamps ship with every light") never touches the registry's
+"Available" column, same class of bug as gearflow#801 #2 but for accessory children
+specifically.
+**Why not fixed alongside #801:** #801's acceptance criteria scoped to "a bulk-only
+model added standalone (no kit) to a project" — the #801 fix deliberately gates on
+`!lineItem.isKitChild`, which also (correctly, for now) excludes accessory children
+from the new standalone adjustment, to avoid conflicting with DEDICATED-mode
+accessories' existing attach/detach-based accounting (`assetAccessoriesWrites.ts`).
+Distinguishing SHIPS_WITH from DEDICATED at checkout/checkin time (the child line
+doesn't currently carry `allocationMode`) is a separate, scoped piece of work.
+**Priority:** P2
+
 ## Call Sheet
 
 ### ~~Template Editor Settings for New Section Types~~ ✅ SHIPPED

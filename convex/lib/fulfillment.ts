@@ -14,6 +14,7 @@
 import { ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import type { MutationCtx } from "../_generated/server";
+import { adjustBulkAvailability } from "./inventory";
 import {
   computeRollupCounters,
   deriveOrderLineStatus,
@@ -286,6 +287,19 @@ export async function returnLineUnits(
         updatedAt: now,
       });
       remaining -= canReturn;
+    }
+    // Standalone (non-kit-child) bulk lines release back to the shared shelf
+    // pool directly (issue #801 #2), mirroring collectKitBulkAdjustments'
+    // unconditional restore on kit check-in — a bulk asset has no per-unit
+    // condition bucket to route DAMAGED/MISSING returns into, so (like kits)
+    // the full actually-returned quantity always goes back regardless of
+    // `returnCondition`. Kit members never reach this branch through their own
+    // checkin (patchKitMemberUnits, not returnLineUnits); accessory children are
+    // out of scope here (see FEATUREDOCS/48's SHIPS_WITH/DEDICATED split) —
+    // both set isKitChild, so this single flag is the right gate.
+    const actuallyReturned = returnQty - remaining;
+    if (!lineItem.isKitChild && actuallyReturned > 0) {
+      await adjustBulkAvailability(ctx, args.organizationId, [{ bulkAssetId: targetBulkId, delta: actuallyReturned }]);
     }
     return { unitsFlipped: bulkUnits.length, assetsTouched: [] };
   }

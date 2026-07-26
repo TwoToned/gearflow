@@ -192,13 +192,6 @@ export async function getMatchingSupplierIds(orgId: string, term: string): Promi
   return all.filter((s) => s.name.toLowerCase().includes(needle)).map((s) => s.id);
 }
 
-export type ConvexSupplierOrder = Doc<"supplierOrders">;
-
-/** All of an org's supplier orders (supplier_order), for per-supplier counts. */
-export async function getSupplierOrdersByOrg(orgId: string): Promise<ConvexSupplierOrder[]> {
-  return await (await getConvexClient()).query(api.supplierOrders.list, { orgId });
-}
-
 /**
  * Per-supplier asset + order counts (supplierId -> { assets, orders }) computed in
  * JS over the org's assets + supplier orders, replacing the Prisma

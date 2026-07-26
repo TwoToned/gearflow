@@ -25,7 +25,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("assets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: cross-domain server-read helper (getAssetsByOrg/getMappedAssetsByOrg), not a browser subscription — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });
@@ -69,7 +69,7 @@ export const listPage = query({
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, models, categories, locations] = await Promise.all([
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: T3 (denormalize+searchIndex) approved but unshipped — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
       ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
       ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
@@ -137,7 +137,7 @@ export const listGallery = query({
   handler: async (ctx, { orgId, search }) => {
     await requireOrgRead(ctx, orgId);
     const [rows, models, categories, locations] = await Promise.all([
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: "browse everything" gallery view, Option A (perf design) — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
       ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
       ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3

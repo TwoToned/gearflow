@@ -42,12 +42,25 @@ import { mapLineItemDoc } from "@/lib/project-equipment-reconstruct";
  * every bulk line showed "0 available". Fall back to `"BULK"` when the model has
  * any active bulk asset. A present value is returned unchanged, so this is a
  * strictly-safe replacement for `assetType ?? "SERIALIZED"` at every stock site.
+ *
+ * The undefined-only fallback above never fires for a NEW model, though: the
+ * model-form.tsx create form defaults `assetType` to an EXPLICIT `"SERIALIZED"`
+ * (there's a Serialized/Bulk selector, but Serialized is what you get unless you
+ * deliberately switch it), so a model stocked exclusively with bulk assets and
+ * never switched away from the default reads back `assetType: "SERIALIZED"` —
+ * present, not absent — and stays stuck on the zero-stock branch forever
+ * (issue #801). `hasAssets` closes that gap: a model with real bulk stock and
+ * ZERO actual serialized assets can never have any serialized stock to report
+ * under any interpretation, so an explicit-but-label-only `"SERIALIZED"` is
+ * trusted less than the data in that one unambiguous case.
  */
 export function resolveModelAssetType(
   assetType: string | null | undefined,
   hasBulkAssets: boolean,
+  hasAssets: boolean,
 ): "SERIALIZED" | "BULK" {
-  if (assetType === "BULK" || assetType === "SERIALIZED") return assetType;
+  if (assetType === "BULK") return "BULK";
+  if (assetType === "SERIALIZED") return hasBulkAssets && !hasAssets ? "BULK" : "SERIALIZED";
   return hasBulkAssets ? "BULK" : "SERIALIZED";
 }
 
@@ -270,7 +283,7 @@ export function reconstructOverbookedStatus(
     const m = convexModelMap.get(modelId);
     if (!m) continue;
     const modelForBreakdown = {
-      assetType: resolveModelAssetType(m.assetType, (bulkMap.get(modelId)?.length ?? 0) > 0),
+      assetType: resolveModelAssetType(m.assetType, (bulkMap.get(modelId)?.length ?? 0) > 0, (assetMap.get(modelId)?.length ?? 0) > 0),
       assets: (assetMap.get(modelId) ?? []).map((a) => ({ status: a.status ?? "AVAILABLE" })),
       bulkAssets: (bulkMap.get(modelId) ?? []).map((ba) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
     };

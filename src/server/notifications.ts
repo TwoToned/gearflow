@@ -229,18 +229,13 @@ export async function getNotifications(): Promise<AppNotification[]> {
   }
 
   // 9. Flagged assets from warehouse checks.
-  // projectLineItem is Convex-only — read the org's lines, filter by prepStatus
-  // in JS, take 10. Asset tags + project headers are resolved from Convex.
-  const allLines = await (await getConvexClient()).query(
-    api.projectLineItems.list,
-    { orgId: organizationId },
+  // projectLineItem is Convex-only — bounded read via the prepStatus index (up
+  // to 10 flagged lines), not a whole-org scan. Asset tags + project headers
+  // are resolved from Convex.
+  const flaggedItems = await (await getConvexClient()).query(
+    api.projectLineItems.listFlagged,
+    { orgId: organizationId, limit: 10 },
   );
-  const flaggedItems = allLines
-    .filter(
-      (li) =>
-        li.prepStatus === "FLAGGED_FAULTY" || li.prepStatus === "FLAGGED_TT_OVERDUE",
-    )
-    .slice(0, 10);
 
   if (flaggedItems.length > 0) {
     const assets = await getAssetsByOrg(organizationId);

@@ -971,7 +971,12 @@ export default defineSchema({
     .index("by_supplierOrderId", ["supplierOrderId"])
     .index("by_subHireId", ["subHireId"])
     .index("by_subHireItemId", ["subHireItemId"])
-    .index("by_subHireGroupId", ["subHireGroupId"]),
+    .index("by_subHireGroupId", ["subHireGroupId"])
+    // Composite: range-scan an org's flagged lines (FLAGGED_FAULTY /
+    // FLAGGED_TT_OVERDUE) by prepStatus instead of collecting the whole org
+    // (perf-convex-efficiency-2026-06.md Finding #0b). Used by the notification
+    // digest's flagged-asset scan.
+    .index("by_organizationId_prepStatus", ["organizationId", "prepStatus"]),
 
   // ProjectLineItemUnit
   projectLineItemUnits: defineTable({

@@ -79,12 +79,27 @@ async function checkOutSerializedItem(
 
 async function checkOutBulkItem(
   ctx: Ctx,
-  p: { organizationId: string; lineItemId: string; lineItemQuantity: number; bulkAssetId: string; checkoutQty: number; userId: string; projectId: string; notes?: string; now: number },
+  p: { organizationId: string; lineItemId: string; lineItemQuantity: number; bulkAssetId: string; checkoutQty: number; userId: string; projectId: string; notes?: string; now: number; isKitChild: boolean },
 ): Promise<void> {
+  const priorUnits = await lineUnits(ctx, p.lineItemId);
+  const priorCheckedOutQty = priorUnits.find((u) => u.bulkAssetId === p.bulkAssetId && u.status === "CHECKED_OUT")?.quantity ?? 0;
   const { id: unitId } = await ensureBulkUnit(ctx, { organizationId: p.organizationId, lineItemId: p.lineItemId, bulkAssetId: p.bulkAssetId, quantity: p.checkoutQty });
   const unit = await unitByCuid(ctx, unitId);
   if (unit) {
     await ctx.db.patch(unit._id, { status: "CHECKED_OUT", quantity: p.checkoutQty, checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
+  }
+  // Standalone (non-kit-child) bulk lines consume the shared shelf pool directly
+  // (issue #801 #2) — kit members instead go through the kit's own
+  // collectKitBulkAdjustments off `kitBulkItems`, and accessory children are
+  // out of scope here (see FEATUREDOCS/48's SHIPS_WITH/DEDICATED split); both
+  // set isKitChild, so this single flag is the right gate. Deduct only the
+  // DELTA over what this line already had checked out, so a repeat/idempotent
+  // checkout call for the same total quantity doesn't double-consume stock.
+  if (!p.isKitChild) {
+    const delta = p.checkoutQty - priorCheckedOutQty;
+    if (delta !== 0) {
+      await adjustBulkAvailability(ctx, p.organizationId, [{ bulkAssetId: p.bulkAssetId, delta: -delta }]);
+    }
   }
   await scanLog(ctx, { organizationId: p.organizationId, bulkAssetId: p.bulkAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.notes || `Checked out ${p.checkoutQty} of ${p.lineItemQuantity}` });
 }
@@ -308,7 +323,7 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
         await checkOutBulkItem(ctx, {
           organizationId: a.organizationId, lineItemId: lineItem.id, lineItemQuantity: lineItem.quantity ?? 0,
           bulkAssetId: lineItem.bulkAssetId, checkoutQty: item.quantity || lineItem.quantity || 0, userId: a.userId,
-          projectId: a.projectId, notes: item.notes, now: a.now,
+          projectId: a.projectId, notes: item.notes, now: a.now, isKitChild: !!lineItem.isKitChild,
         });
       } else {
         // No serialised asset, no bulk asset. Prefer deploying the prepped
@@ -873,7 +888,11 @@ export const checkinItems = mutation({
 // bulk pool. Kits go through their own reverse (like checkoutKit / checkinKit).
 
 /** Flip a line's units from one status to another (whole units, up to `want`),
- *  restoring each serialised unit's asset status + location. */
+ *  restoring each serialised unit's asset status + location. Also reports the
+ *  bulk units flipped (`bulkFlips`) — PURE reporting only, no availability side
+ *  effect here; callers that own a top-level (non-kit-child) line decide
+ *  whether to apply it via `adjustBulkAvailability` (issue #801 #2 move-back
+ *  parity — see undeployItemsCore / unreturnItemsCore). */
 async function flipLineUnits(
   ctx: Ctx,
   p: {
@@ -883,12 +902,13 @@ async function flipLineUnits(
     assetStatus: string; locationId: string | null; clearLoc: boolean;
     want?: number; now: number;
   },
-): Promise<{ flipped: number; assetIds: string[] }> {
+): Promise<{ flipped: number; assetIds: string[]; bulkFlips: Array<{ bulkAssetId: string; quantity: number }> }> {
   const units = (await lineUnits(ctx, p.lineItemId))
     .filter((u) => u.status === p.fromStatus)
     .sort((a, b) => a.ordinal - b.ordinal);
   const toFlip = p.want != null ? units.slice(0, Math.max(0, Math.min(p.want, units.length))) : units;
   const assetIds: string[] = [];
+  const bulkFlips: Array<{ bulkAssetId: string; quantity: number }> = [];
   for (const u of toFlip) {
     await ctx.db.patch(u._id, {
       status: p.toStatus,
@@ -897,9 +917,28 @@ async function flipLineUnits(
       updatedAt: p.now,
     });
     if (u.assetId) assetIds.push(u.assetId);
+    if (u.bulkAssetId) bulkFlips.push({ bulkAssetId: u.bulkAssetId, quantity: u.quantity ?? 0 });
   }
   if (assetIds.length > 0) await setAssetsStatus(ctx, assetIds, p.assetStatus, p.locationId, p.clearLoc, p.now);
-  return { flipped: toFlip.length, assetIds };
+  return { flipped: toFlip.length, assetIds, bulkFlips };
+}
+
+/** Apply issue #801 #2 standalone-bulk availability adjustments for a set of
+ *  flipped bulk units, honoring the isKitChild gate (kit members own their own
+ *  adjustment via collectKitBulkAdjustments off `kitBulkItems`, not per-unit
+ *  flips). `sign` is +1 to release stock back to the shelf (undeploy) or -1 to
+ *  re-consume it (unreturn) — mirrors kit move-back's documented "+1"/"-1". */
+async function applyBulkFlipAvailability(
+  ctx: Ctx,
+  organizationId: string,
+  isKitChild: boolean | undefined,
+  bulkFlips: Array<{ bulkAssetId: string; quantity: number }>,
+  sign: 1 | -1,
+): Promise<void> {
+  if (isKitChild) return;
+  for (const bf of bulkFlips) {
+    if (bf.quantity > 0) await adjustBulkAvailability(ctx, organizationId, [{ bulkAssetId: bf.bulkAssetId, delta: sign * bf.quantity }]);
+  }
 }
 
 /** Cascade a line's ACCESSORY children back with their parent (whole units). */
@@ -937,7 +976,7 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped } = await flipLineUnits(ctx, {
+    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "CHECKED_OUT",
       toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE",
       locationId: defLoc, clearLoc: true, want: item.quantity, now: a.now,
@@ -947,6 +986,7 @@ export async function undeployItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       // Legacy unit-less line — set counters directly; a rollup would zero them.
       await ctx.db.patch(line._id, { status: "CONFIRMED", prepStatus: "PACKED", checkedOutQuantity: 0, updatedAt: a.now });
     }
+    await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, 1);
     await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "CHECKED_OUT", toStatus: "CONFIRMED", toPrepStatus: "PACKED", assetStatus: "AVAILABLE", locationId: defLoc, clearLoc: true, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_IN", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Prepped (un-deploy)" });
@@ -973,7 +1013,7 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
   for (const item of a.items) {
     const line = await lineByCuid(ctx, item.lineItemId);
     if (!line || line.projectId !== a.projectId || line.organizationId !== a.organizationId) throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
-    const { flipped } = await flipLineUnits(ctx, {
+    const { flipped, bulkFlips } = await flipLineUnits(ctx, {
       organizationId: a.organizationId, lineItemId: line.id, fromStatus: "RETURNED",
       toStatus: "CHECKED_OUT", resetReturnedQty: true, assetStatus: "CHECKED_OUT",
       locationId: projLoc, clearLoc: false, want: item.quantity, now: a.now,
@@ -984,6 +1024,7 @@ export async function unreturnItemsCore(ctx: Ctx, a: ReverseItemsArgs): Promise<
       // would zero checkedOutQuantity (no units to recompute from).
       await ctx.db.patch(line._id, { status: "CHECKED_OUT", returnedQuantity: 0, checkedOutQuantity: line.quantity ?? 0, checkedOutAt: a.now, checkedOutById: a.userId, updatedAt: a.now });
     }
+    await applyBulkFlipAvailability(ctx, a.organizationId, line.isKitChild, bulkFlips, -1);
     await reverseAccessoryChildren(ctx, { organizationId: a.organizationId, parentLineItemId: line.id, fromStatus: "RETURNED", toStatus: "CHECKED_OUT", assetStatus: "CHECKED_OUT", locationId: projLoc, clearLoc: false, now: a.now });
     if (!wholeLine) await syncLineItemRollup(ctx, line.id);
     await scanLog(ctx, { organizationId: a.organizationId, projectId: a.projectId, action: "CHECK_OUT", scannedById: a.userId, scannedAt: a.now, notes: "Moved back to Deployed (un-return)" });

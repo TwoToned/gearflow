@@ -27,8 +27,33 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("projectLineItems")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: GDPR org-delete export needs every line item — see docs/exceptions.md R-8.3.3
       .collect();
+  },
+});
+
+/**
+ * Up to `limit` flagged line items (FLAGGED_FAULTY / FLAGGED_TT_OVERDUE) for the
+ * notification digest's flagged-asset scan (perf-convex-efficiency-2026-06.md
+ * Finding #0b — replaces a whole-org `list()` + JS prepStatus filter). Bounded via
+ * `by_organizationId_prepStatus`, oldest-first (matches the old table-scan order).
+ */
+export const listFlagged = query({
+  args: { orgId: v.string(), limit: v.number() },
+  handler: async (ctx, { orgId, limit }) => {
+    await requireOrgRead(ctx, orgId);
+    const FLAGGED_STATUSES = ["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"] as const;
+    const rows = (
+      await Promise.all(
+        FLAGGED_STATUSES.map((prepStatus) =>
+          ctx.db
+            .query("projectLineItems")
+            .withIndex("by_organizationId_prepStatus", (q) => q.eq("organizationId", orgId).eq("prepStatus", prepStatus))
+            .take(limit),
+        ),
+      )
+    ).flat();
+    return rows.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)).slice(0, limit);
   },
 });
 

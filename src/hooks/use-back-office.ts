@@ -11,13 +11,9 @@ import type { Doc } from "../../convex/_generated/dataModel";
  * re-fetch their server-action composites when another tab changes the data.
  * See FEATUREDOCS/54.
  */
-export type SupplierOrderDoc = Doc<"supplierOrders">;
 export type WarehouseCloseDoc = Doc<"warehouseCloses">;
 export type SavedTableViewDoc = Doc<"savedTableViews">;
 
-export function useSupplierOrders(orgId: string | undefined): SupplierOrderDoc[] | undefined {
-  return useAuthedQuery(api.supplierOrders.list, orgId ? { orgId } : "skip");
-}
 /** Reactive per-project close-out record (cross-tab sync) — not the whole org's table. */
 export function useWarehouseCloseForProject(
   orgId: string | undefined,
@@ -29,13 +25,6 @@ export function useSavedTableViews(orgId: string | undefined): SavedTableViewDoc
   return useAuthedQuery(api.savedTableViews.list, orgId ? { orgId } : "skip");
 }
 
-export function fingerprintSupplierOrders(rows: SupplierOrderDoc[] | undefined): string | undefined {
-  if (!rows) return undefined;
-  return rows
-    .map((o) => `${o.id}:${o.updatedAt ?? 0}:${o.status ?? ""}:${o.orderNumber ?? ""}:${o.supplierId ?? ""}:${o.total ?? ""}`)
-    .sort()
-    .join("|");
-}
 export function fingerprintWarehouseClose(doc: WarehouseCloseDoc | null | undefined): string | undefined {
   if (doc === undefined) return undefined;
   if (doc === null) return "none";

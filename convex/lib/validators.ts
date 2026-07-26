@@ -67,7 +67,7 @@ export const MaintenanceResult = v.union(
 );
 /**
  * Incident-report classification captured by the "Report Issue" flow
- * (FEATUREDOCS/62-incident-reporting.md). Set on a `maintenanceRecords` row to mark
+ * (FEATUREDOCS/64-incident-reporting.md). Set on a `maintenanceRecords` row to mark
  * it as originating from an incident report (vs. an ordinary manually-created
  * maintenance record) and to drive the asset-status mapping on report:
  * BROKEN_DAMAGED/NEEDS_SERVICE -> IN_MAINTENANCE, LOST_MISSING -> LOST.

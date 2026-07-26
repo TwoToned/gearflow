@@ -112,6 +112,11 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
 ### Ad-Hoc Check
 
 - **Route** (`/check/[assetTag]`): Standalone page to check any asset outside a project.
+- **Audio feedback**: Uses the shared `useScanFeedback` hook (`@/hooks/use-scan-feedback`,
+  see FEATUREDOCS/12 §"Scan Feedback (Audio)" and FEATUREDOCS/14 §"Audio / Scan Feedback")
+  with a `<ScanAudioToggle>` in the page header. `exception` plays once when the tag lookup
+  resolves and the asset isn't found (unknown tag); `submitMutation` plays `success` on save
+  and `error` on failure.
 
 ## Check Queue
 
@@ -192,12 +197,12 @@ After saving check records, if any check item has a FAIL result:
 
 ## Immediate incident report on FAIL
 
-**(GitHub #898, FEATUREDOCS/62 — additional to the predictive trigger above, not a
+**(GitHub #898, FEATUREDOCS/64 — additional to the predictive trigger above, not a
 replacement.)** Every FAIL, not just the 2nd-of-3, immediately opens a linked
 `MaintenanceRecord` (`type: REPAIR`, `incidentType: NEEDS_SERVICE`) instead of only
 flipping `prepStatus=FLAGGED_FAULTY` — `convex/lib/checkIncidentReportCore.ts`. The
 `ItemCheckForm` requires a reason + at least one photo on any FAILed row before the
-check can submit. See FEATUREDOCS/62 for the full data-model + entry-point writeup,
+check can submit. See FEATUREDOCS/64 for the full data-model + entry-point writeup,
 including the separate mid-deploy "Report Issue" flow (a different trigger path,
 since checks only fire at PREP/DE-PREP — see the policy note above).
 

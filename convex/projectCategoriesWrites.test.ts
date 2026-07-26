@@ -21,9 +21,16 @@ const NOW = 1_700_000_000_000;
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 const ACTOR = { userId: USER, userName: "Alice" };
 
-async function member(t: ReturnType<typeof convexTest>, role: string) {
+async function member(t: ReturnType<typeof makeT>, role: string) {
   await t.run(async (ctx) => {
     await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role });
+    // Default OPEN-tier project ("p1") — #957's lock-tier gates need a project
+    // row to resolve their tier; QUOTED keeps these pre-existing tests ungated
+    // (none of them are about the lock feature).
+    const existing = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+    if (!existing) {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    }
   });
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
+import Link from "next/link";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectSubHires, refreshProjectSubHires, useSubHire, refreshSubHire } from "@/hooks/use-project-equipment";
@@ -16,10 +17,12 @@ import {
   removeSubHireMedia,
 } from "@/server/sub-hires";
 import { useSubHireWrites, type SubHireGroupInput } from "@/hooks/use-sub-hire-writes";
+import { useSupplierOrderWrites } from "@/hooks/use-supplier-order-writes";
 import { useSuppliers } from "@/hooks/use-suppliers";
 import { useModels } from "@/hooks/use-models";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { subHireStatusLabels, formatLabel } from "@/lib/status-labels";
+import { subHireStatusLabels, supplierOrderStatusLabels, formatLabel } from "@/lib/status-labels";
+import { buildOrderHeaderPrefill, mapSubHireItemsToOrderItems, defaultOrderNumberFor } from "@/lib/sub-hire-to-order";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { CanDo } from "@/components/auth/permission-gate";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
@@ -541,12 +544,14 @@ function SubHireManageView({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editingGroup, setEditingGroup] = useState<Record<string, any> | null>(null);
+  const [showCreateOrder, setShowCreateOrder] = useState(false);
   const isMobile = useIsMobile();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subHire, isLoading } = useSubHire(subHireId) as { data: any; isLoading: boolean };
 
   const subHireWrites = useSubHireWrites();
+  const orderWrites = useSupplierOrderWrites();
 
   const statusMutation = useServerMutation({
     mutationFn: (newStatus: SubHireStatus) => subHireWrites.setStatus(subHireId, newStatus),
@@ -645,6 +650,57 @@ function SubHireManageView({
       subHireWrites.updateOrderPricing(subHireId, data),
     onSuccess: () => {
       toast.success("Pricing updated");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // WS7 #946 — unlink the sub-hire from its purchase order.
+  const unlinkOrderMutation = useServerMutation({
+    mutationFn: () => subHireWrites.unlinkFromSupplierOrder(subHireId),
+    onSuccess: () => {
+      toast.success("Purchase order unlinked");
+      invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // WS7 #946 — "Create purchase order from this sub-hire": create the order header
+  // (prefilled from the sub-hire), add one order item per sub-hire item (cost →
+  // unitPrice), then link the new order back onto the sub-hire. The modal reads
+  // via non-reactive server actions (FEATUREDOCS/39), so an explicit invalidate()
+  // after success refreshes the manage view with the new link.
+  const createOrderMutation = useServerMutation({
+    mutationFn: async (orderNumber: string) => {
+      const header = buildOrderHeaderPrefill(
+        {
+          orderNumber: subHire.orderNumber,
+          supplierId: subHire.supplierId,
+          hireStart: subHire.hireStart ?? null,
+          hireEnd: subHire.hireEnd ?? null,
+          projectId: subHire.projectId ?? null,
+        },
+        orderNumber,
+      );
+      const created = await orderWrites.create({
+        supplierId: header.supplierId,
+        orderNumber: header.orderNumber,
+        type: header.type,
+        orderDate: header.orderDate ?? undefined,
+        expectedDate: header.expectedDate ?? undefined,
+        projectId: header.projectId ?? undefined,
+      });
+      const items = (subHire.items || []) as Array<{ description: string; quantity: number; unitCost: number }>;
+      const orderItems = mapSubHireItemsToOrderItems(items);
+      for (const item of orderItems) {
+        await orderWrites.addItem(created.id, { description: item.description, quantity: item.quantity, unitPrice: item.unitPrice });
+      }
+      await subHireWrites.linkToSupplierOrder(subHireId, created.id);
+      return created;
+    },
+    onSuccess: () => {
+      toast.success("Purchase order created and linked");
+      setShowCreateOrder(false);
       invalidate();
     },
     onError: (e) => toast.error(e.message),
@@ -917,6 +973,72 @@ function SubHireManageView({
             })}
           />
           <p className="text-[11px] text-fg-4 mt-1.5">Items and groups can override this individually</p>
+        </div>
+
+        {/* Purchase order link + quoted-vs-invoiced reconciliation (WS7 #946) */}
+        <div className="rounded-md bg-bg-inset p-3">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-fg-3 mb-2">Purchase order</div>
+          {subHire.linkedOrder ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Link
+                  href={`/suppliers/${subHire.supplier?.id}/orders/${subHire.linkedOrder.id}`}
+                  className="truncate text-sm font-medium text-link hover:underline"
+                >
+                  {subHire.linkedOrder.orderNumber}
+                </Link>
+                <StatusIndicator
+                  category="supplierOrder"
+                  value={subHire.linkedOrder.status}
+                  label={supplierOrderStatusLabels[subHire.linkedOrder.status] || formatLabel(subHire.linkedOrder.status)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 border-t border-border/50 pt-2 text-xs sm:grid-cols-3">
+                <div>
+                  <div className="text-fg-4">Quoted</div>
+                  <div className="tabular-nums">{formatCurrency(Number(subHire.reconciliation?.quoted ?? 0))}</div>
+                </div>
+                <div>
+                  <div className="text-fg-4">Invoiced</div>
+                  <div className="tabular-nums">
+                    {subHire.reconciliation?.invoiced != null ? formatCurrency(Number(subHire.reconciliation.invoiced)) : "—"}
+                  </div>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <div className="text-fg-4">Variance</div>
+                  {subHire.reconciliation?.variance != null ? (
+                    <div className={cn(
+                      "tabular-nums",
+                      subHire.reconciliation.variance > 0 ? "text-error" : subHire.reconciliation.variance < 0 ? "text-success" : "text-fg-3",
+                    )}>
+                      {subHire.reconciliation.variance > 0 ? "+" : ""}{formatCurrency(subHire.reconciliation.variance)}
+                    </div>
+                  ) : (
+                    <div className="text-fg-4">—</div>
+                  )}
+                </div>
+              </div>
+              <CanDo resource="subHire" action="update">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs text-fg-3"
+                  onClick={() => unlinkOrderMutation.mutate()}
+                  disabled={unlinkOrderMutation.isPending}
+                >
+                  {unlinkOrderMutation.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                  Unlink
+                </Button>
+              </CanDo>
+            </div>
+          ) : (
+            <CanDo resource="subHire" action="update">
+              <Button size="sm" variant="line" onClick={() => setShowCreateOrder(true)}>
+                <Plus className="mr-1 h-3 w-3" />
+                Create purchase order
+              </Button>
+            </CanDo>
+          )}
         </div>
 
         {/* Items + Groups */}
@@ -1401,7 +1523,70 @@ function SubHireManageView({
         action={confirmAction}
         onClose={() => setConfirmAction(null)}
       />
+
+      {/* Create-purchase-order-from-sub-hire dialog (WS7 #946) */}
+      <SubHireCreateOrderDialog
+        open={showCreateOrder}
+        onOpenChange={setShowCreateOrder}
+        defaultOrderNumber={defaultOrderNumberFor(subHire.orderNumber)}
+        isPending={createOrderMutation.isPending}
+        onConfirm={(orderNumber) => createOrderMutation.mutate(orderNumber)}
+      />
     </>
+  );
+}
+
+// ─── Create-purchase-order-from-sub-hire dialog (WS7 #946) ────────────────────
+
+function SubHireCreateOrderDialog({
+  open,
+  onOpenChange,
+  defaultOrderNumber,
+  isPending,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  defaultOrderNumber: string;
+  isPending: boolean;
+  onConfirm: (orderNumber: string) => void;
+}) {
+  const [orderNumber, setOrderNumber] = useState(defaultOrderNumber);
+
+  useEffect(() => {
+    if (open) setOrderNumber(defaultOrderNumber);
+  }, [open, defaultOrderNumber]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create purchase order</DialogTitle>
+          <DialogDescription>
+            Creates a purchase order with the same supplier, dates, and items as this
+            sub-hire, then links it back for cost reconciliation.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-2">
+          <Label htmlFor="new-po-number">Order number</Label>
+          <Input
+            id="new-po-number"
+            value={orderNumber}
+            onChange={(e) => setOrderNumber(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="line" onClick={() => onOpenChange(false)} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button onClick={() => onConfirm(orderNumber.trim())} disabled={isPending || !orderNumber.trim()}>
+            {isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+            Create &amp; link
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

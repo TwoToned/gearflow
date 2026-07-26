@@ -74,6 +74,10 @@ import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
+import { UnlockSessionBanner } from "@/components/projects/unlock-session-banner";
+import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
+import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -140,6 +144,14 @@ export default function ProjectDetailPage({
   // so the primary action sits inline with the tab selector. State-backed (not a
   // plain ref) so EquipmentTab re-renders its portal once the node mounts.
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
+
+  // #957 lifecycle lock — reactive tier/session status, the unlock-session
+  // open action, and the Versions panel.
+  const lockStatus = useProjectLockStatus(id, orgId);
+  const unlockSession = useUnlockSession(id, orgId);
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
+  const [unlockPending, setUnlockPending] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
@@ -382,6 +394,10 @@ export default function ProjectDetailPage({
                           Runsheet
                         </Link>
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setVersionsOpen(true)}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Versions
+                      </DropdownMenuItem>
                       <CanDo resource="project" action="create">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
                           <Copy className="mr-2 h-4 w-4" />
@@ -500,6 +516,36 @@ export default function ProjectDetailPage({
                 {!project.isTemplate && (
                   <TabsContent value="financials">
                     <div className="space-y-6 pt-4">
+                      {lockStatus.openSession && orgId && (
+                        <UnlockSessionBanner
+                          projectId={id}
+                          orgId={orgId}
+                          session={{
+                            scope: lockStatus.openSession.scope,
+                            justification: lockStatus.openSession.justification,
+                            openedByName: lockStatus.openSession.openedByName,
+                          }}
+                        />
+                      )}
+                      {!lockStatus.openSession && lockStatus.tier !== "OPEN" && (
+                        <div className="flex items-center justify-between rounded-[var(--radius)] border-2 border-line bg-paper-2 px-4 py-3">
+                          <p className="text-sm text-ink-2">
+                            {lockStatus.tier === "HARD_LOCKED"
+                              ? "This project is completed and hard-locked."
+                              : "This project's financials are locked."}
+                          </p>
+                          <CanDo resource="project" action="update">
+                            <Button
+                              variant="line"
+                              size="sm"
+                              onClick={() => setUnlockDialogOpen(true)}
+                              disabled={lockStatus.tier === "HARD_LOCKED" && !lockStatus.canOverrideHardLock}
+                            >
+                              {lockStatus.tier === "HARD_LOCKED" ? "Open full unlock session" : "Unlock financials"}
+                            </Button>
+                          </CanDo>
+                        </div>
+                      )}
                       {(() => {
                         // Compute group pricing stats from categories
                         const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
@@ -786,6 +832,34 @@ export default function ProjectDetailPage({
         }}
         pending={archiveMutation.isPending}
       />
+      {orgId && (
+        <>
+          <UnlockSessionDialog
+            open={unlockDialogOpen}
+            onOpenChange={setUnlockDialogOpen}
+            scope={lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL"}
+            pending={unlockPending}
+            onConfirm={async (justification) => {
+              setUnlockPending(true);
+              try {
+                await unlockSession.open(lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL", justification);
+                setUnlockDialogOpen(false);
+                toast.success("Unlocked");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Failed to unlock");
+              } finally {
+                setUnlockPending(false);
+              }
+            }}
+          />
+          <ProjectVersionsPanel
+            open={versionsOpen}
+            onOpenChange={setVersionsOpen}
+            projectId={id}
+            orgId={orgId}
+          />
+        </>
+      )}
     </RequirePermission>
   );
 }

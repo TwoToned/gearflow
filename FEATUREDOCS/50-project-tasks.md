@@ -3,7 +3,8 @@
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
 
 Per-project task lists so operators can track project work inside RVLT Flow instead of
-external tools (Asana, Slack threads). Each project gets a **Tasks** tab.
+external tools (Asana, Slack threads). Each project gets a **Tasks** tab, and every user gets
+a cross-project **`/my-tasks`** view of everything currently assigned to them (see below).
 
 ## Data model
 `ProjectTask` (`project_task`):
@@ -18,7 +19,9 @@ external tools (Asana, Slack threads). Each project gets a **Tasks** tab.
   user OR a crew member. Both FKs are `onDelete: SetNull` so deleting the person keeps the task.
 - `createdById?`, `completedAt?` (set when status enters `DONE`, cleared when it leaves)
 
-Indexes: `(organizationId, projectId)`, `(projectId, status)`, `(assigneeUserId, status)`.
+Indexes: `(organizationId, projectId)`, `(projectId, status)`, `(assigneeUserId, status)`,
+`(assigneeCrewId, status)` (added for `myOpenTasks`, below — mirrors the user-id index so a
+crew-assigned task's open status can be range-scanned the same way).
 Migration: `20260606000000_project_tasks`.
 
 ## Convex functions (formerly `src/server/project-tasks.ts`, now deleted)
@@ -41,9 +44,17 @@ Reads in [`convex/projectTasks.ts`](../convex/projectTasks.ts); browser-direct w
   its index, scoped to org (a foreign id can't be reordered in). Still `requireService`-gated
   (not yet browser-direct) and has no production caller — matches the "Drag-and-drop reordering"
   follow-up below; only exercised by `convex/review2Bulk.test.ts`.
-- ⚠️ `getMyOpenTasks(limit)` (cross-project "my tasks" read for a user-centric home screen) could
-  not be found anywhere in current code — it appears to have never shipped, or was removed.
-  Treat that line as aspirational/stale.
+- `myOpenTasks(orgId, now)` — cross-project "my tasks" read (#952 / QW-3), backing both
+  `/my-tasks` and the dashboard's tasks-due block (see [FEATUREDOCS/06](./06-pages-layouts.md)
+  and the dashboard section of `DESIGN.md`). `requireOrgRead` + a user token (mirrors
+  `dashboardLists.blocking`'s auth shape rather than inventing a new one). Union of this user's
+  directly-assigned OPEN tasks (`by_assigneeUserId_status`) and their crew-assigned OPEN tasks
+  (`by_assigneeCrewId_status`, crew ids resolved via `crewMembers.by_userId`), de-duped by task
+  id. Both source indexes are GLOBAL (span every org) — every row is re-checked against `orgId`
+  in-handler before use. Sorted overdue → due asc (undated last) → priority, bounded to 100.
+  `now` is client-passed and minute-bucketed (dashboard convention — Convex queries can't read
+  the clock); dates come back epoch-ms, not the ISO strings `listByProjectWithRelations` returns.
+  Tests: `convex/projectTasks.myOpenTasks.test.ts`.
 
 Every mutation writes its own audit row via `writeActivityLog` (Convex's `logActivity` counterpart)
 with `entityType: "ProjectTask"` and the `projectId`.
@@ -55,6 +66,22 @@ in-progress dot → done check), priority dot, due-date badge (red when overdue 
 checklist progress (`n/m`), and assignee avatar. A row dropdown edits, advances status, or deletes.
 The edit dialog covers title, description, status, priority, due date, assignee (ComboboxPicker
 of users + crew), and an inline checklist editor.
+
+## My tasks (`src/app/(app)/my-tasks/page.tsx`)
+A cross-project, personal-scope view: every open task assigned to the current user (directly
+or via their crew record), backed by `myOpenTasks` above. Bespoke card list (mobile-first, one
+column — not a `DataTable`), grouped by due bucket in this order: **Overdue / Today / This week
+/ Later** (undated tasks fall into Later). Each row shows a status-cycle icon (TODO → IN_PROGRESS
+→ DONE, same cycle as `tasks-panel.tsx`), priority dot, due badge (red when overdue), and a link
+through to the task's project. The status-cycle button is only interactive when
+`useCanDo("project", "update")` is true — viewer/warehouse roles get a static (non-clickable)
+icon instead, consistent with the read-only treatment elsewhere. Zero open tasks renders a
+`FlowMascot` all-clear empty state (personality allowed there — it's a true zero-state — but
+never inside the Overdue group itself, per DESIGN.md §9's ban on personality in overdue/alert
+copy). Registered in the sidebar RAIL (directly under Dashboard, no resource gate — personal
+scope, not an org resource) and in `PAGE_COMMANDS` (`searchable: false`). **Sidebar-only** — not
+in the mobile bottom nav, which stays the 5 daily-operator workflows (DESIGN.md §16).
+Test: `src/app/(app)/my-tasks/__tests__/page.smoke.test.tsx`.
 
 ## Follow-ups (deferred)
 - **Notifications on assignment / due date.** The notification system exists

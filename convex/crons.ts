@@ -39,4 +39,18 @@ crons.daily(
   {},
 );
 
+// Recurring preventative maintenance (WS6 #945) — generate/merge due PM cycles
+// from serviceSchedules. NATIVE Convex internalMutation, NOT the HTTP-hop
+// pattern the two crons above use — this job only ever touches Convex tables
+// (serviceSchedules/models/assets/bulkAssets/maintenanceRecords), so there is
+// no Postgres/Better-Auth dependency to route through the Next.js route for.
+// Still gated behind ENABLE_CONVEX_CRONS for the same off-by-default rollout
+// discipline as the rest of this file. See maintenanceScheduleGeneration.ts.
+crons.daily(
+  "maintenance-schedule-generation",
+  { hourUTC: 22, minuteUTC: 0 },
+  internal.maintenanceScheduleGeneration.generateDueCycles,
+  {},
+);
+
 export default crons;

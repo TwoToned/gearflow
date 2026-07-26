@@ -269,7 +269,7 @@ export const completeCheckAndPack = mutation({
     includeAccessoryIds: v.optional(v.array(v.string())),
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
-    incidentPlan: v.optional(v.array(incidentEntryArg)),
+    incidentPlan: v.array(incidentEntryArg),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -315,7 +315,7 @@ export const completeCheckAndPack = mutation({
     await runFailPredictiveMaintenance(ctx, a.orgId, actor, resolvedAssetId, a.checks, a.maintenancePlan, a.now);
 
     // 4. Immediate incident report on FAIL (additional to the predictive trigger).
-    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan, a.now);
 
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "asset",
@@ -339,7 +339,7 @@ export const completeCheckAndFlag = mutation({
     flagType,
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
-    incidentPlan: v.optional(v.array(incidentEntryArg)),
+    incidentPlan: v.array(incidentEntryArg),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -374,7 +374,7 @@ export const completeCheckAndFlag = mutation({
 
     // 4. Immediate incident report on FAIL — this is the primary FAIL path (flag),
     //    so it's the main site this trigger fires from in practice.
-    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan, a.now);
 
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "asset",
@@ -400,7 +400,7 @@ export const completeCheckAndStore = mutation({
     notes: v.optional(v.string()),
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
-    incidentPlan: v.optional(v.array(incidentEntryArg)),
+    incidentPlan: v.array(incidentEntryArg),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -448,7 +448,7 @@ export const completeCheckAndStore = mutation({
     await runFailPredictiveMaintenance(ctx, a.orgId, actor, resolvedAssetId, a.checks, a.maintenancePlan, a.now);
 
     // 4. Immediate incident report on FAIL.
-    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan, a.now);
 
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "CHECK_IN", entityType: "asset",
@@ -470,7 +470,7 @@ export const saveAdHocCheck = mutation({
     bulkAssetId: v.optional(v.string()),
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
-    incidentPlan: v.optional(v.array(incidentEntryArg)),
+    incidentPlan: v.array(incidentEntryArg),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -495,7 +495,7 @@ export const saveAdHocCheck = mutation({
     await runFailPredictiveMaintenance(ctx, a.orgId, actor, a.assetId, a.checks, a.maintenancePlan, a.now);
 
     // 3. Immediate incident report on FAIL (no project/line item — ad-hoc check).
-    await runFailIncidentReportForChecks(ctx, a.orgId, actor, a.assetId, undefined, undefined, a.checks, a.incidentPlan ?? [], a.now);
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, a.assetId, undefined, undefined, a.checks, a.incidentPlan, a.now);
 
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "CREATE", entityType: "checkRecord",
@@ -554,7 +554,7 @@ export const saveChildItemChecks = mutation({
     context: checkContextPrepReturn,
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
-    incidentPlan: v.optional(v.array(incidentEntryArg)),
+    incidentPlan: v.array(incidentEntryArg),
     now: v.number(),
     actor: actorValidator,
   },
@@ -583,7 +583,7 @@ export const saveChildItemChecks = mutation({
     // specific asset resolved).
     if (resolvedAssetId) {
       await runFailPredictiveMaintenance(ctx, a.orgId, actor, resolvedAssetId, a.checks, a.maintenancePlan, a.now);
-      await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
+      await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan, a.now);
     }
 
     return { success: true as const };

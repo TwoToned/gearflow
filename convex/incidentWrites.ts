@@ -10,7 +10,7 @@ import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
 /**
- * Browser-direct "Report Issue" write (FEATUREDOCS/62-incident-reporting.md — GitHub
+ * Browser-direct "Report Issue" write (FEATUREDOCS/64-incident-reporting.md — GitHub
  * #898). The in-app successor to the deleted Discord `/fault` command: creates a
  * `maintenanceRecords` row (type=REPAIR, incidentType/incidentSeverity set) AND flips
  * the reported asset's status IMMEDIATELY (product decision — no triage delay):
@@ -61,6 +61,41 @@ async function requireAssetInOrg(ctx: MutationCtx, assetId: string, orgId: strin
   return a;
 }
 
+/**
+ * Resolve the reported asset: an explicit assetId (asset detail page — no line
+ * item in play), or via the reported line item (project / warehouse tabs),
+ * falling back to the line's bulk asset for pooled items. Throws unless a
+ * reportable (non-RETIRED) asset was found.
+ */
+async function resolveReportedAsset(
+  ctx: MutationCtx,
+  a: { orgId: string; assetId?: string; lineItemId?: string; projectId?: string },
+): Promise<Doc<"assets">> {
+  let resolvedAssetId = a.assetId || "";
+  if (a.lineItemId) {
+    if (!a.projectId) throw new ConvexError("projectId is required when reporting against a line item");
+    const line = await requireLineInProject(ctx, a.lineItemId, a.orgId, a.projectId);
+    resolvedAssetId = resolvedAssetId || line.assetId || line.bulkAssetId || "";
+  }
+  if (!resolvedAssetId) throw new ConvexError("An asset is required to report an issue");
+
+  const asset = await requireAssetInOrg(ctx, resolvedAssetId, a.orgId);
+  if (asset.status === "RETIRED") throw new ConvexError("Cannot report an issue on a retired asset");
+  return asset;
+}
+
+/** Idempotent per (recordId, assetId) pair; rejects a link-id collision (mirrors maintenanceWrites.insertLink). */
+async function linkIncidentAsset(ctx: MutationCtx, recordId: string, linkId: string, assetId: string): Promise<void> {
+  const pair = await ctx.db
+    .query("maintenanceRecordAssets")
+    .withIndex("by_maintenanceRecordId_assetId", (q) => q.eq("maintenanceRecordId", recordId).eq("assetId", assetId))
+    .first();
+  if (pair) return;
+  const idDup = await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", linkId)).unique();
+  if (idDup) throw new ConvexError("Maintenance link id collision");
+  await ctx.db.insert("maintenanceRecordAssets", { id: linkId, maintenanceRecordId: recordId, assetId });
+}
+
 // ─── reportIssueNative ─── maintenance:create
 export const reportIssueNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -91,29 +126,13 @@ export const reportIssueNative = mutation({
       throw new ConvexError("At least one photo is required to report an issue");
     }
 
-    // Resolve the target asset: an explicit assetId (asset detail page — no line
-    // item in play), or via the reported line item (project / warehouse tabs),
-    // falling back to the line's bulk asset for pooled items.
-    let resolvedAssetId = a.assetId || "";
-    if (a.lineItemId) {
-      if (!a.projectId) throw new ConvexError("projectId is required when reporting against a line item");
-      const line = await requireLineInProject(ctx, a.lineItemId, a.orgId, a.projectId);
-      resolvedAssetId = resolvedAssetId || line.assetId || line.bulkAssetId || "";
-    }
-    if (!resolvedAssetId) throw new ConvexError("An asset is required to report an issue");
-
-    const asset = await requireAssetInOrg(ctx, resolvedAssetId, a.orgId);
-    if (asset.status === "RETIRED") {
-      throw new ConvexError("Cannot report an issue on a retired asset");
-    }
+    const asset = await resolveReportedAsset(ctx, a);
 
     // Dup-guard by_cuid (GLOBAL): reject a cross-org collision, treat a same-org
     // collision as an idempotent retry.
     const dup = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", a.recordId)).unique();
-    if (dup) {
-      if (dup.organizationId !== a.orgId) throw new ConvexError("Maintenance record id already exists");
-      return { id: a.recordId };
-    }
+    if (dup && dup.organizationId !== a.orgId) throw new ConvexError("Maintenance record id already exists");
+    if (dup) return { id: a.recordId };
 
     const title = `${INCIDENT_TYPE_LABEL[a.incidentType]} — ${asset.assetTag}`;
 
@@ -134,23 +153,11 @@ export const reportIssueNative = mutation({
       updatedAt: a.now,
     });
 
-    const pair = await ctx.db
-      .query("maintenanceRecordAssets")
-      .withIndex("by_maintenanceRecordId_assetId", (q) => q.eq("maintenanceRecordId", a.recordId).eq("assetId", resolvedAssetId))
-      .first();
-    if (!pair) {
-      const idDup = await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", a.linkId)).unique();
-      if (idDup) throw new ConvexError("Maintenance link id collision");
-      await ctx.db.insert("maintenanceRecordAssets", {
-        id: a.linkId,
-        maintenanceRecordId: a.recordId,
-        assetId: resolvedAssetId,
-      });
-    }
+    await linkIncidentAsset(ctx, a.recordId, a.linkId, asset.id);
 
     // Flip the asset's status immediately — product decision: no triage delay.
-    // Unconditional aside from the RETIRED guard above (unlike maintenanceWrites'
-    // holdAssets, which only transitions FROM AVAILABLE).
+    // Unconditional aside from the RETIRED guard in resolveReportedAsset (unlike
+    // maintenanceWrites' holdAssets, which only transitions FROM AVAILABLE).
     await ctx.db.patch(asset._id, { status: targetAssetStatus(a.incidentType), updatedAt: a.now });
 
     await writeActivityLog(ctx, {
@@ -158,13 +165,13 @@ export const reportIssueNative = mutation({
       organizationId: a.orgId,
       action: "REPORT_ISSUE",
       entityType: "asset",
-      entityId: resolvedAssetId,
+      entityId: asset.id,
       entityName: asset.assetTag,
       userId: actor.userId,
       userName: actor.userName,
       summary: `Reported issue: ${title}`,
       ...(a.projectId ? { projectId: a.projectId } : {}),
-      assetId: resolvedAssetId,
+      assetId: asset.id,
       createdAt: a.now,
     });
 

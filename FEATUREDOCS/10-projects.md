@@ -1,6 +1,6 @@
 # Project & Rental Management
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 ## Projects List Views (`ProjectTable`, `ProjectBoard`)
 `ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
@@ -22,6 +22,19 @@ ENQUIRY → QUOTING → QUOTED → CONFIRMED → PREPPING → CHECKED_OUT → ON
                                                                                         ↗
                                            Any status → CANCELLED ─────────────────────┘
 ```
+
+### Lock tiers (#957 — see FEATUREDOCS/62-project-lifecycle-locks.md)
+
+Each status maps to one of four lock tiers, resolved by `lockTierForStatus()`
+(`convex/lib/projectLocks.ts` — the single source of truth every gate site imports):
+
+| Statuses | Tier | Gated |
+|---|---|---|
+| `ENQUIRY` / `QUOTING` / `QUOTED` | **OPEN** | Nothing |
+| `CONFIRMED` / `PREPPING` / `CHECKED_OUT` | **FINANCE_LOCKED** | Money fields (`FINANCIALS_LOCKED` without an open unlock session) |
+| `ON_SITE` / `RETURNED` | **JUSTIFY** | Above, plus structural mutations need a confirm + written justification |
+| `COMPLETED` / `INVOICED` | **HARD_LOCKED** | Everything — no per-edit path, only a FULL unlock session |
+| `CANCELLED` | OPEN | Ungated (open question — see FEATUREDOCS/62) |
 
 ## Project Hierarchy
 ```
@@ -50,9 +63,14 @@ retired). Routes:
 - `defaultValues` are pre-filled from the project across all steps; stored dates
   are normalised to the form's `yyyy-MM-dd` shape via `normalizeDate`, times stay
   `HH:mm`. Existing project managers seed `managerIds`.
-- Two edit-only fields appear that create mode hides: **Status** (basics step) and
-  the **Financial** block — discount %, deposit %, deposit paid, invoiced total
-  (site step). These carry the parity that the old flat edit form had.
+- One edit-only field appears that create mode hides: **Status** (basics step).
+  The **Financial** block (site step, `isEditing`-gated) still holds deposit %,
+  deposit paid, invoiced total — these carry the parity that the old flat edit
+  form had, and are currently hand-typed inputs applied nowhere server-side
+  (RESERVED for #940 / WS1, see the schema.ts + wizard reservation comments; do
+  not wire deposit math without that issue). **Discount (%)** moved out of that
+  block (QW-4 / #953) to the basics step, always visible in both create and edit
+  mode, right after the Client picker — see "Discount default cascade" below.
 - Submit calls `updateProject(id, data)` and **reconciles managers** by diffing
   the initial set vs the selected set (`addProjectManager`/`removeProjectManager`
   on the delta only — no dupes, no accidental removals), then routes to
@@ -82,6 +100,39 @@ retired). Routes:
   edit). Per-moment dates + times live in an optional "Load-in, show & load-out
   times" accordion so the common case is "tap a preset, done". All ten underlying
   fields are preserved for `createProject()`.
+
+### Discount default cascade (QW-4 / #953)
+
+`Client.defaultDiscount` (`convex/schema.ts`) is a per-client default discount
+percentage, set on the client record (`client-form.tsx`, `src/lib/client-fields.ts`).
+It snapshots onto `Project.discountPercent` **at project-create time only**:
+
+- **Server-authoritative (R-9.3).** `projectWrites.createNative` resolves it
+  in-mutation: when the caller doesn't pass an explicit `discountPercent` AND the
+  project has a `clientId`, it org-checked-reads the client row and stamps
+  `client.defaultDiscount` (when set) onto the new project. `== null` (not a
+  truthy/falsy check) decides "not provided" — an explicit `0`% discount from the
+  caller always wins over the client default, never gets silently overwritten by
+  it (see the `== null` auto-pricing comment in `convex/lineItemWrites.ts` for the
+  same lesson applied elsewhere). This is the only place the cascade fires;
+  `updateNative` has no equivalent — reassigning a project's client later does
+  **not** retroactively recompute its discount.
+- **WooCommerce order assembly** builds projects directly (not through
+  `createNative` — see FEATUREDOCS/35 §"Order Processing" step 5), so it seeds the
+  same cascade independently via `resolveWooDiscountPercent` (canonical copy in
+  `src/lib/woocommerce-utils.ts`, a verbatim-copied twin in
+  `convex/wooCommerceActions.ts` since Convex functions can't import from `src/`).
+- **Wizard UX** (`project-wizard.tsx`, Basics step, next to the Client picker) is a
+  convenience layer only — the server snapshot above is authoritative regardless
+  of what the browser sends. Selecting a client prefills Discount (%) from
+  `client.defaultDiscount` with a "from client default" hint; the field stays
+  freely editable. Switching clients before submitting re-prefills, but **only**
+  while the user hasn't touched the field themselves (`discountTouchedRef`) —
+  once they type a value (including an explicit `0`), their choice sticks through
+  further client changes. Opening an existing project for edit never re-prefills
+  from the client's *current* default over whatever discount was actually saved
+  (`prefilledDiscountForClientId` seeds from the project's original `clientId`, so
+  the effect only fires on an actual client *change*, not on mount).
 
 ## Project Managers
 - **Manager picker permissions (#727).** The wizard's "Project manager(s)" field
@@ -134,6 +185,18 @@ marginPercent = margin / total × 100
 - Per-group override: `ProjectGroup.rentalPeriod` + `rentalQuantity`
 - Used only when billingWeeks/billingDays are both null
 - Formula: `rate × quantity × rentalQuantity`
+
+### Finance soft-lock (#957 — see FEATUREDOCS/62-project-lifecycle-locks.md)
+Once a project is FINANCE_LOCKED+ (CONFIRMED and later), the fields that feed the
+formula above — `taxRate`/`discountPercent`/`depositPercent`/`depositPaid`/
+`invoicedTotal` on the project, `price`/`discount`/`rentalPeriod`/`rentalQuantity`
+on a group, `unitPrice`/`discount`/`duration` on a line item, a crew-less
+service's `costTotal`, and crew assignment rate/hours overrides — are rejected
+server-side (`FINANCIALS_LOCKED`) unless an unlock session is open. `recalcProjectTotals`
+itself is never gated — it only ever reads these fields, never sets them, so
+totals stay live on a locked project. New adds while locked default their price
+to $0 instead of the normal autofill (an "Unpriced" badge marks them) — this is
+server-enforced, not just a client suggestion.
 
 ## Categories (`ProjectCategory`)
 - Top-level organiser for equipment (e.g. "RF", "IEM", "PA")
@@ -374,6 +437,14 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - `costTotal` field for direct financial roll-up (no shadow line items) — **auto-calculated
   from the service's own crew once it has any** (see Crew Integration below); a
   crew-less service keeps a manually-typed value (e.g. vehicle/transport cost)
+- `chargeRateOverride` / `crewChargeTotal` (WS10 #949) — the charge-side twin of
+  `costTotal`: once a service has crew AND a charge rate resolves (per-service
+  `chargeRateOverride` or the assigned crew role's `chargeRate`), `crewChargeTotal`
+  auto-computes and feeds `lineTotal` UNLESS `unitPrice` is manually set (manual
+  price always wins — see [31-crew-management.md](./31-crew-management.md) "Charge
+  Cascade & Margin"). No manual price + no charge rate configured = `lineTotal`
+  stays whatever it was (usually null) — margin UI hides rather than showing a
+  fake reading.
 - Services grouped by date in the UI
 
 ### Crew Integration (issue #796 — per-crew rate table)
@@ -395,6 +466,22 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - Query invalidation ensures Crew and Services stay in sync
 - See [31-crew-management.md](./31-crew-management.md) "Service ↔ Crew Cost Linkage"
   for the double-counting guard in `recalcProjectTotals`
+
+### Margin Display (WS10 #949)
+- `ServiceCard`'s financial line (`services-panel.tsx`) shows charge (`lineTotal`,
+  everyone) and, for manager+ only, cost (`costTotal`) + margin (charge - cost,
+  with %) — negative margin renders `text-t-out`, UNCLAMPED (a loss-making service
+  is meant to be visible, not hidden). A `showOnDocuments: false` auto-priced
+  service shows an "Internal (not billed)" tag instead of forcing the flag on.
+- The services financial summary panel's third tile used to duplicate the second
+  ("Total" and "Internal" both read the same `costTotal`-derived value) — it's now
+  "Margin" (`onDocumentsTotal - internalTotal`), gated manager+ along with the
+  "Internal" cost tile (members see only "On documents").
+- The project P&L panel (`project-costs-panel.tsx` / `convex/projectCosts.ts`)
+  gained an additive `labourServiceRevenue` field — the slice of `serviceRevenue`
+  billed for LABOUR-type services, shown as a "Labour revenue" line once
+  auto-pricing makes it non-zero (the pre-existing "Labour" cost row is unchanged —
+  it covers standalone, non-service-linked crew, which never has a charge side).
 
 ### Defaults from Project
 - New services inherit the project location address/coordinates
@@ -481,7 +568,7 @@ dropped from Postgres in the Convex decommission):
 1. **Reset checked-out assets**: All `CHECKED_OUT`/`CONFIRMED` serialized assets linked to project line items → `AVAILABLE`, restore default location
 2. **Reset checked-out kits**: All `CHECKED_OUT`/`CONFIRMED` kits + their serialized assets → `AVAILABLE`, restore locations
 3. **Cascade line items**: every top-level line item (+ children + units) is deleted via `removeLineItemCascadeCore`
-4. **Cascade crew, PMs, tasks, services, grouping (categories/groups/slots), and the `projectModelRevenues` rollup**, then the project row itself + counters + audit log
+4. **Cascade crew, PMs, tasks, services, grouping (categories/groups/slots), the `projectModelRevenues` rollup, and (#957) `projectSnapshots`/`projectSnapshotEntries`/`projectUnlockSessions`**, then the project row itself + counters + audit log
 
 ## Server Action Files vs Convex
 Writes moved browser-direct during the Convex-native migration (see [54. Convex Data Layer](./54-convex-data-layer.md)); `src/server/*.ts` now holds reads-only carve-outs where a file remains at all.
@@ -509,7 +596,16 @@ Writes moved browser-direct during the Convex-native migration (see [54. Convex 
 - `src/lib/validations/project-service.ts` — Service (includes billableToClient, costTotal)
 
 ## Operational P&L Panel
-The project detail page shows the costs panel in the Financials tab (`src/components/projects/project-costs-panel.tsx`, server fn `getProjectOperationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance / damage costs with a net-margin bar. Charge-back-aware: damage marked charged-back to the client is excluded from cost. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
+The project detail page shows the costs panel in the Financials tab (`src/components/projects/project-costs-panel.tsx`, reactive via `useProjectOperationalCosts`/`convex/projectCosts.ts`'s `operationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance costs (`ProjectOperationalCosts` in `src/lib/project-costs.ts`) with a net-margin bar. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
+
+**Doc-drift correction (WS7 #946, 2026-07-26):** this section previously claimed a
+"damage" cost line and "charge-back-aware" logic (damage marked charged-back to the
+client excluded from cost) — **neither exists in the codebase.** There is no
+`damageCost`/`chargeBack`/`chargedBack` field anywhere in `convex/` or
+`src/lib/project-costs.ts`; the only costs are `serviceCostTotal`, `labourCostTotal`,
+`subHireCostTotal`, and `maintenanceCostTotal`. Charge-back-aware damage costs remain
+an unbuilt, undesigned feature — WS7 explicitly deferred it (sub-hire order totals
+also do NOT feed the P&L; see [22-suppliers](./22-suppliers.md#supplier-orders-purchase-orders)).
 
 ## Reservation Conflict Resolution
 When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone. Both reads `.collect()` the org's full line-item/unit/asset/project/model graph (`loadOrgGraph()`) rather than paginating — correctness requires comparing against every booking anywhere in the org, so a bounded read would silently miss conflicts outside the fetched page. This is a registered §15 exception, not an oversight — see `docs/exceptions.md` (R-8.3.3 `reservationConflicts-orgGraph`).

@@ -34,7 +34,7 @@ import {
 /**
  * "Report Issue" — available on a project line item (CHECKED_OUT only), the
  * warehouse deploy/return tabs (CHECKED_OUT gear), and the asset detail page
- * (GitHub #898, FEATUREDOCS/62-incident-reporting.md). Creates a REPAIR
+ * (GitHub #898, FEATUREDOCS/64-incident-reporting.md). Creates a REPAIR
  * MaintenanceRecord and immediately flips the asset's status
  * (IN_MAINTENANCE / LOST) — no triage delay, per product decision.
  */

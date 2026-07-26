@@ -7,7 +7,7 @@ import { api } from "../../../convex/_generated/api";
 import { cn, focusRing } from "@/lib/utils";
 
 /**
- * "Open issues" indicator (GitHub #898, FEATUREDOCS/62) — counts open
+ * "Open issues" indicator (GitHub #898, FEATUREDOCS/64) — counts open
  * MaintenanceRecords with `incidentType` set (Report Issue / an immediate
  * check-item FAIL) for this project. Hidden entirely at zero.
  */

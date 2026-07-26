@@ -7,7 +7,7 @@ import type { IncidentReportFormValues } from "@/lib/validations/incident";
 import { api } from "../../convex/_generated/api";
 
 /**
- * Browser-direct "Report Issue" write (GitHub #898, FEATUREDOCS/62). Calls the
+ * Browser-direct "Report Issue" write (GitHub #898, FEATUREDOCS/64). Calls the
  * guarded `api.incidentWrites.reportIssueNative` mutation, which creates a REPAIR
  * MaintenanceRecord AND flips the reported asset's status immediately. The client
  * mints the record id + asset-link id; dates are epoch ms.

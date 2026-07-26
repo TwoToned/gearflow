@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // convex/incidentWrites.ts — the "Report Issue" mutation (GitHub #898,
-// FEATUREDOCS/62-incident-reporting.md). Verifies: creates a REPAIR
+// FEATUREDOCS/64-incident-reporting.md). Verifies: creates a REPAIR
 // MaintenanceRecord with incidentType/incidentSeverity set, flips the asset's
 // status IMMEDIATELY (IN_MAINTENANCE / LOST per incidentType, unconditional aside
 // from the RETIRED guard — unlike maintenanceWrites' AVAILABLE-only hold), resolves

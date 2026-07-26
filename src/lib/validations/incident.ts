@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * "Report Issue" — the in-app successor to the deleted Discord `/fault` command
- * (GitHub #898, FEATUREDOCS/62-incident-reporting.md). Reuses `MaintenanceRecord`
+ * (GitHub #898, FEATUREDOCS/64-incident-reporting.md). Reuses `MaintenanceRecord`
  * directly (type=REPAIR) rather than a parallel model; these fields feed
  * `convex/incidentWrites.ts::reportIssueNative`.
  */

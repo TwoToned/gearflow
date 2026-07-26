@@ -33,6 +33,16 @@ export function useCrewRoles(orgId: string | undefined): CrewRoleDoc[] | undefin
   return useAuthedQuery(api.crewRoles.list, orgId ? { orgId } : "skip");
 }
 
+/**
+ * Roles-admin variant (WS10 #949, `/crew/settings`) — same rows, but `defaultRate`/
+ * `chargeRate` come back stripped for non-manager+ viewers (server-enforced, see
+ * `convex/crewRoles.ts` `listForSettings`). Use `useCrewRoles` instead for cost-
+ * preview call sites that need `defaultRate` regardless of viewer role.
+ */
+export function useCrewRolesForSettings(orgId: string | undefined): CrewRoleDoc[] | undefined {
+  return useAuthedQuery(api.crewRoles.listForSettings, orgId ? { orgId } : "skip");
+}
+
 export function useCrewSkills(orgId: string | undefined): CrewSkillDoc[] | undefined {
   return useAuthedQuery(api.crewSkills.list, orgId ? { orgId } : "skip");
 }

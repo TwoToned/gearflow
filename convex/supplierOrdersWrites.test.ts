@@ -102,6 +102,183 @@ describe("supplierOrdersWrites.createNative", () => {
       }),
     ).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  // WS7 #946 latent-bug fix — orderNumber uniqueness was documented but never checked.
+  test("rejects a duplicate orderNumber within the same org", async () => {
+    const t = makeT(); await seed(t);
+    await create(t, { id: "o1", orderNumber: "PO-DUP" });
+    await expect(create(t, { id: "o2", orderNumber: "PO-DUP" })).rejects.toThrow(/already exists/i);
+  });
+
+  test("allows the SAME orderNumber in a DIFFERENT org", async () => {
+    const t = makeT(); await seed(t);
+    await create(t, { id: "o1", orderNumber: "PO-SAME" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m2", organizationId: OTHER, userId: "user_2", role: "manager" });
+      await ctx.db.insert("suppliers", { id: "s2", organizationId: OTHER, name: "Other Acme" });
+    });
+    const res = await t.withIdentity({ subject: "user_2", orgId: OTHER, role: "manager" }).mutation(api.supplierOrdersWrites.createNative, {
+      id: "o2", orgId: OTHER, supplierId: "s2", orderNumber: "PO-SAME", type: "PURCHASE", now: NOW, actor: { userId: "user_2", userName: "Bob" }, auditId: "a2",
+    });
+    expect(res).toEqual({ id: "o2" });
+  });
+});
+
+describe("supplierOrdersWrites.updateNative", () => {
+  async function seedOrder(t: T, status: "DRAFT" | "ORDERED" | "PARTIAL" | "RECEIVED" | "CANCELLED" = "DRAFT") {
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", status, createdAt: NOW });
+    });
+  }
+
+  test("header edit: status/orderDate/expectedDate/notes; audits", async () => {
+    const t = makeT(); await seedOrder(t, "DRAFT");
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, {
+      id: "o1", orgId: ORG, status: "ORDERED", orderDate: NOW, expectedDate: NOW + 86_400_000, notes: "call ahead", now: NOW + 1, actor, auditId: "au1",
+    });
+    const o = await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first());
+    expect(o?.status).toBe("ORDERED");
+    expect(o?.orderDate).toBe(NOW);
+    expect(o?.expectedDate).toBe(NOW + 86_400_000);
+    expect(o?.notes).toBe("call ahead");
+    const log = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "au1")).first());
+    expect(log?.summary).toBe("Changed order PO-1 status to ORDERED");
+  });
+
+  test("valid status machine: DRAFT -> ORDERED -> PARTIAL -> RECEIVED (auto-sets receivedDate)", async () => {
+    const t = makeT(); await seedOrder(t, "DRAFT");
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "ORDERED", now: NOW, actor, auditId: "a1" });
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "PARTIAL", now: NOW, actor, auditId: "a2" });
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "RECEIVED", now: NOW + 5, actor, auditId: "a3" });
+    const o = await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first());
+    expect(o?.status).toBe("RECEIVED");
+    expect(o?.receivedDate).toBe(NOW + 5);
+  });
+
+  test("re-saving while already RECEIVED does not re-stamp receivedDate", async () => {
+    const t = makeT(); await seedOrder(t, "RECEIVED");
+    await t.run(async (ctx) => {
+      const o = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first();
+      if (o) await ctx.db.patch(o._id, { receivedDate: NOW - 1000 });
+    });
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "RECEIVED", notes: "still received", now: NOW + 999, actor, auditId: "a1" });
+    const o = await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first());
+    expect(o?.receivedDate).toBe(NOW - 1000); // untouched
+  });
+
+  test("rejects an invalid transition (DRAFT -> RECEIVED, skipping ORDERED/PARTIAL)", async () => {
+    const t = makeT(); await seedOrder(t, "DRAFT");
+    await expect(
+      t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "RECEIVED", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/Cannot transition/i);
+  });
+
+  test("rejects a transition out of a terminal state (CANCELLED -> ORDERED)", async () => {
+    const t = makeT(); await seedOrder(t, "CANCELLED");
+    await expect(
+      t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "ORDERED", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/Cannot transition/i);
+  });
+
+  test("CANCELLED reachable from DRAFT/ORDERED/PARTIAL", async () => {
+    const t = makeT(); await seedOrder(t, "PARTIAL");
+    await t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "CANCELLED", now: NOW, actor, auditId: "a1" });
+    const o = await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first());
+    expect(o?.status).toBe("CANCELLED");
+  });
+
+  test("cross-tenant order rejected", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: OTHER, supplierId: "sV", orderNumber: "VIC", type: "PURCHASE", createdAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "ORDERED", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/Order not found/i);
+  });
+
+  test("RBAC: a viewer (no supplier:update) is rejected", async () => {
+    const t = makeT(); await seedOrder(t, "DRAFT");
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      if (m) await ctx.db.patch(m._id, { role: "viewer" });
+    });
+    await expect(
+      t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.supplierOrdersWrites.updateNative, { id: "o1", orgId: ORG, status: "ORDERED", now: NOW, actor, auditId: "a1" }),
+    ).rejects.toThrow(/Forbidden|permission/i);
+  });
+});
+
+describe("supplierOrdersWrites.deleteNative", () => {
+  // supplier:delete is admin/owner-only (manager has create/read/update but NOT
+  // delete — convex/lib/permissionsCore.ts). Promote the seeded "m1" member row
+  // (whose role the permission check actually reads, not the identity object) so
+  // the success-path tests exercise real authorization, not just the org guard.
+  async function seedOrder(t: T) {
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", createdAt: NOW });
+      const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      if (m) await ctx.db.patch(m._id, { role: "admin" });
+    });
+  }
+  const asAdmin = { subject: USER, orgId: ORG, role: "admin" };
+
+  test("deletes the order + its items; audits", async () => {
+    const t = makeT(); await seedOrder(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrderItems", { id: "i1", orderId: "o1", description: "Widget", sortOrder: 0 });
+    });
+    await t.withIdentity(asAdmin).mutation(api.supplierOrdersWrites.deleteNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "ad1" });
+    expect(await t.run(async (ctx) => ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first())).toBeNull();
+    expect(await t.run(async (ctx) => ctx.db.query("supplierOrderItems").withIndex("by_orderId", (q) => q.eq("orderId", "o1")).collect())).toEqual([]);
+    const log = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "ad1")).first());
+    expect(log?.summary).toBe("Deleted order PO-1");
+  });
+
+  test("blocks deletion when an asset is linked to the order", async () => {
+    const t = makeT(); await seedOrder(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "mo1", organizationId: ORG, name: "Console" });
+      await ctx.db.insert("assets", { id: "as1", organizationId: ORG, modelId: "mo1", assetTag: "T1", supplierOrderId: "o1" });
+    });
+    await expect(
+      t.withIdentity(asAdmin).mutation(api.supplierOrdersWrites.deleteNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "ad1" }),
+    ).rejects.toThrow(/assets linked/i);
+  });
+
+  test("blocks deletion when a sub-hire is linked to the order (WS7 #946 FK)", async () => {
+    const t = makeT(); await seedOrder(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "s1", createdById: USER, orderNumber: "SH-1", status: "DRAFT", showOnDocs: false, supplierOrderId: "o1" });
+    });
+    await expect(
+      t.withIdentity(asAdmin).mutation(api.supplierOrdersWrites.deleteNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "ad1" }),
+    ).rejects.toThrow(/linked to a sub-hire/i);
+  });
+
+  test("cross-tenant order rejected", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      if (m) await ctx.db.patch(m._id, { role: "admin" });
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: OTHER, supplierId: "sV", orderNumber: "VIC", type: "PURCHASE", createdAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asAdmin).mutation(api.supplierOrdersWrites.deleteNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "ad1" }),
+    ).rejects.toThrow(/Order not found/i);
+  });
+
+  test("RBAC: a manager (create/read/update only, no delete) is rejected", async () => {
+    const t = makeT(); await seed(t); // seed() alone leaves m1 as "manager" (no admin promotion)
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", createdAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.supplierOrdersWrites.deleteNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "ad1" }),
+    ).rejects.toThrow(/Forbidden|permission/i);
+  });
 });
 
 describe("supplierOrders.listBySupplier", () => {

@@ -470,11 +470,14 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                         <span className="text-muted">Requires T&amp;T</span>
                         <span className="font-medium">{model.requiresTestAndTag ? "Yes" : "No"}</span>
                       </div>
+                      {/* Recurring preventative-maintenance cadence is now managed via
+                          serviceSchedules (WS6 #945), not a per-model interval field —
+                          see the /maintenance/due worklist. */}
                       <div className="flex justify-between">
-                        <span className="text-muted">Maintenance interval</span>
-                        <span className="font-medium">
-                          {model.maintenanceIntervalDays ? `${model.maintenanceIntervalDays} days` : "—"}
-                        </span>
+                        <span className="text-muted">Preventative service</span>
+                        <Link href="/maintenance/due" className={cn("font-medium text-link hover:underline rounded-sm", focusRing)}>
+                          Manage schedules
+                        </Link>
                       </div>
                     </div>
                   </div>

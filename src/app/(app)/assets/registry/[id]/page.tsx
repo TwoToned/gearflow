@@ -288,10 +288,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
       mobile: "title",
       cell: (link) => (
         <span className="font-medium text-ink">
-          {link.maintenanceRecord.title}
-          {link.maintenanceRecord.incidentType && (
-            <Badge status="warn" className="ml-2 align-middle">Reported issue</Badge>
-          )}
+          <MaintenanceTitle title={link.maintenanceRecord.title} incidentType={link.maintenanceRecord.incidentType} />
         </span>
       ),
     },
@@ -591,12 +588,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           return (
                             <TableRow key={mr.id}>
                               <TableCell className="truncate font-medium text-ink">
-                                {mr.title}
-                                {mr.incidentType && (
-                                  <Badge status="warn" className="ml-2 align-middle">
-                                    Reported issue
-                                  </Badge>
-                                )}
+                                <MaintenanceTitle title={mr.title} incidentType={mr.incidentType} />
                               </TableCell>
                               <TableCell>
                                 <Badge status="neutral">{maintenanceTypeLabels[mr.type] || formatLabel(mr.type)}</Badge>
@@ -947,6 +939,19 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         lineItemId={activeLineItem?.id}
       />
     </FadeIn>
+  );
+}
+
+/** Maintenance record title + a "Reported issue" badge for incident-report records
+ *  (GitHub #898) — shared by the desktop table and mobile card title cells. */
+function MaintenanceTitle({ title, incidentType }: { title: string; incidentType?: string | null }) {
+  return (
+    <>
+      {title}
+      {incidentType && (
+        <Badge status="warn" className="ml-2 align-middle">Reported issue</Badge>
+      )}
+    </>
   );
 }
 

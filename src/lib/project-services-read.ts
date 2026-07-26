@@ -43,3 +43,25 @@ export function sumProjectServiceRevenue(
   }
   return total;
 }
+
+/**
+ * Same scope as `sumProjectServiceRevenue`, narrowed to LABOUR-type services
+ * (WS10 #949 — labour charge rates & margin). Non-zero once a crew role (or
+ * per-service override) has a configured charge rate, since that's what makes a
+ * LABOUR service's `lineTotal` auto-price instead of staying null. Mirrors
+ * `convex/projectCosts.ts`'s `operationalCosts` query — kept in sync there.
+ */
+export function sumProjectLabourServiceRevenue(
+  services: ConvexProjectService[],
+  projectId: string,
+): number {
+  let total = 0;
+  for (const s of services) {
+    if (s.projectId !== projectId) continue;
+    if (s.status === "CANCELLED") continue;
+    if (s.showOnDocuments !== true) continue;
+    if (s.type !== "LABOUR") continue;
+    total += s.lineTotal ?? 0;
+  }
+  return total;
+}

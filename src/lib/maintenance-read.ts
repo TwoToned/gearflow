@@ -59,7 +59,7 @@ export interface MaintenanceRecordRow {
   nextDueDate: Date | null;
   tags: string[];
   /** Set only on records created via "Report Issue" / an immediate check-item
-   *  FAIL (GitHub #898, FEATUREDOCS/62) — null on ordinary manually-created
+   *  FAIL (GitHub #898, FEATUREDOCS/64) — null on ordinary manually-created
    *  maintenance records. */
   incidentType: "BROKEN_DAMAGED" | "LOST_MISSING" | "NEEDS_SERVICE" | null;
   incidentSeverity: "MINOR" | "MAJOR" | null;

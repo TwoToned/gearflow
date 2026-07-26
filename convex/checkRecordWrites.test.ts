@@ -80,7 +80,7 @@ describe("completeCheckAndPack", () => {
     await seedLine(t, "L1", { assetId: "as1", prepStatus: "PENDING" });
     const res = await t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndPack, {
       orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1",
-      checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+      checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
     });
     expect(res.success).toBe(true);
     const us = await unitsOf(t, "L1");
@@ -105,7 +105,7 @@ describe("completeCheckAndPack", () => {
     await expect(
       t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndPack, {
         orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1",
-        checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow(/blocking comment/i);
     // Atomic rollback — no record written.
@@ -117,7 +117,7 @@ describe("completeCheckAndPack", () => {
     await seedLine(t, "Lx", { prepStatus: "PENDING" }, OTHER);
     await expect(
       t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndPack, {
-        orgId: ORG, projectId: "p1", lineItemId: "Lx", checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        orgId: ORG, projectId: "p1", lineItemId: "Lx", checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow(/not found/i);
   });
@@ -134,7 +134,7 @@ describe("completeCheckAndPack", () => {
     await expect(
       t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndPack, {
         orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1",
-        checks: [mkCheck({ recordId: "r1" })], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        checks: [mkCheck({ recordId: "r1" })], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow(/collision/i);
   });
@@ -144,7 +144,7 @@ describe("completeCheckAndPack", () => {
     await seedLine(t, "L1", { assetId: "as1", prepStatus: "PENDING" });
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndPack, {
       orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1",
-      checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW,
+      checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW,
       actor: { userId: "attacker", userName: "Mallory" },
     });
     expect((await records(t))[0].performedById).toBe(USER);
@@ -214,7 +214,7 @@ describe("completeCheckAndStore", () => {
     });
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndStore, {
       orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1", condition: "GOOD",
-      checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+      checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
     });
     expect((await unitsOf(t, "L1"))[0].status).toBe("RETURNED");
     expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
@@ -232,7 +232,7 @@ describe("completeCheckAndStore", () => {
     await expect(
       t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndStore, {
         orgId: ORG, projectId: "p1", lineItemId: "L1", condition: "GOOD",
-        checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow();
   });
@@ -246,7 +246,7 @@ describe("completeCheckAndStore", () => {
     await expect(
       t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndStore, {
         orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1", condition: "GOOD",
-        notes: "X".repeat(2001), checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        notes: "X".repeat(2001), checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow(/notes/);
   });
@@ -262,7 +262,7 @@ describe("checkRecordSchema.notes bound (per-check notes)", () => {
       t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
         orgId: ORG, assetId: "as1",
         checks: [{ ...mkCheck(), notes: "X".repeat(2001) }],
-        maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow(/notes/);
   });
@@ -273,7 +273,7 @@ describe("saveAdHocCheck", () => {
   test("inserts an AD_HOC record with no line + no transition", async () => {
     const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
-      orgId: ORG, assetId: "as1", checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+      orgId: ORG, assetId: "as1", checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
     });
     const recs = await records(t);
     expect(recs).toHaveLength(1);
@@ -286,7 +286,7 @@ describe("saveAdHocCheck", () => {
     const t = makeT(); await seed(t, "viewer"); await seedCheckItem(t); await seedAsset(t, "as1");
     await expect(
       t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.checkRecordWrites.saveAdHocCheck, {
-        orgId: ORG, assetId: "as1", checks: [mkCheck()], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        orgId: ORG, assetId: "as1", checks: [mkCheck()], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow(/Forbidden|permission/i);
   });
@@ -333,7 +333,7 @@ describe("predictive maintenance", () => {
     });
     // Both triggers fire on this FAIL: the 2-of-3 predictive PREVENTATIVE record
     // AND the immediate incident REPAIR record (checkIncidentReportCore.ts) —
-    // additive signals, not alternatives (FEATUREDOCS/62).
+    // additive signals, not alternatives (FEATUREDOCS/64).
     const ms = await maint(t);
     expect(ms).toHaveLength(2);
     const preventative = ms.find((m) => m.type === "PREVENTATIVE")!;
@@ -386,7 +386,7 @@ describe("predictive maintenance", () => {
     await expect(
       t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
         orgId: ORG, assetId: "as1",
-        checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [], auditId: "a1", now: NOW, actor,
+        checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [], incidentPlan: [], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow();
   });

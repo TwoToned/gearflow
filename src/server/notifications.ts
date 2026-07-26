@@ -259,7 +259,7 @@ export async function getNotifications(): Promise<AppNotification[]> {
     }
   }
 
-  // 10. Incident reports (GitHub #898, FEATUREDOCS/62) — maintenance records
+  // 10. Incident reports (GitHub #898, FEATUREDOCS/64) — maintenance records
   // created via "Report Issue" or an immediate check-item FAIL, still open (not
   // COMPLETED/CANCELLED). A distinct type from `flagged_asset`: that one is keyed
   // off ProjectLineItem.prepStatus, this one off MaintenanceRecord.incidentType.

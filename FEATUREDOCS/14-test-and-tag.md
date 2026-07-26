@@ -77,9 +77,34 @@ Multi-outlet/phase devices (power boards, RCD power boards, three-phase) require
 
 ### Session Features
 - **Session tester**: Defaults to logged-in user, selectable from org members. Persists across tests in session.
-- **Audio feedback**: Beep on save (success/fail tones), toggleable.
+- **Audio feedback**: Success/error tone on save, toggleable — via the shared `useScanFeedback` hook (`@/hooks/use-scan-feedback`), not a page-local implementation. See "Audio / Scan Feedback" below.
 - **Session log**: Desktop sidebar / mobile bottom bar showing tested items + results.
 - **Keyboard shortcuts**: Ctrl+Enter save, Escape reset to scan.
+
+## Audio / Scan Feedback
+
+The quick-test wizard was the **original** (and until #951/QW-1, only) audio call site in
+the repo — a page-local `playBeep(success: boolean)` in
+`src/app/(app)/test-and-tag/quick-test/page.tsx` that built a brand-new `AudioContext` per
+beep and never closed it (Chrome caps ~6 concurrent contexts, so head-down scanning
+sessions eventually went silent), never called `ctx.resume()` (autoplay policy can
+silently suspend a context created outside a user gesture), stopped the oscillator with
+a hard `osc.stop()` (audible click), and swallowed every failure with a bare `catch {}`.
+
+That logic has been extracted into the shared **`src/lib/scan-feedback.ts`** +
+**`src/hooks/use-scan-feedback.ts`** pair (FEATUREDOCS/12 §"Scan Feedback" has the full
+architecture — this section covers only what's specific to the quick-test wizard):
+
+- `saveMutation`'s `onSuccess` plays `success` when `overallResult === "PASS"`, `error`
+  otherwise (byte-identical to the legacy pass/fail tones: 800 Hz/150 ms vs 300 Hz/400 ms).
+  `onError` (the save itself failing, e.g. a network/validation error) always plays `error`.
+- The old page-local `audioEnabled` `useState` (default `true`, **not persisted** — reset
+  every mount) is gone. The header's `Volume2`/`VolumeX` icon button is now the shared
+  `<ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />`
+  component (`@/components/scan-audio-toggle`), backed by `useScanFeedback`'s
+  localStorage-persisted (`rvlt.scanAudio`) toggle. Default is still ON and the toggle is
+  visually/behaviourally identical — only the persistence and the underlying audio
+  implementation changed.
 
 ### Failure Workflow
 When overall result is FAIL, a dialog prompts with options:

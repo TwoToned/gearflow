@@ -45,6 +45,9 @@ export const projectServiceSchema = z.object({
   discount: z.coerce.number().optional(),
   taxable: z.boolean().default(true),
   costTotal: z.coerce.number().min(0).optional(),
+  // Charge-side auto-pricing override (WS10 #949) — per-service override of the
+  // crew charge-rate cascade (chargeRateOverride -> role.chargeRate -> null).
+  chargeRateOverride: z.coerce.number().min(0).optional(),
 
   vehicleDescription: z.string().optional(),
   numberOfTrips: z.coerce.number().optional(),

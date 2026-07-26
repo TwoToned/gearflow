@@ -140,6 +140,15 @@ function diceCoefficient(a: Set<string>, b: Set<string>): number {
 }
 
 /**
+ * QW-4 (#953) discount seed — copied verbatim from src/lib/woocommerce-utils.ts
+ * (`resolveWooDiscountPercent`). Convex files can't import from src/. Keep both
+ * copies byte-identical on change; see that file's comment for the full rationale.
+ */
+function resolveWooDiscountPercent(client: { defaultDiscount?: number | null }): number | undefined {
+  return client.defaultDiscount != null ? client.defaultDiscount : undefined;
+}
+
+/**
  * Flexible date parse — copied verbatim from src/lib/woocommerce-utils.ts
  * (`flexibleDateParse`). Convex files can't import from src/.
  */
@@ -287,7 +296,33 @@ type ClientDoc = {
   type?: string;
   contactEmail?: string;
   isActive?: boolean;
+  // QW-4 (#953): needed to seed a new Woo-order project's discountPercent (see
+  // buildProjectArgs below) — this path creates projects directly, bypassing
+  // projectWrites.createNative's own defaultDiscount cascade.
+  defaultDiscount?: number;
 };
+
+type ClientContactDoc = { clientId: string; email?: string };
+
+/** Group an org's contacts by clientId (WS9 #948 — widens WooCommerce email
+ *  matching to any contact, not just the legacy embedded contactEmail). */
+function groupContactsByClient(allContacts: ClientContactDoc[]): Map<string, ClientContactDoc[]> {
+  const map = new Map<string, ClientContactDoc[]>();
+  for (const c of allContacts) {
+    const list = map.get(c.clientId) ?? [];
+    list.push(c);
+    map.set(c.clientId, list);
+  }
+  return map;
+}
+
+/** True if `email` is already known for this client — the legacy embedded field
+ *  OR any of its clientContacts rows. */
+function clientKnowsEmail(client: ClientDoc, email: string | undefined, contactsByClient: Map<string, ClientContactDoc[]>): boolean {
+  if (!email) return false;
+  if (client.contactEmail === email) return true;
+  return (contactsByClient.get(client.id) ?? []).some((c) => c.email === email);
+}
 
 /**
  * Fuzzy-match a company name against existing COMPANY clients. (Verbatim logic
@@ -320,6 +355,37 @@ function fuzzyMatchCompany(allClients: ClientDoc[], companyName: string): Client
   return bestMatch ? bestMatch.client : null;
 }
 
+/**
+ * WS9 #948 — on a fuzzy-company match whose billing email is unknown to the
+ * matched client, auto-create an additional (non-primary) contact tagged from
+ * the order, instead of silently losing it. Split out of `findOrCreateClient` to
+ * keep that function's cyclomatic complexity under the R-3.6 ceiling.
+ */
+async function autoCreateContactIfEmailUnknown(
+  ctx: ActionCtx,
+  orgId: string,
+  client: ClientDoc,
+  billing: WooOrder["billing"],
+  contactsByClient: Map<string, ClientContactDoc[]>,
+): Promise<void> {
+  if (!billing.email || clientKnowsEmail(client, billing.email, contactsByClient)) return;
+  await ctx.runMutation(internal.wooCommerceInternal.createClientContact, {
+    id: createId(),
+    organizationId: orgId,
+    clientId: client.id,
+    name: `${billing.first_name} ${billing.last_name}`.trim() || undefined,
+    email: billing.email,
+    phone: billing.phone || undefined,
+    notes: "Auto-created from a WooCommerce order",
+    isPrimary: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+}
+
+// Complexity 15 (R-3.6 ceiling) — the 3-step match/create waterfall (exact email
+// → fuzzy company → create-new) is inherently branchy; `autoCreateContactIfEmailUnknown`
+// above already carries the WS9 #948 contact-creation branching out of this function.
 async function findOrCreateClient(
   ctx: ActionCtx,
   orgId: string,
@@ -327,19 +393,27 @@ async function findOrCreateClient(
 ): Promise<ClientDoc> {
   const hasCompany = !!billing.company?.trim();
 
-  // Clients live in Convex — fetch the org's clients once and match in memory.
-  const all = (await ctx.runQuery(internal.wooCommerceInternal.listClientsByOrg, { orgId })) as ClientDoc[];
+  // Clients live in Convex — fetch the org's clients + contacts once and match in
+  // memory. Contacts widen the email match (WS9 #948) beyond the legacy embedded
+  // clients.contactEmail field.
+  const [all, allContacts] = (await Promise.all([
+    ctx.runQuery(internal.wooCommerceInternal.listClientsByOrg, { orgId }),
+    ctx.runQuery(internal.wooCommerceInternal.listClientContactsByOrg, { orgId }),
+  ])) as [ClientDoc[], ClientContactDoc[]];
+  const contactsByClient = groupContactsByClient(allContacts);
 
-  // 1. Try exact email match first
+  // 1. Try exact email match first — ANY contact's email on an active client, not
+  //    just the legacy embedded one.
   let client: ClientDoc | null =
-    all.find((c) => (c.isActive ?? true) && c.contactEmail === billing.email) ?? null;
+    all.find((c) => (c.isActive ?? true) && clientKnowsEmail(c, billing.email, contactsByClient)) ?? null;
   if (client && hasCompany && client.type === "INDIVIDUAL") {
     client = null; // skip personal match, fall through to company matching
   }
 
-  // 2. If company name provided, try fuzzy company matching
+  // 2. If company name provided, try fuzzy company matching.
   if (!client && hasCompany) {
     client = fuzzyMatchCompany(all, billing.company!.trim());
+    if (client) await autoCreateContactIfEmailUnknown(ctx, orgId, client, billing, contactsByClient);
   }
 
   // 3. If still no match, create a new client
@@ -387,6 +461,35 @@ async function findOrCreateClient(
 
   return client;
 }
+
+/**
+ * TEST-ONLY exported wrapper — `findOrCreateClient` needs a real ActionCtx
+ * (`ctx.runQuery`/`ctx.runMutation`), which only `t.action(...)` provides in
+ * convex-test; there is no HTTP-triggerable entry point for it otherwise. Not
+ * part of the WooCommerce ingress itself (never scheduled by http.ts/processOrder
+ * indirectly through this name) — exists purely so
+ * wooCommerceActions.test.ts can behavior-pin the email-widen + auto-create-contact
+ * matching logic (WS9 #948) without standing up the full order pipeline.
+ */
+export const _findOrCreateClientForTest = internalAction({
+  args: {
+    orgId: v.string(),
+    billing: v.object({
+      first_name: v.string(),
+      last_name: v.string(),
+      company: v.optional(v.string()),
+      email: v.string(),
+      phone: v.optional(v.string()),
+      address_1: v.optional(v.string()),
+      address_2: v.optional(v.string()),
+      city: v.optional(v.string()),
+      state: v.optional(v.string()),
+      postcode: v.optional(v.string()),
+      country: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, { orgId, billing }) => findOrCreateClient(ctx, orgId, billing),
+});
 
 type LocationDoc = { id: string; name: string; address?: string };
 
@@ -668,6 +771,12 @@ export const processOrder = internalAction({
         : `${order.billing.first_name} ${order.billing.last_name} — Website Order #${order.number || order.id}`;
       const clientNotes = extractNotes(order, integration);
       const projectCreatedAt = Date.now();
+      // QW-4 (#953): seed the discount cascade here too — this path creates the
+      // project via createProjectWithUniqueNumber (a plain insert), which does
+      // NOT run projectWrites.createNative's in-mutation defaultDiscount lookup.
+      // A snapshot, not a live link (see the "no retroactive change" note on
+      // createNative).
+      const wooDiscountPercent = resolveWooDiscountPercent(client);
       const buildProjectArgs = (num: string) => ({
         id: projectId,
         organizationId: orgId,
@@ -681,6 +790,7 @@ export const processOrder = internalAction({
         ...(dates.rentalEnd ? { rentalEndDate: dates.rentalEnd.getTime() } : {}),
         ...(dates.eventStart ? { eventStartDate: dates.eventStart.getTime() } : {}),
         ...(clientNotes ? { clientNotes } : {}),
+        ...(wooDiscountPercent != null ? { discountPercent: wooDiscountPercent } : {}),
         tags: ["website-order"],
         createdAt: projectCreatedAt,
         updatedAt: projectCreatedAt,

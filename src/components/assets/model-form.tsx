@@ -286,9 +286,10 @@ export function ModelForm({ initialData }: ModelFormProps) {
             <SmartFormField label="Power draw (watts)">
               <Input type="number" {...form.register("powerDraw")} placeholder="0" />
             </SmartFormField>
-            <SmartFormField label="Maintenance interval (days)">
-              <Input type="number" {...form.register("maintenanceIntervalDays")} placeholder="e.g. 365" />
-            </SmartFormField>
+            {/* Maintenance interval field removed (WS6 #945) — recurring
+                preventative-maintenance cadence is now a serviceSchedules row
+                (interval + anchor date), managed from /maintenance/due, not a
+                per-model form field. */}
             <div className="sm:col-span-2 space-y-4">
               <div className="flex items-center gap-2">
                 <Checkbox

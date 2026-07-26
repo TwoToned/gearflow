@@ -53,7 +53,8 @@ import {
 } from "@/lib/validations/project-service";
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { crewRateTypeLabels } from "@/lib/status-labels";
-import { resolveRate, calculateEstimatedCost } from "../../../convex/lib/crewRate";
+import { resolveRate, calculateEstimatedCost, resolveChargeRate } from "../../../convex/lib/crewRate";
+import { useIsManagerPlus } from "@/lib/use-permissions";
 import { CrewPanel } from "./crew-panel";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
@@ -168,6 +169,8 @@ interface ServiceRow {
   unitPrice: number | null;
   lineTotal: number | null;
   costTotal: number | null;
+  chargeRateOverride: number | null;
+  crewChargeTotal: number | null;
   discount: number | null;
   vehicleDescription: string | null;
   crewCountRequired: number | null;
@@ -200,6 +203,7 @@ export function ServicesPanel({
 }: ServicesPanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const isManagerPlus = useIsManagerPlus();
 
   // Cross-tab live sync: re-fetch the services composites when another tab edits.
   useProjectServicesLiveSync(projectId, orgId);
@@ -514,6 +518,7 @@ export function ServicesPanel({
                       <ServiceCard
                         key={service.id}
                         service={service}
+                        isManagerPlus={isManagerPlus}
                         selected={selection.isSelected(service.id)}
                         selectionActive={selectedServiceIds.length > 0}
                         onSelectChange={() => selection.toggle(service.id, true)}
@@ -534,26 +539,35 @@ export function ServicesPanel({
           </StaggerList>
         )}
 
-        {/* Financial Summary */}
+        {/* Financial Summary. Third tile used to duplicate "Internal" (both read
+            summary.totalCost, a legacy alias for costTotal) — it's now Margin
+            (charge - cost), gated manager+ along with the cost tile (spec:
+            "cost + margin visible to manager+ only; members see the charge side"). */}
         {summary && summary.serviceCount > 0 && (
           <div className="rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)]">
             <h4 className="t-overline text-muted mb-2 flex items-center gap-1">
               <DollarSign className="h-3.5 w-3.5" />
               Services financial summary
             </h4>
-            <div className="grid gap-4 sm:grid-cols-3 text-ui-text">
+            <div className={cn("grid gap-4 text-ui-text", isManagerPlus ? "sm:grid-cols-3" : "sm:grid-cols-1")}>
               <div>
                 <span className="text-muted">On documents</span>
                 <p className="font-medium tabular-nums text-ink-2">{formatCurrency(summary.onDocumentsTotal)}</p>
               </div>
-              <div>
-                <span className="text-muted">Internal</span>
-                <p className="font-medium tabular-nums text-ink-2">{formatCurrency(summary.internalTotal)}</p>
-              </div>
-              <div>
-                <span className="text-muted">Total</span>
-                <p className="font-semibold tabular-nums text-ink">{formatCurrency(summary.totalCost)}</p>
-              </div>
+              {isManagerPlus && (
+                <div>
+                  <span className="text-muted">Internal</span>
+                  <p className="font-medium tabular-nums text-ink-2">{formatCurrency(summary.internalTotal)}</p>
+                </div>
+              )}
+              {isManagerPlus && (
+                <div>
+                  <span className="text-muted">Margin</span>
+                  <p className={cn("font-semibold tabular-nums", summary.onDocumentsTotal - summary.internalTotal < 0 ? "text-t-out" : "text-ink")}>
+                    {formatCurrency(summary.onDocumentsTotal - summary.internalTotal)}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -649,6 +663,7 @@ export function ServicesPanel({
 
 function ServiceCard({
   service,
+  isManagerPlus,
   selected,
   selectionActive,
   onSelectChange,
@@ -658,6 +673,7 @@ function ServiceCard({
   onCrewMessage,
 }: {
   service: ServiceRow;
+  isManagerPlus: boolean;
   selected?: boolean;
   selectionActive?: boolean;
   onSelectChange?: () => void;
@@ -819,9 +835,13 @@ function ServiceCard({
             </div>
           )}
 
-          {/* Financial */}
+          {/* Financial — charge is client-facing (everyone sees it); cost + margin
+              are manager+ only (spec: "members see the charge side"). Margin is
+              charge - cost, UNCLAMPED at this level (a negative margin renders
+              text-t-out rather than being hidden/clamped to 0 — the whole point is
+              to surface a loss-making service). */}
           {(service.lineTotal != null || service.costTotal != null) && (
-            <div className="flex items-center gap-3 text-ui-text">
+            <div className="flex flex-wrap items-center gap-3 text-ui-text">
               {service.lineTotal != null && (
                 <div className="flex items-center gap-1">
                   <DollarSign className="h-3 w-3 text-muted" />
@@ -829,14 +849,34 @@ function ServiceCard({
                   <span className="text-muted text-caption">charge</span>
                 </div>
               )}
-              {service.costTotal != null && Number(service.costTotal) > 0 && (
+              {isManagerPlus && service.costTotal != null && Number(service.costTotal) > 0 && (
                 <div className="flex items-center gap-1">
                   <span className="tabular-nums text-muted">{formatCurrency(service.costTotal)}</span>
                   <span className="text-muted text-caption">cost</span>
                 </div>
               )}
-              {service.showOnDocuments && (
+              {isManagerPlus && service.lineTotal != null && service.costTotal != null && (
+                (() => {
+                  const margin = Number(service.lineTotal) - Number(service.costTotal);
+                  const marginPercent = Number(service.lineTotal) > 0 ? (margin / Number(service.lineTotal)) * 100 : 0;
+                  return (
+                    <div className="flex items-center gap-1">
+                      <span className={cn("font-medium tabular-nums", margin < 0 ? "text-t-out" : "text-ok")}>
+                        {formatCurrency(margin)}
+                      </span>
+                      <span className={cn("text-caption", margin < 0 ? "text-t-out" : "text-muted")}>
+                        margin · {marginPercent.toFixed(0)}%
+                      </span>
+                    </div>
+                  );
+                })()
+              )}
+              {service.showOnDocuments ? (
                 <span className="text-muted text-caption">· On quote</span>
+              ) : (
+                service.crewChargeTotal != null && (
+                  <span className="text-muted text-caption">· Internal (not billed)</span>
+                )
               )}
             </div>
           )}
@@ -1345,6 +1385,7 @@ function ServiceDialog({
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isEditing = !!editingService;
+  const isManagerPlus = useIsManagerPlus();
   const svcWrites = useProjectServiceWrites();
 
   const matchingTemplate = preselectedType
@@ -1395,6 +1436,7 @@ function ServiceDialog({
         unitPrice: (editingService.unitPrice as number) || undefined,
         discount: (editingService.discount as number) || undefined,
         costTotal: (editingService.costTotal as number) || undefined,
+        chargeRateOverride: (editingService.chargeRateOverride as number) || undefined,
         taxable: editingService.taxable !== false,
         vehicleDescription: (editingService.vehicleDescription as string) || "",
         numberOfTrips: (editingService.numberOfTrips as number) || undefined,
@@ -1516,6 +1558,7 @@ function ServiceDialog({
   // in this dialog), mirroring updateServiceNative's role-patch-all-survivors behaviour.
   const watchCrewRoleId = form.watch("crewRoleId") as string;
   const selectedCrewRole = (roleDocs ?? []).find((r) => r.id === watchCrewRoleId) ?? null;
+  const rateOverrideUnitSuffix = selectedCrewRole?.rateType ? ` / ${crewRateTypeLabels[selectedCrewRole.rateType].toLowerCase()}` : "";
   const watchServiceDate = form.watch("date") as string;
   const watchServiceEndDate = (form.watch("endDate") as string) || watchServiceDate;
   const serviceStartMs = watchServiceDate ? new Date(watchServiceDate).getTime() : null;
@@ -1536,6 +1579,30 @@ function ServiceDialog({
   }
 
   const crewCostTotal = watchCrew.reduce((sum, row) => sum + previewCrewCost(row).cost, 0);
+
+  /** Live client-side preview of the charge-side cascade (convex/lib/crewRate.ts
+   *  resolveChargeRate) — UX only, mirrors previewCrewCost. Role-first, no member
+   *  level (spec decision — client pricing shouldn't wobble per crew member): the
+   *  service's chargeRateOverride, else the selected role's chargeRate, else null
+   *  (this member contributes nothing to the auto-price). */
+  const watchChargeRateOverrideRaw = form.watch("chargeRateOverride");
+  const watchChargeRateOverride = watchChargeRateOverrideRaw != null && watchChargeRateOverrideRaw !== ("" as unknown)
+    ? Number(watchChargeRateOverrideRaw)
+    : undefined;
+  function previewChargeCost(row: ServiceCrewRow): number {
+    const resolved = resolveChargeRate(
+      watchChargeRateOverride,
+      selectedCrewRole ? { chargeRate: selectedCrewRole.chargeRate ?? null, rateType: selectedCrewRole.rateType ?? null } : null,
+    );
+    if (!resolved) return 0;
+    return calculateEstimatedCost(resolved.rate, resolved.rateType, serviceStartMs, serviceEndMs, row.estimatedHours ?? null);
+  }
+  const anyChargeResolved = watchCrew.length > 0 && (
+    watchChargeRateOverride != null && Number(watchChargeRateOverride) > 0
+      ? true
+      : selectedCrewRole?.chargeRate != null && Number(selectedCrewRole.chargeRate) > 0
+  );
+  const crewChargeTotalPreview = anyChargeResolved ? watchCrew.reduce((sum, row) => sum + previewChargeCost(row), 0) : 0;
 
   const invalidateAll = () => {
     refreshProjectServices(projectId);
@@ -1839,7 +1906,11 @@ function ServiceDialog({
           <div className="border-t pt-4 space-y-4">
             <h4 className="text-card-title font-semibold text-ink">Pricing</h4>
 
-            {/* Charge to Client */}
+            {/* Charge to Client — visible to everyone (spec: "members see the
+                charge side"). unitPrice stays a normal editable input even when
+                crew are auto-priced: typing a value is the EXPLICIT manual
+                override (never silently clobbered by a crew edit — the costTotal
+                clobber lesson, #796, applied to price). */}
             <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
               <div className="t-overline text-muted">
                 Charge to client
@@ -1851,8 +1922,20 @@ function ServiceDialog({
                     type="number"
                     step="0.01"
                     {...form.register("unitPrice")}
-                    placeholder="0.00"
+                    placeholder={crewChargeTotalPreview > 0 ? formatCurrency(crewChargeTotalPreview) : "0.00"}
                   />
+                  {!form.watch("unitPrice") && crewChargeTotalPreview > 0 && (
+                    <p className="text-[11px] text-faint">
+                      Auto from crew: {formatCurrency(crewChargeTotalPreview)}.{" "}
+                      <button
+                        type="button"
+                        className="text-link underline-offset-2 hover:underline"
+                        onClick={() => form.setValue("unitPrice", Number(crewChargeTotalPreview.toFixed(2)))}
+                      >
+                        Use manual rate
+                      </button>
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>Discount ($)</Label>
@@ -1864,38 +1947,56 @@ function ServiceDialog({
                   />
                 </div>
               </div>
-            </div>
-
-            {/* Cost to Business */}
-            <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
-              <div className="t-overline text-muted">
-                Cost to Business
-              </div>
-              {watchCrew.length > 0 ? (
+              {watchCrew.length > 0 && (
                 <div className="space-y-1.5">
-                  <Label>Total cost</Label>
-                  <div className="flex h-9 items-center rounded-[var(--r)] border border-line bg-paper-2 px-3 text-ui-text font-medium tabular-nums text-ink">
-                    {formatCurrency(crewCostTotal)}
-                  </div>
-                  <p className="text-[11px] text-faint">
-                    Auto-calculated from {watchCrew.length} crew member{watchCrew.length === 1 ? "" : "s"}&apos; rates above. Used for margin calculation.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <Label>Total cost</Label>
+                  <Label>Charge rate override ($){rateOverrideUnitSuffix}</Label>
                   <Input
                     type="number"
                     step="0.01"
-                    {...form.register("costTotal")}
+                    {...form.register("chargeRateOverride")}
                     placeholder="0.00"
                   />
                   <p className="text-[11px] text-faint">
-                    What this service costs you (transport, materials, etc). Assign crew above to auto-calculate labour cost instead.
+                    Overrides the crew role&apos;s charge rate for this service&apos;s crew.
+                    Leave blank to use the role default{selectedCrewRole?.chargeRate ? ` ($${selectedCrewRole.chargeRate})` : " (none set — no auto-pricing)"}.
                   </p>
                 </div>
               )}
             </div>
+
+            {/* Cost to Business — manager+ only (spec: "cost + margin visible to
+                manager+ only"). */}
+            {isManagerPlus && (
+              <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
+                <div className="t-overline text-muted">
+                  Cost to Business
+                </div>
+                {watchCrew.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <Label>Total cost</Label>
+                    <div className="flex h-9 items-center rounded-[var(--r)] border border-line bg-paper-2 px-3 text-ui-text font-medium tabular-nums text-ink">
+                      {formatCurrency(crewCostTotal)}
+                    </div>
+                    <p className="text-[11px] text-faint">
+                      Auto-calculated from {watchCrew.length} crew member{watchCrew.length === 1 ? "" : "s"}&apos; rates above. Used for margin calculation.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label>Total cost</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...form.register("costTotal")}
+                      placeholder="0.00"
+                    />
+                    <p className="text-[11px] text-faint">
+                      What this service costs you (transport, materials, etc). Assign crew above to auto-calculate labour cost instead.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Notes */}

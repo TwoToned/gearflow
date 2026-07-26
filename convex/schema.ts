@@ -5,7 +5,8 @@ import * as enums from "./lib/validators";
 /**
  * RVLT Flow Convex schema — generated from prisma/schema.prisma (Phase 1).
  *
- * 98 tables mirroring the Prisma models. Conventions:
+ * 101 tables mirroring the Prisma models (100, +1 `serviceSchedules` — WS6 #945,
+ * a Convex-native table with no Prisma equivalent, see below). Conventions:
  *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`
  *    field with a `by_cuid` index — NOT dropped in favour of Convex's `_id`. The
  *    app holds cuids everywhere (URLs, FK strings, server-action args), so every
@@ -319,6 +320,22 @@ export default defineSchema({
     defaultEquipmentClass: v.optional(enums.EquipmentClass),
     defaultApplianceType: v.optional(enums.ApplianceType),
     defaultTestProfileId: v.optional(v.string()),
+    // DEPRECATED (WS6 #945): superseded by `serviceSchedules` (fixed interval +
+    // anchor date, not "N days since last service"). The one-time migrate
+    // backfill (backfillMaintenanceSchedules.ts) seeds one schedule per model
+    // that had this set (days -> nearest month). Removed from modelSchema/
+    // model-form.tsx — the interactive create/edit form no longer reads or
+    // writes it. Deliberately left wired in convex/models.ts's generic CRUD
+    // (create/createIfMissing/update) and convex/modelWrites.ts, because CSV
+    // bulk import/export (src/server/csv.ts) still reads/writes this column
+    // directly via `api.models.createIfMissing`/`update` — migrating THAT
+    // surface to serviceSchedules is a separate follow-up, out of scope here.
+    // Left readable/nulled-out on old rows rather than dropped from the schema
+    // in this PR — mirrors the WS9 clientContacts widen/migrate-now,
+    // narrow/drop-later precedent — so a schema-strictness deploy doesn't race
+    // the backfill actually being run in prod. Remove this field once the
+    // backfill is confirmed in prod AND the CSV import/export surface is
+    // migrated too.
     maintenanceIntervalDays: v.optional(v.number()),
     assetType: v.optional(enums.AssetType),
     barcodeLabelTemplate: v.optional(v.string()),
@@ -439,6 +456,14 @@ export default defineSchema({
     notes: v.optional(v.string()),
     defaultTargetCategoryId: v.optional(v.string()),
     defaultTargetGroupId: v.optional(v.string()),
+    // WS7 #946 — 1:1 link to the purchase order raised with the supplier for this
+    // sub-hire (the FK the data-linkage workstream adds; see FEATUREDOCS/39). Org- +
+    // same-supplier-validated in convex/subHiresWrites.ts (assertRefInOrg + an
+    // explicit supplierId match — a link only makes sense when both sides name the
+    // same supplier). Cleared automatically when either side's supplier changes
+    // (asset-form `supplierOrderId` precedent, issue #789). NOT copied by
+    // duplicateSubHireNative — a duplicated sub-hire starts unlinked.
+    supplierOrderId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -452,7 +477,8 @@ export default defineSchema({
     .index("by_organizationId_orderNumber", ["organizationId", "orderNumber"])
     .index("by_organizationId_supplierId", ["organizationId", "supplierId"])
     .index("by_organizationId_status", ["organizationId", "status"])
-    .index("by_organizationId_projectId", ["organizationId", "projectId"]),
+    .index("by_organizationId_projectId", ["organizationId", "projectId"])
+    .index("by_supplierOrderId", ["supplierOrderId"]),
 
   // SubHireItem
   subHireItems: defineTable({
@@ -756,13 +782,22 @@ export default defineSchema({
     result: v.optional(enums.MaintenanceResult),
     nextDueDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
-    // Incident-report fields (FEATUREDOCS/62) — set only on records created via the
+    // Incident-report fields (FEATUREDOCS/64) — set only on records created via the
     // "Report Issue" flow or an immediate check-item FAIL; absent on ordinary
     // manually-created maintenance records. lineItemId links back to the specific
     // ProjectLineItem the issue was reported against, when there was one.
     incidentType: v.optional(enums.IncidentType),
     incidentSeverity: v.optional(enums.IncidentSeverity),
     lineItemId: v.optional(v.string()),
+    // WS6 #945 — recurring preventative maintenance. Absent on every pre-existing
+    // row (ad-hoc REPAIR/INSPECTION/etc. records, and the dead-end nextDueDate
+    // above) = not schedule-generated (zero-migration, back-compat).
+    // `serviceScheduleId` links a generated cycle back to its `serviceSchedules`
+    // row; `poolQuantitySnapshot` freezes the pool denominator (unit count for
+    // SERIALIZED, summed totalQuantity for BULK) AT GENERATION TIME, so "18 of
+    // 120" stays stable even if the model's fleet is resized mid-cycle.
+    serviceScheduleId: v.optional(v.string()),
+    poolQuantitySnapshot: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -778,19 +813,70 @@ export default defineSchema({
     // Range-scan an org's OPEN maintenance whose scheduledDate has arrived
     // (dashboardStats.maintenanceDue) — bounds the reactive read-set to the due
     // records instead of collecting the whole org's maintenance table.
-    .index("by_organizationId_status_scheduledDate", ["organizationId", "status", "scheduledDate"]),
+    .index("by_organizationId_status_scheduledDate", ["organizationId", "status", "scheduledDate"])
+    // WS6 #945: find a schedule's existing cycles (merge semantics — "is there
+    // already an open cycle for this schedule?") and the idempotency lookup for
+    // a specific (schedule, dueDate) pair, without a whole-org scan.
+    .index("by_serviceScheduleId", ["serviceScheduleId"])
+    .index("by_serviceScheduleId_scheduledDate", ["serviceScheduleId", "scheduledDate"]),
 
+  // ServiceSchedule (WS6 #945) — fixed-calendar recurring preventative-maintenance
+  // cadence for a model (issue #936 tracking issue's Tier-2 "recurring PM,
+  // non-blocking" decision). Convex-native — no Prisma equivalent; superseded
+  // `models.maintenanceIntervalDays` (a one-time migrate backfill seeds one
+  // schedule per model that had it — see backfillMaintenanceSchedules.ts).
+  // Cadence is INTERVAL + ANCHOR, not "N days after last service": the whole
+  // pool comes due together on a fixed calendar cycle and late completion does
+  // NOT shift the next due date (see convex/lib/serviceScheduleCore.ts).
+  serviceSchedules: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    modelId: v.string(),
+    name: v.string(),
+    intervalMonths: v.number(),
+    anchorDate: v.number(), // epoch ms — the first/reference due date
+    instructions: v.optional(v.string()),
+    isActive: v.optional(v.boolean()), // absent = active (default true, zero-migration)
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_modelId", ["modelId"])
+    .index("by_organizationId_modelId", ["organizationId", "modelId"]),
 
-  // MaintenanceRecordAsset
+  // MaintenanceRecordAsset — polymorphic (WS6 #945, checkRecords-pattern extension).
+  // Two row KINDS share this table (discriminated by `kind`, absent = "LINK" for
+  // zero-migration back-compat with every pre-existing row):
+  //   • "LINK" (default/legacy) — the ORIGINAL meaning: this asset is linked to
+  //     the maintenance record for the hold/release state machine
+  //     (maintenanceWrites.ts). `assetId` is always set.
+  //   • "CHECKOFF" — a WS6 recurring-PM progress row, NEVER touched by the
+  //     hold/release machinery (maintenanceWrites.ts filters these out — see the
+  //     `isLinkRow` helper there). Append-only + auditable, checkRecords-style:
+  //       - serialised unit done:  { assetId, completedAt, completedById }
+  //       - bulk session:          { bulkAssetId, quantity, completedAt, completedById }
+  //     "Check all remaining" is one session row for the outstanding quantity.
+  // Keeping both kinds in one table (rather than a new table) mirrors the
+  // checkRecords polymorphic shape the spec calls out; the `kind` discriminator
+  // is what keeps the two meanings from colliding when a PM record is later
+  // edited through the ordinary maintenance form (which only ever touches LINK
+  // rows).
   maintenanceRecordAssets: defineTable({
     id: v.string(),
     maintenanceRecordId: v.string(),
-    assetId: v.string(),
+    assetId: v.optional(v.string()),
+    kind: v.optional(v.union(v.literal("LINK"), v.literal("CHECKOFF"))),
+    bulkAssetId: v.optional(v.string()),
+    quantity: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    completedById: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_maintenanceRecordId", ["maintenanceRecordId"])
     .index("by_assetId", ["assetId"])
-    .index("by_maintenanceRecordId_assetId", ["maintenanceRecordId", "assetId"]),
+    .index("by_maintenanceRecordId_assetId", ["maintenanceRecordId", "assetId"])
+    .index("by_bulkAssetId", ["bulkAssetId"]),
 
   // Client
   clients: defineTable({
@@ -821,6 +907,30 @@ export default defineSchema({
     .index("by_isActive", ["isActive"])
     .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
 
+  // ClientContact (WS9 #948 — multiple contacts per client, expand phase).
+  // DIRECT (carries organizationId). Child table for `clients` — a client with zero
+  // contacts stays valid; the embedded clients.contactName/Email/Phone fields stay
+  // live as read-only legacy during the migration window (see FEATUREDOCS/63).
+  // `isPrimary`: exclusive-per-client, "absent = false" (mirrors mediaWrites.ts's
+  // setPrimaryNative pattern). Cap of 50 contacts/client enforced in the write layer.
+  clientContacts: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    clientId: v.string(),
+    name: v.optional(v.string()),
+    role: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    isPrimary: v.optional(v.boolean()),
+    sortOrder: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_clientId", ["clientId"]),
+
   // Project
   projects: defineTable({
     id: v.string(),
@@ -828,6 +938,10 @@ export default defineSchema({
     projectNumber: v.string(),
     name: v.string(),
     clientId: v.optional(v.string()),
+    // Per-project contact picker (WS9 #948) — defaults to the client's primary
+    // contact when unset. Org + belongs-to-project's-client validated on write
+    // (projectWrites.ts); cleared when the project's clientId changes.
+    clientContactId: v.optional(v.string()),
     status: v.optional(enums.ProjectStatus),
     type: v.optional(enums.ProjectType),
     description: v.optional(v.string()),
@@ -862,6 +976,10 @@ export default defineSchema({
     discountAmount: v.optional(v.number()),
     taxAmount: v.optional(v.number()),
     total: v.optional(v.number()),
+    // RESERVED for #940 (WS1 — deposit/invoicing workflow). Hand-typed wizard inputs
+    // today (project-wizard.tsx), applied nowhere server-side — do NOT wire deposit
+    // math or delete these as dead fields in a hygiene pass; #940 owns them. See
+    // issue #953 (QW-4) re-review, which scoped `defaultDiscount` wiring separately.
     depositPercent: v.optional(v.number()),
     depositPaid: v.optional(v.number()),
     invoicedTotal: v.optional(v.number()),
@@ -1649,6 +1767,10 @@ export default defineSchema({
     color: v.optional(v.string()),
     defaultRate: v.optional(v.number()),
     rateType: v.optional(enums.CrewRateType),
+    // Client-facing charge rate for this role (WS10 #949) — same `rateType` unit as
+    // `defaultRate` (one rateType per role governs both the cost AND charge cascades).
+    // null/absent = no auto-pricing for this role (margin hidden, not a fake 0%/-100%).
+    chargeRate: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     isActive: v.optional(v.boolean()),
   })
@@ -1800,6 +1922,16 @@ export default defineSchema({
     discount: v.optional(v.number()),
     lineTotal: v.optional(v.number()),
     costTotal: v.optional(v.number()),
+    // Charge-side auto-pricing (WS10 #949). `chargeRateOverride` overrides the PER-
+    // ASSIGNMENT charge-rate cascade for this service's crew (cascade:
+    // chargeRateOverride -> role.chargeRate -> null); `crewChargeTotal` is the
+    // resulting sum (convex/lib/serviceCost.ts recalcServiceChargeFromCrew), the
+    // charge-side twin of `costTotal`. Deliberately NOT named `chargeTotal` — that
+    // name is already used (project-service-read.ts / project-services.ts) for the
+    // AGGREGATE "sum of lineTotal across services" concept, a different quantity
+    // (post-discount, post-manual-override) than this pre-discount per-service input.
+    chargeRateOverride: v.optional(v.number()),
+    crewChargeTotal: v.optional(v.number()),
     taxable: v.optional(v.boolean()),
     lineItemId: v.optional(v.string()),
     vehicleDescription: v.optional(v.string()),
@@ -2148,7 +2280,8 @@ export default defineSchema({
     .index("by_createdById", ["createdById"])
     .index("by_organizationId_projectId", ["organizationId", "projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_assigneeUserId_status", ["assigneeUserId", "status"]),
+    .index("by_assigneeUserId_status", ["assigneeUserId", "status"])
+    .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"]),
 
   // SavedTableView
   savedTableViews: defineTable({
@@ -2333,5 +2466,77 @@ export default defineSchema({
     // a loading state) until reconcileIfStale re-seeds on first view.
     shardsSeededAt: v.optional(v.number()),
   }).index("by_organizationId", ["organizationId"]),
+
+  // ── Project lifecycle locking & versioning (#957/#791/#792/#793) ────────────
+  //
+  // ProjectSnapshot — whole-project version, parent row. Captured at the
+  // forward →CONFIRMED / →COMPLETED transitions and at every unlock-session
+  // open (the discard target). Never overwritten — a re-crossing takes a NEW
+  // row, so the list is a full version history. See convex/lib/projectSnapshots.ts.
+  projectSnapshots: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    reason: v.union(v.literal("CONFIRMED"), v.literal("COMPLETED"), v.literal("UNLOCK")),
+    takenAt: v.number(),
+    takenBy: v.string(),
+    takenByName: v.optional(v.string()),
+    statusFrom: v.optional(v.string()),
+    statusTo: v.optional(v.string()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_takenAt", ["projectId", "takenAt"]),
+
+  // ProjectSnapshotEntry — one row per captured entity (project/category/group/
+  // lineItem/service/crewAssignment), not a single JSON blob — avoids Convex's
+  // ~1MB doc limit on large projects and makes diffing a queryable join instead
+  // of a client-side JSON walk. `data` is the entity's field snapshot (no _id/
+  // _creationTime — see captureProjectSnapshot).
+  projectSnapshotEntries: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    snapshotId: v.string(),
+    entityType: v.union(
+      v.literal("project"),
+      v.literal("category"),
+      v.literal("group"),
+      v.literal("lineItem"),
+      v.literal("service"),
+      v.literal("crewAssignment"),
+    ),
+    entityId: v.string(),
+    data: v.any(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_snapshotId", ["snapshotId"])
+    .index("by_snapshotId_entityType", ["snapshotId", "entityType"])
+    .index("by_snapshotId_entityId", ["snapshotId", "entityId"]),
+
+  // ProjectUnlockSession — at most one OPEN row per project (enforced in the
+  // open mutation). `scope: "FINANCIAL"` is #791's finance-only unlock;
+  // `scope: "FULL"` is #792's hard-lock override (restricted audience). Both
+  // share this table/lifecycle — see convex/projectUnlockSessionsWrites.ts.
+  projectUnlockSessions: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    scope: v.union(v.literal("FINANCIAL"), v.literal("FULL")),
+    justification: v.string(),
+    openedBy: v.string(),
+    openedByName: v.optional(v.string()),
+    openedAt: v.number(),
+    snapshotId: v.string(),
+    outcome: v.union(v.literal("OPEN"), v.literal("COMMITTED"), v.literal("DISCARDED")),
+    closedAt: v.optional(v.number()),
+    closedBy: v.optional(v.string()),
+    closeNote: v.optional(v.string()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_outcome", ["projectId", "outcome"]),
 
 });

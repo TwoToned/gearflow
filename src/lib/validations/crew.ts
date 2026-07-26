@@ -36,6 +36,28 @@ export const crewMemberSchema = z.object({
 export type CrewMemberFormValues = z.input<typeof crewMemberSchema>;
 
 /**
+ * CrewRole form (WS10 #949 — labour charge rates & margin, `/crew/settings` roles
+ * admin). `defaultRate` is the internal cost rate; `chargeRate` is the client-facing
+ * rate — both share the ONE `rateType` unit (spec decision: one rateType per role
+ * governs both cascades, so there's no separate `chargeRateType`).
+ */
+export const crewRoleSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100),
+  description: z.string().max(500).optional(),
+  department: z.string().max(100).optional(),
+  color: z.string().max(20).optional(),
+  defaultRate: z.union([z.literal(""), z.coerce.number().min(0)]).optional()
+    .transform(v => v === "" ? undefined : v),
+  rateType: z.enum(["HOURLY", "DAILY", "FLAT"]).optional().or(z.literal("")),
+  chargeRate: z.union([z.literal(""), z.coerce.number().min(0)]).optional()
+    .transform(v => v === "" ? undefined : v),
+  sortOrder: z.coerce.number().min(0).int().optional(),
+  isActive: z.boolean().default(true),
+});
+
+export type CrewRoleFormValues = z.input<typeof crewRoleSchema>;
+
+/**
  * Rate-cascade input fields shared by any form that can set a CrewAssignment's rate
  * (the crew-panel assignment dialog + the per-service crew rate table in
  * services-panel.tsx) — single source of truth for these bounds (R-8.6.3/R-3.1).

@@ -328,7 +328,7 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     }
   }
 
-  // 9. Incident reports (GitHub #898, FEATUREDOCS/62) — maintenance records
+  // 9. Incident reports (GitHub #898, FEATUREDOCS/64) — maintenance records
   // created via "Report Issue" or an immediate check-item FAIL, still open.
   const incidentRecords = (await getMaintenanceRecordsByOrg(organizationId))
     .filter((m) => m.incidentType != null && m.status !== "COMPLETED" && m.status !== "CANCELLED")

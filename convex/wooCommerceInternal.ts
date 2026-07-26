@@ -152,6 +152,42 @@ export const getClientById = internalQuery({
     await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique(),
 });
 
+// ─── clientContacts (WS9 #948) ──────────────────────────────────────────────
+
+/** Twin of api.clientContacts.listByOrg — widens the WooCommerce email match to
+ *  ANY contact's email, not just the legacy embedded clients.contactEmail. */
+export const listClientContactsByOrg = internalQuery({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) =>
+    await ctx.db
+      .query("clientContacts")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
+      .collect(),
+});
+
+/** Twin of api.clientContacts.create — used on a fuzzy-company match whose
+ *  billing email is unknown to the matched client (spec decision: auto-create an
+ *  additional contact tagged from the order, instead of silently losing it). */
+export const createClientContact = internalMutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    clientId: v.string(),
+    name: v.optional(v.string()),
+    role: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    isPrimary: v.optional(v.boolean()),
+    sortOrder: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("clientContacts", args);
+  },
+});
+
 /** Twin of api.clients.createIfMissing. */
 export const createClientIfMissing = internalMutation({
   args: {

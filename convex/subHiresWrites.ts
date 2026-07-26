@@ -77,6 +77,27 @@ async function requireSupplierInOrg(ctx: MutationCtx, supplierId: string, orgId:
   return s;
 }
 
+/**
+ * WS7 #946 — validate a `subHires.supplierOrderId` FK: org-checked (by_cuid is
+ * GLOBAL) AND same-supplier (the order's supplierId must equal the sub-hire's
+ * CURRENT-OR-INCOMING supplierId) — a link across two different suppliers would be
+ * a data-integrity footgun (quoting one supplier, invoicing another). Returns the
+ * order doc so callers can read its total/status for the link response.
+ */
+async function requireLinkableSupplierOrder(
+  ctx: MutationCtx,
+  supplierOrderId: string,
+  orgId: string,
+  subHireSupplierId: string,
+): Promise<Doc<"supplierOrders">> {
+  const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", supplierOrderId)).first();
+  if (!order || order.organizationId !== orgId) throw new ConvexError("Purchase order not found");
+  if (order.supplierId !== subHireSupplierId) {
+    throw new ConvexError("The purchase order's supplier must match the sub-hire's supplier");
+  }
+  return order;
+}
+
 async function requireProjectInOrg(ctx: MutationCtx, projectId: string, orgId: string): Promise<Doc<"projects">> {
   const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
   if (!p || p.organizationId !== orgId) throw new ConvexError("Project not found");
@@ -310,6 +331,14 @@ export const updateSubHireNative = mutation({
     if (a.defaultTargetCategoryId != null) patch.defaultTargetCategoryId = a.defaultTargetCategoryId;
     if (a.defaultTargetGroupId != null) patch.defaultTargetGroupId = a.defaultTargetGroupId;
 
+    // WS7 #946 — changing the supplier invalidates any existing PO link (the asset-
+    // form `supplierOrderId` precedent, issue #789): a link asserts both sides name
+    // the SAME supplier, so a supplier change on either side must clear it rather
+    // than leave a now-mismatched FK dangling.
+    if (existing.supplierOrderId && a.supplierId !== existing.supplierId) {
+      patch.supplierOrderId = undefined;
+    }
+
     await ctx.db.patch(existing._id, patch);
 
     const label = await supplierLabel(ctx, a.supplierId, a.orgId);
@@ -324,10 +353,70 @@ export const updateSubHireNative = mutation({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// linkSubHireToSupplierOrderNative / unlinkSubHireFromSupplierOrderNative — WS7
+// #946's explicit FK set/clear (kept separate from updateSubHireNative, the same
+// way attachInvoiceNative/removeInvoiceNative got their own mutations rather than
+// being folded into a general order update — a 1:1 link is its own small lifecycle).
+// Regenerates the sub-hire's project lines so `projectLineItems.supplierOrderId`
+// picks up the (new) link immediately. subHire:update.
+// ─────────────────────────────────────────────────────────────────────────────
+export const linkSubHireToSupplierOrderNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { id: v.string(), orgId: v.string(), supplierOrderId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const head = await requireSubHireInOrg(ctx, a.id, a.orgId);
+    const order = await requireLinkableSupplierOrder(ctx, a.supplierOrderId, a.orgId, head.supplierId);
+
+    await ctx.db.patch(head._id, { supplierOrderId: a.supplierOrderId, updatedAt: a.now });
+    await regenerateSubHireLines(ctx, head.id, a.orgId, a.now);
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "UPDATE", entityId: head.id, entityName: head.orderNumber,
+      summary: `Linked sub-hire ${head.orderNumber} to purchase order ${order.orderNumber}`,
+    });
+
+    return { id: a.id };
+  },
+});
+
+export const unlinkSubHireFromSupplierOrderNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "subHire");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "subHire", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const head = await requireSubHireInOrg(ctx, a.id, a.orgId);
+    if (!head.supplierOrderId) return { id: a.id }; // idempotent — nothing to unlink
+
+    await ctx.db.patch(head._id, { supplierOrderId: undefined, updatedAt: a.now });
+    await regenerateSubHireLines(ctx, head.id, a.orgId, a.now);
+
+    await logSubHire(ctx, {
+      orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
+      action: "UPDATE", entityId: head.id, entityName: head.orderNumber,
+      summary: `Unlinked sub-hire ${head.orderNumber} from its purchase order`,
+    });
+
+    return { id: a.id };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // deleteSubHireNative — reject if any linked project line is CHECKED_OUT; inline
 // cascade-delete the linked project lines (top-level + children, NO units — sub-hire
 // lines have none), then the sub-hire's items + groups + head; recalc the project.
-// Parity: deleteSubHire. subHire:delete.
+// Deleting the sub-hire row simply removes the (one-directional) FK with it — the
+// linked supplierOrder carries no back-reference, so it is orphaned, never
+// cascade-deleted (spec: WS7 #946). Parity: deleteSubHire. subHire:delete.
 // ─────────────────────────────────────────────────────────────────────────────
 export const deleteSubHireNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -1107,7 +1196,9 @@ export const changeSubHireProjectNative = mutation({
 // duplicateSubHireNative — reserve a fresh order number (atomic counter) + insert a
 // new DRAFT head (createdById = actor.userId, NO project) + copy groups + items with
 // fresh cuids (group ids minted inline, mapped so item.groupId re-points). Placement
-// targets NOT copied. NO recalc (no project). Parity: duplicateSubHire. subHire:create.
+// targets NOT copied. supplierOrderId NOT copied (WS7 #946 — a duplicated sub-hire
+// starts unlinked; the source order was raised for the ORIGINAL sub-hire's items).
+// NO recalc (no project). Parity: duplicateSubHire. subHire:create.
 // ─────────────────────────────────────────────────────────────────────────────
 export const duplicateSubHireNative = mutation({
   returns: v.object({ id: v.string(), orderNumber: v.string() }),

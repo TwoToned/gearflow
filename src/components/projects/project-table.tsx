@@ -21,20 +21,9 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { DateRangeBar } from "@/components/ui/sparkline";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { projectStatusLabels } from "@/lib/status-labels";
 import { getStatusColor } from "@/lib/status-colors";
-
-/** 60-day window for the date range bar: today -7d to today +53d */
-function getDateRangeWindow() {
-  const now = new Date();
-  const rangeStart = new Date(now);
-  rangeStart.setDate(rangeStart.getDate() - 7);
-  const rangeEnd = new Date(now);
-  rangeEnd.setDate(rangeEnd.getDate() + 53);
-  return { rangeStart, rangeEnd };
-}
 
 const typeLabels: Record<string, string> = {
   DRY_HIRE: "Dry hire",
@@ -198,26 +187,11 @@ const projectColumns: ColumnDef<AnyProject>[] = [
     header: "Dates",
     sortKey: "rentalStartDate",
     mobile: "meta",
-    cell: (row) => {
-      const start = row.rentalStartDate as number | null;
-      const end = row.rentalEndDate as number | null;
-      const { rangeStart, rangeEnd } = getDateRangeWindow();
-      return (
-        <div className="flex flex-col gap-1 min-w-[120px]">
-          <span className="text-muted text-sm">
-            {formatDateRange(start, end)}
-          </span>
-          {start && end && (
-            <DateRangeBar
-              start={new Date(start)}
-              end={new Date(end)}
-              rangeStart={rangeStart}
-              rangeEnd={rangeEnd}
-            />
-          )}
-        </div>
-      );
-    },
+    cell: (row) => (
+      <span className="text-muted text-sm min-w-[120px]">
+        {formatDateRange(row.rentalStartDate as number | null, row.rentalEndDate as number | null)}
+      </span>
+    ),
   },
   {
     id: "total",

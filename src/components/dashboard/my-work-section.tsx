@@ -6,7 +6,6 @@ import { ArrowRight, Boxes, CalendarClock, ShieldAlert, AtSign, CheckCircle2, Fo
 import { cn, focusRing } from "@/lib/utils";
 import { StaggerList, StaggerItem } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
-import { DateRangeBar } from "@/components/ui/sparkline";
 import { getStatusColor } from "@/lib/status-colors";
 
 const projectStatusLabels: Record<string, string> = {
@@ -49,10 +48,6 @@ function projectDateLine(p: Project): { text: string; tone: "error" | "warning" 
 const toneText = { error: "text-t-out", warning: "text-warn", muted: "text-muted" } as const;
 
 export function MyWorkSection({ projects, blockers = [] }: { projects: Project[]; blockers?: Blocker[] }) {
-  const now = new Date();
-  const rangeStart = new Date(now); rangeStart.setDate(rangeStart.getDate() - 7);
-  const rangeEnd = new Date(now); rangeEnd.setDate(rangeEnd.getDate() + 53);
-
   // Group blockers by project so each card can flag its own issues.
   const blockersByProject = new Map<string, Blocker[]>();
   for (const b of blockers) {
@@ -93,8 +88,6 @@ export function MyWorkSection({ projects, blockers = [] }: { projects: Project[]
             const client = p.client as { name?: string } | null;
             const equip = (p._count as { lineItems?: number } | undefined)?.lineItems ?? 0;
             const dateLine = projectDateLine(p);
-            const start = p.rentalStartDate ? new Date(p.rentalStartDate as string) : null;
-            const end = p.rentalEndDate ? new Date(p.rentalEndDate as string) : null;
             const pBlockers = blockersByProject.get(p.id as string) ?? [];
             const latest = pBlockers[0];
             return (
@@ -126,10 +119,6 @@ export function MyWorkSection({ projects, blockers = [] }: { projects: Project[]
                     {client?.name ? <> · {client.name}</> : null}
                   </p>
 
-                  {/* date range */}
-                  {start && end && (
-                    <div className="mt-2.5"><DateRangeBar start={start} end={end} rangeStart={rangeStart} rangeEnd={rangeEnd} /></div>
-                  )}
 
                   {/* footer: gear + blockers */}
                   <div className="mt-auto flex items-center justify-between gap-2 pt-3">

@@ -267,7 +267,7 @@ HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
 
 ┌─── LEFT (~63%) ──────────────────────┐ ┌─── RIGHT (~37%, 340px sticky) ───┐
 │  TABS: [Equipment] [Labour &          │ │  ── Schedule ──                   │
-│   logistics] [Financials] [Tasks]     │ │  DateRangeBar + date rows         │
+│   logistics] [Financials] [Tasks]     │ │  date rows                        │
 │   [Notes] [Files]                     │ │  ── Location ──                   │
 │                                       │ │  venue + site contact             │
 │  Financials tab = FinancialSummary    │ │  ── Team ──                       │

@@ -312,7 +312,6 @@ All detail pages (project, asset, model, kit, client, crew, supplier, maintenanc
 - Dynamic greeting (Good morning/afternoon/evening) + date
 - Alert badges (red/amber) only when problems exist
 - Inline metrics strip (single surface, vertical dividers) instead of stat card grid
-- Projects with `DateRangeBar` for visual rental period
 - Activity feed with staggered entrance
 
 ### Breadcrumb Navigation
@@ -370,7 +369,9 @@ All status → color intent mappings live in `src/lib/status-colors.ts`. **Never
 Inline charts from `@/components/ui/sparkline`:
 - **`Sparkline`** — tiny line chart, red stroke on espresso
 - **`UtilizationBar`** — thin progress bar (red for active, amber for at-risk, green for available)
-- **`DateRangeBar`** — rental period visualization
+
+(`DateRangeBar` — the unlabeled mini timeline bar under rental dates — was removed
+app-wide in 2026-07: with no legend or axis it read as decoration, not data.)
 
 ## §6 PDF Pipeline (separate from app UI)
 PDF generation (`src/lib/pdfme/`) uses Helvetica (pdfme constraint — no Unicode, no web fonts). PDF branding updates are **deferred** to a follow-up PR. Do not apply RVLT design system colors or fonts to PDF templates in this redesign. See `docs/designs/ux-ui-redesign.md` T3 decision.

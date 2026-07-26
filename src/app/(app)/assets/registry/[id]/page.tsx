@@ -32,6 +32,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useAssetWrites } from "@/hooks/use-asset-writes";
 import type { NativeAssetDetail } from "@/lib/asset-detail-reconstruct";
 import { AssetChecksTab } from "@/components/assets/asset-checks-tab";
+import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { AssetAccessoriesManager } from "@/components/assets/asset-accessories-manager";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useConvex, useConvexAuth } from "convex/react";
@@ -169,6 +170,7 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const [forceReturnOpen, setForceReturnOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [reportIssueOpen, setReportIssueOpen] = useState(false);
 
   // ─── Bulk Asset → Redirect to Model page ────────────────────────────
   const bulkModelId = isBulk ? bulkAsset?.modelId : null;
@@ -284,7 +286,11 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
       id: "title",
       header: "Title",
       mobile: "title",
-      cell: (link) => <span className="font-medium text-ink">{link.maintenanceRecord.title}</span>,
+      cell: (link) => (
+        <span className="font-medium text-ink">
+          <MaintenanceTitle title={link.maintenanceRecord.title} incidentType={link.maintenanceRecord.incidentType} />
+        </span>
+      ),
     },
     {
       id: "type",
@@ -418,6 +424,12 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 </PopoverContent>
               </Popover>
+              <CanDo resource="maintenance" action="create">
+                <Button variant="line" size="sm" onClick={() => setReportIssueOpen(true)}>
+                  <Wrench className="h-4 w-4" />
+                  Report issue
+                </Button>
+              </CanDo>
               <CanDo resource="asset" action="update">
                 <Button variant="line" size="sm" asChild>
                   <Link href={`/assets/registry/${id}/edit`}>
@@ -575,7 +587,9 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           const mr = link.maintenanceRecord;
                           return (
                             <TableRow key={mr.id}>
-                              <TableCell className="truncate font-medium text-ink">{mr.title}</TableCell>
+                              <TableCell className="truncate font-medium text-ink">
+                                <MaintenanceTitle title={mr.title} incidentType={mr.incidentType} />
+                              </TableCell>
                               <TableCell>
                                 <Badge status="neutral">{maintenanceTypeLabels[mr.type] || formatLabel(mr.type)}</Badge>
                               </TableCell>
@@ -914,7 +928,30 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         }}
         pending={deleteMutation.isPending}
       />
+      <ReportIssueDialog
+        open={reportIssueOpen}
+        onOpenChange={setReportIssueOpen}
+        targetLabel={asset.assetTag}
+        assetId={id}
+        // Pre-fill the project/line item when the asset is currently deployed —
+        // otherwise the report is asset-only (no active job to link).
+        projectId={activeLineItem?.projectId ?? undefined}
+        lineItemId={activeLineItem?.id}
+      />
     </FadeIn>
+  );
+}
+
+/** Maintenance record title + a "Reported issue" badge for incident-report records
+ *  (GitHub #898) — shared by the desktop table and mobile card title cells. */
+function MaintenanceTitle({ title, incidentType }: { title: string; incidentType?: string | null }) {
+  return (
+    <>
+      {title}
+      {incidentType && (
+        <Badge status="warn" className="ml-2 align-middle">Reported issue</Badge>
+      )}
+    </>
   );
 }
 

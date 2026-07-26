@@ -69,7 +69,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/assets/categories` | Category list (table with indented children) |
 | `/assets/categories/[id]` | Category detail (subcategories, models & kits tabs) |
 | `/availability` | Availability calendar (top-level) — draws RENTAL window bars, not the PROJECT window (deliberate, WS2 #941 — pricing's window is what's visually "booked"; see [11-availability.md](./11-availability.md)) |
-| `/overbookings` | Overbookings & Gaps board (WS3 #942) — org-wide hard/pencilled overbooking + crew-gap risk over a selectable date range; see [64-overbookings-gaps-board.md](./64-overbookings-gaps-board.md) |
+| `/overbookings` | Overbookings & Gaps board (WS3 #942) — org-wide hard/pencilled overbooking + crew-gap risk over a selectable date range; see [65-overbookings-gaps-board.md](./65-overbookings-gaps-board.md) |
 | `/kits` | Kit list |
 | `/kits/new` | Create kit |
 | `/kits/[id]` | Kit detail (contents, media, status) |
@@ -94,6 +94,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/suppliers/[id]/edit` | Edit supplier |
 | `/suppliers/[id]/orders/new` | Create supplier order |
 | `/warehouse` | Warehouse project list |
+| `/warehouse/returns` | Returns station — org-wide, project-less scan-and-return (issue #944; static route, resolved before the `[projectId]` dynamic sibling — see FEATUREDOCS/12) |
 | `/warehouse/[projectId]` | Check out/in interface |
 | `/warehouse/[projectId]/pull-sheet` | Pull sheet preview + print |
 | `/locations` | Location hierarchy |

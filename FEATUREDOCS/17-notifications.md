@@ -14,6 +14,7 @@
 | `pending_offers` | Crew assignments in OFFERED status | `/crew` |
 | `pending_timesheets` | Crew time entries in SUBMITTED status | `/crew/timesheets` |
 | `flagged_asset` | Project line item in FLAGGED_FAULTY/FLAGGED_TT_OVERDUE | `/warehouse/{projectId}` |
+| `incident_report` | New/open MaintenanceRecord with `incidentType` set (Report Issue or an immediate check-item FAIL) — see FEATUREDOCS/64 | `/warehouse/{projectId}` or `/maintenance/{id}` |
 
 ## Implementation
 
@@ -23,7 +24,7 @@
 - Dismissal persists in the `NotificationDismissal` table, keyed by `(userId, notificationKey)`. localStorage is a transient optimistic-UI fallback; the DB is the source of truth. Server actions: `getDismissedKeys()`, `dismissNotification(key)`, `pruneStaleDismissals(activeKeys)`.
 
 ### Email delivery
-- Per-user opt-in flags live in `UserNotificationPreference` (one row per user, lazily created). Defaults: high-signal events (overdue maintenance/returns, low stock, invitations, expiring certs, flagged assets) ON; advisory events (upcoming projects, pending offers, pending timesheets) OFF.
+- Per-user opt-in flags live in `UserNotificationPreference` (one row per user, lazily created). Defaults: high-signal events (overdue maintenance/returns, low stock, invitations, expiring certs, flagged assets, reported issues) ON; advisory events (upcoming projects, pending offers, pending timesheets) OFF.
 - Settings page: `/account/notifications`.
 - Templates: `src/lib/notification-emails.ts` — one factory per type returning `{ subject, html }`.
 - Orchestrator: `sendNotificationEmails()` in `src/server/notification-email-sender.ts`. Iterates orgs, fans out to active (non-banned) members of each org, checks the per-type pref flag, dedupes via `NotificationEmailLog`, sends through `sendEmail()`.

@@ -130,7 +130,7 @@ blocks** — it never disables a write, it only surfaces as a heads-up.
   project, not one project's own window), reusing the same
   `isConfirmedOrLater`/`isOptional` vocabulary. Full architecture, the six
   board sections, and the confirm-time gate: see
-  [FEATUREDOCS/64](./64-overbookings-gaps-board.md).
+  [FEATUREDOCS/65](./65-overbookings-gaps-board.md).
 
 ## Dateless Stock Checks
 When a project has **no rental dates**, availability is still calculated:

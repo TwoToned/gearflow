@@ -145,12 +145,14 @@ export const rolePermissions: Record<string, PermissionMap> = {
     client: ["read"],
     warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["read"],
-    // WS6 #945: floor staff tick off recurring preventative-maintenance cycles
+    // "create" added so the warehouse role can use "Report Issue" on the
+    // deploy/return tabs (FEATUREDOCS/64) — the role otherwise had no write
+    // access to the maintenance resource. "update" added separately (WS6 #945)
+    // so floor staff can tick off recurring preventative-maintenance cycles
     // (convex/maintenanceCheckoffWrites.ts gates on maintenance:update) — a real
-    // workshop task, not an office one. Does NOT grant create/delete: warehouse
-    // still can't raise/remove maintenance records, only check off PM progress
-    // and edit the fields the check-off mutations touch.
-    maintenance: ["read", "update"],
+    // workshop task, not an office one. Still no delete: warehouse can't remove
+    // maintenance records, only raise/check off them.
+    maintenance: ["read", "create", "update"],
     location: ["read"],
     document: [],
     orgSettings: [],

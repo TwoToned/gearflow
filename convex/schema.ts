@@ -790,6 +790,13 @@ export default defineSchema({
     result: v.optional(enums.MaintenanceResult),
     nextDueDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
+    // Incident-report fields (FEATUREDOCS/64) — set only on records created via the
+    // "Report Issue" flow or an immediate check-item FAIL; absent on ordinary
+    // manually-created maintenance records. lineItemId links back to the specific
+    // ProjectLineItem the issue was reported against, when there was one.
+    incidentType: v.optional(enums.IncidentType),
+    incidentSeverity: v.optional(enums.IncidentSeverity),
+    lineItemId: v.optional(v.string()),
     // WS6 #945 — recurring preventative maintenance. Absent on every pre-existing
     // row (ad-hoc REPAIR/INSPECTION/etc. records, and the dead-end nextDueDate
     // above) = not schedule-generated (zero-migration, back-compat).
@@ -810,6 +817,7 @@ export default defineSchema({
     .index("by_assignedToId", ["assignedToId"])
     .index("by_status", ["status"])
     .index("by_scheduledDate", ["scheduledDate"])
+    .index("by_lineItemId", ["lineItemId"])
     // Range-scan an org's OPEN maintenance whose scheduledDate has arrived
     // (dashboardStats.maintenanceDue) — bounds the reactive read-set to the due
     // records instead of collecting the whole org's maintenance table.
@@ -1107,6 +1115,11 @@ export default defineSchema({
     // of collecting ALL of a project's lines and JS-filtering. Used by
     // warehouseOps.checkInBulkTotals (the hottest status-filtered read).
     .index("by_projectId_status", ["projectId", "status"])
+    // Composite: range-scan an org's CHECKED_OUT lines ORG-WIDE (no project
+    // pre-selection) instead of collecting the whole org's lines and JS-filtering.
+    // Used by warehouseReturns.bundle (WS5 returns station board, issue #944) —
+    // capped read, see docs/exceptions.md R-9.8 (returns-board-orgwide-checkedout).
+    .index("by_organizationId_status", ["organizationId", "status"])
     .index("by_modelId", ["modelId"])
     .index("by_assetId", ["assetId"])
     .index("by_bulkAssetId", ["bulkAssetId"])
@@ -2214,6 +2227,7 @@ export default defineSchema({
     pendingOffers: v.optional(v.boolean()),
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
+    incidentReport: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])

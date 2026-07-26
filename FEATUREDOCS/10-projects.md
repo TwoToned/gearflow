@@ -533,7 +533,16 @@ Writes moved browser-direct during the Convex-native migration (see [54. Convex 
 - `src/lib/validations/project-service.ts` — Service (includes billableToClient, costTotal)
 
 ## Operational P&L Panel
-The project detail page shows the costs panel in the Financials tab (`src/components/projects/project-costs-panel.tsx`, server fn `getProjectOperationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance / damage costs with a net-margin bar. Charge-back-aware: damage marked charged-back to the client is excluded from cost. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
+The project detail page shows the costs panel in the Financials tab (`src/components/projects/project-costs-panel.tsx`, reactive via `useProjectOperationalCosts`/`convex/projectCosts.ts`'s `operationalCosts`). It shows revenue minus service / labour / sub-hire / maintenance costs (`ProjectOperationalCosts` in `src/lib/project-costs.ts`) with a net-margin bar. Operational only — Xero owns invoicing. Hides itself when the project has no revenue.
+
+**Doc-drift correction (WS7 #946, 2026-07-26):** this section previously claimed a
+"damage" cost line and "charge-back-aware" logic (damage marked charged-back to the
+client excluded from cost) — **neither exists in the codebase.** There is no
+`damageCost`/`chargeBack`/`chargedBack` field anywhere in `convex/` or
+`src/lib/project-costs.ts`; the only costs are `serviceCostTotal`, `labourCostTotal`,
+`subHireCostTotal`, and `maintenanceCostTotal`. Charge-back-aware damage costs remain
+an unbuilt, undesigned feature — WS7 explicitly deferred it (sub-hire order totals
+also do NOT feed the P&L; see [22-suppliers](./22-suppliers.md#supplier-orders-purchase-orders)).
 
 ## Reservation Conflict Resolution
 When a serialized asset is booked on this project AND on another live project whose rental window overlaps, an amber banner (`src/components/projects/project-conflicts-banner.tsx`) surfaces on the project page. Each conflict row expands to a one-click swap picker of free same-model assets. The swap (`swapLineItemAsset`, `convex/projectLineItems.ts`, browser-direct via `src/hooks/use-reservation-swap.ts`) re-checks free-in-window and reassigns inside one mutation, so a stale candidate can't push through a fresh double-booking. Conflict/swap-candidate reads live in `convex/reservationConflicts.ts` (`projectConflicts`, `swapCandidates`); the old `src/lib/reservation-conflicts.ts` is gone. Both reads `.collect()` the org's full line-item/unit/asset/project/model graph (`loadOrgGraph()`) rather than paginating — correctness requires comparing against every booking anywhere in the org, so a bounded read would silently miss conflicts outside the fetched page. This is a registered §15 exception, not an oversight — see `docs/exceptions.md` (R-8.3.3 `reservationConflicts-orgGraph`).

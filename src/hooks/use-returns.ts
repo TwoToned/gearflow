@@ -44,7 +44,6 @@ export function useLineUnits() {
   );
 }
 
-export type ResolveResult = Awaited<ReturnType<typeof resolveScanImpl>>;
 async function resolveScanImpl(convex: ReturnType<typeof useConvex>, orgId: string, value: string) {
   return convex.query(api.returnsLookup.resolve, { orgId, value });
 }

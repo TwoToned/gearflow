@@ -67,7 +67,7 @@ export function distributeReturn(children: CheckInItem[], quantity: number): Dis
 // warehouseOps.checkInBulkTotals — this closes that gap so both halves of the
 // bulk-check-in engine have exactly one Convex-side definition (R-3.1).
 
-export type BulkCheckInKind = "BULK" | "SERIALIZED";
+type BulkCheckInKind = "BULK" | "SERIALIZED";
 
 export interface BulkCheckInTotal {
   key: string;

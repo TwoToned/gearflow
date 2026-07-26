@@ -115,6 +115,22 @@ another slot or upgrading the plan.
 See `docs/exceptions.md` (R-8.9.3 row) for the dated exception covering the residual baseline
 latency / SSR-streaming follow-up that didn't fit this cycle.
 
+**2026-07-26 update (#802/#803/#804):** the round-3 "residual ~500ms infra baseline" has a
+now-tested candidate root cause: `GET /api/auth/jwks` — which Convex's customJwt provider
+fetches to verify the token on every function call — was an uncached, per-request DB read
+measuring 0.9–5.6s TTFB from us-east (probed 2026-07-26; a bare `/` redirect on the same
+origin is ~0.7s, so the endpoint adds work on top of an already-long origin RTT). Two fixes
+landed: the JWKS response is memoized in-process + served with `Cache-Control`
+(`src/lib/jwks-route-cache.ts`), and the public login page's `getOrgLoginInfo` (whose
+`SsoProvider.findMany` was the only query over the T-9 incident line) is behind a 60s
+in-process cache (`src/lib/org-login-info-cache.ts`). Re-check all three alerts (LCP p75,
+`convex_op_latency` p95, `slow_query` p95) after a few days of traffic; if `convex_op_latency`
+p95 is still >1s, the residual is genuine app↔Convex network distance and belongs to the
+R-8.9.3 exception's SSR/streaming follow-up, plus an ops-side option: add a CDN cache rule
+for `/api/auth/jwks` (Cloudflare does not edge-cache extensionless JSON by default even with
+`Cache-Control`; a Cache Rule honoring the served `s-maxage=300` would let Convex's fetches
+hit the us-east edge instead of the origin).
+
 ## Remaining ops steps (not code)
 
 Optionally wire the Convex dashboard **log stream → PostHog/Slack** for full

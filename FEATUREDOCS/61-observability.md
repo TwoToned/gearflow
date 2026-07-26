@@ -130,6 +130,16 @@ to the originating Next.js request (POLICY.md R-8.9.6). A true W3C `traceparent`
 the Convex function body itself would need threading a trace id through every query/mutation's
 args across all ~43 `*Writes.ts` domain modules — out of scope here.
 
+**2026-07-26 follow-up (#802/#803/#804):** all three latency alerts were still breaching after
+the round-3 fixes. Two shared-root-cause remediations landed: (1) the JWKS endpoint Convex
+verifies every function-call token against (`/api/auth/jwks`) was an uncached per-request DB
+read measuring 0.9–5.6s TTFB from us-east — now memoized in-process + served with
+`Cache-Control` (`src/lib/jwks-route-cache.ts`, see FEATUREDOCS/54); (2) the public login
+page's `getOrgLoginInfo` — whose `SsoProvider.findMany` was the sole T-9 `slow_query` p95
+incident driver — is now behind a 60s in-process cache (`src/lib/org-login-info-cache.ts`,
+see FEATUREDOCS/33). LCP (T-7, #802) is expected to recover downstream of the Convex-leg
+fix per #802's own triage; re-check all three alerts after a few days of traffic.
+
 ## Vendor cost budget tracking (T-P4, R-9.12/#764, #831)
 
 The README.md R-0.4 budget registry registers a $15/mo ceiling each for Resend and Google

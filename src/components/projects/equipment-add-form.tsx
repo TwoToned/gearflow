@@ -31,13 +31,13 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PlacementFields } from "./placement-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { SectionTitle, Field, DiscountField, resolveDiscountAmount } from "./line-item-form-fields";
 
 type AddMode = "model" | "asset-tag";
 
@@ -192,11 +192,14 @@ export function EquipmentAddForm({
 
   const mutation = useServerMutation({
     mutationFn: async (data: LineItemFormValues) => {
-      let disc = data.discount;
-      if (discountMode === "%" && disc && data.unitPrice) {
-        const gross = Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
-        disc = Math.round((gross * Number(disc)) / 100 * 100) / 100;
-      }
+      const gross = data.unitPrice != null
+        ? Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1)
+        : undefined;
+      const disc = resolveDiscountAmount(
+        discountMode,
+        data.discount != null ? Number(data.discount) : undefined,
+        gross,
+      );
       const effectiveCategoryId = categoryId || selectedCategoryId || undefined;
       const effectiveGroupId = groupId || selectedGroupId || undefined;
       // Browser-direct native path. addLineItemSmartNative folds availability +
@@ -562,30 +565,12 @@ export function EquipmentAddForm({
                 <p className="t-micro text-warn">Overrides auto-pricing</p>
               )}
             </Field>
-            <Field label="Discount" htmlFor="eq-discount">
-              <div className="flex gap-1.5">
-                <Input
-                  id="eq-discount"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  placeholder="0"
-                  {...form.register("discount")}
-                  className="flex-1"
-                />
-                <button
-                  type="button"
-                  onClick={() => setDiscountMode(discountMode === "$" ? "%" : "$")}
-                  title={discountMode === "$" ? "Switch to percentage" : "Switch to dollars"}
-                  className={cn(
-                    "h-11 w-11 shrink-0 rounded-[var(--radius)] border-2 border-input bg-card text-ui-text font-medium text-ink transition-colors hover:bg-paper-2",
-                    focusRing,
-                  )}
-                >
-                  {discountMode}
-                </button>
-              </div>
-            </Field>
+            <DiscountField
+              id="eq-discount"
+              mode={discountMode}
+              onModeChange={setDiscountMode}
+              inputProps={form.register("discount")}
+            />
           </div>
         </section>
 
@@ -662,28 +647,6 @@ export function EquipmentAddForm({
 }
 
 // ─── Local helpers ───────────────────────────────────────────────
-
-function SectionTitle({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div>
-      <h3 className="text-card-title font-bold text-ink">{title}</h3>
-      {hint && <p className="mt-0.5 t-micro text-muted">{hint}</p>}
-    </div>
-  );
-}
-
-function Field({
-  label, htmlFor, required, children,
-}: {
-  label: string; htmlFor?: string; required?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={htmlFor}>{label}{required && <span className="text-red"> *</span>}</Label>
-      {children}
-    </div>
-  );
-}
 
 function ModeTab({
   active, onClick, children,

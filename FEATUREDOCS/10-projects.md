@@ -84,6 +84,15 @@ retired). Routes:
   fields are preserved for `createProject()`.
 
 ## Project Managers
+- **Manager picker permissions (#727).** The wizard's "Project manager(s)" field
+  (basics step) loads options via `getOrgMembers()`, which requires
+  `orgMembers:read` — the `member` role was granted this (`fix(rbac): grant
+  member role read-only access to orgMembers`) so it no longer 403s for
+  `member`-role users creating projects. `useServerQuery`'s `error` is destructured
+  and surfaced through `Field`'s `error` prop (not just `data`), so any future
+  permission regression (or a real network failure) renders a visible "Couldn't
+  load org members" message instead of silently resolving to an empty picker
+  indistinguishable from "this org has no other members".
 - Multi-PM support via `ProjectManager` join table (replaces old single `projectManagerId`)
 - Managed on the project detail page sidebar via `ProjectManagersPanel`
 - Add/remove PMs via browser-direct mutations `addNative` / `removeNative` in

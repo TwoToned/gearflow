@@ -908,6 +908,12 @@ export default defineSchema({
     // authority for its effective accessory set. Absent = template behaviour
     // (all model DEFAULTs, no OPTIONALs). See resolveLineAccessoryPlan.
     accessoryPlan: v.optional(enums.AccessoryPlanArg),
+    // Denormalized copy of the tier ("DEFAULT" | "OPTIONAL") stamped onto an
+    // accessory CHILD line at creation time (issue #794 follow-up), so warehouse
+    // checkout gating can read the tier straight off the child without
+    // cross-referencing the parent's accessoryPlan/model config. Only set on
+    // lines with isKitChild + childKind === "ACCESSORY".
+    accessoryInclusion: v.optional(enums.AccessoryInclusion),
     pricingMode: v.optional(enums.KitPricingMode),
     description: v.optional(v.string()),
     quantity: v.optional(v.number()),

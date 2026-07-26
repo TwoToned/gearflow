@@ -6,7 +6,7 @@ import { logActivity, logActivityMany } from "@/lib/activity-log";
 import { assertNoBlockingComments, getProjectBlockingSummary } from "@/lib/blocking-comments-read";
 import { evaluateBlockingGate } from "@/lib/blocking-comments-gate";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
-import { getAssetById, getAssetByAssetTag, getBulkAssetById } from "@/lib/assets-read";
+import { getAssetByAssetTag } from "@/lib/assets-read";
 import {
   getCheckHistoryRows,
   getModelFailureAnalyticsRows,
@@ -77,72 +77,6 @@ export async function pullItem(projectId: string, lineItemId: string) {
 // ─── Prep item directly (no checks needed) ──────────────────────────────────
 // Assigns the asset to the line item and sets prepStatus=PACKED without deploying.
 // Used in the Pick/Prep flow for items that have no check items assigned.
-
-/**
- * The permanent accessories a specific asset carries (battery kit, mic clip, …),
- * for the prep picker's per-accessory checkboxes. Each is keyed by its accessory
- * identity — serialised accessory `assetId` or bulk accessory `bulkAssetId` —
- * which is exactly what prep takes back in `includeAccessoryIds`.
- */
-export async function getAssetAccessories(assetId: string) {
-  const { organizationId } = await getOrgContext();
-
-  // Rebuild the accessory profile directly from Convex (asset / assetBulkChild /
-  // modelBulkAccessory are Convex-only — Phase C mega-flip). Replaces
-  // resolveAssetAccessories' prisma reads. org-scoped (assetId can be a scan value).
-  const convex = await getConvexClient();
-  const asset = await getAssetById(assetId);
-  if (!asset || asset.organizationId !== organizationId) {
-    return serialize({ serialised: [], bulk: [] });
-  }
-
-  const [childAssetDocs, childBulkDocs, modelBulks, modelMap] = await Promise.all([
-    convex.query(api.assets.listByParentAssetId, { parentAssetId: assetId, orgId: organizationId }),
-    convex.query(api.assetBulkChildren.listByParentAssetId, { parentAssetId: assetId, orgId: organizationId }),
-    asset.modelId
-      ? convex.query(api.modelBulkAccessories.listByModelId, { modelId: asset.modelId, organizationId })
-      : Promise.resolve([]),
-    getModelMap(organizationId),
-  ]);
-
-  // assetBulkChildren docs carry only bulkAssetId — resolve each child's bulk
-  // asset for its modelId (the model name shown), mirroring the old
-  // resolveAssetAccessories `bulkAsset.modelId` join.
-  const childBulkAssetDocs = await Promise.all(
-    childBulkDocs.map((b) => getBulkAssetById(b.bulkAssetId)),
-  );
-  const childBulkModelIdById = new Map(
-    childBulkAssetDocs.filter((d): d is NonNullable<typeof d> => d != null).map((d) => [d.id, d.modelId]),
-  );
-
-  // Asset-level bulk children win by bulkAssetId over inherited model accessories.
-  const assetBulkIds = new Set(childBulkDocs.map((b) => b.bulkAssetId));
-
-  const serialised = childAssetDocs.map((c) => ({
-    id: c.id,
-    name: c.modelId ? modelMap.get(c.modelId)?.name ?? null : null,
-  }));
-
-  const bulk = [
-    ...childBulkDocs.map((b) => {
-      const bulkModelId = childBulkModelIdById.get(b.bulkAssetId) ?? null;
-      return {
-        id: b.bulkAssetId,
-        name: bulkModelId ? modelMap.get(bulkModelId)?.name ?? null : null,
-        quantity: b.quantity,
-      };
-    }),
-    ...modelBulks
-      .filter((m) => !assetBulkIds.has(m.bulkAssetId))
-      .map((m) => ({
-        id: m.bulkAssetId,
-        name: m.bulkAssetModelId ? modelMap.get(m.bulkAssetModelId)?.name ?? null : null,
-        quantity: m.quantity,
-      })),
-  ];
-
-  return serialize({ serialised, bulk });
-}
 
 export async function prepItemDirect(
   projectId: string,

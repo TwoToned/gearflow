@@ -1,10 +1,13 @@
 import { v, ConvexError } from "convex/values";
+import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
+import { assertProjectInOrg } from "./projectLineItems";
 import {
   checkinItemsCore,
   checkoutItemsCore,
@@ -976,6 +979,64 @@ export const checkOutItems = mutation({
     }
 
     return res; // { updatedLineIds }
+  },
+});
+
+/** Bound the checkout-override reason (issue #794 follow-up) — mirrors
+ *  lineItemWrites.ts's assertAccessoryPlanFields reason bound. */
+function assertCheckoutOverrideFields(skipped: { accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }[]): void {
+  assertArrayMax(skipped, "skipped", 50);
+  for (const s of skipped) assertStrLen(s.reason, "skipped.reason", { min: 1, max: 500 });
+}
+
+// ─── logAccessoryCheckoutOverride — the warehouse Deploy gate's paper trail
+// (issue #794 follow-up). Deploying a line missing its DEFAULT accessories is a
+// soft block: the operator can proceed but must record why (a typed reason, or a
+// manager-tier role — the UI pre-fills the reason for managers so this mutation
+// always receives a non-empty string either way). Missing OPTIONALs work the same
+// with preset reasons. Logged to BOTH the activity log (audit trail) AND the
+// specific accessory child line's own `notes` field, per the design decision. ───
+export const logAccessoryCheckoutOverride = mutation({
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    parentName: v.string(),
+    skipped: v.array(v.object({
+      accessoryLineItemId: v.string(),
+      tier: v.union(v.literal("DEFAULT"), v.literal("OPTIONAL")),
+      reason: v.string(),
+    })),
+    actor: actorValidator,
+    now: v.number(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    const actor = await resolveActor(ctx, a.actor);
+    await assertProjectInOrg(ctx, a.projectId, a.orgId);
+    assertCheckoutOverrideFields(a.skipped);
+
+    for (const s of a.skipped) {
+      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", s.accessoryLineItemId)).first();
+      if (!line || line.organizationId !== a.orgId) continue;
+      const mergedNotes = line.notes ? `${line.notes}; Deployed without this accessory: ${s.reason}` : `Deployed without this accessory: ${s.reason}`;
+      await ctx.db.patch(line._id, { notes: mergedNotes, updatedAt: a.now });
+      await writeActivityLog(ctx, {
+        id: createId(),
+        organizationId: a.orgId,
+        action: "UPDATE",
+        entityType: "lineItem",
+        entityId: line.id,
+        entityName: line.description ?? a.parentName,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Deployed ${a.parentName} without ${s.tier === "DEFAULT" ? "default" : "optional"} accessory ${line.description ?? "item"}: ${s.reason}`,
+        projectId: a.projectId,
+        createdAt: a.now,
+      });
+    }
+    return { logged: a.skipped.length };
   },
 });
 

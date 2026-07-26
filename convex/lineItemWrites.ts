@@ -1,4 +1,5 @@
 import { v, ConvexError } from "convex/values";
+import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -63,10 +64,47 @@ function assertLineItemFields(f: { description?: string | null; subhireOrderNumb
 
 /** Bound `accessoryPlan.excluded`/`.added` (R-8.6.2) — a browser-direct caller
  *  bypassing the add-form picker could otherwise send an unbounded array. */
-function assertAccessoryPlanFields(plan?: { excluded: string[]; added: { bulkAssetId: string }[] }): void {
+function assertAccessoryPlanFields(plan?: { excluded: string[]; added: { bulkAssetId: string }[]; excludedReasons?: { bulkAssetId: string; reason: string }[] }): void {
   if (!plan) return;
   assertArrayMax(plan.excluded, "accessoryPlan.excluded", 200);
   assertArrayMax(plan.added, "accessoryPlan.added", 200);
+  assertArrayMax(plan.excludedReasons, "accessoryPlan.excludedReasons", 200);
+  for (const r of plan.excludedReasons ?? []) assertStrLen(r.reason, "accessoryPlan.excludedReasons.reason", { min: 1, max: 500 });
+}
+
+/** One audit-log entry per deselected DEFAULT accessory that carries an
+ *  override reason (issue #794 follow-up) — a default auto-includes, so
+ *  removing one is logged distinctly from the ordinary "added line"/"edited
+ *  accessories" entry, next to it in the same audit trail. */
+async function logExcludedDefaultAccessories(
+  ctx: MutationCtx,
+  args: {
+    organizationId: string;
+    projectId: string;
+    lineId: string;
+    lineName: string;
+    excludedReasons: { bulkAssetId: string; reason: string }[] | undefined;
+    userId: string;
+    userName: string;
+    now: number;
+  },
+): Promise<void> {
+  for (const { bulkAssetId, reason } of args.excludedReasons ?? []) {
+    const bulkAsset = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", bulkAssetId)).first();
+    await writeActivityLog(ctx, {
+      id: createId(),
+      organizationId: args.organizationId,
+      action: "UPDATE",
+      entityType: "lineItem",
+      entityId: args.lineId,
+      entityName: args.lineName,
+      userId: args.userId,
+      userName: args.userName,
+      summary: `Removed default accessory ${bulkAsset?.assetTag ?? bulkAssetId} from ${args.lineName}: ${reason}`,
+      projectId: args.projectId,
+      createdAt: args.now,
+    });
+  }
 }
 
 // ─── Collaboration colour (deterministic from userId) ────────────────────────
@@ -1055,6 +1093,10 @@ export const addNative = mutation({
       projectId,
       createdAt: now,
     });
+    await logExcludedDefaultAccessories(ctx, {
+      organizationId, projectId, lineId: id, lineName: fields.description || "Line item",
+      excludedReasons: accessoryPlan?.excludedReasons, userId: actor.userId, userName: actor.userName, now,
+    });
 
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
     await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
@@ -1137,6 +1179,10 @@ export const updateAccessoryPlanNative = mutation({
       summary: "Edited accessory selection",
       projectId: line.projectId,
       createdAt: now,
+    });
+    await logExcludedDefaultAccessories(ctx, {
+      organizationId, projectId: line.projectId, lineId: line.id, lineName: line.description || "Line item",
+      excludedReasons: accessoryPlan.excludedReasons, userId: actor.userId, userName: actor.userName, now,
     });
 
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
@@ -1701,6 +1747,10 @@ export const addLineItemSmartNative = mutation({
       summary: "Added line item to project",
       projectId,
       createdAt: now,
+    });
+    await logExcludedDefaultAccessories(ctx, {
+      organizationId, projectId, lineId: id, lineName: fields.description || "Line item",
+      excludedReasons: accessoryPlan?.excludedReasons, userId: actor.userId, userName: actor.userName, now,
     });
 
     if (fields.groupId) await recomputeGroupSuggestedNative(ctx, fields.groupId, organizationId, now);

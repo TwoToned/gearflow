@@ -203,13 +203,22 @@ export const AccessoryInclusion = v.union(
 );
 /** Mutation-arg shape for `projectLineItems.accessoryPlan` (schema.ts) — one
  *  definition shared by every add-line mutation that accepts a plan at create
- *  time (R-3.1/R-8.2.4), instead of three hand-repeated `v.object`s. */
+ *  time (R-3.1/R-8.2.4), instead of three hand-repeated `v.object`s.
+ *  `excludedReasons` (issue #794 follow-up): a DEFAULT accessory is auto-
+ *  included, so deselecting one is a deliberate override the add-form gates
+ *  behind a required typed reason — captured here (bulkAssetId keyed) for the
+ *  audit trail, separate from `excluded` itself so old plans without a reason
+ *  still resolve/filter identically (additive, zero-migration). */
 export const AccessoryPlanArg = v.object({
   excluded: v.array(v.string()),
   added: v.array(v.object({
     bulkAssetId: v.string(),
     quantityPerParent: v.optional(v.number()),
   })),
+  excludedReasons: v.optional(v.array(v.object({
+    bulkAssetId: v.string(),
+    reason: v.string(),
+  }))),
 });
 export const AllocationBasis = v.union(
   v.literal("DIRECT"),

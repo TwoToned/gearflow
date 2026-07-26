@@ -26,6 +26,7 @@ export function useWarehouseWrites() {
   const convex = useConvex();
 
   const checkOutItemsM = useMutation(api.warehouseWrites.checkOutItems);
+  const logAccessoryCheckoutOverrideM = useMutation(api.warehouseWrites.logAccessoryCheckoutOverride);
   const checkOutKitM = useMutation(api.warehouseWrites.checkOutKit);
   const checkOutKitsBatchM = useMutation(api.warehouseWrites.checkOutKitsBatch);
   const quickAddAndCheckOutM = useMutation(api.warehouseWrites.quickAddAndCheckOut);
@@ -71,6 +72,27 @@ export function useWarehouseWrites() {
         auditIds: items.map(() => createId()),
         now: Date.now(),
         actor: actor(),
+      });
+    },
+
+    /** Records the Deploy accessory gate's override — a typed (or manager-tier
+     *  auto-filled) reason per missing DEFAULT/OPTIONAL accessory, written to
+     *  BOTH the activity log and that accessory line's own `notes` field
+     *  (issue #794 follow-up). Fire-and-forget from the caller's perspective:
+     *  it never blocks the checkout itself. */
+    logAccessoryCheckoutOverride: async (
+      projectId: string,
+      parentName: string,
+      skipped: Array<{ accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }>,
+    ): Promise<{ logged: number }> => {
+      if (skipped.length === 0) return { logged: 0 };
+      return logAccessoryCheckoutOverrideM({
+        orgId: requireOrg(),
+        projectId,
+        parentName,
+        skipped,
+        actor: actor(),
+        now: Date.now(),
       });
     },
 

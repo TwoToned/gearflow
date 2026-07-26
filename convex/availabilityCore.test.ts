@@ -25,7 +25,9 @@ describe("availabilityCore stock math == overbooking-core (byte-for-byte pin)", 
   test("resolveModelAssetType matches the original over every combo", () => {
     for (const assetType of [undefined, null, "SERIALIZED", "BULK", "OTHER", ""]) {
       for (const hasBulk of [true, false]) {
-        expect(coreType(assetType, hasBulk)).toBe(origType(assetType, hasBulk));
+        for (const hasAssets of [true, false]) {
+          expect(coreType(assetType, hasBulk, hasAssets)).toBe(origType(assetType, hasBulk, hasAssets));
+        }
       }
     }
   });
@@ -127,6 +129,25 @@ describe("computeModelAvailability", () => {
     });
     const r = computeModelAvailability(b, { rentalStart: START, rentalEnd: END, excludeProjectId: "thisP" });
     expect(r).toMatchObject({ totalStock: 14, effectiveStock: 14, unavailable: 0, booked: 3, available: 11, assetType: "BULK" });
+  });
+
+  // Regression: issue #801 — a model created via model-form.tsx keeps the
+  // create form's explicit "SERIALIZED" default unless someone deliberately
+  // switches the Asset type selector to Bulk, even when it's stocked
+  // exclusively with bulk assets. Before the fix, `assetType: "SERIALIZED"`
+  // was PRESENT (not absent), so the undefined-only fallback in
+  // resolveModelAssetType never kicked in, and this bulk-only model showed
+  // `available: 0` no matter how much real bulk stock existed.
+  test("BULK-only model mislabeled SERIALIZED (model-form.tsx default) still reports real bulk availability", () => {
+    const b = mkBundle({
+      assetType: "SERIALIZED", // the model-form.tsx create default — never switched to Bulk
+      assets: [], // zero serialized assets — this model only ever held bulk stock
+      bulks: [{ totalQuantity: 10 }],
+      lines: [{ projectId: "thisP", quantity: 3 }],
+      projects: [{ id: "thisP", rentalStartDate: START, rentalEndDate: END, status: "CONFIRMED" }],
+    });
+    const r = computeModelAvailability(b, { rentalStart: START, rentalEnd: END, excludeProjectId: "thisP" });
+    expect(r).toMatchObject({ totalStock: 10, effectiveStock: 10, unavailable: 0, booked: 3, available: 7, assetType: "BULK" });
   });
 
   test("dated: CANCELLED lines + sub-hire lines are excluded from booked", () => {

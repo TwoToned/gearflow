@@ -45,7 +45,7 @@ export async function checkAvailability(
   }
 
   const modelForBreakdown = {
-    assetType: resolveModelAssetType(model.assetType, activeBulkAssets.length > 0),
+    assetType: resolveModelAssetType(model.assetType, activeBulkAssets.length > 0, activeAssets.length > 0),
     assets: activeAssets.map((a: ConvexAsset) => ({ status: a.status ?? "AVAILABLE" })),
     bulkAssets: activeBulkAssets.map((ba: ConvexBulkAsset) => ({ totalQuantity: ba.totalQuantity ?? 0 })),
   };

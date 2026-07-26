@@ -18,7 +18,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("categories")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: categories is a small bounded per-org set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: categories is a small bounded per-org set — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });
@@ -49,13 +49,13 @@ export const counts = query({
 
     const models = await ctx.db
       .query("models")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set — see docs/exceptions.md R-8.3.3
       .collect();
     for (const m of models) if (m.categoryId) ensure(m.categoryId).models++;
 
     const kits = await ctx.db
       .query("kits")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set — see docs/exceptions.md R-8.3.3
       .collect();
     for (const k of kits) if (k.categoryId) ensure(k.categoryId).kits++;
 
@@ -76,7 +76,7 @@ export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
     await requireOrgRead(ctx, orgId);
-    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: categories is a small bounded per-org set (tree)
+    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: categories is a small bounded per-org set (tree) — see docs/exceptions.md R-8.3.3
     const category = cats.find((c) => c.id === id);
     if (!category) throw new ConvexError("Category not found");
 
@@ -173,9 +173,9 @@ export const containerAssetSearch = query({
     }
     if (!rootCatId) return [];
 
-    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment)
+    const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment) — see docs/exceptions.md R-8.3.3
     const categoryIds = collectDescendants(cats, rootCatId);
-    const models = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment)
+    const models = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded per-org catalog/config map (enrichment) — see docs/exceptions.md R-8.3.3
     const modelById = new Map(models.map((m) => [m.id, m]));
 
     const q = (search ?? "").toLowerCase();

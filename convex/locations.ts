@@ -19,7 +19,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("locations")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: locations is a small bounded per-org set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: locations is a small bounded per-org set — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });
@@ -40,7 +40,7 @@ export const listSimple = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
-    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: locations is a small bounded per-org set
+    const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: locations is a small bounded per-org set — see docs/exceptions.md R-8.3.3
     return locs
       .map((l) => ({ id: l.id, name: l.name, type: l.type ?? "WAREHOUSE" }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -58,7 +58,7 @@ export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
     await requireOrgRead(ctx, orgId);
-    // r9.8-ok: locations is a small bounded per-org set (tens of rows).
+    // r9.8-ok: locations is a small bounded per-org set (tens of rows). — see docs/exceptions.md R-8.3.3
     const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
     const self = locs.find((l) => l.id === id);
     if (!self) return null; // parity with the deleted getLocation (graceful not-found UI)
@@ -75,7 +75,7 @@ export const detail = query({
       byLoc(targetLocIds.map((lid) => ctx.db.query("bulkAssets").withIndex("by_locationId", (q) => q.eq("locationId", lid)).collect())),
       byLoc(targetLocIds.map((lid) => ctx.db.query("kits").withIndex("by_locationId", (q) => q.eq("locationId", lid)).collect())),
       byLoc(targetLocIds.map((lid) => ctx.db.query("projects").withIndex("by_locationId", (q) => q.eq("locationId", lid)).collect())),
-      // r9.8-ok: model catalog name map (bounded per-org catalog); resolved for display only.
+      // r9.8-ok: model catalog name map (bounded per-org catalog); resolved for display only. — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
     ]);
     const modelName = new Map(models.map((m) => [m.id, m.name]));

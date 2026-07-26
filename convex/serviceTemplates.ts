@@ -19,7 +19,7 @@ export const list = query({
     await requireService(ctx);
     return await ctx.db
       .query("serviceTemplates")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org template set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org template set — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });

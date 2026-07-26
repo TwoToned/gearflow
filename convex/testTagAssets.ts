@@ -55,7 +55,7 @@ export const list = query({
     // set to find overdue items — off the request hot path, not a client list.
     return await ctx.db
       .query("testTagAssets")
-      // r9.8-ok: background job full scan (see note above)
+      // r9.8-ok: background job full scan (see note above) — see docs/exceptions.md R-8.3.3
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
       .collect();
   },
@@ -193,7 +193,7 @@ export const listPage = query({
       ctx.db.query("testTagRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
       ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
       ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
-      ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: small bounded per-org config set
+      ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: small bounded per-org config set — see docs/exceptions.md R-8.3.3
     ]);
     const recordCounts = new Map<string, number>();
     for (const r of records) recordCounts.set(r.testTagAssetId, (recordCounts.get(r.testTagAssetId) ?? 0) + 1);
@@ -267,7 +267,7 @@ export const detail = query({
     // Org-wide profile map so EACH record resolves its OWN testProfile (parity with the
     // old getTestTagAsset profileMap — a record tested under a since-changed profile must
     // still show that profile's name, not null).
-    // r9.8-ok: testProfiles is a small bounded per-org config set (a handful of profiles).
+    // r9.8-ok: testProfiles is a small bounded per-org config set (a handful of profiles). — see docs/exceptions.md R-8.3.3
     const profiles = await ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
     const profileById = new Map(profiles.map((p) => [p.id, p]));
     const resolvedProfile = item.testProfileId ? profileById.get(item.testProfileId) ?? null : null;

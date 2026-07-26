@@ -162,7 +162,7 @@ export const scrubUserRefs = mutation({
     await requireService(ctx);
     const docs = await ctx.db
       .query("maintenanceRecords")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
       .collect();
     let scrubbed = 0;
     for (const doc of docs) {

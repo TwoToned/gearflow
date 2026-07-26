@@ -15,7 +15,7 @@ export const availableSerialized = query({
     const [assets, bulkChildren, models] = await Promise.all([
       ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: picker: scans the org set for candidates — accepted, revisit with a narrower index if large
       ctx.db.query("assetBulkChildren").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: picker: scans the org set for candidates — accepted, revisit with a narrower index if large
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: picker: scans the org set for candidates — accepted, revisit with a narrower index if large
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: picker: scans the org set for candidates — accepted, revisit with a narrower index if large — see docs/exceptions.md R-8.3.3
     ]);
     const modelName = new Map(models.map((m) => [m.id, m.name]));
 

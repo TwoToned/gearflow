@@ -22,7 +22,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("bulkAssets")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });
@@ -69,10 +69,10 @@ export const listPage = query({
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, models, categories, locations] = await Promise.all([
-      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
-      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
-      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
+      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff — see docs/exceptions.md R-8.3.3
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
     const categoryMap = new Map(categories.map((c) => [c.id, c]));

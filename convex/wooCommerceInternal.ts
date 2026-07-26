@@ -193,7 +193,7 @@ export const listLocationsByOrg = internalQuery({
   handler: async (ctx, { orgId }) =>
     await ctx.db
       .query("locations")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
       .collect(),
 });
 
@@ -227,7 +227,7 @@ export const listModelsByOrg = internalQuery({
   handler: async (ctx, { orgId }) =>
     await ctx.db
       .query("models")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large — see docs/exceptions.md R-8.3.3
       .collect(),
 });
 

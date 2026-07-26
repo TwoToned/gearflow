@@ -20,7 +20,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("clients")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });
@@ -59,7 +59,7 @@ export const listPage = query({
     const sortBy = a.sortBy ?? "name";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
-    const rows = await ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set
+    const rows = await ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
 
     const filtered = rows.filter((c) => {
       if ((c.isActive ?? true) !== true) return false;
@@ -92,7 +92,7 @@ export const projectCounts = query({
     await requireOrgRead(ctx, orgId);
     const projects = await ctx.db
       .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set — see docs/exceptions.md R-8.3.3
       .collect();
     const counts: Record<string, number> = {};
     for (const p of projects) {

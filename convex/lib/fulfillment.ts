@@ -18,6 +18,7 @@ import {
   computeRollupCounters,
   deriveOrderLineStatus,
   deriveOrderLinePrepStatus,
+  deriveOrderLineReturnCondition,
   nextOrdinal,
   type UnitLike,
 } from "./lineItemUnits";
@@ -56,6 +57,7 @@ export async function syncLineItemRollup(ctx: Ctx, lineItemId: string): Promise<
     ...computeRollupCounters(unitLikes),
     status: deriveOrderLineStatus(line.status ?? "CONFIRMED", unitLikes) as typeof line.status,
     prepStatus: (deriveOrderLinePrepStatus(line.prepStatus, unitLikes) ?? undefined) as typeof line.prepStatus,
+    returnCondition: (deriveOrderLineReturnCondition(line.returnCondition, unitLikes) ?? undefined) as typeof line.returnCondition,
     updatedAt: Date.now(),
   });
 }

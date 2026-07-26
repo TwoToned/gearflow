@@ -7,6 +7,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown, resolveModelAssetType } from "@/lib/availability";
+import { getProjectWindow } from "@/lib/project-window";
 import { getModelWithCategoryMap } from "@/lib/model-category-join";
 import { getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByIds, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
@@ -85,8 +86,11 @@ export async function checkAvailability(
       if (!p) continue;
       if (p.isTemplate) continue;
       if (["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "")) continue;
-      if (p.rentalStartDate == null || p.rentalEndDate == null) continue;
-      if ((p.rentalStartDate as number) > endMs || (p.rentalEndDate as number) < startMs) continue;
+      // WS2 (#941) — availability reads the PROJECT window (falls back to rental
+      // when unset), not the rental window directly.
+      const { start: pStart, end: pEnd } = getProjectWindow(p);
+      if (pStart == null || pEnd == null) continue;
+      if (pStart > endMs || pEnd < startMs) continue;
       overlappingLineItems.push({
         quantity: li.quantity ?? 0,
         project: { id: p.id, name: p.name ?? null, projectNumber: p.projectNumber ?? null },

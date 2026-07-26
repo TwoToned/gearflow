@@ -275,12 +275,13 @@ suggestion popups, return-side partial cascade.
 Each phase ships independently behind no flag (phase 1–2 are strictly additive;
 absent-plan lines behave exactly as today).
 
-## Open questions
+## Decisions (Jayden, 2026-07-26)
 
-1. **Optional accessories on by-asset-tag adds** — offer the *model's* optionals there
-   too? (Proposed: yes; same picker, same plan.)
-2. **Post-deploy plan edits** — hard-block, or allow adding (never removing) while out?
-   (Proposed: hard-block v1.)
-3. **Warehouse free-add at prep** — Flex's "free pick" (scan an unplanned accessory into
-   a line at prep) is deliberately excluded to keep "office decides"; confirm we're happy
-   losing that door, since today's prep dialog technically only ever narrows.
+1. **Optional accessories on by-asset-tag adds: yes, same picker.** Tag adds render the
+   same Accessories section — model defaults deselectable, model optionals opt-in, the
+   unit's physically-attached children shown read-only. One flow everywhere.
+2. **Post-deploy plan edits: hard-block.** Once any unit of the line is checked out the
+   plan is frozen; the error points the PM at the warehouse return/swap flow.
+3. **Warehouse is verify/narrow only.** No Flex-style free-add at prep — the warehouse
+   can deselect or partially deploy planned accessories, never add unplanned ones.
+   "Office decides, warehouse verifies" holds without exception in v1.

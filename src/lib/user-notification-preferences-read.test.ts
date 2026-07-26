@@ -31,6 +31,7 @@ describe("resolvePreferenceValues", () => {
         pendingOffers: true,
         pendingTimesheets: true,
         flaggedAsset: false,
+        incidentReport: false,
       }),
     );
     expect(out).toEqual({
@@ -41,6 +42,7 @@ describe("resolvePreferenceValues", () => {
       pendingOffers: true,
       pendingTimesheets: true,
       flaggedAsset: false,
+      incidentReport: false,
     });
   });
 

@@ -81,6 +81,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
+import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
@@ -430,6 +431,11 @@ function WarehouseProjectPage({
     fromDeprep?: boolean;
   } | null>(null);
   const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
+
+  // "Report issue" dialog (GitHub #898) — opened from a CHECKED_OUT line item
+  // row on the Return tab (Deployed gear). Non-null target = dialog open.
+  const [reportIssueTarget, setReportIssueTarget] = useState<LineItem | null>(null);
+  const handleReportIssue = (item: LineItem) => setReportIssueTarget(item);
 
   // Queue for multi-item check flows
   type CheckQueueItem = {
@@ -2833,6 +2839,7 @@ function WarehouseProjectPage({
           checkInIsPending={checkInMutation.isPending}
           handleUndeploy={handleUndeploy}
           undeployIsPending={undeployMutation.isPending || undeployKitsMutation.isPending}
+          onReportIssue={handleReportIssue}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -3429,6 +3436,20 @@ function WarehouseProjectPage({
           }}
         />
       )}
+      <ReportIssueDialog
+        open={reportIssueTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setReportIssueTarget(null);
+        }}
+        targetLabel={
+          reportIssueTarget?.asset?.assetTag
+          ?? reportIssueTarget?.bulkAsset?.assetTag
+          ?? (reportIssueTarget ? modelDisplayName(reportIssueTarget) : "item")
+        }
+        projectId={projectId}
+        lineItemId={reportIssueTarget?.id}
+        assetId={reportIssueTarget?.assetId ?? undefined}
+      />
     </div>
     </FadeIn>
     </RequirePermission>

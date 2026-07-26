@@ -14,6 +14,7 @@ export const notificationPreferenceSchema = z.object({
   pendingOffers: z.boolean(),
   pendingTimesheets: z.boolean(),
   flaggedAsset: z.boolean(),
+  incidentReport: z.boolean(),
 });
 
 export type NotificationPreferenceInput = z.input<typeof notificationPreferenceSchema>;
@@ -28,6 +29,7 @@ export const NOTIFICATION_PREFERENCE_DEFAULTS: NotificationPreferenceValues = {
   pendingOffers: false,
   pendingTimesheets: false,
   flaggedAsset: true,
+  incidentReport: true,
 };
 
 /** Maps an AppNotification.type to the preference field that controls it. */
@@ -39,6 +41,7 @@ export const NOTIFICATION_TYPE_TO_PREFERENCE: Record<string, keyof NotificationP
   pending_offers: "pendingOffers",
   pending_timesheets: "pendingTimesheets",
   flagged_asset: "flaggedAsset",
+  incident_report: "incidentReport",
 };
 
 /** Human-readable labels for the preferences UI. */
@@ -70,5 +73,9 @@ export const NOTIFICATION_PREFERENCE_LABELS: Record<keyof NotificationPreference
   flaggedAsset: {
     label: "Flagged assets",
     description: "Email me when an asset is flagged as faulty or T&T overdue.",
+  },
+  incidentReport: {
+    label: "Reported issues",
+    description: "Email me when someone reports a broken, lost, or damaged item.",
   },
 };

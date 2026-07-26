@@ -32,6 +32,7 @@ import {
   Copy,
   ArrowRightLeft,
   Sparkles,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,6 +52,9 @@ import {
   type ProjectServiceFormValues,
 } from "@/lib/validations/project-service";
 import { SERVICE_TYPE_LABELS, SERVICE_STATUS_LABELS } from "@/lib/constants/services";
+import { crewRateTypeLabels } from "@/lib/status-labels";
+import { resolveRate, calculateEstimatedCost } from "../../../convex/lib/crewRate";
+import { CrewPanel } from "./crew-panel";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
@@ -85,6 +89,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AddressInput } from "@/components/ui/address-input";
 import type { PlaceResult } from "@/lib/address-autocomplete";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -158,6 +169,11 @@ interface ServiceRow {
     status: string;
     estimatedCost: number | null;
     crewMember: { id: string; firstName: string; lastName: string; image: string | null };
+    rateOverride: number | null;
+    rateType: string | null;
+    estimatedHours: number | null;
+    resolvedRate: number;
+    resolvedRateType: string;
   }[];
 }
 
@@ -532,6 +548,16 @@ export function ServicesPanel({
             </div>
           </div>
         )}
+
+        {/* Project crew — services are the only crew entry point (issue #796): crew
+            are added/rated per-service above; this lists everyone across the whole
+            project (incl. any legacy assignment with no service link) for viewing,
+            status changes, messaging, and call sheets. */}
+        <div className="h-px bg-line" />
+        <div className="space-y-3">
+          <h4 className="text-card-title font-semibold text-ink">Project crew</h4>
+          <CrewPanel projectId={projectId} />
+        </div>
 
         {/* Bulk delete confirmation */}
         <BulkDeleteDialog
@@ -1099,6 +1125,137 @@ function CrewCountBadge({ needed, assigned }: { needed: number; assigned: number
   );
 }
 
+// ─── Crew Rate Table (issue #796) ─────────────────────────────────────────────
+//
+// Per-crew-member rate table shown inside the service dialog once 1+ crew are
+// assigned. Each row's override writes to that CrewAssignment.rateOverride (via the
+// existing rate cascade — resolveRate/calculateEstimatedCost, convex/lib/crewRate.ts).
+// The displayed rate/cost is a live client-side PREVIEW of that same cascade; the
+// server always recomputes authoritatively on save (POLICY.md R-9.3 — no money
+// originates from the client).
+
+type ServiceCrewTableRow = { crewMemberId: string; rateOverride?: number; rateType?: "" | "HOURLY" | "DAILY" | "FLAT"; estimatedHours?: number };
+
+function CrewRateTable({
+  rows,
+  crewMemberById,
+  previewCost,
+  onChangeRow,
+  onRemoveRow,
+  total,
+}: {
+  rows: ServiceCrewTableRow[];
+  crewMemberById: Map<string, { id: string; firstName: string; lastName: string; image: string | null }>;
+  previewCost: (row: ServiceCrewTableRow) => { rate: number; rateType: string; cost: number };
+  onChangeRow: (crewMemberId: string, patch: Partial<ServiceCrewTableRow>) => void;
+  onRemoveRow: (crewMemberId: string) => void;
+  total: number;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Crew rates</Label>
+      <div className="space-y-2 rounded-[var(--r)] border border-line p-2">
+        {rows.map((row) => {
+          const member = crewMemberById.get(row.crewMemberId);
+          const { rate, rateType, cost } = previewCost(row);
+          const isOverridden = row.rateOverride != null && row.rateOverride > 0;
+          return (
+            <div
+              key={row.crewMemberId}
+              className="flex flex-wrap items-end gap-2 rounded-[var(--r)] bg-paper-2/60 p-2"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2 basis-full sm:basis-auto">
+                <PersonAvatar
+                  name={member ? `${member.firstName} ${member.lastName}` : "?"}
+                  src={member?.image ?? undefined}
+                  className="size-6 shrink-0"
+                />
+                <span className="truncate text-ui-text font-medium text-ink-2">
+                  {member ? `${member.firstName} ${member.lastName}` : "Unknown"}
+                </span>
+              </div>
+              <div className="w-24 space-y-0.5">
+                <Label className="text-[10px] text-faint">Rate override</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={row.rateOverride ?? ""}
+                  onChange={(e) =>
+                    onChangeRow(row.crewMemberId, {
+                      rateOverride: e.target.value === "" ? undefined : Number(e.target.value),
+                    })
+                  }
+                  placeholder={formatCurrency(rate)}
+                  className="h-8 text-caption"
+                />
+              </div>
+              <div className="w-24 space-y-0.5">
+                <Label className="text-[10px] text-faint">Rate type</Label>
+                <Select
+                  value={row.rateType || rateType}
+                  onValueChange={(v) => onChangeRow(row.crewMemberId, { rateType: v as ServiceCrewTableRow["rateType"] })}
+                >
+                  <SelectTrigger className="h-8 text-caption">
+                    <SelectValue>{crewRateTypeLabels[row.rateType || rateType]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DAILY">Daily</SelectItem>
+                    <SelectItem value="HOURLY">Hourly</SelectItem>
+                    <SelectItem value="FLAT">Flat</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {(row.rateType || rateType) === "HOURLY" && (
+                <div className="w-20 space-y-0.5">
+                  <Label className="text-[10px] text-faint">Hours</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min={0}
+                    value={row.estimatedHours ?? ""}
+                    onChange={(e) =>
+                      onChangeRow(row.crewMemberId, {
+                        estimatedHours: e.target.value === "" ? undefined : Number(e.target.value),
+                      })
+                    }
+                    className="h-8 text-caption"
+                  />
+                </div>
+              )}
+              <div className="w-20 space-y-0.5 text-right">
+                <Label className="text-[10px] text-faint">Cost</Label>
+                <div className="flex h-8 items-center justify-end text-caption font-medium tabular-nums text-ink">
+                  {formatCurrency(cost)}
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="touch-target size-8 shrink-0"
+                onClick={() => onRemoveRow(row.crewMemberId)}
+                aria-label={`Remove ${member ? `${member.firstName} ${member.lastName}` : "crew member"}`}
+              >
+                <X className="h-3.5 w-3.5 text-muted" />
+              </Button>
+              {!isOverridden && (
+                <p className="w-full text-[10px] text-faint">
+                  Using default rate — {formatCurrency(rate)}/{rateType.toLowerCase()}
+                </p>
+              )}
+            </div>
+          );
+        })}
+        <div className="flex items-center justify-between border-t border-line pt-2 text-ui-text">
+          <span className="font-medium text-ink-2">Total labour cost</span>
+          <span className="font-semibold tabular-nums text-ink">{formatCurrency(total)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Create/Edit Dialog ───────────────────────────────────────────────────────
 
 function ServiceDialog({
@@ -1188,8 +1345,15 @@ function ServiceDialog({
         numberOfTrips: (editingService.numberOfTrips as number) || undefined,
         crewCountRequired: (editingService.crewCountRequired as number) || undefined,
         crewRoleId: (editingService.crewRoleId as string) || "",
-        crewMemberIds: editingService.crewAssignments
-          ? (editingService.crewAssignments as { crewMember: { id: string } }[]).map((a) => a.crewMember.id)
+        crew: editingService.crewAssignments
+          ? (editingService.crewAssignments as ServiceRow["crewAssignments"])
+              .filter((a): a is typeof a & { crewMember: NonNullable<typeof a.crewMember> } => !!a.crewMember)
+              .map((a) => ({
+                crewMemberId: a.crewMember.id,
+                rateOverride: a.rateOverride ?? undefined,
+                rateType: (a.rateType as "HOURLY" | "DAILY" | "FLAT" | null) || "",
+                estimatedHours: a.estimatedHours ?? undefined,
+              }))
           : [],
       }
     : {
@@ -1213,7 +1377,7 @@ function ServiceDialog({
         numberOfTrips: undefined,
         crewCountRequired: (matchingTemplate?.defaultCrewCount as number) || undefined,
         crewRoleId: "",
-        crewMemberIds: [],
+        crew: [],
       };
 
   const form = useForm<ProjectServiceFormValues>({
@@ -1253,8 +1417,19 @@ function ServiceDialog({
     enabled: open && !!orgId && spAuthed,
   });
 
+  type CrewMemberOption = {
+    id: string;
+    firstName: string;
+    lastName: string;
+    image: string | null;
+    defaultDayRate: number | null;
+    defaultHourlyRate: number | null;
+  };
+  const crewMemberDocs = crewMembers as CrewMemberOption[];
+  const crewMemberById = new Map(crewMemberDocs.map((m) => [m.id, m]));
+
   const crewMemberOptions: { value: string; label: string; icon: React.ReactNode }[] =
-    (crewMembers as { id: string; firstName: string; lastName: string; image: string | null }[]).map((m) => ({
+    crewMemberDocs.map((m) => ({
       value: m.id,
       label: `${m.firstName} ${m.lastName}`,
       icon: (
@@ -1266,9 +1441,46 @@ function ServiceDialog({
       ),
     }));
 
-  const watchCrewMemberIds = (form.watch("crewMemberIds") || []) as string[];
+  type ServiceCrewRow = { crewMemberId: string; rateOverride?: number; rateType?: "" | "HOURLY" | "DAILY" | "FLAT"; estimatedHours?: number };
+  const watchCrew = (form.watch("crew") || []) as ServiceCrewRow[];
+  const watchCrewMemberIds = watchCrew.map((c) => c.crewMemberId);
   const watchCrewNeeded = Number(form.watch("crewCountRequired") || 0);
-  const setCrewMemberIds = (ids: string[]) => { form.setValue("crewMemberIds", ids); };
+  const setCrewMemberIds = (ids: string[]) => {
+    const existing = new Map(watchCrew.map((c) => [c.crewMemberId, c]));
+    form.setValue("crew", ids.map((id) => existing.get(id) ?? { crewMemberId: id }));
+  };
+  const updateCrewRow = (crewMemberId: string, patch: Partial<ServiceCrewRow>) => {
+    form.setValue(
+      "crew",
+      watchCrew.map((c) => (c.crewMemberId === crewMemberId ? { ...c, ...patch } : c)),
+    );
+  };
+
+  // Selected crew role doc (for the rate-cascade fallback) — all crew on a service
+  // currently share the one service-level role (per-row role overrides aren't a thing
+  // in this dialog), mirroring updateServiceNative's role-patch-all-survivors behaviour.
+  const watchCrewRoleId = form.watch("crewRoleId") as string;
+  const selectedCrewRole = (roleDocs ?? []).find((r) => r.id === watchCrewRoleId) ?? null;
+  const watchServiceDate = form.watch("date") as string;
+  const watchServiceEndDate = (form.watch("endDate") as string) || watchServiceDate;
+  const serviceStartMs = watchServiceDate ? new Date(watchServiceDate).getTime() : null;
+  const serviceEndMs = watchServiceEndDate ? new Date(watchServiceEndDate).getTime() : null;
+
+  /** Live client-side preview of the SAME cascade the server runs (convex/lib/crewRate.ts) —
+   *  UX only, never authoritative; the server always recomputes on save (issue #796). */
+  function previewCrewCost(row: ServiceCrewRow): { rate: number; rateType: string; cost: number } {
+    const member = crewMemberById.get(row.crewMemberId);
+    const { rate, rateType } = resolveRate(
+      row.rateOverride,
+      row.rateType || null,
+      { defaultDayRate: member?.defaultDayRate ?? null, defaultHourlyRate: member?.defaultHourlyRate ?? null },
+      selectedCrewRole ? { defaultRate: selectedCrewRole.defaultRate ?? null, rateType: selectedCrewRole.rateType ?? null } : null,
+    );
+    const cost = calculateEstimatedCost(rate, rateType, serviceStartMs, serviceEndMs, row.estimatedHours ?? null);
+    return { rate, rateType, cost };
+  }
+
+  const crewCostTotal = watchCrew.reduce((sum, row) => sum + previewCrewCost(row).cost, 0);
 
   const invalidateAll = () => {
     refreshProjectServices(projectId);
@@ -1523,6 +1735,17 @@ function ServiceDialog({
               options={crewMemberOptions}
             />
 
+            {watchCrew.length > 0 && (
+              <CrewRateTable
+                rows={watchCrew}
+                crewMemberById={crewMemberById}
+                previewCost={previewCrewCost}
+                onChangeRow={updateCrewRow}
+                onRemoveRow={(id) => setCrewMemberIds(watchCrewMemberIds.filter((m) => m !== id))}
+                total={crewCostTotal}
+              />
+            )}
+
             {watchCrewMemberIds.length > 0 && (
               <div className="flex items-center gap-2">
                 <Button
@@ -1605,18 +1828,30 @@ function ServiceDialog({
               <div className="t-overline text-muted">
                 Cost to Business
               </div>
-              <div className="space-y-1.5">
-                <Label>Total cost</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  {...form.register("costTotal")}
-                  placeholder="0.00"
-                />
-                <p className="text-[11px] text-faint">
-                  What this service costs you (crew, transport, etc). Used for margin calculation.
-                </p>
-              </div>
+              {watchCrew.length > 0 ? (
+                <div className="space-y-1.5">
+                  <Label>Total cost</Label>
+                  <div className="flex h-9 items-center rounded-[var(--r)] border border-line bg-paper-2 px-3 text-ui-text font-medium tabular-nums text-ink">
+                    {formatCurrency(crewCostTotal)}
+                  </div>
+                  <p className="text-[11px] text-faint">
+                    Auto-calculated from {watchCrew.length} crew member{watchCrew.length === 1 ? "" : "s"}&apos; rates above. Used for margin calculation.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label>Total cost</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...form.register("costTotal")}
+                    placeholder="0.00"
+                  />
+                  <p className="text-[11px] text-faint">
+                    What this service costs you (transport, materials, etc). Assign crew above to auto-calculate labour cost instead.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

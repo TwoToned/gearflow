@@ -140,6 +140,15 @@ function diceCoefficient(a: Set<string>, b: Set<string>): number {
 }
 
 /**
+ * QW-4 (#953) discount seed — copied verbatim from src/lib/woocommerce-utils.ts
+ * (`resolveWooDiscountPercent`). Convex files can't import from src/. Keep both
+ * copies byte-identical on change; see that file's comment for the full rationale.
+ */
+function resolveWooDiscountPercent(client: { defaultDiscount?: number | null }): number | undefined {
+  return client.defaultDiscount != null ? client.defaultDiscount : undefined;
+}
+
+/**
  * Flexible date parse — copied verbatim from src/lib/woocommerce-utils.ts
  * (`flexibleDateParse`). Convex files can't import from src/.
  */
@@ -287,6 +296,10 @@ type ClientDoc = {
   type?: string;
   contactEmail?: string;
   isActive?: boolean;
+  // QW-4 (#953): needed to seed a new Woo-order project's discountPercent (see
+  // buildProjectArgs below) — this path creates projects directly, bypassing
+  // projectWrites.createNative's own defaultDiscount cascade.
+  defaultDiscount?: number;
 };
 
 /**
@@ -668,6 +681,12 @@ export const processOrder = internalAction({
         : `${order.billing.first_name} ${order.billing.last_name} — Website Order #${order.number || order.id}`;
       const clientNotes = extractNotes(order, integration);
       const projectCreatedAt = Date.now();
+      // QW-4 (#953): seed the discount cascade here too — this path creates the
+      // project via createProjectWithUniqueNumber (a plain insert), which does
+      // NOT run projectWrites.createNative's in-mutation defaultDiscount lookup.
+      // A snapshot, not a live link (see the "no retroactive change" note on
+      // createNative).
+      const wooDiscountPercent = resolveWooDiscountPercent(client);
       const buildProjectArgs = (num: string) => ({
         id: projectId,
         organizationId: orgId,
@@ -681,6 +700,7 @@ export const processOrder = internalAction({
         ...(dates.rentalEnd ? { rentalEndDate: dates.rentalEnd.getTime() } : {}),
         ...(dates.eventStart ? { eventStartDate: dates.eventStart.getTime() } : {}),
         ...(clientNotes ? { clientNotes } : {}),
+        ...(wooDiscountPercent != null ? { discountPercent: wooDiscountPercent } : {}),
         tags: ["website-order"],
         createdAt: projectCreatedAt,
         updatedAt: projectCreatedAt,

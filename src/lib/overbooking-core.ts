@@ -21,6 +21,7 @@ import type { api } from "../../convex/_generated/api";
 import type { ConvexProject } from "@/lib/projects-read";
 import type { MappedLineItem } from "@/lib/project-line-item-read";
 import { mapLineItemDoc } from "@/lib/project-equipment-reconstruct";
+import { getProjectWindow } from "@/lib/project-window";
 
 // ─── Stock breakdown (moved from availability.ts) ────────────────────────────
 
@@ -125,16 +126,21 @@ export interface DateWindow {
 
 /**
  * Reproduces the Prisma `project` `where` used by every availability read:
- * non-template, active status, and rental window overlaps `[start, end]`.
- * A project with no rental dates is excluded (null fails the date comparison,
- * matching Prisma's behaviour on `lte`/`gte` against null).
+ * non-template, active status, and PROJECT window (WS2 #941 — the gear-committed
+ * window, `getProjectWindow`; defaults to the rental window when unset) overlaps
+ * `[start, end]`. A project with no resolvable window is excluded (null fails the
+ * date comparison, matching Prisma's behaviour on `lte`/`gte` against null).
+ *
+ * NOTE: this is the AVAILABILITY window — pricing reads the rental window
+ * directly and is untouched by this (see #943).
  */
 export function projectMatchesWindow(p: ConvexProject, window: DateWindow): boolean {
   if (p.isTemplate === true) return false;
   if (p.status != null && EXCLUDED_PROJECT_STATUSES.has(p.status)) return false;
-  if (p.rentalStartDate == null || p.rentalEndDate == null) return false;
-  // rentalStartDate <= end AND rentalEndDate >= start
-  return p.rentalStartDate <= window.end.getTime() && p.rentalEndDate >= window.start.getTime();
+  const { start, end } = getProjectWindow(p);
+  if (start == null || end == null) return false;
+  // start <= window.end AND end >= window.start
+  return start <= window.end.getTime() && end >= window.start.getTime();
 }
 
 /** Build a `projectId → ConvexProject` map from the org's projects. */

@@ -770,6 +770,103 @@ describe("checkOutItems", () => {
   });
 });
 
+// ─── logAccessoryCheckoutOverride (issue #794 follow-up) ────────────────────────
+describe("logAccessoryCheckoutOverride", () => {
+  async function seed(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("li1", { description: "Camera A", status: "CONFIRMED" }));
+      await ctx.db.insert("projectLineItems", baseLine("acc1", {
+        description: "Battery pack", isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "li1",
+        accessoryInclusion: "DEFAULT", status: "CONFIRMED",
+      }));
+    });
+  }
+
+  test("writes an activity log entry AND appends to the accessory line's notes", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.logAccessoryCheckoutOverride, {
+      orgId: ORG, projectId: "p1", parentName: "Camera A",
+      skipped: [{ accessoryLineItemId: "acc1", tier: "DEFAULT", reason: "Left at the depot" }],
+      actor: SPOOF, now: NOW,
+    });
+    const line = await lineById(t, "acc1");
+    expect(line?.notes).toContain("Left at the depot");
+    const logs = await t.run(async (ctx) =>
+      (await ctx.db.query("activityLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect())
+        .filter((l) => l.entityId === "acc1"),
+    );
+    expect(logs).toHaveLength(1);
+    expect(logs[0].summary).toContain("Left at the depot");
+    expect(logs[0].summary).toContain("default");
+    expect(logs[0].userId).toBe(USER); // spoofed actor overridden
+  });
+
+  test("appends to existing notes rather than overwriting them", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("acc1", {
+        description: "Mic clip", isKitChild: true, childKind: "ACCESSORY", accessoryInclusion: "OPTIONAL",
+        status: "CONFIRMED", notes: "Existing note",
+      }));
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.logAccessoryCheckoutOverride, {
+      orgId: ORG, projectId: "p1", parentName: "Camera A",
+      skipped: [{ accessoryLineItemId: "acc1", tier: "OPTIONAL", reason: "Out of stock" }],
+      actor: SPOOF, now: NOW,
+    });
+    const line = await lineById(t, "acc1");
+    expect(line?.notes).toBe("Existing note; Deployed without this accessory: Out of stock");
+  });
+
+  test("empty reason rejected", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.logAccessoryCheckoutOverride, {
+        orgId: ORG, projectId: "p1", parentName: "Camera A",
+        skipped: [{ accessoryLineItemId: "acc1", tier: "DEFAULT", reason: "" }],
+        actor: SPOOF, now: NOW,
+      }),
+    ).rejects.toThrow(/reason/i);
+  });
+
+  test("cross-org accessory line silently skipped, not thrown", async () => {
+    const t = makeT();
+    await seed(t);
+    await member(t, "member", OTHER);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("accX", {
+        description: "Foreign accessory", isKitChild: true, childKind: "ACCESSORY", accessoryInclusion: "DEFAULT", status: "CONFIRMED",
+      }, OTHER));
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.logAccessoryCheckoutOverride, {
+      orgId: ORG, projectId: "p1", parentName: "Camera A",
+      skipped: [{ accessoryLineItemId: "accX", tier: "DEFAULT", reason: "Left behind" }],
+      actor: SPOOF, now: NOW,
+    });
+    const foreignLine = await lineById(t, "accX");
+    expect(foreignLine?.notes).toBeUndefined();
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedProject(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.logAccessoryCheckoutOverride, {
+        orgId: ORG, projectId: "p1", parentName: "Camera A",
+        skipped: [{ accessoryLineItemId: "acc1", tier: "DEFAULT", reason: "x" }],
+        actor: SPOOF, now: NOW,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
 // ─── checkOutKit ────────────────────────────────────────────────────────────────
 describe("checkOutKit", () => {
   test("blocking comment present → ConvexError (gate runs before the core)", async () => {

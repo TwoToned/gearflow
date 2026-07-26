@@ -34,7 +34,8 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { useReturnsBoard, useReturnsWrites, useResolveScan, useLineUnits } from "@/hooks/use-returns";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useCanDo } from "@/lib/use-permissions";
-import { playScanFeedback } from "@/lib/scan-feedback";
+import { useScanFeedback } from "@/hooks/use-scan-feedback";
+import { ScanAudioToggle } from "@/components/scan-audio-toggle";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -101,6 +102,7 @@ export default function ReturnsStationPage() {
   const resolveScan = useResolveScan();
   const fetchUnits = useLineUnits();
   const canRaiseRepair = useCanDo("maintenance", "create");
+  const scanFeedback = useScanFeedback();
 
   const [scanValue, setScanValue] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -115,13 +117,13 @@ export default function ReturnsStationPage() {
 
   const pushException = useCallback((tag: string, reason: string, detail?: string) => {
     setExceptions((prev) => [{ key: `${tag}-${Date.now()}`, tag, reason, detail }, ...prev]);
-    playScanFeedback("exception");
-  }, []);
+    scanFeedback.play("exception");
+  }, [scanFeedback]);
 
   const recordReturn = useCallback((row: Omit<SessionRow, "key">) => {
     setSessionRows((prev) => [{ ...row, key: `${row.lineItemId}-${Date.now()}` }, ...prev]);
-    playScanFeedback("success");
-  }, []);
+    scanFeedback.play("success");
+  }, [scanFeedback]);
 
   const handleScan = useCallback(
     async (rawValue: string) => {
@@ -190,14 +192,14 @@ export default function ReturnsStationPage() {
         }
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Scan failed");
-        playScanFeedback("error");
+        scanFeedback.play("error");
       } finally {
         setScanning(false);
         setScanValue("");
         inputRef.current?.focus();
       }
     },
-    [orgId, scanning, resolveScan, writes, kitWrites, pushException, recordReturn, refetch],
+    [orgId, scanning, resolveScan, writes, kitWrites, pushException, recordReturn, refetch, scanFeedback],
   );
 
   // ── Disambiguation resolution ──────────────────────────────────────────
@@ -328,15 +330,18 @@ export default function ReturnsStationPage() {
   return (
     <RequirePermission resource="warehouse" action="read">
       <div className="space-y-6">
-        <div className="flex flex-col gap-1">
-          <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-soft px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] text-teal">
-            <Undo2 className="h-3.5 w-3.5" />
-            Warehouse
-          </span>
-          <h1 className="t-title text-ink">Returns</h1>
-          <p className="t-body text-muted">
-            Everything out, org-wide — scan a tag to return it. No project to pick first.
-          </p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-col gap-1">
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-teal-soft px-2.5 py-1 text-[11px] font-semibold tracking-[0.02em] text-teal">
+              <Undo2 className="h-3.5 w-3.5" />
+              Warehouse
+            </span>
+            <h1 className="t-title text-ink">Returns</h1>
+            <p className="t-body text-muted">
+              Everything out, org-wide — scan a tag to return it. No project to pick first.
+            </p>
+          </div>
+          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
         </div>
 
         {/* ── Scan bar ─────────────────────────────────────────────────── */}

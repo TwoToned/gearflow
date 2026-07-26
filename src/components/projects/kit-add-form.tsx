@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
+import { SectionTitle, Field, DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useKitSearch, useKit } from "@/hooks/use-kits";
@@ -108,40 +108,36 @@ export function KitAddForm({
     enabled: !!selectedKitId,
   });
 
+  // Computed outside mutationFn so the mutation call itself stays a
+  // straight-line pass-through (R-3.6 — keeps mutationFn's own complexity low).
+  const kitUnitPriceResolved =
+    kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined;
+  // Discount is only meaningful alongside a flat KIT_PRICE unitPrice.
+  const kitDiscountResolved =
+    kitPricingMode === "KIT_PRICE" && kitUnitPriceResolved != null
+      ? resolveDiscountAmount(kitDiscountMode, kitDiscount, kitUnitPriceResolved)
+      : undefined;
+  const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
+  const effectiveGroupId = (groupId || selectedGroupId) || undefined;
+  // kitLabel = "<assetTag> - <name>" (what the server derives from the fetched kit if
+  // this resolves empty). Prefer the resolved selected-kit label; fall back to the
+  // search option.
+  const resolvedKitLabel =
+    selectedKitLabel ?? kitOptions.find((o) => o.value === selectedKitId)?.label ?? "";
+
   const addKitMut = useServerMutation({
-    mutationFn: () => {
-      const unitPrice =
-        kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined;
-      // Discount is only meaningful alongside a flat KIT_PRICE unitPrice — resolve a
-      // `%` value to a dollar amount client-side before it reaches the mutation
-      // (discount is always persisted as a flat $ amount, same as equipment/custom items).
-      let discount: number | undefined;
-      if (kitPricingMode === "KIT_PRICE" && unitPrice != null && kitDiscount) {
-        const raw = parseFloat(kitDiscount);
-        if (Number.isFinite(raw) && raw > 0) {
-          discount = kitDiscountMode === "%" ? Math.round(unitPrice * raw) / 100 : raw;
-        }
-      }
-      const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
-      const effectiveGroupId = (groupId || selectedGroupId) || undefined;
-      // Browser-direct native path. addKitNative expands the parent + member children +
-      // recalc + audit + collab atomically; reactive useQuery renders the new rows.
-      // kitLabel = "<assetTag> - <name>" (what the server derived from the fetched kit).
-      // Prefer the resolved selected-kit label; fall back to the search option.
-      const kitLabel =
-        selectedKitLabel ??
-        kitOptions.find((o) => o.value === selectedKitId)?.label ??
-        "";
-      return lineItemWrites.addKit(projectId, selectedKitId, {
+    // Browser-direct native path. addKitNative expands the parent + member children +
+    // recalc + audit + collab atomically; reactive useQuery renders the new rows.
+    mutationFn: () =>
+      lineItemWrites.addKit(projectId, selectedKitId, {
         pricingMode: kitPricingMode,
-        unitPrice,
-        discount,
+        unitPrice: kitUnitPriceResolved,
+        discount: kitDiscountResolved,
         groupName: undefined,
         categoryId: effectiveCategoryId,
         groupId: effectiveGroupId,
-        kitLabel,
-      });
-    },
+        kitLabel: resolvedKitLabel,
+      }),
     onSuccess: () => {
       onInvalidate();
       refreshProjectDetail(projectId);

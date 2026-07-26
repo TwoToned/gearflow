@@ -16,6 +16,31 @@ import { cn, focusRing } from "@/lib/utils";
 
 export type DiscountMode = "$" | "%";
 
+/**
+ * Resolves a raw discount input to the flat dollar amount the schema/mutation
+ * expects — discount is always persisted as a flat $ amount (never a
+ * percentage), so every caller needs this same conversion before submit.
+ * `%` mode multiplies against `grossAmount` (the pre-discount line/bundle
+ * total); `$` mode passes the value through unchanged. Returns `undefined`
+ * for blank/zero/invalid input — "nothing to discount".
+ */
+export function resolveDiscountAmount(
+  mode: DiscountMode,
+  rawValue: number | string | null | undefined,
+  grossAmount: number,
+): number | undefined {
+  // Blank/unset is distinct from an explicit 0 — a blank field means "no
+  // discount" (or, for callers with an omit-to-preserve mutation like
+  // updateGroupPriceNative, "don't touch the existing discount"), while a
+  // deliberately typed 0 clears/zeroes a previously-set discount. Checking
+  // the raw value BEFORE Number() coercion is what keeps that distinction —
+  // `Number(0)` is falsy too, so a truthiness check alone would collapse them.
+  if (rawValue === "" || rawValue == null) return undefined;
+  const raw = Number(rawValue);
+  if (!Number.isFinite(raw) || raw < 0) return undefined;
+  return mode === "%" ? Math.round(grossAmount * raw) / 100 : raw;
+}
+
 export function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
     <div>

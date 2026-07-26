@@ -28,7 +28,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { useEditLock } from "@/hooks/use-collaboration";
 import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
 import { COLLAB_TARGET_TYPES } from "@/lib/collaboration-targets";
-import { DiscountField, type DiscountMode } from "./line-item-form-fields";
+import { DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { GroupData } from "./equipment-rows";
 
 export interface EditGroupFormValues {
@@ -97,14 +97,8 @@ function EditGroupDialogBody({
   function handleSave() {
     if (!title.trim() || formDisabled) return;
     const resolvedPrice = price !== "" ? parseFloat(price) || 0 : undefined;
-    // Resolve a `%` discount to a flat $ amount before it reaches the mutation —
-    // discount is always persisted as a flat dollar amount off price × quantity.
-    let resolvedDiscount: number | undefined;
-    if (discount !== "") {
-      const raw = parseFloat(discount) || 0;
-      const gross = (resolvedPrice ?? priceVal ?? 0) * (parseInt(quantity) || 1);
-      resolvedDiscount = discountMode === "%" ? Math.round(gross * raw) / 100 : raw;
-    }
+    const gross = (resolvedPrice ?? priceVal ?? 0) * (parseInt(quantity) || 1);
+    const resolvedDiscount = resolveDiscountAmount(discountMode, discount, gross);
     onSubmit(
       group.id,
       {

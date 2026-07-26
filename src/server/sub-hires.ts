@@ -104,7 +104,7 @@ export async function getSubHires(filters?: {
     const [modelMap, projectCategories, projectGroups] = await Promise.all([
       getModelMap(organizationId),
       (await getConvexClient()).query(api.projectCategories.list, { orgId: organizationId }),
-      (await getConvexClient()).query(api.projectGroups.list, { orgId: organizationId }),
+      (await getConvexClient()).query(api.projectGroups.listByProject, { projectId: filters.projectId, orgId: organizationId }),
     ]);
     const catLabel = new Map(projectCategories.map((c) => [c.id, { id: c.id, name: c.name }]));
     const grpLabel = new Map(projectGroups.map((g) => [g.id, { id: g.id, title: g.title, categoryId: g.categoryId ?? null }]));

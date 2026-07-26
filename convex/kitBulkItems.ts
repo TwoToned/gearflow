@@ -31,6 +31,18 @@ export const getById = query({
   },
 });
 
+/** Cross-org GDPR sweep lookup — mirrors assetScanLogs.listByScannedById/testTagRecords.listByTestedById. */
+export const listByAddedById = query({
+  args: { addedById: v.string() },
+  handler: async (ctx, { addedById }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("kitBulkItems")
+      .withIndex("by_addedById", (q) => q.eq("addedById", addedById))
+      .collect();
+  },
+});
+
 /**
  * Kit bulk-item members for ONE kit (via by_kitId), org-filtered. Replaces
  * getKitBulkItemsByOrg + JS `.filter(kitId === id)` in the getKit composite.

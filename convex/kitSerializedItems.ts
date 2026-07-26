@@ -18,7 +18,19 @@ export const list = query({
     await requireService(ctx);
     return await ctx.db
       .query("kitSerializedItems")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: kit composition is bounded by admin-driven catalog size, not transaction volume — see docs/exceptions.md R-8.3.3
+      .collect();
+  },
+});
+
+/** Cross-org GDPR sweep lookup — mirrors assetScanLogs.listByScannedById/testTagRecords.listByTestedById. */
+export const listByAddedById = query({
+  args: { addedById: v.string() },
+  handler: async (ctx, { addedById }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("kitSerializedItems")
+      .withIndex("by_addedById", (q) => q.eq("addedById", addedById))
       .collect();
   },
 });

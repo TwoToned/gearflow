@@ -459,6 +459,25 @@ export default function WarehousePage() {
           </div>
         </FadeIn>
 
+        {/* ── Hub card: org-wide returns station (issue #944 WS5) ─────── */}
+        <FadeIn delay={0.05}>
+          <Link
+            href="/warehouse/returns"
+            className={`flex items-center justify-between gap-3 rounded-[var(--r-lg)] border border-line bg-card p-3.5 shadow-[var(--sh-card)] transition-colors hover:bg-paper-2 sm:p-4 ${focusRing}`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-soft text-teal">
+                <Undo2 className="h-4.5 w-4.5" />
+              </span>
+              <div>
+                <p className="t-body font-semibold text-ink">Returns station</p>
+                <p className="t-micro text-muted">Everything out, org-wide — scan to return, no project to pick first</p>
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 flex-shrink-0 text-faint" />
+          </Link>
+        </FadeIn>
+
         {/* ── Stat strip: the pipeline at a glance ────────────────── */}
         {!isLoading && projects.length > 0 && (
           <FadeIn delay={0.06}>

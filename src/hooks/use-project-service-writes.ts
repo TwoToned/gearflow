@@ -76,7 +76,13 @@ export function useProjectServiceWrites() {
         crewCountRequired: p.crewCountRequired,
         crewRoleId: p.crewRoleId,
       },
-      crew: (p.crewMemberIds ?? []).map((crewMemberId) => ({ id: createId(), crewMemberId })),
+      crew: (p.crew ?? []).map((c) => ({
+        id: createId(),
+        crewMemberId: c.crewMemberId,
+        rateOverride: c.rateOverride,
+        rateType: c.rateType || undefined,
+        estimatedHours: c.estimatedHours,
+      })),
     };
   };
 

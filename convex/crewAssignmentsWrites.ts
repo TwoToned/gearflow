@@ -10,6 +10,8 @@ import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen } from "./lib/fieldGuards";
+import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
+import { recalcServiceCostFromCrew } from "./lib/serviceCost";
 import * as enums from "./lib/validators";
 
 /**
@@ -18,7 +20,7 @@ import * as enums from "./lib/validators";
  * accepts NaN/Infinity/negatives; a browser-direct caller bypasses the server-side Zod,
  * and a negative/Infinity rate silently poisons the project's margin. `null`/`undefined`
  * skip (unset). */
-function assertCrewMoney(value: number | undefined, field: string): void {
+export function assertCrewMoney(value: number | undefined, field: string): void {
   if (value == null) return;
   if (!Number.isFinite(value) || value < 0) {
     throw new ConvexError({ code: "INVALID_NUMBER", message: `${field} must be a non-negative finite number.` });
@@ -71,7 +73,7 @@ export const assignmentFields = {
 
 type RateInputs = { crewMember: { firstName: string; lastName: string; defaultDayRate?: number | null; defaultHourlyRate?: number | null }; crewRole: { defaultRate?: number | null; rateType?: string | null } | null };
 
-async function rateInputs(ctx: MutationCtx, orgId: string, crewMemberId: string, crewRoleId: string | undefined): Promise<RateInputs> {
+export async function rateInputs(ctx: MutationCtx, orgId: string, crewMemberId: string, crewRoleId: string | undefined): Promise<RateInputs> {
   const m = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", crewMemberId)).first();
   if (!m || m.organizationId !== orgId) throw new ConvexError("Crew member not found");
   let crewRole: RateInputs["crewRole"] = null;
@@ -96,6 +98,14 @@ async function cascadeDelete(ctx: MutationCtx, doc: { _id: import("./_generated/
   for (const e of entries) await ctx.db.delete(e._id);
   await ctx.db.delete(doc._id);
   await bumpCountersForTable(ctx, "crewAssignments", doc, null);
+}
+
+/** Recalc every service + project touched by a bulk crew delete. Pulled out of
+ *  bulkDeleteNative's handler to keep its own complexity down (R-3.6). */
+async function recalcAfterBulkDelete(ctx: MutationCtx, orgId: string, serviceIds: Set<string>, projectIds: Set<string>, now: number): Promise<void> {
+  for (const serviceId of serviceIds) await recalcServiceCostFromCrew(ctx, serviceId, orgId, now);
+  const taxRate = await orgDefaultTaxRate(ctx, orgId);
+  for (const projectId of projectIds) await recalcProjectTotals(ctx, projectId, orgId, taxRate, now);
 }
 
 async function logAssignment(ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; id: string; name: string; summary: string; projectId?: string }) {
@@ -153,6 +163,14 @@ export const createNative = mutation({
       }
     }
 
+    // Keep the linked service's costTotal (if any) + project financials in sync —
+    // this is the ONLY crew-write path outside projectServicesWrites.ts's own crew
+    // reconcile (e.g. the crew-panel dialog linking straight to a service), so it
+    // must recalc too (single source of truth, issue #796).
+    if (a.serviceId) await recalcServiceCostFromCrew(ctx, a.serviceId, a.orgId, a.now);
+    const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
+    await recalcProjectTotals(ctx, a.projectId, a.orgId, taxRate, a.now);
+
     await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: `${crewMember.firstName} ${crewMember.lastName}`, summary: `Assigned ${crewMember.firstName} ${crewMember.lastName} to ${project.projectNumber}`, projectId: a.projectId });
     return { id: a.id };
   },
@@ -202,6 +220,16 @@ export const updateNative = mutation({
     await ctx.db.replace(doc._id, merged as typeof rest);
     await bumpCountersForTable(ctx, "crewAssignments", doc, merged);
 
+    // Recalc whichever service(s) this assignment is/was linked to (a rate/serviceId
+    // change can affect the OLD link's rollup too, e.g. re-linking to a different
+    // service) + the project totals. Single source of truth, issue #796.
+    const oldServiceId = doc.serviceId ?? null;
+    const newServiceId = a.serviceId ?? null;
+    if (oldServiceId) await recalcServiceCostFromCrew(ctx, oldServiceId, a.orgId, a.now);
+    if (newServiceId && newServiceId !== oldServiceId) await recalcServiceCostFromCrew(ctx, newServiceId, a.orgId, a.now);
+    const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
+    await recalcProjectTotals(ctx, doc.projectId, a.orgId, taxRate, a.now);
+
     const pn = await projectNumber(ctx, a.orgId, doc.projectId);
     await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: `${crewMember.firstName} ${crewMember.lastName}`, summary: `Updated assignment for ${crewMember.firstName} ${crewMember.lastName} on ${pn}`, projectId: doc.projectId });
     return { id: a.id };
@@ -247,7 +275,11 @@ export const deleteNative = mutation({
     const m = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", doc.crewMemberId)).first();
     const name = m && m.organizationId === a.orgId ? `${m.firstName} ${m.lastName}` : "";
     const pn = await projectNumber(ctx, a.orgId, doc.projectId);
+    const serviceId = doc.serviceId ?? null;
     await cascadeDelete(ctx, doc, a.orgId);
+    if (serviceId) await recalcServiceCostFromCrew(ctx, serviceId, a.orgId, a.now);
+    const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
+    await recalcProjectTotals(ctx, doc.projectId, a.orgId, taxRate, a.now);
     await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name, summary: `Removed ${name} from ${pn}`, projectId: doc.projectId });
     return { id: a.id };
   },
@@ -265,14 +297,19 @@ export const bulkDeleteNative = mutation({
 
     let deleted = 0, skipped = 0;
     const projectIds = new Set<string>();
+    const serviceIds = new Set<string>();
     for (const id of a.ids) {
       const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== a.orgId) { skipped++; continue; }
       projectIds.add(doc.projectId);
+      if (doc.serviceId) serviceIds.add(doc.serviceId);
       await cascadeDelete(ctx, doc, a.orgId);
       deleted++;
     }
-    if (deleted > 0) await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.ids[0], name: `${deleted} assignment${deleted === 1 ? "" : "s"}`, summary: `Removed ${deleted} crew assignment${deleted === 1 ? "" : "s"}`, projectId: [...projectIds][0] });
+    if (deleted > 0) {
+      await recalcAfterBulkDelete(ctx, a.orgId, serviceIds, projectIds, a.now);
+      await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.ids[0], name: `${deleted} assignment${deleted === 1 ? "" : "s"}`, summary: `Removed ${deleted} crew assignment${deleted === 1 ? "" : "s"}`, projectId: [...projectIds][0] });
+    }
     return { deleted, skipped };
   },
 });

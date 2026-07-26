@@ -35,6 +35,20 @@ export const crewMemberSchema = z.object({
 
 export type CrewMemberFormValues = z.input<typeof crewMemberSchema>;
 
+/**
+ * Rate-cascade input fields shared by any form that can set a CrewAssignment's rate
+ * (the crew-panel assignment dialog + the per-service crew rate table in
+ * services-panel.tsx) — single source of truth for these bounds (R-8.6.3/R-3.1).
+ * Mirrors convex/lib/crewRate.ts's cascade inputs (rateOverride/rateType/estimatedHours).
+ */
+export const crewRateFieldsSchema = {
+  rateOverride: z.union([z.literal(""), z.coerce.number().min(0)]).optional()
+    .transform(v => v === "" ? undefined : v),
+  rateType: z.enum(["HOURLY", "DAILY", "FLAT"]).optional().or(z.literal("")),
+  estimatedHours: z.union([z.literal(""), z.coerce.number().min(0)]).optional()
+    .transform(v => v === "" ? undefined : v),
+};
+
 export const crewAssignmentSchema = z.object({
   crewMemberId: z.string().min(1, "Crew member is required"),
   crewRoleId: z.string().optional().or(z.literal("")),
@@ -47,11 +61,7 @@ export const crewAssignmentSchema = z.object({
   endDate: z.union([z.literal(""), z.coerce.date()]).optional()
     .transform(v => v === "" ? undefined : v),
   endTime: z.string().max(5).optional(),
-  rateOverride: z.union([z.literal(""), z.coerce.number().min(0)]).optional()
-    .transform(v => v === "" ? undefined : v),
-  rateType: z.enum(["HOURLY", "DAILY", "FLAT"]).optional().or(z.literal("")),
-  estimatedHours: z.union([z.literal(""), z.coerce.number().min(0)]).optional()
-    .transform(v => v === "" ? undefined : v),
+  ...crewRateFieldsSchema,
   notes: z.string().max(2000).optional(),
   internalNotes: z.string().max(2000).optional(),
   generateShifts: z.boolean().default(false),

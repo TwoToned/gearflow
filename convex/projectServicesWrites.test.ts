@@ -110,6 +110,29 @@ describe("createServiceNative", () => {
     expect(await pendingOffers(t)).toBe(1); // PENDING counted
   });
 
+  test("crew rate cascade runs on create — resolved rate lands in estimatedCost + rolls up into costTotal (#796)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Bob", lastName: "Roe", status: "ACTIVE", defaultDayRate: 300 });
+      await ctx.db.insert("crewMembers", { id: "cm2", organizationId: ORG, firstName: "Cara", lastName: "Doe", status: "ACTIVE", defaultDayRate: 300 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, costTotal: 999 /* manual value must be overridden */,
+      crew: [
+        { id: "a1", crewMemberId: "cm1" }, // no override → member's day rate, 300
+        { id: "a2", crewMemberId: "cm2", rateOverride: 150, rateType: "FLAT" as const }, // overridden
+      ],
+      now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    const asgs = await asgsForService(t, "s1");
+    expect(asgs.find((a) => a.id === "a1")?.estimatedCost).toBe(300);
+    expect(asgs.find((a) => a.id === "a2")?.estimatedCost).toBe(150);
+    const s = await svcById(t, "s1");
+    expect(s?.costTotal).toBe(450); // 300 + 150, NOT the manually-sent 999
+  });
+
   test("dup-guard: a retried create (same cuid) is idempotent — no second audit", async () => {
     const t = makeT();
     await member(t, "member");
@@ -224,6 +247,45 @@ describe("updateServiceNative", () => {
     });
     expect(await asgsForService(t, "s1")).toHaveLength(0);
     expect(await pendingOffers(t)).toBe(0);
+  });
+
+  test("survivor rate-table edit recomputes estimatedCost + rolls up costTotal, without waiting on a role change (#796)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Bob", lastName: "Roe", status: "ACTIVE", defaultDayRate: 300 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput,
+      crew: [{ id: "a1", crewMemberId: "cm1" }], now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    expect((await svcById(t, "s1"))?.costTotal).toBe(300);
+
+    // Same crew (survivor), no role change — only the rate override moved.
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.updateServiceNative, {
+      id: "s1", orgId: ORG, ...baseInput,
+      crew: [{ id: "a1", crewMemberId: "cm1", rateOverride: 175, rateType: "FLAT" as const }],
+      now: NOW + 1, actor: ACTOR, auditId: "logu",
+    });
+    const asgs = await asgsForService(t, "s1");
+    expect(asgs[0].estimatedCost).toBe(175);
+    expect(asgs[0].rateOverride).toBe(175);
+    expect((await svcById(t, "s1"))?.costTotal).toBe(175);
+  });
+
+  test("a crew-less service keeps its manually-entered costTotal untouched", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, costTotal: 60, now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    expect((await svcById(t, "s1"))?.costTotal).toBe(60);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.updateServiceNative, {
+      id: "s1", orgId: ORG, ...baseInput, costTotal: 80, now: NOW + 1, actor: ACTOR, auditId: "logu",
+    });
+    expect((await svcById(t, "s1"))?.costTotal).toBe(80); // manual value passes through untouched
   });
 
   test("cross-org service rejected", async () => {

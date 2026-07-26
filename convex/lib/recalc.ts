@@ -18,6 +18,17 @@ import { applyProjectAllocation } from "./allocation";
 const round = (v: number): number => Math.round(v * 100) / 100;
 const num = (v: unknown): number => (v != null ? Number(v) : 0);
 
+/** Org default tax rate from the orgSettings mirror (Postgres-authoritative). Shared by
+ *  every native write mutation that needs it for recalcProjectTotals (project-services,
+ *  crew-assignments, line-items) — one lookup, not a copy per write file. */
+export async function orgDefaultTaxRate(ctx: MutationCtx, orgId: string): Promise<number | null> {
+  const row = await ctx.db
+    .query("orgSettings")
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+    .first();
+  return row?.defaultTaxRate ?? null;
+}
+
 export async function recalcProjectTotals(
   ctx: MutationCtx,
   projectId: string,
@@ -102,8 +113,15 @@ export async function recalcProjectTotals(
     services.filter((s) => s.showOnDocuments === true).reduce((sum, s) => sum + num(s.lineTotal), 0),
   );
 
-  // 4. Labour costs from crew assignments.
-  const labourCostTotal = round(assignments.reduce((sum, a) => sum + num(a.estimatedCost), 0));
+  // 4. Labour costs from crew assignments NOT already linked to a service — a
+  // service-linked assignment's cost is rolled into its service's costTotal instead
+  // (convex/lib/serviceCost.ts recalcServiceCostFromCrew, folded into serviceCostTotal
+  // just above), so counting it again here would double it in `margin`. Only
+  // standalone assignments (no serviceId — legacy or added outside any service) land
+  // in labourCostTotal. See FEATUREDOCS/31 Rate Cascade / issue #796.
+  const labourCostTotal = round(
+    assignments.filter((a) => a.serviceId == null).reduce((sum, a) => sum + num(a.estimatedCost), 0),
+  );
 
   // 5. Sub-hire costs (exclude CANCELLED/DRAFT).
   const subHires = allSubHires.filter((sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT");

@@ -18,3 +18,5 @@ distinct from "debt paid down" instead of both looking like the same baseline co
 | 2026-07-26 | 646 | 645 | -1 | (decrease — existing collects bounded/paginated) |
 | 2026-07-26 | 646 | 643 | -3 | (decrease — existing collects bounded/paginated, issue #794 branch — dedupe accessory-child/model-bulk queries in convex/lib/fulfillment.ts) |
 | 2026-07-26 | 643 | 642 | -1 | (decrease — existing collects bounded/paginated) |
+| 2026-07-26 | 645 | 646 | +1 | convex/lib/serviceCost.ts recalcServiceCostFromCrew: one new .collect() on crewAssignments by_serviceId (bounded to a single service's own crew — a handful of rows, not org-wide/whole-table) needed to sum a service's rolled-up labour cost from either write path (issue #796). |
+| 2026-07-26 | 642 | 643 | +1 | merge of origin/main PR #930 (serviceCost.ts recalcServiceCostFromCrew, +1 bounded collect, already justified) into issue #794 accessories branch |

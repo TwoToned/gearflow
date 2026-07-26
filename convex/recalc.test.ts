@@ -118,6 +118,31 @@ describe("recalcProjectTotals — totals parity", () => {
     expect(p?.equipmentRevenue).toBe(0);
   });
 
+  test("excludes service-linked crew cost from labourCostTotal (no double-count with serviceCostTotal, #796)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      // Service's costTotal is already the rolled-up sum of its own crew (as
+      // recalcServiceCostFromCrew would have set it) — 100.
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false, costTotal: 100 });
+      // This assignment IS that service's crew — must NOT also land in labourCostTotal.
+      await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", serviceId: "s1", estimatedCost: 100 });
+      // A standalone (no serviceId) assignment DOES still count in labourCostTotal.
+      await ctx.db.insert("crewAssignments", { id: "a2", organizationId: ORG, projectId: "p1", crewMemberId: "c2", estimatedCost: 40 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.serviceCostTotal).toBe(100);
+    expect(p?.labourCostTotal).toBe(40);
+    // margin = total(0) - (100 + 40 + 0) = -140
+    expect(p?.margin).toBe(-140);
+  });
+
   test("uses org default tax when the project has no override", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {

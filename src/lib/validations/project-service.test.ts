@@ -32,7 +32,10 @@ describe("projectServiceSchema", () => {
     numberOfTrips: 2,
     crewCountRequired: 4,
     crewRoleId: "role-1",
-    crewMemberIds: ["cm-1", "cm-2"],
+    crew: [
+      { crewMemberId: "cm-1", rateOverride: 500, rateType: "DAILY" as const },
+      { crewMemberId: "cm-2" },
+    ],
   };
 
   it("accepts valid minimal data", () => {
@@ -52,7 +55,10 @@ describe("projectServiceSchema", () => {
       expect(result.data.endDate).toBeInstanceOf(Date);
       expect(result.data.latitude).toBe(-33.8688);
       expect(result.data.quantity).toBe(2);
-      expect(result.data.crewMemberIds).toEqual(["cm-1", "cm-2"]);
+      expect(result.data.crew).toEqual([
+        { crewMemberId: "cm-1", rateOverride: 500, rateType: "DAILY" },
+        { crewMemberId: "cm-2" },
+      ]);
     }
   });
 
@@ -195,18 +201,31 @@ describe("projectServiceSchema", () => {
     }
   });
 
-  // crewMemberIds array
-  it("accepts empty crewMemberIds array", () => {
-    const result = projectServiceSchema.safeParse({ ...minimal, crewMemberIds: [] });
+  // crew array
+  it("accepts empty crew array", () => {
+    const result = projectServiceSchema.safeParse({ ...minimal, crew: [] });
     expect(result.success).toBe(true);
   });
 
-  it("accepts undefined crewMemberIds", () => {
+  it("accepts undefined crew", () => {
     const result = projectServiceSchema.safeParse(minimal);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.crewMemberIds).toBeUndefined();
+      expect(result.data.crew).toBeUndefined();
     }
+  });
+
+  it("rejects a crew row with a blank crewMemberId", () => {
+    const result = projectServiceSchema.safeParse({ ...minimal, crew: [{ crewMemberId: "" }] });
+    expect(result.success).toBe(false);
+  });
+
+  it("coerces a crew row's rateOverride and rejects a negative one", () => {
+    const ok = projectServiceSchema.safeParse({ ...minimal, crew: [{ crewMemberId: "cm-1", rateOverride: "45.5" }] });
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data.crew?.[0].rateOverride).toBe(45.5);
+    const bad = projectServiceSchema.safeParse({ ...minimal, crew: [{ crewMemberId: "cm-1", rateOverride: -10 }] });
+    expect(bad.success).toBe(false);
   });
 
   // Optional string fields

@@ -4,7 +4,11 @@ WORKDIR /app
 # curl: required by Coolify's container health check (slim has neither curl nor wget)
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pnpm@11.7.0
+# corepack ships with node:22 — activates the exact pnpm version pinned in
+# package.json's "packageManager" field via corepack's own signed release
+# manifest, rather than an unpinned `npm install -g` (OSSF Scorecard
+# Pinned-Dependencies).
+RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \

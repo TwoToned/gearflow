@@ -545,6 +545,24 @@ export const createNative = mutation({
       await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
     }
 
+    // Discount cascade (#953 / QW-4): when the caller doesn't pass an explicit
+    // discountPercent, snapshot the client's `defaultDiscount` onto the project
+    // AT CREATE TIME (server-authoritative, R-9.3 — never trust a client-computed
+    // discount). `== null` (not falsy) is deliberate: an explicit 0% discount is a
+    // real caller choice and must win over the client default, never be silently
+    // overwritten by it (the lineItemWrites.ts `unitPrice == null` lesson — see the
+    // auto-pricing comment there for the truthiness bug this avoids). This is a
+    // ONE-TIME snapshot: reassigning the project's client later does NOT
+    // retroactively recompute discountPercent — updateNative has no equivalent
+    // cascade, by design.
+    let discountPercent = fields.discountPercent;
+    if (discountPercent == null && fields.clientId) {
+      const client = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", fields.clientId!)).first();
+      if (client && client.organizationId === fields.organizationId && client.defaultDiscount != null) {
+        discountPercent = client.defaultDiscount;
+      }
+    }
+
     // Dup-guard the client-minted cuid first (applies to both number paths). The
     // projectNumber clash-guard below is org-scoped and doesn't catch a cross-org
     // cuid collision. THROW (not the `{created:false}` number-clash signal, which
@@ -604,7 +622,7 @@ export const createNative = mutation({
     // mint a project with forged financials (projectWriteFields exposes them as args).
     // Non-breaking: createProject never sends these. (bumpProjectCounters keys off
     // status/isTemplate, not money, so it's unaffected by the strip.)
-    const insertFields = { ...fields, projectNumber };
+    const insertFields = { ...fields, projectNumber, discountPercent };
     for (const k of PROJECT_MONEY_ANCHORS) delete (insertFields as Record<string, unknown>)[k];
 
     await ctx.db.insert("projects", insertFields);

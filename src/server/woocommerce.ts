@@ -12,7 +12,7 @@ import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { recalculateProjectTotals } from "@/server/line-items";
-import { flexibleDateParse } from "@/lib/woocommerce-utils";
+import { flexibleDateParse, resolveWooDiscountPercent } from "@/lib/woocommerce-utils";
 import {
   getWooCommerceOrderLogsPage,
   getFailedOrderLogById,
@@ -321,6 +321,12 @@ export async function processWooCommerceOrder(
       : `${order.billing.first_name} ${order.billing.last_name} — Website Order #${order.number || order.id}`;
     const clientNotes = extractNotes(order, integration);
     const projectCreatedAt = Date.now();
+    // QW-4 (#953): seed the discount cascade here too — this path creates the
+    // project via api.projects.createWithUniqueNumber (a plain insert), which
+    // does NOT run projectWrites.createNative's in-mutation defaultDiscount
+    // lookup. A snapshot, not a live link (see the "no retroactive change" note
+    // on createNative).
+    const wooDiscountPercent = resolveWooDiscountPercent(client);
     const buildProjectArgs = (num: string) => ({
       id: projectId,
       organizationId: orgId,
@@ -334,6 +340,7 @@ export async function processWooCommerceOrder(
       ...(dates.rentalEnd ? { rentalEndDate: dates.rentalEnd.getTime() } : {}),
       ...(dates.eventStart ? { eventStartDate: dates.eventStart.getTime() } : {}),
       ...(clientNotes ? { clientNotes } : {}),
+      ...(wooDiscountPercent != null ? { discountPercent: wooDiscountPercent } : {}),
       tags: ["website-order"],
       createdAt: projectCreatedAt,
       updatedAt: projectCreatedAt,

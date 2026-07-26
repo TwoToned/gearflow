@@ -115,6 +115,7 @@ import type * as lib_recalc from "../lib/recalc.js";
 import type * as lib_reservationConflicts from "../lib/reservationConflicts.js";
 import type * as lib_sanitizeSet from "../lib/sanitizeSet.js";
 import type * as lib_searchScore from "../lib/searchScore.js";
+import type * as lib_serviceCost from "../lib/serviceCost.js";
 import type * as lib_shardedCounter from "../lib/shardedCounter.js";
 import type * as lib_subHireLineGen from "../lib/subHireLineGen.js";
 import type * as lib_subHireOrderCounter from "../lib/subHireOrderCounter.js";
@@ -332,6 +333,7 @@ declare const fullApi: ApiFromModules<{
   "lib/reservationConflicts": typeof lib_reservationConflicts;
   "lib/sanitizeSet": typeof lib_sanitizeSet;
   "lib/searchScore": typeof lib_searchScore;
+  "lib/serviceCost": typeof lib_serviceCost;
   "lib/shardedCounter": typeof lib_shardedCounter;
   "lib/subHireLineGen": typeof lib_subHireLineGen;
   "lib/subHireOrderCounter": typeof lib_subHireOrderCounter;

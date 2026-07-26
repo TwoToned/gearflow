@@ -19,6 +19,7 @@ import {
   ChevronRight,
   X,
   LayoutDashboard,
+  ListTodo,
   Warehouse,
   ShieldCheck,
   BarChart3,
@@ -108,7 +109,7 @@ const typeLabels: Record<SearchResultType, string> = {
 };
 
 const pageIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  LayoutDashboard, Package, Boxes, Box, CalendarRange, Container,
+  LayoutDashboard, ListTodo, Package, Boxes, Box, CalendarRange, Container,
   FolderOpen, BookTemplate, Warehouse, Users, MapPin, Wrench,
   ShieldCheck, BarChart3, Settings, UserCircle, PackageCheck, PackageX,
   CreditCard, Palette, Truck, FileText, ClipboardList, Pencil, Copy,

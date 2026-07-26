@@ -57,6 +57,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | Path | Page |
 |------|------|
 | `/dashboard` | Overview, stats, recent activity, upcoming projects |
+| `/my-tasks` | This user's open tasks (direct + crew assignment) across every project, grouped Overdue/Today/This week/Later |
 | `/assets/registry` | Serialized + bulk asset list |
 | `/assets/registry/new` | Create asset(s) |
 | `/assets/registry/[id]` | Asset detail (tabs: info, history, maintenance, media) |

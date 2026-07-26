@@ -416,6 +416,63 @@ describe("projectWrites.createNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, clientId: "foreign-client" } as typeof cargs),
     ).rejects.toThrow(/not found in your organization/i);
   });
+
+  // QW-4 (#953) — discount cascade: a new project with a client and no explicit
+  // discountPercent snapshots the client's defaultDiscount at create time.
+  describe("discount cascade (client.defaultDiscount)", () => {
+    async function seedClient(t: ReturnType<typeof convexTest>, id: string, defaultDiscount?: number) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" });
+        await ctx.db.insert("clients", { id, organizationId: ORG, name: "Acme Co", defaultDiscount, createdAt: NOW, updatedAt: NOW });
+      });
+    }
+
+    test("default applied: no discountPercent supplied → stamps the client's defaultDiscount", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", 15);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, clientId: "c1" } as typeof cargs);
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBe(15);
+    });
+
+    test("explicit value wins: caller's discountPercent overrides the client default", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", 15);
+      await t.withIdentity(asUser(ORG)).mutation(
+        api.projectWrites.createNative,
+        { ...cargs, clientId: "c1", discountPercent: 5 } as typeof cargs,
+      );
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBe(5);
+    });
+
+    test("explicit 0 wins: an explicit 0% discount is NOT overwritten by the client default (no truthiness bug)", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", 15);
+      await t.withIdentity(asUser(ORG)).mutation(
+        api.projectWrites.createNative,
+        { ...cargs, clientId: "c1", discountPercent: 0 } as typeof cargs,
+      );
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBe(0);
+    });
+
+    test("no client → no default applied (discountPercent stays unset)", async () => {
+      const t = makeT();
+      await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, cargs);
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBeUndefined();
+    });
+
+    test("client with no defaultDiscount set → discountPercent stays unset", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", undefined);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, clientId: "c1" } as typeof cargs);
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBeUndefined();
+    });
+  });
 });
 
 describe("projectWrites.deleteNative", () => {

@@ -39,6 +39,14 @@ export const PAGE_COMMANDS: PageCommand[] = [
     description: "Overview and recent activity",
   },
   {
+    label: "My tasks",
+    href: "/my-tasks",
+    aliases: ["mytasks", "tasks", "todo", "mytodo"],
+    icon: "ListTodo",
+    description: "Open tasks assigned to you, across every project",
+    searchable: false,
+  },
+  {
     label: "Assets",
     href: "/assets/registry",
     aliases: ["assets", "registry", "assetregistry", "inventory"],

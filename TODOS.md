@@ -317,11 +317,11 @@ Model detail page; asset detail shows inherited rows tagged "from model".
   kit children (`GripVertical` icon, `text-fg-3/40`, same `ml-16` indentation).
   The grip is inert (no drag listeners) since accessories move with their
   parent.
-- **~~Exclude-accessories toggle.~~** ✅ SHIPPED. `addLineItem` and
-  `checkOutItems` accept `includeAccessories` (default `true`). UI checkbox
-  on the equipment-add form when `hasAccessories` is true on
-  `checkAvailability` / `lookupAssetByTag`. `hasAccessories` field added to
-  both return types. Integration tests for `includeAccessories=false`.
+- **~~Exclude-accessories toggle.~~** ✅ SHIPPED, then **superseded by issue
+  #794** — see below. The all-or-nothing "Include accessories" checkbox is
+  gone from the add form; per-accessory selection via `accessoryPlan` replaced
+  it. `includeAccessories` still exists as a mutation-level all-or-nothing gate
+  for non-picker callers (bulk import, the `requireService` mirror).
 - **Bulk parents.** v1 restricts parents to serialised assets; "50 lights
   each with 2 clamps" can't be expressed yet. Unlocks the full Bulk Check-In
   payoff. P2.
@@ -330,6 +330,42 @@ Model detail page; asset detail shows inherited rows tagged "from model".
 - **DEDICATED detach-while-out** — if `DEDICATED` is re-enabled, block
   detaching while the bulk units are still out on a project (currently we
   guard only the serialised case). P3.
+
+### ~~Redo accessories: default/optional tier + accessory plan~~ ✅ SHIPPED (issue #794)
+`modelBulkAccessories.inclusion` (`DEFAULT`/`OPTIONAL`, absent = `DEFAULT`) +
+`updateNative` (was a dead end — dup-guard said "edit the quantity instead" with
+no such mutation). `ProjectLineItem.accessoryPlan` (`{excluded, added}`) is the
+per-line override; `resolveLineAccessoryPlan` is the ONE function office add,
+warehouse prep, and warehouse checkout all consult — fixes the real bug where
+checkout re-expanded raw config and could resurrect a PM-deselected default.
+Add-form picker (both by-model and by-asset-tag) replaces the old "Include
+accessories" checkbox. `updateAccessoryPlanNative` reconciles an existing
+line's children to an edited plan, hard-blocked once the line has deployed.
+Online Pick List + Pull Sheet now render accessory children as indented,
+individually-checkable rows (closes the un-completable pick-progress bug);
+`KitChildRows` has an "Accessory" badge. Full design: `docs/designs/accessories-v2.md`.
+
+**Left open, tracked here (not silently dropped):**
+- **Row-menu "Edit accessories" entry point.** `updateAccessoryPlanNative` is
+  implemented and tested but nothing in `equipment-rows.tsx` calls it yet —
+  reopening the picker against an existing line's plan from the project
+  equipment tab needs a UI hook. P2.
+- **Main warehouse page kit-parity for accessory parents.** `groupItems`/
+  `groupCheckinItems` (`warehouse/[projectId]/page.tsx`) still only
+  special-case `isKitParent` — an accessory parent doesn't get its own
+  expandable group, verification circles, "X/Y verified" badge, or "Deploy
+  Verified Only"/"Deploy All" dialog in the Deploy/Return/Prep/De-prep tabs.
+  `checkOutItems`'s new per-item `includeAccessoryIds` (the mutation-level
+  "verified subset" narrowing) has no UI driving it yet. P2.
+- **By-asset-tag picker parity.** The add-form Accessories section surfaces
+  the model's DEFAULT/OPTIONAL bulk accessories on a by-asset-tag add too, but
+  does not show the specific asset's own serialised/bulk children as a
+  read-only "attached to this unit" group (they still always auto-attach,
+  just aren't listed in the picker). P3.
+- **Quantity-merge path still doesn't rescale.** Adding the same model again
+  (the quantity-merge path in `addLineItemSmartNative`) increments the
+  existing line without re-running `reconcileLineAccessoryChildren` — a
+  pre-existing limitation (FEATUREDOCS/48) this issue didn't fix. P3.
 
 ## Warehouse Documents
 

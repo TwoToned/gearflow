@@ -96,6 +96,9 @@ export function KitChildRows({
                   {isNestedKit && (
                     <Badge status="neutral">Kit</Badge>
                   )}
+                  {child.childKind === "ACCESSORY" && (
+                    <Badge status="neutral">Accessory</Badge>
+                  )}
                   {nestedKitPartial && (
                     <Badge status="warn">Partial</Badge>
                   )}
@@ -239,6 +242,7 @@ export function MobileKitChildCards({
             verified={isVerified}
             onToggleVerify={() => onToggleVerify(child.id)}
             name={child.model?.name || child.description || "Item"}
+            badges={child.childKind === "ACCESSORY" ? <Badge status="neutral">Accessory</Badge> : undefined}
             assetTag={child.asset?.assetTag || child.bulkAsset?.assetTag || "—"}
             qtyLabel={child.quantity}
             status={<PrepStatusBadge item={child} />}

@@ -172,6 +172,7 @@ export const detail = query({
       .filter((r) => r.organizationId === orgId);
     const bulkAccessories: Array<{
       id: string; organizationId: string; modelId: string; bulkAssetId: string; quantity: number;
+      inclusion: "DEFAULT" | "OPTIONAL";
       sortOrder: number | null; notes: string | null; addedAt: number | null; addedById: string;
       bulkAsset: { id: string; assetTag: string; modelId: string | null; model: { id: string; name: string } | null };
     }> = [];
@@ -187,6 +188,7 @@ export const detail = query({
         modelId: ba.modelId,
         bulkAssetId: ba.bulkAssetId,
         quantity: ba.quantity,
+        inclusion: ba.inclusion ?? "DEFAULT",
         sortOrder: ba.sortOrder ?? null,
         notes: ba.notes ?? null,
         addedAt: ba.addedAt ?? null,

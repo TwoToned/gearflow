@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { focusRing } from "@/lib/utils";
-import { pickListProgress } from "./pick-list-progress";
+import { pickListProgress, getAccessoryChildren } from "./pick-list-progress";
 
 function getStorageKey(projectId: string) {
   return `picklist-checks-${projectId}`;
@@ -162,6 +162,11 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                 const isKit = !!(item.kitId) && !(item.isKitChild);
                 const isGroup = isKit;
                 const children = isGroup ? ((item.childLineItems || []) as Array<Record<string, unknown>>) : [];
+                // A non-kit top-level line with ACCESSORY children (issue #794) —
+                // its accessories are independently pickable rows, indented below it
+                // (not synced to the parent like a kit member; pickListProgress
+                // already counts them this way, this closes the render-side gap).
+                const accessoryChildren = isGroup ? [] : getAccessoryChildren(item);
                 const qty = item.quantity as number;
                 const itemName = isKit
                   ? (item.description as string) || kit?.name || "Kit"
@@ -255,6 +260,43 @@ export function OnlinePickList({ projectId }: OnlinePickListProps) {
                         onToggle={() => toggle(item.id as string)}
                       />
                     )}
+
+                    {/* Accessory children — independently pickable, indented */}
+                    {accessoryChildren.map((child) => {
+                      const childModel = child.model as { name: string; modelNumber?: string | null } | null;
+                      const childAsset = child.asset as { assetTag: string } | null;
+                      const childBulk = child.bulkAsset as { assetTag: string } | null;
+                      const childName = childModel?.name || (child.description as string) || "Accessory";
+                      const childTag = childAsset?.assetTag || childBulk?.assetTag || null;
+                      const childQty = child.quantity as number;
+
+                      if (childQty > 1) {
+                        return Array.from({ length: childQty }).map((_, i) => {
+                          const key = `${child.id}-${i}`;
+                          return (
+                            <PickListRow
+                              key={key}
+                              label={`${childName} - ${i + 1}`}
+                              tag={childTag}
+                              checked={checked.has(key)}
+                              onToggle={() => toggle(key)}
+                              indent={1}
+                            />
+                          );
+                        });
+                      }
+
+                      return (
+                        <PickListRow
+                          key={child.id as string}
+                          label={childName}
+                          tag={childTag}
+                          checked={checked.has(child.id as string)}
+                          onToggle={() => toggle(child.id as string)}
+                          indent={1}
+                        />
+                      );
+                    })}
                   </React.Fragment>
                 );
               })}

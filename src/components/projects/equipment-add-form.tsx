@@ -25,7 +25,7 @@ import {
   type LineItemFormValues,
 } from "@/lib/validations/line-item";
 import { checkAvailability, lookupAssetByTag } from "@/server/line-items";
-import { useLineItemWrites } from "@/hooks/use-line-item-writes";
+import { useLineItemWrites, type AccessoryPlanInput } from "@/hooks/use-line-item-writes";
 import { useModelSearch, useModel } from "@/hooks/use-models";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
@@ -83,7 +83,11 @@ export function EquipmentAddForm({
   const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? "");
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
   const [duplicateAction, setDuplicateAction] = useState<"combine" | "separate">("combine");
-  const [includeAccessories, setIncludeAccessories] = useState(true);
+  // Per-accessory selection (issue #794), keyed by the modelBulkAccessories row id —
+  // replaces the old all-or-nothing "Include accessories" checkbox. DEFAULT rows
+  // start selected (deselecting records an exclusion); OPTIONAL rows start
+  // unselected (selecting opts in). See accessoryPlan below for the derived plan.
+  const [accessorySelection, setAccessorySelection] = useState<Record<string, boolean>>({});
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -212,7 +216,10 @@ export function EquipmentAddForm({
       const res = await lineItemWrites.add(projectId, parsed, {
         allowOverbook: overbookConfirmed,
         forceSeparate: duplicateAction === "separate",
-        includeAccessories,
+        // Per-accessory selection now replaces the all-or-nothing toggle (issue
+        // #794) — "exclude all" is just a plan excluding every default.
+        includeAccessories: true,
+        accessoryPlan,
       });
       // Native returns { id, merged }; reshape to the _merged/_newQuantity onSuccess
       // expects. Merged qty mirrors the "combine" radio's preview.
@@ -263,9 +270,39 @@ export function EquipmentAddForm({
   const requestedQty = Number(form.watch("quantity")) || 1;
   const isOverbooked = mode === "model" && !!availability && requestedQty > availability.available;
   const hasDuplicate = mode === "model" && !!availability && availability.bookedOnThisProject > 0;
-  const modelHasAccessories = availability?.hasAccessories === true;
-  const assetHasAccessories = assetLookup?.hasAccessories === true;
-  const showAccessoriesToggle = mode === "model" ? !!selectedModelId && modelHasAccessories : !!lookupTag && assetHasAccessories;
+  // Accessories picker (issue #794) — model add and by-asset-tag add share the same
+  // model-level DEFAULT/OPTIONAL list (asset-level serialised/bulk children still
+  // always auto-attach, unaffected by this picker — see FEATUREDOCS/48).
+  const accessories = mode === "model" ? (availability?.accessories ?? []) : (assetLookup?.accessories ?? []);
+  const accessoryKey = accessories.map((a) => a.id).join(",");
+  useEffect(() => {
+    setAccessorySelection((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const a of accessories) {
+        next[a.id] = a.id in prev ? prev[a.id] : a.inclusion !== "OPTIONAL";
+      }
+      return next;
+    });
+    // Only reinitialize when the SET of accessory rows changes, not on every
+    // availability refetch — re-running per object identity would clobber toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessoryKey]);
+
+  const defaultAccessories = accessories.filter((a) => a.inclusion !== "OPTIONAL");
+  const optionalAccessories = accessories.filter((a) => a.inclusion === "OPTIONAL");
+
+  const accessoryPlan: AccessoryPlanInput | undefined = useMemo(() => {
+    if (accessories.length === 0) return undefined;
+    const excluded = defaultAccessories
+      .filter((a) => accessorySelection[a.id] === false)
+      .map((a) => a.bulkAssetId);
+    const added = optionalAccessories
+      .filter((a) => accessorySelection[a.id] === true)
+      .map((a) => ({ bulkAssetId: a.bulkAssetId }));
+    if (excluded.length === 0 && added.length === 0) return undefined;
+    return { excluded, added };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessorySelection, accessoryKey]);
 
   // Reset overbook confirmation when model or quantity changes
   useEffect(() => {
@@ -617,15 +654,50 @@ export function EquipmentAddForm({
             <span className="text-ui-text text-ink-2">Optional item (excluded from totals)</span>
           </label>
 
-          {showAccessoriesToggle && (
-            <label className="flex cursor-pointer items-center gap-2.5">
-              <Checkbox
-                id="eq-includeAccessories"
-                checked={includeAccessories}
-                onCheckedChange={(c) => setIncludeAccessories(c === true)}
-              />
-              <span className="text-ui-text text-ink-2">Include accessories</span>
-            </label>
+          {accessories.length > 0 && (
+            <div className="space-y-2.5 rounded-[var(--r)] border border-line bg-paper-2/50 p-3">
+              <p className="t-overline text-muted">Accessories</p>
+
+              {defaultAccessories.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="t-micro text-faint">Included</p>
+                  {defaultAccessories.map((a) => (
+                    <label key={a.id} className="flex cursor-pointer items-center gap-2.5">
+                      <Checkbox
+                        checked={accessorySelection[a.id] ?? true}
+                        onCheckedChange={(c) =>
+                          setAccessorySelection((prev) => ({ ...prev, [a.id]: c === true }))
+                        }
+                      />
+                      <span className="text-ui-text text-ink-2">
+                        <span className="t-data tabular-nums">{a.quantity * requestedQty}×</span>{" "}
+                        {a.modelName ?? a.assetTag}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {optionalAccessories.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="t-micro text-faint">Optional</p>
+                  {optionalAccessories.map((a) => (
+                    <label key={a.id} className="flex cursor-pointer items-center gap-2.5">
+                      <Checkbox
+                        checked={accessorySelection[a.id] ?? false}
+                        onCheckedChange={(c) =>
+                          setAccessorySelection((prev) => ({ ...prev, [a.id]: c === true }))
+                        }
+                      />
+                      <span className="text-ui-text text-ink-2">
+                        <span className="t-data tabular-nums">{a.quantity * requestedQty}×</span>{" "}
+                        {a.modelName ?? a.assetTag}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </section>
 

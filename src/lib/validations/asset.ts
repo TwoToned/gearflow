@@ -67,9 +67,20 @@ export type AssetBulkChildFormValues = z.input<typeof assetBulkChildSchema>;
  * Same bulkAssetId/quantity/notes shape as assetBulkChildSchema, minus
  * allocationMode (model-level accessories are always SHIPS_WITH) — derived via
  * `.omit()` (R-8.6.3) rather than re-declared. */
-export const modelBulkAccessorySchema = assetBulkChildSchema.omit({ allocationMode: true });
+export const modelBulkAccessorySchema = assetBulkChildSchema.omit({ allocationMode: true }).extend({
+  // DEFAULT (default): auto-attaches when the model is added to a project (PM may
+  // deselect per line). OPTIONAL: never auto-attaches — offered in the add-time
+  // picker (issue #794).
+  inclusion: z.enum(["DEFAULT", "OPTIONAL"]).default("DEFAULT"),
+});
 
 export type ModelBulkAccessoryFormValues = z.input<typeof modelBulkAccessorySchema>;
+
+/** Patch form for an existing model accessory — quantity/inclusion/notes only
+ * (bulkAssetId is immutable after creation; remove+re-add to change it). */
+export const modelBulkAccessoryUpdateSchema = modelBulkAccessorySchema.omit({ bulkAssetId: true }).partial();
+
+export type ModelBulkAccessoryUpdateFormValues = z.input<typeof modelBulkAccessoryUpdateSchema>;
 
 export const locationSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),

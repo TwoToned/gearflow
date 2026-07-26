@@ -32,6 +32,14 @@ export interface BulkLineItemPatch {
   isOptional?: boolean;
 }
 
+/** The durable per-line accessory selection (issue #794) — mirrors
+ *  `projectLineItems.accessoryPlan` (convex/schema.ts). Absent/undefined on `add`
+ *  means template behaviour: every model DEFAULT, no OPTIONALs. */
+export interface AccessoryPlanInput {
+  excluded: string[];
+  added: { bulkAssetId: string; quantityPerParent?: number }[];
+}
+
 /**
  * Browser-direct LINE-ITEM writes (Phase 3 — the flag-gated, default-OFF twin of the
  * add/update/remove/reorder line-item server actions in src/server/line-items.ts).
@@ -138,6 +146,7 @@ export function useLineItemWrites() {
   const orgId = activeOrg?.id;
 
   const addM = useMutation(api.lineItemWrites.addLineItemSmartNative);
+  const updateAccessoryPlanM = useMutation(api.lineItemWrites.updateAccessoryPlanNative);
   const addCustomM = useMutation(api.lineItemWrites.addCustomNative);
   const addKitM = useMutation(api.lineItemWrites.addKitNative);
   const patchM = useMutation(api.lineItemWrites.patchNative);
@@ -169,6 +178,7 @@ export function useLineItemWrites() {
         allowOverbook: boolean;
         forceSeparate: boolean;
         includeAccessories: boolean;
+        accessoryPlan?: AccessoryPlanInput;
       },
     ): Promise<{ id: string; merged: boolean }> => {
       try {
@@ -180,6 +190,7 @@ export function useLineItemWrites() {
           allowOverbook: opts.allowOverbook,
           forceSeparate: opts.forceSeparate,
           includeAccessories: opts.includeAccessories,
+          accessoryPlan: opts.accessoryPlan,
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
@@ -262,6 +273,23 @@ export function useLineItemWrites() {
           groupId: opts.groupId || undefined,
           kitLabel: opts.kitLabel,
           emitActivity: true,
+          actor: actor(),
+          auditId: createId(),
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** Post-add "Edit accessories" (issue #794) — reconciles child lines to the new
+     *  plan; throws if the line has already deployed (server-enforced lock). */
+    updateAccessoryPlan: async (id: string, plan: AccessoryPlanInput): Promise<{ ok: boolean }> => {
+      try {
+        return await updateAccessoryPlanM({
+          id,
+          organizationId: requireOrg(),
+          accessoryPlan: plan,
           actor: actor(),
           auditId: createId(),
           now: Date.now(),

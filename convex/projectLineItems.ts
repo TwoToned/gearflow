@@ -487,6 +487,7 @@ export const createLineItem = mutation({
       subhireOrderNumber: v.optional(v.string()),
     }),
     includeAccessories: v.boolean(),
+    accessoryPlan: v.optional(enums.AccessoryPlanArg),
     now: v.number(),
   },
   handler: async (ctx, a) => {
@@ -497,6 +498,7 @@ export const createLineItem = mutation({
       organizationId: a.organizationId,
       projectId: a.projectId,
       ...a.fields,
+      accessoryPlan: a.accessoryPlan,
       status: "CONFIRMED",
       sortOrder,
       createdAt: a.now,
@@ -514,6 +516,7 @@ export const createLineItem = mutation({
         pricingType: a.fields.pricingType,
         organizationId: a.organizationId,
         projectId: a.projectId,
+        accessoryPlan: a.accessoryPlan ?? null,
       });
     }
     return { id: a.id, sortOrder };

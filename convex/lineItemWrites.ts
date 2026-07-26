@@ -7,7 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertLineMoneyFields } from "./lib/moneyGuards";
-import { assertStrLen } from "./lib/fieldGuards";
+import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
@@ -15,7 +15,7 @@ import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
-import { expandAccessoryChildLines } from "./lib/fulfillment";
+import { expandAccessoryChildLines, reconcileLineAccessoryChildren, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
 import {
   loadModelAvailabilityBundle,
@@ -59,6 +59,14 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 function assertLineItemFields(f: { description?: string | null; subhireOrderNumber?: string | null }): void {
   assertStrLen(f.description, "description", { max: 500 });
   assertStrLen(f.subhireOrderNumber, "subhireOrderNumber", { max: 100 });
+}
+
+/** Bound `accessoryPlan.excluded`/`.added` (R-8.6.2) — a browser-direct caller
+ *  bypassing the add-form picker could otherwise send an unbounded array. */
+function assertAccessoryPlanFields(plan?: { excluded: string[]; added: { bulkAssetId: string }[] }): void {
+  if (!plan) return;
+  assertArrayMax(plan.excluded, "accessoryPlan.excluded", 200);
+  assertArrayMax(plan.added, "accessoryPlan.added", 200);
 }
 
 // ─── Collaboration colour (deterministic from userId) ────────────────────────
@@ -878,6 +886,10 @@ export const addNative = mutation({
       subhireOrderNumber: v.optional(v.string()),
     }),
     includeAccessories: v.boolean(),
+    // Durable per-line accessory selection from the add-form picker (issue #794) —
+    // stored on the parent row and consulted by every later expansion (prep,
+    // checkout) via resolveLineAccessoryPlan. Absent = template behaviour.
+    accessoryPlan: v.optional(enums.AccessoryPlanArg),
     allowOverbook: v.boolean(),
     actor: actorValidator,
     auditId: v.string(),
@@ -888,7 +900,7 @@ export const addNative = mutation({
     orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, allowOverbook, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, accessoryPlan, allowOverbook, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -901,6 +913,7 @@ export const addNative = mutation({
     await assertProjectInOrg(ctx, projectId, organizationId);
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
+    assertAccessoryPlanFields(accessoryPlan);
 
     // Org-validate every referenced FK (by_cuid is global — the row could be another
     // org's; the service-token read path resolves these with no org re-check). Same
@@ -1007,6 +1020,7 @@ export const addNative = mutation({
       projectId,
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
+      accessoryPlan,
       status: "CONFIRMED",
       sortOrder,
       createdAt: now,
@@ -1024,6 +1038,7 @@ export const addNative = mutation({
         pricingType: fields.pricingType,
         organizationId,
         projectId,
+        accessoryPlan: (accessoryPlan as AccessoryPlan | undefined) ?? null,
       });
     }
 
@@ -1044,6 +1059,89 @@ export const addNative = mutation({
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
     await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
     return { id, sortOrder };
+  },
+});
+
+/**
+ * updateAccessoryPlanNative — post-add "Edit accessories" (issue #794). Reopens the
+ * same picker against the current plan; reconciles child lines via the shared
+ * `reconcileLineAccessoryChildren` (creates newly-added, cascade-removes newly-
+ * excluded, rescales a kept bulk child's quantity). Hard-blocks once any unit of
+ * the PARENT line has deployed — the design's "office decides, warehouse
+ * verifies": after deploy the warehouse return/swap flow owns changes, not this
+ * picker. RBAC(project, manage_line_items).
+ */
+/** Validate a fetched line is a legal target for an accessory-plan edit — org
+ *  match, parent (not a child), has a model/asset, and hasn't deployed yet
+ *  (issue #794 decision 2: post-deploy edits are hard-blocked). Extracted so
+ *  the mutation handler stays under the complexity ratchet (R-3.6). */
+function assertLineOwnsAccessoryPlan(
+  line: { organizationId: string; childKind?: string; modelId?: string; assetId?: string; checkedOutQuantity?: number; status?: string } | null,
+  organizationId: string,
+): asserts line is NonNullable<typeof line> {
+  if (!line || line.organizationId !== organizationId) throw new ConvexError("Line item not found");
+  if (line.childKind) throw new ConvexError("Only a parent equipment line can have an accessory plan");
+  if (!line.modelId && !line.assetId) {
+    throw new ConvexError("This line has no model or asset — there's nothing to attach accessories to");
+  }
+  if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") {
+    throw new ConvexError(
+      "This line has already deployed — accessory selection is locked. Use the warehouse return/swap flow instead.",
+    );
+  }
+}
+
+export const updateAccessoryPlanNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    accessoryPlan: enums.AccessoryPlanArg,
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, accessoryPlan, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+    assertAccessoryPlanFields(accessoryPlan);
+
+    const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    assertLineOwnsAccessoryPlan(line, organizationId);
+
+    await ctx.db.patch(line._id, { accessoryPlan, updatedAt: now });
+    await reconcileLineAccessoryChildren(ctx, {
+      id: line.id,
+      assetId: line.assetId,
+      modelId: line.modelId,
+      quantity: line.quantity ?? 1,
+      categoryId: line.categoryId,
+      groupId: line.groupId,
+      duration: line.duration,
+      pricingType: line.pricingType,
+      organizationId,
+      projectId: line.projectId,
+    }, accessoryPlan);
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "UPDATE",
+      entityType: "lineItem",
+      entityId: line.id,
+      entityName: line.description || "Line item",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: "Edited accessory selection",
+      projectId: line.projectId,
+      createdAt: now,
+    });
+
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
+    await recalcProjectTotals(ctx, line.projectId, organizationId, orgDefaultTaxRate, now);
+    return { ok: true };
   },
 });
 
@@ -1314,6 +1412,10 @@ export const addLineItemSmartNative = mutation({
     allowOverbook: v.boolean(),
     forceSeparate: v.boolean(),
     includeAccessories: v.boolean(),
+    // See addNative — same durable per-line accessory selection (issue #794). Only
+    // applied on the insert path; a merge into an existing line keeps that line's
+    // own plan untouched.
+    accessoryPlan: v.optional(enums.AccessoryPlanArg),
     actor: actorValidator,
     auditId: v.string(),
     // Accepted-but-IGNORED for backward-compat with the pre-internalization app image
@@ -1329,7 +1431,7 @@ export const addLineItemSmartNative = mutation({
     now: v.number(),
   },
   handler: async (ctx, {
-    id, organizationId, projectId, fields, allowOverbook, forceSeparate, includeAccessories,
+    id, organizationId, projectId, fields, allowOverbook, forceSeparate, includeAccessories, accessoryPlan,
     actor: suppliedActor, auditId, emitSideEffects, now,
   }) => {
     await assertWritesEnabled(ctx, "lineItem");
@@ -1342,6 +1444,7 @@ export const addLineItemSmartNative = mutation({
     await assertProjectInOrg(ctx, projectId, organizationId);
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
+    assertAccessoryPlanFields(accessoryPlan);
 
     // Org default tax rate resolved in-mutation from orgSettings (source of truth) so a
     // browser caller can't spoof it. Used by recalc on both the merge and insert paths.
@@ -1563,6 +1666,7 @@ export const addLineItemSmartNative = mutation({
       subhireOrderNumber: fields.subhireOrderNumber || undefined,
       categoryId: fields.categoryId || undefined,
       groupId: fields.groupId || undefined,
+      accessoryPlan,
       status: "CONFIRMED",
       sortOrder,
       createdAt: now,
@@ -1581,6 +1685,7 @@ export const addLineItemSmartNative = mutation({
         pricingType: fields.pricingType,
         organizationId,
         projectId,
+        accessoryPlan: (accessoryPlan as AccessoryPlan | undefined) ?? null,
       });
     }
 

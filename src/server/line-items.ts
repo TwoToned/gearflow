@@ -8,10 +8,21 @@ import { api } from "../../convex/_generated/api";
 import { UserFacingError } from "@/lib/errors";
 import { computeStockBreakdown, resolveModelAssetType } from "@/lib/availability";
 import { getModelWithCategoryMap } from "@/lib/model-category-join";
-import { getAssetByAssetTag, getAssetsByOrg, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
+import { getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByIds, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
 import { getKitById } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
+
+/** Model-accessory detail for the add-form picker (issue #794) — resolved bulk-asset
+ *  tag + model name, not just the bare bulkAssetId. */
+type ModelAccessoryDetail = {
+  id: string;
+  bulkAssetId: string;
+  quantity: number;
+  inclusion: "DEFAULT" | "OPTIONAL";
+  assetTag: string;
+  modelName: string | null;
+};
 
 export async function checkAvailability(
   modelId: string,
@@ -41,7 +52,7 @@ export async function checkAvailability(
   const activeBulkAssets = ab.activeBulkAssets;
 
   if (!model) {
-    return serialize({ totalStock: 0, effectiveStock: 0, booked: 0, available: 0, bookedOnThisProject: 0, unavailable: 0, inMaintenance: 0, lost: 0, conflicts: [] as string[], dateless: !hasDates, hasAccessories: false });
+    return serialize({ totalStock: 0, effectiveStock: 0, booked: 0, available: 0, bookedOnThisProject: 0, unavailable: 0, inMaintenance: 0, lost: 0, conflicts: [] as string[], dateless: !hasDates, hasAccessories: false, accessories: [] as typeof ab.accessories });
   }
 
   const modelForBreakdown = {
@@ -130,6 +141,7 @@ export async function checkAvailability(
     return serialize({
       totalStock, effectiveStock, booked, available, bookedOnThisProject,
       unavailable, inMaintenance, lost, conflicts, dateless: !hasDates, hasAccessories: bulkAccessoryCount > 0,
+      accessories: ab.accessories,
     });
   } else {
     // BULK: sum up total quantity across all bulk assets
@@ -142,6 +154,7 @@ export async function checkAvailability(
     return serialize({
       totalStock, effectiveStock: totalStock, booked, available, bookedOnThisProject,
       unavailable: 0, inMaintenance: 0, lost: 0, conflicts, dateless: !hasDates, hasAccessories: bulkAccessoryCount > 0,
+      accessories: ab.accessories,
     });
   }
 }
@@ -157,7 +170,7 @@ export async function lookupAssetByTag(
   const convexTagAsset = await getAssetByAssetTag(organizationId, assetTag);
 
   if (!convexTagAsset) {
-    return serialize({ found: false as const, asset: null, available: false, conflictsWith: null, hasAccessories: false });
+    return serialize({ found: false as const, asset: null, available: false, conflictsWith: null, hasAccessories: false, accessories: [] as ModelAccessoryDetail[] });
   }
 
   const convexTagLocation = convexTagAsset.locationId ? await getLocationById(convexTagAsset.locationId) : null;
@@ -232,7 +245,25 @@ export async function lookupAssetByTag(
   const childBulkCount = parentBulkChildren.length;
   const hasAccessories = childAssetCount > 0 || childBulkCount > 0 || modelBulksCount > 0;
 
-  return serialize({ found: true as const, asset: { ...asset, model }, available, conflictsWith, hasAccessories });
+  // Resolved model-accessory detail for the add-form picker (issue #794) — same
+  // tag/model-name shape checkAvailability's `accessories` returns, so a by-asset-tag
+  // add gets the same picker as a by-model add (design decision #1).
+  const accessoryBulkAssets = await getBulkAssetsByIds(organizationId, modelBulksForCount.map((a) => a.bulkAssetId));
+  const bulkAssetById = new Map(accessoryBulkAssets.map((ba) => [ba.id, ba]));
+  const accessories: ModelAccessoryDetail[] = modelBulksForCount.map((a) => {
+    const ba = bulkAssetById.get(a.bulkAssetId);
+    const baModel = ba?.modelId ? (modelWithCategoryMap.get(ba.modelId) ?? null) : null;
+    return {
+      id: a.id,
+      bulkAssetId: a.bulkAssetId,
+      quantity: a.quantity,
+      inclusion: (a.inclusion ?? "DEFAULT") as "DEFAULT" | "OPTIONAL",
+      assetTag: ba?.assetTag ?? a.bulkAssetId,
+      modelName: baModel?.name ?? null,
+    };
+  });
+
+  return serialize({ found: true as const, asset: { ...asset, model }, available, conflictsWith, hasAccessories, accessories });
 }
 
 export async function checkKitAvailability(

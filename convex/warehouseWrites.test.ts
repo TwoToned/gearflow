@@ -690,6 +690,84 @@ describe("checkOutItems", () => {
       }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // Issue #794 — the line's stored accessoryPlan is the SOLE authority at checkout;
+  // deselecting a default at add-time (or prep) must stick, not get resurrected by
+  // an unfiltered re-expansion (the "prep selection is silently overridden at
+  // checkout" defect the design doc's current-state audit found).
+  describe("honours the line's accessoryPlan (issue #794)", () => {
+    async function seedWithAccessories(t: T, plan?: { excluded: string[]; added: { bulkAssetId: string }[] }) {
+      await member(t, "member");
+      await seedProject(t);
+      await seedModelAsset(t, ORG, "AVAILABLE");
+      await t.run(async (ctx) => {
+        await ctx.db.insert("bulkAssets", { id: "ba-default", organizationId: ORG, modelId: "m1", assetTag: "BA-DEF", isActive: true });
+        await ctx.db.insert("bulkAssets", { id: "ba-optional", organizationId: ORG, modelId: "m1", assetTag: "BA-OPT", isActive: true });
+        await ctx.db.insert("modelBulkAccessories", { id: "mba-def", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-default", quantity: 1, addedById: USER });
+        await ctx.db.insert("modelBulkAccessories", { id: "mba-opt", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-optional", quantity: 1, inclusion: "OPTIONAL", addedById: USER });
+        await ctx.db.insert("projectLineItems", baseLine("li1", { modelId: "m1", assetId: "a1", status: "CONFIRMED", accessoryPlan: plan }));
+      });
+    }
+    const accessoryChildren = (t: T) =>
+      t.run(async (ctx) =>
+        (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "li1")).collect())
+          .filter((c) => c.childKind === "ACCESSORY"),
+      );
+
+    test("a deselected DEFAULT never cascades at checkout, even with no per-item filter", async () => {
+      const t = makeT();
+      await seedWithAccessories(t, { excluded: ["ba-default"], added: [] });
+      await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      });
+      const children = await accessoryChildren(t);
+      expect(children.map((c) => c.bulkAssetId)).not.toContain("ba-default");
+    });
+
+    test("an OPTIONAL accessory never cascades unless the plan opted in", async () => {
+      const t = makeT();
+      await seedWithAccessories(t); // no plan at all
+      await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      });
+      const children = await accessoryChildren(t);
+      expect(children.map((c) => c.bulkAssetId)).toEqual(["ba-default"]);
+      expect(children.map((c) => c.bulkAssetId)).not.toContain("ba-optional");
+    });
+
+    test("an opted-in OPTIONAL accessory DOES cascade at checkout", async () => {
+      const t = makeT();
+      await seedWithAccessories(t, { excluded: [], added: [{ bulkAssetId: "ba-optional" }] });
+      await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      });
+      const children = await accessoryChildren(t);
+      expect(children.map((c) => c.bulkAssetId).sort()).toEqual(["ba-default", "ba-optional"]);
+    });
+
+    test("per-item includeAccessoryIds narrows the cascade to a verified subset", async () => {
+      const t = makeT();
+      await seedWithAccessories(t, { excluded: [], added: [{ bulkAssetId: "ba-optional" }] });
+      await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1",
+        items: [{ lineItemId: "li1", assetId: "a1", includeAccessoryIds: ["ba-default"] }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      });
+      // Only the verified ("ba-default") accessory materialises + deploys — the
+      // unverified plan-added optional stays behind entirely (deployable later),
+      // the "Deploy Verified Only" partial-deploy escape hatch (issue #794).
+      const children = await accessoryChildren(t);
+      expect(children.map((c) => c.bulkAssetId)).toEqual(["ba-default"]);
+      const outUnits = await t.run(async (ctx) =>
+        (await ctx.db.query("projectLineItemUnits").withIndex("by_lineItemId", (q) => q.eq("lineItemId", children[0].id)).collect())
+          .filter((u) => u.status === "CHECKED_OUT"),
+      );
+      expect(outUnits).toHaveLength(1);
+    });
+  });
 });
 
 // ─── checkOutKit ────────────────────────────────────────────────────────────────

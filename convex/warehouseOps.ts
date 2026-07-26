@@ -134,10 +134,13 @@ async function checkOutGenericUnits(
   return true;
 }
 
-/** Cascade checkout to a parent line's accessory children (per parent unit / whole line). */
+/** Cascade checkout to a parent line's accessory children (per parent unit / whole line).
+ *  `includeAccessoryIds`, when given, narrows to only those accessories (by assetId or
+ *  bulkAssetId) — the warehouse verified-set / partial-deploy escape hatch (issue #794).
+ *  Absent ⇒ every not-yet-deployed accessory unit in scope cascades (today's behaviour). */
 async function checkoutAccessoryChildren(
   ctx: Ctx,
-  p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; now: number },
+  p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; includeAccessoryIds?: Set<string> | null; now: number },
 ): Promise<{ assetsTouched: string[] }> {
   const children = (
     await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", p.parentLineItemId)).collect()
@@ -149,6 +152,7 @@ async function checkoutAccessoryChildren(
     for (const u of await lineUnits(ctx, child.id)) {
       if (u.status === "CHECKED_OUT") continue;
       if (p.parentUnitAssetId && u.parentUnitAssetId !== p.parentUnitAssetId) continue;
+      if (p.includeAccessoryIds && !p.includeAccessoryIds.has(u.assetId ?? u.bulkAssetId ?? "")) continue;
       units.push(u);
     }
   }
@@ -179,15 +183,22 @@ async function checkoutAccessoryChildren(
 
 async function finalizeCheckoutItem(
   ctx: Ctx,
-  p: { organizationId: string; lineItemId: string; targetAssetId: string | null; projectId: string; userId: string; projectLocationId: string | null; includeAccessories: boolean; now: number },
+  p: {
+    organizationId: string; lineItemId: string; targetAssetId: string | null; projectId: string; userId: string;
+    projectLocationId: string | null; includeAccessories: boolean; includeAccessoryIds?: Set<string> | null; now: number;
+  },
 ): Promise<void> {
   if (p.includeAccessories) {
     if (p.targetAssetId) {
-      await expandAccessoriesForAsset(ctx, { organizationId: p.organizationId, lineItemId: p.lineItemId, assetId: p.targetAssetId });
+      await expandAccessoriesForAsset(ctx, {
+        organizationId: p.organizationId, lineItemId: p.lineItemId, assetId: p.targetAssetId,
+        includeAccessoryIds: p.includeAccessoryIds,
+      });
     }
     await checkoutAccessoryChildren(ctx, {
       organizationId: p.organizationId, projectId: p.projectId, parentLineItemId: p.lineItemId,
-      parentUnitAssetId: p.targetAssetId, userId: p.userId, projectLocationId: p.projectLocationId, now: p.now,
+      parentUnitAssetId: p.targetAssetId, userId: p.userId, projectLocationId: p.projectLocationId,
+      includeAccessoryIds: p.includeAccessoryIds, now: p.now,
     });
   }
   await syncLineItemRollup(ctx, p.lineItemId);
@@ -232,11 +243,11 @@ async function gatherTestTagAssetsAndAssert(
 async function expandPrepUnitAssignments(
   ctx: Ctx,
   organizationId: string,
-  items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>,
+  items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }>,
   preflight: Array<{ id: string; assetId?: string; bulkAssetId?: string }>,
   unitsByLine: Map<string, Awaited<ReturnType<typeof lineUnits>>>,
-): Promise<Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>> {
-  const out: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }> = [];
+): Promise<Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }>> {
+  const out: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }> = [];
   for (const item of items) {
     if (item.assetId) { out.push(item); continue; }
     const row = preflight.find((l) => l.id === item.lineItemId);
@@ -250,7 +261,12 @@ async function expandPrepUnitAssignments(
     const want = item.quantity ?? units.length;
     const toDeploy = units.slice(0, Math.max(1, Math.min(want, units.length)));
     for (const u of toDeploy) {
-      out.push({ lineItemId: item.lineItemId, ...(u.assetId ? { assetId: u.assetId } : { quantity: u.quantity ?? 1 }), notes: item.notes });
+      out.push({
+        lineItemId: item.lineItemId,
+        ...(u.assetId ? { assetId: u.assetId } : { quantity: u.quantity ?? 1 }),
+        notes: item.notes,
+        includeAccessoryIds: item.includeAccessoryIds,
+      });
     }
   }
   return out;
@@ -263,13 +279,17 @@ const checkoutItemArg = v.object({
   assetId: v.optional(v.string()),
   quantity: v.optional(v.number()),
   notes: v.optional(v.string()),
+  // Narrows this item's accessory cascade to a verified subset (assetId/bulkAssetId)
+  // — the warehouse "Deploy Verified Only" partial-deploy escape hatch (issue #794).
+  // Absent = every not-yet-deployed accessory in scope cascades (today's behaviour).
+  includeAccessoryIds: v.optional(v.array(v.string())),
 });
 
 export type CheckoutItemsArgs = {
   organizationId: string;
   projectId: string;
   userId: string;
-  items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>;
+  items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }>;
   includeAccessories: boolean;
   now: number;
 };
@@ -322,7 +342,9 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
       }
       await finalizeCheckoutItem(ctx, {
         organizationId: a.organizationId, lineItemId: lineItem.id, targetAssetId, projectId: a.projectId,
-        userId: a.userId, projectLocationId, includeAccessories: a.includeAccessories, now: a.now,
+        userId: a.userId, projectLocationId, includeAccessories: a.includeAccessories,
+        includeAccessoryIds: item.includeAccessoryIds ? new Set(item.includeAccessoryIds) : null,
+        now: a.now,
       });
       updated.add(lineItem.id);
     }

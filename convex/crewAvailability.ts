@@ -59,9 +59,18 @@ export const conflicts = query({
       });
     }
 
-    const assignments = (await ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()) // r9.8-ok: conflict detection over the org's assignment set
-      .filter((a) => a.crewMemberId === crewMemberId && !EXCLUDED.has(a.status ?? "") && a.startDate != null && a.endDate != null && overlaps(a.startDate, a.endDate, startMs, endMs) && (excludeAssignmentId ? a.id !== excludeAssignmentId : true));
-    const projById = new Map((await ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((p) => [p.id, p])); // r9.8-ok: conflict detection resolves the org's projects
+    const assignments = (
+      await ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).collect()
+    ).filter((a) => a.organizationId === orgId && !EXCLUDED.has(a.status ?? "") && a.startDate != null && a.endDate != null && overlaps(a.startDate, a.endDate, startMs, endMs) && (excludeAssignmentId ? a.id !== excludeAssignmentId : true));
+    const projById = new Map(
+      (
+        await Promise.all(
+          [...new Set(assignments.map((a) => a.projectId))].map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first()),
+        )
+      )
+        .filter((p): p is NonNullable<typeof p> => p != null && p.organizationId === orgId)
+        .map((p) => [p.id, p]),
+    );
     for (const a of assignments) {
       const p = projById.get(a.projectId);
       out.push({ type: "assignment", severity: "soft", label: `Already on ${p?.projectNumber ?? ""} - ${p?.name ?? ""}`, startDate: iso(a.startDate) ?? new Date(startMs).toISOString(), endDate: iso(a.endDate) ?? new Date(endMs).toISOString() });

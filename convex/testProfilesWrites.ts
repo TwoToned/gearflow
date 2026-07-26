@@ -218,8 +218,8 @@ export const deleteNative = mutation({
     if (!doc) throw new ConvexError("Test profile not found");
 
     // In-use check (the inbound FKs were dropped — count referencing rows, org-scoped).
-    const assetUses = (await ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()).filter((x) => x.testProfileId === a.id).length; // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
-    const recordUses = (await ctx.db.query("testTagRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()).filter((x) => x.testProfileId === a.id).length; // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
+    const assetUses = (await ctx.db.query("testTagAssets").withIndex("by_testProfileId", (q) => q.eq("testProfileId", a.id)).collect()).filter((x) => x.organizationId === a.orgId).length;
+    const recordUses = (await ctx.db.query("testTagRecords").withIndex("by_testProfileId", (q) => q.eq("testProfileId", a.id)).collect()).filter((x) => x.organizationId === a.orgId).length;
     const modelUses = (await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()).filter((x) => x.defaultTestProfileId === a.id).length; // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
 
     if (assetUses + recordUses + modelUses > 0) {

@@ -55,10 +55,10 @@ async function logAccessory(
 
 /** True if `assetId` is itself the parent of any serialized or bulk accessory (one-level guard). */
 async function isAccessoryParent(ctx: MutationCtx, orgId: string, assetId: string): Promise<boolean> {
-  const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-  if (assets.some((a) => a.parentAssetId === assetId)) return true;
-  const bulkChildren = await ctx.db.query("assetBulkChildren").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-  return bulkChildren.some((c) => c.parentAssetId === assetId);
+  const serializedChild = await ctx.db.query("assets").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", assetId)).first();
+  if (serializedChild && serializedChild.organizationId === orgId) return true;
+  const bulkChild = await ctx.db.query("assetBulkChildren").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", assetId)).first();
+  return bulkChild != null && bulkChild.organizationId === orgId;
 }
 
 export const addSerializedNative = mutation({
@@ -121,8 +121,9 @@ export const addBulkNative = mutation({
     const dup = await ctx.db.query("assetBulkChildren").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Accessory already exists");
 
-    const siblings = (await ctx.db.query("assetBulkChildren").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect()) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
-      .filter((c) => c.parentAssetId === a.parentAssetId);
+    const siblings = (
+      await ctx.db.query("assetBulkChildren").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", a.parentAssetId)).collect()
+    ).filter((c) => c.organizationId === a.orgId);
     const sortOrder = siblings.reduce((max, c) => Math.max(max, c.sortOrder ?? -1), -1) + 1;
 
     // DEDICATED draws from the shared pool NOW (atomic + throws on insufficient stock).

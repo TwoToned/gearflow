@@ -117,14 +117,12 @@ export const membersForAssignment = query({
   args: { projectId: v.string(), orgId: v.string(), search: v.optional(v.string()), rangeStartMs: v.optional(v.number()), rangeEndMs: v.optional(v.number()) },
   handler: async (ctx, { projectId, orgId, search, rangeStartMs, rangeEndMs }) => {
     await requireOrgRead(ctx, orgId);
-    const [allMembers, allAssignments, roles, projects] = await Promise.all([
+    const [allMembers, roles, projectAssignments] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) — see docs/exceptions.md R-8.3.3
-      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects)
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) — see docs/exceptions.md R-8.3.3
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects)
+      ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ]);
     const roleById = new Map(roles.map((r) => [r.id, r]));
-    const projectsById = new Map(projects.map((p) => [p.id, p]));
     const needle = search?.trim().toLowerCase();
     const members = allMembers
       .filter((m) => (m.isActive ?? true) && (m.status ?? "ACTIVE") === "ACTIVE")
@@ -132,9 +130,9 @@ export const membersForAssignment = query({
       .sort((a, b) => ascNullsLast(a.lastName, b.lastName))
       .slice(0, 50);
 
-    const projectAssignmentsByMember = new Map<string, typeof allAssignments>();
-    for (const a of allAssignments) {
-      if (a.projectId !== projectId) continue;
+    const projectAssignmentsByMember = new Map<string, typeof projectAssignments>();
+    for (const a of projectAssignments) {
+      if (a.organizationId !== orgId) continue;
       const list = projectAssignmentsByMember.get(a.crewMemberId) ?? [];
       list.push(a); projectAssignmentsByMember.set(a.crewMemberId, list);
     }
@@ -149,14 +147,26 @@ export const membersForAssignment = query({
     };
 
     if (rangeStartMs != null && rangeEndMs != null) {
-      const memberIds = new Set(members.map((m) => m.id));
-      const avails = (await Promise.all([...memberIds].map((mid) => ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", mid)).collect())))
-        .flat().filter((b) => b.organizationId == null || b.organizationId === orgId);
+      const memberIds = members.map((m) => m.id);
+      const [avails, crossProjectAssignmentsByMember] = await Promise.all([
+        Promise.all(memberIds.map((mid) => ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", mid)).collect())),
+        Promise.all(memberIds.map((mid) => ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", mid)).collect())),
+      ]);
       const unavailable = new Set<string>();
-      for (const b of avails) { if (b.type === "UNAVAILABLE" && rangeOverlaps(b.startDate, b.endDate, rangeStartMs, rangeEndMs)) unavailable.add(b.crewMemberId); }
+      for (const b of avails.flat().filter((b) => b.organizationId == null || b.organizationId === orgId)) {
+        if (b.type === "UNAVAILABLE" && rangeOverlaps(b.startDate, b.endDate, rangeStartMs, rangeEndMs)) unavailable.add(b.crewMemberId);
+      }
+      const conflictingAssignments = crossProjectAssignmentsByMember
+        .flat()
+        .filter((a) => a.organizationId === orgId && a.projectId !== projectId && !EXCLUDED_STATUSES.has(a.status ?? "") && rangeOverlaps(a.startDate, a.endDate, rangeStartMs, rangeEndMs));
+      const conflictProjectIds = [...new Set(conflictingAssignments.map((a) => a.projectId))];
+      const conflictProjects = (
+        await Promise.all(conflictProjectIds.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first()))
+      ).filter((p): p is NonNullable<typeof p> => p != null && p.organizationId === orgId);
+      const projectsById = new Map(conflictProjects.map((p) => [p.id, p]));
       return members.map((m) => {
-        const conflicts = allAssignments
-          .filter((a) => a.crewMemberId === m.id && a.projectId !== projectId && !EXCLUDED_STATUSES.has(a.status ?? "") && rangeOverlaps(a.startDate, a.endDate, rangeStartMs, rangeEndMs))
+        const conflicts = conflictingAssignments
+          .filter((a) => a.crewMemberId === m.id)
           .map((c) => { const p = projectsById.get(c.projectId) ?? null; return { crewMemberId: c.crewMemberId, projectId: c.projectId, project: p ? { projectNumber: p.projectNumber, name: p.name } : null, startDate: isoMs(c.startDate), endDate: isoMs(c.endDate) }; });
         return { ...baseShape(m), conflicts, isUnavailable: unavailable.has(m.id) };
       });

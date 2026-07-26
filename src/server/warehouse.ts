@@ -170,11 +170,11 @@ export async function lookupAssetForScan(
   // Map of every line item in the org keyed by id → {projectId, status}, so a
   // unit's line can be located on any project (for the "out elsewhere" check).
   const orgUnits = asset
-    ? ((await convexScan.query(api.projectLineItemUnits.list, { orgId: organizationId })) as Array<{
+    ? ((await convexScan.query(api.projectLineItemUnits.listByOrgAndAsset, { orgId: organizationId, assetId: asset.id })) as Array<{
         assetId?: string | null;
         lineItemId: string;
         status: string;
-      }>).filter((u) => u.assetId === asset.id)
+      }>)
     : [];
 
   if (asset) {

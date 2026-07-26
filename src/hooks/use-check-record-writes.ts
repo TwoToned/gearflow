@@ -45,6 +45,20 @@ function buildPlan(checks: Check[]) {
   }));
 }
 
+/** One maintenance-id bundle per DISTINCT failed check item id (immediate incident
+ * report plan — distinct ids from buildPlan's predictive-maintenance bundle, since
+ * a FAIL creates two separate maintenance records: the immediate REPAIR report and,
+ * if the 2-of-3 threshold trips, the PREVENTATIVE trend record). */
+function buildIncidentPlan(checks: Check[]) {
+  const failed = [...new Set(checks.filter((c) => c.result === "FAIL").map((c) => c.checkItemId))];
+  return failed.map((checkItemId) => ({
+    checkItemId,
+    maintenanceId: createId(),
+    maintenanceLinkId: createId(),
+    auditId: createId(),
+  }));
+}
+
 export function useCheckRecordWrites() {
   const { data: session } = useSession();
   const { data: activeOrg } = useActiveOrganization();
@@ -104,6 +118,7 @@ export function useCheckRecordWrites() {
         ...(data.includeAccessoryIds ? { includeAccessoryIds: data.includeAccessoryIds } : {}),
         checks: buildChecks(data.checks),
         maintenancePlan: buildPlan(data.checks),
+        incidentPlan: buildIncidentPlan(data.checks),
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
@@ -127,6 +142,7 @@ export function useCheckRecordWrites() {
         flagType: data.flagType,
         checks: buildChecks(data.checks),
         maintenancePlan: buildPlan(data.checks),
+        incidentPlan: buildIncidentPlan(data.checks),
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
@@ -152,6 +168,7 @@ export function useCheckRecordWrites() {
         ...(data.notes ? { notes: data.notes } : {}),
         checks: buildChecks(data.checks),
         maintenancePlan: buildPlan(data.checks),
+        incidentPlan: buildIncidentPlan(data.checks),
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
@@ -169,6 +186,7 @@ export function useCheckRecordWrites() {
         ...(data.bulkAssetId ? { bulkAssetId: data.bulkAssetId } : {}),
         checks: buildChecks(data.checks),
         maintenancePlan: buildPlan(data.checks),
+        incidentPlan: buildIncidentPlan(data.checks),
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
@@ -211,6 +229,7 @@ export function useCheckRecordWrites() {
         context,
         checks: buildChecks(checks),
         maintenancePlan: buildPlan(checks),
+        incidentPlan: buildIncidentPlan(checks),
         now: Date.now(),
         actor: actor(),
       });

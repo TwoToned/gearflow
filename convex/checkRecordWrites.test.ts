@@ -71,6 +71,7 @@ const mkCheck = (opts: Partial<{ recordId: string; checkItemId: string; result: 
   result: opts.result ?? ("PASS" as const),
 });
 const pmEntry = (checkItemId = "ci1") => ({ checkItemId, maintenanceId: "mnt1", maintenanceLinkId: "mlnk1", auditId: "ma1" });
+const incidentEntry = (checkItemId = "ci1") => ({ checkItemId, maintenanceId: "inc1", maintenanceLinkId: "ilnk1", auditId: "ia1" });
 
 // ─── completeCheckAndPack ──────────────────────────────────────────────────────
 describe("completeCheckAndPack", () => {
@@ -159,7 +160,7 @@ describe("completeCheckAndFlag", () => {
     await seedLine(t, "L1", { assetId: "as1", prepStatus: "PENDING" });
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.completeCheckAndFlag, {
       orgId: ORG, projectId: "p1", lineItemId: "L1", assetId: "as1", flagType: "FLAGGED_FAULTY",
-      checks: [mkCheck({ result: "FAIL" })], maintenancePlan: [pmEntry()], auditId: "a1", now: NOW, actor,
+      checks: [mkCheck({ result: "FAIL" })], maintenancePlan: [pmEntry()], incidentPlan: [incidentEntry()], auditId: "a1", now: NOW, actor,
     });
     expect((await line(t, "L1"))?.prepStatus).toBe("FLAGGED_FAULTY");
     expect(await records(t)).toHaveLength(1);
@@ -328,20 +329,26 @@ describe("predictive maintenance", () => {
     await t.run(async (ctx) => { await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW }); });
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
       orgId: ORG, assetId: "as1",
-      checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], auditId: "a1", now: NOW, actor,
+      checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], incidentPlan: [incidentEntry()], auditId: "a1", now: NOW, actor,
     });
+    // Both triggers fire on this FAIL: the 2-of-3 predictive PREVENTATIVE record
+    // AND the immediate incident REPAIR record (checkIncidentReportCore.ts) —
+    // additive signals, not alternatives (FEATUREDOCS/62).
     const ms = await maint(t);
-    expect(ms).toHaveLength(1);
-    expect(ms[0].type).toBe("PREVENTATIVE");
-    expect(ms[0].status).toBe("SCHEDULED");
-    expect(ms[0].title).toContain("[Auto] Visual");
+    expect(ms).toHaveLength(2);
+    const preventative = ms.find((m) => m.type === "PREVENTATIVE")!;
+    expect(preventative.status).toBe("SCHEDULED");
+    expect(preventative.title).toContain("[Auto] Visual");
+    const incident = ms.find((m) => m.type === "REPAIR")!;
+    expect(incident.incidentType).toBe("NEEDS_SERVICE");
     const links = await maintLinks(t);
     expect(links.map((l) => l.assetId)).toContain("as1");
-    // PREVENTATIVE/SCHEDULED does NOT hold the asset.
+    // PREVENTATIVE/SCHEDULED does NOT hold the asset (neither does the incident
+    // report on a check-triggered FAIL — only the "Report Issue" flow does).
     expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
   });
 
-  test("dedups: an existing active auto record blocks a second create", async () => {
+  test("dedups: an existing active auto record blocks a second PREVENTATIVE create", async () => {
     const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1"); await seedPriorFails(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("maintenanceRecords", { id: "existing", organizationId: ORG, type: "PREVENTATIVE", status: "SCHEDULED", title: "[Auto] Visual — AS1", createdAt: NOW, updatedAt: NOW });
@@ -349,20 +356,29 @@ describe("predictive maintenance", () => {
     });
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
       orgId: ORG, assetId: "as1",
-      checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], auditId: "a1", now: NOW, actor,
+      checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], incidentPlan: [incidentEntry()], auditId: "a1", now: NOW, actor,
     });
-    // Still just the one pre-existing record — no duplicate.
-    expect(await maint(t)).toHaveLength(1);
+    // The pre-existing PREVENTATIVE record is not duplicated (dedup), but the
+    // immediate incident report has no dedup and always fires on FAIL — so the
+    // pre-existing record plus one new REPAIR record.
+    const ms = await maint(t);
+    expect(ms).toHaveLength(2);
+    expect(ms.filter((m) => m.type === "PREVENTATIVE")).toHaveLength(1);
+    expect(ms.filter((m) => m.type === "REPAIR")).toHaveLength(1);
   });
 
-  test("does not fire below the 2-fail threshold", async () => {
+  test("does not fire below the 2-fail threshold, but the immediate incident report still does", async () => {
     const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
-    // Only the current FAIL (no priors) → failCount 1 → no maintenance.
+    // Only the current FAIL (no priors) → failCount 1 → no PREVENTATIVE record.
+    // The immediate incident report is unconditional on FAIL, though.
     await t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
       orgId: ORG, assetId: "as1",
-      checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], auditId: "a1", now: NOW, actor,
+      checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], incidentPlan: [incidentEntry()], auditId: "a1", now: NOW, actor,
     });
-    expect(await maint(t)).toHaveLength(0);
+    const ms = await maint(t);
+    expect(ms).toHaveLength(1);
+    expect(ms[0].type).toBe("REPAIR");
+    expect(ms[0].incidentType).toBe("NEEDS_SERVICE");
   });
 
   test("rejects a FAIL check whose failed item has NO maintenance-plan entry (PM can't be silently skipped)", async () => {
@@ -385,7 +401,7 @@ describe("predictive maintenance", () => {
     await expect(
       t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
         orgId: ORG, assetId: "as1",
-        checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], auditId: "a1", now: NOW, actor,
+        checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], incidentPlan: [incidentEntry()], auditId: "a1", now: NOW, actor,
       }),
     ).rejects.toThrow();
   });

@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PhotoGridInput } from "@/components/ui/photo-grid-input";
 import {
   Sheet,
   SheetContent,
@@ -132,6 +133,13 @@ export function ItemCheckForm({
   // Keyboard-shortcut cursor: which row is "active" for P/F keystrokes.
   // Points at an index within the full items[] array — arrow keys skip non-PASS_FAIL rows.
   const [focusedRowIndex, setFocusedRowIndex] = useState(0);
+
+  // Inline FAIL reason/photo capture (GitHub #898 — "checks that actually do
+  // something"): a FAILed row must carry a reason (notes) + at least one photo
+  // before the check can submit. Uploading state is tracked per checkItemId so
+  // submit stays disabled while any FAIL row's photo is still uploading.
+  const [failPhotosUploading, setFailPhotosUploading] = useState<Record<string, boolean>>({});
+  const anyFailPhotoUploading = Object.values(failPhotosUploading).some(Boolean);
 
   // Refs used by the keyboard handler so it reads the latest props/state without re-binding.
   const handleSubmitRef = useRef<() => void>(() => {});
@@ -258,8 +266,14 @@ export function ItemCheckForm({
     const state = checkStates[mci.checkItem.id];
     if (!state) return false;
     if (mci.checkItem.type === "NOTES") return true; // Notes are always optional
+    if (state.result === "FAIL") {
+      // FAIL requires an inline "what happened" reason + at least one photo
+      // before the check can submit — the reason a genuine failure opens a
+      // maintenance record (checkIncidentReportCore.ts) instead of a silent flag.
+      return state.notes.trim().length > 0 && state.photos.length > 0;
+    }
     return state.result !== null;
-  });
+  }) && !anyFailPhotoUploading;
 
   function handleSubmit() {
     if (!allComplete || isSubmitting) return;
@@ -431,6 +445,9 @@ export function ItemCheckForm({
               onFocus={() => setFocusedRowIndex(index)}
               onUpdate={(updates) => updateCheck(mci.checkItem.id, updates)}
               getMeasurementAutoResult={getMeasurementAutoResult}
+              onFailPhotoUploadingChange={(uploading) =>
+                setFailPhotosUploading((prev) => ({ ...prev, [mci.checkItem.id]: uploading }))
+              }
             />
           ))}
         </div>
@@ -576,6 +593,7 @@ function CheckItemRow({
   onFocus,
   onUpdate,
   getMeasurementAutoResult,
+  onFailPhotoUploadingChange,
 }: {
   item: CheckItemData;
   state: CheckState | undefined;
@@ -588,10 +606,14 @@ function CheckItemRow({
     min: number | null,
     max: number | null
   ) => "PASS" | "FAIL" | null;
+  /** FAIL-only photo upload state, bubbled to the form so submit disables mid-upload. */
+  onFailPhotoUploadingChange?: (uploading: boolean) => void;
 }) {
   const ci = item.checkItem;
   const result = state?.result;
+  const isFail = result === "FAIL";
   const [showNotes, setShowNotes] = useState(false);
+  const notesVisible = showNotes || isFail;
 
   return (
     <div
@@ -659,10 +681,36 @@ function CheckItemRow({
         )}
       </div>
 
-      {/* Notes toggle for non-NOTES types */}
-      {ci.type !== "NOTES" && (
+      {/* FAIL — inline "what happened?" reason + photo, required before submit
+          (GitHub #898: a genuine FAIL opens a maintenance record, so it needs
+          enough detail to act on). */}
+      {isFail && (
+        <div className="mt-2 space-y-2 rounded-[var(--r)] border-l-[3px] border-l-t-out bg-out-soft/40 p-2.5">
+          <p className="text-caption font-medium text-t-out">What happened? (required)</p>
+          <Textarea
+            value={state?.notes || ""}
+            onChange={(e) => onUpdate({ notes: e.target.value })}
+            placeholder="Describe the failure..."
+            rows={2}
+            className="text-ui-text"
+          />
+          <PhotoGridInput
+            value={state?.photos || []}
+            onChange={(photos) => onUpdate({ photos })}
+            onUploadingChange={onFailPhotoUploadingChange}
+            compact
+            maxPhotos={6}
+          />
+          {(state?.photos.length ?? 0) === 0 && (
+            <p className="text-micro text-t-out">At least one photo is required.</p>
+          )}
+        </div>
+      )}
+
+      {/* Notes toggle for non-NOTES, non-FAIL types */}
+      {ci.type !== "NOTES" && !isFail && (
         <div className="mt-2">
-          {showNotes ? (
+          {notesVisible ? (
             <Textarea
               value={state?.notes || ""}
               onChange={(e) => onUpdate({ notes: e.target.value })}

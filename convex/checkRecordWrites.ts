@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { runPredictiveMaintenance, type PmPlanEntry } from "./lib/checkPredictiveMaintenanceCore";
+import { runFailIncidentReport, type IncidentPlanEntry } from "./lib/checkIncidentReportCore";
 import { completeCheckAndDeprepLineCore, prepItemCore } from "./checkRecordOps";
 import { checkinItemsCore } from "./warehouseOps";
 import * as enums from "./lib/validators";
@@ -71,6 +72,16 @@ type CheckArg = {
 
 /** One client-minted maintenance-id bundle per DISTINCT failed check item id. */
 const pmEntryArg = v.object({
+  checkItemId: v.string(),
+  maintenanceId: v.string(),
+  maintenanceLinkId: v.string(),
+  auditId: v.string(),
+});
+
+/** One client-minted maintenance-id bundle per DISTINCT failed check item id,
+ * for the IMMEDIATE incident-report record (distinct ids from pmEntryArg's
+ * predictive-maintenance bundle — see checkIncidentReportCore.ts). */
+const incidentEntryArg = v.object({
   checkItemId: v.string(),
   maintenanceId: v.string(),
   maintenanceLinkId: v.string(),
@@ -258,6 +269,7 @@ export const completeCheckAndPack = mutation({
     includeAccessoryIds: v.optional(v.array(v.string())),
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
+    incidentPlan: v.optional(v.array(incidentEntryArg)),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -302,6 +314,9 @@ export const completeCheckAndPack = mutation({
     // 3. Predictive maintenance on FAIL (atomic — no swallow).
     await runFailPredictiveMaintenance(ctx, a.orgId, actor, resolvedAssetId, a.checks, a.maintenancePlan, a.now);
 
+    // 4. Immediate incident report on FAIL (additional to the predictive trigger).
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
+
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "asset",
       entityId: resolvedAssetId || a.lineItemId, entityName: `Line item ${a.lineItemId}`,
@@ -324,6 +339,7 @@ export const completeCheckAndFlag = mutation({
     flagType,
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
+    incidentPlan: v.optional(v.array(incidentEntryArg)),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -356,6 +372,10 @@ export const completeCheckAndFlag = mutation({
     // 3. Predictive maintenance on FAIL.
     await runFailPredictiveMaintenance(ctx, a.orgId, actor, resolvedAssetId, a.checks, a.maintenancePlan, a.now);
 
+    // 4. Immediate incident report on FAIL — this is the primary FAIL path (flag),
+    //    so it's the main site this trigger fires from in practice.
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
+
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "asset",
       entityId: resolvedAssetId || a.lineItemId, entityName: `Line item ${a.lineItemId}`,
@@ -380,6 +400,7 @@ export const completeCheckAndStore = mutation({
     notes: v.optional(v.string()),
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
+    incidentPlan: v.optional(v.array(incidentEntryArg)),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -426,6 +447,9 @@ export const completeCheckAndStore = mutation({
     // 3. Predictive maintenance on FAIL.
     await runFailPredictiveMaintenance(ctx, a.orgId, actor, resolvedAssetId, a.checks, a.maintenancePlan, a.now);
 
+    // 4. Immediate incident report on FAIL.
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
+
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "CHECK_IN", entityType: "asset",
       entityId: resolvedAssetId || a.lineItemId, entityName: `Line item ${a.lineItemId}`,
@@ -446,6 +470,7 @@ export const saveAdHocCheck = mutation({
     bulkAssetId: v.optional(v.string()),
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
+    incidentPlan: v.optional(v.array(incidentEntryArg)),
     auditId: v.string(),
     now: v.number(),
     actor: actorValidator,
@@ -468,6 +493,9 @@ export const saveAdHocCheck = mutation({
 
     // 2. Predictive maintenance on FAIL.
     await runFailPredictiveMaintenance(ctx, a.orgId, actor, a.assetId, a.checks, a.maintenancePlan, a.now);
+
+    // 3. Immediate incident report on FAIL (no project/line item — ad-hoc check).
+    await runFailIncidentReportForChecks(ctx, a.orgId, actor, a.assetId, undefined, undefined, a.checks, a.incidentPlan ?? [], a.now);
 
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "CREATE", entityType: "checkRecord",
@@ -526,6 +554,7 @@ export const saveChildItemChecks = mutation({
     context: checkContextPrepReturn,
     checks: v.array(checkArg),
     maintenancePlan: v.array(pmEntryArg),
+    incidentPlan: v.optional(v.array(incidentEntryArg)),
     now: v.number(),
     actor: actorValidator,
   },
@@ -550,9 +579,11 @@ export const saveChildItemChecks = mutation({
       checks: a.checks, performedById: actor.userId, now: a.now,
     });
 
-    // Predictive maintenance on FAIL (only when a specific asset resolved).
+    // Predictive maintenance + immediate incident report on FAIL (only when a
+    // specific asset resolved).
     if (resolvedAssetId) {
       await runFailPredictiveMaintenance(ctx, a.orgId, actor, resolvedAssetId, a.checks, a.maintenancePlan, a.now);
+      await runFailIncidentReportForChecks(ctx, a.orgId, actor, resolvedAssetId, a.projectId, a.lineItemId, a.checks, a.incidentPlan ?? [], a.now);
     }
 
     return { success: true as const };
@@ -592,5 +623,40 @@ async function runFailPredictiveMaintenance(
   }
   await runPredictiveMaintenance(ctx, {
     orgId, userId: actor.userId, userName: actor.userName, assetId, plan: entries, now,
+  });
+}
+
+/**
+ * Shared IMMEDIATE incident-report trigger (checkIncidentReportCore.ts) — same
+ * "every distinct failed item MUST carry a client-minted entry" contract as
+ * runFailPredictiveMaintenance above, using a separate incidentPlan (distinct ids;
+ * the two triggers create two distinct maintenance records per FAIL).
+ */
+async function runFailIncidentReportForChecks(
+  ctx: MutationCtx,
+  orgId: string,
+  actor: { userId: string; userName: string },
+  assetId: string,
+  projectId: string | undefined,
+  lineItemId: string | undefined,
+  checks: CheckArg[],
+  plan: IncidentPlanEntry[],
+  now: number,
+): Promise<void> {
+  if (!assetId) return;
+  const failed = new Set(checks.filter((c) => c.result === "FAIL").map((c) => c.checkItemId));
+  if (failed.size === 0) return;
+  const planByItem = new Map(plan.map((e) => [e.checkItemId, e]));
+  const entries: IncidentPlanEntry[] = [];
+  for (const checkItemId of failed) {
+    const entry = planByItem.get(checkItemId);
+    if (!entry) {
+      throw new ConvexError("Missing incident plan entry for failed check item: " + checkItemId);
+    }
+    entries.push(entry);
+  }
+  await runFailIncidentReport(ctx, {
+    orgId, userId: actor.userId, userName: actor.userName, assetId, projectId, lineItemId,
+    checks, plan: entries, now,
   });
 }

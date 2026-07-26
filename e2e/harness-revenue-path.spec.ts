@@ -172,10 +172,15 @@ test.describe("harness: primary revenue path", () => {
     await test.step("add the model as a line item + pricing (flow 6)", async () => {
       await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByRole("menuitem", { name: "Add item" }).click();
-      await page.getByRole("tab", { name: "Own stock" }).click();
-      await page.getByRole("button", { name: "Search models" }).click();
-      await page.getByPlaceholder(/Search by name/).fill(modelName);
-      await page.getByRole("button", { name: modelName, exact: true }).click();
+      // WS3 (#942) added a persistent "Overbookings" sidebar nav item, which
+      // matches a page-wide /overbook/i locator — scope to the add-equipment
+      // dialog itself (title "Add equipment" for the "Own stock" tab/kind) so
+      // this only ever sees the in-dialog warning, not global nav chrome.
+      const addDialog = page.getByRole("dialog", { name: "Add equipment" });
+      await addDialog.getByRole("tab", { name: "Own stock" }).click();
+      await addDialog.getByRole("button", { name: "Search models" }).click();
+      await addDialog.getByPlaceholder(/Search by name/).fill(modelName);
+      await addDialog.getByRole("button", { name: modelName, exact: true }).click();
 
       // Availability check (flow 7) is inline and automatic here: with exactly
       // one asset created above and quantity defaulted to 1, it renders
@@ -185,8 +190,8 @@ test.describe("harness: primary revenue path", () => {
       // a while, so wait for the SPECIFIC "1 available" text (not just the
       // generic "available out of" phrase, which matches the placeholder too)
       // before asserting there's no overbook warning.
-      await expect(page.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
-      await expect(page.getByText(/overbook/i)).toHaveCount(0);
+      await expect(addDialog.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
+      await expect(addDialog.getByText(/overbook/i)).toHaveCount(0);
 
       await page.getByRole("button", { name: "Add to project" }).click();
       // The dialog closes on a successful add.

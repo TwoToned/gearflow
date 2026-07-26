@@ -2,9 +2,11 @@ import { describe, test, expect } from "vitest";
 import {
   isAccessoryParent,
   accessoryChildrenOf,
-  isExpandableParent,
-  expandableChildrenOf,
-  isKitParent,
+  isInPickPrepStage,
+  isInPreppedStage,
+  isInReturnedStage,
+  isInDeprepedStage,
+  isInCheckedOutStage,
   type LineItem,
 } from "./warehouse-types";
 
@@ -96,32 +98,88 @@ describe("accessoryChildrenOf", () => {
   });
 });
 
-describe("isExpandableParent / expandableChildrenOf", () => {
-  test("kit parent: expandableChildrenOf returns ALL children (unfiltered by kind)", () => {
-    const parent = line({
-      id: "p1",
-      kitId: "k1",
-      childLineItems: [line({ id: "c1", isKitChild: true, childKind: "KIT", parentLineItemId: "p1" })],
-    });
-    expect(isExpandableParent(parent)).toBe(true);
-    expect(isKitParent(parent)).toBe(true);
-    expect(expandableChildrenOf(parent).map((c) => c.id)).toEqual(["c1"]);
+// Regression coverage for a real production bug: an accessory parent's stage
+// membership used to be gated PURELY on its accessory children's status,
+// ignoring the parent asset's own status/prepStatus entirely. Unlike a kit
+// parent (a synthetic rollup with no state of its own), an accessory parent is
+// a real, independently-fulfilled asset — these tests pin "parent's own state
+// OR any child's state" as the correct rule by exercising exactly the
+// divergent-state cases that used to make the parent vanish.
+function accessoryParent(overrides: Partial<LineItem>, childOverrides: Partial<LineItem>): LineItem {
+  return line({
+    id: "p1",
+    assetId: "a1",
+    childLineItems: [line({ id: "c1", isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "p1", ...childOverrides })],
+    ...overrides,
+  });
+}
+
+describe("isInPickPrepStage", () => {
+  test("plain line (no accessories): needs prep when not PACKED", () => {
+    expect(isInPickPrepStage(line({ id: "p1", prepStatus: "PENDING" }))).toBe(true);
+    expect(isInPickPrepStage(line({ id: "p1", prepStatus: "PACKED" }))).toBe(false);
   });
 
-  test("accessory parent: expandableChildrenOf narrows to ACCESSORY children only", () => {
-    const parent = line({
-      id: "p1",
-      childLineItems: [
-        line({ id: "c1", isKitChild: true, childKind: "ACCESSORY", parentLineItemId: "p1" }),
-      ],
-    });
-    expect(isExpandableParent(parent)).toBe(true);
-    expect(expandableChildrenOf(parent).map((c) => c.id)).toEqual(["c1"]);
+  test("accessory parent: shows when the PARENT needs prep even if its accessory is already packed", () => {
+    const item = accessoryParent({ prepStatus: "PENDING" }, { prepStatus: "PACKED" });
+    expect(isInPickPrepStage(item)).toBe(true);
   });
 
-  test("plain line: not expandable, no children", () => {
-    const plain = line({ id: "p1" });
-    expect(isExpandableParent(plain)).toBe(false);
-    expect(expandableChildrenOf(plain)).toEqual([]);
+  test("accessory parent: shows when the ACCESSORY needs prep even if the parent is already packed", () => {
+    const item = accessoryParent({ prepStatus: "PACKED" }, { prepStatus: "PENDING" });
+    expect(isInPickPrepStage(item)).toBe(true);
+  });
+
+  test("accessory parent: hidden once both parent and accessory are packed", () => {
+    const item = accessoryParent({ prepStatus: "PACKED" }, { prepStatus: "PACKED" });
+    expect(isInPickPrepStage(item)).toBe(false);
+  });
+
+  test("kit parent unaffected: gated purely on children (no own prepStatus)", () => {
+    const kit = line({
+      id: "k1", kitId: "kit-1",
+      childLineItems: [line({ id: "c1", isKitChild: true, prepStatus: "PACKED" })],
+    });
+    expect(isInPickPrepStage(kit)).toBe(false);
+  });
+});
+
+describe("isInPreppedStage", () => {
+  test("accessory parent: shows once EITHER the parent or the accessory is prepped-and-waiting", () => {
+    expect(isInPreppedStage(accessoryParent({ prepStatus: "PACKED" }, { prepStatus: "PENDING" }))).toBe(true);
+    expect(isInPreppedStage(accessoryParent({ prepStatus: "PENDING" }, { prepStatus: "PACKED" }))).toBe(true);
+  });
+
+  test("accessory parent: hidden when neither the parent nor the accessory is packed", () => {
+    expect(isInPreppedStage(accessoryParent({ prepStatus: "PENDING" }, { prepStatus: "PENDING" }))).toBe(false);
+  });
+});
+
+describe("isInReturnedStage (de-prep staging)", () => {
+  test("accessory parent: shows once EITHER the parent or the accessory is RETURNED+PACKED", () => {
+    expect(isInReturnedStage(accessoryParent({ status: "RETURNED", prepStatus: "PACKED" }, { status: "CONFIRMED", prepStatus: "PENDING" }))).toBe(true);
+    expect(isInReturnedStage(accessoryParent({ status: "CONFIRMED", prepStatus: "PENDING" }, { status: "RETURNED", prepStatus: "PACKED" }))).toBe(true);
+  });
+
+  test("accessory parent: hidden when neither has returned+packed", () => {
+    expect(isInReturnedStage(accessoryParent({ status: "CONFIRMED" }, { status: "CONFIRMED" }))).toBe(false);
+  });
+});
+
+describe("isInDeprepedStage", () => {
+  test("accessory parent: shows once EITHER the parent or the accessory is RETURNED but not packed", () => {
+    expect(isInDeprepedStage(accessoryParent({ status: "RETURNED", prepStatus: "PENDING" }, { status: "CONFIRMED" }))).toBe(true);
+    expect(isInDeprepedStage(accessoryParent({ status: "CONFIRMED" }, { status: "RETURNED", prepStatus: "PENDING" }))).toBe(true);
+  });
+});
+
+describe("isInCheckedOutStage", () => {
+  test("accessory parent: shows once EITHER the parent or the accessory is CHECKED_OUT", () => {
+    expect(isInCheckedOutStage(accessoryParent({ status: "CHECKED_OUT" }, { status: "CONFIRMED" }))).toBe(true);
+    expect(isInCheckedOutStage(accessoryParent({ status: "CONFIRMED" }, { status: "CHECKED_OUT" }))).toBe(true);
+  });
+
+  test("accessory parent: hidden when neither is checked out", () => {
+    expect(isInCheckedOutStage(accessoryParent({ status: "CONFIRMED" }, { status: "CONFIRMED" }))).toBe(false);
   });
 });

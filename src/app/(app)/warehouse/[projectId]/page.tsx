@@ -93,12 +93,15 @@ import {
   isKitParent,
   isAccessoryParent,
   accessoryChildrenOf,
-  isExpandableParent,
-  expandableChildrenOf,
   collectAllVerifiableIds,
   bulkUnitKey,
   bulkUnpackedRemaining,
   bulkPackedWaiting,
+  isInPickPrepStage,
+  isInPreppedStage,
+  isInReturnedStage,
+  isInDeprepedStage,
+  isInCheckedOutStage,
 } from "@/components/warehouse/warehouse-types";
 import {
   pullItem,
@@ -1444,126 +1447,27 @@ function WarehouseProjectPage({
   const stageCounts = summarizeWarehouseStages(equipmentItems);
 
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
-  const pickPrepItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    // Bulk lines are quantity-aware: show while any ordered unit is still
-    // unpacked, even once some units are prepped/deployed. This is what keeps
-    // "prep 1 of 10" from yanking the other 9 out of Pick. (Kit/accessory
-    // parents are handled by their child rollup below, never as a bulk line.)
-    if (isBulkItem(item) && !isExpandableParent(item)) return bulkUnpackedRemaining(item) > 0;
-    if (item.status === "CHECKED_OUT") return false;
-    // A returned piece of gear is DONE with the prep half of the flow — it lives
-    // in the Returned / De-prep stage, never back here. (Without this, a returned
-    // item whose prepStatus is no longer PACKED fell through below and reappeared
-    // in Pick/Prep, looking like it had never been sent out.)
-    if (item.status === "RETURNED") return false;
-    // Kit/accessory parents: show if any children still need prepping
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
-        if (c.prepStatus === "PACKED") return false;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus !== "PACKED"
-          );
-        }
-        return true;
-      });
-    }
-    // After prep-splitting, exhausted originals have qty=0 — hide them
-    if (item.quantity <= 0) return false;
-    if (item.prepStatus === "PACKED") return false;
-    return true;
-  });
-
+  // Pick/Prep, Deploy, De-prep-staging, De-prepped, and Return tab membership —
+  // see isInPickPrepStage/isInPreppedStage/isInReturnedStage/isInDeprepedStage/
+  // isInCheckedOutStage in warehouse-types.ts for the shared, tested logic.
+  const pickPrepItems = equipmentItems.filter(isInPickPrepStage);
   // Deploy: items that are prepped (PACKED) but not yet deployed (CHECKED_OUT).
   // Returned gear is excluded — it lives in the De-prep stage, NOT back here
   // (the "to return it goes back to deploy" confusion).
-  const preppedItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    // Bulk lines are quantity-aware: show while any unit is packed and waiting to
-    // deploy, even if some of the line's units are already out or still to pick.
-    // (Kit/accessory parents fall through to the child rollup below, never treated as bulk.)
-    if (isBulkItem(item) && !isExpandableParent(item)) return bulkPackedWaiting(item) > 0;
-    if (item.status === "CHECKED_OUT") return false;
-    if (item.status === "RETURNED") return false;
-    // Kit/accessory parents: show if any children are prepped but not deployed
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED" || c.status === "RETURNED") return false;
-        if (c.prepStatus === "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.status !== "RETURNED" && gc.prepStatus === "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    if (item.quantity <= 0) return false;
-    return item.prepStatus === "PACKED";
-  });
-
+  const preppedItems = equipmentItems.filter(isInPreppedStage);
   // De-prep: gear that's physically back (RETURNED) but still packed — it needs
   // return checks and putting back into inventory. Once de-prepped, prepStatus
   // resets off PACKED and it leaves this list. Mirrors the checkedOutItems shape
   // so it can flow through the same Deploy-tab rendering in "deprep" mode.
-  const returnedItems = equipmentItems.filter((item) => {
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "RETURNED" && c.prepStatus === "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status === "RETURNED" && gc.prepStatus === "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    return item.status === "RETURNED" && item.prepStatus === "PACKED";
-  });
-
+  const returnedItems = equipmentItems.filter(isInReturnedStage);
   // De-prepped: returned gear checked back into inventory (prepStatus reset off
   // PACKED). Terminal stage — a read-only confirmation list.
-  const deprepedItems = equipmentItems.filter((item) => {
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "RETURNED" && c.prepStatus !== "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status === "RETURNED" && gc.prepStatus !== "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    return item.status === "RETURNED" && item.prepStatus !== "PACKED";
-  });
+  const deprepedItems = equipmentItems.filter(isInDeprepedStage);
 
   // Keep old name for compatibility with deploy tab selection logic
   const checkOutItemsList = preppedItems;
 
-  const checkedOutItems = equipmentItems.filter((item) => {
-    // Kit/accessory parents: show in return tab if any children/grandchildren are deployed
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT") return true;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
-        }
-        return false;
-      });
-    }
-    if (isBulkItem(item)) return item.status === "CHECKED_OUT" && item.checkedOutQuantity > item.returnedQuantity;
-    return item.status === "CHECKED_OUT";
-  });
+  const checkedOutItems = equipmentItems.filter(isInCheckedOutStage);
 
   const groupedPrep = groupItems(pickPrepItems, "prep", "prep");
   const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");

@@ -57,6 +57,7 @@ export function mapProject(d: ProjectDoc): ProjectRow {
     projectNumber: d.projectNumber,
     name: d.name,
     clientId: orNull(d.clientId),
+    clientContactId: orNull(d.clientContactId),
     status: (d.status ?? "ENQUIRY") as ProjectRow["status"],
     type: (d.type ?? "OTHER") as ProjectRow["type"],
     description: orNull(d.description),

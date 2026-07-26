@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
 import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
@@ -8,7 +9,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
 import { assertStrLen } from "./lib/fieldGuards";
-import { assertRefInOrg } from "./lib/orgRef";
+import { assertRefInOrg, assertClientContactBelongsToClient } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getKitByCuid } from "./lib/kits";
@@ -343,6 +344,54 @@ const PROJECT_NEVER_CLEAR = new Set<string>([
 ]);
 
 /**
+ * clientContactId (WS9 #948) validate/clear-on-client-change for the general
+ * `updateNative` set/clear patch — split out of the handler to keep its own
+ * complexity from growing further (that function is already a pre-existing
+ * complexity hotspot). Validates against the project's (possibly
+ * reassigned-in-this-same-call) clientId when explicitly set; throws on an
+ * invalid pairing. Returns true when the caller's `setObj`/`clear` should have
+ * `clientContactId` cleared — a contact tied to the OLD client must never
+ * silently carry over onto a newly-assigned (or newly-cleared) client.
+ */
+async function shouldClearStaleClientContactId(
+  ctx: MutationCtx,
+  orgId: string,
+  project: { clientId?: string; clientContactId?: string },
+  setObj: Record<string, unknown>,
+  clear: string[],
+): Promise<boolean> {
+  const effectiveClientId = typeof setObj.clientId === "string" ? setObj.clientId : project.clientId;
+  if (typeof setObj.clientContactId === "string") {
+    if (!effectiveClientId) {
+      throw new ConvexError({ code: "INVALID_FIELD", message: "clientContactId requires a clientId." });
+    }
+    await assertClientContactBelongsToClient(ctx, setObj.clientContactId, effectiveClientId, orgId);
+    return false;
+  }
+  const clientIdChanged = typeof setObj.clientId === "string" && setObj.clientId !== project.clientId;
+  const clientIdCleared = clear.includes("clientId");
+  return (clientIdChanged || clientIdCleared) && !!project.clientContactId;
+}
+
+/**
+ * clientContactId (WS9 #948) validate-on-create — must belong to the SAME client
+ * being set, or a caller could pin the project's PDFs/Xero mapping at another
+ * client's contact.
+ */
+async function assertClientContactOnCreate(
+  ctx: MutationCtx,
+  orgId: string,
+  clientId: string | undefined,
+  clientContactId: string | undefined,
+): Promise<void> {
+  if (!clientContactId) return;
+  if (!clientId) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: "clientContactId requires a clientId." });
+  }
+  await assertClientContactBelongsToClient(ctx, clientContactId, clientId, orgId);
+}
+
+/**
  * updateNative — general project field patch (set/clear) + UPDATE audit, atomic.
  * RBAC(project, update). STALE-COMMENT FIX: the former `updateProject` server action
  * this mutation replaced is gone — `projectSchema.parse()` now runs client-side in
@@ -434,6 +483,13 @@ export const updateNative = mutation({
       await assertRefInOrg(ctx, "locations", setObj.locationId, orgId);
     }
 
+    // clientContactId (WS9 #948) — validate/clear-on-client-change, extracted to
+    // keep this already-large handler's own complexity from growing further.
+    if (await shouldClearStaleClientContactId(ctx, orgId, project, setObj, clear)) {
+      delete setObj.clientContactId;
+      if (!clear.includes("clientContactId")) clear = [...clear, "clientContactId"];
+    }
+
     // A general update that also moves the status FORWARD into PREPPING/CHECKED_OUT/ON_SITE
     // must clear the blocking-comment gate too (parity with the server updateProject path).
     const nextStatus = typeof setObj.status === "string" ? setObj.status : undefined;
@@ -488,6 +544,12 @@ export const updateNative = mutation({
  *    clash-guard; on a rendered-code clash the counter advances and we retry
  *    (bounded), so a lagging counter skips past manually-entered codes. Atomic — the
  *    sequence bump and the create commit (or roll back) together.
+ *
+ * Handler complexity 15 (R-3.6 ceiling) — the field-bound-check gauntlet
+ * (money/dates/strings/clientId/clientContactId/locationId) plus the two
+ * mutually-exclusive number paths account for the branch count; each guard is
+ * already its own named assertion function, so further splitting would only
+ * relocate the branches, not reduce them.
  */
 export const createNative = mutation({
   returns: v.object({ created: v.boolean(), id: v.string() }),
@@ -540,6 +602,10 @@ export const createNative = mutation({
     if (fields.clientId) {
       await assertRefInOrg(ctx, "clients", fields.clientId, fields.organizationId);
     }
+    // clientContactId (WS9 #948) — extracted to a helper (keeps this already-large
+    // handler's own complexity from growing further — same rationale as
+    // shouldClearStaleClientContactId for updateNative).
+    await assertClientContactOnCreate(ctx, fields.organizationId, fields.clientId, fields.clientContactId);
     // locationId — same cross-tenant leak class as clientId (see updateNative's comment).
     if (fields.locationId) {
       await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);

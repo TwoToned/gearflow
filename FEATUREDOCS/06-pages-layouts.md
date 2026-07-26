@@ -85,7 +85,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/crew/[id]/edit` | Edit crew member |
 | `/clients` | Client list |
 | `/clients/new` | Create client |
-| `/clients/[id]` | Client detail |
+| `/clients/[id]` | Client detail (projects, notes, files tabs; sidebar contacts manager — see FEATUREDOCS/63) |
 | `/clients/[id]/edit` | Edit client |
 | `/suppliers` | Supplier list |
 | `/suppliers/new` | Create supplier |

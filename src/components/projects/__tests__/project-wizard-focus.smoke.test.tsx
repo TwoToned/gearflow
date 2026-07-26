@@ -35,6 +35,7 @@ vi.mock("@/hooks/use-project-managers-writes", () => ({
 vi.mock("@/hooks/use-clients", () => ({
   useClientSearch: () => [],
   useClient: () => undefined,
+  useClientContacts: () => [],
 }));
 vi.mock("@/hooks/use-debounced-value", () => ({
   useDebouncedValue: (v: unknown) => v,

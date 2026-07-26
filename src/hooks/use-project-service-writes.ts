@@ -70,6 +70,7 @@ export function useProjectServiceWrites() {
         duration: p.duration,
         discount: p.discount,
         costTotal: p.costTotal,
+        chargeRateOverride: p.chargeRateOverride,
         taxable: p.taxable,
         vehicleDescription: p.vehicleDescription,
         numberOfTrips: p.numberOfTrips,

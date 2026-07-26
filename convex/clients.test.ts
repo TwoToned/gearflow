@@ -80,4 +80,47 @@ describe("clients.listPage", () => {
     const result = await t.withIdentity({ subject: "user_2", orgId: "org_2" }).query(api.clients.listPage, { orgId: "org_2" });
     expect(result.items).toEqual([]);
   });
+
+  // WS9 #948 — contactName/contactEmail become primary-contact-derived.
+  test("contactName/contactEmail reflect the PRIMARY contact row, not the legacy embedded fields, once the client has contacts", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clientContacts", { id: "cc1", organizationId: ORG, clientId: "C1", name: "New Primary", email: "new-primary@acme.test", isPrimary: true, sortOrder: 0 });
+    });
+    const result = await t.withIdentity(asUser).query(api.clients.listPage, { orgId: ORG });
+    const c1 = result.items.find((c) => c.id === "C1");
+    expect(c1?.contactName).toBe("New Primary");
+    expect(c1?.contactEmail).toBe("new-primary@acme.test");
+  });
+
+  test("a client with no contacts still falls back to the legacy embedded contactName/contactEmail", async () => {
+    const t = makeT();
+    await seed(t);
+    const result = await t.withIdentity(asUser).query(api.clients.listPage, { orgId: ORG });
+    const c1 = result.items.find((c) => c.id === "C1");
+    expect(c1?.contactName).toBe("Jane Doe");
+    expect(c1?.contactEmail).toBe("jane@acme.test");
+  });
+});
+
+describe("clients.detail", () => {
+  test("returns the client's contacts, sorted by sortOrder, org-scoped", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clientContacts", { id: "cc2", organizationId: ORG, clientId: "C1", name: "Second", isPrimary: false, sortOrder: 1 });
+      await ctx.db.insert("clientContacts", { id: "cc1", organizationId: ORG, clientId: "C1", name: "First", isPrimary: true, sortOrder: 0 });
+      await ctx.db.insert("clientContacts", { id: "ccOther", organizationId: "org_2", clientId: "C1", name: "Foreign" });
+    });
+    const result = await t.withIdentity(asUser).query(api.clients.detail, { orgId: ORG, id: "C1" });
+    expect(result?.contacts.map((c) => c.name)).toEqual(["First", "Second"]);
+  });
+
+  test("a client with zero contacts returns an empty contacts array (fully optional)", async () => {
+    const t = makeT();
+    await seed(t);
+    const result = await t.withIdentity(asUser).query(api.clients.detail, { orgId: ORG, id: "C2" });
+    expect(result?.contacts).toEqual([]);
+  });
 });

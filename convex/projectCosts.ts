@@ -14,6 +14,12 @@ import { requireOrgPermission } from "./lib/auth";
 const costsShape = {
   equipmentRevenue: v.number(),
   serviceRevenue: v.number(),
+  // Additive (WS10 #949 labour charge rates & margin): the slice of serviceRevenue
+  // billed for LABOUR-type services specifically — non-zero only once a crew role
+  // (or per-service override) has a charge rate configured, so the "Labour" row
+  // can show revenue alongside its existing cost once auto-pricing exists. See
+  // ProjectCostsPanel.
+  labourServiceRevenue: v.number(),
   total: v.number(),
   serviceCostTotal: v.number(),
   labourCostTotal: v.number(),
@@ -27,6 +33,7 @@ const costsShape = {
 const EMPTY = {
   equipmentRevenue: 0,
   serviceRevenue: 0,
+  labourServiceRevenue: 0,
   total: 0,
   serviceCostTotal: 0,
   labourCostTotal: 0,
@@ -55,11 +62,13 @@ export const operationalCosts = query({
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect();
     let serviceRevenue = 0;
+    let labourServiceRevenue = 0;
     for (const s of services) {
       if (s.organizationId !== orgId) continue; // defence-in-depth (by_projectId is not org-scoped)
       if (s.status === "CANCELLED") continue;
       if (s.showOnDocuments !== true) continue;
       serviceRevenue += s.lineTotal ?? 0;
+      if (s.type === "LABOUR") labourServiceRevenue += s.lineTotal ?? 0;
     }
 
     // Maintenance cost: mirrors aggregateMaintenanceForProject (non-cancelled).
@@ -89,6 +98,7 @@ export const operationalCosts = query({
     return {
       equipmentRevenue,
       serviceRevenue,
+      labourServiceRevenue,
       total,
       serviceCostTotal,
       labourCostTotal,

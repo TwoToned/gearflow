@@ -53,6 +53,9 @@ export interface SubHireRow {
   notes: string | null;
   defaultTargetCategoryId: string | null;
   defaultTargetGroupId: string | null;
+  // WS7 #946 — linked purchase order (1:1, see convex/schema.ts's comment on
+  // subHires.supplierOrderId).
+  supplierOrderId: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
 }
@@ -113,6 +116,7 @@ export function mapSubHire(d: RawSubHire): SubHireRow {
     notes: orNull(d.notes),
     defaultTargetCategoryId: orNull(d.defaultTargetCategoryId),
     defaultTargetGroupId: orNull(d.defaultTargetGroupId),
+    supplierOrderId: orNull(d.supplierOrderId),
     createdAt: toDate(d.createdAt),
     updatedAt: toDate(d.updatedAt),
   };

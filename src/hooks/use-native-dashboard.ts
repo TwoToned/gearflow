@@ -19,6 +19,9 @@ export interface NativeDashboardStats {
   activeCrew: number;
   pendingCrewOffers: number;
   maintenanceDue: number;
+  /** WS6 #945 — distinct models with an open, due recurring-PM cycle. Separate
+   *  from `maintenanceDue` (which excludes schedule-generated records). */
+  modelsDueForService: number;
   overdueReturns: number;
   countersReady: boolean;
 }

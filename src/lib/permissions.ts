@@ -20,6 +20,7 @@ export {
   ORG_ROLES,
   ASSIGNABLE_BUILT_IN_ROLES,
   isBuiltInRole,
+  isManagerPlusRole,
 } from "../../convex/lib/permissionsCore";
 export type {
   Resource,

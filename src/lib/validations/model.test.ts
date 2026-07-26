@@ -24,7 +24,6 @@ const validComplete = {
   testAndTagIntervalDays: 90,
   defaultEquipmentClass: "CLASS_I" as const,
   defaultApplianceType: "APPLIANCE" as const,
-  maintenanceIntervalDays: 180,
   assetType: "SERIALIZED" as const,
   barcodeLabelTemplate: "default",
   isActive: true,
@@ -183,15 +182,10 @@ describe("modelSchema", () => {
       expect(result.success).toBe(true);
     });
 
-    it("rejects negative maintenanceIntervalDays", () => {
-      const result = modelSchema.safeParse({ ...validMinimal, maintenanceIntervalDays: -1 });
-      expect(result.success).toBe(false);
-    });
-
-    it("accepts zero maintenanceIntervalDays", () => {
-      const result = modelSchema.safeParse({ ...validMinimal, maintenanceIntervalDays: 0 });
-      expect(result.success).toBe(true);
-    });
+    // maintenanceIntervalDays removed from modelSchema (WS6 #945) — superseded
+    // by serviceSchedules. An unknown `maintenanceIntervalDays` key is now
+    // silently stripped (Zod's default non-strict object behavior), not
+    // validated — covered by convex/serviceSchedulesWrites.test.ts instead.
   });
 
   describe("testAndTagIntervalDays (transform: empty string → undefined)", () => {

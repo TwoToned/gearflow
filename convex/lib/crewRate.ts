@@ -18,6 +18,28 @@ export function resolveRate(
   return { rate: 0, rateType: "DAILY" };
 }
 
+/**
+ * Charge-side cascade (WS10 #949 — labour charge rates & margin). Deliberately
+ * SIMPLER than `resolveRate`: role-first by design (spec decision — client pricing
+ * shouldn't wobble per crew member). No member-level charge rate exists.
+ * `chargeRateOverride` -> `role.chargeRate` -> null. A null return means NO auto-
+ * pricing figure is available for this assignment (never coerced to a fake $0) —
+ * `recalcServiceChargeFromCrew` (serviceCost.ts) treats "nothing resolved anywhere"
+ * as "leave the service's charge/margin unset", not as a $0 charge.
+ */
+export function resolveChargeRate(
+  chargeRateOverride: number | null | undefined,
+  crewRole: { chargeRate?: number | null; rateType?: string | null } | null,
+): { rate: number; rateType: string } | null {
+  if (chargeRateOverride != null && chargeRateOverride > 0) {
+    return { rate: chargeRateOverride, rateType: crewRole?.rateType || "DAILY" };
+  }
+  if (crewRole?.chargeRate != null && Number(crewRole.chargeRate) > 0) {
+    return { rate: Number(crewRole.chargeRate), rateType: crewRole.rateType || "DAILY" };
+  }
+  return null;
+}
+
 /** Estimated cost. startMs/endMs are epoch-ms (or null); FLAT = rate, HOURLY = rate*hours, DAILY = rate*days. */
 export function calculateEstimatedCost(
   rate: number,

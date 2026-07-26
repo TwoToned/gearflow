@@ -151,25 +151,30 @@ export function ClientForm({ initialData }: ClientFormProps) {
           </div>
         </SmartFormSection>
 
-        {/* Contact */}
-        <SmartFormSection title="Contact" hint="Where quotes, dockets and invoices land.">
-          <div className="grid gap-5 sm:grid-cols-2">
-            <SmartFormField label="Contact name">
-              <Input {...form.register("contactName")} placeholder="Primary contact person" />
-            </SmartFormField>
-            <SmartFormField label="Contact email" error={form.formState.errors.contactEmail?.message}>
-              <Input
-                type="email"
-                {...form.register("contactEmail")}
-                placeholder="email@example.com"
-                aria-invalid={!!form.formState.errors.contactEmail}
-              />
-            </SmartFormField>
-            <SmartFormField label="Contact phone">
-              <Input {...form.register("contactPhone")} placeholder="+61 400 000 000" />
-            </SmartFormField>
-          </div>
-        </SmartFormSection>
+        {/* Contact — create-time only (WS9 #948): this seeds the PRIMARY contact
+            as a separate clientContacts row right after the client is created.
+            Editing contacts (adding more, changing the primary, etc.) moves to
+            the contacts manager on the client detail page's sidebar. */}
+        {!isEditing && (
+          <SmartFormSection title="Contact" hint="Where quotes, dockets and invoices land. Add more contacts from the client's page once it's created.">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <SmartFormField label="Contact name">
+                <Input {...form.register("contactName")} placeholder="Primary contact person" />
+              </SmartFormField>
+              <SmartFormField label="Contact email" error={form.formState.errors.contactEmail?.message}>
+                <Input
+                  type="email"
+                  {...form.register("contactEmail")}
+                  placeholder="email@example.com"
+                  aria-invalid={!!form.formState.errors.contactEmail}
+                />
+              </SmartFormField>
+              <SmartFormField label="Contact phone">
+                <Input {...form.register("contactPhone")} placeholder="+61 400 000 000" />
+              </SmartFormField>
+            </div>
+          </SmartFormSection>
+        )}
 
         {/* Address */}
         <SmartFormSection title="Address" hint="Billing and shipping — used on documents.">

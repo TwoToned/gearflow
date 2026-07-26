@@ -20,7 +20,7 @@ import { projectSchema, type ProjectFormValues } from "@/lib/validations/project
 import { peekNextProjectNumber, checkProjectNumberAvailable } from "@/server/projects";
 import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
-import { useClientSearch, useClient } from "@/hooks/use-clients";
+import { useClientSearch, useClient, useClientContacts } from "@/hooks/use-clients";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -66,6 +66,7 @@ export interface EditableProject {
   projectNumber?: string | null;
   name?: string | null;
   clientId?: string | null;
+  clientContactId?: string | null;
   status?: ProjectFormValues["status"] | null;
   type?: ProjectFormValues["type"] | null;
   description?: string | null;
@@ -97,7 +98,7 @@ export interface EditableProject {
 
 type StepKey = "basics" | "schedule" | "site" | "review";
 const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFormValues>[] }[] = [
-  { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", fields: ["name", "projectNumber", "clientId", "type", "description", "tags"] },
+  { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", fields: ["name", "projectNumber", "clientId", "clientContactId", "type", "description", "tags"] },
   { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten load-in / load-out later.", fields: ["rentalStartDate", "rentalEndDate", "loadInDate", "loadInTime", "loadOutDate", "loadOutTime", "eventStartDate", "eventStartTime", "eventEndDate", "eventEndTime"] },
   { key: "site", label: "Site", tip: "Where it's happening and who to call on the day. All optional.", fields: ["locationId", "siteContactName", "siteContactPhone", "siteContactEmail"] },
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
@@ -168,6 +169,7 @@ export function ProjectWizard({
           projectNumber: project.projectNumber ?? "",
           name: project.name ?? "",
           clientId: project.clientId ?? "",
+          clientContactId: project.clientContactId ?? "",
           status: project.status ?? "ENQUIRY",
           type: project.type ?? "OTHER",
           description: project.description ?? "",
@@ -196,7 +198,7 @@ export function ProjectWizard({
           tags: project.tags ?? [],
         }
       : {
-          projectNumber: "", name: "", clientId: "", status: "ENQUIRY", type: "OTHER",
+          projectNumber: "", name: "", clientId: "", clientContactId: "", status: "ENQUIRY", type: "OTHER",
           description: "", locationId: "", siteContactName: "", siteContactPhone: "", siteContactEmail: "",
           loadInDate: undefined, loadInTime: "", eventStartDate: undefined, eventStartTime: "",
           eventEndDate: undefined, eventEndTime: "", loadOutDate: undefined, loadOutTime: "",
@@ -235,6 +237,27 @@ export function ProjectWizard({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v.clientId, selectedClient]);
+
+  // Per-project contact picker (WS9 #948) — the client's contacts, reactively.
+  // Changing clientId invalidates any previously-picked contact (it belonged to a
+  // DIFFERENT client), so reset the field the moment the client selection changes —
+  // the server also enforces this (projectWrites.ts), this is just UX so a stale
+  // pick never lingers in the form between the change and submit.
+  const clientContacts = useClientContacts(v.clientId || undefined, orgId);
+  const contactOptions = (clientContacts ?? []).map((c) => ({
+    value: c.id,
+    label: c.name || c.email || c.phone || "Unnamed contact",
+    description: c.isPrimary ? "Primary" : undefined,
+  }));
+  const prevClientIdRef = useRef(project?.clientId ?? "");
+  useEffect(() => {
+    const currentClientId = v.clientId || "";
+    if (currentClientId !== prevClientIdRef.current) {
+      prevClientIdRef.current = currentClientId;
+      form.setValue("clientContactId", "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.clientId]);
 
   // Pre-fill the project code from the org's next sequence so the (now required)
   // field is populated by default — the user accepts it or types their own.
@@ -381,6 +404,15 @@ export function ProjectWizard({
                     onCreateNew={() => setQuickClient(true)} createNewLabel="New client" emptyMessage="No clients found." />
                 )} />
               </Field>
+              {v.clientId && (
+                <Field label="Contact" hint="Who this job's documents address — defaults to the client's primary contact.">
+                  <Controller control={form.control} name="clientContactId" render={({ field }) => (
+                    <ComboboxPicker value={field.value || ""} onChange={field.onChange} options={contactOptions}
+                      loading={clientContacts === undefined} placeholder="Primary contact (default)" searchPlaceholder="Search contacts…"
+                      allowClear emptyMessage="This client has no contacts yet." />
+                  )} />
+                </Field>
+              )}
               <Field
                 label="Discount (%)"
                 hint={
@@ -484,6 +516,7 @@ export function ProjectWizard({
               <h2 className="font-display text-section-header font-bold text-ink">{v.name || "Untitled job"}</h2>
               <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                 <ReviewRow label="Client" value={clientName} />
+                <ReviewRow label="Contact" value={contactOptions.find((c) => c.value === v.clientContactId)?.label} />
                 <ReviewRow label="Type" value={typeName} />
                 <ReviewRow label="Managers" value={managerIds.length ? `${managerIds.length} assigned` : undefined} />
                 <ReviewRow label="Project code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />

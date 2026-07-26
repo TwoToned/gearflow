@@ -14,6 +14,20 @@ export const supplierOrderSchema = z.object({
 
 export type SupplierOrderFormValues = z.input<typeof supplierOrderSchema>;
 
+// WS7 #946 — the order HEADER EDIT form (order detail page) only ever touches
+// status/orderDate/expectedDate/notes (supplierId/orderNumber/type/projectId are
+// fixed at creation). Derived via `.pick()` (R-8.6.3) rather than re-declared —
+// paired with `convex/supplierOrdersWrites.ts`'s `updateFields` in
+// convex/validationDrift.test.ts (R-8.6.1).
+export const supplierOrderUpdateSchema = supplierOrderSchema.pick({
+  status: true,
+  orderDate: true,
+  expectedDate: true,
+  notes: true,
+});
+
+export type SupplierOrderUpdateFormValues = z.input<typeof supplierOrderUpdateSchema>;
+
 export const supplierOrderItemSchema = z.object({
   description: z.string().min(1, "Description is required").max(500),
   quantity: z.coerce.number().int().min(1).default(1),

@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useEditLock } from "@/hooks/use-collaboration";
 import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 import {
   Dialog,
@@ -28,8 +28,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { checkAvailability } from "@/server/line-items";
 import type { LineItemData } from "./equipment-rows";
+import { DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 
 export interface EditLineItemPayload {
   type: string;
@@ -40,6 +42,7 @@ export interface EditLineItemPayload {
   duration: number;
   discount?: number;
   notes?: string;
+  isOptional?: boolean;
 }
 
 interface EditLineItemDialogProps {
@@ -108,8 +111,9 @@ function EditLineItemDialogBody({
   const [discount, setDiscount] = useState(
     item.discount != null && Number(item.discount) > 0 ? String(Number(item.discount)) : "",
   );
-  const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
   const [notes, setNotes] = useState(item.notes ?? "");
+  const [isOptional, setIsOptional] = useState(item.isOptional ?? false);
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
 
   // Optimistic-concurrency baseline — captured once when the editor opens
@@ -157,14 +161,12 @@ function EditLineItemDialogBody({
     const qty = Number(quantity) || 1;
     const price = unitPrice ? Number(unitPrice) : undefined;
     const dur = item.duration ?? 1;
-    let disc: number | undefined;
-    if (discount && Number(discount) > 0) {
-      if (discountMode === "%" && price != null) {
-        disc = Math.round((price * qty * dur * Number(discount)) / 100 * 100) / 100;
-      } else {
-        disc = Number(discount);
-      }
-    }
+    const gross = price != null ? price * qty * dur : undefined;
+    const disc = resolveDiscountAmount(
+      discountMode,
+      discount ? Number(discount) : undefined,
+      gross,
+    );
     onSubmit(
       item.id,
       {
@@ -176,6 +178,7 @@ function EditLineItemDialogBody({
         duration: dur,
         discount: disc,
         notes: notes || undefined,
+        isOptional,
       },
       overbookConfirmed,
       baseUpdatedAt,
@@ -271,28 +274,16 @@ function EditLineItemDialogBody({
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <Label htmlFor="edit-discount" className="shrink-0 text-sm">Discount</Label>
-            <div className="flex gap-1 flex-1">
-              <Input
-                id="edit-discount"
-                type="number"
-                step="0.01"
-                min={0}
-                placeholder="0"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-                className="flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => setDiscountMode(discountMode === "$" ? "%" : "$")}
-                className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
-              >
-                {discountMode}
-              </button>
-            </div>
-          </div>
+          <DiscountField
+            id="edit-discount"
+            mode={discountMode}
+            onModeChange={setDiscountMode}
+            disabled={formDisabled}
+            inputProps={{
+              value: discount,
+              onChange: (e) => setDiscount(e.target.value),
+            }}
+          />
         </div>
 
         <div className="space-y-2">
@@ -304,6 +295,16 @@ function EditLineItemDialogBody({
             rows={2}
           />
         </div>
+
+        <label className="flex cursor-pointer items-center gap-2.5">
+          <Checkbox
+            id="edit-isOptional"
+            checked={isOptional}
+            onCheckedChange={(c) => setIsOptional(c === true)}
+            disabled={formDisabled}
+          />
+          <span className="text-ui-text text-ink-2">Optional item (excluded from totals)</span>
+        </label>
 
         {!formDisabled && isOverbooked && (
           <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-2">
@@ -341,9 +342,9 @@ function EditLineItemDialogBody({
         </Button>
         <Button
           onClick={handleSave}
-          disabled={formDisabled || isPending || (isOverbooked && !overbookConfirmed)}
+          loading={isPending}
+          disabled={formDisabled || (isOverbooked && !overbookConfirmed)}
         >
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save
         </Button>
       </DialogFooter>

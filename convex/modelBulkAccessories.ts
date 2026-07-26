@@ -12,17 +12,6 @@ import { requireService } from "./lib/auth";
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
-export const list = query({
-  args: { orgId: v.string() },
-  handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
-    return await ctx.db
-      .query("modelBulkAccessories")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-      .collect();
-  },
-});
-
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {

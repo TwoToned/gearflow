@@ -13,17 +13,6 @@ import * as enums from "./lib/validators";
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
-export const list = query({
-  args: { orgId: v.string() },
-  handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
-    return await ctx.db
-      .query("supplierModelRates")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
-      .collect();
-  },
-});
-
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {

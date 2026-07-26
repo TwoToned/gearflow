@@ -144,6 +144,39 @@ describe("overbooking.bundle — scoped vs unscoped parity", () => {
     expect(result.get("L1")?.overBy).toBe(3); // 8 booked - 5 stock
   });
 
+  // WS2 (#941) — the scoped candidate scan is re-keyed to also catch a project
+  // found ONLY via its PROJECT window (its rental window is far outside the query
+  // range), via the by_organizationId_projectStartDate fallback scan.
+  test("scoped bundle finds a project via its PROJECT window when its rental window doesn't overlap", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      // P6: rental window is 60 days away (would NOT be found by the rental-index
+      // scan), but its PROJECT window (e.g. an early load-in) overlaps P1.
+      await ctx.db.insert("projects", {
+        id: "P6", organizationId: ORG, projectNumber: "P6", name: "Early load-in", status: "CONFIRMED",
+        isTemplate: false,
+        rentalStartDate: NOW + 60 * DAY, rentalEndDate: NOW + 63 * DAY,
+        projectStartDate: NOW + 1 * DAY, projectEndDate: NOW + 2 * DAY,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", { id: "L6", organizationId: ORG, projectId: "P6", modelId: "mdl", status: "CONFIRMED", quantity: 10, type: "EQUIPMENT" });
+    });
+    const modelIds = relevantOverbookModelIds(p1LineItems);
+    const scoped = await t.withIdentity(asUser).query(api.overbooking.bundle, {
+      orgId: ORG,
+      modelIds,
+      thisProjectId: "P1",
+      rentalStartDate: NOW,
+      rentalEndDate: NOW + 5 * DAY,
+    });
+    const projectIdsInBundle = new Set(scoped.lineItems.map((li) => li.projectId));
+    expect(projectIdsInBundle.has("P6")).toBe(true);
+    const result = reconstructOverbookedStatus(scoped, p1LineItems, new Date(NOW), new Date(NOW + 5 * DAY), "P1");
+    // 2 (P1) + 3 (P2) + 10 (P6) = 15 booked against 5 stock.
+    expect(result.get("L1")?.overBy).toBe(10);
+  });
+
   test("dateless project (no rental window) scopes to only its own bookings, no org-wide read", async () => {
     const t = makeT();
     await seed(t);

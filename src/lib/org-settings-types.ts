@@ -22,6 +22,16 @@ export interface OrgBranding {
   showOrgNameOnDocuments?: boolean;
 }
 
+/** Global document settings — footer text, T&Cs, quote validity. Applies to
+ *  all 5 project doc types (footer) or just the quote (T&Cs, validity). */
+export interface OrgDocumentSettings {
+  footerText?: string;
+  footerSecondLine?: string;
+  termsAndConditions?: string;
+  /** Days a quote stays valid from its generation date. Default 30. */
+  quoteValidityDays?: number;
+}
+
 export interface TestTagSettings {
   prefix?: string;
   digits?: number;
@@ -55,6 +65,7 @@ export interface OrgSettings {
   /** Zero-pad width for the project-number increment. Default 2. */
   projectNumberIncrementPadding?: number;
   branding?: OrgBranding;
+  documents?: OrgDocumentSettings;
   testTag?: TestTagSettings;
   icalToken?: string;
   icalEnabled?: boolean;

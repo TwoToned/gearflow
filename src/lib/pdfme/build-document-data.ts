@@ -31,6 +31,7 @@ import {
   type SubHireGroupForStructuring,
 } from "./structure-line-items";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
+import type { OrgDocumentSettings } from "@/lib/org-settings-types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
@@ -103,6 +104,7 @@ export async function buildDocumentData(
     documentLogoMode?: "logo" | "icon" | "none";
     showOrgNameOnDocuments?: boolean;
   } | undefined;
+  const documentSettings = orgSettings.documents as OrgDocumentSettings | undefined;
 
   // Load logo/icon as base64
   const [logoData, iconData] = await Promise.all([
@@ -634,6 +636,9 @@ export async function buildDocumentData(
 
   const totalNum = Number(serialized.total) || 0;
   const depositNum = Number(serialized.depositPaid) || 0;
+  const now = new Date();
+  const quoteValidityDays = documentSettings?.quoteValidityDays ?? 30;
+  const quoteValidUntil = new Date(now.getTime() + quoteValidityDays * 24 * 60 * 60 * 1000);
 
   return {
     // Org
@@ -695,7 +700,11 @@ export async function buildDocumentData(
     internal_notes: serialized.internalNotes || "",
 
     // Metadata
-    document_date: formatDate(new Date().toISOString()),
+    document_date: formatDate(now),
+    document_footer_text: documentSettings?.footerText || "",
+    document_footer_second_line: documentSettings?.footerSecondLine || "",
+    quote_terms_and_conditions: documentSettings?.termsAndConditions || "",
+    quote_valid_until: formatDate(quoteValidUntil),
 
     // PM
     pm_name: pmName,

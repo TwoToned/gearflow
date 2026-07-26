@@ -202,6 +202,15 @@ export interface DocumentData {
 
   // Metadata
   document_date: string;
+  /** Org-level document settings (src/lib/org-settings-types.ts `documents`).
+   *  footer_text/footer_second_line: empty string = composer auto-generates
+   *  from org_name/org_email/org_phone. */
+  document_footer_text: string;
+  document_footer_second_line: string;
+  /** Quote-only: plain-text T&Cs block and a real computed "valid until" date
+   *  (generatedAt + org's quoteValidityDays, default 30). */
+  quote_terms_and_conditions: string;
+  quote_valid_until: string;
 
   // PM
   pm_name: string;

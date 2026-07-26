@@ -59,6 +59,10 @@ function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
     crew_notes: "",
     internal_notes: "",
     document_date: "2026-07-26",
+    document_footer_text: "",
+    document_footer_second_line: "",
+    quote_terms_and_conditions: "",
+    quote_valid_until: "2026-08-25",
     line_items: [],
     pm_name: "",
     pm_phone: "",
@@ -269,5 +273,45 @@ describe("composeDocument — layout invariants", () => {
   it("only quote and invoice show a totals block", () => {
     const withTotals = PROJECT_DOC_TYPES.filter((t) => DOCUMENT_LAYOUTS[t].blocks.some((b) => b.kind === "totals"));
     expect(withTotals.sort()).toEqual(["invoice", "quote"]);
+  });
+});
+
+describe("composeDocument — org document settings (footer, T&Cs, quote validity)", () => {
+  const soloData = (overrides: Partial<DocumentData> = {}) =>
+    makeData({
+      line_items: [makeLineItem({ id: "only-item", status: "CHECKED_OUT", checkedOutQuantity: 1, model: { name: "Solo Item" } })],
+      ...overrides,
+    });
+
+  it("uses the org's footer text when set, falling back to org contact details otherwise", () => {
+    const withFooter = composeDocument("quote", soloData({ document_footer_text: "Custom footer", document_footer_second_line: "Second line" }), "#0d4f4f");
+    const footerSchema = withFooter.template.schemas[0].find((s) => s.type === "gearflowPageFooter")!;
+    const footerConfig = JSON.parse(withFooter.inputs[0][footerSchema.name as string]);
+    expect(footerConfig.text).toBe("Custom footer");
+    expect(footerConfig.secondLine).toBe("Second line");
+
+    const withoutFooter = composeDocument("quote", soloData({ document_footer_text: "" }), "#0d4f4f");
+    const footerSchema2 = withoutFooter.template.schemas[0].find((s) => s.type === "gearflowPageFooter")!;
+    const footerConfig2 = JSON.parse(withoutFooter.inputs[0][footerSchema2.name as string]);
+    expect(footerConfig2.text).toBe("Test Org | org@test.com | 0400 000 000");
+  });
+
+  it("omits the T&Cs block entirely when the org hasn't set any terms", () => {
+    const result = composeDocument("quote", soloData({ quote_terms_and_conditions: "" }), "#0d4f4f");
+    const hasTermsSchema = result.template.schemas[0].some((s) => String(s.name).startsWith("termsAndConditions"));
+    expect(hasTermsSchema).toBe(false);
+  });
+
+  it("renders the T&Cs block when the org has set terms", () => {
+    const result = composeDocument("quote", soloData({ quote_terms_and_conditions: "All sales final." }), "#0d4f4f");
+    const termsSchema = result.template.schemas[0].find((s) => String(s.name).startsWith("termsAndConditions"))!;
+    expect(termsSchema).toBeDefined();
+    expect(result.inputs[0][termsSchema.name as string]).toBe("All sales final.");
+  });
+
+  it("renders the quote validity note using the real computed date, not static copy", () => {
+    const result = composeDocument("quote", soloData({ quote_valid_until: "2026-09-15" }), "#0d4f4f");
+    const validitySchema = result.template.schemas[0].find((s) => String(s.name).startsWith("quoteValidityNote"))!;
+    expect(result.inputs[0][validitySchema.name as string]).toBe("This quote is valid until 2026-09-15.");
   });
 });

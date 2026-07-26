@@ -60,7 +60,7 @@ const settingsNav: SettingsNavSection[] = [
     items: [
       { title: "General", href: "/settings", icon: Building2, permission: "orgSettings" },
       { title: "Billing", href: "/settings/billing", icon: CreditCard, permission: "orgSettings" },
-      { title: "Branding", href: "/settings/branding", icon: Palette, permission: "orgSettings" },
+      { title: "Branding & documents", href: "/settings/branding", icon: Palette, permission: "orgSettings" },
       { title: "Team", href: "/settings/team", icon: Users, permission: "orgMembers" },
       { title: "Single Sign-On", href: "/settings/sso", icon: Shield, permission: "orgSettings" },
     ],

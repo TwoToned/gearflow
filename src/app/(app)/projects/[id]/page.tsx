@@ -32,6 +32,8 @@ import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
+import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
+import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
@@ -498,6 +500,15 @@ export default function ProjectDetailPage({
                 {!project.isTemplate && (
                   <TabsContent value="financials">
                     <div className="space-y-6 pt-4">
+                      <StalePricingBanner projectId={project.id} orgId={orgId} />
+                      <BillingSummaryRow
+                        projectId={project.id}
+                        orgId={orgId}
+                        rentalStartDate={rentalStart}
+                        rentalEndDate={rentalEnd}
+                        billingWeeksOverride={project.billingWeeksOverride as number | null}
+                        billingDaysOverride={project.billingDaysOverride as number | null}
+                      />
                       {(() => {
                         // Compute group pricing stats from categories
                         const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)

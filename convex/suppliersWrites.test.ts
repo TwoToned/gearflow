@@ -119,16 +119,20 @@ describe("suppliers tab reads", () => {
     expect(res.assets[0].model?.name).toBe("Mixer");
   });
 
-  test("subhiresPage: subHireId!=null line items, createdAt desc, with project", async () => {
+  // WS7 #946 — subhiresPage now returns sub-hire HEADS (order #, status, cost/
+  // charge/margin, linked PO), not raw projectLineItems — see
+  // convex/suppliersSpend.test.ts for the fuller integration coverage (project +
+  // linkedOrder resolution). This keeps the "createdAt desc, org-scoped" contract
+  // covered here.
+  test("subhiresPage: sub-hire heads for this supplier, createdAt desc", async () => {
     const t = makeT(); await seedMember(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", supplierId: "s1", status: "CONFIRMED", quantity: 1, type: "EQUIPMENT", subHireId: "sh1", createdAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", supplierId: "s1", status: "CONFIRMED", quantity: 1, type: "EQUIPMENT", subHireId: "sh2", createdAt: NOW + 10 });
-      await ctx.db.insert("projectLineItems", { id: "liPlain", organizationId: ORG, projectId: "p1", supplierId: "s1", status: "CONFIRMED", quantity: 1, type: "EQUIPMENT", createdAt: NOW });
+      await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "s1", createdById: USER, orderNumber: "SH-1", status: "CONFIRMED", totalCost: 100, totalCharge: 150, showOnDocs: false, createdAt: NOW });
+      await ctx.db.insert("subHires", { id: "sh2", organizationId: ORG, supplierId: "s1", createdById: USER, orderNumber: "SH-2", status: "DRAFT", showOnDocs: false, createdAt: NOW + 10 });
+      await ctx.db.insert("subHires", { id: "shOther", organizationId: ORG, supplierId: "sOther", createdById: USER, orderNumber: "SH-X", status: "CONFIRMED", showOnDocs: false, createdAt: NOW });
     });
     const res = await t.withIdentity(asUser).query(api.suppliers.subhiresPage, { orgId: ORG, supplierId: "s1", page: 1, pageSize: 25 });
-    expect(res.lineItems.map((l) => l.id)).toEqual(["li2", "li1"]); // subHire only, newest first
-    expect(res.lineItems[0].project?.projectNumber).toBe("P1");
+    expect(res.subHires.map((sh) => sh.id)).toEqual(["sh2", "sh1"]); // newest first, other-supplier excluded
+    expect(res.subHires.find((sh) => sh.id === "sh1")?.margin).toBe(50);
   });
 });

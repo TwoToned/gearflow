@@ -241,6 +241,7 @@ export function useLineItemWrites() {
       opts: {
         pricingMode: "KIT_PRICE" | "ITEMIZED";
         unitPrice?: number;
+        discount?: number;
         groupName?: string;
         categoryId?: string;
         groupId?: string;
@@ -254,6 +255,7 @@ export function useLineItemWrites() {
           projectId,
           kitId,
           unitPrice: opts.unitPrice ?? undefined,
+          discount: opts.discount ?? undefined,
           pricingMode: opts.pricingMode,
           groupName: opts.groupName || undefined,
           categoryId: opts.categoryId || undefined,

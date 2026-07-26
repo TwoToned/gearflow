@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field } from "./line-item-form-fields";
+import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useKitSearch, useKit } from "@/hooks/use-kits";
@@ -70,6 +70,8 @@ export function KitAddForm({
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitPricingMode, setKitPricingMode] = useState<KitPricingMode>("KIT_PRICE");
   const [kitUnitPrice, setKitUnitPrice] = useState("");
+  const [kitDiscount, setKitDiscount] = useState("");
+  const [kitDiscountMode, setKitDiscountMode] = useState<DiscountMode>("$");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId ?? "");
   const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? "");
 
@@ -110,6 +112,16 @@ export function KitAddForm({
     mutationFn: () => {
       const unitPrice =
         kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined;
+      // Discount is only meaningful alongside a flat KIT_PRICE unitPrice — resolve a
+      // `%` value to a dollar amount client-side before it reaches the mutation
+      // (discount is always persisted as a flat $ amount, same as equipment/custom items).
+      let discount: number | undefined;
+      if (kitPricingMode === "KIT_PRICE" && unitPrice != null && kitDiscount) {
+        const raw = parseFloat(kitDiscount);
+        if (Number.isFinite(raw) && raw > 0) {
+          discount = kitDiscountMode === "%" ? Math.round(unitPrice * raw) / 100 : raw;
+        }
+      }
       const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
       const effectiveGroupId = (groupId || selectedGroupId) || undefined;
       // Browser-direct native path. addKitNative expands the parent + member children +
@@ -123,6 +135,7 @@ export function KitAddForm({
       return lineItemWrites.addKit(projectId, selectedKitId, {
         pricingMode: kitPricingMode,
         unitPrice,
+        discount,
         groupName: undefined,
         categoryId: effectiveCategoryId,
         groupId: effectiveGroupId,
@@ -195,16 +208,24 @@ export function KitAddForm({
           </Field>
 
           {kitPricingMode === "KIT_PRICE" && (
-            <Field label="Unit price ($)">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={kitUnitPrice}
-                onChange={(e) => setKitUnitPrice(e.target.value)}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Unit price ($)">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={kitUnitPrice}
+                  onChange={(e) => setKitUnitPrice(e.target.value)}
+                />
+              </Field>
+              <DiscountField
+                value={kitDiscount}
+                onValueChange={setKitDiscount}
+                mode={kitDiscountMode}
+                onModeChange={setKitDiscountMode}
               />
-            </Field>
+            </div>
           )}
         </section>
 

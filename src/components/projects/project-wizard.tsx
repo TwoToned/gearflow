@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller, type Path, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -126,6 +126,21 @@ export function ProjectWizard({
   const [quickClient, setQuickClient] = useState(false);
   const [quickLocation, setQuickLocation] = useState(false);
   const [managerIds, setManagerIds] = useState<string[]>(initialManagerIds);
+
+  // WCAG "focus is never silently lost" (R-8.1.7, #894): the just-clicked
+  // Continue/Back button unmounts on step change, and without an explicit
+  // target focus falls back to document.body. Land it on the new step's
+  // heading instead. Step 0 is excluded — its Name field already autoFocuses
+  // on (re)mount, which fires during commit, before this effect would run.
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const isInitialStepRender = useRef(true);
+  useEffect(() => {
+    if (isInitialStepRender.current) {
+      isInitialStepRender.current = false;
+      return;
+    }
+    if (step !== 0) stepHeadingRef.current?.focus();
+  }, [step]);
 
   const { data: nextProjectNumber } = useServerQuery({
     queryKey: ["project-number-next", orgId],
@@ -314,6 +329,13 @@ export function ProjectWizard({
       <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="mt-6 grid gap-6 lg:grid-cols-[1fr_280px]">
         {/* Step content */}
         <div className="rounded-[var(--r-lg)] border border-line bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
+          <h2
+            ref={stepHeadingRef}
+            tabIndex={-1}
+            className={cn("t-overline mb-4 rounded-[var(--r)] text-faint", focusRing)}
+          >
+            Step {step + 1}: {STEPS[step].label}
+          </h2>
           {step === 0 && (
             <div className="space-y-5">
               <Field label="Name" required error={form.formState.errors.name?.message}>

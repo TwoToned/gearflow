@@ -82,7 +82,7 @@ export function ScanItemCard({
           }}
           title="Report issue"
           aria-label="Report issue"
-          className={`mr-1.5 inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-warn-soft hover:text-warn ${focusRing}`}
+          className={`touch-target mr-1.5 inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-warn-soft hover:text-warn ${focusRing}`}
         >
           <AlertTriangle className="h-4 w-4" />
         </button>
@@ -167,7 +167,7 @@ export function ScanGroupCard({
             }}
             title="Report issue"
             aria-label="Report issue"
-            className={`inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-warn-soft hover:text-warn ${focusRing}`}
+            className={`touch-target inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-warn-soft hover:text-warn ${focusRing}`}
           >
             <AlertTriangle className="h-4 w-4" />
           </button>

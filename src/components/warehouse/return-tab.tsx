@@ -283,7 +283,7 @@ export function ReturnTab({
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="size-7"
+                                    className="touch-target size-7"
                                     title="Report issue"
                                     aria-label={`Report issue — ${item.asset?.assetTag || "item"}`}
                                     onClick={(e) => {
@@ -564,7 +564,7 @@ export function ReturnTab({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="size-7"
+                            className="touch-target size-7"
                             title="Report issue"
                             aria-label={`Report issue — ${assetTag || modelDisplayName(item)}`}
                             onClick={(e) => {

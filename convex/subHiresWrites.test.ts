@@ -872,4 +872,169 @@ describe("duplicateSubHireNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.duplicateSubHireNative, { id: "sh2", orgId: ORG, sourceId: "sh1", now: NOW, actor: ACTOR, auditId: "logdup" }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  test("does NOT copy supplierOrderId — the duplicate starts unlinked", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "po1", organizationId: ORG, supplierId: "sup1", orderNumber: "PO-1", type: "SUBHIRE", createdAt: NOW });
+    });
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined, supplierOrderId: "po1" });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.duplicateSubHireNative, {
+      id: "sh2", orgId: ORG, sourceId: "sh1", now: NOW, actor: ACTOR, auditId: "logdup2",
+    });
+    const dup = await shById(t, "sh2");
+    expect(dup?.supplierOrderId).toBeUndefined();
+  });
+});
+
+// ─── WS7 #946 — supplierOrderId FK: link/unlink, clear-on-supplier-change ─────
+async function seedOrder(t: T, id = "po1", orgId = ORG, supplierId = "sup1", extra: Record<string, unknown> = {}) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("supplierOrders", { id, organizationId: orgId, supplierId, orderNumber: `PO-${id}`, type: "SUBHIRE", createdAt: NOW, ...extra });
+  });
+}
+describe("linkSubHireToSupplierOrderNative / unlinkSubHireFromSupplierOrderNative", () => {
+  test("links a same-supplier order + audits", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await seedOrder(t);
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.linkSubHireToSupplierOrderNative, {
+      id: "sh1", orgId: ORG, supplierOrderId: "po1", now: NOW, actor: ACTOR, auditId: "loglink",
+    });
+    expect(res).toEqual({ id: "sh1" });
+    const sh = await shById(t, "sh1");
+    expect(sh?.supplierOrderId).toBe("po1");
+    expect((await logById(t, "loglink"))?.summary).toBe("Linked sub-hire SH-9999 to purchase order PO-po1");
+  });
+
+  test("rejects a link to an order with a DIFFERENT supplier", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t, "sup1");
+    await seedSupplier(t, "sup2");
+    await seedOrder(t, "po1", ORG, "sup2"); // order belongs to a different supplier
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined, supplierId: "sup1" });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.linkSubHireToSupplierOrderNative, {
+        id: "sh1", orgId: ORG, supplierOrderId: "po1", now: NOW, actor: ACTOR, auditId: "loglink",
+      }),
+    ).rejects.toThrow(/supplier must match/i);
+  });
+
+  test("rejects a cross-org order (by_cuid is global)", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await seedOrder(t, "po1", OTHER, "sup1");
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.linkSubHireToSupplierOrderNative, {
+        id: "sh1", orgId: ORG, supplierOrderId: "po1", now: NOW, actor: ACTOR, auditId: "loglink",
+      }),
+    ).rejects.toThrow(/Purchase order not found/i);
+  });
+
+  test("rejects a cross-org sub-hire", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await seedOrder(t);
+    await seedSubHire(t, "sh1", OTHER, { projectId: undefined });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.linkSubHireToSupplierOrderNative, {
+        id: "sh1", orgId: ORG, supplierOrderId: "po1", now: NOW, actor: ACTOR, auditId: "loglink",
+      }),
+    ).rejects.toThrow(/Sub-hire not found/i);
+  });
+
+  test("stamps supplierOrderId onto regenerated project lines when linked", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedOrder(t);
+    await seedSubHire(t, "sh1"); // DRAFT, projectId "p1" (seedSubHire's default)
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireItems", { id: "it1", subHireId: "sh1", description: "Rig", quantity: 1, unitCost: 40, unitCharge: 100, pricingType: "FLAT", duration: 1, discount: 0, showOnQuote: true, showOnDocs: false, sortOrder: 0 });
+    });
+    // Confirm generates the line first (without a link yet).
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireStatusNative, {
+      id: "sh1", orgId: ORG, status: "CONFIRMED", now: NOW, actor: ACTOR, auditId: "logstatus",
+    });
+    let lines = await linesForSubHire(t, "sh1");
+    expect(lines[0]?.supplierOrderId).toBeUndefined();
+
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.linkSubHireToSupplierOrderNative, {
+      id: "sh1", orgId: ORG, supplierOrderId: "po1", now: NOW, actor: ACTOR, auditId: "loglink",
+    });
+    lines = await linesForSubHire(t, "sh1");
+    expect(lines.length).toBeGreaterThan(0);
+    for (const l of lines) expect(l.supplierOrderId).toBe("po1");
+  });
+
+  test("unlink clears the FK + regenerates lines without it; idempotent when already unlinked", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t);
+    await seedOrder(t);
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined, supplierOrderId: "po1" });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.unlinkSubHireFromSupplierOrderNative, {
+      id: "sh1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logunlink",
+    });
+    expect((await shById(t, "sh1"))?.supplierOrderId).toBeUndefined();
+
+    // Idempotent — no error, no-op.
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.unlinkSubHireFromSupplierOrderNative, {
+      id: "sh1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logunlink2",
+    });
+    expect(res).toEqual({ id: "sh1" });
+  });
+
+  test("viewer denied on link", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedSupplier(t);
+    await seedOrder(t);
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.linkSubHireToSupplierOrderNative, {
+        id: "sh1", orgId: ORG, supplierOrderId: "po1", now: NOW, actor: ACTOR, auditId: "loglink",
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
+describe("updateSubHireNative — clear-on-supplier-change (WS7 #946)", () => {
+  test("changing the sub-hire's supplier clears an existing supplierOrderId link", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t, "sup1");
+    await seedSupplier(t, "sup2");
+    await seedOrder(t, "po1", ORG, "sup1");
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined, supplierId: "sup1", supplierOrderId: "po1" });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireNative, {
+      id: "sh1", orgId: ORG, supplierId: "sup2", showOnDocs: false, now: NOW, actor: ACTOR, auditId: "logu",
+    });
+    const sh = await shById(t, "sh1");
+    expect(sh?.supplierId).toBe("sup2");
+    expect(sh?.supplierOrderId).toBeUndefined();
+  });
+
+  test("resubmitting the SAME supplier leaves the link untouched", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedSupplier(t, "sup1");
+    await seedOrder(t, "po1", ORG, "sup1");
+    await seedSubHire(t, "sh1", ORG, { projectId: undefined, supplierId: "sup1", supplierOrderId: "po1" });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireNative, {
+      id: "sh1", orgId: ORG, supplierId: "sup1", showOnDocs: false, supplierReference: "same-ref", now: NOW, actor: ACTOR, auditId: "logu",
+    });
+    expect((await shById(t, "sh1"))?.supplierOrderId).toBe("po1");
+  });
 });

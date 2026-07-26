@@ -2143,7 +2143,8 @@ export default defineSchema({
     .index("by_createdById", ["createdById"])
     .index("by_organizationId_projectId", ["organizationId", "projectId"])
     .index("by_projectId_status", ["projectId", "status"])
-    .index("by_assigneeUserId_status", ["assigneeUserId", "status"]),
+    .index("by_assigneeUserId_status", ["assigneeUserId", "status"])
+    .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"]),
 
   // SavedTableView
   savedTableViews: defineTable({

@@ -40,6 +40,21 @@ async function lineDocByCuid(ctx: Ctx, id: string) {
   return await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
 }
 
+/** A parent line's ACCESSORY child lines — one shared query (R-9.8 collect-ratchet:
+ *  four call sites duplicated this exact `by_parentLineItemId` + childKind filter
+ *  before this helper). */
+async function accessoryChildrenOf(ctx: Ctx, organizationId: string, parentLineItemId: string) {
+  return (
+    await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", parentLineItemId)).collect()
+  ).filter((c) => c.organizationId === organizationId && c.childKind === "ACCESSORY");
+}
+
+/** A model's configured bulk accessories — shared by every expansion/reconcile
+ *  site that reads the model-level template (R-9.8 collect-ratchet). */
+async function modelBulkAccessoriesOf(ctx: Ctx, modelId: string) {
+  return await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect();
+}
+
 /** Recompute + persist a line's rollup counters/status from its unit rows. */
 export async function syncLineItemRollup(ctx: Ctx, lineItemId: string): Promise<void> {
   const line = await lineDocByCuid(ctx, lineItemId);
@@ -329,12 +344,7 @@ export async function checkinAccessoryChildren(
   const assetStatus = assetStatusFromReturnCondition(args.returnCondition);
   const now = Date.now();
 
-  const children = (
-    await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", args.parentLineItemId))
-      .collect()
-  ).filter((c) => c.organizationId === args.organizationId && c.childKind === "ACCESSORY");
+  const children = await accessoryChildrenOf(ctx, args.organizationId, args.parentLineItemId);
   if (children.length === 0) return { assetsTouched: [] };
 
   const assetsTouched: string[] = [];
@@ -415,9 +425,7 @@ export async function resolveLineAccessoryPlan(
     .withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", assetId))
     .collect();
   const assetBulkIds = new Set(childBulkItems.map((b) => b.bulkAssetId));
-  const modelBulks = asset.modelId
-    ? await ctx.db.query("modelBulkAccessories").withIndex("by_modelId", (q) => q.eq("modelId", asset.modelId!)).collect()
-    : [];
+  const modelBulks = asset.modelId ? await modelBulkAccessoriesOf(ctx, asset.modelId) : [];
 
   const excluded = new Set(plan?.excluded ?? []);
   const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
@@ -488,9 +496,7 @@ export async function expandAccessoriesForAsset(
     for (const b of p.bulks) bulkDemand.set(b.bulkAssetId, (bulkDemand.get(b.bulkAssetId) ?? 0) + b.quantity);
   }
 
-  const existing = (
-    await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", lineItemId)).collect()
-  ).filter((e) => e.childKind === "ACCESSORY" && e.organizationId === organizationId);
+  const existing = await accessoryChildrenOf(ctx, organizationId, lineItemId);
   const existingByAsset = new Map(existing.filter((e) => e.assetId).map((e) => [e.assetId as string, e.id]));
   const existingBulk = new Map(existing.filter((e) => e.bulkAssetId).map((e) => [e.bulkAssetId as string, e.id]));
 
@@ -621,10 +627,7 @@ export async function expandAccessoryChildLines(
   }
 
   if (parentLine.modelId) {
-    const modelBulks = await ctx.db
-      .query("modelBulkAccessories")
-      .withIndex("by_modelId", (q) => q.eq("modelId", parentLine.modelId!))
-      .collect();
+    const modelBulks = await modelBulkAccessoriesOf(ctx, parentLine.modelId);
     if (modelBulks.length === 0) return;
     const excluded = new Set(plan?.excluded ?? []);
     const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
@@ -683,10 +686,7 @@ export async function reconcileLineAccessoryChildren(
     for (const s of profile.serialised) wantSerialised.set(s.assetId, { modelId: s.modelId, modelName: s.modelName });
     for (const b of profile.bulks) wantBulk.set(b.bulkAssetId, { quantity: b.quantity, modelId: b.modelId, modelName: b.modelName });
   } else if (parentLine.modelId) {
-    const modelBulks = await ctx.db
-      .query("modelBulkAccessories")
-      .withIndex("by_modelId", (q) => q.eq("modelId", parentLine.modelId!))
-      .collect();
+    const modelBulks = await modelBulkAccessoriesOf(ctx, parentLine.modelId);
     const excluded = new Set(plan?.excluded ?? []);
     const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
     for (const b of modelBulks) {
@@ -706,9 +706,7 @@ export async function reconcileLineAccessoryChildren(
     }
   }
 
-  const existing = (
-    await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", parentLine.id)).collect()
-  ).filter((c) => c.organizationId === parentLine.organizationId && c.childKind === "ACCESSORY");
+  const existing = await accessoryChildrenOf(ctx, parentLine.organizationId, parentLine.id);
 
   for (const child of existing) {
     const keep = (child.assetId && wantSerialised.has(child.assetId)) || (child.bulkAssetId && wantBulk.has(child.bulkAssetId));
@@ -797,9 +795,7 @@ export async function prepUnit(
       includeAccessoryIds: args.includeAccessoryIds ?? null,
     });
     // Pack the accessory units tied to this parent unit.
-    const accChildren = (
-      await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", args.lineItemId)).collect()
-    ).filter((c) => c.childKind === "ACCESSORY");
+    const accChildren = await accessoryChildrenOf(ctx, args.organizationId, args.lineItemId);
     for (const child of accChildren) {
       const units = (await lineUnits(ctx, child.id)).filter(
         (un) => un.parentUnitAssetId === args.assetId && un.status !== "CHECKED_OUT",

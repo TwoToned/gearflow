@@ -854,6 +854,10 @@ export default defineSchema({
     discountAmount: v.optional(v.number()),
     taxAmount: v.optional(v.number()),
     total: v.optional(v.number()),
+    // RESERVED for #940 (WS1 — deposit/invoicing workflow). Hand-typed wizard inputs
+    // today (project-wizard.tsx), applied nowhere server-side — do NOT wire deposit
+    // math or delete these as dead fields in a hygiene pass; #940 owns them. See
+    // issue #953 (QW-4) re-review, which scoped `defaultDiscount` wiring separately.
     depositPercent: v.optional(v.number()),
     depositPaid: v.optional(v.number()),
     invoicedTotal: v.optional(v.number()),

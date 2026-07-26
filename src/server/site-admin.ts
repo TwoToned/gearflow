@@ -483,13 +483,11 @@ export async function adminDeleteUser(userId: string) {
   // inside a Prisma $transaction).
   const convexForDelete = await getConvexClient();
 
-  // kitSerializedItem / kitBulkItem are now Convex-only. There is no
-  // by-addedById query, only org-scoped lists, so enumerate every org and
-  // filter in JS to find this user's rows across the whole platform (GDPR sweep
-  // is cross-org). organization stays on Prisma (KEPT table).
+  // kitSerializedItem / kitBulkItem are Convex-only; both now have a by_addedById
+  // index, so this GDPR sweep resolves them in one indexed query each instead of
+  // enumerating every org's whole table (mirrors assetScanLogs.listByScannedById/
+  // testTagRecords.listByTestedById below). organization stays on Prisma (KEPT table).
   const allOrgsForSweep = await prisma.organization.findMany({ select: { id: true } });
-  const serializedItemsToRemove: { id: string }[] = [];
-  const bulkItemsToRemove: { id: string }[] = [];
   // projectLineItem is Convex-only too; collect the lines whose checkedOutById /
   // returnedById point at this user so we can clear those FKs post-commit.
   const lineItemsToClearCheckedOut: { id: string }[] = [];
@@ -499,14 +497,10 @@ export async function adminDeleteUser(userId: string) {
   // prisma.project.updateMany).
   const projectsToClearManager: { id: string }[] = [];
   for (const org of allOrgsForSweep) {
-    const [serialized, bulk, lines, projects] = await Promise.all([
-      convexForDelete.query(api.kitSerializedItems.list, { orgId: org.id }),
-      convexForDelete.query(api.kitBulkItems.list, { orgId: org.id }),
+    const [lines, projects] = await Promise.all([
       convexForDelete.query(api.projectLineItems.list, { orgId: org.id }),
       convexForDelete.query(api.projects.list, { orgId: org.id }),
     ]);
-    for (const s of serialized) if (s.addedById === userId) serializedItemsToRemove.push({ id: s.id });
-    for (const b of bulk) if (b.addedById === userId) bulkItemsToRemove.push({ id: b.id });
     for (const li of lines) {
       if (li.checkedOutById === userId) lineItemsToClearCheckedOut.push({ id: li.id });
       if (li.returnedById === userId) lineItemsToClearReturned.push({ id: li.id });
@@ -514,7 +508,9 @@ export async function adminDeleteUser(userId: string) {
     for (const p of projects) if (p.projectManagerId === userId) projectsToClearManager.push({ id: p.id });
   }
 
-  const [scanLogsToRemove, testTagRecordsToRemove] = await Promise.all([
+  const [serializedItemsToRemove, bulkItemsToRemove, scanLogsToRemove, testTagRecordsToRemove] = await Promise.all([
+    convexForDelete.query(api.kitSerializedItems.listByAddedById, { addedById: userId }),
+    convexForDelete.query(api.kitBulkItems.listByAddedById, { addedById: userId }),
     convexForDelete.query(api.assetScanLogs.listByScannedById, { scannedById: userId }),
     convexForDelete.query(api.testTagRecords.listByTestedById, { testedById: userId }),
   ]);

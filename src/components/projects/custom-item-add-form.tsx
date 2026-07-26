@@ -19,7 +19,6 @@ import { customLineItemSchema } from "@/lib/validations/line-item";
 import type { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -28,6 +27,13 @@ import {
 import { DialogFooter } from "@/components/ui/dialog";
 import { PlacementFields } from "./placement-fields";
 import type { CategoryData } from "./equipment-rows";
+import {
+  SectionTitle,
+  Field,
+  DiscountField,
+  resolveDiscountAmount,
+  type DiscountMode,
+} from "./line-item-form-fields";
 
 type CustomItemPricingType = "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR";
 
@@ -66,6 +72,7 @@ export function CustomItemAddForm({
   const [pricingType, setPricingType] = useState<CustomItemPricingType>("FLAT");
   const [duration, setDuration] = useState("1");
   const [discount, setDiscount] = useState("");
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
   const [isOptional, setIsOptional] = useState(false);
   const [notes, setNotes] = useState("");
   const [categoryId, setCategoryId] = useState(defaultCategoryId ?? "");
@@ -106,8 +113,10 @@ export function CustomItemAddForm({
   const qtyNum = Math.max(1, parseInt(qty) || 1);
   const priceNum = price !== "" ? parseFloat(price) : 0;
   const durationNum = pricingType !== "FLAT" ? Math.max(1, parseInt(duration) || 1) : 1;
-  const discountNum = discount !== "" ? parseFloat(discount) : 0;
-  const summaryTotal = Math.max(0, qtyNum * priceNum * durationNum - discountNum);
+  const grossTotal = qtyNum * priceNum * durationNum;
+  const rawDiscount = discount !== "" ? parseFloat(discount) : undefined;
+  const resolvedDiscount = resolveDiscountAmount(discountMode, rawDiscount, grossTotal) ?? 0;
+  const summaryTotal = Math.max(0, grossTotal - resolvedDiscount);
   const showSummary = name.trim().length > 0 && priceNum > 0;
 
   return (
@@ -116,7 +125,7 @@ export function CustomItemAddForm({
         {/* Item */}
         <section className="space-y-4">
           <SectionTitle title="Item" hint="What you're adding and where it lands." />
-          <Field label="Name" required>
+          <Field label="Name" htmlFor="custom-item-name" required>
             <Input
               id="custom-item-name"
               placeholder="e.g. 2x SM58 (borrowed), client cable drum"
@@ -140,7 +149,7 @@ export function CustomItemAddForm({
         <section className="space-y-4 border-t border-line pt-5">
           <SectionTitle title="Pricing" hint="Quantity, rate, and how it's charged." />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Quantity">
+            <Field label="Quantity" htmlFor="custom-item-qty">
               <Input
                 id="custom-item-qty"
                 type="number"
@@ -149,7 +158,7 @@ export function CustomItemAddForm({
                 onChange={(e) => setQty(e.target.value)}
               />
             </Field>
-            <Field label="Unit price ($)">
+            <Field label="Unit price ($)" htmlFor="custom-item-price">
               <Input
                 id="custom-item-price"
                 type="number"
@@ -178,7 +187,7 @@ export function CustomItemAddForm({
               </Select>
             </Field>
             {pricingType !== "FLAT" && (
-              <Field label="Duration">
+              <Field label="Duration" htmlFor="custom-item-duration">
                 <Input
                   id="custom-item-duration"
                   type="number"
@@ -189,17 +198,15 @@ export function CustomItemAddForm({
               </Field>
             )}
           </div>
-          <Field label="Discount ($)">
-            <Input
-              id="custom-item-discount"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="0.00"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-            />
-          </Field>
+          <DiscountField
+            id="custom-item-discount"
+            mode={discountMode}
+            onModeChange={setDiscountMode}
+            inputProps={{
+              value: discount,
+              onChange: (e) => setDiscount(e.target.value),
+            }}
+          />
           <label className="flex cursor-pointer items-center gap-2.5">
             <Checkbox
               id="custom-item-optional"
@@ -213,7 +220,7 @@ export function CustomItemAddForm({
         {/* Notes */}
         <section className="space-y-4 border-t border-line pt-5">
           <SectionTitle title="Notes" hint="Optional — context for the docket." />
-          <Field label="Notes">
+          <Field label="Notes" htmlFor="custom-item-notes">
             <Textarea
               id="custom-item-notes"
               placeholder="Optional notes…"
@@ -248,7 +255,7 @@ export function CustomItemAddForm({
               unitPrice: price !== "" ? parseFloat(price) : undefined,
               pricingType,
               duration: pricingType !== "FLAT" ? (parseInt(duration) || 1) : 1,
-              discount: discount !== "" ? parseFloat(discount) : undefined,
+              discount: resolveDiscountAmount(discountMode, rawDiscount, grossTotal),
               isOptional,
               notes: notes.trim() || undefined,
               categoryId: categoryId || undefined,
@@ -263,26 +270,3 @@ export function CustomItemAddForm({
   );
 }
 
-// ─── Local helpers ───────────────────────────────────────────────
-
-function SectionTitle({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div>
-      <h3 className="text-card-title font-bold text-ink">{title}</h3>
-      {hint && <p className="mt-0.5 t-micro text-muted">{hint}</p>}
-    </div>
-  );
-}
-
-function Field({
-  label, required, children,
-}: {
-  label: string; required?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
-      {children}
-    </div>
-  );
-}

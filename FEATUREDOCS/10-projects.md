@@ -1,6 +1,6 @@
 # Project & Rental Management
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 ## Projects List Views (`ProjectTable`, `ProjectBoard`)
 `ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
@@ -50,9 +50,14 @@ retired). Routes:
 - `defaultValues` are pre-filled from the project across all steps; stored dates
   are normalised to the form's `yyyy-MM-dd` shape via `normalizeDate`, times stay
   `HH:mm`. Existing project managers seed `managerIds`.
-- Two edit-only fields appear that create mode hides: **Status** (basics step) and
-  the **Financial** block — discount %, deposit %, deposit paid, invoiced total
-  (site step). These carry the parity that the old flat edit form had.
+- One edit-only field appears that create mode hides: **Status** (basics step).
+  The **Financial** block (site step, `isEditing`-gated) still holds deposit %,
+  deposit paid, invoiced total — these carry the parity that the old flat edit
+  form had, and are currently hand-typed inputs applied nowhere server-side
+  (RESERVED for #940 / WS1, see the schema.ts + wizard reservation comments; do
+  not wire deposit math without that issue). **Discount (%)** moved out of that
+  block (QW-4 / #953) to the basics step, always visible in both create and edit
+  mode, right after the Client picker — see "Discount default cascade" below.
 - Submit calls `updateProject(id, data)` and **reconciles managers** by diffing
   the initial set vs the selected set (`addProjectManager`/`removeProjectManager`
   on the delta only — no dupes, no accidental removals), then routes to
@@ -82,6 +87,39 @@ retired). Routes:
   edit). Per-moment dates + times live in an optional "Load-in, show & load-out
   times" accordion so the common case is "tap a preset, done". All ten underlying
   fields are preserved for `createProject()`.
+
+### Discount default cascade (QW-4 / #953)
+
+`Client.defaultDiscount` (`convex/schema.ts`) is a per-client default discount
+percentage, set on the client record (`client-form.tsx`, `src/lib/client-fields.ts`).
+It snapshots onto `Project.discountPercent` **at project-create time only**:
+
+- **Server-authoritative (R-9.3).** `projectWrites.createNative` resolves it
+  in-mutation: when the caller doesn't pass an explicit `discountPercent` AND the
+  project has a `clientId`, it org-checked-reads the client row and stamps
+  `client.defaultDiscount` (when set) onto the new project. `== null` (not a
+  truthy/falsy check) decides "not provided" — an explicit `0`% discount from the
+  caller always wins over the client default, never gets silently overwritten by
+  it (see the `== null` auto-pricing comment in `convex/lineItemWrites.ts` for the
+  same lesson applied elsewhere). This is the only place the cascade fires;
+  `updateNative` has no equivalent — reassigning a project's client later does
+  **not** retroactively recompute its discount.
+- **WooCommerce order assembly** builds projects directly (not through
+  `createNative` — see FEATUREDOCS/35 §"Order Processing" step 5), so it seeds the
+  same cascade independently via `resolveWooDiscountPercent` (canonical copy in
+  `src/lib/woocommerce-utils.ts`, a verbatim-copied twin in
+  `convex/wooCommerceActions.ts` since Convex functions can't import from `src/`).
+- **Wizard UX** (`project-wizard.tsx`, Basics step, next to the Client picker) is a
+  convenience layer only — the server snapshot above is authoritative regardless
+  of what the browser sends. Selecting a client prefills Discount (%) from
+  `client.defaultDiscount` with a "from client default" hint; the field stays
+  freely editable. Switching clients before submitting re-prefills, but **only**
+  while the user hasn't touched the field themselves (`discountTouchedRef`) —
+  once they type a value (including an explicit `0`), their choice sticks through
+  further client changes. Opening an existing project for edit never re-prefills
+  from the client's *current* default over whatever discount was actually saved
+  (`prefilledDiscountForClientId` seeds from the project's original `clientId`, so
+  the effect only fires on an actual client *change*, not on mount).
 
 ## Project Managers
 - **Manager picker permissions (#727).** The wizard's "Project manager(s)" field

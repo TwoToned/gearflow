@@ -69,7 +69,9 @@ Grouped by area (table names are the Convex identifiers, e.g. `assets`,
   `projectCategories`, `categorySlots`, `projectGroups`, `projectManagers`,
   `projectModelRevenues`, `groupTemplates` + `groupTemplateItems`,
   `projectTasks`, `projectNumberSequences`.
-- **Clients** — `clients`.
+- **Clients** — `clients`. `defaultDiscount` snapshots onto `Project.discountPercent`
+  at project-create time only (server-side in `projectWrites.createNative`, plus the
+  WooCommerce order-assembly path) — see FEATUREDOCS/10 "Discount default cascade".
 - **Crew** — `crewMembers`, `crewRoles`, `crewSkills`, `crewAssignments`,
   `crewShifts`, `crewAvailabilities`, `crewTimeEntries`.
 - **Project services** — `projectServices`, `serviceTemplates`.

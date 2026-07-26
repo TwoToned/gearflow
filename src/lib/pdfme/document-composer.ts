@@ -712,6 +712,7 @@ function buildEntryFields(
           showRowNumbers: block.config.showRowNumbers,
           filterOptional: false,
           filterByStatus,
+          hidePricingPeriodSuffix: block.config.hidePricingPeriodSuffix ?? false,
         },
       };
       if (entry.tableStartIndex) tableValue.startIndex = entry.tableStartIndex;

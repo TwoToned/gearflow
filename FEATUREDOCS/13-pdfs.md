@@ -143,7 +143,7 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 
 | Type | Blocks | `expandProjectGroups` | Status filter |
 |------|--------|------------------------|----------------|
-| `quote` | header, client+project details, table, totals, client notes, quote-validity note | false (collapse groups) | none |
+| `quote` | header, client+project details, table (no "/day" price suffix), totals, client notes, T&Cs (omitted if unset), quote-validity note (real computed date) | false (collapse groups) | none |
 | `invoice` | header, client+project details (+ tax ID, payment terms), table (no badges), totals (+ deposit/balance), client notes | false | none |
 | `packing-list` | header, client+project details, table (checkboxes, per-unit, asset tags, categories), total-items note | true (expand groups) | none |
 | `return-sheet` | header, client+project details, table (checkboxes, condition columns, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT`, `RETURNED` |
@@ -152,6 +152,61 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 Call sheets are a 6th `DocumentType` value but are **not** in
 `DOCUMENT_LAYOUTS` — they render via `templates/call-sheet-services.ts`
 instead (`ProjectDocumentType = Exclude<DocumentType, "call-sheet">`).
+
+## Global Document Settings
+
+Org-level, stored in the existing `orgSettings` Convex blob (`OrgSettings.documents`,
+`src/lib/org-settings-types.ts`) — no new tables. Validated server-side by
+`src/lib/validations/org-settings.ts` (string length caps, `quoteValidityDays` 1-365,
+R-8.6.2), the only write path being `updateOrganization()`. Edited on a "Documents"
+card at `/settings/branding` ("Branding & documents").
+
+| Setting | Effect |
+|---|---|
+| `footerText` / `footerSecondLine` | Rendered on every page of every doc type. Empty falls back to an auto-generated `{org name} \| {org email} \| {org phone}` line. |
+| `termsAndConditions` | Plain text (no token system) rendered as a block on the quote only. Omitted entirely (zero height, no schema) when unset — no empty box by default. |
+| `quoteValidityDays` (default 30) | Feeds a **real computed date** — `document_date + quoteValidityDays` — into the quote's "This quote is valid until {date}" line. Replaces the two hardcoded "valid for 30 days" static-text copies the deleted customization layer used to carry. |
+
+`build-document-data.ts` computes 4 `DocumentData` fields from these settings each
+time a document is built: `document_footer_text`, `document_footer_second_line`,
+`quote_terms_and_conditions`, `quote_valid_until`.
+
+### Quote-specific fixes (#790 Phase 4)
+
+- **No "/day" (or other period) price suffix on the quote.** `TablePluginConfig.hidePricingPeriodSuffix`
+  (only the quote's `document-layouts.ts` entry sets it `true`) suppresses the
+  `PRICING_LABELS` lookup in `gearflow-table.ts`'s top-level price cell. Other doc
+  types are unaffected (kit/group child rows never showed the suffix anyway — only
+  the top-level unitPrice cell did).
+- **Discount, item notes, group notes**: audited end-to-end
+  (`document-composer.test.ts`) and confirmed already flowing correctly through the
+  new pipeline — `data.discount_amount`/`discount_percent` are unconditional from the
+  Convex `projects.discountAmount`/`discountPercent` fields, gated only by the
+  quote's `totals.showDiscount` (default `true`); `item.notes` (incl. a Project
+  Group's `notes: group.description`) already reaches the table plugin whenever
+  `table.showNotes` is `true` (default for quote). No code change was needed here —
+  just proof, since these were the class of bug (height/render consumers drifting
+  out of sync) this whole redesign targets.
+- **Terms & conditions block, real computed quote expiry**: see Global Document
+  Settings above.
+- **Crewing/services billable-to-client section — deferred, not in this PR.** The
+  design doc's Phase 4 checklist calls for a quote section built from billable
+  `CrewAssignment`/`ProjectService` rows gated by `billableToClient`. That field
+  exists on the Convex `projectServices` schema but has **no UI to set it anywhere
+  in the app** (confirmed by grep — the one place it's read,
+  `project-service-read.ts`, defaults it to `false` when absent). Gating the
+  existing quote services injection (`build-document-data.ts`'s `showOnDocuments`
+  filter, already live) by `billableToClient` today would silently hide every
+  existing org's services from every quote, since no org has ever been able to set
+  the field `true`. Shipping the gate without the UI control would recreate exactly
+  the "feature nobody can reach" anti-pattern this redesign removed. Needs a
+  `billableToClient` toggle added to the project-services edit UI first — tracked
+  as a follow-up, not silently dropped.
+- **General tidiness pass per DESIGN.md**: DESIGN.md §6 explicitly defers PDF
+  branding/visual changes ("Do not apply RVLT design system colors or fonts to PDF
+  templates in this redesign") — so no visual re-skin was done here. The block
+  ordering (header → details → table → totals → notes → T&Cs → validity) matches
+  the pre-redesign section defaults.
 
 ## Child Rendering (Kits, Prep-Kits, Accessories)
 All document templates use a unified line item hierarchy with up to 3 levels:

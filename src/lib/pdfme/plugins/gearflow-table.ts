@@ -508,7 +508,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
             if (!config.showPricing) break;
             const priceStr = isItemized ? "-"
               : item.unitPrice != null
-                ? `${formatCurrency(item.unitPrice)}${PRICING_LABELS[item.pricingType] || ""}`
+                ? `${formatCurrency(item.unitPrice)}${config.hidePricingPeriodSuffix ? "" : PRICING_LABELS[item.pricingType] || ""}`
                 : "-";
             const priceWidth = fonts.regular.widthOfTextAtSize(priceStr, fontSize);
             page.drawText(priceStr, {

@@ -26,6 +26,7 @@ import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import { getSubHiresByProject, getSubHireGroups } from "@/lib/sub-hire-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
+import { getProjectWindow } from "@/lib/project-window";
 import { formatDate } from "./plugins/helpers";
 import {
   structureLineItems,
@@ -518,13 +519,15 @@ export async function buildDocumentData(
             shiftDateSet.add(new Date(s.date).toISOString().split("T")[0]);
           }
         }
-        // Fall back to project dates if no shifts exist
+        // Fall back to project dates if no shifts exist. WS2 (#941): the project
+        // WINDOW (falling back to the deprecated loadIn/loadOut fields for a
+        // project the backfill hasn't reached yet) + RENTAL dates.
         if (shiftDateSet.size === 0) {
           const projectDates = [
-            project.loadInDate,
-            project.eventStartDate,
-            project.eventEndDate,
-            project.loadOutDate,
+            project.projectStartDate ?? project.loadInDate,
+            project.projectEndDate ?? project.loadOutDate,
+            project.rentalStartDate,
+            project.rentalEndDate,
           ].filter(Boolean);
           for (const d of projectDates) {
             shiftDateSet.add(new Date(d as Date).toISOString().split("T")[0]);
@@ -635,7 +638,9 @@ export async function buildDocumentData(
       }
     } else {
       // ─── Single-date mode (backward compat) ─────────────────────────
-      const callDate = callSheetDate || project.loadInDate || project.eventStartDate || project.rentalStartDate || new Date();
+      // WS2 (#941): project window start, falling back to the deprecated
+      // loadInDate for a project the backfill hasn't reached yet, then rental.
+      const callDate = callSheetDate || project.projectStartDate || project.loadInDate || project.rentalStartDate || new Date();
       const dateStr = new Date(callDate).toISOString().split("T")[0];
 
       crew = crewAssignments.map((a) => {
@@ -647,6 +652,18 @@ export async function buildDocumentData(
       });
     }
   }
+
+  // WS2 (#941) — the PROJECT window (falls back to rental when unset) backs the
+  // deprecated event_start/event_end/load_in_date/load_out_date tokens (kept as
+  // aliases for saved templates — see FEATUREDOCS/13).
+  const projectWindowMs = getProjectWindow({
+    projectStartDate: project.projectStartDate?.getTime() ?? null,
+    projectEndDate: project.projectEndDate?.getTime() ?? null,
+    rentalStartDate: project.rentalStartDate?.getTime() ?? null,
+    rentalEndDate: project.rentalEndDate?.getTime() ?? null,
+  });
+  const windowStartDate = projectWindowMs.start != null ? new Date(projectWindowMs.start) : null;
+  const windowEndDate = projectWindowMs.end != null ? new Date(projectWindowMs.end) : null;
 
   const totalNum = Number(serialized.total) || 0;
   const depositNum = Number(serialized.depositPaid) || 0;
@@ -677,10 +694,14 @@ export async function buildDocumentData(
     // Dates
     rental_start: formatDate(serialized.rentalStartDate),
     rental_end: formatDate(serialized.rentalEndDate),
-    event_start: formatDate(serialized.eventStartDate),
-    event_end: formatDate(serialized.eventEndDate),
-    load_in_date: formatDate(serialized.loadInDate),
-    load_out_date: formatDate(serialized.loadOutDate),
+    // event_start/event_end/load_in_date/load_out_date are DEPRECATED aliases
+    // (WS2 #941) — kept so a saved custom template referencing them still
+    // resolves, now to the PROJECT window instead of the removed/deprecated
+    // source fields.
+    event_start: formatDate(windowStartDate),
+    event_end: formatDate(windowEndDate),
+    load_in_date: formatDate(windowStartDate),
+    load_out_date: formatDate(windowEndDate),
 
     // Client
     client_name: serialized.client?.name || "",
@@ -725,9 +746,12 @@ export async function buildDocumentData(
     pm_phone: pmPhone,
     pm_email: pmEmail,
 
-    // Schedule
-    load_in_time: serialized.loadInDate ? formatDate(serialized.loadInDate) : "-",
-    load_out_time: serialized.loadOutDate ? formatDate(serialized.loadOutDate) : "-",
+    // Schedule — FIXED (was formatDate() on the *date* field, emitting a date
+    // like "26 Jul 2026" where a time like "14:00" belongs). projectStartTime/
+    // projectEndTime are the WS2 (#941) fields; loadInTime/loadOutTime is the
+    // deprecated fallback for a project the backfill hasn't touched yet.
+    load_in_time: serialized.projectStartTime || serialized.loadInTime || "-",
+    load_out_time: serialized.projectEndTime || serialized.loadOutTime || "-",
 
     // Complex data
     line_items: lineItems,

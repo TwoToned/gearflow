@@ -33,6 +33,8 @@ function p(overrides: Partial<BookingProject>): BookingProject {
     isTemplate: false,
     rentalStartMs: T0 + 5 * DAY,
     rentalEndMs: T0 + 10 * DAY,
+    projectStartMs: null,
+    projectEndMs: null,
     ...overrides,
   };
 }
@@ -87,6 +89,32 @@ describe("projectMatchesWindow", () => {
   it("includes projects straddling the window edges (boundary inclusive)", () => {
     expect(projectMatchesWindow(p({ rentalStartMs: T0 - 5 * DAY, rentalEndMs: T0 }), WINDOW)).toBe(true);
     expect(projectMatchesWindow(p({ rentalStartMs: T0 + 30 * DAY, rentalEndMs: T0 + 40 * DAY }), WINDOW)).toBe(true);
+  });
+
+  // WS2 (#941) — reads the PROJECT window (getProjectWindow), not rental directly.
+  it("prefers the project window over the rental window when both are set", () => {
+    // Rental window is OUTSIDE WINDOW, but the project window overlaps it.
+    expect(
+      projectMatchesWindow(
+        p({ rentalStartMs: T0 + 40 * DAY, rentalEndMs: T0 + 50 * DAY, projectStartMs: T0, projectEndMs: T0 + 2 * DAY }),
+        WINDOW,
+      ),
+    ).toBe(true);
+    // Inverse: project window is outside WINDOW even though rental overlaps.
+    expect(
+      projectMatchesWindow(
+        p({ rentalStartMs: T0 + 5 * DAY, rentalEndMs: T0 + 10 * DAY, projectStartMs: T0 + 40 * DAY, projectEndMs: T0 + 50 * DAY }),
+        WINDOW,
+      ),
+    ).toBe(false);
+  });
+
+  it("falls back to the rental window when only one side of the project window is set", () => {
+    // projectStartMs diverges earlier than the window; projectEndMs unset falls back
+    // to rentalEndMs, which is inside WINDOW.
+    expect(
+      projectMatchesWindow(p({ rentalStartMs: T0 + 5 * DAY, rentalEndMs: T0 + 10 * DAY, projectStartMs: T0 - 20 * DAY }), WINDOW),
+    ).toBe(true);
   });
 });
 

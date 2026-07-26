@@ -1,6 +1,6 @@
 # Page Routes & Layouts
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 ## Layout Architecture
 
@@ -68,7 +68,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/assets/models/[id]/edit` | Edit model |
 | `/assets/categories` | Category list (table with indented children) |
 | `/assets/categories/[id]` | Category detail (subcategories, models & kits tabs) |
-| `/availability` | Availability calendar (top-level) |
+| `/availability` | Availability calendar (top-level) — draws RENTAL window bars, not the PROJECT window (deliberate, WS2 #941 — pricing's window is what's visually "booked"; see [11-availability.md](./11-availability.md)) |
 | `/kits` | Kit list |
 | `/kits/new` | Create kit |
 | `/kits/[id]` | Kit detail (contents, media, status) |
@@ -124,7 +124,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 ### Public (Token-Authenticated)
 | Path | Page |
 |------|------|
-| `/warehouse/display/[token]` | Warehouse TV dashboard (dark, auto-refresh, no login) |
+| `/warehouse/display/[token]` | Warehouse TV dashboard (dark, auto-refresh, no login) — dispatch/return/prep cards read the PROJECT window (`getProjectWindow`, WS2 #941), see [11-availability.md](./11-availability.md) |
 
 ### Admin
 | Path | Page |

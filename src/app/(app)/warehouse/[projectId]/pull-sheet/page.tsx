@@ -278,8 +278,10 @@ export default function PullSheetPage({
             Rental: {formatDate(project.rentalStartDate as unknown as string | null)} –{" "}
             {formatDate(project.rentalEndDate as unknown as string | null)}
           </span>
-          {project.loadInDate && (
-            <span>Load in: {formatDate(project.loadInDate as unknown as string | null)}</span>
+          {/* WS2 (#941): projectStartDate is the load-in role now; loadInDate is the
+              deprecated fallback for a project the backfill hasn't reached yet. */}
+          {(project.projectStartDate ?? project.loadInDate) && (
+            <span>Load in: {formatDate((project.projectStartDate ?? project.loadInDate) as unknown as string | null)}</span>
           )}
         </div>
       </div>

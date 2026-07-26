@@ -949,6 +949,18 @@ export default defineSchema({
     eventEndTime: v.optional(v.string()),
     loadOutDate: v.optional(v.number()),
     loadOutTime: v.optional(v.string()),
+    // WS2 (#941) — the two-window date model. `projectStartDate`/`projectEndDate`
+    // are the "gear committed" window availability/conflicts read; they default to
+    // the rental window at READ TIME via `getProjectWindow` (src/lib/project-window.ts
+    // + convex/lib/projectWindow.ts) — NOT stored duplication (R-3.1). loadIn/loadOut
+    // and event* are DEPRECATED (kept for one rollout cycle — see FEATUREDOCS/10):
+    // loadInDate/Time → projectStartDate/Time, loadOutDate/Time → projectEndDate/Time
+    // is the intended replacement; eventStartDate/eventEndDate have no replacement
+    // (dropped, not migrated). Do not add new writers of the deprecated fields.
+    projectStartDate: v.optional(v.number()),
+    projectStartTime: v.optional(v.string()),
+    projectEndDate: v.optional(v.number()),
+    projectEndTime: v.optional(v.string()),
     rentalStartDate: v.optional(v.number()),
     rentalEndDate: v.optional(v.number()),
     projectManagerId: v.optional(v.string()),
@@ -995,6 +1007,11 @@ export default defineSchema({
     // overdueReturns) — bounds the reactive read-set to past-end-date projects
     // instead of collecting the whole org's projects table.
     .index("by_organizationId_rentalEndDate", ["organizationId", "rentalEndDate"])
+    // WS2 (#941) — range-scan an org's BACKFILLED projectStartDate (the availability
+    // candidate scan in convex/overbooking.ts). Only catches projects with
+    // projectStartDate explicitly set; the scan pairs this with a rental-index
+    // fallback for projects where it's still unset (getProjectWindow's coalesce).
+    .index("by_organizationId_projectStartDate", ["organizationId", "projectStartDate"])
     .index("by_isTemplate", ["isTemplate"])
     .index("by_organizationId_status", ["organizationId", "status"]),
   // (No project search index: the app never picks a project in a combobox — projects

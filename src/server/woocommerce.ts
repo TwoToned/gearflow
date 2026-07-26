@@ -340,7 +340,8 @@ export async function processWooCommerceOrder(
       ...(locationId ? { locationId } : {}),
       ...(dates.rentalStart ? { rentalStartDate: dates.rentalStart.getTime() } : {}),
       ...(dates.rentalEnd ? { rentalEndDate: dates.rentalEnd.getTime() } : {}),
-      ...(dates.eventStart ? { eventStartDate: dates.eventStart.getTime() } : {}),
+      // WS2 (#941) — eventStartDate is deprecated/dropped; the rental dates
+      // above already carry the show date.
       ...(clientNotes ? { clientNotes } : {}),
       ...(wooDiscountPercent != null ? { discountPercent: wooDiscountPercent } : {}),
       tags: ["website-order"],

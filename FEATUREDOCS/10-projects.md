@@ -374,6 +374,14 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - `costTotal` field for direct financial roll-up (no shadow line items) — **auto-calculated
   from the service's own crew once it has any** (see Crew Integration below); a
   crew-less service keeps a manually-typed value (e.g. vehicle/transport cost)
+- `chargeRateOverride` / `crewChargeTotal` (WS10 #949) — the charge-side twin of
+  `costTotal`: once a service has crew AND a charge rate resolves (per-service
+  `chargeRateOverride` or the assigned crew role's `chargeRate`), `crewChargeTotal`
+  auto-computes and feeds `lineTotal` UNLESS `unitPrice` is manually set (manual
+  price always wins — see [31-crew-management.md](./31-crew-management.md) "Charge
+  Cascade & Margin"). No manual price + no charge rate configured = `lineTotal`
+  stays whatever it was (usually null) — margin UI hides rather than showing a
+  fake reading.
 - Services grouped by date in the UI
 
 ### Crew Integration (issue #796 — per-crew rate table)
@@ -395,6 +403,22 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - Query invalidation ensures Crew and Services stay in sync
 - See [31-crew-management.md](./31-crew-management.md) "Service ↔ Crew Cost Linkage"
   for the double-counting guard in `recalcProjectTotals`
+
+### Margin Display (WS10 #949)
+- `ServiceCard`'s financial line (`services-panel.tsx`) shows charge (`lineTotal`,
+  everyone) and, for manager+ only, cost (`costTotal`) + margin (charge - cost,
+  with %) — negative margin renders `text-t-out`, UNCLAMPED (a loss-making service
+  is meant to be visible, not hidden). A `showOnDocuments: false` auto-priced
+  service shows an "Internal (not billed)" tag instead of forcing the flag on.
+- The services financial summary panel's third tile used to duplicate the second
+  ("Total" and "Internal" both read the same `costTotal`-derived value) — it's now
+  "Margin" (`onDocumentsTotal - internalTotal`), gated manager+ along with the
+  "Internal" cost tile (members see only "On documents").
+- The project P&L panel (`project-costs-panel.tsx` / `convex/projectCosts.ts`)
+  gained an additive `labourServiceRevenue` field — the slice of `serviceRevenue`
+  billed for LABOUR-type services, shown as a "Labour revenue" line once
+  auto-pricing makes it non-zero (the pre-existing "Labour" cost row is unchanged —
+  it covers standalone, non-service-linked crew, which never has a charge side).
 
 ### Defaults from Project
 - New services inherit the project location address/coordinates

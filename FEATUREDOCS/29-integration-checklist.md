@@ -26,3 +26,4 @@ When implementing a new feature, ensure it integrates with ALL existing systems.
 | **CSV** | Consider import/export if bulk data operations are useful. |
 | **Org export** | Add new table to `convex/orgExport.ts`. |
 | **Documentation** | Update ARCHITECTURE.md overview and add/update relevant FEATUREDOCS file. |
+| **Role-gated fields** (WS10 #949) | If a field must be hidden from some roles (e.g. cost/margin data manager+ only), don't strip it in the shared list query other call sites depend on — add a SEPARATE query for the gated surface (see `crewRoles.ts` `listForSettings` vs `list`) and redact with `redactFields()` (`convex/lib/auth.ts`) based on `isCallerManagerPlus()`/`isManagerPlusRole()` (`convex/lib/permissionsCore.ts` — the one source of truth, shared with the client-side `useIsManagerPlus()` hook). Client-side hiding alone is not sufficient (R-9.3). |

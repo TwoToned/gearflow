@@ -71,11 +71,12 @@ export function useProjectGroupWrites() {
       });
     },
 
-    updatePrice: async (groupId: string, price: number): Promise<void> => {
+    updatePrice: async (groupId: string, price: number, discount?: number): Promise<void> => {
       await updatePriceM({
         id: groupId,
         orgId: requireOrg(),
         price,
+        discount,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

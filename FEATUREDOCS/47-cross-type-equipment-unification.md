@@ -247,6 +247,110 @@ got a `(no group)` escape hatch in v0.9.2.1; field reports kept showing
 the mixed picker confused users about whether their pick would also
 re-home the item's category, so we split it.
 
+### Structural + discount unification pass (issue #883)
+
+The visual pass above explicitly stopped short of form-library choice,
+edit dialogs, and discount logic. This pass finishes that:
+
+**Shared primitives (`src/components/projects/line-item-form-fields.tsx`).**
+`SectionTitle` and `Field` were byte-identical copy-paste across all four
+add forms — now one shared export each. The `$`/`%` discount toggle had
+three independently hand-rolled implementations (`equipment-add-form`,
+`edit-line-item-dialog`, `bulk-edit-line-items-dialog`) that had quietly
+drifted in exact classes — now `DiscountField` (labelled) and
+`DiscountAmountInput` (bare, for callers with their own label, e.g.
+`bulk-edit-line-items-dialog`'s checkbox-gated rows). The mode is a pure
+client-side display convenience: every caller resolves a `%` value to a
+flat dollar amount before it reaches the schema/mutation — discount is
+*always* persisted as a flat $ amount (see `line-item.ts`'s `discountField`
+and the new `project-group.ts` `discount` field below).
+
+**RHF + Zod everywhere.** `custom-item-add-form.tsx` moved from hand-rolled
+`useState` per field (only `.parse()`d at submit) to
+`useForm + zodResolver(customLineItemSchema)`, matching
+`equipment-add-form.tsx`. It also gained the `%` discount toggle it was
+missing (dollars-only before, while its own edit path already supported
+both).
+
+**`edit-line-item-dialog.tsx` rebuilt on the add-form pattern.** This was
+the single biggest structural gap: equipment has a richly-structured add
+form, but editing that *same* line item dropped into a generic dialog with
+no placement/category editing, no `isOptional` toggle, no section
+grouping, no RHF/Zod. Worse, it was a live bug — `EditLineItemPayload`
+never included `isOptional`, so `lineItemSchema.parse()`'s
+`.default(false)` silently reset every edited item's optional flag to
+`false` on save. Now rebuilt on RHF + `zodResolver(lineItemSchema)` +
+`SectionTitle`/`Field`/`DiscountField`, with `isOptional` required in the
+payload (always seeded from the item) and a new Placement section
+(`PlacementFields`, hidden for kit children — they move with their parent
+kit, not independently). Placement changes fire a separate `onMove`
+callback into `groupWrites.moveLineItem` (only when the picker's value
+differs from the item's current placement) rather than flowing through
+`lineItemSchema`/`patchNative`, since a placement move is a different
+mutation with its own category-slot/suggested-price side effects — this
+mirrors how `EditGroupDialog` already fires price as a second, independent
+call alongside its main update. `equipment-tab.tsx` threads the item's
+current category/group into the dialog from the same closures the
+neighbouring `onMoveToCategory`/`onMoveToGroup` handlers already use (line
+items don't carry `categoryId`/`groupId` directly — tree position *is* the
+placement).
+
+**Kit and group discount capability.** Neither had any discount concept
+before this pass.
+
+- *Kits* reuse the existing `projectLineItems.discount` field (no schema
+  change) — `createKitLineItemCore` / `addKitNative` /
+  `useLineItemWrites().addKit()` / `kit-add-form.tsx` all thread an
+  optional `discount`, gated to `KIT_PRICE` mode (the only mode with a
+  flat `unitPrice` to discount against; `ITEMIZED` kits have no parent-row
+  price).
+- *Groups* got a new `discount: v.optional(v.number())` on the
+  `projectGroups` Convex table, the same 0–999999.99 finite bound as
+  line-item discount (`assertValidDiscount` in `projectGroupsWrites.ts`,
+  mirrored in `src/lib/validations/project-group.ts`). Threaded through
+  `createGroupNative` / `updateGroupPriceNative`, both `mapGroupDoc`
+  copies (`project-equipment-reconstruct.ts` and
+  `project-line-item-read.ts` — the latter feeds PDF generation),
+  `equipment-tab-reconstruct.ts`, and `useProjectGroupWrites().updatePrice()`'s
+  new optional third argument. `EditGroupDialog` and `PriceEditDialog`'s
+  project branch both expose a `DiscountField`. Money-math consumers
+  updated to actually apply it (a stored-but-ignored discount is worse
+  than no field at all):
+  - `convex/lib/recalc.ts` `groupRevenue` — `bundlePrice × quantity −
+    discount`, clamped at 0, same as line-item discount's single
+    flat-amount subtraction.
+  - `convex/lib/allocation.ts` `poolOf` (per-model revenue allocation) —
+    same clamp-then-subtract before the project-level discount factor
+    applies.
+  - `src/lib/pdfme/structure-line-items.ts` — the synthetic group row's
+    `lineTotal` now reflects the discount (was hardcoding
+    `discount: null` and never subtracting it), so quote/invoice PDFs
+    match what `recalcProjectTotals` actually bills.
+  - `equipment-rows.tsx` `GroupRow` — a `-$X disc.` caption under the unit
+    price (matching the existing per-line-item convention) and the Total
+    column reflects the discounted amount, desktop and mobile.
+
+  `subHireGroups` already had an unused `discount` field in the Convex
+  schema before this pass (never read/written by any mutation or dialog) —
+  left as-is; sub-hire group discount is out of scope for #883 (it uses
+  charge/cost, not a discount-off-price model).
+
+**`Button loading` sweep.** `edit-line-item-dialog.tsx`,
+`edit-group-dialog.tsx`, `price-edit-dialog.tsx`,
+`bulk-edit-line-items-dialog.tsx`, and `add-group-toolbar-dialog.tsx` all
+now use the registry `Button loading` prop instead of an inline
+`Loader2`-in-button-children spinner.
+
+Not changed in this pass: `sub-hire-add-form.tsx` (order-level fields only,
+no pricing section to unify — it got the `SectionTitle`/`Field` dedup but
+no RHF/Zod migration since it has no numeric bounds to validate beyond
+what `ComboboxPicker`/`<input type="date">` already constrain) and
+`unified-add-dialog.tsx`'s own segmented-switcher styling (still raw
+`bg-primary`/`hover:bg-accent` Tailwind rather than the RVLT semantic
+tokens `equipment-add-form.tsx`'s internal `ModeTab` uses — flagged as a
+follow-up, not fixed here to keep this pass's blast radius to the
+form-library/discount work the issue scoped).
+
 ## Reordering (▲/▼ move buttons)
 
 Drag-and-drop was removed (`chore/remove-pdf-builder-and-dnd`; `@dnd-kit`
@@ -319,6 +423,14 @@ Unit tests under `src/lib/validations/` and `src/components/projects/`:
 
 PDF pipeline (`src/lib/pdfme/structure-line-items.ts`) already handles
 SubHireGroup synthetic parents — pre-dates this work, no changes needed.
+
+**#883 (structural + discount unification) test coverage:**
+
+- `convex/recalc.test.ts` — group discount subtracted from `equipmentRevenue`, clamped at 0
+- `convex/allocation.test.ts` — group discount shrinks the per-model revenue pool, clamped at 0
+- `convex/projectGroupsWrites.test.ts` — `updateGroupPriceNative` discount bound, the omit-to-preserve-existing-value semantics, non-finite rejection
+- `src/lib/validations/project-group.test.ts` — `discount` field + `updateGroupPriceSchema` bound coverage
+- `src/lib/pdfme/structure-line-items.test.ts` — group discount subtracted from the synthetic row's `lineTotal`, clamped at 0
 
 ## What this work did NOT change
 

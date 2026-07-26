@@ -1061,6 +1061,9 @@ export const addKitNative = mutation({
     projectId: v.string(),
     kitId: v.string(),
     unitPrice: v.optional(v.number()),
+    /** Flat $ discount off unitPrice — KIT_PRICE mode only. Mirrors the
+     *  equipment/custom line-item discount field (#883). */
+    discount: v.optional(v.number()),
     pricingMode: enums.KitPricingMode,
     groupName: v.optional(v.string()),
     categoryId: v.optional(v.string()),
@@ -1082,7 +1085,7 @@ export const addKitNative = mutation({
     orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1096,7 +1099,7 @@ export const addKitNative = mutation({
     // (assertLineMoneyFields) — this one didn't, so a browser caller sending
     // `unitPrice: NaN` (or Infinity/negative) flowed straight into the line and then
     // poisoned recalcProjectTotals' project.total/subtotal/margin to NaN.
-    assertLineMoneyFields({ unitPrice });
+    assertLineMoneyFields({ unitPrice, discount });
 
     // Dup-guard the client-minted kit-line id (by_cuid is global + non-unique).
     const dupKit = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1140,7 +1143,7 @@ export const addKitNative = mutation({
     }
 
     await createKitLineItemCore(ctx, {
-      id, organizationId, projectId, kitId, unitPrice, pricingMode, groupName, categoryId, groupId, now,
+      id, organizationId, projectId, kitId, unitPrice, discount, pricingMode, groupName, categoryId, groupId, now,
     });
 
     // Parity with the deleted addKitLineItem: when the client can't resolve the kit

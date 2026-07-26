@@ -594,6 +594,9 @@ export async function createKitLineItemCore(
     projectId: string;
     kitId: string;
     unitPrice?: number;
+    /** Flat dollar amount off `unitPrice`, KIT_PRICE mode only — mirrors how
+     *  discount already works for equipment/custom line items. */
+    discount?: number;
     pricingMode: "KIT_PRICE" | "ITEMIZED";
     groupName?: string;
     categoryId?: string;
@@ -606,10 +609,15 @@ export async function createKitLineItemCore(
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
     let sort = await nextLineSort(ctx, a.projectId, a.organizationId);
 
+    // Discount only means anything alongside a flat unitPrice (KIT_PRICE mode) —
+    // ITEMIZED kits have no parent-row price to discount against.
+    const kitLineTotal =
+      a.unitPrice != null ? Math.max(0, a.unitPrice - (a.discount ?? 0)) : a.unitPrice;
+
     await ctx.db.insert("projectLineItems", {
       id: a.id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", kitId: a.kitId,
       description: `${kit.assetTag} - ${kit.name}`, quantity: 1, unitPrice: a.unitPrice, pricingType: "PER_DAY",
-      duration: 1, lineTotal: a.unitPrice, sortOrder: sort++, pricingMode: a.pricingMode,
+      duration: 1, discount: a.unitPrice != null ? a.discount : undefined, lineTotal: kitLineTotal, sortOrder: sort++, pricingMode: a.pricingMode,
       groupName: a.groupName, categoryId: a.categoryId, groupId: a.groupId, status: "CONFIRMED",
       createdAt: a.now, updatedAt: a.now,
     });

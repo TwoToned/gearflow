@@ -62,6 +62,13 @@ function assertValidPrice(price: number) {
   // (groupRevenue += num(price) * qty → project.total = NaN). Browser-direct bypasses Zod.
   if (!Number.isFinite(price) || price < 0) throw new ConvexError("Price must be a finite number ≥ 0");
 }
+function assertValidDiscount(discount: number) {
+  // Same anti-poisoning guard as assertValidPrice, plus the upper bound
+  // src/lib/validations/project-group.ts / line-item.ts discountField enforces.
+  if (!Number.isFinite(discount) || discount < 0 || discount > 999999.99) {
+    throw new ConvexError("Discount must be a finite number between 0 and 999999.99");
+  }
+}
 
 // ─── Collaboration colour (deterministic from userId) ────────────────────────
 // Inlined from src/lib/collaboration-colors.ts getUserColor (same as
@@ -219,6 +226,7 @@ export const createGroupNative = mutation({
     description: v.optional(v.string()),
     quantity: v.optional(v.number()),
     price: v.optional(v.number()),
+    discount: v.optional(v.number()),
     rentalPeriod: v.optional(enums.RentalPeriod),
     rentalQuantity: v.optional(v.number()),
     now: v.number(),
@@ -236,6 +244,7 @@ export const createGroupNative = mutation({
     const quantity = a.quantity ?? 1;
     assertValidQuantity(quantity);
     if (a.price != null) assertValidPrice(a.price);
+    if (a.discount != null) assertValidDiscount(a.discount);
     if (a.rentalQuantity != null) assertValidRentalQuantity(a.rentalQuantity);
 
     // The client supplies projectId + categoryId; verify both are the caller's org (and
@@ -278,6 +287,7 @@ export const createGroupNative = mutation({
       description: a.description || undefined,
       quantity,
       price: a.price != null ? a.price : undefined,
+      discount: a.discount != null ? a.discount : undefined,
       rentalPeriod: a.rentalPeriod || undefined,
       rentalQuantity: a.rentalQuantity || undefined,
       suggestedPrice: 0,
@@ -406,6 +416,11 @@ export const updateGroupPriceNative = mutation({
     id: v.string(),
     orgId: v.string(),
     price: v.number(),
+    // Optional — omit to leave the existing discount untouched; pass 0/undefined
+    // via the caller's "clear" convention (client always sends a resolved number
+    // or leaves the arg out entirely, mirroring how discount already works for
+    // patchNative on line items).
+    discount: v.optional(v.number()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -417,9 +432,12 @@ export const updateGroupPriceNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     assertValidPrice(a.price);
+    if (a.discount != null) assertValidDiscount(a.discount);
     const group = await requireGroupInOrg(ctx, a.id, a.orgId);
 
-    await ctx.db.patch(group._id, { price: a.price, updatedAt: a.now });
+    const patch: Record<string, unknown> = { price: a.price, updatedAt: a.now };
+    if (a.discount !== undefined) patch.discount = a.discount;
+    await ctx.db.patch(group._id, patch);
 
     await logGroupChange(ctx, {
       orgId: a.orgId,

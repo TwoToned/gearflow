@@ -23,9 +23,9 @@ import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PlacementFields } from "./placement-fields";
+import { SectionTitle, Field, DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useKitSearch, useKit } from "@/hooks/use-kits";
@@ -70,6 +70,8 @@ export function KitAddForm({
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitPricingMode, setKitPricingMode] = useState<KitPricingMode>("KIT_PRICE");
   const [kitUnitPrice, setKitUnitPrice] = useState("");
+  const [kitDiscount, setKitDiscount] = useState("");
+  const [kitDiscountMode, setKitDiscountMode] = useState<DiscountMode>("$");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId ?? "");
   const [selectedGroupId, setSelectedGroupId] = useState(groupId ?? "");
 
@@ -106,29 +108,36 @@ export function KitAddForm({
     enabled: !!selectedKitId,
   });
 
+  // Computed outside mutationFn so the mutation call itself stays a
+  // straight-line pass-through (R-3.6 — keeps mutationFn's own complexity low).
+  const kitUnitPriceResolved =
+    kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined;
+  // Discount is only meaningful alongside a flat KIT_PRICE unitPrice.
+  const kitDiscountResolved =
+    kitPricingMode === "KIT_PRICE" && kitUnitPriceResolved != null
+      ? resolveDiscountAmount(kitDiscountMode, kitDiscount, kitUnitPriceResolved)
+      : undefined;
+  const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
+  const effectiveGroupId = (groupId || selectedGroupId) || undefined;
+  // kitLabel = "<assetTag> - <name>" (what the server derives from the fetched kit if
+  // this resolves empty). Prefer the resolved selected-kit label; fall back to the
+  // search option.
+  const resolvedKitLabel =
+    selectedKitLabel ?? kitOptions.find((o) => o.value === selectedKitId)?.label ?? "";
+
   const addKitMut = useServerMutation({
-    mutationFn: () => {
-      const unitPrice =
-        kitPricingMode === "KIT_PRICE" && kitUnitPrice ? parseFloat(kitUnitPrice) : undefined;
-      const effectiveCategoryId = (categoryId || selectedCategoryId) || undefined;
-      const effectiveGroupId = (groupId || selectedGroupId) || undefined;
-      // Browser-direct native path. addKitNative expands the parent + member children +
-      // recalc + audit + collab atomically; reactive useQuery renders the new rows.
-      // kitLabel = "<assetTag> - <name>" (what the server derived from the fetched kit).
-      // Prefer the resolved selected-kit label; fall back to the search option.
-      const kitLabel =
-        selectedKitLabel ??
-        kitOptions.find((o) => o.value === selectedKitId)?.label ??
-        "";
-      return lineItemWrites.addKit(projectId, selectedKitId, {
+    // Browser-direct native path. addKitNative expands the parent + member children +
+    // recalc + audit + collab atomically; reactive useQuery renders the new rows.
+    mutationFn: () =>
+      lineItemWrites.addKit(projectId, selectedKitId, {
         pricingMode: kitPricingMode,
-        unitPrice,
+        unitPrice: kitUnitPriceResolved,
+        discount: kitDiscountResolved,
         groupName: undefined,
         categoryId: effectiveCategoryId,
         groupId: effectiveGroupId,
-        kitLabel,
-      });
-    },
+        kitLabel: resolvedKitLabel,
+      }),
     onSuccess: () => {
       onInvalidate();
       refreshProjectDetail(projectId);
@@ -195,16 +204,24 @@ export function KitAddForm({
           </Field>
 
           {kitPricingMode === "KIT_PRICE" && (
-            <Field label="Unit price ($)">
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={kitUnitPrice}
-                onChange={(e) => setKitUnitPrice(e.target.value)}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Unit price ($)">
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={kitUnitPrice}
+                  onChange={(e) => setKitUnitPrice(e.target.value)}
+                />
+              </Field>
+              <DiscountField
+                value={kitDiscount}
+                onValueChange={setKitDiscount}
+                mode={kitDiscountMode}
+                onModeChange={setKitDiscountMode}
               />
-            </Field>
+            </div>
           )}
         </section>
 
@@ -244,28 +261,6 @@ export function KitAddForm({
 }
 
 // ─── Local helpers ───────────────────────────────────────────────
-
-function SectionTitle({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div>
-      <h3 className="text-card-title font-bold text-ink">{title}</h3>
-      {hint && <p className="mt-0.5 t-micro text-muted">{hint}</p>}
-    </div>
-  );
-}
-
-function Field({
-  label, required, children,
-}: {
-  label: string; required?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
-      {children}
-    </div>
-  );
-}
 
 function PricingModeOption({
   label, hint, selected, onSelect,

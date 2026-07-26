@@ -339,6 +339,7 @@ export interface MappedGroup {
   description: string | null;
   quantity: number;
   price: number | null;
+  discount: number | null;
   suggestedPrice: number | null;
   rentalPeriod: string | null;
   rentalQuantity: number | null;
@@ -357,6 +358,7 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     description: d.description ?? null,
     quantity: d.quantity ?? 1,
     price: d.price ?? null,
+    discount: d.discount ?? null,
     suggestedPrice: d.suggestedPrice ?? null,
     rentalPeriod: d.rentalPeriod ?? null,
     rentalQuantity: d.rentalQuantity ?? null,

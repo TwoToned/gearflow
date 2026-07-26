@@ -157,7 +157,8 @@ function AddGroupToolbarDialogBody({
         </Button>
         <Button
           onClick={handleSubmit}
-          disabled={!title.trim() || !categoryId || isPending}
+          loading={isPending}
+          disabled={!title.trim() || !categoryId}
         >
           Create
         </Button>

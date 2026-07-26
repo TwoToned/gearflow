@@ -373,6 +373,25 @@ describe("groups — Approach B", () => {
     expect(sumOf(r, ["a", "b"])).toBe(300);
   });
 
+  test("a group discount shrinks the pool everyone splits (#883)", () => {
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", lineTotal: 1, sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", lineTotal: 1, sortOrder: 2 }),
+      ],
+      { groups: [{ id: "g1", price: 100, quantity: 3, discount: 50 }] },
+    );
+    // pool = 100 × 3 - 50 = 250, not 300.
+    expect(sumOf(r, ["a", "b"])).toBe(250);
+  });
+
+  test("a group discount larger than the bundle clamps the pool at 0, not negative (#883)", () => {
+    const r = run([L("a", { groupId: "g1", modelId: "m1", lineTotal: 1 })], {
+      groups: [{ id: "g1", price: 100, quantity: 1, discount: 9999 }],
+    });
+    expect(rev(r, "a")).toBe(0);
+  });
+
   test("an awkward price still sums exactly — no leaked cents", () => {
     const r = run(
       [

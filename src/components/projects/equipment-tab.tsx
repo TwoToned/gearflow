@@ -284,6 +284,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
   // EditLineItemDialog target — body owns its own form state + availability query.
   const [editLineItem, setEditLineItem] = useState<LineItemData | null>(null);
+  // The clicked item's current placement — line items don't carry categoryId/groupId
+  // directly (the tree position IS the placement), so each onEdit call site captures
+  // it from the same closure the neighbouring onMoveToCategory/onMoveToGroup use.
+  const [editLineItemPlacement, setEditLineItemPlacement] = useState<{
+    categoryId?: string;
+    groupId?: string;
+  }>({});
 
   // Bulk-operations dialog state (act on the current multi-selection).
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -1145,7 +1152,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 kind: "project",
                                 groupId: group.id,
                                 title: group.title,
+                                quantity: group.quantity,
                                 price: priceVal,
+                                discount: group.discount != null ? Number(group.discount) : null,
                               })}
                               onAddEquipment={() => {
                                 setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
@@ -1195,7 +1204,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                                 onClick={(e) => handleRowClick(item.id, e)}
                                 onToggle={() => toggleParent(item.id)}
-                                onEdit={() => setEditLineItem(item)}
+                                onEdit={() => {
+                                  setEditLineItemPlacement({ categoryId: cat.id, groupId: group.id });
+                                  setEditLineItem(item);
+                                }}
                                 onMoveToCategory={() => setMoveItemToCategory({
                                   lineItemId: item.id,
                                   initialCategoryId: cat.id,
@@ -1235,7 +1247,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                           onClick={(e) => handleRowClick(item.id, e)}
                           onToggle={() => toggleParent(item.id)}
-                          onEdit={() => setEditLineItem(item)}
+                          onEdit={() => {
+                            setEditLineItemPlacement({ categoryId: cat.id });
+                            setEditLineItem(item);
+                          }}
                           onMoveToCategory={() => setMoveItemToCategory({
                             lineItemId: item.id,
                             initialCategoryId: cat.id,
@@ -1290,7 +1305,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                     onClick={(e) => handleRowClick(item.id, e)}
                     onToggle={() => toggleParent(item.id)}
-                    onEdit={() => setEditLineItem(item)}
+                    onEdit={() => {
+                      setEditLineItemPlacement({});
+                      setEditLineItem(item);
+                    }}
                     onMoveToCategory={() => setMoveItemToCategory({
                       lineItemId: item.id,
                     })}
@@ -1337,7 +1355,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           kind: "project",
                           groupId: group.id,
                           title: group.title,
+                          quantity: group.quantity,
                           price: priceVal,
+                          discount: group.discount != null ? Number(group.discount) : null,
                         })}
                         onAddEquipment={() => {
                           setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
@@ -1385,7 +1405,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
                           onClick={(e) => handleRowClick(item.id, e)}
                           onToggle={() => toggleParent(item.id)}
-                          onEdit={() => setEditLineItem(item)}
+                          onEdit={() => {
+                            setEditLineItemPlacement({ groupId: group.id });
+                            setEditLineItem(item);
+                          }}
                           onMoveToCategory={() => setMoveItemToCategory({
                             lineItemId: item.id,
                           })}
@@ -1702,8 +1725,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         rentalStartDate={rentalStartDate}
         rentalEndDate={rentalEndDate}
         orgId={orgId}
+        categories={categories as CategoryData[]}
+        initialCategoryId={editLineItemPlacement.categoryId}
+        initialGroupId={editLineItemPlacement.groupId}
         isPending={updateLineItemMut.isPending}
         onClose={() => setEditLineItem(null)}
+        onMove={(id, placement) => {
+          groupWrites
+            .moveLineItem({ lineItemId: id, targetCategoryId: placement.categoryId, targetGroupId: placement.groupId })
+            .then(() => invalidate())
+            .catch((e: Error) => toast.error(e.message));
+        }}
         onSubmit={(id, data, allowOverbook, baseUpdatedAt) => {
           // Optimistically overlay the edited fields onto the row so it updates
           // instantly; the server action below is still the authoritative write.
@@ -1909,10 +1941,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         projectId={projectId}
         orgId={orgId}
         onClose={() => setEditGroupData(null)}
-        onSubmit={(groupId, values, price) => {
+        onSubmit={(groupId, values, price, discount) => {
           updateGroupMut.mutate({ groupId, data: values });
           if (price !== undefined) {
-            groupWrites.updatePrice(groupId, price)
+            groupWrites.updatePrice(groupId, price, discount)
               .then(() => invalidate())
               .catch((e: Error) => toast.error(e.message));
           }

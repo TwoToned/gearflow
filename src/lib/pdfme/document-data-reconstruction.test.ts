@@ -127,7 +127,7 @@ describe("keystone reconstruction → full PDF pipeline", () => {
     }) as unknown as DocumentLineItem[];
     const categories: CategoryForStructuring[] = [
       { id: "cat-light", name: "Lighting", sortOrder: 0, groups: [] },
-      { id: "cat-audio", name: "Audio", sortOrder: 1, groups: [{ id: "g1", title: "Mic Kit", description: null, quantity: 1, price: null, rentalPeriod: null, rentalQuantity: null, sortOrder: 0 }] },
+      { id: "cat-audio", name: "Audio", sortOrder: 1, groups: [{ id: "g1", title: "Mic Kit", description: null, quantity: 1, price: null, discount: null, rentalPeriod: null, rentalQuantity: null, sortOrder: 0 }] },
     ];
     const structured = structureLineItems(enriched, categories, { expandProjectGroups: true, packerSort: true }, []);
 

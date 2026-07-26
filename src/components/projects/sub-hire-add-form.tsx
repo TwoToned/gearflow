@@ -22,10 +22,10 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { QuickCreateSupplier } from "@/components/assets/quick-create-supplier";
+import { SectionTitle, Field } from "./line-item-form-fields";
 import { useActiveOrganization } from "@/lib/auth-client";
 
 export interface SubHireAddFormProps {
@@ -192,29 +192,5 @@ export function SubHireAddForm({
         onCreated={(id) => setSupplierId(id)}
       />
     </>
-  );
-}
-
-// ─── Local helpers ───────────────────────────────────────────────
-
-function SectionTitle({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div>
-      <h3 className="text-card-title font-bold text-ink">{title}</h3>
-      {hint && <p className="mt-0.5 t-micro text-muted">{hint}</p>}
-    </div>
-  );
-}
-
-function Field({
-  label, required, children,
-}: {
-  label: string; required?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
-      {children}
-    </div>
   );
 }

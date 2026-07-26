@@ -83,6 +83,41 @@ describe("recalcProjectTotals — totals parity", () => {
     expect(p?.equipmentRevenue).toBe(160);
   });
 
+  test("subtracts a Project Group's flat discount from its bundle revenue (#883)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      // price 100 × qty 2 = 200, minus a flat $50 group discount = 150.
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 2, discount: 50, sortOrder: 0 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.equipmentRevenue).toBe(150);
+    expect(p?.subtotal).toBe(150);
+  });
+
+  test("clamps a Project Group's discount at 0 rather than going negative (#883)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      // price 100 × qty 1 = 100, discount 9999 — must clamp at 0, not go negative.
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 1, discount: 9999, sortOrder: 0 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.equipmentRevenue).toBe(0);
+  });
+
   test("uses org default tax when the project has no override", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {

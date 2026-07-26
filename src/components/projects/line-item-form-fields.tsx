@@ -47,60 +47,71 @@ export function Field({
   );
 }
 
-export interface DiscountFieldProps {
+export interface DiscountAmountInputProps {
   id?: string;
-  label?: string;
   value: string;
   onValueChange: (value: string) => void;
   mode: DiscountMode;
   onModeChange: (mode: DiscountMode) => void;
   disabled?: boolean;
-  hint?: string;
 }
 
 /**
- * Discount amount input + $/% mode toggle. The mode is a pure client-side
- * display convenience — callers are responsible for resolving a `%` value
- * to a dollar amount before it reaches the schema/mutation (discount is
- * always persisted as a flat dollar amount; see `src/lib/validations/line-item.ts`).
+ * Discount amount input + $/% mode toggle, with no Field/Label wrapper — for
+ * callers that supply their own label (e.g. bulk-edit-line-items-dialog's
+ * checkbox-gated field rows). Most callers want `DiscountField` below instead.
+ * The mode is a pure client-side display convenience — callers are responsible
+ * for resolving a `%` value to a dollar amount before it reaches the
+ * schema/mutation (discount is always persisted as a flat dollar amount; see
+ * `src/lib/validations/line-item.ts`).
  */
-export function DiscountField({
+export function DiscountAmountInput({
   id,
-  label = "Discount",
   value,
   onValueChange,
   mode,
   onModeChange,
   disabled,
-  hint,
-}: DiscountFieldProps) {
+}: DiscountAmountInputProps) {
   return (
-    <Field label={label} htmlFor={id}>
-      <div className="flex gap-1.5">
-        <Input
-          id={id}
-          type="number"
-          step="0.01"
-          min={0}
-          placeholder="0"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          disabled={disabled}
-          className="flex-1"
-        />
-        <button
-          type="button"
-          onClick={() => onModeChange(mode === "$" ? "%" : "$")}
-          disabled={disabled}
-          title={mode === "$" ? "Switch to percentage" : "Switch to dollars"}
-          className={cn(
-            "h-11 w-11 shrink-0 rounded-[var(--radius)] border-2 border-input bg-card text-ui-text font-medium text-ink transition-colors hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-45",
-            focusRing,
-          )}
-        >
-          {mode}
-        </button>
-      </div>
+    <div className="flex gap-1.5">
+      <Input
+        id={id}
+        type="number"
+        step="0.01"
+        min={0}
+        placeholder="0"
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        disabled={disabled}
+        className="flex-1"
+      />
+      <button
+        type="button"
+        onClick={() => onModeChange(mode === "$" ? "%" : "$")}
+        disabled={disabled}
+        title={mode === "$" ? "Switch to percentage" : "Switch to dollars"}
+        className={cn(
+          "h-11 w-11 shrink-0 rounded-[var(--radius)] border-2 border-input bg-card text-ui-text font-medium text-ink transition-colors hover:bg-paper-2 disabled:cursor-not-allowed disabled:opacity-45",
+          focusRing,
+        )}
+      >
+        {mode}
+      </button>
+    </div>
+  );
+}
+
+export interface DiscountFieldProps extends DiscountAmountInputProps {
+  label?: string;
+  hint?: string;
+}
+
+/** `DiscountAmountInput` wrapped in `Field` (its own label). */
+export function DiscountField({ label = "Discount", hint, ...inputProps }: DiscountFieldProps) {
+  return (
+    <Field label={label} htmlFor={inputProps.id}>
+      <DiscountAmountInput {...inputProps} />
       {hint && <p className="t-micro text-muted">{hint}</p>}
     </Field>
   );

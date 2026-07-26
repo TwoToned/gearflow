@@ -116,7 +116,5 @@ describe("mapCategoryDoc / mapGroupDoc", () => {
     expect(r.price).toBe(100);
     expect(r.suggestedPrice).toBeNull();
     expect(r.categoryId).toBeNull();
-    expect(r.rentalPeriod).toBeNull();
-    expect(r.rentalQuantity).toBeNull();
   });
 });

@@ -327,7 +327,8 @@ export const updateNative = mutation({
       depositPercent: typeof setObj.depositPercent === "number" ? setObj.depositPercent : undefined,
       depositPaid: typeof setObj.depositPaid === "number" ? setObj.depositPaid : undefined,
       invoicedTotal: typeof setObj.invoicedTotal === "number" ? setObj.invoicedTotal : undefined,
-      defaultRentalQuantity: typeof setObj.defaultRentalQuantity === "number" ? setObj.defaultRentalQuantity : undefined,
+      billingWeeksOverride: typeof setObj.billingWeeksOverride === "number" ? setObj.billingWeeksOverride : undefined,
+      billingDaysOverride: typeof setObj.billingDaysOverride === "number" ? setObj.billingDaysOverride : undefined,
     });
 
     // Bound-check the string fields projectSchema constrains (same rationale as the
@@ -448,7 +449,8 @@ export const createNative = mutation({
     assertProjectMoneyFields({
       taxRate: fields.taxRate, discountPercent: fields.discountPercent,
       depositPercent: fields.depositPercent, depositPaid: fields.depositPaid,
-      invoicedTotal: fields.invoicedTotal, defaultRentalQuantity: fields.defaultRentalQuantity,
+      invoicedTotal: fields.invoicedTotal, billingWeeksOverride: fields.billingWeeksOverride,
+      billingDaysOverride: fields.billingDaysOverride,
     });
 
     // See updateNative's comment — NaN here defeats the double-booking overlap check.
@@ -821,7 +823,7 @@ function duplicateProjectScalars(source: {
   siteContactName?: string; siteContactPhone?: string; siteContactEmail?: string;
   crewNotes?: string; internalNotes?: string; clientNotes?: string;
   discountPercent?: number; depositPercent?: number;
-  defaultRentalPeriod?: string; defaultRentalQuantity?: number; taxRate?: number;
+  taxRate?: number;
   tags?: string[];
 }): Record<string, unknown> {
   return {
@@ -837,10 +839,13 @@ function duplicateProjectScalars(source: {
     ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
     ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
     ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
-    ...(source.defaultRentalPeriod ? { defaultRentalPeriod: source.defaultRentalPeriod } : {}),
-    ...(source.defaultRentalQuantity != null ? { defaultRentalQuantity: source.defaultRentalQuantity } : {}),
     ...(source.taxRate != null ? { taxRate: source.taxRate } : {}),
     tags: source.tags ?? [],
+    // billingWeeksOverride/billingDaysOverride deliberately NOT copied — a
+    // duplicated project starts with fresh (unset) dates, so a copied override
+    // would silently pin the wrong billing summary until the new dates are set.
+    // Matches the pre-existing "dates not copied" behaviour this scalar list
+    // already documents just above.
   };
 }
 
@@ -965,8 +970,6 @@ export const duplicateNative = mutation({
         ...(group.quantity != null ? { quantity: group.quantity } : {}),
         ...(group.price != null ? { price: group.price } : {}),
         ...(group.suggestedPrice != null ? { suggestedPrice: group.suggestedPrice } : {}),
-        ...(group.rentalPeriod != null ? { rentalPeriod: group.rentalPeriod } : {}),
-        ...(group.rentalQuantity != null ? { rentalQuantity: group.rentalQuantity } : {}),
         sortOrder: group.sortOrder ?? 0,
         createdAt: now,
         updatedAt: now,
@@ -1152,7 +1155,7 @@ export const saveAsTemplateNative = mutation({
     if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A template with code "${templateNumber}" already exists.` });
 
     // 1. Template project row. Parity: saveAsTemplate copies FEWER scalars than
-    //    duplicate — no taxRate, no defaultRentalPeriod/Quantity.
+    //    duplicate — no taxRate, no billingWeeksOverride/DaysOverride.
     await ctx.db.insert("projects", {
       id: newId,
       organizationId: orgId,

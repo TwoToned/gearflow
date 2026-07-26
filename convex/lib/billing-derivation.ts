@@ -97,6 +97,38 @@ export function serializePriceBreakdown(b: PriceBreakdown): string {
   return JSON.stringify(b);
 }
 
+/** Structural (non-Zod — Convex mutations don't need the extra dependency) parse of a
+ *  stored priceBreakdown string. Malformed/legacy data returns null rather than
+ *  throwing (used by the stale-price detection query/mutation, never a trust
+ *  boundary — the string only ever originates from this same module server-side). */
+export function parsePriceBreakdown(raw: string | null | undefined): PriceBreakdown | null {
+  if (!raw) return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof json !== "object" || json == null) return null;
+  const b = json as Record<string, unknown>;
+  if (
+    typeof b.weeks !== "number" ||
+    typeof b.days !== "number" ||
+    typeof b.capped !== "boolean" ||
+    (b.weeklyRate !== null && typeof b.weeklyRate !== "number") ||
+    (b.dailyRate !== null && typeof b.dailyRate !== "number")
+  ) {
+    return null;
+  }
+  return {
+    weeks: b.weeks,
+    days: b.days,
+    weeklyRate: b.weeklyRate as number | null,
+    dailyRate: b.dailyRate as number | null,
+    capped: b.capped,
+  };
+}
+
 /** Project-level "billed as N wk M d" summary — no capping, overrides win. */
 export interface BillingSummary {
   weeks: number;

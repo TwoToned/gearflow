@@ -83,7 +83,8 @@ export function assertProjectMoneyFields(f: {
   depositPercent?: number | null;
   depositPaid?: number | null;
   invoicedTotal?: number | null;
-  defaultRentalQuantity?: number | null;
+  billingWeeksOverride?: number | null;
+  billingDaysOverride?: number | null;
 }): void {
   if (f.taxRate != null) {
     if (!Number.isFinite(f.taxRate) || f.taxRate < 0 || f.taxRate > 100) {
@@ -110,12 +111,18 @@ export function assertProjectMoneyFields(f: {
       throw new ConvexError({ code: "INVALID_INVOICED_TOTAL", message: "Invoiced total must be a non-negative finite number." });
     }
   }
-  if (f.defaultRentalQuantity != null) {
-    // Not itself money, but feeds addLineItemSmartNative's auto-pricing as `autoDuration`
-    // (unbounded/NaN here poisons a subsequently-added line's lineTotal, then the
-    // project's recalculated totals). Bounds mirror line-item `duration`'s cap.
-    if (!Number.isFinite(f.defaultRentalQuantity) || !Number.isInteger(f.defaultRentalQuantity) || f.defaultRentalQuantity < 1 || f.defaultRentalQuantity > 3650) {
-      throw new ConvexError({ code: "INVALID_DEFAULT_RENTAL_QUANTITY", message: "Default rental quantity must be a whole number between 1 and 3650." });
+  if (f.billingWeeksOverride != null) {
+    // Not itself money, but feeds recalcProjectTotals' allocation pass (weekly vs
+    // daily rate-scale choice) and the financial-header billing summary — unbounded/
+    // NaN here would poison both. ~10 years of weeks as a generous upper bound.
+    if (!Number.isFinite(f.billingWeeksOverride) || !Number.isInteger(f.billingWeeksOverride) || f.billingWeeksOverride < 0 || f.billingWeeksOverride > 522) {
+      throw new ConvexError({ code: "INVALID_BILLING_WEEKS_OVERRIDE", message: "Billing weeks override must be a whole number between 0 and 522." });
+    }
+  }
+  if (f.billingDaysOverride != null) {
+    // Same rationale as billingWeeksOverride. Remainder days are always < 7.
+    if (!Number.isFinite(f.billingDaysOverride) || !Number.isInteger(f.billingDaysOverride) || f.billingDaysOverride < 0 || f.billingDaysOverride > 6) {
+      throw new ConvexError({ code: "INVALID_BILLING_DAYS_OVERRIDE", message: "Billing days override must be a whole number between 0 and 6." });
     }
   }
 }

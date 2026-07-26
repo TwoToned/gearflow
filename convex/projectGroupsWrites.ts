@@ -8,7 +8,6 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
-import * as enums from "./lib/validators";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -50,11 +49,6 @@ function assertValidDescription(description: string | undefined) {
 function assertValidQuantity(quantity: number) {
   if (!Number.isInteger(quantity) || quantity < 1) {
     throw new ConvexError("Quantity must be an integer of at least 1");
-  }
-}
-function assertValidRentalQuantity(rentalQuantity: number) {
-  if (!Number.isInteger(rentalQuantity) || rentalQuantity < 1) {
-    throw new ConvexError("Rental quantity must be an integer of at least 1");
   }
 }
 function assertValidPrice(price: number) {
@@ -155,10 +149,11 @@ async function orgDefaultTaxRate(ctx: MutationCtx, orgId: string): Promise<numbe
 }
 
 /**
- * Recompute + persist a group's suggested price by id (org-checked). Reads the
- * group's own rentalPeriod/rentalQuantity (falling back to project defaults),
- * mirroring the server calculateSuggestedPrice. Patches by the fetched _id.
- * No-op if the group is gone / cross-org.
+ * Recompute + persist a group's suggested price by id (org-checked). Prices
+ * from the PROJECT's rentalStartDate/rentalEndDate via the shared
+ * computeGroupSuggestedPrice best-price-capped derivation (#943) — no more
+ * group-level rentalPeriod/rentalQuantity override (retired). No-op if the
+ * group is gone / cross-org.
  */
 async function recomputeGroupSuggestedById(
   ctx: MutationCtx,
@@ -174,10 +169,8 @@ async function recomputeGroupSuggestedById(
     projectId: group.projectId,
     groupId,
     orgId,
-    defaultRentalPeriod: project?.defaultRentalPeriod ?? undefined,
-    defaultRentalQuantity: project?.defaultRentalQuantity ?? undefined,
-    groupRentalPeriod: group.rentalPeriod ?? undefined,
-    groupRentalQuantity: group.rentalQuantity ?? undefined,
+    rentalStartDate: project?.rentalStartDate ?? undefined,
+    rentalEndDate: project?.rentalEndDate ?? undefined,
   });
   await ctx.db.patch(group._id, { suggestedPrice: suggested, updatedAt: now });
 }
@@ -227,8 +220,6 @@ export const createGroupNative = mutation({
     quantity: v.optional(v.number()),
     price: v.optional(v.number()),
     discount: v.optional(v.number()),
-    rentalPeriod: v.optional(enums.RentalPeriod),
-    rentalQuantity: v.optional(v.number()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -245,7 +236,6 @@ export const createGroupNative = mutation({
     assertValidQuantity(quantity);
     if (a.price != null) assertValidPrice(a.price);
     if (a.discount != null) assertValidDiscount(a.discount);
-    if (a.rentalQuantity != null) assertValidRentalQuantity(a.rentalQuantity);
 
     // The client supplies projectId + categoryId; verify both are the caller's org (and
     // the category is in that project) — else a member could hang a group off another
@@ -288,8 +278,6 @@ export const createGroupNative = mutation({
       quantity,
       price: a.price != null ? a.price : undefined,
       discount: a.discount != null ? a.discount : undefined,
-      rentalPeriod: a.rentalPeriod || undefined,
-      rentalQuantity: a.rentalQuantity || undefined,
       suggestedPrice: 0,
       sortOrder,
       createdAt: a.now,
@@ -312,10 +300,17 @@ export const createGroupNative = mutation({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// updateGroupNative — patch title/description/quantity/rentalPeriod/rentalQuantity/
-// sortOrder. Recompute suggested price IF rental settings changed, then recalc
+// updateGroupNative — patch title/description/quantity/sortOrder, then recalc
 // project totals. Collab `group_updated` UNLESS only sortOrder changed. Audit uses
 // the PRE-patch title. Parity: updateProjectGroup.
+//
+// #943: group-level rentalPeriod/rentalQuantity retired — suggestedPrice is now
+// derived purely from the PROJECT's rentalStartDate/rentalEndDate (best-price
+// capped, convex/lib/billing-derivation.ts), so nothing on this mutation can
+// make it stale anymore. It's recomputed when a line is added/merged into the
+// group (recomputeGroupSuggestedNative in lineItemWrites.ts) and when the
+// project's rental dates change (recalcAutoPricedLinesNative — the "stale
+// price" recalculate flow).
 // ─────────────────────────────────────────────────────────────────────────────
 export const updateGroupNative = mutation({
   returns: v.object({ ok: v.boolean() }),
@@ -325,8 +320,6 @@ export const updateGroupNative = mutation({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     quantity: v.optional(v.number()),
-    rentalPeriod: v.optional(enums.RentalPeriod),
-    rentalQuantity: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     now: v.number(),
     actor: actorValidator,
@@ -343,25 +336,14 @@ export const updateGroupNative = mutation({
     if (a.title !== undefined) assertValidTitle(a.title);
     if (a.description !== undefined) assertValidDescription(a.description || undefined);
     if (a.quantity !== undefined) assertValidQuantity(Number(a.quantity));
-    // rentalQuantity of 0/falsy clears the field (parity) — only validate a real value.
-    if (a.rentalQuantity) assertValidRentalQuantity(Number(a.rentalQuantity));
 
     // Patch semantics mirror the server: "" / falsy clears the optional field.
     const patch: Record<string, unknown> = { updatedAt: a.now };
     if (a.title !== undefined) patch.title = a.title;
     if (a.description !== undefined) patch.description = a.description || undefined;
     if (a.quantity !== undefined) patch.quantity = Number(a.quantity);
-    if (a.rentalPeriod !== undefined) patch.rentalPeriod = a.rentalPeriod || undefined;
-    if (a.rentalQuantity !== undefined) patch.rentalQuantity = a.rentalQuantity ? Number(a.rentalQuantity) : undefined;
     if (a.sortOrder !== undefined) patch.sortOrder = Number(a.sortOrder);
     await ctx.db.patch(group._id, patch);
-
-    // Recompute the suggested price only when rental settings changed (post-patch
-    // group values feed the recompute — parity with calculateSuggestedPrice(groupId)).
-    const projectCache = new Map<string, Doc<"projects"> | null>();
-    if (a.rentalPeriod !== undefined || a.rentalQuantity !== undefined) {
-      await recomputeGroupSuggestedById(ctx, a.id, a.orgId, projectCache, a.now);
-    }
 
     // Audit uses the PRE-patch title (parity with the server action).
     await logGroupChange(ctx, {
@@ -383,9 +365,7 @@ export const updateGroupNative = mutation({
     const providedNonSortOrder =
       a.title !== undefined ||
       a.description !== undefined ||
-      a.quantity !== undefined ||
-      a.rentalPeriod !== undefined ||
-      a.rentalQuantity !== undefined;
+      a.quantity !== undefined;
     if (providedNonSortOrder) {
       await ctx.db.insert("activityEvents", {
         orgId: a.orgId,

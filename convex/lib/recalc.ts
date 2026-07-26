@@ -1,5 +1,6 @@
 import type { MutationCtx } from "../_generated/server";
 import { applyProjectAllocation } from "./allocation";
+import { deriveBillingSummary } from "./billing-derivation";
 
 /**
  * In-mutation project-totals recalculation (Phase 5, Option A — write-latency fix).
@@ -162,10 +163,20 @@ export async function recalcProjectTotals(
   // forget to allocate. Reuses the groups/lines already read above; line patches
   // are diffed, so an edit that moves no allocation costs no writes.
   // See convex/lib/allocation.ts + docs/revenue-allocation-design.md.
+  // #943: allocation's weekly-vs-daily rate-scale choice now reads the project's
+  // DERIVED billing weeks (rentalStartDate/rentalEndDate, or the manual override)
+  // instead of the retired `defaultRentalPeriod` field — same "> 0 means weekly
+  // scale" role the old `rentalPeriod === "WEEKLY"` check played.
+  const billingSummary = deriveBillingSummary({
+    rentalStartMs: project.rentalStartDate,
+    rentalEndMs: project.rentalEndDate,
+    weeksOverride: project.billingWeeksOverride,
+    daysOverride: project.billingDaysOverride,
+  });
   await applyProjectAllocation(ctx, {
     projectId,
     orgId,
-    rentalPeriod: project.defaultRentalPeriod,
+    billingWeeks: billingSummary.weeks,
     // Allocate what was BILLED, not what was listed: the project discount above
     // never reached the group/line prices the allocation pass reads.
     discountPercent,

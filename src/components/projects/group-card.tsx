@@ -22,8 +22,6 @@ interface GroupCardProps {
   quantity: number;
   price: number | null;
   suggestedPrice?: number | null;
-  rentalPeriod: string | null;
-  rentalQuantity: number | null;
   lineItemCount: number;
   children: React.ReactNode;
   onEditPrice?: () => void;
@@ -42,8 +40,6 @@ export function GroupCard({
   quantity,
   price,
   suggestedPrice,
-  rentalPeriod,
-  rentalQuantity,
   lineItemCount,
   children,
   onEditPrice,
@@ -58,9 +54,6 @@ export function GroupCard({
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const priceVal = price != null ? Number(price) : null;
-
-  const periodLabel = rentalPeriod === "WEEKLY" ? "week" : "day";
-  const qtyLabel = rentalQuantity ? `${rentalQuantity} ${periodLabel}${rentalQuantity > 1 ? "s" : ""}` : null;
 
   return (
     <div className="group/card">
@@ -98,9 +91,6 @@ export function GroupCard({
           <span className="flex-none text-xs text-fg-4">
             {lineItemCount} item{lineItemCount !== 1 ? "s" : ""}
           </span>
-          {qtyLabel && (
-            <span className="flex-none text-xs text-fg-4">{qtyLabel}</span>
-          )}
         </div>
 
         {/* Price area */}

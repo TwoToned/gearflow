@@ -12,6 +12,8 @@ import { findKitConflict } from "./lib/availabilityCore";
 import { recalcProjectTotals } from "./lib/recalc";
 import { assertRefInOrg } from "./lib/orgRef";
 import { getKitByCuid } from "./lib/kits";
+import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
+import { inclusiveCalendarDays, computeBlendedCharge, serializePriceBreakdown } from "./lib/billing-derivation";
 
 /**
  * Native GROUP-TEMPLATE write mutations (Phase 3 browser-direct — replaces the
@@ -64,8 +66,6 @@ function getUserColor(userId: string): string {
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
   return COLLAB_COLORS[hash % COLLAB_COLORS.length];
 }
-
-const round = (n: number): number => Math.round(n * 100) / 100;
 
 /** Next sort order for a project's lines (replica of the private nextLineSort). */
 async function nextLineSort(ctx: MutationCtx, projectId: string, orgId: string): Promise<number> {
@@ -407,9 +407,6 @@ export const applyNative = mutation({
       .first();
     const orgDefaultTaxRate = settingsRow?.defaultTaxRate ?? null;
 
-    const defaultRentalPeriod = project.defaultRentalPeriod ?? undefined;
-    const defaultRentalQuantity = project.defaultRentalQuantity ?? undefined;
-
     // ── Create the group inline (replicate projectGroups.createAtEnd) ──────────
     const bucket = a.categoryId ?? null;
     const siblings = (
@@ -433,8 +430,6 @@ export const applyNative = mutation({
       title: a.title,
       description: template.description || undefined,
       quantity: 1,
-      rentalPeriod: defaultRentalPeriod,
-      rentalQuantity: defaultRentalQuantity,
       suggestedPrice: 0,
       sortOrder: groupSortOrder,
       createdAt: a.now,
@@ -460,16 +455,21 @@ export const applyNative = mutation({
     };
 
     // ── Model items → bare model lines (no accessory expansion) ────────────────
-    const period = project.defaultRentalPeriod ?? "DAILY";
+    // #943: blended per-unit charge (best-price capped) over the project's
+    // rental window, replacing the old defaultRentalPeriod-branched rate pick.
+    // duration pinned to 1 — the blended charge already bakes in the whole
+    // chargeable window (lineTotal = unitPrice × qty × duration stays untouched).
+    const chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate);
     for (const item of templateItems) {
       if (!item.modelId) continue;
       const model = await getModel(item.modelId);
       if (!model) continue; // parity: server dropped items whose model didn't resolve
       const quantity = item.quantity ?? 1;
-      const rate =
-        period === "WEEKLY"
-          ? Number(model.weeklyRate ?? model.dailyRate ?? 0)
-          : Number(model.dailyRate ?? 0);
+      const { perUnitCharge, breakdown } = computeBlendedCharge({
+        chargeableDays,
+        dailyRate: model.dailyRate ?? null,
+        weeklyRate: model.weeklyRate ?? null,
+      });
       const sortOrder = await nextLineSort(ctx, a.projectId, a.orgId);
       const modelLineId = nextModelId();
       // Dup-guard the client-minted line cuid (by_cuid is global + non-unique).
@@ -484,8 +484,10 @@ export const applyNative = mutation({
         modelId: item.modelId,
         description: model.name,
         quantity,
-        unitPrice: rate,
-        lineTotal: rate * quantity,
+        unitPrice: perUnitCharge,
+        duration: 1,
+        priceBreakdown: serializePriceBreakdown(breakdown),
+        lineTotal: perUnitCharge * quantity,
         status: "CONFIRMED",
         sortOrder,
         createdAt: a.now,
@@ -550,27 +552,21 @@ export const applyNative = mutation({
       }
     }
 
-    // ── Suggested price recompute (port of calculateSuggestedPrice L29-64) ─────
-    const rentalPeriod = defaultRentalPeriod ?? "DAILY";
-    const rentalQuantity = defaultRentalQuantity ?? 1;
-    const groupLines = (
-      await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", a.projectId))
-        .collect()
-    ).filter((li) => li.organizationId === a.orgId && li.groupId === a.groupId && !li.isKitChild);
-    let suggested = 0;
-    for (const li of groupLines) {
-      if (li.isCustomItem) continue;
-      const model = li.modelId ? await getModel(li.modelId) : null;
-      const rate =
-        rentalPeriod === "WEEKLY"
-          ? Number(model?.weeklyRate ?? model?.dailyRate ?? li.unitPrice ?? 0)
-          : Number(model?.dailyRate ?? li.unitPrice ?? 0);
-      suggested += rate * (li.quantity ?? 0) * rentalQuantity;
-    }
+    // ── Suggested price recompute — the SHARED computeGroupSuggestedPrice port
+    // (convex/lib/suggestedPrice.ts). This used to be a fourth hand-duplicated
+    // copy of the formula; #943 collapses it into the one canonical helper every
+    // other call site already uses (recomputeGroupSuggestedNative in
+    // lineItemWrites.ts, recomputeGroupSuggestedById in projectGroupsWrites.ts,
+    // subHireLineGen.ts).
+    const suggested = await computeGroupSuggestedPrice(ctx, {
+      projectId: a.projectId,
+      groupId: a.groupId,
+      orgId: a.orgId,
+      rentalStartDate: project.rentalStartDate,
+      rentalEndDate: project.rentalEndDate,
+    });
     // Patch the group we just inserted by its _id — never re-query by the global cuid.
-    await ctx.db.patch(groupDocId, { suggestedPrice: round(suggested), updatedAt: a.now });
+    await ctx.db.patch(groupDocId, { suggestedPrice: suggested, updatedAt: a.now });
 
     // ── Totals recalc (always — idempotent + correct) ──────────────────────────
     await recalcProjectTotals(ctx, a.projectId, a.orgId, orgDefaultTaxRate, a.now);

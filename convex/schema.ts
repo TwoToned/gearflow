@@ -838,8 +838,15 @@ export default defineSchema({
     rentalStartDate: v.optional(v.number()),
     rentalEndDate: v.optional(v.number()),
     projectManagerId: v.optional(v.string()),
-    defaultRentalPeriod: v.optional(enums.RentalPeriod),
-    defaultRentalQuantity: v.optional(v.number()),
+    // Derived billing weeks/days (#943) — the project-level "billed as N wk M d"
+    // summary is DERIVED from rentalStartDate/rentalEndDate via
+    // convex/lib/billing-derivation.ts `deriveBillingSummary`, never persisted.
+    // These are ONLY the manual override + "edited" marker: absent = derived,
+    // present = user-entered override. Replaces the retired
+    // defaultRentalPeriod/defaultRentalQuantity + RentalPeriod enum (dead since
+    // migration 20260617000000 — see FEATUREDOCS/10).
+    billingWeeksOverride: v.optional(v.number()),
+    billingDaysOverride: v.optional(v.number()),
     taxRate: v.optional(v.number()),
     equipmentRevenue: v.optional(v.number()),
     serviceCostTotal: v.optional(v.number()),
@@ -1079,8 +1086,6 @@ export default defineSchema({
     // Flat $ amount off `price × quantity` (#883) — mirrors projectLineItems.discount.
     discount: v.optional(v.number()),
     suggestedPrice: v.optional(v.number()),
-    rentalPeriod: v.optional(enums.RentalPeriod),
-    rentalQuantity: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),

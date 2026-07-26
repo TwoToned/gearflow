@@ -109,10 +109,6 @@ export const PricingType = v.union(
   v.literal("PER_HOUR"),
   v.literal("OPTIMIZED"),
 );
-export const RentalPeriod = v.union(
-  v.literal("DAILY"),
-  v.literal("WEEKLY"),
-);
 export const LineItemStatus = v.union(
   v.literal("QUOTED"),
   v.literal("CONFIRMED"),

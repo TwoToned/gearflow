@@ -67,8 +67,6 @@ export interface GroupData {
   price: unknown;
   discount: unknown;
   suggestedPrice: unknown;
-  rentalPeriod: string | null;
-  rentalQuantity: number | null;
   sortOrder: number;
   lineItems?: LineItemData[];
 }

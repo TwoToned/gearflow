@@ -1,6 +1,6 @@
 # Warehouse Operations
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 ## UI Terminology
 - "Check Out" is displayed as **"Deploy"** in the UI
@@ -253,16 +253,27 @@ Before deploying or returning a kit (or prep-kit) with unverified items:
 ## Kit Groups in Deploy/Return Tabs
 Kits and prep-kits appear as expandable groups in the Deploy and Return tabs. Uses `kit-group` GroupEntry variant. Parent line item has `kitId` set, children have `isKitChild: true`. Checkbox selection routes to `kitCheckOutMutation`/`kitCheckInMutation`.
 
-**Accessory parents do NOT get this treatment yet.** Issue #794 asked for accessory-parent
-lines (top-level, no `kitId`, has `ACCESSORY` children) to render the same way — expandable,
-with verification circles and the partial-deploy dialog. That's shipped for the **Online Pick
-List** and **printable Pull Sheet** (accessories render indented, badged "Accessory", and
-count toward pick progress — see below), and `KitChildRows`/`MobileKitChildCards` now render
-an "Accessory" badge when reused for one. But `groupItems`/`groupCheckinItems` in the main
-warehouse page (Deploy/Return/Prep/De-prep tabs) still only special-case `kit-group` — an
-accessory parent falls through to the plain serialized/single-item branch, so it does NOT
-yet get its own expandable group, verification circles, or "Deploy Verified Only" dialog in
-those four tabs. Tracked as a follow-up (TODOS.md).
+**Accessory parents get the same treatment (shipped, issue #794 follow-up).**
+`isAccessoryParent`/`accessoryChildrenOf` (`warehouse-types.ts`) detect a
+top-level, no-`kitId` line with an `ACCESSORY` child, and `groupItems`/
+`groupCheckinItems` emit a fifth `GroupEntry` kind, `"accessory-group"` —
+checked in the same slot as `kit-group` (before `isBulkItem`), across all four
+tabs (Pick/Prep, Deploy, Return, De-prep — De-prep reuses `DeployTab` with
+`mode="deprep"`, same grouping). `isExpandableParent`/`expandableChildrenOf`
+generalise the five equipment-stage filters' kit-only children check to cover
+both kinds, so an accessory parent moves through Pick → Prep → Deploy →
+Return staged exactly like a kit, gated on child status/prepStatus. Rendering
+reuses `KitChildRows`/`MobileKitChildCards` unchanged (an "Accessories" badge
+instead of "Kit", the parent's own asset tag instead of a kit tag) — same
+expand/collapse, same `collectAllVerifiableIds`-driven "X/Y verified" badge,
+same clickable verify circles. **Not shipped:** a `kitConfirm`-style "Deploy
+Verified Only"/"Deploy All" partial-action dialog specifically for accessory
+groups (kits still have theirs; an accessory group's checkbox selects the
+whole parent, no partial-selection dialog yet) — tracked as a follow-up.
+See [FEATUREDOCS/48](./48-child-assets-accessories.md) for the checkout gate
+that pairs with this (blocks Deploy when a parent's DEFAULT accessories aren't
+packed, asks for a reason on missing OPTIONALs) and for the Online Pick List /
+Pull Sheet rendering that shipped in the first pass.
 
 ### Nested Kit Rendering (`KitChildRows`)
 Children of a kit/prep-kit that are themselves kits render with:

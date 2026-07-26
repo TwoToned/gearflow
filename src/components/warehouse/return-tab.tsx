@@ -419,6 +419,86 @@ export function ReturnTab({
                     );
                   }
 
+                  // --- Accessory group ---
+                  if (entry.kind === "accessory-group") {
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allIds = collectAllVerifiableIds(entry.children, "return");
+                    const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                    const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                    const isPartiallyDeployed = entry.children.some((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
+                    return (
+                      <Fragment key={entry.groupKey}>
+                        <TableRow
+                          className={`cursor-pointer hover:bg-elev ${focusRing}`}
+                          onClick={() => toggleExpanded(entry.groupKey)}
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleExpanded(entry.groupKey);
+                            }
+                          }}
+                        >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedIn.has(entry.item.id)}
+                              onCheckedChange={() => toggleSelection(selectedIn, setSelectedIn, entry.item.id)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <ChevronRight className={`h-4 w-4 text-muted transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                              <span className="font-medium text-ink">{modelDisplayName(entry.item)}</span>
+                              <Badge status="neutral" className="ml-1">
+                                Accessories
+                              </Badge>
+                              {allIds.length > 0 && (
+                                <Badge
+                                  status={allVerified ? "ok" : verifiedCount > 0 ? "warn" : "neutral"}
+                                  className="ml-1 tabular-nums"
+                                >
+                                  {verifiedCount}/{allIds.length} verified
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="t-mono text-muted">
+                            {entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
+                          </TableCell>
+                          <TableCell className="text-center tabular-nums">{entry.children.length}</TableCell>
+                          <TableCell>
+                            {isPartiallyDeployed ? (
+                              <Badge status="warn">
+                                Partial
+                              </Badge>
+                            ) : (
+                              <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <KitChildRows
+                            kitChildren={entry.children}
+                            verifiedKitItems={verifiedKitItems}
+                            expandedGroups={expandedGroups}
+                            toggleExpanded={toggleExpanded}
+                            mode="return"
+                            onToggleVerify={(assetId) => {
+                              setVerifiedKitItems((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(assetId)) next.delete(assetId);
+                                else next.add(assetId);
+                                return next;
+                              });
+                            }}
+                          />
+                        )}
+                      </Fragment>
+                    );
+                  }
+
                   // --- Single item ---
                   const item = entry.item;
                   const isBulk = isBulkItem(item);
@@ -587,6 +667,53 @@ export function ReturnTab({
                           </>
                         }
                         assetTag={entry.item.kit?.assetTag || "—"}
+                        qtyLabel={entry.children.length}
+                        status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                      >
+                        <MobileKitChildCards
+                          kitChildren={entry.children}
+                          verifiedKitItems={verifiedKitItems}
+                          expandedGroups={expandedGroups}
+                          toggleExpanded={toggleExpanded}
+                          mode="return"
+                          onToggleVerify={(assetId) => {
+                            setVerifiedKitItems((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(assetId)) next.delete(assetId);
+                              else next.add(assetId);
+                              return next;
+                            });
+                          }}
+                        />
+                      </ScanGroupCard>
+                    );
+                  }
+
+                  if (entry.kind === "accessory-group") {
+                    const isExpanded = expandedGroups.has(entry.groupKey);
+                    const allIds = collectAllVerifiableIds(entry.children, "return");
+                    const verifiedCount = allIds.filter((id) => verifiedKitItems.has(id)).length;
+                    const allVerified = allIds.length > 0 && verifiedCount === allIds.length;
+                    const isPartiallyDeployed = entry.children.some((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
+                    return (
+                      <ScanGroupCard
+                        key={entry.groupKey}
+                        selected={selectedIn.has(entry.item.id)}
+                        onToggleSelect={() => toggleSelection(selectedIn, setSelectedIn, entry.item.id)}
+                        expanded={isExpanded}
+                        onToggleExpand={() => toggleExpanded(entry.groupKey)}
+                        name={modelDisplayName(entry.item)}
+                        badges={
+                          <>
+                            <Badge status="neutral">Accessories</Badge>
+                            {allIds.length > 0 && (
+                              <Badge status={allVerified ? "ok" : verifiedCount > 0 ? "warn" : "neutral"} className="tabular-nums">
+                                {verifiedCount}/{allIds.length} verified
+                              </Badge>
+                            )}
+                          </>
+                        }
+                        assetTag={entry.item.asset?.assetTag || entry.item.bulkAsset?.assetTag || "—"}
                         qtyLabel={entry.children.length}
                         status={isPartiallyDeployed ? <Badge status="warn">Partial</Badge> : <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
                       >

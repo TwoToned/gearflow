@@ -389,7 +389,7 @@ export async function checkinAccessoryChildren(
 
 type AccessoryProfile = {
   serialised: Array<{ assetId: string; modelId: string | null; modelName: string | null }>;
-  bulks: Array<{ bulkAssetId: string; quantity: number; modelId: string | null; modelName: string | null }>;
+  bulks: Array<{ bulkAssetId: string; quantity: number; modelId: string | null; modelName: string | null; inclusion: "DEFAULT" | "OPTIONAL" }>;
 };
 
 /** A parent line's durable per-line accessory selection (issue #794). Absent/null
@@ -397,6 +397,9 @@ type AccessoryProfile = {
 export type AccessoryPlan = {
   excluded: string[];
   added: Array<{ bulkAssetId: string; quantityPerParent?: number }>;
+  /** Required override reason per deselected DEFAULT (issue #794 follow-up) —
+   *  audit trail only, not consulted by resolution/expansion. */
+  excludedReasons?: Array<{ bulkAssetId: string; reason: string }>;
 };
 
 async function modelName(ctx: Ctx, modelId: string | null | undefined): Promise<string | null> {
@@ -447,7 +450,9 @@ export async function resolveLineAccessoryPlan(
   const bulks: AccessoryProfile["bulks"] = [];
   for (const b of childBulkItems) {
     const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", b.bulkAssetId)).unique();
-    bulks.push({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: ba?.modelId ?? null, modelName: await modelName(ctx, ba?.modelId) });
+    // Asset-level bulk children are always-default: they model physical attachment
+    // to this specific unit, not a template tier (issue #794 gating follow-up).
+    bulks.push({ bulkAssetId: b.bulkAssetId, quantity: b.quantity, modelId: ba?.modelId ?? null, modelName: await modelName(ctx, ba?.modelId), inclusion: "DEFAULT" });
   }
   for (const m of modelBulks) {
     if (assetBulkIds.has(m.bulkAssetId)) continue; // asset-level override wins
@@ -459,7 +464,7 @@ export async function resolveLineAccessoryPlan(
     }
     const quantity = added.get(m.bulkAssetId)?.quantityPerParent ?? m.quantity;
     const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", m.bulkAssetId)).unique();
-    bulks.push({ bulkAssetId: m.bulkAssetId, quantity, modelId: ba?.modelId ?? null, modelName: await modelName(ctx, ba?.modelId) });
+    bulks.push({ bulkAssetId: m.bulkAssetId, quantity, modelId: ba?.modelId ?? null, modelName: await modelName(ctx, ba?.modelId), inclusion });
   }
   const serialised: AccessoryProfile["serialised"] = [];
   for (const c of childAssets) {
@@ -543,6 +548,7 @@ export async function expandAccessoriesForAsset(
         description: child.modelName ?? undefined,
         sortOrder: sort++,
         status: "CONFIRMED",
+        accessoryInclusion: "DEFAULT",
         createdAt: now,
         updatedAt: now,
       });
@@ -558,7 +564,7 @@ export async function expandAccessoriesForAsset(
     let childLineId = existingBulk.get(bulk.bulkAssetId) ?? null;
     if (childLineId) {
       const cl = await lineDocByCuid(ctx, childLineId);
-      if (cl) await ctx.db.patch(cl._id, { quantity: demand, description, updatedAt: now });
+      if (cl) await ctx.db.patch(cl._id, { quantity: demand, description, accessoryInclusion: bulk.inclusion, updatedAt: now });
     } else {
       childLineId = createId();
       await ctx.db.insert("projectLineItems", {
@@ -570,6 +576,7 @@ export async function expandAccessoriesForAsset(
         description,
         sortOrder: sort++,
         status: "CONFIRMED",
+        accessoryInclusion: bulk.inclusion,
         createdAt: now,
         updatedAt: now,
       });
@@ -627,14 +634,15 @@ export async function expandAccessoryChildLines(
     for (const child of profile.serialised) {
       await ctx.db.insert("projectLineItems", {
         ...base, id: createId(), modelId: child.modelId ?? undefined, assetId: child.assetId,
-        quantity: 1, description: child.modelName ?? undefined, sortOrder: sort++, createdAt: now, updatedAt: now,
+        quantity: 1, description: child.modelName ?? undefined, sortOrder: sort++,
+        accessoryInclusion: "DEFAULT", createdAt: now, updatedAt: now,
       });
     }
     for (const b of profile.bulks) {
       await ctx.db.insert("projectLineItems", {
         ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
         quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
-        sortOrder: sort++, createdAt: now, updatedAt: now,
+        sortOrder: sort++, accessoryInclusion: b.inclusion, createdAt: now, updatedAt: now,
       });
     }
     return;
@@ -658,7 +666,8 @@ export async function expandAccessoryChildLines(
       const name = await modelName(ctx, ba?.modelId);
       await ctx.db.insert("projectLineItems", {
         ...base, id: createId(), modelId: ba?.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
-        quantity: qty, description: name ? `${qty}x ${name}` : undefined, sortOrder: sort++, createdAt: now, updatedAt: now,
+        quantity: qty, description: name ? `${qty}x ${name}` : undefined, sortOrder: sort++,
+        accessoryInclusion: inclusion, createdAt: now, updatedAt: now,
       });
     }
   }
@@ -675,8 +684,8 @@ export async function expandAccessoryChildLines(
  * shipped); this function additionally refuses to delete a child that itself has
  * a CHECKED_OUT unit, since narrowing a live deployment isn't a "plan edit".
  */
-type WantedSerialised = Map<string, { modelId: string | null; modelName: string | null }>;
-type WantedBulk = Map<string, { quantity: number; modelId: string | null; modelName: string | null }>;
+type WantedSerialised = Map<string, { modelId: string | null; modelName: string | null; inclusion: "DEFAULT" | "OPTIONAL" }>;
+type WantedBulk = Map<string, { quantity: number; modelId: string | null; modelName: string | null; inclusion: "DEFAULT" | "OPTIONAL" }>;
 type ReconcileParentLine = {
   id: string;
   assetId: string | null | undefined;
@@ -699,8 +708,8 @@ async function wantedSetForAsset(ctx: Ctx, organizationId: string, assetId: stri
   const wantSerialised: WantedSerialised = new Map();
   const wantBulk: WantedBulk = new Map();
   const profile = await resolveLineAccessoryPlan(ctx, organizationId, assetId, plan);
-  for (const s of profile.serialised) wantSerialised.set(s.assetId, { modelId: s.modelId, modelName: s.modelName });
-  for (const b of profile.bulks) wantBulk.set(b.bulkAssetId, { quantity: b.quantity, modelId: b.modelId, modelName: b.modelName });
+  for (const s of profile.serialised) wantSerialised.set(s.assetId, { modelId: s.modelId, modelName: s.modelName, inclusion: "DEFAULT" });
+  for (const b of profile.bulks) wantBulk.set(b.bulkAssetId, { quantity: b.quantity, modelId: b.modelId, modelName: b.modelName, inclusion: b.inclusion });
   return { wantSerialised, wantBulk };
 }
 
@@ -713,7 +722,7 @@ function isWantedModelBulk(b: { bulkAssetId: string; inclusion?: "DEFAULT" | "OP
  *  parent line quantity, bulk-asset model name resolved). */
 async function resolveWantedModelBulkEntry(
   ctx: Ctx,
-  b: { bulkAssetId: string; quantity: number },
+  b: { bulkAssetId: string; quantity: number; inclusion?: "DEFAULT" | "OPTIONAL" },
   added: Map<string, { bulkAssetId: string; quantityPerParent?: number }>,
   parentQuantity: number,
 ): Promise<WantedBulk extends Map<string, infer V> ? V : never> {
@@ -723,6 +732,7 @@ async function resolveWantedModelBulkEntry(
     quantity: perParent * Math.max(parentQuantity, 1),
     modelId: ba?.modelId ?? null,
     modelName: await modelName(ctx, ba?.modelId),
+    inclusion: b.inclusion ?? "DEFAULT",
   };
 }
 
@@ -761,9 +771,9 @@ function isWantedChild(child: ExistingAccessoryChildren[number], wanted: WantedS
 async function rescaleKeptBulkChild(ctx: Ctx, child: ExistingAccessoryChildren[number], wanted: WantedSet, now: number): Promise<void> {
   if (!child.bulkAssetId) return;
   const want = wanted.wantBulk.get(child.bulkAssetId)!;
-  if (child.quantity === want.quantity) return;
+  if (child.quantity === want.quantity && child.accessoryInclusion === want.inclusion) return;
   const desc = want.modelName ? `${want.quantity}x ${want.modelName}` : child.description;
-  await ctx.db.patch(child._id, { quantity: want.quantity, description: desc, updatedAt: now });
+  await ctx.db.patch(child._id, { quantity: want.quantity, description: desc, accessoryInclusion: want.inclusion, updatedAt: now });
 }
 
 /** Delete a no-longer-wanted accessory child + its units. Throws if a unit has
@@ -812,7 +822,8 @@ async function insertMissingSerialisedAccessories(
     if (existingAssetIds.has(assetId)) continue;
     await ctx.db.insert("projectLineItems", {
       ...base, id: createId(), modelId: s.modelId ?? undefined, assetId,
-      quantity: 1, description: s.modelName ?? undefined, sortOrder: sort.n++, createdAt: now, updatedAt: now,
+      quantity: 1, description: s.modelName ?? undefined, sortOrder: sort.n++,
+      accessoryInclusion: s.inclusion, createdAt: now, updatedAt: now,
     });
   }
 }
@@ -826,7 +837,7 @@ async function insertMissingBulkAccessories(
     await ctx.db.insert("projectLineItems", {
       ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId,
       quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
-      sortOrder: sort.n++, createdAt: now, updatedAt: now,
+      sortOrder: sort.n++, accessoryInclusion: b.inclusion, createdAt: now, updatedAt: now,
     });
   }
 }

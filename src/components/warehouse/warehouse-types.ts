@@ -16,6 +16,9 @@ export interface LineItem {
   /** Child discriminator: KIT (kit member) vs ACCESSORY (permanently attached
    *  to a parent asset). Null on top-level lines. */
   childKind?: string | null;
+  /** Denormalized tier on an ACCESSORY child line — DEFAULT accessories gate
+   *  checkout, OPTIONAL ones only require an explain-why when missing. */
+  accessoryInclusion?: "DEFAULT" | "OPTIONAL" | null;
   parentLineItemId: string | null;
   model: { name: string; modelNumber?: string | null; assetType?: string; _count?: { modelCheckItems: number } } | null;
   asset: { assetTag: string } | null;
@@ -62,7 +65,8 @@ export type GroupEntry =
   | { kind: "single"; item: LineItem }
   | { kind: "serialized-group"; groupKey: string; modelName: string; items: LineItem[] }
   | { kind: "bulk-group"; groupKey: string; item: LineItem; unitCount: number }
-  | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] };
+  | { kind: "kit-group"; groupKey: string; item: LineItem; children: LineItem[] }
+  | { kind: "accessory-group"; groupKey: string; item: LineItem; children: LineItem[] };
 
 // "Bulk" means: a multi-unit line item without individual serialized assets.
 export function isBulkItem(item: LineItem) {
@@ -109,6 +113,30 @@ export function modelDisplayName(item: LineItem) {
 
 export function isKitParent(item: LineItem) {
   return !!item.kitId && !item.isKitChild;
+}
+
+// An accessory parent is NOT a kit (no kitId) — a top-level line whose
+// children include at least one ACCESSORY child (FEATUREDOCS/48). Treated
+// like a kit parent for warehouse rendering: accessories always render
+// (inseparable, not gated by any "show children" toggle).
+export function isAccessoryParent(item: LineItem) {
+  if (item.isKitChild || item.kitId) return false;
+  return (item.childLineItems ?? []).some((c) => c.childKind === "ACCESSORY");
+}
+
+export function accessoryChildrenOf(item: LineItem): LineItem[] {
+  return (item.childLineItems ?? []).filter((c) => c.childKind === "ACCESSORY");
+}
+
+// A top-level line whose children warehouse tabs must expand/roll-up like a
+// kit's — either a real kit parent or an accessory parent (see above).
+export function isExpandableParent(item: LineItem) {
+  return isKitParent(item) || isAccessoryParent(item);
+}
+
+export function expandableChildrenOf(item: LineItem): LineItem[] {
+  if (isAccessoryParent(item)) return accessoryChildrenOf(item);
+  return (item.childLineItems ?? []) as LineItem[];
 }
 
 // Sub-hire group parents have childLineItems but no kitId

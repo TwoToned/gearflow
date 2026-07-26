@@ -309,3 +309,78 @@ describe("warehouseCloses.closeOutSummary (browser-direct read)", () => {
     ).rejects.toThrow();
   });
 });
+
+// ─── gearflow#797 follow-up: per-unit-tracked returns and close-out ──────────
+// returnLineUnits (convex/lib/fulfillment.ts) only ever patches a UNIT's
+// returnCondition, never the LINE's — so for any modern per-unit-tracked item,
+// line.returnCondition stayed permanently null. closeOutSummary read that null
+// as "still pending" (blocking the close-out tab) while closeOutCore defaulted
+// the same null to "GOOD"/stored — a silent audit-trail miscount for anything
+// actually returned DAMAGED/MISSING. Fixed by having syncLineItemRollup derive
+// the line's returnCondition from its units (deriveOrderLineReturnCondition).
+describe("gearflow#797 — per-unit return syncs line.returnCondition", () => {
+  const SERVICE = { subject: "gearflow-service", svc: true };
+
+  async function seedDeployedItem(t: ReturnType<typeof convexTest>, id: string) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "manager" });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Test", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "Drum Shield", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id, organizationId: ORG, modelId: "mdl1", assetTag: id.toUpperCase(), status: "CHECKED_OUT", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", {
+        id: `L_${id}`, organizationId: ORG, projectId: "p1", type: "EQUIPMENT", modelId: "mdl1", assetId: id,
+        quantity: 1, status: "CHECKED_OUT", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItemUnits", {
+        id: `u_${id}`, organizationId: ORG, lineItemId: `L_${id}`, ordinal: 1, assetId: id,
+        quantity: 1, returnedQuantity: 0, status: "CHECKED_OUT", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+  }
+
+  test("a GOOD return is not flagged pending and counts as stored", async () => {
+    const t = makeT();
+    await seedDeployedItem(t, "as1");
+    await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER,
+      items: [{ lineItemId: "L_as1", assetId: "as1", returnCondition: "GOOD" }],
+      now: NOW,
+    });
+
+    const s = await t.withIdentity(asUser(ORG)).query(api.warehouseCloses.closeOutSummary, { orgId: ORG, projectId: "p1" });
+    expect(s.pendingCount).toBe(0);
+    expect(s.storedCount).toBe(1);
+    expect(s.canClose).toBe(true);
+
+    // The actual close-out mutation must also tally it as stored, not miscount it.
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseCloseWrites.closeOutNative, {
+      id: "wc1", orgId: ORG, projectId: "p1", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    expect(res.storedCount).toBe(1);
+    expect(res.damagedCount).toBe(0);
+  });
+
+  test("a DAMAGED return surfaces as an exception, not a silent stored count", async () => {
+    const t = makeT();
+    await seedDeployedItem(t, "as2");
+    await t.withIdentity(SERVICE).mutation(api.warehouseOps.checkinItems, {
+      organizationId: ORG, projectId: "p1", userId: USER,
+      items: [{ lineItemId: "L_as2", assetId: "as2", returnCondition: "DAMAGED" }],
+      now: NOW,
+    });
+
+    const s = await t.withIdentity(asUser(ORG)).query(api.warehouseCloses.closeOutSummary, { orgId: ORG, projectId: "p1" });
+    expect(s.pendingCount).toBe(0);
+    expect(s.damagedCount).toBe(1);
+    expect(s.storedCount).toBe(0);
+    expect(s.exceptions).toHaveLength(1);
+
+    // Regression: before the fix this silently landed in storedCount (line.returnCondition
+    // was null, and closeOutCore's `!li.returnCondition || "GOOD"` default treated null as GOOD).
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseCloseWrites.closeOutNative, {
+      id: "wc1", orgId: ORG, projectId: "p1", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    expect(res.damagedCount).toBe(1);
+    expect(res.storedCount).toBe(0);
+  });
+});

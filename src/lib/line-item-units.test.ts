@@ -3,6 +3,7 @@ import {
   computeRollupCounters,
   deriveOrderLineStatus,
   deriveOrderLinePrepStatus,
+  deriveOrderLineReturnCondition,
   nextOrdinal,
   isFullyAssigned,
   type UnitLike,
@@ -179,6 +180,48 @@ describe("deriveOrderLinePrepStatus", () => {
       unit({ status: "CONFIRMED", prepStatus: "PACKED" }),
     ];
     expect(deriveOrderLinePrepStatus("PENDING", units)).toBe("PACKED");
+  });
+});
+
+describe("deriveOrderLineReturnCondition", () => {
+  it("returns the current value when no unit has a recorded condition", () => {
+    expect(deriveOrderLineReturnCondition(null, [unit()])).toBeNull();
+    expect(deriveOrderLineReturnCondition("GOOD", [unit({ status: "CHECKED_OUT" })])).toBe(
+      "GOOD",
+    );
+  });
+
+  it("gearflow#797 follow-up: a returned unit's condition promotes the line, which return itself never does", () => {
+    // Regression: returnLineUnits only ever patches the UNIT's returnCondition,
+    // never the line's — so the close-out summary (which reads the line field)
+    // saw every per-unit-tracked return as null and flagged it "still pending"
+    // even though the item was correctly returned GOOD.
+    const units = [unit({ status: "RETURNED", returnCondition: "GOOD" })];
+    expect(deriveOrderLineReturnCondition(null, units)).toBe("GOOD");
+  });
+
+  it("worst condition wins: DAMAGED beats MISSING beats GOOD", () => {
+    expect(
+      deriveOrderLineReturnCondition(null, [
+        unit({ status: "RETURNED", returnCondition: "GOOD" }),
+        unit({ status: "RETURNED", returnCondition: "DAMAGED" }),
+        unit({ status: "RETURNED", returnCondition: "MISSING" }),
+      ]),
+    ).toBe("DAMAGED");
+    expect(
+      deriveOrderLineReturnCondition(null, [
+        unit({ status: "RETURNED", returnCondition: "GOOD" }),
+        unit({ status: "RETURNED", returnCondition: "MISSING" }),
+      ]),
+    ).toBe("MISSING");
+  });
+
+  it("ignores units that haven't been returned yet (no recorded condition)", () => {
+    const units = [
+      unit({ status: "RETURNED", returnCondition: "GOOD" }),
+      unit({ status: "CHECKED_OUT", returnCondition: null }),
+    ];
+    expect(deriveOrderLineReturnCondition(null, units)).toBe("GOOD");
   });
 });
 

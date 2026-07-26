@@ -161,6 +161,30 @@ export function deriveOrderLinePrepStatus(
 }
 
 /**
+ * Derive the order line's `returnCondition` from its units.
+ *
+ * Return only ever writes `returnCondition` onto the unit row, never the
+ * line, so without this the line's own field stays permanently null for any
+ * per-unit-tracked item — and downstream readers (close-out summary/tally)
+ * that check `line.returnCondition` can never see it.
+ *
+ * "Worst condition wins" across units with a recorded condition: any
+ * DAMAGED beats any MISSING beats GOOD, so a single damaged unit on a
+ * multi-unit line still surfaces as an exception. Units not yet returned
+ * (no recorded condition) are ignored, not treated as missing data.
+ */
+export function deriveOrderLineReturnCondition(
+  currentReturnCondition: ReturnCondition | null,
+  units: readonly UnitLike[],
+): ReturnCondition | null {
+  const withCondition = units.filter((u) => u.returnCondition != null);
+  if (withCondition.length === 0) return currentReturnCondition;
+  if (withCondition.some((u) => u.returnCondition === "DAMAGED")) return "DAMAGED";
+  if (withCondition.some((u) => u.returnCondition === "MISSING")) return "MISSING";
+  return "GOOD";
+}
+
+/**
  * Next free `ordinal` for a new unit on an order line. Ordinals are a stable
  * 1..N identity within the line; they never reuse a gap, so a unit keeps its
  * number even after siblings are removed.

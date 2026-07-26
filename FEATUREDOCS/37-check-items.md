@@ -188,7 +188,18 @@ The `ItemCheckForm` is not the only client path that can produce an empty `check
 After saving check records, if any check item has a FAIL result:
 1. Query last 3 CheckRecords for that asset + check item
 2. If 2+ are FAIL, auto-create a MaintenanceRecord (type=PREVENTATIVE)
-3. Runs as post-commit hook with `.catch(console.error)` to not block the main flow
+3. Runs in-transaction inside the calling check mutation (`checkPredictiveMaintenanceCore.ts`) — atomic with the check-record write, not a post-commit fire-and-forget.
+
+## Immediate incident report on FAIL
+
+**(GitHub #898, FEATUREDOCS/62 — additional to the predictive trigger above, not a
+replacement.)** Every FAIL, not just the 2nd-of-3, immediately opens a linked
+`MaintenanceRecord` (`type: REPAIR`, `incidentType: NEEDS_SERVICE`) instead of only
+flipping `prepStatus=FLAGGED_FAULTY` — `convex/lib/checkIncidentReportCore.ts`. The
+`ItemCheckForm` requires a reason + at least one photo on any FAILed row before the
+check can submit. See FEATUREDOCS/62 for the full data-model + entry-point writeup,
+including the separate mid-deploy "Report Issue" flow (a different trigger path,
+since checks only fire at PREP/DE-PREP — see the policy note above).
 
 ## Permissions
 

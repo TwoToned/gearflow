@@ -51,8 +51,18 @@ Overdue maintenance generates notifications. Shows first asset name + count for 
 ## Deletion
 Deleting a maintenance record releases any held assets and removes the record atomically (single transaction).
 
+## Incident-report records
+
+Records created via the "Report Issue" flow or an immediate check-item FAIL
+(FEATUREDOCS/62) are ordinary `MaintenanceRecord`s (`type: REPAIR`) with
+`incidentType`/`incidentSeverity` additionally set — not a parallel model. The
+Maintenance tab on the asset detail page shows a "Reported issue" badge for these.
+
 ## Related
+- **[FEATUREDOCS/62 — Incident Reporting](./62-incident-reporting.md)** — the
+  in-app successor to the deleted Discord `/fault` command, reusing this model.
 - Workshop Kanban (formerly `FEATUREDOCS/41-workshop-kanban.md`) and Damage Capture
   (formerly `FEATUREDOCS/40-damage-capture.md`) were both removed as features; their
   docs were deleted along with the code (`chore: remove Workshop kanban tab`,
-  `chore: remove Damage Capture feature`). No replacement docs exist.
+  `chore: remove Damage Capture feature`). No replacement docs exist — Damage
+  Capture's role is now covered by FEATUREDOCS/62's "Report Issue" flow.

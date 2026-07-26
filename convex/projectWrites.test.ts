@@ -333,6 +333,114 @@ describe("projectWrites.updateNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { crewNotes: "x".repeat(5001), updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/crewNotes/);
   });
+
+  // WS9 #948 — per-project contact picker.
+  describe("clientContactId", () => {
+    async function seedClientWithContact(t: ReturnType<typeof convexTest>, clientId: string, contactId: string) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: clientId, organizationId: ORG, name: `Client ${clientId}`, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("clientContacts", { id: contactId, organizationId: ORG, clientId, name: "Jane Doe", isPrimary: true, sortOrder: 0 });
+      });
+    }
+
+    test("accepts a contact that belongs to the project's client", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
+      });
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.clientContactId).toBe("cc1");
+    });
+
+    test("rejects a contact belonging to a DIFFERENT client (wrong-client contact)", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await seedClientWithContact(t, "c2", "cc2");
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+          ...uargs, set: { clientId: "c1", clientContactId: "cc2", updatedAt: NOW }, clear: [],
+        }),
+      ).rejects.toThrow(/not found on this project's client/i);
+    });
+
+    test("rejects a cross-org contact even if it happens to share the clientId string", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Own Co", createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("clientContacts", { id: "ccX", organizationId: "other_org", clientId: "c1", name: "Ghost", isPrimary: true, sortOrder: 0 });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+          ...uargs, set: { clientId: "c1", clientContactId: "ccX", updatedAt: NOW }, clear: [],
+        }),
+      ).rejects.toThrow(/not found on this project's client/i);
+    });
+
+    test("is cleared automatically when the project's clientId changes without an explicit new contact", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await seedClientWithContact(t, "c2", "cc2");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
+      });
+      // Switch clients WITHOUT touching clientContactId — the stale cc1 pick must
+      // not silently carry over onto c2's documents.
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
+      });
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.clientId).toBe("c2");
+      expect(p?.clientContactId).toBeUndefined();
+    });
+
+    test("is cleared when clientId is cleared outright", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { updatedAt: NOW + 1 }, clear: ["clientId"],
+      });
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.clientId).toBeUndefined();
+      expect(p?.clientContactId).toBeUndefined();
+    });
+
+    test("createNative rejects a clientContactId belonging to a different client", async () => {
+      const t = makeT();
+      await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" }); });
+      await seedClientWithContact(t, "c1", "cc1");
+      await seedClientWithContact(t, "c2", "cc2");
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, {
+          id: "pnew", organizationId: ORG, projectNumber: "P-NEW", name: "New Gig",
+          clientId: "c1", clientContactId: "cc2",
+          actor: ACTOR, auditId: "log-new",
+        }),
+      ).rejects.toThrow(/not found on this project's client/i);
+    });
+
+    test("createNative accepts a clientContactId belonging to the SAME client", async () => {
+      const t = makeT();
+      await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" }); });
+      await seedClientWithContact(t, "c1", "cc1");
+      const result = await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, {
+        id: "pnew", organizationId: ORG, projectNumber: "P-NEW", name: "New Gig",
+        clientId: "c1", clientContactId: "cc1",
+        actor: ACTOR, auditId: "log-new",
+      });
+      expect(result.created).toBe(true);
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "pnew")).first());
+      expect(p?.clientContactId).toBe("cc1");
+    });
+  });
 });
 
 describe("projectWrites.createNative", () => {

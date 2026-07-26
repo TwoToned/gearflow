@@ -1,21 +1,32 @@
 "use client";
 
 /**
- * Edit-line-item dialog — description, quantity, unit price (manual),
- * discount, notes, and the overbook confirmation flow. Extracted from
- * equipment-tab.tsx in Phase 7.
+ * Edit-line-item dialog — description, quantity, unit price, discount,
+ * placement (category/group), the optional flag, notes, and the overbook
+ * confirmation flow. Rebuilt on the equipment-add-form reference pattern
+ * (#883): RHF + zodResolver(lineItemSchema), the shared SectionTitle/Field/
+ * DiscountField primitives, and PlacementFields — closing the biggest gap
+ * called out in the issue (this dialog previously had NO placement or
+ * isOptional editing at all, and silently reset isOptional to false on
+ * every save since it was never included in the submitted payload).
  *
  * State + the availability query live inside the body keyed by
  * item.id so re-opening for a different row remounts the body and
  * seeds fresh from the new item. Parent owns updateLineItemMut and
- * receives the computed payload via onSubmit.
+ * receives the computed payload via onSubmit; placement changes go
+ * through a separate `onMove` callback since they're a different
+ * mutation (groupWrites.moveLineItem) with its own slot/suggested-price
+ * side effects — mirrors how EditGroupDialog fires price as a second,
+ * independent call alongside its main update.
  */
 
 import { useState } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useEditLock } from "@/hooks/use-collaboration";
 import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 import {
   Dialog,
@@ -26,10 +37,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { checkAvailability } from "@/server/line-items";
-import type { LineItemData } from "./equipment-rows";
+import { lineItemSchema, type LineItemFormValues } from "@/lib/validations/line-item";
+import { PlacementFields } from "./placement-fields";
+import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
+import type { LineItemData, CategoryData } from "./equipment-rows";
 
 export interface EditLineItemPayload {
   type: string;
@@ -40,6 +54,12 @@ export interface EditLineItemPayload {
   duration: number;
   discount?: number;
   notes?: string;
+  isOptional: boolean;
+}
+
+export interface EditLineItemPlacement {
+  categoryId: string | null;
+  groupId: string | null;
 }
 
 interface EditLineItemDialogProps {
@@ -50,6 +70,14 @@ interface EditLineItemDialogProps {
   rentalEndDate?: Date | null;
   /** Active organization id — used in the availability query key. */
   orgId?: string;
+  /** Categories (+ groups) for the placement picker. Omit/empty to hide
+   *  the Placement section (e.g. when categories haven't loaded yet). */
+  categories?: CategoryData[];
+  /** The item's current category/group, resolved by the caller from where
+   *  in the tree the row was clicked (line items don't carry categoryId/
+   *  groupId directly — the tree position IS the placement). */
+  initialCategoryId?: string;
+  initialGroupId?: string;
   isPending: boolean;
   onClose: () => void;
   onSubmit: (
@@ -58,6 +86,11 @@ interface EditLineItemDialogProps {
     allowOverbook: boolean,
     baseUpdatedAt?: string | number | null,
   ) => void;
+  /** Fired separately from onSubmit only when the placement picker's value
+   *  differs from initialCategoryId/initialGroupId — a no-op move is never
+   *  sent. Omitted (or the Placement section hidden) when the item is a kit
+   *  child, which moves with its parent kit rather than independently. */
+  onMove?: (id: string, placement: EditLineItemPlacement) => void;
 }
 
 export function EditLineItemDialog(props: EditLineItemDialogProps) {
@@ -78,9 +111,13 @@ function EditLineItemDialogBody({
   rentalStartDate,
   rentalEndDate,
   orgId,
+  categories,
+  initialCategoryId,
+  initialGroupId,
   isPending,
   onClose,
   onSubmit,
+  onMove,
 }: EditLineItemDialogProps & { item: LineItemData }) {
   // Edit lock — acquire while this dialog body is mounted. Released on unmount.
   const { lockState, isLocked, isStale, takeover } = useEditLock({
@@ -95,22 +132,27 @@ function EditLineItemDialogBody({
   // Disable the whole form when another user holds an active lock
   const formDisabled = isLocked;
 
-  // Form state — seeded from item via useState initializers. Each fresh
-  // open remounts the body (keyed by item.id) so these always reflect
-  // the row that was clicked.
-  const [description, setDescription] = useState(
-    item.description ?? item.model?.name ?? "",
-  );
-  const [quantity, setQuantity] = useState(String(item.quantity));
-  const [unitPrice, setUnitPrice] = useState(
-    item.unitPrice != null ? String(Number(item.unitPrice)) : "",
-  );
-  const [discount, setDiscount] = useState(
-    item.discount != null && Number(item.discount) > 0 ? String(Number(item.discount)) : "",
-  );
-  const [discountMode, setDiscountMode] = useState<"$" | "%">("$");
-  const [notes, setNotes] = useState(item.notes ?? "");
+  const form = useForm<LineItemFormValues>({
+    resolver: zodResolver(lineItemSchema),
+    defaultValues: {
+      type: (item.type as LineItemFormValues["type"]) ?? "EQUIPMENT",
+      description: item.description ?? item.model?.name ?? "",
+      quantity: item.quantity,
+      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : undefined,
+      pricingType: (item.pricingType as LineItemFormValues["pricingType"]) ?? "PER_DAY",
+      duration: item.duration ?? 1,
+      discount: item.discount != null && Number(item.discount) > 0 ? Number(item.discount) : undefined,
+      notes: item.notes ?? "",
+      isOptional: item.isOptional ?? false,
+    },
+  });
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
+
+  // Placement — kit children move with their parent kit, not independently.
+  const canEditPlacement = !item.isKitChild && !!onMove && !!categories?.length;
+  const [categoryId, setCategoryId] = useState(initialCategoryId ?? "");
+  const [groupId, setGroupId] = useState(initialGroupId ?? "");
 
   // Optimistic-concurrency baseline — captured once when the editor opens
   // (the body remounts per item.id, so the initializer runs fresh each open).
@@ -149,37 +191,44 @@ function EditLineItemDialogBody({
   const availableForEdit =
     availability ? availability.available + item.quantity : null;
 
-  const requestedQty = Number(quantity) || 1;
+  const requestedQty = Number(form.watch("quantity")) || 1;
   const isOverbooked =
     availableForEdit != null && requestedQty > availableForEdit;
 
-  function handleSave() {
-    const qty = Number(quantity) || 1;
-    const price = unitPrice ? Number(unitPrice) : undefined;
-    const dur = item.duration ?? 1;
-    let disc: number | undefined;
-    if (discount && Number(discount) > 0) {
-      if (discountMode === "%" && price != null) {
-        disc = Math.round((price * qty * dur * Number(discount)) / 100 * 100) / 100;
-      } else {
-        disc = Number(discount);
-      }
+  function handleSave(data: LineItemFormValues) {
+    const qty = Number(data.quantity) || 1;
+    const price = data.unitPrice != null ? Number(data.unitPrice) : undefined;
+    const dur = Number(data.duration) || item.duration || 1;
+    let disc = data.discount != null ? Number(data.discount) : undefined;
+    if (disc && discountMode === "%" && price != null) {
+      disc = Math.round((price * qty * dur * disc) / 100 * 100) / 100;
     }
     onSubmit(
       item.id,
       {
-        type: item.type ?? "EQUIPMENT",
+        type: data.type ?? item.type ?? "EQUIPMENT",
         quantity: qty,
         unitPrice: price,
-        description,
-        pricingType: item.pricingType ?? "PER_DAY",
+        description: data.description ?? "",
+        pricingType: data.pricingType ?? item.pricingType ?? "PER_DAY",
         duration: dur,
         discount: disc,
-        notes: notes || undefined,
+        notes: data.notes || undefined,
+        isOptional: data.isOptional ?? false,
       },
       overbookConfirmed,
       baseUpdatedAt,
     );
+
+    if (canEditPlacement) {
+      const nextCategoryId = categoryId || null;
+      const nextGroupId = groupId || null;
+      const placementChanged =
+        (initialCategoryId ?? null) !== nextCategoryId || (initialGroupId ?? null) !== nextGroupId;
+      if (placementChanged) {
+        onMove!(item.id, { categoryId: nextCategoryId, groupId: nextGroupId });
+      }
+    }
   }
 
   return (
@@ -197,42 +246,39 @@ function EditLineItemDialogBody({
         />
       )}
 
-      <div className={`space-y-4 py-2 ${formDisabled ? "pointer-events-none opacity-60" : ""}`}>
-        <div className="space-y-2">
-          <Label htmlFor="edit-description">Description</Label>
-          <Input
-            id="edit-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={formDisabled}
-          />
-        </div>
+      <form
+        onSubmit={form.handleSubmit(handleSave)}
+        className={`space-y-6 ${formDisabled ? "pointer-events-none opacity-60" : ""}`}
+      >
+        {/* Item */}
+        <section className="space-y-4">
+          <SectionTitle title="Item" hint="Description and how much of it." />
+          <Field label="Description" htmlFor="edit-description">
+            <Input id="edit-description" {...form.register("description")} disabled={formDisabled} />
+          </Field>
+          <Field label="Quantity" htmlFor="edit-quantity">
+            <Input
+              id="edit-quantity"
+              type="number"
+              min={1}
+              {...form.register("quantity")}
+              disabled={formDisabled}
+            />
+          </Field>
 
-        <div className="space-y-2">
-          <Label htmlFor="edit-quantity">Quantity</Label>
-          <Input
-            id="edit-quantity"
-            type="number"
-            min={1}
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            disabled={formDisabled}
-          />
           {availability && item.modelId && (
-            <div className="space-y-1 pt-1">
-              <p className={isOverbooked ? "text-sm text-red-600 dark:text-red-400" : "text-sm text-fg-3"}>
-                <span className="font-semibold">{availableForEdit ?? 0}</span>{" "}
+            <div className="space-y-1 rounded-[var(--r)] border border-line bg-paper-2/50 p-3 text-caption">
+              <p className={isOverbooked ? "text-t-out" : "text-muted"}>
+                <span className="t-data font-semibold">{availableForEdit ?? 0}</span>{" "}
                 available out of{" "}
-                <span className="font-semibold">{availability.effectiveStock ?? availability.totalStock}</span>{" "}
+                <span className="t-data font-semibold">{availability.effectiveStock ?? availability.totalStock}</span>{" "}
                 {availability.dateless ? "in stock" : "usable"}
                 {availability.dateless && (
-                  <span className="text-fg-3 font-normal">
-                    {" "}(no dates set — showing stock only)
-                  </span>
+                  <span className="font-normal text-muted"> (no dates set — showing stock only)</span>
                 )}
               </p>
               {(availability.unavailable ?? 0) > 0 && (
-                <p className="text-blue-600 dark:text-blue-400 text-xs">
+                <p className="text-blue t-micro">
                   {availability.unavailable} of {availability.totalStock} total not usable
                   {" "}({[
                     availability.inMaintenance ? `${availability.inMaintenance} in maintenance` : "",
@@ -241,11 +287,11 @@ function EditLineItemDialogBody({
                 </p>
               )}
               {availability.conflicts && availability.conflicts.length > 0 && (
-                <div className="flex items-start gap-2 text-amber-600 dark:text-amber-400">
+                <div className="flex items-start gap-2 text-warn">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <div>
-                    <p className="text-xs font-medium">Conflicts:</p>
-                    <ul className="list-disc pl-4 text-xs">
+                    <p className="font-medium">Conflicts:</p>
+                    <ul className="list-disc pl-4">
                       {availability.conflicts.map((c) => (
                         <li key={String(c)}>{String(c)}</li>
                       ))}
@@ -255,98 +301,118 @@ function EditLineItemDialogBody({
               )}
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="space-y-3">
-          <Label htmlFor="edit-unitPrice">Unit price</Label>
-          <div className="space-y-2">
+        {/* Pricing */}
+        <section className="space-y-4 border-t border-line pt-5">
+          <SectionTitle title="Pricing" hint="Rate and discount for this line." />
+          <Field label="Unit price ($)" htmlFor="edit-unitPrice">
             <Input
               id="edit-unitPrice"
               type="number"
               step="0.01"
               min={0}
-              value={unitPrice}
-              onChange={(e) => setUnitPrice(e.target.value)}
               placeholder="Enter price"
+              {...form.register("unitPrice")}
+              disabled={formDisabled}
             />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Label htmlFor="edit-discount" className="shrink-0 text-sm">Discount</Label>
-            <div className="flex gap-1 flex-1">
-              <Input
+          </Field>
+          <Controller
+            control={form.control}
+            name="discount"
+            render={({ field }) => (
+              <DiscountField
                 id="edit-discount"
-                type="number"
-                step="0.01"
-                min={0}
-                placeholder="0"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-                className="flex-1"
+                value={field.value == null ? "" : String(field.value)}
+                onValueChange={field.onChange}
+                mode={discountMode}
+                onModeChange={setDiscountMode}
+                disabled={formDisabled}
               />
-              <button
-                type="button"
-                onClick={() => setDiscountMode(discountMode === "$" ? "%" : "$")}
-                className="shrink-0 w-9 h-9 rounded-md border border-input text-sm font-medium hover:bg-accent transition-colors"
-              >
-                {discountMode}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="edit-notes">Notes</Label>
-          <Textarea
-            id="edit-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
+            )}
           />
-        </div>
+        </section>
+
+        {/* Placement & options */}
+        <section className="space-y-4 border-t border-line pt-5">
+          <SectionTitle title="Placement & options" hint="Where it lands and how it's treated." />
+
+          {canEditPlacement && (
+            <PlacementFields
+              categories={categories!}
+              categoryId={categoryId}
+              groupId={groupId}
+              onChange={({ categoryId, groupId }) => {
+                setCategoryId(categoryId);
+                setGroupId(groupId);
+              }}
+            />
+          )}
+
+          <Field label="Notes" htmlFor="edit-notes">
+            <Textarea id="edit-notes" {...form.register("notes")} rows={2} disabled={formDisabled} />
+          </Field>
+
+          <label className="flex cursor-pointer items-center gap-2.5">
+            <Controller
+              control={form.control}
+              name="isOptional"
+              render={({ field }) => (
+                <Checkbox
+                  id="edit-isOptional"
+                  checked={field.value ?? false}
+                  onCheckedChange={field.onChange}
+                  disabled={formDisabled}
+                />
+              )}
+            />
+            <span className="text-ui-text text-ink-2">Optional item (excluded from totals)</span>
+          </label>
+        </section>
 
         {!formDisabled && isOverbooked && (
-          <div className="rounded-md border border-red-500/50 bg-red-500/10 p-3 space-y-2">
-            <p className="text-sm font-medium text-red-600 dark:text-red-400">
-              <AlertTriangle className="inline-block mr-1.5 h-3.5 w-3.5" />
-              {rentalStartDate && rentalEndDate
-                ? `This will overbook ${requestedQty} units with only ${availableForEdit ?? 0} available across overlapping projects`
-                : `Only ${availableForEdit ?? 0} in stock — requesting ${requestedQty}`}
+          <div className="space-y-2 rounded-[var(--r)] border-l-[3px] border-t-out bg-out-soft px-3 py-2.5">
+            <p className="flex items-start gap-1.5 text-caption font-medium text-t-out">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {rentalStartDate && rentalEndDate
+                  ? `This will overbook ${requestedQty} units with only ${availableForEdit ?? 0} available across overlapping projects`
+                  : `Only ${availableForEdit ?? 0} in stock — requesting ${requestedQty}`}
+              </span>
             </p>
             {availability?.dateless && (
-              <p className="text-xs text-red-600/80 dark:text-red-400/80">
+              <p className="t-micro text-t-out/80">
                 No dates set — checking stock only (not cross-project conflicts)
               </p>
             )}
             {availability?.conflicts && availability.conflicts.length > 0 && (
-              <p className="text-xs text-red-600/80 dark:text-red-400/80">
+              <p className="t-micro text-t-out/80">
                 Conflicts with: {availability.conflicts.join(", ")}
               </p>
             )}
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
+            <label className="flex cursor-pointer items-center gap-2 text-caption">
+              <Checkbox
                 checked={overbookConfirmed}
-                onChange={(e) => setOverbookConfirmed(e.target.checked)}
-                className="accent-red-500"
+                onCheckedChange={(c) => setOverbookConfirmed(c === true)}
               />
-              <span className="text-red-600 dark:text-red-400">I understand, overbook anyway</span>
+              <span className="text-t-out">I understand, overbook anyway</span>
             </label>
           </div>
         )}
-      </div>
-      <DialogFooter>
-        <Button variant="line" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          onClick={handleSave}
-          disabled={formDisabled || isPending || (isOverbooked && !overbookConfirmed)}
-        >
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save
-        </Button>
-      </DialogFooter>
+
+        <DialogFooter>
+          <Button type="button" variant="line" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            loading={isPending}
+            disabled={formDisabled || (isOverbooked && !overbookConfirmed)}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </form>
     </>
   );
 }

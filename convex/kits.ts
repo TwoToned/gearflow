@@ -6,6 +6,7 @@ import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
+import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 
@@ -228,8 +229,8 @@ export const availableAssets = query({
   args: { orgId: v.string(), modelId: v.optional(v.string()) },
   handler: async (ctx, { orgId, modelId }) => {
     await requireOrgRead(ctx, orgId);
-    const [assets, models] = await Promise.all([
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: availability picker: scans org assets to find available candidates — accepted, revisit if large
+    const [{ rows: assets }, models] = await Promise.all([
+      collectCapped(ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: status defaults to AVAILABLE when absent, so a status-indexed scan can't safely replace this — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
@@ -249,8 +250,8 @@ export const availableBulkAssets = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
-    const [bulk, models] = await Promise.all([
-      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: availability picker: scans org assets to find available candidates — accepted, revisit if large
+    const [{ rows: bulk }, models] = await Promise.all([
+      collectCapped(ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: status defaults to ACTIVE when absent, so a status-indexed scan can't safely replace this — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));

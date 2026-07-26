@@ -27,6 +27,7 @@ import {
   HardHat,
   Clock,
   MoreHorizontal,
+  AlertTriangle,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,13 @@ const RAIL: RailItem[] = [
   { title: "My tasks", url: "/my-tasks", icon: ListTodo, hue: "blue" },
   {
     title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
-    subs: [{ title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" }],
+    subs: [
+      { title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" },
+      // WS3 #942 — org-wide hard/pencilled overbooking + crew-gap board.
+      // Blue (Projects hue, per spec) rather than its own hue — this is a
+      // projects-adjacent risk view, not a separate module.
+      { title: "Overbookings", url: "/overbookings", icon: AlertTriangle, resource: "project" },
+    ],
   },
   { title: "Schedule", url: "/availability", icon: CalendarRange, hue: "green", resource: "asset" },
   {

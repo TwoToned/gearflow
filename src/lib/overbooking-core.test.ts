@@ -21,6 +21,7 @@ function bundleLineItem(p: {
   quantity: number;
   status?: string;
   subHireId?: string | null;
+  isOptional?: boolean;
 }) {
   return {
     id: p.id,
@@ -30,6 +31,7 @@ function bundleLineItem(p: {
     quantity: p.quantity,
     status: p.status ?? "QUOTED",
     subHireId: p.subHireId ?? null,
+    isOptional: p.isOptional ?? false,
   };
 }
 
@@ -242,6 +244,80 @@ describe("reconstructOverbookedStatus", () => {
     // 6 booked against 10 bulk units → within stock, NOT overbooked.
     const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
     expect(map.has("li1")).toBe(false);
+  });
+});
+
+// ─── WS3 (#942) two-layer hard/pencilled split ────────────────────────────────
+
+describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", () => {
+  it("an isOptional line stays pencilled even on a CONFIRMED project — no hard flag", () => {
+    // stock 1; this CONFIRMED project's line is isOptional and books 2 → would
+    // have been flagged pre-WS3, but optional demand never counts toward hard.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 2, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED", isOptional: true },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 2, isOptional: true })],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.has("li1")).toBe(false);
+  });
+
+  it("a QUOTED project's own (non-optional) demand stays entirely pencilled — no hard flag", () => {
+    // stock 1; this QUOTED project alone books 2 — the gig isn't locked in yet,
+    // so none of its demand counts toward the hard sum.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 2, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "QUOTED" })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 2 })],
+    });
+    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
+    expect(map.has("li1")).toBe(false);
+  });
+
+  it("computes pencilledOverBy as the extra collision from a separate not-yet-confirmed project's demand", () => {
+    // stock 2 (2 assets). THIS_PROJECT (CONFIRMED) books 3 → hard overBy 1.
+    // A SEPARATE project (QUOTED) books 2 more of the same model — pencilled
+    // demand that would push the overage to 3 if it were also confirmed, i.e.
+    // pencilledOverBy = 3 - 1 = 2.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 3, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1" })],
+      projects: [
+        project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" }),
+        project({ id: "proj_quoted", start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "QUOTED" }),
+      ],
+      lineItems: [
+        bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 3 }),
+        bundleLineItem({ id: "li_quoted", projectId: "proj_quoted", modelId: "m1", quantity: 2 }),
+      ],
+    });
+    const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 2 });
+  });
+
+  it("pencilledOverBy is 0 when there is no pencilled demand at all (pure hard case, unchanged)", () => {
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 3, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 3 })],
+    });
+    const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 0 });
   });
 });
 

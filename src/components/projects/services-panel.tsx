@@ -7,6 +7,7 @@ import { useProjectServices, refreshProjectServices, useProjectServicesSummary, 
 import { useServiceTemplates } from "@/hooks/use-service-templates";
 import { refreshProjectCrew } from "@/hooks/use-project-crew";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -687,11 +688,19 @@ function ServiceCard({
   const isMultiDay = service.date && service.endDate &&
     new Date(service.date).toISOString().slice(0, 10) !== new Date(service.endDate).toISOString().slice(0, 10);
 
-  // Crew cost subtotal (D12)
-  const crewCostTotal = service.crewAssignments?.reduce(
+  // "Filled" crew — excludes DECLINED/CANCELLED so a declined-and-never-replaced
+  // assignment doesn't silently read as staffed (bug fix, WS3 #942: this predicate
+  // used raw crewAssignments.length, so 2× DECLINED against crewCountRequired: 2
+  // showed a full avatar stack and no "needed" warning). Mirrors
+  // convex/crewAvailability.ts's own EXCLUDED = {CANCELLED, DECLINED} pattern.
+  const filledCrewAssignments = (service.crewAssignments ?? []).filter((a) => isFilledAssignmentStatus(a.status));
+
+  // Crew cost subtotal (D12) — cost of FILLED assignments only (a declined
+  // assignment never actually cost anything).
+  const crewCostTotal = filledCrewAssignments.reduce(
     (sum, a) => sum + (a.estimatedCost ? Number(a.estimatedCost) : 0),
     0,
-  ) ?? 0;
+  );
 
   return (
     <div className={`group rounded-[var(--r-lg)] bg-card p-4 border border-line shadow-[var(--sh-card)] ${isCancelled ? "opacity-50" : ""} ${selected ? "ring-2 ring-red/40" : ""}`}>
@@ -780,7 +789,7 @@ function ServiceCard({
           )}
 
           {/* Crew — avatar stack with 3 max + overflow (D14) */}
-          {(service.crewRole || service.crewAssignments?.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
+          {(service.crewRole || filledCrewAssignments.length > 0 || (service.crewCountRequired != null && service.crewCountRequired > 0)) && (
             <div className="flex items-center gap-1.5 text-ui-text text-muted flex-wrap">
               <Users className="h-3 w-3 shrink-0" />
               {service.crewRole && (
@@ -791,11 +800,11 @@ function ServiceCard({
                   {service.crewRole.name}
                 </span>
               )}
-              {service.crewAssignments?.length > 0 ? (
+              {filledCrewAssignments.length > 0 ? (
                 <div className="flex items-center gap-1">
                   {/* Avatar stack — max 3 */}
                   <div className="flex -space-x-1">
-                    {service.crewAssignments.slice(0, 3).map((a) => (
+                    {filledCrewAssignments.slice(0, 3).map((a) => (
                       <button
                         key={a.id}
                         onClick={() => onCrewMessage(a.crewMember.id, `${a.crewMember.firstName} ${a.crewMember.lastName}`)}
@@ -809,16 +818,16 @@ function ServiceCard({
                         />
                       </button>
                     ))}
-                    {service.crewAssignments.length > 3 && (
+                    {filledCrewAssignments.length > 3 && (
                       <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-card bg-paper-2 text-badge font-medium">
-                        +{service.crewAssignments.length - 3}
+                        +{filledCrewAssignments.length - 3}
                       </span>
                     )}
                   </div>
                   {/* Crew cost subtotal (D12) */}
                   {crewCostTotal > 0 && (
                     <span className="text-caption text-muted ml-1">
-                      {service.crewAssignments.length} crew · {formatCurrency(crewCostTotal)}
+                      {filledCrewAssignments.length} crew · {formatCurrency(crewCostTotal)}
                     </span>
                   )}
                 </div>
@@ -827,9 +836,9 @@ function ServiceCard({
                   {service.crewCountRequired} needed — none assigned
                 </span>
               ) : null}
-              {service.crewCountRequired != null && service.crewCountRequired > 0 && service.crewAssignments?.length > 0 && service.crewAssignments.length < service.crewCountRequired && (
+              {service.crewCountRequired != null && service.crewCountRequired > 0 && filledCrewAssignments.length > 0 && filledCrewAssignments.length < service.crewCountRequired && (
                 <span className="text-warn text-caption">
-                  ({service.crewAssignments.length}/{service.crewCountRequired})
+                  ({filledCrewAssignments.length}/{service.crewCountRequired})
                 </span>
               )}
             </div>

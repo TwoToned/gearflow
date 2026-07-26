@@ -161,6 +161,7 @@ import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as orgExport from "../orgExport.js";
 import type * as orgSettings from "../orgSettings.js";
 import type * as overbooking from "../overbooking.js";
+import type * as overbookingBoard from "../overbookingBoard.js";
 import type * as parity from "../parity.js";
 import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
 import type * as projectCategories from "../projectCategories.js";
@@ -396,6 +397,7 @@ declare const fullApi: ApiFromModules<{
   orgExport: typeof orgExport;
   orgSettings: typeof orgSettings;
   overbooking: typeof overbooking;
+  overbookingBoard: typeof overbookingBoard;
   parity: typeof parity;
   pendingSSOApprovals: typeof pendingSSOApprovals;
   projectCategories: typeof projectCategories;

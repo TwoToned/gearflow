@@ -690,6 +690,14 @@ export default defineSchema({
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
+    // WS3 (#942) — minimal pre-WS11 stub: a negative value means this bulk-asset
+    // row has been sold below its restocked count and needs procuring. No UI
+    // writes this field yet (WS11 owns the full sale-stock feature); it exists
+    // solely so the Overbookings & Gaps board's "Sale stock to procure" section
+    // has a real field to read instead of a not-yet-built one. `undefined` (the
+    // overwhelming majority today) is never negative, so it's inert until WS11
+    // (or a manual admin/backfill write) starts populating it.
+    saleStockQuantity: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1851,7 +1859,12 @@ export default defineSchema({
     .index("by_responseToken", ["responseToken"])
     .index("by_crewMemberId_startDate", ["crewMemberId", "startDate"])
     .index("by_crewMemberId_startDate_endDate", ["crewMemberId", "startDate", "endDate"])
-    .index("by_organizationId_status", ["organizationId", "status"]),
+    .index("by_organizationId_status", ["organizationId", "status"])
+    // WS3 (#942) — range-scan an org's assignments by `startDate` for the
+    // Overbookings & Gaps board's "unconfirmed crew" section (bounded
+    // [MIN_TS, rangeEnd] scan). The existing `by_crewMemberId_startDate*`
+    // indexes are member-scoped only; this is the org-wide equivalent R-9.8 needs.
+    .index("by_organizationId_startDate", ["organizationId", "startDate"]),
 
   // CrewShift
   crewShifts: defineTable({
@@ -1970,7 +1983,12 @@ export default defineSchema({
     .index("by_lineItemId", ["lineItemId"])
     .index("by_crewRoleId", ["crewRoleId"])
     .index("by_projectId_type", ["projectId", "type"])
-    .index("by_projectId_date", ["projectId", "date"]),
+    .index("by_projectId_date", ["projectId", "date"])
+    // WS3 (#942) — range-scan an org's services by `date` for the Overbookings &
+    // Gaps board's "services missing crew" section (bounded [MIN_TS, rangeEnd]
+    // scan, the dashboardStats.ts MIN_TS idiom). `by_projectId_date` only serves a
+    // single-project scan; this is the org-wide equivalent R-9.8 needs.
+    .index("by_organizationId_date", ["organizationId", "date"]),
 
   // ServiceTemplate
   serviceTemplates: defineTable({

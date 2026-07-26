@@ -68,6 +68,8 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeBlocking: () => [BLOCKER],
   useNativeActivity: () => ({ logs: [], testRecords: [], maintenanceRecords: [] }),
   useNativeMyOpenTasks: () => [TASK],
+  // WS3 #942 — nonzero so the overbooking-chip test below has something to render.
+  useNativeOverbookingCounts: () => ({ hardCount: 2, pencilledCount: 1, saleStockCount: 3 }),
 }));
 
 import DashboardPage from "../page";
@@ -112,5 +114,17 @@ describe("DashboardPage reorder (smoke)", () => {
   it("renders the org-risk zone with the needs-attention chips", () => {
     render(<DashboardPage />);
     expect(screen.getByText("Needs attention")).toBeDefined();
+  });
+
+  // WS3 #942 — the Overbookings & Gaps board's three dashboard chips, backed
+  // by the cheap overbookingBoard.counts query (mocked to a nonzero count
+  // above so a real chip actually renders).
+  it("renders hard/pencilled/sale-stock chips linking to /overbookings", () => {
+    render(<DashboardPage />);
+    expect(screen.getByText(/2 hard overbookings/)).toBeDefined();
+    expect(screen.getByText(/1 pencilled collision/)).toBeDefined();
+    expect(screen.getByText(/3 sale stock to procure/)).toBeDefined();
+    const link = screen.getByText(/2 hard overbookings/).closest("a");
+    expect(link?.getAttribute("href")).toBe("/overbookings");
   });
 });

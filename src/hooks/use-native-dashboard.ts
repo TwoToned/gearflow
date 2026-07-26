@@ -139,6 +139,32 @@ export function useNativeMyOpenTasks(orgId: string | undefined) {
   ) as NativeMyOpenTask[] | undefined;
 }
 
+export interface NativeOverbookingCounts {
+  hardCount: number;
+  pencilledCount: number;
+  saleStockCount: number;
+}
+
+/**
+ * overbookingBoard.counts: the three Overbookings & Gaps dashboard-chip counts
+ * (WS3 #942) — hard overbookings, pencilled collisions, sale stock to
+ * procure — over the board's default 30-day horizon (the dashboard has no
+ * range picker; open `/overbookings` for that). Deliberately the CHEAP counts
+ * query, not the full `bundle` subscription the board page uses — a chip
+ * needs three numbers, not every row.
+ */
+const DAY_MS = 24 * 60 * MINUTE;
+
+export function useNativeOverbookingCounts(orgId: string | undefined): NativeOverbookingCounts | undefined {
+  const enabled = !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  const rangeEnd = enabled ? nowBucket + 30 * DAY_MS : 0;
+  return useAuthedQuery(
+    api.overbookingBoard.counts,
+    enabled ? { orgId: orgId!, rangeStart: nowBucket, rangeEnd } : "skip",
+  ) as NativeOverbookingCounts | undefined;
+}
+
 export interface NativeSubHireStats {
   activeSubHires: number;
   monthlySubHireCost: number;

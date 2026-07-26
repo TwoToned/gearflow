@@ -12,11 +12,17 @@ import {
   computeStockBreakdown as coreStock,
   resolveModelAssetType as coreType,
   computeModelAvailability,
+  isConfirmedOrLater as coreIsConfirmedOrLater,
+  PENCILLED_PROJECT_STATUSES as corePencilledStatuses,
+  HARD_PROJECT_STATUSES as coreHardStatuses,
   type ModelAvailabilityBundle,
 } from "./lib/availabilityCore";
 import {
   computeStockBreakdown as origStock,
   resolveModelAssetType as origType,
+  isConfirmedOrLater as origIsConfirmedOrLater,
+  PENCILLED_PROJECT_STATUSES as origPencilledStatuses,
+  HARD_PROJECT_STATUSES as origHardStatuses,
 } from "@/lib/overbooking-core";
 
 // ─── (a) cross-import equality — pins the duplication ─────────────────────────
@@ -51,6 +57,37 @@ describe("availabilityCore stock math == overbooking-core (byte-for-byte pin)", 
     ];
     for (const m of matrices) {
       expect(coreStock(m)).toEqual(origStock(m));
+    }
+  });
+});
+
+// ─── (a2) WS3 (#942) two-layer pencil-rule constants — cross-import pin ───────
+
+describe("availabilityCore pencil-rule constants == overbooking-core (byte-for-byte pin)", () => {
+  test("PENCILLED_PROJECT_STATUSES/HARD_PROJECT_STATUSES match exactly", () => {
+    expect([...coreHardStatuses].sort()).toEqual([...origHardStatuses].sort());
+    expect([...corePencilledStatuses].sort()).toEqual([...origPencilledStatuses].sort());
+  });
+
+  test("isConfirmedOrLater matches over every project status + nullish", () => {
+    const statuses = [
+      undefined,
+      null,
+      "ENQUIRY",
+      "QUOTING",
+      "QUOTED",
+      "CONFIRMED",
+      "PREPPING",
+      "CHECKED_OUT",
+      "ON_SITE",
+      "RETURNED",
+      "COMPLETED",
+      "INVOICED",
+      "CANCELLED",
+      "SOME_UNKNOWN_STATUS",
+    ];
+    for (const s of statuses) {
+      expect(coreIsConfirmedOrLater(s)).toBe(origIsConfirmedOrLater(s));
     }
   });
 });

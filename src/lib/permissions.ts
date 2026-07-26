@@ -139,7 +139,6 @@ export const PERMISSION_REGISTRY: Record<
     actions: [
       { key: "generate", label: "Generate" },
       { key: "send", label: "Send" },
-      { key: "manage_templates", label: "Manage Templates" },
     ],
   },
   orgSettings: {

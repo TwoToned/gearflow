@@ -88,39 +88,3 @@ export function UtilizationBar({ value, color, className }: UtilizationBarProps)
     </div>
   );
 }
-
-/** Mini date range bar for showing rental periods inline */
-interface DateRangeBarProps {
-  /** Start date */
-  start: Date;
-  /** End date */
-  end: Date;
-  /** Reference range start (e.g., start of month) */
-  rangeStart: Date;
-  /** Reference range end (e.g., end of month) */
-  rangeEnd: Date;
-  color?: string;
-  className?: string;
-}
-
-export function DateRangeBar({ start, end, rangeStart, rangeEnd, color = "var(--primary)", className }: DateRangeBarProps) {
-  const totalMs = rangeEnd.getTime() - rangeStart.getTime();
-  if (totalMs <= 0) return null;
-
-  const leftPct = Math.max(0, ((start.getTime() - rangeStart.getTime()) / totalMs) * 100);
-  const widthPct = Math.min(100 - leftPct, ((end.getTime() - start.getTime()) / totalMs) * 100);
-
-  return (
-    <div className={cn("relative h-1.5 w-full rounded-full bg-bg-inset", className)}>
-      <div
-        className="absolute h-full rounded-full"
-        style={{
-          left: `${leftPct}%`,
-          width: `${Math.max(widthPct, 2)}%`,
-          backgroundColor: color,
-          opacity: 0.7,
-        }}
-      />
-    </div>
-  );
-}

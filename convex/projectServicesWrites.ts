@@ -9,8 +9,11 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
 import { assertNumRange } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
-import { recalcProjectTotals } from "./lib/recalc";
+import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
+import { recalcServiceCostFromCrew } from "./lib/serviceCost";
 import { bumpCountersForTable } from "./lib/counters";
+import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
+import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
 import * as enums from "./lib/validators";
 
 /**
@@ -260,15 +263,6 @@ async function isCrewRoleInOrg(ctx: MutationCtx, id: string, orgId: string): Pro
   return !!r && r.organizationId === orgId;
 }
 
-/** Org default tax rate from the orgSettings mirror (Postgres-authoritative). */
-async function orgDefaultTaxRate(ctx: MutationCtx, orgId: string): Promise<number | null> {
-  const row = await ctx.db
-    .query("orgSettings")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-    .first();
-  return row?.defaultTaxRate ?? null;
-}
-
 // ─── Cascade helpers (mirror crewAssignments / projectServices cascades) ──────
 
 /** Delete an assignment + its shifts + its (org-scoped) linked time entries + counter bump. */
@@ -324,9 +318,15 @@ async function insertServiceAssignment(
     startTime?: string;
     endDate?: number;
     endTime?: string;
+    rateOverride?: number;
+    rateType?: string;
+    estimatedHours?: number;
     now: number;
   },
-): Promise<boolean> {
+): Promise<{ estimatedCost: number }> {
+  assertCrewMoney(row.rateOverride, "rateOverride");
+  assertCrewMoney(row.estimatedHours, "estimatedHours");
+
   // Idempotent on retry: a row for this cuid that IS the same logical assignment → skip.
   // A cuid that collides with an UNRELATED assignment is a hard error, not a silent skip.
   const dupById = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", row.id)).first();
@@ -337,7 +337,7 @@ async function insertServiceAssignment(
       dupById.crewMemberId === row.crewMemberId &&
       dupById.serviceId === row.serviceId
     ) {
-      return false;
+      return { estimatedCost: dupById.estimatedCost ?? 0 };
     }
     throw new ConvexError("Crew assignment already exists");
   }
@@ -347,7 +347,15 @@ async function insertServiceAssignment(
     .withIndex("by_serviceId", (q) => q.eq("serviceId", row.serviceId))
     .filter((q) => q.and(q.eq(q.field("projectId"), row.projectId), q.eq(q.field("crewMemberId"), row.crewMemberId)))
     .first();
-  if (dupTriple) return false;
+  if (dupTriple) return { estimatedCost: dupTriple.estimatedCost ?? 0 };
+
+  // Rate cascade (rateOverride → crewMember day/hourly → crewRole default → $0) — the
+  // SAME cascade a crew-panel-created assignment gets, so a service-added crew member's
+  // cost isn't silently $0 until someone happens to edit it later (issue #796).
+  const { crewMember, crewRole } = await rateInputs(ctx, row.organizationId, row.crewMemberId, row.crewRoleId);
+  const { rate, rateType } = resolveRate(row.rateOverride, row.rateType ?? null, crewMember, crewRole);
+  const estimatedCost = calculateEstimatedCost(rate, rateType, row.startDate ?? null, row.endDate ?? null, row.estimatedHours ?? null);
+
   const doc = {
     id: row.id,
     organizationId: row.organizationId,
@@ -361,12 +369,16 @@ async function insertServiceAssignment(
     ...(row.startTime ? { startTime: row.startTime } : {}),
     ...(row.endDate != null ? { endDate: row.endDate } : {}),
     ...(row.endTime ? { endTime: row.endTime } : {}),
+    ...(row.rateOverride != null ? { rateOverride: row.rateOverride } : {}),
+    ...(row.rateType ? { rateType: row.rateType as Doc<"crewAssignments">["rateType"] } : {}),
+    ...(row.estimatedHours != null ? { estimatedHours: row.estimatedHours } : {}),
+    estimatedCost,
     createdAt: row.now,
     updatedAt: row.now,
   };
   await ctx.db.insert("crewAssignments", doc);
   await bumpCountersForTable(ctx, "crewAssignments", null, doc);
-  return true;
+  return { estimatedCost };
 }
 
 async function logService(
@@ -400,7 +412,13 @@ export const createServiceNative = mutation({
     orgId: v.string(),
     projectId: v.string(),
     ...serviceInputArgs,
-    crew: v.optional(v.array(v.object({ id: v.string(), crewMemberId: v.string() }))),
+    crew: v.optional(v.array(v.object({
+      id: v.string(),
+      crewMemberId: v.string(),
+      rateOverride: v.optional(v.number()),
+      rateType: v.optional(enums.CrewRateType),
+      estimatedHours: v.optional(v.number()),
+    }))),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -471,8 +489,7 @@ export const createServiceNative = mutation({
       updatedAt: a.now,
     });
 
-    // Crew assignments (PENDING, partial-unique enforced). No rate cascade — the server's
-    // createManyServiceAssignments doesn't compute estimatedCost on the create path.
+    // Crew assignments (PENDING, partial-unique enforced, full rate cascade).
     if (a.crew && a.crew.length > 0) {
       const phase = serviceTypeToPhase(a.type);
       const { crewStart, crewEnd } = deriveCrewTimes(a.startTime, a.endTime, a.scheduledTime, a.type);
@@ -491,9 +508,16 @@ export const createServiceNative = mutation({
           ...(crewStart ? { startTime: crewStart } : {}),
           ...(serviceEndDate != null ? { endDate: serviceEndDate } : {}),
           ...(crewEnd ? { endTime: crewEnd } : {}),
+          rateOverride: c.rateOverride,
+          rateType: c.rateType,
+          estimatedHours: c.estimatedHours,
           now: a.now,
         });
       }
+      // Roll the crew's resolved cost up into costTotal — the service's own
+      // manually-entered costTotal (set just above) only survives when it has NO
+      // crew (issue #796 single source of truth).
+      await recalcServiceCostFromCrew(ctx, a.id, a.orgId, a.now);
     }
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -521,7 +545,13 @@ export const updateServiceNative = mutation({
     orgId: v.string(),
     ...serviceInputArgs,
     // Present (even []) → reconcile crew. Absent → leave crew untouched.
-    crew: v.optional(v.array(v.object({ id: v.string(), crewMemberId: v.string() }))),
+    crew: v.optional(v.array(v.object({
+      id: v.string(),
+      crewMemberId: v.string(),
+      rateOverride: v.optional(v.number()),
+      rateType: v.optional(enums.CrewRateType),
+      estimatedHours: v.optional(v.number()),
+    }))),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -589,7 +619,7 @@ export const updateServiceNative = mutation({
 
     // Reconcile crew assignments (present → reconcile, absent → untouched).
     if (a.crew !== undefined) {
-      const desiredMemberIds = new Set(a.crew.map((c) => c.crewMemberId));
+      const desiredByMember = new Map(a.crew.map((c) => [c.crewMemberId, c]));
       const existingAssignments = (
         await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", a.id)).collect()
       ).filter((r) => r.organizationId === a.orgId);
@@ -597,7 +627,7 @@ export const updateServiceNative = mutation({
 
       // Remove de-selected members' assignments (cascade shifts + time entries + counter).
       for (const asg of existingAssignments) {
-        if (!desiredMemberIds.has(asg.crewMemberId)) await cascadeDeleteAssignment(ctx, asg, a.orgId);
+        if (!desiredByMember.has(asg.crewMemberId)) await cascadeDeleteAssignment(ctx, asg, a.orgId);
       }
 
       // Add newly-selected members (partial-unique re-enforced per row).
@@ -619,22 +649,41 @@ export const updateServiceNative = mutation({
           ...(crewStart ? { startTime: crewStart } : {}),
           ...(serviceEndDate != null ? { endDate: serviceEndDate } : {}),
           ...(crewEnd ? { endTime: crewEnd } : {}),
+          rateOverride: c.rateOverride,
+          rateType: c.rateType,
+          estimatedHours: c.estimatedHours,
           now: a.now,
         });
       }
 
-      // Role-change patch on surviving assignments (set-or-clear crewRoleId).
+      // Survivors: always re-run the rate cascade + role patch (not just on role
+      // change) — a rate-table edit in the dialog must land here too, and this is the
+      // ONLY place that recomputes estimatedCost for an existing service-linked row
+      // short of editing it directly from the crew side (issue #796).
       const newRoleId = a.crewRoleId || null;
-      const oldRoleId = existing.crewRoleId ?? null;
-      if (newRoleId !== oldRoleId) {
-        for (const asg of existingAssignments) {
-          if (!desiredMemberIds.has(asg.crewMemberId)) continue; // was removed above
-          const rolePatch: Record<string, unknown> = { updatedAt: a.now };
-          rolePatch.crewRoleId = newRoleId ?? undefined;
-          await ctx.db.patch(asg._id, rolePatch);
-          await bumpCountersForTable(ctx, "crewAssignments", asg, { ...asg, ...rolePatch });
-        }
+      for (const asg of existingAssignments) {
+        const c = desiredByMember.get(asg.crewMemberId);
+        if (!c) continue; // was removed above
+        assertCrewMoney(c.rateOverride, "rateOverride");
+        assertCrewMoney(c.estimatedHours, "estimatedHours");
+        const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, asg.crewMemberId, newRoleId ?? undefined);
+        const { rate, rateType } = resolveRate(c.rateOverride, c.rateType ?? null, crewMember, crewRole);
+        const estimatedCost = calculateEstimatedCost(rate, rateType, serviceDate ?? null, serviceEndDate ?? null, c.estimatedHours ?? null);
+        const patch: Record<string, unknown> = {
+          updatedAt: a.now,
+          crewRoleId: newRoleId ?? undefined,
+          rateOverride: c.rateOverride ?? undefined,
+          rateType: c.rateType ?? undefined,
+          estimatedHours: c.estimatedHours ?? undefined,
+          estimatedCost,
+        };
+        await ctx.db.patch(asg._id, patch);
+        await bumpCountersForTable(ctx, "crewAssignments", asg, { ...asg, ...patch });
       }
+
+      // Roll the crew's resolved cost up into costTotal (only while it HAS crew —
+      // a crew-less service keeps its manually-entered costTotal untouched).
+      await recalcServiceCostFromCrew(ctx, a.id, a.orgId, a.now);
     }
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);

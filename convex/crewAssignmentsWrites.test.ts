@@ -141,6 +141,40 @@ describe("crewAssignmentsWrites", () => {
     await t.run(async (ctx) => { const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first(); if (m) await ctx.db.patch(m._id, { role: "viewer" }); });
     await expect(t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.crewAssignmentsWrites.createNative, { ...base, id: "a9", auditId: "l9" })).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  test("create/update/delete on a service-linked assignment keeps the service's costTotal + project totals in sync (#796)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false });
+    });
+
+    // Create linked straight to the service (not via projectServicesWrites) — the
+    // crew-panel dialog's "linked service" picker takes this path.
+    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.createNative, { ...base, serviceId: "s1", startDate: NOW, endDate: NOW });
+    let svc = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", "s1")).first());
+    expect(svc?.costTotal).toBe(500); // member's day rate, 1 day
+    let proj = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(proj?.serviceCostTotal).toBe(500);
+    expect(proj?.labourCostTotal).toBe(0); // service-linked — must not double count
+
+    // Editing the rate override recomputes both the service AND the project margin.
+    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.updateNative, {
+      id: "a1", orgId: ORG, crewMemberId: "c1", serviceId: "s1", status: "PENDING" as const,
+      isProjectManager: false, startDate: NOW, endDate: NOW, rateOverride: 200, rateType: "FLAT" as const,
+      now: NOW + 1, actor, auditId: "l2",
+    });
+    svc = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", "s1")).first());
+    expect(svc?.costTotal).toBe(200);
+    proj = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(proj?.serviceCostTotal).toBe(200);
+
+    // Deleting the last crew member leaves costTotal as whatever it last resolved to
+    // (recalcServiceCostFromCrew only acts while the service HAS crew) — the project
+    // total still tracks it since it re-reads serviceCostTotal fresh each recalc.
+    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.deleteNative, { id: "a1", orgId: ORG, now: NOW + 2, actor, auditId: "l3" });
+    proj = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(proj?.labourCostTotal).toBe(0);
+  });
 });
 
 describe("crewAssignments reads", () => {

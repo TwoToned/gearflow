@@ -303,7 +303,12 @@ export async function checkKitAvailability(
  *   equipmentRevenue = SUM(group.price × group.quantity)  [groups]
  *                    + SUM(standalone.lineTotal)           [ungrouped items]
  *   serviceCostTotal = SUM(service.costTotal) WHERE status != CANCELLED
- *   labourCostTotal  = SUM(assignment.estimatedCost)
+ *                      (a service's costTotal is itself auto-rolled up from its own
+ *                      crewAssignments' estimatedCost once it has crew — see
+ *                      convex/lib/serviceCost.ts recalcServiceCostFromCrew)
+ *   labourCostTotal  = SUM(assignment.estimatedCost) WHERE assignment.serviceId IS NULL
+ *                      (service-linked assignments are already counted via
+ *                      serviceCostTotal above — see convex/lib/recalc.ts)
  *   subtotal         = equipmentRevenue
  *   discountAmount   = subtotal × discountPercent / 100
  *   taxableAmount    = subtotal - discountAmount

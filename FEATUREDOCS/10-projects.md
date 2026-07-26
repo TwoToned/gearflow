@@ -94,8 +94,8 @@ retired). Routes:
 ## Financial Calculations (`recalculateProjectTotals()`)
 ```
 equipmentRevenue = SUM(group.price × group.quantity) + SUM(standalone.lineTotal)
-serviceCostTotal = SUM(service.costTotal) where billableToClient = false
-labourCostTotal = SUM(assignment.estimatedCost)
+serviceCostTotal = SUM(service.costTotal) where status != CANCELLED
+labourCostTotal = SUM(assignment.estimatedCost) where assignment.serviceId IS NULL
 
 subtotal = equipmentRevenue
 discountAmount = subtotal × discountPercent / 100
@@ -319,7 +319,11 @@ Moved out of the sidebar into its own non-template main-content tab (after
 - Uses existing financial data + `getProjectServicesSummary()` + `getProjectLabourCost()`
 
 ### Labour & Logistics Tab
-- Unified tab for services and crew (replaces separate Services/Crew tabs)
+- Single tab, single component: `ServicesPanel` (`src/components/projects/
+  services-panel.tsx`) is now the **entire** tab — there is no page-level `CrewPanel`
+  sibling anymore (issue #796). `ServicesPanel` renders the services timeline, then
+  a "Project crew" section that mounts `CrewPanel` internally (viewing/status/bulk/
+  messaging/call-sheet for every assignment on the project, service-linked or not).
 - Timeline view: services grouped by date with SectionHeader overline pattern
 - Service cards show StatusIndicator pills, crew avatar stack (3 max + overflow), inline crew cost
 - "Generate Services" button auto-creates services from project dates + service templates
@@ -358,16 +362,30 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 ### Key Behaviour
 - Each service has its own date, time, address (for delivery/pickup), crew count, pricing
 - `billableToClient` flag: when true, cost flows into project revenue instead of cost
-- `costTotal` field for direct financial roll-up (no shadow line items)
+- `costTotal` field for direct financial roll-up (no shadow line items) — **auto-calculated
+  from the service's own crew once it has any** (see Crew Integration below); a
+  crew-less service keeps a manually-typed value (e.g. vehicle/transport cost)
 - Services grouped by date in the UI
 
-### Crew Integration
+### Crew Integration (issue #796 — per-crew rate table)
 - Each service can optionally have a `crewRoleId` (FK to `CrewRole`) and `crewCountRequired`
-- Service dialog includes crew role picker and searchable crew member multi-select
-- `CrewAssignment` records auto-created with `serviceId` set
+- Service dialog includes a crew role picker, searchable crew member multi-select,
+  and — once 1+ crew are selected — a **per-crew rate table** (`CrewRateTable` in
+  `services-panel.tsx`): name, resolved rate (cascade preview), an overridable
+  rate/rate-type/hours per row, and that row's cost
+- `CrewAssignment` records auto-created with `serviceId` set, running the full rate
+  cascade immediately (`convex/lib/crewRate.ts` `resolveRate`/`calculateEstimatedCost`,
+  same as a crew-side assignment — no more "$0 until someone edits it later")
+- The table's total is the single source of truth for the service's `costTotal`:
+  `recalcServiceCostFromCrew()` (`convex/lib/serviceCost.ts`) recomputes it after
+  every create/update crew reconcile, AND after a rate edit made from the crew side
+  (`CrewPanel`'s assignment dialog / `crewAssignmentsWrites.ts`) — whichever side
+  changed the rate, both surfaces show the same number
 - Service type maps to assignment phase: DELIVERY→DELIVERY, PICKUP→PICKUP, etc.
 - Deleting a service deletes all linked crew assignments
 - Query invalidation ensures Crew and Services stay in sync
+- See [31-crew-management.md](./31-crew-management.md) "Service ↔ Crew Cost Linkage"
+  for the double-counting guard in `recalcProjectTotals`
 
 ### Defaults from Project
 - New services inherit the project location address/coordinates

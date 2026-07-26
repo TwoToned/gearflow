@@ -140,6 +140,13 @@ export function ItemCheckForm({
   // submit stays disabled while any FAIL row's photo is still uploading.
   const [failPhotosUploading, setFailPhotosUploading] = useState<Record<string, boolean>>({});
   const anyFailPhotoUploading = Object.values(failPhotosUploading).some(Boolean);
+  // Stable across renders (empty deps — setFailPhotosUploading never changes) so
+  // PhotoGridInput's `[pending, onUploadingChange]` effect only re-fires when
+  // upload state genuinely changes, not on every parent render — an inline arrow
+  // here would recreate on every render and loop forever.
+  const updateFailPhotoUploading = useCallback((checkItemId: string, uploading: boolean) => {
+    setFailPhotosUploading((prev) => ({ ...prev, [checkItemId]: uploading }));
+  }, []);
 
   // Refs used by the keyboard handler so it reads the latest props/state without re-binding.
   const handleSubmitRef = useRef<() => void>(() => {});
@@ -445,9 +452,7 @@ export function ItemCheckForm({
               onFocus={() => setFocusedRowIndex(index)}
               onUpdate={(updates) => updateCheck(mci.checkItem.id, updates)}
               getMeasurementAutoResult={getMeasurementAutoResult}
-              onFailPhotoUploadingChange={(uploading) =>
-                setFailPhotosUploading((prev) => ({ ...prev, [mci.checkItem.id]: uploading }))
-              }
+              onFailPhotoUploadingChange={updateFailPhotoUploading}
             />
           ))}
         </div>
@@ -606,14 +611,21 @@ function CheckItemRow({
     min: number | null,
     max: number | null
   ) => "PASS" | "FAIL" | null;
-  /** FAIL-only photo upload state, bubbled to the form so submit disables mid-upload. */
-  onFailPhotoUploadingChange?: (uploading: boolean) => void;
+  /** FAIL-only photo upload state, bubbled to the form so submit disables mid-upload.
+   *  Stable (keyed by checkItemId) — see ItemCheckForm's updateFailPhotoUploading. */
+  onFailPhotoUploadingChange?: (checkItemId: string, uploading: boolean) => void;
 }) {
   const ci = item.checkItem;
   const result = state?.result;
   const isFail = result === "FAIL";
   const [showNotes, setShowNotes] = useState(false);
   const notesVisible = showNotes || isFail;
+  // Bind the checkItemId once per row so the reference PhotoGridInput depends on
+  // stays stable across re-renders (same reasoning as updateFailPhotoUploading).
+  const handleFailPhotoUploadingChange = useCallback(
+    (uploading: boolean) => onFailPhotoUploadingChange?.(ci.id, uploading),
+    [onFailPhotoUploadingChange, ci.id],
+  );
 
   return (
     <div
@@ -697,7 +709,7 @@ function CheckItemRow({
           <PhotoGridInput
             value={state?.photos || []}
             onChange={(photos) => onUpdate({ photos })}
-            onUploadingChange={onFailPhotoUploadingChange}
+            onUploadingChange={handleFailPhotoUploadingChange}
             compact
             maxPhotos={6}
           />

@@ -1015,6 +1015,43 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
         }),
       ).rejects.toThrow(/accessoryPlan/);
     });
+
+    describe("excludedReasons audit trail (issue #794 follow-up)", () => {
+      test("a deselected default WITH a reason writes a distinct audit log entry", async () => {
+        const t = makeT();
+        await seedModelWithAccessories(t);
+        await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, {
+          ...smartArgs({ modelId: "m1", quantity: 1 }, { over: true, acc: true }),
+          accessoryPlan: { excluded: ["ba-def"], added: [], excludedReasons: [{ bulkAssetId: "ba-def", reason: "customer supplying their own" }] },
+        });
+        const logs = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect());
+        const removal = logs.find((l) => /Removed default accessory/i.test(l.summary ?? ""));
+        expect(removal?.summary).toMatch(/BA-DEF/);
+        expect(removal?.summary).toMatch(/customer supplying their own/);
+      });
+
+      test("a deselected default with NO reason writes no extra audit entry", async () => {
+        const t = makeT();
+        await seedModelWithAccessories(t);
+        await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, {
+          ...smartArgs({ modelId: "m1", quantity: 1 }, { over: true, acc: true }),
+          accessoryPlan: { excluded: ["ba-def"], added: [] },
+        });
+        const logs = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect());
+        expect(logs.some((l) => /Removed default accessory/i.test(l.summary ?? ""))).toBe(false);
+      });
+
+      test("rejects an excludedReasons entry with an empty reason (R-8.6.2)", async () => {
+        const t = makeT();
+        await seedModelWithAccessories(t);
+        await expect(
+          t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, {
+            ...smartArgs({ modelId: "m1", quantity: 1 }, { over: true, acc: true }),
+            accessoryPlan: { excluded: ["ba-def"], added: [], excludedReasons: [{ bulkAssetId: "ba-def", reason: "" }] },
+          }),
+        ).rejects.toThrow(/excludedReasons/);
+      });
+    });
   });
 
   test("cross-org modelId is rejected (by_cuid is global)", async () => {

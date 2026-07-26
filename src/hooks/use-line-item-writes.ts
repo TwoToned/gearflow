@@ -38,6 +38,8 @@ export interface BulkLineItemPatch {
 export interface AccessoryPlanInput {
   excluded: string[];
   added: { bulkAssetId: string; quantityPerParent?: number }[];
+  /** Required override reason per deselected DEFAULT (issue #794 follow-up). */
+  excludedReasons?: { bulkAssetId: string; reason: string }[];
 }
 
 /**

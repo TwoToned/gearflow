@@ -99,6 +99,27 @@ export const addNative = mutation({
   },
 });
 
+/** True when a fetched accessory row belongs to this model/org (narrows `acc`
+ *  to non-null for the caller — the inverse condition still reads naturally
+ *  as `if (!isOwnAccessory(...)) throw`). */
+function isOwnAccessory<T extends { organizationId: string; modelId: string }>(
+  acc: T | null,
+  orgId: string,
+  modelId: string,
+): acc is T {
+  return !!acc && acc.organizationId === orgId && acc.modelId === modelId;
+}
+
+/** Only-defined-fields patch set for updateNative — keeps the handler's own
+ *  branch count under the complexity ratchet (R-3.6). */
+function accessoryUpdateSet(f: { quantity?: number; inclusion?: "DEFAULT" | "OPTIONAL"; notes?: string }) {
+  return {
+    ...(f.quantity !== undefined ? { quantity: f.quantity } : {}),
+    ...(f.inclusion !== undefined ? { inclusion: f.inclusion } : {}),
+    ...(f.notes !== undefined ? { notes: f.notes } : {}),
+  };
+}
+
 /** Edit an existing model accessory's quantity/inclusion/notes. `bulkAssetId` is
  *  immutable (remove + re-add to change it) — this closes the "Edit the quantity
  *  instead" dead end from the addNative dup-guard error (issue #794). */
@@ -124,15 +145,11 @@ export const updateNative = mutation({
     assertStrLen(notes, "notes", { max: 500 });
 
     const acc = await ctx.db.query("modelBulkAccessories").withIndex("by_cuid", (q) => q.eq("id", accessoryId)).first();
-    if (!acc || acc.organizationId !== orgId || acc.modelId !== modelId) {
+    if (!isOwnAccessory(acc, orgId, modelId)) {
       throw new ConvexError("That default accessory is not on this model.");
     }
 
-    await ctx.db.patch(acc._id, {
-      ...(quantity !== undefined ? { quantity } : {}),
-      ...(inclusion !== undefined ? { inclusion } : {}),
-      ...(notes !== undefined ? { notes } : {}),
-    });
+    await ctx.db.patch(acc._id, accessoryUpdateSet({ quantity, inclusion, notes }));
 
     const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
     const bulkAsset = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", acc.bulkAssetId)).first();

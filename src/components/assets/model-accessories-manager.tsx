@@ -49,6 +49,64 @@ const INCLUSION_LABEL: Record<Inclusion, string> = {
   OPTIONAL: "optional",
 };
 
+/** Edit-accessory dialog — split out of ModelAccessoriesManager so the parent's
+ *  own branch count stays under the complexity ratchet (R-3.6); this component
+ *  owns its own qty/inclusion draft state, reset via `key={accessory.id}` by
+ *  the caller (see below). */
+function EditAccessoryDialog({
+  accessory,
+  onClose,
+  onSave,
+  saving,
+}: {
+  accessory: BulkAccessory;
+  onClose: () => void;
+  onSave: (values: { quantity: number; inclusion: Inclusion }) => void;
+  saving: boolean;
+}) {
+  const [editQty, setEditQty] = useState(accessory.quantity);
+  const [editInclusion, setEditInclusion] = useState<Inclusion>(accessory.inclusion ?? "DEFAULT");
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit {accessory.bulkAsset?.model?.name ?? accessory.bulkAsset?.assetTag}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="acc-edit-qty">Quantity per asset</Label>
+            <Input
+              id="acc-edit-qty"
+              type="number"
+              min={1}
+              value={editQty}
+              onChange={(e) => setEditQty(Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Inclusion</Label>
+            <Select value={editInclusion} onValueChange={(v) => setEditInclusion(v as Inclusion)}>
+              <SelectTrigger>
+                <SelectValue>{INCLUSION_LABEL[editInclusion]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="DEFAULT">Default (auto-attaches)</SelectItem>
+                <SelectItem value="OPTIONAL">Optional (PM picks at add-time)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button loading={saving} onClick={() => onSave({ quantity: editQty, inclusion: editInclusion })}>
+              Save
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }: Props) {
   const [open, setOpen] = useState(false);
   const [bulkId, setBulkId] = useState("");
@@ -56,8 +114,6 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
   const [inclusion, setInclusion] = useState<Inclusion>("DEFAULT");
 
   const [editing, setEditing] = useState<BulkAccessory | null>(null);
-  const [editQty, setEditQty] = useState(1);
-  const [editInclusion, setEditInclusion] = useState<Inclusion>("DEFAULT");
 
   const refresh = () => onChanged?.();
   const hasAny = bulkAccessories.length > 0;
@@ -97,9 +153,9 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
     onError: (e) => toast.error(e.message),
   });
   const update = useServerMutation({
-    mutationFn: () => {
+    mutationFn: (values: { quantity: number; inclusion: Inclusion }) => {
       if (!editing) throw new Error("Nothing to edit");
-      return writes.update(modelId, editing.id, { quantity: editQty, inclusion: editInclusion });
+      return writes.update(modelId, editing.id, values);
     },
     onSuccess: () => {
       toast.success("Accessory updated");
@@ -108,12 +164,6 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
     },
     onError: (e) => toast.error(e.message),
   });
-
-  const openEdit = (c: BulkAccessory) => {
-    setEditing(c);
-    setEditQty(c.quantity);
-    setEditInclusion(c.inclusion ?? "DEFAULT");
-  };
 
   return (
     <div className="space-y-3">
@@ -148,7 +198,7 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
                 size="icon"
                 variant="ghost"
                 className="touch-target size-7"
-                onClick={() => openEdit(c)}
+                onClick={() => setEditing(c)}
               >
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
@@ -221,44 +271,15 @@ export function ModelAccessoriesManager({ modelId, bulkAccessories, onChanged }:
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              Edit {editing?.bulkAsset?.model?.name ?? editing?.bulkAsset?.assetTag}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="acc-edit-qty">Quantity per asset</Label>
-              <Input
-                id="acc-edit-qty"
-                type="number"
-                min={1}
-                value={editQty}
-                onChange={(e) => setEditQty(Number(e.target.value))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Inclusion</Label>
-              <Select value={editInclusion} onValueChange={(v) => setEditInclusion(v as Inclusion)}>
-                <SelectTrigger>
-                  <SelectValue>{INCLUSION_LABEL[editInclusion]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DEFAULT">Default (auto-attaches)</SelectItem>
-                  <SelectItem value="OPTIONAL">Optional (PM picks at add-time)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button loading={update.isPending} onClick={() => update.mutate()}>
-                Save
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {editing && (
+        <EditAccessoryDialog
+          key={editing.id}
+          accessory={editing}
+          onClose={() => setEditing(null)}
+          onSave={(values) => update.mutate(values)}
+          saving={update.isPending}
+        />
+      )}
     </div>
   );
 }

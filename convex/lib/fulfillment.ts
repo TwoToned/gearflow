@@ -675,78 +675,121 @@ export async function expandAccessoryChildLines(
  * shipped); this function additionally refuses to delete a child that itself has
  * a CHECKED_OUT unit, since narrowing a live deployment isn't a "plan edit".
  */
-export async function reconcileLineAccessoryChildren(
+type WantedSerialised = Map<string, { modelId: string | null; modelName: string | null }>;
+type WantedBulk = Map<string, { quantity: number; modelId: string | null; modelName: string | null }>;
+type ReconcileParentLine = {
+  id: string;
+  assetId: string | null | undefined;
+  modelId: string | null | undefined;
+  quantity: number;
+  categoryId: string | null | undefined;
+  groupId: string | null | undefined;
+  duration: number | null | undefined;
+  pricingType: string | null | undefined;
+  organizationId: string;
+  projectId: string;
+};
+
+type WantedSet = { wantSerialised: WantedSerialised; wantBulk: WantedBulk };
+type ExistingAccessoryChildren = Awaited<ReturnType<typeof accessoryChildrenOf>>;
+
+/** The wanted set for an asset-based parent line — every accessory
+ *  resolveLineAccessoryPlan resolves for that specific asset. */
+async function wantedSetForAsset(ctx: Ctx, organizationId: string, assetId: string, plan: AccessoryPlan | null): Promise<WantedSet> {
+  const wantSerialised: WantedSerialised = new Map();
+  const wantBulk: WantedBulk = new Map();
+  const profile = await resolveLineAccessoryPlan(ctx, organizationId, assetId, plan);
+  for (const s of profile.serialised) wantSerialised.set(s.assetId, { modelId: s.modelId, modelName: s.modelName });
+  for (const b of profile.bulks) wantBulk.set(b.bulkAssetId, { quantity: b.quantity, modelId: b.modelId, modelName: b.modelName });
+  return { wantSerialised, wantBulk };
+}
+
+/** Whether a single model bulk accessory belongs in the effective set. */
+function isWantedModelBulk(b: { bulkAssetId: string; inclusion?: "DEFAULT" | "OPTIONAL" }, excluded: Set<string>, added: Map<string, { bulkAssetId: string; quantityPerParent?: number }>): boolean {
+  return (b.inclusion ?? "DEFAULT") === "DEFAULT" ? !excluded.has(b.bulkAssetId) : added.has(b.bulkAssetId);
+}
+
+/** Resolve one wanted model bulk accessory's map entry (quantity scaled by
+ *  parent line quantity, bulk-asset model name resolved). */
+async function resolveWantedModelBulkEntry(
   ctx: Ctx,
-  parentLine: {
-    id: string;
-    assetId: string | null | undefined;
-    modelId: string | null | undefined;
-    quantity: number;
-    categoryId: string | null | undefined;
-    groupId: string | null | undefined;
-    duration: number | null | undefined;
-    pricingType: string | null | undefined;
-    organizationId: string;
-    projectId: string;
-  },
-  plan: AccessoryPlan | null,
-): Promise<void> {
-  const now = Date.now();
-  const wantSerialised = new Map<string, { modelId: string | null; modelName: string | null }>();
-  const wantBulk = new Map<string, { quantity: number; modelId: string | null; modelName: string | null }>();
+  b: { bulkAssetId: string; quantity: number },
+  added: Map<string, { bulkAssetId: string; quantityPerParent?: number }>,
+  parentQuantity: number,
+): Promise<WantedBulk extends Map<string, infer V> ? V : never> {
+  const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", b.bulkAssetId)).unique();
+  const perParent = added.get(b.bulkAssetId)?.quantityPerParent ?? b.quantity;
+  return {
+    quantity: perParent * Math.max(parentQuantity, 1),
+    modelId: ba?.modelId ?? null,
+    modelName: await modelName(ctx, ba?.modelId),
+  };
+}
 
-  if (parentLine.assetId) {
-    const profile = await resolveLineAccessoryPlan(ctx, parentLine.organizationId, parentLine.assetId, plan);
-    for (const s of profile.serialised) wantSerialised.set(s.assetId, { modelId: s.modelId, modelName: s.modelName });
-    for (const b of profile.bulks) wantBulk.set(b.bulkAssetId, { quantity: b.quantity, modelId: b.modelId, modelName: b.modelName });
-  } else if (parentLine.modelId) {
-    const modelBulks = await modelBulkAccessoriesOf(ctx, parentLine.modelId);
-    const excluded = new Set(plan?.excluded ?? []);
-    const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
-    for (const b of modelBulks) {
-      const inclusion = b.inclusion ?? "DEFAULT";
-      if (inclusion === "DEFAULT") {
-        if (excluded.has(b.bulkAssetId)) continue;
-      } else if (!added.has(b.bulkAssetId)) {
-        continue;
-      }
-      const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", b.bulkAssetId)).unique();
-      const perParent = added.get(b.bulkAssetId)?.quantityPerParent ?? b.quantity;
-      wantBulk.set(b.bulkAssetId, {
-        quantity: perParent * Math.max(parentLine.quantity, 1),
-        modelId: ba?.modelId ?? null,
-        modelName: await modelName(ctx, ba?.modelId),
-      });
-    }
+/** The wanted set for a model-based parent line — no serialised accessories
+ *  (no specific asset to resolve them from), only the model's bulk template
+ *  filtered by inclusion/plan. */
+async function wantedSetForModel(ctx: Ctx, parentLine: ReconcileParentLine, plan: AccessoryPlan | null): Promise<WantedSet> {
+  const wantBulk: WantedBulk = new Map();
+  const modelBulks = await modelBulkAccessoriesOf(ctx, parentLine.modelId!);
+  const excluded = new Set(plan?.excluded ?? []);
+  const added = new Map((plan?.added ?? []).map((a) => [a.bulkAssetId, a]));
+  for (const b of modelBulks) {
+    if (!isWantedModelBulk(b, excluded, added)) continue;
+    wantBulk.set(b.bulkAssetId, await resolveWantedModelBulkEntry(ctx, b, added, parentLine.quantity));
   }
+  return { wantSerialised: new Map(), wantBulk };
+}
 
-  const existing = await accessoryChildrenOf(ctx, parentLine.organizationId, parentLine.id);
+/** The effective accessory set a plan resolves to for a parent line — same
+ *  DEFAULT-minus-excluded / OPTIONAL-plus-added resolution as
+ *  expandAccessoryChildLines, factored out so reconcileLineAccessoryChildren
+ *  stays under the complexity ratchet (R-3.6). */
+async function computeWantedAccessorySet(ctx: Ctx, parentLine: ReconcileParentLine, plan: AccessoryPlan | null): Promise<WantedSet> {
+  if (parentLine.assetId) return wantedSetForAsset(ctx, parentLine.organizationId, parentLine.assetId, plan);
+  if (parentLine.modelId) return wantedSetForModel(ctx, parentLine, plan);
+  return { wantSerialised: new Map(), wantBulk: new Map() };
+}
 
+function isWantedChild(child: ExistingAccessoryChildren[number], wanted: WantedSet): boolean {
+  if (child.assetId) return wanted.wantSerialised.has(child.assetId);
+  if (child.bulkAssetId) return wanted.wantBulk.has(child.bulkAssetId);
+  return false;
+}
+
+/** Rescale a kept bulk child's quantity if the wanted set's demand changed. */
+async function rescaleKeptBulkChild(ctx: Ctx, child: ExistingAccessoryChildren[number], wanted: WantedSet, now: number): Promise<void> {
+  if (!child.bulkAssetId) return;
+  const want = wanted.wantBulk.get(child.bulkAssetId)!;
+  if (child.quantity === want.quantity) return;
+  const desc = want.modelName ? `${want.quantity}x ${want.modelName}` : child.description;
+  await ctx.db.patch(child._id, { quantity: want.quantity, description: desc, updatedAt: now });
+}
+
+/** Delete a no-longer-wanted accessory child + its units. Throws if a unit has
+ *  itself already deployed — narrowing a live deployment isn't a "plan edit". */
+async function dropAccessoryChild(ctx: Ctx, child: ExistingAccessoryChildren[number]): Promise<void> {
+  const units = await lineUnits(ctx, child.id);
+  if (units.some((u) => u.status === "CHECKED_OUT")) {
+    throw new ConvexError(
+      `${child.description ?? "An accessory"} on this line has already deployed — return it before editing the accessory plan.`,
+    );
+  }
+  for (const u of units) await ctx.db.delete(u._id);
+  await ctx.db.delete(child._id);
+}
+
+/** Drop (or rescale) existing accessory children the wanted set no longer covers. */
+async function dropUnwantedAccessoryChildren(ctx: Ctx, existing: ExistingAccessoryChildren, wanted: WantedSet, now: number): Promise<void> {
   for (const child of existing) {
-    const keep = (child.assetId && wantSerialised.has(child.assetId)) || (child.bulkAssetId && wantBulk.has(child.bulkAssetId));
-    if (keep) {
-      if (child.bulkAssetId) {
-        const want = wantBulk.get(child.bulkAssetId)!;
-        if (child.quantity !== want.quantity) {
-          const desc = want.modelName ? `${want.quantity}x ${want.modelName}` : child.description;
-          await ctx.db.patch(child._id, { quantity: want.quantity, description: desc, updatedAt: now });
-        }
-      }
-      continue;
-    }
-    const units = await lineUnits(ctx, child.id);
-    if (units.some((u) => u.status === "CHECKED_OUT")) {
-      throw new ConvexError(
-        `${child.description ?? "An accessory"} on this line has already deployed — return it before editing the accessory plan.`,
-      );
-    }
-    for (const u of units) await ctx.db.delete(u._id);
-    await ctx.db.delete(child._id);
+    if (isWantedChild(child, wanted)) await rescaleKeptBulkChild(ctx, child, wanted, now);
+    else await dropAccessoryChild(ctx, child);
   }
+}
 
-  const existingAssetIds = new Set(existing.filter((c) => c.assetId).map((c) => c.assetId as string));
-  const existingBulkIds = new Set(existing.filter((c) => c.bulkAssetId).map((c) => c.bulkAssetId as string));
-  const base = {
+/** Shared insert base for a newly-reconciled accessory child. */
+function accessoryChildInsertBase(parentLine: ReconcileParentLine) {
+  return {
     organizationId: parentLine.organizationId,
     projectId: parentLine.projectId,
     type: "EQUIPMENT" as const,
@@ -759,22 +802,50 @@ export async function reconcileLineAccessoryChildren(
     duration: parentLine.duration ?? undefined,
     status: "CONFIRMED" as const,
   };
-  let sort = existing.length;
+}
+
+async function insertMissingSerialisedAccessories(
+  ctx: Ctx, parentLine: ReconcileParentLine, existingAssetIds: Set<string>, wantSerialised: WantedSerialised, sort: { n: number }, now: number,
+): Promise<void> {
+  const base = accessoryChildInsertBase(parentLine);
   for (const [assetId, s] of wantSerialised) {
     if (existingAssetIds.has(assetId)) continue;
     await ctx.db.insert("projectLineItems", {
       ...base, id: createId(), modelId: s.modelId ?? undefined, assetId,
-      quantity: 1, description: s.modelName ?? undefined, sortOrder: sort++, createdAt: now, updatedAt: now,
+      quantity: 1, description: s.modelName ?? undefined, sortOrder: sort.n++, createdAt: now, updatedAt: now,
     });
   }
+}
+
+async function insertMissingBulkAccessories(
+  ctx: Ctx, parentLine: ReconcileParentLine, existingBulkIds: Set<string>, wantBulk: WantedBulk, sort: { n: number }, now: number,
+): Promise<void> {
+  const base = accessoryChildInsertBase(parentLine);
   for (const [bulkAssetId, b] of wantBulk) {
     if (existingBulkIds.has(bulkAssetId)) continue;
     await ctx.db.insert("projectLineItems", {
       ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId,
       quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
-      sortOrder: sort++, createdAt: now, updatedAt: now,
+      sortOrder: sort.n++, createdAt: now, updatedAt: now,
     });
   }
+}
+
+/** Create child lines for wanted accessories that don't already exist. */
+async function insertMissingAccessoryChildren(ctx: Ctx, parentLine: ReconcileParentLine, existing: ExistingAccessoryChildren, wanted: WantedSet, now: number): Promise<void> {
+  const existingAssetIds = new Set(existing.filter((c) => c.assetId).map((c) => c.assetId as string));
+  const existingBulkIds = new Set(existing.filter((c) => c.bulkAssetId).map((c) => c.bulkAssetId as string));
+  const sort = { n: existing.length };
+  await insertMissingSerialisedAccessories(ctx, parentLine, existingAssetIds, wanted.wantSerialised, sort, now);
+  await insertMissingBulkAccessories(ctx, parentLine, existingBulkIds, wanted.wantBulk, sort, now);
+}
+
+export async function reconcileLineAccessoryChildren(ctx: Ctx, parentLine: ReconcileParentLine, plan: AccessoryPlan | null): Promise<void> {
+  const now = Date.now();
+  const wanted = await computeWantedAccessorySet(ctx, parentLine, plan);
+  const existing = await accessoryChildrenOf(ctx, parentLine.organizationId, parentLine.id);
+  await dropUnwantedAccessoryChildren(ctx, existing, wanted, now);
+  await insertMissingAccessoryChildren(ctx, parentLine, existing, wanted, now);
 }
 
 /** Mark a unit prepped/packed (pick-and-pack before checkout). Rolls the line up. */

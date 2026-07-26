@@ -30,6 +30,56 @@ import {
 import { StickyTable } from "@/components/ui/sticky-table";
 import { getAccessoryChildren } from "@/components/warehouse/pick-list-progress";
 
+/** First truthy value, or "" — a plain loop (not a chain of `||`/`?.`) keeps
+ *  the caller's own branch count down for the complexity ratchet (R-3.6). */
+function firstNonEmpty(...vals: Array<string | null | undefined>): string {
+  for (const v of vals) if (v) return v;
+  return "";
+}
+
+/** One accessory child's pull-sheet rows (+ its per-unit qty expansion) —
+ *  split out of the parent render map so that map's own branch count stays
+ *  under the complexity ratchet (R-3.6). */
+function AccessoryChildPullSheetRows({ child }: { child: Record<string, unknown> }) {
+  const childModel = child.model as { name: string; modelNumber?: string | null } | null;
+  const childAsset = child.asset as { assetTag: string; location?: { name: string } | null } | null;
+  const childBulk = child.bulkAsset as { assetTag: string } | null;
+  const childQty = child.quantity as number;
+  const childName = firstNonEmpty(childModel?.name, child.description as string, "Accessory");
+  const childTag = firstNonEmpty(childAsset?.assetTag, childBulk?.assetTag);
+  const childLocation = firstNonEmpty(childAsset?.location?.name);
+
+  return (
+    <React.Fragment key={child.id as string}>
+      <TableRow>
+        <TableCell className="text-center">
+          <Square className="h-3.5 w-3.5 text-muted print:text-black" />
+        </TableCell>
+        <TableCell className="pl-8">
+          <span className="text-table-cell text-muted">{childName}</span>
+          <Badge status="neutral" className="ml-1.5">Accessory</Badge>
+        </TableCell>
+        <TableCell className="text-center text-table-cell tabular-nums whitespace-nowrap">{childQty}</TableCell>
+        <TableCell className="t-mono text-muted whitespace-nowrap">{childTag}</TableCell>
+        <TableCell className="text-caption text-muted">{childLocation}</TableCell>
+      </TableRow>
+      {childQty > 1 && Array.from({ length: childQty }).map((_, i) => (
+        <TableRow key={`${child.id}-${i}`}>
+          <TableCell className="text-center">
+            <Square className="h-3 w-3 text-faint print:text-black" />
+          </TableCell>
+          <TableCell className="pl-12">
+            <span className="text-caption text-muted">{childName} - {i + 1}</span>
+          </TableCell>
+          <TableCell />
+          <TableCell />
+          <TableCell />
+        </TableRow>
+      ))}
+    </React.Fragment>
+  );
+}
+
 const statusLabels: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
@@ -379,47 +429,9 @@ export default function PullSheetPage({
                           </TableRow>
                         ))}
                         {/* Accessory children (issue #794) — indented, badged like kit members */}
-                        {accessoryChildren.map((child) => {
-                          const childModel = child.model as { name: string; modelNumber?: string | null } | null;
-                          const childAsset = child.asset as { assetTag: string; location?: { name: string } | null } | null;
-                          const childBulk = child.bulkAsset as { assetTag: string } | null;
-                          const childName = childModel?.name || (child.description as string) || "Accessory";
-                          const childQty = child.quantity as number;
-
-                          return (
-                            <React.Fragment key={child.id as string}>
-                              <TableRow>
-                                <TableCell className="text-center">
-                                  <Square className="h-3.5 w-3.5 text-muted print:text-black" />
-                                </TableCell>
-                                <TableCell className="pl-8">
-                                  <span className="text-table-cell text-muted">{childName}</span>
-                                  <Badge status="neutral" className="ml-1.5">Accessory</Badge>
-                                </TableCell>
-                                <TableCell className="text-center text-table-cell tabular-nums whitespace-nowrap">{childQty}</TableCell>
-                                <TableCell className="t-mono text-muted whitespace-nowrap">
-                                  {childAsset?.assetTag || childBulk?.assetTag || ""}
-                                </TableCell>
-                                <TableCell className="text-caption text-muted">
-                                  {childAsset?.location?.name || ""}
-                                </TableCell>
-                              </TableRow>
-                              {childQty > 1 && Array.from({ length: childQty }).map((_, i) => (
-                                <TableRow key={`${child.id}-${i}`}>
-                                  <TableCell className="text-center">
-                                    <Square className="h-3 w-3 text-faint print:text-black" />
-                                  </TableCell>
-                                  <TableCell className="pl-12">
-                                    <span className="text-caption text-muted">{childName} - {i + 1}</span>
-                                  </TableCell>
-                                  <TableCell />
-                                  <TableCell />
-                                  <TableCell />
-                                </TableRow>
-                              ))}
-                            </React.Fragment>
-                          );
-                        })}
+                        {accessoryChildren.map((child) => (
+                          <AccessoryChildPullSheetRows key={child.id as string} child={child} />
+                        ))}
                       </TableBody>
                     );
                   })}

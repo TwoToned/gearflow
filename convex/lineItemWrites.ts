@@ -1071,6 +1071,26 @@ export const addNative = mutation({
  * verifies": after deploy the warehouse return/swap flow owns changes, not this
  * picker. RBAC(project, manage_line_items).
  */
+/** Validate a fetched line is a legal target for an accessory-plan edit — org
+ *  match, parent (not a child), has a model/asset, and hasn't deployed yet
+ *  (issue #794 decision 2: post-deploy edits are hard-blocked). Extracted so
+ *  the mutation handler stays under the complexity ratchet (R-3.6). */
+function assertLineOwnsAccessoryPlan(
+  line: { organizationId: string; childKind?: string; modelId?: string; assetId?: string; checkedOutQuantity?: number; status?: string } | null,
+  organizationId: string,
+): asserts line is NonNullable<typeof line> {
+  if (!line || line.organizationId !== organizationId) throw new ConvexError("Line item not found");
+  if (line.childKind) throw new ConvexError("Only a parent equipment line can have an accessory plan");
+  if (!line.modelId && !line.assetId) {
+    throw new ConvexError("This line has no model or asset — there's nothing to attach accessories to");
+  }
+  if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") {
+    throw new ConvexError(
+      "This line has already deployed — accessory selection is locked. Use the warehouse return/swap flow instead.",
+    );
+  }
+}
+
 export const updateAccessoryPlanNative = mutation({
   returns: v.object({ ok: v.boolean() }),
   args: {
@@ -1089,16 +1109,7 @@ export const updateAccessoryPlanNative = mutation({
     assertAccessoryPlanFields(accessoryPlan);
 
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    if (!line || line.organizationId !== organizationId) throw new ConvexError("Line item not found");
-    if (line.childKind) throw new ConvexError("Only a parent equipment line can have an accessory plan");
-    if (!line.modelId && !line.assetId) {
-      throw new ConvexError("This line has no model or asset — there's nothing to attach accessories to");
-    }
-    if ((line.checkedOutQuantity ?? 0) > 0 || line.status === "CHECKED_OUT") {
-      throw new ConvexError(
-        "This line has already deployed — accessory selection is locked. Use the warehouse return/swap flow instead.",
-      );
-    }
+    assertLineOwnsAccessoryPlan(line, organizationId);
 
     await ctx.db.patch(line._id, { accessoryPlan, updatedAt: now });
     await reconcileLineAccessoryChildren(ctx, {

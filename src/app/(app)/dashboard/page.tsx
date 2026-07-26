@@ -9,6 +9,7 @@ import {
   useNativeHome,
   useNativeBlocking,
   useNativeActivity,
+  useNativeMyOpenTasks,
 } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
@@ -17,7 +18,6 @@ import {
   Wrench,
   ArrowRight,
   ShieldAlert,
-  AtSign,
   AlertTriangle,
   UserCheck,
   Plus,
@@ -75,6 +75,15 @@ export default function DashboardPage() {
   const myHome = useNativeHome(orgId) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myBlockers = useNativeBlocking(orgId) as any;
+  const myTasks = useNativeMyOpenTasks(orgId);
+
+  // Delay ladder derived from section index instead of hand-numbered literals
+  // (§ "Dashboard reorder" — the old 0.04/0.05/0.08/0.1/0.12/0.14/0.16 chain
+  // meant inserting a section required renumbering every one after it).
+  // `nextSectionDelay()` is called once per top-level FadeIn'd section below,
+  // in render order, top to bottom.
+  let sectionIndex = 0;
+  const nextSectionDelay = () => 0.04 + 0.04 * sectionIndex++;
 
   const now = new Date();
   const hour = now.getHours();
@@ -121,11 +130,15 @@ export default function DashboardPage() {
         />
       </FadeIn>
 
-      {/* ── Bento board ── */}
-      <div className="grid auto-rows-[minmax(0,auto)] grid-cols-2 gap-3 lg:grid-cols-4">
-        {/* On the floor now — hero tile */}
-        <FadeIn delay={0.04} className="col-span-2 lg:row-span-2">
-          <div className={`${TILE} flex h-full flex-col p-5`}>
+      {/* ══ Zone 1: My work ══
+          "On the floor now" + MyWorkSection (which now owns the tasks-due
+          block and the per-project blocker badges/snippets — the standalone
+          blockers panel that used to sit between the bento board and
+          MyWorkSection is gone; blockers now render in exactly two places:
+          here, and the "needs attention" chip in zone 2 below). */}
+      <div className="space-y-3">
+        <FadeIn delay={nextSectionDelay()}>
+          <div className={`${TILE} flex flex-col p-5`}>
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {liveJobs.length > 0 && <LivePulse />}
@@ -136,35 +149,50 @@ export default function DashboardPage() {
             {!myHome ? (
               <div className="space-y-2"><Skeleton className="h-16 w-full rounded-[var(--r)]" /><Skeleton className="h-16 w-full rounded-[var(--r)]" /></div>
             ) : liveJobs.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+              <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
                 <FlowMascot className="h-10 w-10" eyeColor="var(--ok)" />
                 <p className="text-[14px] font-medium text-ink">Nothing out right now</p>
                 <p className="t-micro text-muted">The warehouse is full and calm. Enjoy it.</p>
               </div>
             ) : (
-              <StaggerList className="flex flex-col gap-2">
+              <StaggerList className="flex flex-col gap-2 sm:grid sm:grid-cols-2">
                 {liveJobs.slice(0, 4).map((p) => (<StaggerItem key={p.id as string}><LiveJobRow project={p} now={now} /></StaggerItem>))}
               </StaggerList>
             )}
           </div>
         </FadeIn>
 
+        <FadeIn delay={nextSectionDelay()}>
+          <MyWorkSection
+            projects={myProjects}
+            blockers={(myBlockers ?? []) as Record<string, unknown>[]}
+            tasks={(myTasks ?? []) as unknown as Record<string, unknown>[]}
+          />
+        </FadeIn>
+      </div>
+
+      {/* ══ Zone 2: Org risk ══ */}
+      <FadeIn delay={nextSectionDelay()}>
+        <div className={`${TILE} p-5`}>
+          <h2 className="t-overline mb-3 text-muted">Needs attention</h2>
+          <NeedsAttention stats={stats} loading={statsLoading} blockers={myBlockers ?? []} subHireOverdue={subHireStats?.overdueReturns ?? 0} />
+          {/* Extension point: sibling issue's org-risk board chips (fleet/
+              maintenance/sub-hire exposure boards) slot in here alongside the
+              needs-attention chips above — owned by another team, not stubbed
+              ahead of that work. */}
+        </div>
+      </FadeIn>
+
+      {/* ══ Zone 3: Demoted (stats, upcoming, activity) ══ */}
+      <div className="grid auto-rows-[minmax(0,auto)] grid-cols-2 gap-3 lg:grid-cols-4">
         {/* Stat tiles */}
         <StatTile label="Active jobs" value={stats?.activeProjects} loading={statsLoading} hue="blue" sub="in flight" href="/projects" />
         <StatTile label="Overdue returns" value={overdue} loading={statsLoading} hue="red" sub={overdue > 0 ? "chase them" : "all back"} href="/projects" problem={overdue > 0} />
         <DeployTile deployed={deployed} total={total} util={util} loading={statsLoading} />
         <StatTile label="Crew booked" value={stats?.activeCrew} loading={statsLoading} hue="purple" sub="on the books" href="/crew" />
 
-        {/* Needs attention */}
-        <FadeIn delay={0.08} className="col-span-2">
-          <div className={`${TILE} h-full p-5`}>
-            <h2 className="t-overline mb-3 text-muted">Needs attention</h2>
-            <NeedsAttention stats={stats} loading={statsLoading} blockers={myBlockers ?? []} subHireOverdue={subHireStats?.overdueReturns ?? 0} />
-          </div>
-        </FadeIn>
-
         {/* Upcoming */}
-        <FadeIn delay={0.1} className="col-span-2">
+        <FadeIn delay={nextSectionDelay()} className="col-span-2">
           <div className={`${TILE} h-full p-5`}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="t-overline text-muted">Upcoming</h2>
@@ -202,7 +230,7 @@ export default function DashboardPage() {
         </FadeIn>
 
         {/* Recent activity — full width */}
-        <FadeIn delay={0.12} className="col-span-2 lg:col-span-4">
+        <FadeIn delay={nextSectionDelay()} className="col-span-2 lg:col-span-4">
           <div className={`${TILE} p-5`}>
             <h2 className="t-overline mb-4 text-muted">Recent activity</h2>
             {!activity ? (
@@ -217,41 +245,6 @@ export default function DashboardPage() {
           </div>
         </FadeIn>
       </div>
-
-      {/* ── Blockers (alert context — plain, no personality) ── */}
-      {myBlockers && myBlockers.length > 0 && (
-        <FadeIn delay={0.14}>
-          <div className="rounded-[var(--r-lg)] border border-line border-l-[3px] border-l-t-out bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
-            <div className="mb-3 flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-t-out" />
-              <h2 className="text-card-title font-semibold text-ink">Blockers needing you</h2>
-              <span className="rounded-full bg-out-soft px-1.5 py-0.5 text-[11px] font-medium text-t-out">{myBlockers.length}</span>
-            </div>
-            <StaggerList className="space-y-1">
-              {myBlockers.map((b: Record<string, unknown>) => (
-                <StaggerItem key={b.threadId as string}>
-                  <Link href={`/projects/${b.projectId}`} className={cn("group block rounded-[var(--r)] px-3 py-2.5 transition-colors hover:bg-out-soft", focusRing)}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[11px] text-muted">{b.projectNumber as string}</span>
-                          <span className="truncate text-[14px] font-medium text-ink">{b.projectName as string}</span>
-                          {b.reason === "mention" && (<span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-out-soft px-1.5 py-0.5 text-[11px] text-t-out"><AtSign className="h-2.5 w-2.5" /> mentioned</span>)}
-                        </div>
-                        {b.snippet ? <p className="mt-0.5 truncate text-[12px] text-muted">&ldquo;{b.snippet as string}&rdquo;</p> : null}
-                      </div>
-                      <span className="shrink-0 text-[11px] text-muted">{b.createdByName as string} &middot; {formatDistanceToNow(new Date(b.createdAt as number), { addSuffix: true })}</span>
-                    </div>
-                  </Link>
-                </StaggerItem>
-              ))}
-            </StaggerList>
-          </div>
-        </FadeIn>
-      )}
-
-      {/* ── Your jobs ── */}
-      <FadeIn delay={0.16}><MyWorkSection projects={myProjects} blockers={(myBlockers ?? []) as Record<string, unknown>[]} /></FadeIn>
     </div>
   );
 }

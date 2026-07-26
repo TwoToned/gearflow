@@ -87,15 +87,14 @@ async function requireTemplateInOrg(ctx: MutationCtx, templateId: string, orgId:
   return tpl;
 }
 
-/** This template's items (by_organizationId, then filter by templateId in JS — no
- *  by_templateId index), sorted by sortOrder. */
+/** This template's items, sorted by sortOrder. Org-rechecked since by_templateId is global. */
 async function listTemplateItems(ctx: MutationCtx, templateId: string, orgId: string) {
-  const all = await ctx.db
+  const items = await ctx.db
     .query("groupTemplateItems")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
+    .withIndex("by_templateId", (q) => q.eq("templateId", templateId))
     .collect();
-  return all
-    .filter((it) => it.templateId === templateId)
+  return items
+    .filter((it) => it.organizationId === orgId)
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 }
 
@@ -104,9 +103,9 @@ async function deleteTemplateItems(ctx: MutationCtx, templateId: string, orgId: 
   const existing = (
     await ctx.db
       .query("groupTemplateItems")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set
+      .withIndex("by_templateId", (q) => q.eq("templateId", templateId))
       .collect()
-  ).filter((it) => it.templateId === templateId);
+  ).filter((it) => it.organizationId === orgId);
   for (const e of existing) await ctx.db.delete(e._id);
 }
 

@@ -157,9 +157,9 @@ export const removeNative = mutation({
       await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
     ).filter((l) => l.parentId === a.id);
     if (children.length > 0) throw new ConvexError("Cannot delete location with sub-locations");
-    const assets = await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
-    const bulk = await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
-    if (assets.some((x) => x.locationId === a.id) || bulk.some((x) => x.locationId === a.id)) {
+    const asset = await ctx.db.query("assets").withIndex("by_locationId", (q) => q.eq("locationId", a.id)).first();
+    const bulkAsset = asset ? null : await ctx.db.query("bulkAssets").withIndex("by_locationId", (q) => q.eq("locationId", a.id)).first();
+    if (asset || bulkAsset) {
       throw new ConvexError("Cannot delete location with assets assigned to it");
     }
 

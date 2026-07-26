@@ -113,6 +113,16 @@ Six card sections:
 | `patchProviderOidcConfig(id, patch)` | `requirePermission("orgSettings", "update")` | Direct DB patch for ID token mode |
 | `getOrgLoginInfo(orgSlug)` | None (public) | Org info for login page |
 
+**`getOrgLoginInfo` is cached (#804):** it is a public, pre-auth action hit on every
+login-page visit (human or bot), and its `SsoProvider.findMany` + Convex org-settings
+read was the T-9 `slow_query` p95 incident driver. It now serves through a 60s
+in-process TTL cache (`src/lib/org-login-info-cache.ts` — bounded map, null results
+cached, stale-on-error). `updateSSOSettings` / `deleteSSOProvider` /
+`updateSSOProviderMeta` / `patchProviderOidcConfig` invalidate it explicitly so admin
+edits show immediately; provider CRUD through Better Auth's own API (e.g.
+`authClient.sso.register()`) is covered by the TTL alone — a just-registered provider
+can take up to 60s to appear on the login page.
+
 ## Provider Registration
 SSO provider CRUD uses Better Auth's built-in API endpoints from the client (`authClient.sso.register()`), not server actions. SP Metadata (ACS URL, Metadata URL, OIDC Redirect) is displayed in the provider form for IdP configuration.
 

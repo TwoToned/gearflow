@@ -20,6 +20,11 @@ import { env } from "@/env";
 import { readOrgSettingsBlob, saveOrgSettings } from "@/lib/org-settings-read";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { DANGEROUS_OBJECT_KEYS } from "@/lib/safe-object-key";
+import {
+  withOrgLoginInfoCache,
+  invalidateOrgLoginInfoCache,
+  type OrgLoginInfo,
+} from "@/lib/org-login-info-cache";
 
 // ─── Read helpers ────────────────────────────────────────────────────────────
 
@@ -60,6 +65,8 @@ export async function updateSSOSettings(data: Partial<OrgSSOSettings>) {
   const updatedSSO = { ...currentSSO, ...data };
   settings.sso = updatedSSO;
   await saveOrgSettings(organizationId, settings);
+  // Login-page cache reads enabled/enforceSSO/allowPasswordLogin from this blob.
+  invalidateOrgLoginInfoCache();
 
   await logActivity({
     organizationId,
@@ -144,6 +151,7 @@ export async function deleteSSOProvider(providerId: string) {
   if (!provider) throw new Error("SSO provider not found");
 
   await prisma.ssoProvider.delete({ where: { id: provider.id } });
+  invalidateOrgLoginInfoCache();
 
   await logActivity({
     organizationId,
@@ -206,6 +214,7 @@ export async function patchProviderOidcConfig(
     where: { id: provider.id },
     data: { oidcConfig: JSON.stringify(config) },
   });
+  invalidateOrgLoginInfoCache();
 
   return { success: true };
 }
@@ -231,6 +240,8 @@ export async function updateSSOProviderMeta(
   };
   settings.sso = sso;
   await saveOrgSettings(organizationId, settings);
+  // Login-page cache renders provider displayName/icon from providerMeta.
+  invalidateOrgLoginInfoCache();
 
   return { success: true };
 }
@@ -420,8 +431,18 @@ export async function rejectSSOUser(approvalId: string, note?: string) {
 /**
  * Get org info for the org-specific login page.
  * This is public — called from the login page before authentication.
+ *
+ * Served through a 60s in-process cache (#804): this pre-auth path ran
+ * `SsoProvider.findMany` + a Convex org-settings read on every login-page
+ * visit, and that findMany was the T-9 slow_query p95 incident driver. The
+ * SSO mutations above invalidate the cache so admin edits show immediately;
+ * see src/lib/org-login-info-cache.ts for the full policy.
  */
 export async function getOrgLoginInfo(orgSlug: string) {
+  return withOrgLoginInfoCache(orgSlug, loadOrgLoginInfo);
+}
+
+async function loadOrgLoginInfo(orgSlug: string): Promise<OrgLoginInfo | null> {
   const org = await prisma.organization.findUnique({
     where: { slug: orgSlug },
     select: { id: true, name: true, slug: true, logo: true },

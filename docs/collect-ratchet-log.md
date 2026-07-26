@@ -8,3 +8,4 @@ distinct from "debt paid down" instead of both looking like the same baseline co
 | Date | Old | New | Delta | Reason |
 |------|-----|-----|-------|--------|
 | 2026-07-26 | 671 | 666 | -5 | (decrease — existing collects bounded/paginated) |
+| 2026-07-26 | 666 | 661 | -5 | (decrease — existing collects bounded/paginated) |

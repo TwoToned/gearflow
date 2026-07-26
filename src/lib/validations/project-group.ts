@@ -11,8 +11,6 @@ export const projectGroupSchema = z.object({
   // Flat $ amount off `price × quantity` (#883) — same bound as line-item discount
   // (src/lib/validations/line-item.ts discountField).
   discount: z.coerce.number().min(0).max(999999.99).optional(),
-  rentalPeriod: z.enum(["DAILY", "WEEKLY"]).optional(),
-  rentalQuantity: z.coerce.number().int().min(1).optional(),
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
 });
 

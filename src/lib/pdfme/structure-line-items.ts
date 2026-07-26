@@ -45,8 +45,6 @@ export interface CategoryForStructuring {
     quantity: number;
     price: number | null;
     discount: number | null;
-    rentalPeriod: string | null;
-    rentalQuantity: number | null;
     sortOrder: number;
   }>;
 }
@@ -217,13 +215,15 @@ export function structureLineItems(
 
     // Emit each group
     for (const group of cat.groups) {
-      const duration = group.rentalQuantity ?? 1;
       const price = group.price ?? 0;
       const discount = group.discount ?? 0;
-      // Discount is a flat $ amount off the bundle total (#883) — same clamp-at-0
-      // subtraction as convex/lib/recalc.ts groupRevenue, so the PDF total matches
-      // what the project is actually billed.
-      const total = Math.max(0, group.quantity * price * duration - discount);
+      // #943: a group's `price` is now always a flat BUNDLE total (never a
+      // per-day/per-week rate needing a duration multiplier — the group-level
+      // rentalPeriod/rentalQuantity fields that used to imply one are retired).
+      // Matches convex/lib/recalc.ts's groupRevenue exactly (bundlePrice × qty −
+      // discount, clamped at 0, no duration term) — this fixes a latent mismatch
+      // where the PDF used to multiply by `rentalQuantity` and recalc.ts didn't.
+      const total = Math.max(0, group.quantity * price - discount);
 
       // Both modes bucket group rows under the category. In expand mode
       // the group renders as a bold parent row (kit-style) followed by
@@ -262,8 +262,9 @@ export function structureLineItems(
         quantity: group.quantity,
         checkedOutQuantity: 0,
         unitPrice: price,
-        pricingType: group.rentalPeriod === "WEEKLY" ? "PER_WEEK" : "PER_DAY",
-        duration,
+        // FLAT — a group bundle price, not a per-day/per-week rate (#943).
+        pricingType: "FLAT",
+        duration: 1,
         discount: discount > 0 ? discount : null,
         lineTotal: total,
         groupName: bucketLabel,

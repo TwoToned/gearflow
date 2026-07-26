@@ -65,8 +65,6 @@ function makeGroup(
     quantity: 1,
     price: null,
     discount: null,
-    rentalPeriod: null,
-    rentalQuantity: null,
     ...overrides,
   };
 }
@@ -105,7 +103,7 @@ describe("structureLineItems — Phase 0 baseline", () => {
   it("collapses each Project Group into a single virtual row + drops child items", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [
-        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500, rentalQuantity: 3 }),
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500 }),
       ]),
     ];
     const raw = [
@@ -132,21 +130,21 @@ describe("structureLineItems — Phase 0 baseline", () => {
     `);
     expect(result).toHaveLength(1);
     expect(result[0].isGroupRow).toBe(true);
-    expect(result[0].lineTotal).toBe(1500); // 1 * 500 * 3
+    expect(result[0].lineTotal).toBe(500); // 1 × 500 (#943: flat bundle price, no duration multiplier)
   });
 
   it("subtracts a Project Group's flat discount from the synthetic row's total (#883)", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [
         makeGroup("grp-1", "Lighting Package", 0, {
-          quantity: 1, price: 500, rentalQuantity: 3, discount: 200,
+          quantity: 1, price: 500, discount: 200,
         }),
       ]),
     ];
     const result = structureLineItems([], categories);
 
     expect(result).toHaveLength(1);
-    expect(result[0].lineTotal).toBe(1300); // (1 * 500 * 3) - 200
+    expect(result[0].lineTotal).toBe(300); // (1 × 500) - 200
     expect(result[0].discount).toBe(200);
   });
 
@@ -154,7 +152,7 @@ describe("structureLineItems — Phase 0 baseline", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [
         makeGroup("grp-1", "Lighting Package", 0, {
-          quantity: 1, price: 100, rentalQuantity: 1, discount: 9999,
+          quantity: 1, price: 100, discount: 9999,
         }),
       ]),
     ];
@@ -289,16 +287,16 @@ describe("structureLineItems — Phase 0 baseline", () => {
     // Speakers, so that's the output order.
   });
 
-  it("WEEKLY rental period emits PER_WEEK pricingType, else PER_DAY", () => {
+  it("a group row always emits FLAT pricingType (#943 — a bundle price, not a per-day/week rate)", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [
-        makeGroup("grp-w", "Weekly", 0, { quantity: 1, price: 700, rentalPeriod: "WEEKLY" }),
-        makeGroup("grp-d", "Daily", 1, { quantity: 1, price: 100, rentalPeriod: "DAILY" }),
+        makeGroup("grp-w", "Weekly-priced bundle", 0, { quantity: 1, price: 700 }),
+        makeGroup("grp-d", "Daily-priced bundle", 1, { quantity: 1, price: 100 }),
       ]),
     ];
     const result = structureLineItems([], categories);
-    expect(result.find(r => r.groupTitle === "Weekly")?.pricingType).toBe("PER_WEEK");
-    expect(result.find(r => r.groupTitle === "Daily")?.pricingType).toBe("PER_DAY");
+    expect(result.find(r => r.groupTitle === "Weekly-priced bundle")?.pricingType).toBe("FLAT");
+    expect(result.find(r => r.groupTitle === "Daily-priced bundle")?.pricingType).toBe("FLAT");
   });
 
   it("Map-key collision: Category 'Lighting' + Group 'Lighting' coexist without merging", () => {
@@ -329,18 +327,18 @@ describe("structureLineItems — Phase 0 baseline", () => {
     // groupName "Lighting" → today this causes silent merging.
   });
 
-  it("derives group duration from rentalQuantity, defaulting to 1", () => {
+  it("a group row's duration is always 1 (#943 — retired the rentalQuantity multiplier)", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Test", 0, [
-        makeGroup("g-rq", "Has rentalQuantity", 0, { quantity: 1, price: 10, rentalQuantity: 7 }),
-        makeGroup("g-fb", "Fallback to 1", 1, { quantity: 1, price: 10 }),
+        makeGroup("g-a", "Group A", 0, { quantity: 1, price: 10 }),
+        makeGroup("g-b", "Group B", 1, { quantity: 2, price: 10 }),
       ]),
     ];
     const result = structureLineItems([], categories);
-    expect(result[0].duration).toBe(7); // rentalQuantity used
-    expect(result[0].lineTotal).toBe(70);
-    expect(result[1].duration).toBe(1); // default 1
-    expect(result[1].lineTotal).toBe(10);
+    expect(result[0].duration).toBe(1);
+    expect(result[0].lineTotal).toBe(10); // 1 × 10, no duration multiplier
+    expect(result[1].duration).toBe(1);
+    expect(result[1].lineTotal).toBe(20); // 2 × 10
   });
 
   it("kit child INSIDE a Project Group: group row emits, kit-child still filtered", () => {
@@ -376,7 +374,7 @@ describe("structureLineItems — Phase 0 baseline", () => {
   it("expandProjectGroups=true emits group row with members attached as childLineItems", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [
-        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500, rentalQuantity: 3 }),
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500 }),
       ]),
     ];
     const raw = [
@@ -517,7 +515,7 @@ describe("structureLineItems — Phase 0 baseline", () => {
     // change in Phase 1.
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [
-        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500, rentalQuantity: 3 }),
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500 }),
       ]),
     ];
     const raw = [
@@ -984,7 +982,7 @@ describe("structureLineItems — Phase 0 baseline", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-lighting", "Lighting", 0, [
         makeGroup("grp-lights", "Lighting Package", 0, {
-          quantity: 1, price: 500, rentalQuantity: 3,
+          quantity: 1, price: 500,
         }),
       ]),
       makeCategory("cat-audio", "Audio", 1, []),

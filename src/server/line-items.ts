@@ -15,7 +15,7 @@ import { getLocationById } from "@/lib/locations-read";
 
 /** Model-accessory detail for the add-form picker (issue #794) — resolved bulk-asset
  *  tag + model name, not just the bare bulkAssetId. */
-export type ModelAccessoryDetail = {
+type ModelAccessoryDetail = {
   id: string;
   bulkAssetId: string;
   quantity: number;

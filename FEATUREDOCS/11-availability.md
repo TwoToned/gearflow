@@ -101,6 +101,37 @@ See docs/designs/perf-convex-efficiency-2026-06.md Finding #0 for the measured i
 Both scans' candidates run through the SAME `getProjectWindow`-based JS overlap
 check before being added to the fetch set.
 
+## Two-Layer Hard/Pencilled Availability (WS3 #942)
+
+Locked decision: every booking is classified into exactly one of two layers —
+**pencilled** = an `isOptional` line, OR any line on a not-yet-confirmed
+project (`ENQUIRY`/`QUOTING`/`QUOTED`); **hard** = everything else (a
+non-optional line on `CONFIRMED..ON_SITE`). Pencilled always **warns, never
+blocks** — it never disables a write, it only surfaces as a heads-up.
+
+- `PENCILLED_PROJECT_STATUSES` / `HARD_PROJECT_STATUSES` / `isConfirmedOrLater()`
+  — `src/lib/overbooking-core.ts`, duplicated byte-for-byte in
+  `convex/lib/availabilityCore.ts` (Convex can't import `src/lib`), pinned by
+  a cross-import equality test in `convex/availabilityCore.test.ts` — same
+  pattern as `getProjectWindow`.
+- `OverbookLineItem` gained `isOptional?: boolean` (defaults `false` — no
+  behaviour change for a caller that doesn't pass it). `OverbookedInfo` gained
+  `hardOverBy` (== `overBy`, an explicit alias — existing badges/PDFs/pull-sheets
+  are UNCHANGED for the common case) and `pencilledOverBy` (the additional
+  overage if every currently-pencilled booking for that model also went hard).
+  `reconstructOverbookedStatus`'s hard-overbooked gate runs on hard-only sums —
+  an optional line, or a still-quoted project's own demand, drops out of the
+  hard sum entirely (existing per-project badges only lose a flag when the
+  overage was purely pencilled — "that's the rule working," not a regression).
+- **The Overbookings & Gaps board** (`convex/overbookingBoard.ts` +
+  `convex/lib/overbookingBoard.ts`) is the org-wide, date-ranged rollup of this
+  same two-layer split — a SEPARATE aggregation from the per-project engine
+  above (different math shape: whole-range sums across every candidate
+  project, not one project's own window), reusing the same
+  `isConfirmedOrLater`/`isOptional` vocabulary. Full architecture, the six
+  board sections, and the confirm-time gate: see
+  [FEATUREDOCS/64](./64-overbookings-gaps-board.md).
+
 ## Dateless Stock Checks
 When a project has **no rental dates**, availability is still calculated:
 - `computeOverbookedStatus` compares this project's line item quantities against total stock (no cross-project overlap)

@@ -69,6 +69,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/assets/categories` | Category list (table with indented children) |
 | `/assets/categories/[id]` | Category detail (subcategories, models & kits tabs) |
 | `/availability` | Availability calendar (top-level) — draws RENTAL window bars, not the PROJECT window (deliberate, WS2 #941 — pricing's window is what's visually "booked"; see [11-availability.md](./11-availability.md)) |
+| `/overbookings` | Overbookings & Gaps board (WS3 #942) — org-wide hard/pencilled overbooking + crew-gap risk over a selectable date range; see [64-overbookings-gaps-board.md](./64-overbookings-gaps-board.md) |
 | `/kits` | Kit list |
 | `/kits/new` | Create kit |
 | `/kits/[id]` | Kit detail (contents, media, status) |

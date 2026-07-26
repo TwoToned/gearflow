@@ -27,8 +27,10 @@ import { modelFields } from "./modelWrites";
 import { locationFields } from "./locationsWrites";
 import { supplierFields } from "./suppliersWrites";
 import { subTestFields } from "./subTestRecords";
+import { projectWriteFields } from "./projects";
 
 import { clientSchema } from "@/lib/validations/client";
+import { projectSchema } from "@/lib/validations/project";
 import { crewAssignmentSchema, crewTimeEntrySchema } from "@/lib/validations/crew";
 import { checkRecordSchema, checkItemSchema } from "@/lib/validations/check-item";
 import { categorySchema } from "@/lib/validations/category";
@@ -97,6 +99,25 @@ const PAIRS: Pair[] = [
     convex: subTestFields,
     // id + createdAt + the parent FK are server-managed.
     allowConvexOnly: ["createdAt", "id", "testTagRecordId"],
+  },
+  {
+    name: "project",
+    zod: projectSchema,
+    convex: projectWriteFields,
+    // name + projectNumber are top-level createNative args (not part of the shared
+    // projectWriteFields spread — projectNumber has its own auto-number/clash-guard
+    // handling; name is a required createNative arg, not optional like the rest of
+    // projectWriteFields).
+    allowZodOnly: ["name", "projectNumber"],
+    // Server-managed: the recalc-owned money anchors (never client input, see
+    // PROJECT_MONEY_ANCHORS in projectWrites.ts), isTemplate (set at create, never
+    // patched in place), audit timestamps, and projectManagerId (managed via the
+    // separate projectManagers join table writes, not this field).
+    allowConvexOnly: [
+      "equipmentRevenue", "serviceCostTotal", "labourCostTotal", "subHireCostTotal",
+      "margin", "subtotal", "discountAmount", "taxAmount", "total",
+      "isTemplate", "createdAt", "updatedAt", "projectManagerId",
+    ],
   },
 ];
 

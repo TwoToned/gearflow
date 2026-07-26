@@ -25,7 +25,9 @@ Crew management tracks people (employees, freelancers, contractors, volunteers) 
 
 ### CrewRole
 - `id, organizationId, name, description?, department?, color?`
-- `defaultRate?, rateType?` (HOURLY | DAILY | FLAT)
+- `defaultRate?, rateType?` (HOURLY | DAILY | FLAT) — the internal COST rate
+- `chargeRate?` (WS10 #949) — the client-facing CHARGE rate, same `rateType` unit as
+  `defaultRate` (one rateType per role governs both cascades)
 - `sortOrder, isActive`
 - Unique: `[organizationId, name]`
 
@@ -82,9 +84,9 @@ names below.
 | `updateCrewMember(id, data)` | crew.update | Update with skill set replacement |
 | `deleteCrewMember(id)` | crew.delete | Delete crew member |
 | `getCrewRoles()` | crew.read | All active roles |
-| `createCrewRole(data)` | crew.create | Create role |
-| `updateCrewRole(id, data)` | crew.update | Update role |
-| `deleteCrewRole(id)` | crew.delete | Delete (fails if assigned) |
+| `createCrewRole(data)` | crew.create | Create role — native: `crewRolesWrites.createNative` (WS10 #949, `/crew/settings`) |
+| `updateCrewRole(id, data)` | crew.update | Update role — native: `crewRolesWrites.updateNative` |
+| `deleteCrewRole(id)` | crew.delete | No hard delete (a role is referenced by 3 tables — see below); `crewRolesWrites.archiveNative` toggles `isActive` instead |
 | `getCrewSkills()` | crew.read | All skills with member counts |
 | `createCrewSkill(data)` | crew.create | Create skill |
 | `deleteCrewSkill(id)` | crew.delete | Delete skill |
@@ -140,6 +142,52 @@ preview — no duplicated cascade math):
   `CrewAssignment.estimatedCost`, computed on every write that can change it —
   from either side (see "Project Detail Integration" below, issue #796).
 
+## Charge Cascade & Margin (WS10 #949)
+The client-facing twin of the rate cascade above, resolved PER-SERVICE (not per
+assignment) by `convex/lib/crewRate.ts` `resolveChargeRate` — deliberately
+SIMPLER than `resolveRate`: role-first, no member-level charge rate exists (spec
+decision — client pricing shouldn't wobble per crew member):
+1. `projectServices.chargeRateOverride` (if set and > 0) — overrides the charge
+   rate for every crew assignment on that service
+2. The assigned crew's `crewRole.chargeRate` (same `rateType` the cost side uses)
+3. Fallback: **null** — no auto-pricing figure exists for that assignment (never
+   coerced to a fake $0; if NOTHING resolves anywhere on the service, margin stays
+   hidden rather than showing a fake 0%/-100% reading — no backfill).
+
+`recalcServiceChargeFromCrew()` (`convex/lib/serviceCost.ts`, the charge-side twin
+of `recalcServiceCostFromCrew()`) sums `calculateEstimatedCost()` over the
+resolved charge rate for every crew assignment on the service into
+`projectServices.crewChargeTotal`, called from the SAME 5-ish call sites as the
+cost twin (`crewAssignmentsWrites.ts` create/update/delete/bulk-delete,
+`projectServicesWrites.ts` create/update crew reconcile). Same >=1-crew-assignment
+trigger as the cost side (type-agnostic — symmetry with `serviceCost.ts:31`).
+
+**Manual-price protection** (the `costTotal` clobber lesson, #796, applied to
+price): a typed `unitPrice` on the service is an explicit manual override and is
+NEVER touched by the charge recalc. Only when `unitPrice` is unset does
+`lineTotal` get auto-computed from `crewChargeTotal` (minus `discount`, clamped
+>= 0) — so `crewChargeTotal` feeds `lineTotal` for auto-priced services, which
+then flows through the EXISTING `serviceRevenue` path in `recalcProjectTotals`
+(`convex/lib/recalc.ts`) — no new revenue bucket, no double-count. The Pricing
+section in `services-panel.tsx`'s service dialog shows "Auto from crew: $X" next
+to the Rate field when auto-priced, with a "Use manual rate" button that copies
+the auto value into the field as an explicit override (never silently clobbers a
+typed price).
+
+**Naming note:** the new schema field is `crewChargeTotal`, not `chargeTotal` —
+`chargeTotal` was already in use (`src/lib/project-service-read.ts` /
+`src/server/project-services.ts`) for a DIFFERENT aggregate concept (sum of
+`lineTotal` across a project's services, i.e. total client-facing services
+revenue). `crewChargeTotal` is the per-service, pre-discount input that feeds
+`lineTotal`; conflating the two names would have been an R-3.10 violation.
+
+**Visibility:** cost (`defaultRate`, `costTotal`) and margin (charge - cost) are
+manager+ only (`useIsManagerPlus()`, `src/lib/use-permissions.ts`); the charge
+rate/total (`chargeRate`, `crewChargeTotal`/`lineTotal`) is visible to every role
+(members see the client-facing price, not the internal cost or margin). The
+roles admin table (below) is the one place BOTH rate columns are manager+-gated —
+server-enforced via `crewRoles.ts` `listForSettings`.
+
 ## Service ↔ Crew Cost Linkage (issue #796)
 A `CrewAssignment` with a `serviceId` is "owned" by that `ProjectService`: its
 resolved cost rolls up into the service's own `costTotal`, which is what feeds the
@@ -162,6 +210,10 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
 - A **crew-less** service keeps whatever `costTotal` was last set manually (e.g. a
   vehicle/transport-only service with no crew) — `recalcServiceCostFromCrew()` only
   takes over once the service has 1+ crew.
+- **Charge side (WS10 #949):** the SAME crew reconcile also runs
+  `recalcServiceChargeFromCrew()`, rolling the resolved charge rate up into
+  `crewChargeTotal` (and, when no manual `unitPrice` is set, into `lineTotal`) —
+  see "Charge Cascade & Margin" above for the full cascade + manual-override rules.
 
 ## Pages
 | Path | Component | Description |
@@ -172,7 +224,7 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
 | `/crew/[id]/edit` | CrewMemberForm | Edit crew member (includes user account linking) |
 | `/crew/planner` | CrewPlannerPage | 14-day Gantt-style timeline of all crew |
 | `/crew/timesheets` | TimesheetsPage | All time entries with DataTable, filtering, search, edit/delete, export |
-| `/crew/settings` | CrewSettingsPage | Manage roles and skills |
+| `/crew/settings` | `src/app/(app)/crew/settings/page.tsx` | Roles admin (WS10 #949) — name/department/colour/cost rate/charge rate/active, reorder, archive-with-usage-guard. Was a documented-but-nonexistent route until WS10 (`crewRoles.ts`'s mutations previously had zero callers) — see `crewRolesWrites.ts` + `use-crew-role-writes.ts`. Skills management is NOT on this page (out of scope for WS10 — the "& Skills" framing in nav labels is aspirational, not yet built) |
 
 **CrewTable data source (2026-07, perf fix):** server-side paginated —
 `crewMembers.listPage` (filter/sort/crewRole join done in Convex) via
@@ -387,6 +439,14 @@ Resource `crew` with actions: `read, create, update, delete`
 - owner/admin: all
 - manager: create, read, update
 - member/staff/warehouse/viewer: read
+
+Since `crew:create`/`crew:update` are manager+-only, the `/crew/settings` roles
+admin write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
+every role can VIEW the page (`crew:read`), but the cost (`defaultRate`) and
+charge (`chargeRate`) rate columns render only for manager+
+(`useIsManagerPlus()`), server-enforced via `crewRoles.ts`'s `listForSettings`
+query (field-stripped for non-manager+ callers — the plain `list` query, used by
+cost-preview call sites elsewhere, is unchanged).
 
 All read server actions enforce `requirePermission("crew", "read")` —
 including `getCrewMembers`, `getCrewMemberById`, `getCrewRoles`,

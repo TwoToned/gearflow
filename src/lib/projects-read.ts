@@ -37,6 +37,7 @@ export interface ProjectRow {
   projectNumber: string;
   name: string;
   clientId: string | null;
+  clientContactId: string | null;
   status: ProjectStatus;
   type: ProjectType;
   description: string | null;
@@ -93,6 +94,7 @@ export function mapProject(d: ConvexProject): ProjectRow {
     projectNumber: d.projectNumber,
     name: d.name,
     clientId: orNull(d.clientId),
+    clientContactId: orNull(d.clientContactId),
     status: (d.status ?? "ENQUIRY") as ProjectStatus,
     type: (d.type ?? "OTHER") as ProjectType,
     description: orNull(d.description),

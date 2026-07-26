@@ -10,12 +10,13 @@ import { assertFinite } from "./lib/moneyGuards";
 import { assertNumRange } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
-import { recalcServiceCostFromCrew } from "./lib/serviceCost";
+import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
 import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
+import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 
 /**
  * Native PROJECT-SERVICE write mutations (Phase 3 browser-direct — replaces the
@@ -124,6 +125,8 @@ const serviceInputArgs = {
   duration: v.optional(v.number()),
   discount: v.optional(v.number()),
   costTotal: v.optional(v.number()),
+  // Charge-side auto-pricing override (WS10 #949) — see buildServiceFields / schema.ts.
+  chargeRateOverride: v.optional(v.number()),
   taxable: v.boolean(),
   vehicleDescription: v.optional(v.string()),
   numberOfTrips: v.optional(v.number()),
@@ -152,6 +155,7 @@ type ServiceInput = {
   duration?: number;
   discount?: number;
   costTotal?: number;
+  chargeRateOverride?: number;
   taxable: boolean;
   vehicleDescription?: string;
   numberOfTrips?: number;
@@ -180,6 +184,7 @@ function buildServiceFields(a: ServiceInput) {
   assertFinite(a.unitPrice, "unitPrice");
   assertFinite(a.discount, "discount");
   assertFinite(a.costTotal, "costTotal");
+  assertFinite(a.chargeRateOverride, "chargeRateOverride");
   assertServiceFields({ quantity: a.quantity });
   // Bound money NON-NEGATIVE (browser-direct bypasses the server Zod min(0)). A negative
   // discount would INFLATE the customer-facing service line total (max(0, unitPrice - disc)
@@ -191,6 +196,8 @@ function buildServiceFields(a: ServiceInput) {
     throw new ConvexError({ code: "INVALID_MONEY", message: "Service discount cannot be negative." });
   if (a.costTotal != null && a.costTotal < 0)
     throw new ConvexError({ code: "INVALID_MONEY", message: "Service cost cannot be negative." });
+  if (a.chargeRateOverride != null && a.chargeRateOverride < 0)
+    throw new ConvexError({ code: "INVALID_MONEY", message: "Charge rate override cannot be negative." });
   const serviceDate = a.date ?? null;
   let serviceEndDate = a.endDate ?? serviceDate;
   if (!MULTI_DAY_TYPES.has(a.type)) serviceEndDate = serviceDate;
@@ -220,6 +227,7 @@ function buildServiceFields(a: ServiceInput) {
     discount: a.discount ?? null,
     lineTotal,
     costTotal: a.costTotal ?? null,
+    chargeRateOverride: a.chargeRateOverride ?? null,
     taxable: a.taxable,
     vehicleDescription: a.vehicleDescription || null,
     numberOfTrips: a.numberOfTrips || null,
@@ -384,7 +392,7 @@ async function insertServiceAssignment(
 
 async function logService(
   ctx: MutationCtx,
-  a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string; projectId?: string; entityType?: string },
+  a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string; projectId?: string; entityType?: string; metadata?: Record<string, unknown> },
 ): Promise<void> {
   await writeActivityLog(ctx, {
     id: a.auditId,
@@ -396,6 +404,7 @@ async function logService(
     userId: a.actor.userId,
     userName: a.actor.userName,
     summary: a.summary,
+    metadata: a.metadata,
     projectId: a.projectId,
     createdAt: a.now,
   });
@@ -423,6 +432,8 @@ export const createServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -431,7 +442,15 @@ export const createServiceNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     if (!a.title) throw new ConvexError("Title is required");
-    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    const svcProject = await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    // #791: adding a crew-less service while locked defaults costTotal to $0
+    // (server-enforced) — a crew-attached service's cost keeps auto-deriving from
+    // the crew rate table below regardless (issue #796 single source of truth).
+    // #793: adding is a structural mutation at JUSTIFY+.
+    const guard = await assertLifecycleGuard(ctx, svcProject, { kind: "structural", justification: a.justification });
+    if (guard.defaultToZero && (!a.crew || a.crew.length === 0)) {
+      a.costTotal = 0;
+    }
     // Validate the default crew role even when no crew members are attached (it's stored
     // on the service regardless — line ~406).
     if (a.crewRoleId) await assertCrewRoleInOrg(ctx, a.crewRoleId, a.orgId);
@@ -480,6 +499,7 @@ export const createServiceNative = mutation({
       ...(fields.discount != null ? { discount: fields.discount } : {}),
       ...(fields.lineTotal != null ? { lineTotal: fields.lineTotal } : {}),
       ...(fields.costTotal != null ? { costTotal: fields.costTotal } : {}),
+      ...(fields.chargeRateOverride != null ? { chargeRateOverride: fields.chargeRateOverride } : {}),
       taxable: fields.taxable,
       ...(fields.vehicleDescription != null ? { vehicleDescription: fields.vehicleDescription } : {}),
       ...(fields.numberOfTrips != null ? { numberOfTrips: fields.numberOfTrips } : {}),
@@ -517,8 +537,10 @@ export const createServiceNative = mutation({
       }
       // Roll the crew's resolved cost up into costTotal — the service's own
       // manually-entered costTotal (set just above) only survives when it has NO
-      // crew (issue #796 single source of truth).
+      // crew (issue #796 single source of truth). The charge twin (WS10 #949) does
+      // the same for crewChargeTotal/lineTotal, protecting a manually-typed unitPrice.
       await recalcServiceCostFromCrew(ctx, a.id, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, a.id, a.orgId, a.now);
     }
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -528,6 +550,7 @@ export const createServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "created", entityId: a.id, entityName: a.title,
       summary: `Created ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: a.projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -556,6 +579,8 @@ export const updateServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #791/#793: required (one or the other, never both) once locked.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -565,6 +590,19 @@ export const updateServiceNative = mutation({
 
     if (!a.title) throw new ConvexError("Title is required");
     const existing = await requireServiceInOrg(ctx, a.id, a.orgId);
+
+    // #791/#793 lock gate: this mutation resends the WHOLE service form (incl.
+    // unchanged pricing) on every save, so "touches money" means the incoming
+    // price fields actually DIFFER from the stored row, not merely present.
+    const moneyChanged =
+      (a.unitPrice ?? null) !== (existing.unitPrice ?? null) ||
+      (a.discount ?? null) !== (existing.discount ?? null) ||
+      (a.costTotal ?? null) !== (existing.costTotal ?? null);
+    const svcUpdateProject = await requireProjectInOrg(ctx, existing.projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, svcUpdateProject, {
+      kind: moneyChanged ? "financial" : "structural",
+      justification: a.justification,
+    });
 
     const { fields, serviceDate, serviceEndDate } = buildServiceFields(a);
 
@@ -599,6 +637,7 @@ export const updateServiceNative = mutation({
     setOrClear("discount", fields.discount);
     setOrClear("lineTotal", fields.lineTotal);
     setOrClear("costTotal", fields.costTotal);
+    setOrClear("chargeRateOverride", fields.chargeRateOverride);
     setOrClear("vehicleDescription", fields.vehicleDescription);
     setOrClear("numberOfTrips", fields.numberOfTrips);
     setOrClear("crewCountRequired", fields.crewCountRequired);
@@ -683,8 +722,10 @@ export const updateServiceNative = mutation({
       }
 
       // Roll the crew's resolved cost up into costTotal (only while it HAS crew —
-      // a crew-less service keeps its manually-entered costTotal untouched).
+      // a crew-less service keeps its manually-entered costTotal untouched). The
+      // charge twin (WS10 #949) does the same for crewChargeTotal/lineTotal.
       await recalcServiceCostFromCrew(ctx, a.id, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, a.id, a.orgId, a.now);
     }
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -694,6 +735,7 @@ export const updateServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "updated", entityId: a.id, entityName: a.title,
       summary: `Updated ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: existing.projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -705,7 +747,11 @@ export const updateServiceNative = mutation({
 // ─────────────────────────────────────────────────────────────────────────────
 export const deleteServiceNative = mutation({
   returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
     await enforceBrowserWriteLimit(ctx);
@@ -714,6 +760,8 @@ export const deleteServiceNative = mutation({
 
     const service = await requireServiceInOrg(ctx, a.id, a.orgId);
     const { projectId, title, type } = service;
+    const delSvcProject = await requireProjectInOrg(ctx, projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, delSvcProject, { kind: "structural", justification: a.justification });
     await cascadeDeleteService(ctx, service, a.orgId);
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -723,6 +771,7 @@ export const deleteServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "deleted", entityId: a.id, entityName: title,
       summary: `Deleted ${SERVICE_TYPE_LABELS[type]} service "${title}"`, projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -1138,6 +1187,10 @@ export const cloneServicesNative = mutation({
         ...(svc.discount != null ? { discount: svc.discount } : {}),
         ...(svc.lineTotal != null ? { lineTotal: svc.lineTotal } : {}),
         ...(svc.costTotal != null ? { costTotal: svc.costTotal } : {}),
+        // Charge-side fields copy verbatim, same as costTotal above — no recalc call
+        // here (parity with the pre-existing cost-side clone behaviour).
+        ...(svc.chargeRateOverride != null ? { chargeRateOverride: svc.chargeRateOverride } : {}),
+        ...(svc.crewChargeTotal != null ? { crewChargeTotal: svc.crewChargeTotal } : {}),
         taxable: svc.taxable ?? true,
         ...(svc.vehicleDescription != null ? { vehicleDescription: svc.vehicleDescription } : {}),
         ...(svc.numberOfTrips != null ? { numberOfTrips: svc.numberOfTrips } : {}),

@@ -26,7 +26,7 @@ function makeT(): T {
 async function seed(t: T) {
   await t.run(async (ctx) => {
     await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "admin" });
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false });
     await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", defaultDayRate: 500, isActive: true });
     await ctx.db.insert("crewRoles", { id: "r1", organizationId: ORG, name: "Rigger", defaultRate: 400, rateType: "DAILY" });
   });

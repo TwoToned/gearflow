@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  ListTodo,
   Package,
   Boxes,
   FolderOpen,
@@ -90,6 +91,13 @@ interface RailItem {
 // Primary modules. Hues per DESIGN.md §3.7/§15.5.
 const RAIL: RailItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
+  // No `resource` gate — personal scope (this user's own assignments), not an
+  // org resource. A resource gate here would fail-open-flash on load like every
+  // other gated item; skipping it entirely (rather than gating on "project")
+  // means viewer/warehouse roles keep their own task list even without
+  // project:read. Sidebar-only per DESIGN.md §16 — NOT in the mobile bottom nav
+  // (that's the 5 daily-operator workflows; see mobile-nav.tsx).
+  { title: "My tasks", url: "/my-tasks", icon: ListTodo, hue: "blue" },
   {
     title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
     subs: [{ title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" }],

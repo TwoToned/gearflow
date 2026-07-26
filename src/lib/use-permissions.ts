@@ -1,7 +1,7 @@
 "use client";
 
 import { useActiveOrganization } from "@/lib/auth-client";
-import { isReadOnly, type Resource } from "./permissions";
+import { isReadOnly, isManagerPlusRole, type Resource } from "./permissions";
 import { useCurrentRoleResource } from "@/hooks/use-current-role";
 
 export function useCurrentRole() {
@@ -32,4 +32,17 @@ export function useIsViewer(): boolean {
   // While loading, treat as viewer (safe default — don't flash edit buttons)
   if (isLoading || !permissions) return true;
   return isReadOnly(permissions);
+}
+
+/**
+ * Manager+ (owner/admin/manager) standing — the client-side half of the "cost +
+ * margin visible to manager+ only" gate (WS10 #949 labour charge rates & margin).
+ * `isManagerPlusRole` (convex/lib/permissionsCore.ts) is the single source of truth,
+ * shared with the server-side field strip (`convex/crewRoles.ts` `listForSettings`).
+ * While loading, treat as NOT manager+ (safe default — don't flash cost/margin data).
+ */
+export function useIsManagerPlus(): boolean {
+  const { role, isLoading } = useCurrentRole();
+  if (isLoading) return false;
+  return isManagerPlusRole(role);
 }

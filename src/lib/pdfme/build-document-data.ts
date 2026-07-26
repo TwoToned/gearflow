@@ -8,6 +8,8 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../convex/_generated/api";
 import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getClientById } from "@/lib/clients-read";
+import { getClientContactsByClientId } from "@/lib/client-contacts-read";
+import { resolveClientContactDisplay } from "@/lib/client-contact-helpers";
 import { getLocationMap } from "@/lib/locations-read";
 import { getSupplierMap } from "@/lib/suppliers-read";
 import { buildDocumentLineItemData } from "@/lib/project-line-item-read";
@@ -211,16 +213,28 @@ export async function buildDocumentData(
   // The line-item tree + categories come from Convex via buildDocumentLineItemData
   // (model/supplier/kit/asset/bulkAsset + per-line category/group selects, units in
   // the SELECT shape). client / location / subHire supplier are also Convex.
-  const [docData, locationMap, supplierMap, clientRaw] = await Promise.all([
+  const [docData, locationMap, supplierMap, clientRaw, clientContacts] = await Promise.all([
     buildDocumentLineItemData(projectId, organizationId),
     getLocationMap(organizationId),
     getSupplierMap(organizationId),
     projectRow.clientId ? getClientById(projectRow.clientId) : Promise.resolve(null),
+    // WS9 #948 — the client's contact rows, for the client_contact/email/phone
+    // token fallback chain below (project's selected contact -> client primary ->
+    // legacy embedded). Empty when the project has no client.
+    projectRow.clientId ? getClientContactsByClientId(projectRow.clientId, organizationId) : Promise.resolve([]),
   ]);
   // getClientById resolves by a GLOBAL by_cuid index — re-check org ownership (see
   // src/server/projects.ts getProject for the full rationale). A forged/stale
   // cross-org clientId must not leak another org's billing details onto a PDF.
   const client = clientRaw && clientRaw.organizationId === organizationId ? clientRaw : null;
+  // Resolve the "Attn:" / email / phone tokens: the project's explicitly SELECTED
+  // contact wins, else the client's primary contact, else the legacy embedded
+  // clients.contactName/Email/Phone fields (migration-window fallback).
+  const resolvedContact = resolveClientContactDisplay(
+    { contactName: client?.contactName, contactEmail: client?.contactEmail, contactPhone: client?.contactPhone },
+    client ? clientContacts : [],
+    projectRow.clientContactId,
+  );
   const project = {
     ...projectRow,
     client,
@@ -691,9 +705,9 @@ export async function buildDocumentData(
 
     // Client
     client_name: serialized.client?.name || "",
-    client_contact: serialized.client?.contactName || "",
-    client_email: serialized.client?.contactEmail || "",
-    client_phone: serialized.client?.contactPhone || "",
+    client_contact: resolvedContact.name || "",
+    client_email: resolvedContact.email || "",
+    client_phone: resolvedContact.phone || "",
     client_billing_address: serialized.client?.billingAddress || "",
     client_tax_id: serialized.client?.taxId || "",
     client_payment_terms: serialized.client?.paymentTerms || "",

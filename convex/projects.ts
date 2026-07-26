@@ -166,6 +166,7 @@ export const create = mutation({
     projectNumber: v.string(),
     name: v.string(),
     clientId: v.optional(v.string()),
+    clientContactId: v.optional(v.string()),
     status: v.optional(enums.ProjectStatus),
     type: v.optional(enums.ProjectType),
     description: v.optional(v.string()),
@@ -227,6 +228,7 @@ export const createIfMissing = mutation({
     projectNumber: v.string(),
     name: v.string(),
     clientId: v.optional(v.string()),
+    clientContactId: v.optional(v.string()),
     status: v.optional(enums.ProjectStatus),
     type: v.optional(enums.ProjectType),
     description: v.optional(v.string()),
@@ -291,6 +293,7 @@ export const update = mutation({
       projectNumber: v.optional(v.string()),
       name: v.optional(v.string()),
       clientId: v.optional(v.string()),
+      clientContactId: v.optional(v.string()),
       status: v.optional(enums.ProjectStatus),
       type: v.optional(enums.ProjectType),
       description: v.optional(v.string()),
@@ -373,6 +376,10 @@ export const remove = mutation({
 
 export const projectWriteFields = {
   clientId: v.optional(v.string()),
+  // Per-project contact picker (WS9 #948) — org + belongs-to-project's-client
+  // validated in projectWrites.ts (createNative / updateNative), cleared there when
+  // clientId changes without an explicit new contact.
+  clientContactId: v.optional(v.string()),
   status: v.optional(enums.ProjectStatus),
   type: v.optional(enums.ProjectType),
   description: v.optional(v.string()),

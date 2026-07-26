@@ -291,6 +291,7 @@ export function useProjectWrites(orgId: string | undefined) {
       isTemplate,
       name: parsed.name,
       clientId: parsed.clientId || undefined,
+      clientContactId: parsed.clientContactId || undefined,
       status: parsed.status,
       type: parsed.type,
       description: parsed.description || undefined,
@@ -403,6 +404,7 @@ export function useProjectWrites(orgId: string | undefined) {
       else set[key] = value;
     };
     setOrClear("clientId", parsed.clientId || null);
+    setOrClear("clientContactId", parsed.clientContactId || null);
     setOrClear("description", parsed.description || null);
     setOrClear("locationId", parsed.locationId || null);
     setOrClear("siteContactName", parsed.siteContactName || null);

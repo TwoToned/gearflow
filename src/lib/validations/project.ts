@@ -4,6 +4,9 @@ export const projectSchema = z.object({
   projectNumber: z.string().max(50).optional().default(""),
   name: z.string().min(1, "Name is required").max(200),
   clientId: z.string().optional(),
+  // Per-project contact picker (WS9 #948) — defaults to the client's primary
+  // contact when unset; cleared server-side when clientId changes (projectWrites.ts).
+  clientContactId: z.string().optional(),
   status: z
     .enum([
       "ENQUIRY",

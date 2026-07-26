@@ -52,13 +52,15 @@
   unchanged.
 
 ## Supplier Orders (Purchase Orders)
-- **Models**: `SupplierOrder` and `SupplierOrderItem`
-- **Enums**: `SupplierOrderType` (PURCHASE, SUBHIRE, REPAIR, OTHER), `SupplierOrderStatus` (DRAFT, SUBMITTED, CONFIRMED, PARTIAL, RECEIVED, CANCELLED)
-- **Convex functions**: `convex/supplierOrders.ts` (reads: `list`, `getById`, `listBySupplier`; mutations: `create`, `update`, `remove`) + `convex/supplierOrdersWrites.ts` (browser-direct: `createNative`) — full CRUD for orders and items
-- **Order fields**: orderNumber (unique per org), type, status, dates, financials (Decimal), supplierId, projectId, createdById, notes, `invoiceFileId` (issue #789 — see Invoice attachment below)
-- **Order items**: description, quantity, unitPrice, lineTotal (auto-calculated), modelId, assetId, notes, sortOrder
-- **Auto-calculations**: `recalculateOrderTotals()` sums item lineTotals, applies 10% GST
-- **Status shortcuts**: Setting to RECEIVED auto-sets receivedDate
+- **Models**: `SupplierOrder` and `SupplierOrderItem` (Convex tables, `convex/schema.ts`)
+- **Enums**: `SupplierOrderType` (PURCHASE, SUBHIRE, REPAIR, LABOUR, OTHER), `SupplierOrderStatus` (DRAFT, ORDERED, PARTIAL, RECEIVED, CANCELLED) — **doc-drift correction (WS7 #946):** this previously listed SUBMITTED/CONFIRMED, which were never the real enum values (`convex/lib/validators.ts`'s `SupplierOrderStatus`); the status machine is `DRAFT → ORDERED → PARTIAL → RECEIVED`, with `CANCELLED` reachable from any non-terminal state (`VALID_TRANSITIONS` in `convex/supplierOrdersWrites.ts`).
+- **Convex functions**: `convex/supplierOrders.ts` (service-only generated CRUD + the browser-readable `listBySupplier`/`getDetail` composite reads) + `convex/supplierOrdersWrites.ts` (browser-direct: `createNative`, `updateNative`, `deleteNative`, `attachInvoiceNative`, `removeInvoiceNative`) + `convex/supplierOrderItemsWrites.ts` (browser-direct item CRUD: `addSupplierOrderItemNative`/`updateSupplierOrderItemNative`/`removeSupplierOrderItemNative`/`reorderSupplierOrderItemsNative`) — full lifecycle as of WS7 #946 (previously read + invoice-attach only; header edit, delete, and ALL item writes did not exist).
+- **Order fields**: orderNumber (unique per org — WS7 #946 added the org-scoped uniqueness check `createNative` had been missing), type, status, dates, financials, supplierId, projectId, createdById, notes, `invoiceFileId` (issue #789 — see Invoice attachment below), `supplierOrderId` link from `subHires` (WS7 #946 — see [39-sub-hires](./39-sub-hires.md#purchase-order-link-ws7-946))
+- **Order items**: description, quantity, unitPrice, lineTotal (auto-calculated server-side = quantity × unitPrice, never client-trusted — R-9.3), modelId, assetId, notes, sortOrder
+- **Auto-calculations**: `recalcOrderTotals` (`convex/lib/recalcOrderTotals.ts`, WS7 #946) sums item lineTotals into `subtotal`, applies the **org's registered default tax rate** (`orgSettings.defaultTaxRate ?? 10` — NOT a hard-coded 10%, correcting the prior claim) to get `taxAmount`, and `total = subtotal + taxAmount`. Runs after every `supplierOrderItemsWrites.ts` add/update/remove (not reorder — reordering doesn't change money). Before WS7 #946 this function was documented but **did not exist** — supplier "Spend" was structurally $0 (see the Spend rollups below).
+- **Header edit**: `supplierOrdersWrites.updateNative` (WS7 #946) — status (machine-guarded, resubmitting the same status is a no-op-allowed edit), orderDate, expectedDate, notes. `orderNumber`/`type`/`supplierId`/`projectId` are fixed at creation.
+- **Status shortcuts**: Setting to RECEIVED auto-sets `receivedDate` (transition-only — re-saving the header while already RECEIVED does not re-stamp it)
+- **Delete**: `supplierOrdersWrites.deleteNative` (WS7 #946) — refuses to delete an order with any asset (`assets.by_supplierOrderId`) or sub-hire (`subHires.by_supplierOrderId`) still linked to it; otherwise cascades the order's own items + invoice file. `supplier:delete`.
 - **Asset integration**: `purchaseOrderNumber` and `supplierOrderId` on Asset — see the
   order-number combobox below for how these two fields are now kept in sync.
 - **Line item integration**: `subhireOrderNumber` and `supplierOrderId` on ProjectLineItem
@@ -133,10 +135,13 @@ in the supplier detail page's Orders tab (both the desktop table and the
   at-a-glance stats: item count / asset count / total / expected date) → main column
   (Line items table, Linked assets table) → sidebar (Order info: type/status/dates/
   financials/notes; Invoice).
-- **Not built**: in-place editing of order header fields (status/dates/notes) — out of
-  scope for #789's acceptance criteria (read + invoice attach only); a future edit flow
-  would reuse `supplierOrderSchema` + a new `updateNative` mutation the same way
-  `assetWrites.updateNative` does.
+- **Header edit + delete (WS7 #946)**: the Actions dropdown next to the order number
+  (mirrors the supplier detail page's pattern) opens `OrderEditDialog` (status Select
+  + order/expected date inputs + notes textarea, calling `useSupplierOrderWrites().update`
+  → `supplierOrdersWrites.updateNative`) or `DeleteDialog` (→ `.remove()` →
+  `deleteNative`, `supplier:delete`, blocked server-side if the order has a linked
+  asset or sub-hire). This closes the gap #789 had left open (previously documented
+  here as "Not built").
 
 ### Invoice attachment (issue #789)
 An order has at most one invoice, so it's a plain 1:1 FK
@@ -163,3 +168,52 @@ over-engineering the wrong cardinality (R-3.1 — model the actual shape).
   already resolved server-side — the browser never calls `fileUploads.*` directly,
   since those reads are service-only).
 - **Remove**: gated the same way as upload (`CanDo resource="supplier" action="update"`).
+
+### Order line-item CRUD (WS7 #946)
+`convex/supplierOrderItemsWrites.ts` — there was previously **no browser path at
+all** for `supplierOrderItems` (the table existed with a schema and a service-only
+generated CRUD file, but nothing could add/edit/remove a line item on a purchase
+order from the app). Mirrors `subHireItems`' add/update/remove/reorder shape in
+`convex/subHiresWrites.ts`:
+- `addSupplierOrderItemNative` / `updateSupplierOrderItemNative` — `lineTotal` is
+  always computed server-side (`quantity × unitPrice`), never trusted from the
+  client (R-9.3); both call `recalcOrderTotals` afterward.
+- `removeSupplierOrderItemNative` — deletes the item, then `recalcOrderTotals`.
+- `reorderSupplierOrderItemsNative` — sortOrder only, no money change, no audit
+  (parity with `reorderSubHireItemsNative`).
+- All four gate on `supplier:update` (no separate `supplierOrderItem` RBAC
+  resource — the spec decision to stay on the `supplier` resource, matching the
+  invoice-attach precedent above).
+- `useSupplierOrderWrites()` (`src/hooks/use-supplier-order-writes.ts`) wraps all
+  four with `supplierOrderItemSchema.parse()` before submit.
+
+### Supplier spend rollups (WS7 #946)
+`suppliers.detail` (`convex/suppliers.ts`) gains a `spend` object, shown on the
+supplier detail page's hero strip (headline "Spend" figure) and a dedicated
+"Spend" sidebar section (breakdown):
+
+- **`committedOrderSpend`** — sum of `order.total` for orders with status
+  ORDERED/PARTIAL/RECEIVED (DRAFT is a quote, not yet committed; CANCELLED never
+  happened).
+- **`subHireSpend`** — sum of `subHire.totalCost` for sub-hire heads with status
+  NOT IN (DRAFT, CANCELLED) — the same "active cost" convention `recalc.ts`'s
+  `subHireCostTotal` uses.
+- **`totalSpend`** — the two above, **de-duplicated for linked pairs**: a sub-hire
+  linked to a committed order (via `subHires.supplierOrderId`) counts ONCE — at the
+  order's `total` if it's RECEIVED (now invoiced), else at the sub-hire's quoted
+  `totalCost` (not invoiced yet). Unlinked orders/sub-hires count normally. The
+  de-dup algorithm is `convex/suppliers.ts`'s exported `computeSupplierSpend` (a
+  plain function, unit-testable without a Convex harness — see
+  `convex/suppliers.test.ts`'s dedup fixture).
+- **`openOrderCount`** — orders with status DRAFT/ORDERED/PARTIAL (not yet
+  RECEIVED or CANCELLED).
+- **`variance`** — `{ total, linkedCount }` across every linked pair (regardless of
+  order status): `order.total - subHire.totalCost` once the order carries a total.
+  Informational only — never feeds the P&L (see [10-projects](./10-projects.md#operational-pl-panel)).
+
+**Subhires tab (visible behaviour change)**: `suppliers.subhiresPage` now returns
+sub-hire **heads** (order #, status, cost/charge/margin, project, linked PO)
+instead of the old `projectLineItems`-based read, which could only show a raw line
+item (model/description/qty) with no order-level cost/charge/margin/status. See
+[39-sub-hires](./39-sub-hires.md#purchase-order-link-ws7-946) for the FK this
+connects to.

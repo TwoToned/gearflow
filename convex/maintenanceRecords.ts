@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import * as enums from "./lib/validators";
 
 /**
@@ -208,6 +209,10 @@ type EnrichedAssetLink = {
  * Build the enriched asset-link objects for a record (sorted by asset tag asc, to
  * mirror the old include orderBy). Reuses caller-provided asset/model maps so the
  * list read batches its reads across the whole result set.
+ *
+ * Filters to LINK rows only (`isLinkRow`) — `maintenanceRecordAssets` is
+ * polymorphic (WS6 #945): a CHECKOFF progress row sharing this record's id is
+ * never a "linked asset" for display purposes.
  */
 function buildLinks(
   recordLinks: Doc<"maintenanceRecordAssets">[],
@@ -215,12 +220,14 @@ function buildLinks(
   modelMap: Map<string, Doc<"models">>,
 ): EnrichedAssetLink[] {
   return recordLinks
+    .filter(isLinkRow)
     .map((l) => {
-      const asset = assetMap.get(l.assetId) ?? null;
+      const assetId = l.assetId as string; // isLinkRow guarantees this is set
+      const asset = assetMap.get(assetId) ?? null;
       const model = asset?.modelId ? modelMap.get(asset.modelId) ?? null : null;
       return {
         id: l.id,
-        assetId: l.assetId,
+        assetId,
         asset: asset
           ? {
               id: asset.id,
@@ -344,12 +351,16 @@ export const recordsPage = query({
     const linksByRecord = new Map<string, Doc<"maintenanceRecordAssets">[]>();
     const assetIds = new Set<string>();
     for (const r of records) {
-      const rls = await ctx.db
-        .query("maintenanceRecordAssets")
-        .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", r.id))
-        .collect();
+      // WS6 #945: maintenanceRecordAssets is polymorphic — filter out CHECKOFF
+      // progress rows so they never masquerade as "linked assets" here.
+      const rls = (
+        await ctx.db
+          .query("maintenanceRecordAssets")
+          .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", r.id))
+          .collect()
+      ).filter(isLinkRow);
       linksByRecord.set(r.id, rls);
-      for (const l of rls) assetIds.add(l.assetId);
+      for (const l of rls) assetIds.add(l.assetId!);
     }
     const assetMap = new Map<string, Doc<"assets">>();
     const modelIds = new Set<string>();
@@ -371,8 +382,8 @@ export const recordsPage = query({
     for (const r of records) {
       const jd = { assetIds: [] as string[], assetTags: [] as string[], modelNames: [] as string[] };
       for (const l of linksByRecord.get(r.id) ?? []) {
-        jd.assetIds.push(l.assetId);
-        const asset = assetMap.get(l.assetId);
+        jd.assetIds.push(l.assetId!);
+        const asset = assetMap.get(l.assetId!);
         if (asset?.assetTag) jd.assetTags.push(asset.assetTag);
         const model = asset?.modelId ? modelMap.get(asset.modelId) : null;
         if (model?.name) jd.modelNames.push(model.name);
@@ -458,16 +469,21 @@ export const recordDetail = query({
     const record = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!record || record.organizationId !== orgId) return null;
 
-    const links = await ctx.db
-      .query("maintenanceRecordAssets")
-      .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", id))
-      .collect();
+    // WS6 #945: maintenanceRecordAssets is polymorphic — filter out CHECKOFF
+    // progress rows so they never masquerade as "linked assets" here.
+    const links = (
+      await ctx.db
+        .query("maintenanceRecordAssets")
+        .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", id))
+        .collect()
+    ).filter(isLinkRow);
     const assetMap = new Map<string, Doc<"assets">>();
     const modelMap = new Map<string, Doc<"models">>();
     for (const l of links) {
-      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", l.assetId)).unique();
+      const assetId = l.assetId!;
+      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", assetId)).unique();
       if (a && a.organizationId === orgId) {
-        assetMap.set(l.assetId, a);
+        assetMap.set(assetId, a);
         if (a.modelId && !modelMap.has(a.modelId)) {
           const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.modelId)).unique();
           if (m && m.organizationId === orgId) modelMap.set(a.modelId, m);

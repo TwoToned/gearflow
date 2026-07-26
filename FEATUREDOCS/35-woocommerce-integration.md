@@ -1,6 +1,6 @@
 # WooCommerce Integration
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 Automatically creates RVLT Flow projects from WooCommerce orders via webhook.
 
@@ -51,7 +51,14 @@ behavior); only the fields this integration actually reads are modeled.
    - `custom_field` — Meta field value → Model.id
    - `name` — Product name → Model.name (case-insensitive contains)
 4. **Resolve location** — Meta key → fuzzy match existing locations (name + address, substring, bigram), auto-creates VENUE if no match
-5. **Create project** — With client, dates, location, line items (EQUIPMENT for matched, MISC for unmatched)
+5. **Create project** — With client, dates, location, line items (EQUIPMENT for matched, MISC for unmatched). Also
+   seeds `discountPercent` from the matched/created client's `Client.defaultDiscount` when set (QW-4 / #953) — this
+   path builds the project directly (`api.projects.createWithUniqueNumber` / `wooCommerceInternal.
+   createProjectWithUniqueNumber`, both plain inserts) rather than through `projectWrites.createNative`, so it
+   doesn't get that mutation's in-mutation discount cascade for free; `resolveWooDiscountPercent`
+   (`src/lib/woocommerce-utils.ts`, verbatim-copied into `convex/wooCommerceActions.ts` — Convex can't import from
+   `src/`) is the shared one-liner both copies call. A snapshot, not a live link — see the Project Wizard section
+   in FEATUREDOCS/10 for the same semantics on the manual-create path.
 6. **Recalculate totals**, log activity, notify configured users
 
 ### Client Matching Strategy
@@ -88,7 +95,7 @@ Location meta key configured?
 | `convex/schema.ts` | `wooCommerceIntegrations`, `wooCommerceOrderLogs` tables, `Model.sku` field (moved here from Prisma in the Convex-native domain migration; only a vestigial `WooOrderLogStatus` enum remains in `prisma/schema.prisma`) |
 | `convex/wooCommerceIntegrations.ts`, `convex/wooCommerceOrderLogs.ts`, `convex/wooCommerceActions.ts`, `convex/wooCommerceInternal.ts` | Convex queries/mutations/actions backing the integration + order log |
 | `src/server/woocommerce.ts` | Server actions (still `"use server"`, reading/writing via the Convex client above) + `processWooCommerceOrder` background processor |
-| `src/lib/woocommerce-utils.ts` | `verifyWebhookSignature` (HMAC-SHA256), `flexibleDateParse` (multi-format) |
+| `src/lib/woocommerce-utils.ts` | `verifyWebhookSignature` (HMAC-SHA256), `flexibleDateParse` (multi-format), `resolveWooDiscountPercent` (QW-4 discount seed) |
 | `src/lib/validations/woocommerce.ts` | Zod schema for settings form (`wooCommerceIntegrationSchema`) + the webhook trust-boundary schema (`wooOrderSchema`) that `WooOrder` is `z.infer`'d from |
 | `src/app/api/integrations/woocommerce/webhook/route.ts` | POST webhook endpoint (public, in middleware allowlist) |
 | `src/app/(app)/settings/woocommerce/page.tsx` | Settings UI (enable/disable, connection, matching, dates, location, defaults, setup guide, order log) |

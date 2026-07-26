@@ -33,7 +33,7 @@ async function member(t: T, role: string) {
 async function seedProject(t: T, id = "p1", orgId = ORG, extra: Record<string, unknown> = {}) {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
-      id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
+      id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "QUOTED",
       defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 999, ...extra,
     });
   });

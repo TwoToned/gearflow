@@ -9,7 +9,10 @@ The `search` query (called via `useGlobalSearch()`, `src/hooks/use-global-search
 - Bulk assets (assetTag)
 - Kits (assetTag, name)
 - Projects (projectNumber, name) — non-templates only
-- Clients (name, contactName) — children: projects
+- Clients (name, contactName, contactEmail, plus every `clientContacts` row's
+  name/email — WS9 #948, resolved via a per-matched-client drill over
+  `clientContacts.by_clientId` rather than a 16th org-wide scan) — children:
+  projects. Result subtitle prefers the client's PRIMARY contact.
 - Suppliers (name, contactName, accountNumber, email, tags)
 - Locations (name, address) — children: child locations
 - Categories (name) — children: models

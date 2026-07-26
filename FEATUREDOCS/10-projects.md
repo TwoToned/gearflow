@@ -64,6 +64,15 @@ retired). Routes:
   only); the user accepts or overrides. `next()` blocks step 0 if blank (the Zod
   schema still allows blank for auto-gen, so the requirement is enforced in the
   wizard).
+- **Step-transition focus management (R-8.1.7, #894).** Continue/Back unmounts the
+  just-clicked button, so the wizard explicitly moves focus on every step change
+  instead of leaving it to the browser's `document.body` fallback (WCAG "focus is
+  never silently lost"). A `tabIndex={-1}` heading ("Step N: <label>") sits at the
+  top of the step-content card and is focused via `stepHeadingRef` in a `useEffect`
+  keyed on `step`, skipping the very first render. Step 0 is excluded from that
+  effect — its Name field already carries `autoFocus`, which re-fires on every
+  (re)mount (the step content is conditionally rendered, so returning to step 0
+  remounts the field) and would otherwise race the heading-focus effect.
 - **Schedule step — one calendar, not six pickers.** The hire window is a single
   date range chosen via `RangeCalendar` (`src/components/ui/range-calendar.tsx`,
   a custom date-fns range calendar — no external calendar dep) plus duration

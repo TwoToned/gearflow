@@ -257,7 +257,7 @@ describe("WS6 non-blocking invariant — full generate -> check-off -> complete 
     });
     // Progress mid-cycle: still open, quantity untouched.
     expect((await allBulk(t))[0].availableQuantity).toBe(beforeQty);
-    let mid = await t.run(async (ctx) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", cycle.id)).unique());
+    const mid = await t.run(async (ctx) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", cycle.id)).unique());
     expect(mid?.status).toBe("SCHEDULED");
 
     // "Check all remaining" (102 left of 120).

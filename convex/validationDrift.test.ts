@@ -91,7 +91,18 @@ const PAIRS: Pair[] = [
   { name: "checkItem", zod: checkItemSchema, convex: checkItemFields },
   { name: "bulkAsset", zod: bulkAssetSchema, convex: bulkFields },
   { name: "notificationPreference", zod: notificationPreferenceSchema, convex: prefFields },
-  { name: "model", zod: modelSchema, convex: modelFields },
+  {
+    name: "model",
+    zod: modelSchema,
+    convex: modelFields,
+    // WS6 #945: maintenanceIntervalDays was removed from the interactive
+    // create/edit form's Zod schema (superseded by serviceSchedules) but is
+    // deliberately LEFT wired in modelWrites.ts because CSV bulk import/export
+    // (src/server/csv.ts) still reads/writes this column via the generic
+    // convex/models.ts CRUD — migrating that surface is a separate follow-up.
+    // See the deprecation comment on convex/schema.ts's models.maintenanceIntervalDays.
+    allowConvexOnly: ["maintenanceIntervalDays"],
+  },
   { name: "location", zod: locationSchema, convex: locationFields },
   { name: "supplier", zod: supplierSchema, convex: supplierFields },
   {

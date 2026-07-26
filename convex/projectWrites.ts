@@ -377,8 +377,8 @@ export const updateNative = mutation({
     // and isTemplate (no client-forged totals / in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
 
-    // #791/#792 finance soft-lock: any of the locked project fields being set or
-    // cleared on a FINANCE_LOCKED+ project requires an open unlock session.
+    // #791/#792 finance soft-lock: setting or clearing a locked project field
+    // on a FINANCE_LOCKED+ project requires an open unlock session.
     const touchesLockedField = LOCKED_PROJECT_FIELDS.some((f) => f in setObj || clear.includes(f));
     const lockGuard = touchesLockedField ? await assertLifecycleGuard(ctx, project, { kind: "financial" }) : null;
 

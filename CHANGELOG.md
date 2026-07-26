@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **R-8.1.7** (#894) — The "Create a project" wizard (`/projects/new`) silently lost keyboard
+  focus on every step transition: clicking Continue/Back unmounts the just-clicked button, and
+  with no explicit target the browser fell back to `document.body`, forcing keyboard/screen-reader
+  users to re-Tab from the top of the page after every step. `ProjectWizard`
+  (`src/components/projects/project-wizard.tsx`) now focuses a `tabIndex={-1}` step heading after
+  every non-initial step change; step 0 keeps its existing `autoFocus` on the Name field instead
+  (which already re-fires correctly since the step content remounts).
+
 - **R-5.3** (#900, tracked under #905) — Fixed `scripts/check-docs-npm-npx.mjs`'s detection
   logic itself, the actual root cause of this rule's 4th recurrence (#731, #820, #856 only ever
   fixed scope/diff-vs-full-repo). `BAD`'s `npm run` branch required a non-whitespace char with

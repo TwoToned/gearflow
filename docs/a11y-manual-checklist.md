@@ -109,21 +109,23 @@ treating it as a finding — several were test-harness artifacts (see notes belo
 |------|--------|--------|
 | 3. Sign out | Dashboard nav walk; account menu opened with `Enter`, closed with `Escape` (focus returns to trigger), re-opened and navigated to "Sign out" with real `ArrowDown` presses, activated with `Enter`; confirmed the session is actually invalidated (a post-sign-out visit to `/dashboard` bounces to `/login`) | ✅ Clean |
 | 4. Register / onboarding | Registration form and the org-creation form both filled and submitted keyboard-only (`Tab` between fields, `Enter` to submit); confirmed onboarding actually completes (revisiting `/onboarding` redirects to `/dashboard`) | ✅ Clean |
-| 5. Create a project (revenue path) | Keyboard walk through the 4-step wizard (Basics → Schedule → Site → Review → Create job) | ⚠️ One confirmed finding — see below (filed as #894) |
+| 5. Create a project (revenue path) | Keyboard walk through the 4-step wizard (Basics → Schedule → Site → Review → Create job) | ✅ Clean now — one finding found and **fixed** in a follow-up PR, see below |
 | 6. Add line items + pricing (revenue path) | Keyboard-only: "Add" menu (`Enter` + `ArrowDown` + `Enter`), item dialog (tab-strip + form fields), model search combobox, "Add to project" | ✅ Clean now — one finding found and **fixed** in this PR, see below |
 | 7. Availability check (revenue path) | Inline availability panel (async Convex query) renders "1 available" with no overbook warning, exercised as part of the same keyboard flow as flow 6 | ✅ Clean |
 | 8. Warehouse check-out | Pick tab, header checkbox (`Space`), Prep | ✅ Clean once the interaction was scripted correctly — see the "Assign assets" dialog root-cause below |
 | 9. Warehouse check-in / return | Deployed tab, header checkbox, Return; confirmed item moves from Deployed(0)→Returned(1) | ✅ Clean |
 | 10. Create inventory | Model creation + serialized asset creation, both keyboard-only; server-generated asset tag confirmed visible on the detail page | ✅ Clean |
 
-**Finding — flow 5, Create-project wizard loses focus on every step transition (open, filed as
-[#894](https://github.com/TwoToned/gearflow/issues/894)):** clicking "Continue" unmounts the
-just-clicked button; nothing moves focus to the new step, so `document.activeElement` falls back
-to `<body>`. Confirmed directly (not inferred from a tab-walk diff) — a script read
-`document.activeElement` immediately before and after a `Continue` click and observed the drop
-to `body`. A keyboard/screen-reader user loses their place after every step and must re-navigate
-from the top of the page. Criterion 3 (focus never silently lost). Not a hard blocker (Tab still
-reaches the content eventually) but a real, repeated disorientation in the primary revenue path.
+**Finding — flow 5, Create-project wizard loses focus on every step transition (filed as
+[#894](https://github.com/TwoToned/gearflow/issues/894), FIXED in a follow-up PR):** clicking
+"Continue" unmounts the just-clicked button; nothing moved focus to the new step, so
+`document.activeElement` fell back to `<body>`. Confirmed directly (not inferred from a tab-walk
+diff) — a script read `document.activeElement` immediately before and after a `Continue` click
+and observed the drop to `body`. A keyboard/screen-reader user lost their place after every step
+and had to re-navigate from the top of the page. Criterion 3 (focus never silently lost). Fixed:
+`ProjectWizard` (`src/components/projects/project-wizard.tsx`) now focuses a `tabIndex={-1}`
+step heading after every non-initial step change (step 0 is left to its Name field's existing
+`autoFocus`). See `FEATUREDOCS/10-projects.md`.
 
 **Finding — flow 6, unlabeled equipment-dialog fields (FIXED in this PR):**
 `equipment-add-form.tsx`'s local `Field` wrapper rendered `<Label>` with no `htmlFor`, so the
@@ -171,8 +173,7 @@ Turbopack-crash class (`docs/e2e-harness.md`) reproduced live mid-pass; switched
 already does.
 
 **Compliance:** POLICY.md R-8.1.7's manual-checklist requirement is now met for all 10 critical
-flows — flows 1-2 (2026-07-23 entry above) plus flows 3-10 (this entry). One WCAG finding fixed
-in this PR (flow 6 labels); one tracked as a follow-up ([#894](https://github.com/TwoToned/gearflow/issues/894),
-flow 5 focus loss) rather than blocking closure — it's a real but non-blocking finding, exactly
-the "log it and file a follow-up" path this checklist's procedure calls for. Closing #858 and
-#870.
+flows — flows 1-2 (2026-07-23 entry above) plus flows 3-10 (this entry). Two WCAG findings were
+logged from this pass and both are now fixed: flow 6 labels (fixed in this PR) and flow 5 focus
+loss ([#894](https://github.com/TwoToned/gearflow/issues/894), fixed in a follow-up PR). Closing
+#858 and #870.

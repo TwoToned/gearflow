@@ -303,6 +303,12 @@ interface MultiComboboxPickerProps {
   emptyMessage?: string
   className?: string
   disabled?: boolean
+  /**
+   * Render the selected-items chip row below the trigger. Defaults to true.
+   * Set false when the caller already renders the selection elsewhere (e.g.
+   * a table listing the same items) — showing both is duplicate information.
+   */
+  showSelectedTags?: boolean
 }
 
 function MultiComboboxPicker({
@@ -314,6 +320,7 @@ function MultiComboboxPicker({
   emptyMessage = "No results found.",
   className,
   disabled = false,
+  showSelectedTags = true,
 }: MultiComboboxPickerProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
@@ -329,10 +336,6 @@ function MultiComboboxPicker({
         opt.description?.toLowerCase().includes(lower)
     )
   }, [options, search])
-
-  const selectedLabels = values
-    .map((v) => options.find((o) => o.value === v)?.label)
-    .filter(Boolean)
 
   function handleToggle(optionValue: string) {
     if (values.includes(optionValue)) {
@@ -436,30 +439,49 @@ function MultiComboboxPicker({
         </PopoverPrimitive.Portal>
       </PopoverPrimitive.Root>
 
-      {selectedLabels.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {values.map((v) => {
-            const opt = options.find((o) => o.value === v)
-            if (!opt) return null
-            return (
-              <span
-                key={v}
-                className="inline-flex items-center gap-1 rounded-md bg-accent/50 px-1.5 py-0.5 text-xs"
-              >
-                {opt.icon && <span className="shrink-0">{opt.icon}</span>}
-                {opt.label}
-                <button
-                  type="button"
-                  onClick={() => handleRemove(v)}
-                  className="ml-0.5 text-fg-3 hover:text-fg"
-                >
-                  <XIcon className="size-3" />
-                </button>
-              </span>
-            )
-          })}
-        </div>
-      )}
+      <SelectedTagsRow show={showSelectedTags} values={values} options={options} onRemove={handleRemove} />
+    </div>
+  )
+}
+
+/** The removable-chip row under a MultiComboboxPicker's trigger — split out so
+ *  its `show`/empty-selection checks don't add branches to the (already large)
+ *  MultiComboboxPicker function itself (R-3.6 complexity ratchet). */
+function SelectedTagsRow({
+  show,
+  values,
+  options,
+  onRemove,
+}: {
+  show: boolean
+  values: string[]
+  options: ComboboxPickerOption[]
+  onRemove: (value: string) => void
+}) {
+  if (!show) return null
+  const selected = values
+    .map((v) => ({ value: v, option: options.find((o) => o.value === v) }))
+    .filter((entry): entry is { value: string; option: ComboboxPickerOption } => !!entry.option)
+  if (selected.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {selected.map(({ value: v, option }) => (
+        <span
+          key={v}
+          className="inline-flex items-center gap-1 rounded-md bg-accent/50 px-1.5 py-0.5 text-xs"
+        >
+          {option.icon && <span className="shrink-0">{option.icon}</span>}
+          {option.label}
+          <button
+            type="button"
+            onClick={() => onRemove(v)}
+            className="ml-0.5 text-fg-3 hover:text-fg"
+          >
+            <XIcon className="size-3" />
+          </button>
+        </span>
+      ))}
     </div>
   )
 }

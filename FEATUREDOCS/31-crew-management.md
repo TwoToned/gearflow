@@ -241,6 +241,15 @@ on the page (issue #796 — "put all crew management on the services"):
   service's "Cost to Business" total becomes a read-only auto-calculated sum of that
   table once any crew is assigned (see "Service ↔ Crew Cost Linkage" above); a
   crew-less service keeps the old manually-typed cost field.
+  `CrewRateTable` renders as a real `Table`/`TableRow`/`TableCell` (from
+  `@/components/ui/table`) instead of stacked flex rows — column labels ("Crew",
+  "Rate", "Cost") live once in the header instead of being repeated per row per
+  field, and the Rate cell joins the override amount + rate-type select into one
+  bordered control. The Hours column only renders at all when at least one
+  assigned row is hourly-rated. The crew-member picker's selected-chip row
+  (`MultiComboboxPicker`'s default "X selected" chips under the trigger) is
+  suppressed here (`showSelectedTags={false}`) since the rate table immediately
+  below lists the same members — showing both was duplicate information.
 - **`CrewPanel`** (`src/components/projects/crew-panel.tsx`) is rendered FROM
   INSIDE `ServicesPanel` (not mounted separately by the page) as a "Project crew"
   section below the service list — every crew member across every service on the

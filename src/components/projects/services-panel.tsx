@@ -96,6 +96,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1104,6 +1113,7 @@ function CrewMemberSelect({
         placeholder="Search and select crew..."
         searchPlaceholder="Search crew members..."
         emptyMessage="No crew members available"
+        showSelectedTags={false}
       />
     </div>
   );
@@ -1159,24 +1169,51 @@ function CrewRateTable({
   onRemoveRow: (crewMemberId: string) => void;
   total: number;
 }) {
+  // Hours only applies to hourly-rated rows — the column is dropped entirely
+  // (not just blanked per-row) when nothing on the service is hourly, so the
+  // common daily/flat case stays a tight 4-column table.
+  const showHours = rows.some((row) => (row.rateType || previewCost(row).rateType) === "HOURLY");
+  const labelColSpan = showHours ? 3 : 2;
+
   return (
     <div className="space-y-1.5">
       <Label>Crew rates</Label>
-      <div className="space-y-2 rounded-[var(--r)] border border-line p-2">
-        {rows.map((row) => (
-          <CrewRateTableRow
-            key={row.crewMemberId}
-            row={row}
-            member={crewMemberById.get(row.crewMemberId)}
-            previewCost={previewCost}
-            onChangeRow={onChangeRow}
-            onRemoveRow={onRemoveRow}
-          />
-        ))}
-        <div className="flex items-center justify-between border-t border-line pt-2 text-ui-text">
-          <span className="font-medium text-ink-2">Total labour cost</span>
-          <span className="font-semibold tabular-nums text-ink">{formatCurrency(total)}</span>
-        </div>
+      <div className="rounded-[var(--r)] border border-line overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Crew</TableHead>
+              <TableHead>Rate</TableHead>
+              {showHours && <TableHead className="text-right">Hours</TableHead>}
+              <TableHead className="text-right">Cost</TableHead>
+              <TableHead className="w-8" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <CrewRateTableRow
+                key={row.crewMemberId}
+                row={row}
+                member={crewMemberById.get(row.crewMemberId)}
+                previewCost={previewCost}
+                onChangeRow={onChangeRow}
+                onRemoveRow={onRemoveRow}
+                showHours={showHours}
+              />
+            ))}
+          </TableBody>
+          <TableFooter>
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={labelColSpan} className="font-medium text-ink-2">
+                Total labour cost
+              </TableCell>
+              <TableCell className="text-right font-semibold tabular-nums text-ink">
+                {formatCurrency(total)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
+        </Table>
       </div>
     </div>
   );
@@ -1188,86 +1225,89 @@ function CrewRateTableRow({
   previewCost,
   onChangeRow,
   onRemoveRow,
+  showHours,
 }: {
   row: ServiceCrewTableRow;
   member: CrewRateTableMember | undefined;
   previewCost: (row: ServiceCrewTableRow) => { rate: number; rateType: string; cost: number };
   onChangeRow: (crewMemberId: string, patch: Partial<ServiceCrewTableRow>) => void;
   onRemoveRow: (crewMemberId: string) => void;
+  /** Whether the table is rendering the Hours column at all (see CrewRateTable). */
+  showHours: boolean;
 }) {
   const { rate, rateType, cost } = previewCost(row);
   const effectiveRateType = row.rateType || rateType;
-  const isOverridden = row.rateOverride != null && row.rateOverride > 0;
 
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded-[var(--r)] bg-paper-2/60 p-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2 basis-full sm:basis-auto">
-        <PersonAvatar name={memberDisplayName(member, "?")} src={member?.image ?? undefined} className="size-6 shrink-0" />
-        <span className="truncate text-ui-text font-medium text-ink-2">{memberDisplayName(member, "Unknown")}</span>
-      </div>
-      <div className="w-24 space-y-0.5">
-        <Label className="text-[10px] text-faint">Rate override</Label>
-        <Input
-          type="number"
-          step="0.01"
-          min={0}
-          value={row.rateOverride ?? ""}
-          onChange={(e) => onChangeRow(row.crewMemberId, { rateOverride: parseOptionalNumber(e.target.value) })}
-          placeholder={formatCurrency(rate)}
-          className="h-8 text-caption"
-        />
-      </div>
-      <div className="w-24 space-y-0.5">
-        <Label className="text-[10px] text-faint">Rate type</Label>
-        <Select
-          value={effectiveRateType}
-          onValueChange={(v) => onChangeRow(row.crewMemberId, { rateType: v as ServiceCrewTableRow["rateType"] })}
-        >
-          <SelectTrigger className="h-8 text-caption">
-            <SelectValue>{crewRateTypeLabels[effectiveRateType]}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="DAILY">Daily</SelectItem>
-            <SelectItem value="HOURLY">Hourly</SelectItem>
-            <SelectItem value="FLAT">Flat</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {effectiveRateType === "HOURLY" && (
-        <div className="w-20 space-y-0.5">
-          <Label className="text-[10px] text-faint">Hours</Label>
+    <TableRow>
+      <TableCell>
+        <div className="flex min-w-0 items-center gap-2">
+          <PersonAvatar name={memberDisplayName(member, "?")} src={member?.image ?? undefined} className="size-6 shrink-0" />
+          <span className="truncate font-medium text-ink-2">{memberDisplayName(member, "Unknown")}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {/* Amount + unit rendered as one joined control (shared border) so the
+            row reads as a single "Rate" field despite being two inputs. */}
+        <div className="flex w-fit">
           <Input
             type="number"
-            step="0.5"
+            step="0.01"
             min={0}
-            value={row.estimatedHours ?? ""}
-            onChange={(e) => onChangeRow(row.crewMemberId, { estimatedHours: parseOptionalNumber(e.target.value) })}
-            className="h-8 text-caption"
+            value={row.rateOverride ?? ""}
+            onChange={(e) => onChangeRow(row.crewMemberId, { rateOverride: parseOptionalNumber(e.target.value) })}
+            placeholder={formatCurrency(rate)}
+            aria-label="Rate override"
+            className="h-7 w-[72px] rounded-r-none border-r-0 text-caption"
           />
+          <Select
+            value={effectiveRateType}
+            onValueChange={(v) => onChangeRow(row.crewMemberId, { rateType: v as ServiceCrewTableRow["rateType"] })}
+          >
+            <SelectTrigger aria-label="Rate type" className="h-7 w-[72px] rounded-l-none text-caption">
+              <SelectValue>{crewRateTypeLabels[effectiveRateType]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="DAILY">Daily</SelectItem>
+              <SelectItem value="HOURLY">Hourly</SelectItem>
+              <SelectItem value="FLAT">Flat</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
+      </TableCell>
+      {showHours && (
+        <TableCell className="text-right">
+          {effectiveRateType === "HOURLY" ? (
+            <Input
+              type="number"
+              step="0.5"
+              min={0}
+              value={row.estimatedHours ?? ""}
+              onChange={(e) => onChangeRow(row.crewMemberId, { estimatedHours: parseOptionalNumber(e.target.value) })}
+              aria-label="Estimated hours"
+              className="ml-auto h-7 w-16 text-right text-caption"
+            />
+          ) : (
+            <span className="text-faint">—</span>
+          )}
+        </TableCell>
       )}
-      <div className="w-20 space-y-0.5 text-right">
-        <Label className="text-[10px] text-faint">Cost</Label>
-        <div className="flex h-8 items-center justify-end text-caption font-medium tabular-nums text-ink">
-          {formatCurrency(cost)}
-        </div>
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="touch-target size-8 shrink-0"
-        onClick={() => onRemoveRow(row.crewMemberId)}
-        aria-label={`Remove ${memberDisplayName(member, "crew member")}`}
-      >
-        <X className="h-3.5 w-3.5 text-muted" />
-      </Button>
-      {!isOverridden && (
-        <p className="w-full text-[10px] text-faint">
-          Using default rate — {formatCurrency(rate)}/{rateType.toLowerCase()}
-        </p>
-      )}
-    </div>
+      <TableCell className="text-right font-medium tabular-nums text-ink whitespace-nowrap">
+        {formatCurrency(cost)}
+      </TableCell>
+      <TableCell>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="touch-target size-7 shrink-0"
+          onClick={() => onRemoveRow(row.crewMemberId)}
+          aria-label={`Remove ${memberDisplayName(member, "crew member")}`}
+        >
+          <X className="h-3.5 w-3.5 text-muted" />
+        </Button>
+      </TableCell>
+    </TableRow>
   );
 }
 

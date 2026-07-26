@@ -73,7 +73,7 @@ export interface PriceBreakdown {
   capped: boolean;
 }
 
-export const priceBreakdownSchema = z.object({
+const priceBreakdownSchema = z.object({
   weeks: z.number().int().min(0),
   days: z.number().int().min(0).max(6),
   weeklyRate: z.number().nullable(),

@@ -271,3 +271,92 @@ describe("gearflowTable — Project Group rendering", () => {
     expect(groupRow!.y).toBeLessThan(sectionHeader!.y);
   });
 });
+
+// ─── #943 — derived billing weeks/days price breakdown ────────────────────
+
+describe("gearflowTable — priceBreakdown rendering (#943)", () => {
+  it("renders the formatted breakdown line under the description when showPricing is on", async () => {
+    const items = [
+      makeLineItem({
+        id: "li-1",
+        model: { name: "PAR Can" },
+        unitPrice: 100,
+        priceBreakdown: JSON.stringify({ weeks: 1, days: 0, weeklyRate: 100, dailyRate: 20, capped: false }),
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { showPricing: true });
+
+    const breakdown = calls.drawText.find(c => c.text === "1 wk @ $100.00");
+    expect(breakdown).toBeDefined();
+    // Renders below the description row.
+    const description = calls.drawText.find(c => c.text === "PAR Can");
+    expect(description).toBeDefined();
+    expect(breakdown!.y).toBeLessThan(description!.y);
+  });
+
+  it("renders the capped-week label distinctly from the uncapped breakdown", async () => {
+    const items = [
+      makeLineItem({
+        id: "li-1",
+        model: { name: "PAR Can" },
+        unitPrice: 100,
+        priceBreakdown: JSON.stringify({ weeks: 1, days: 0, weeklyRate: 100, dailyRate: 20, capped: true }),
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { showPricing: true });
+
+    expect(calls.drawText.find(c => c.text === "charged as 1 wk (capped)")).toBeDefined();
+  });
+
+  it("shows both weeks-and-days terms when both are non-zero", async () => {
+    const items = [
+      makeLineItem({
+        id: "li-1",
+        model: { name: "PAR Can" },
+        unitPrice: 120,
+        priceBreakdown: JSON.stringify({ weeks: 2, days: 3, weeklyRate: 50, dailyRate: 10, capped: false }),
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { showPricing: true });
+
+    expect(calls.drawText.find(c => c.text === "2 wk @ $50.00 + 3 d @ $10.00")).toBeDefined();
+  });
+
+  it("renders nothing when showPricing is off, even with a stored breakdown", async () => {
+    const items = [
+      makeLineItem({
+        id: "li-1",
+        model: { name: "PAR Can" },
+        unitPrice: 100,
+        priceBreakdown: JSON.stringify({ weeks: 1, days: 0, weeklyRate: 100, dailyRate: 20, capped: false }),
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { showPricing: false });
+
+    expect(calls.drawText.find(c => c.text === "1 wk @ $100.00")).toBeUndefined();
+  });
+
+  it("renders nothing for a manually-priced line (no priceBreakdown stored)", async () => {
+    const items = [
+      makeLineItem({ id: "li-1", model: { name: "PAR Can" }, unitPrice: 15 }),
+    ];
+
+    const calls = await runTablePlugin(items, { showPricing: true });
+
+    // Only the description itself draws — no second text row underneath it.
+    const rowsForThisItem = calls.drawText.filter(c => c.text.includes("PAR Can") || c.text.includes("wk") || c.text.includes(" d @"));
+    expect(rowsForThisItem).toHaveLength(1);
+  });
+
+  it("malformed priceBreakdown JSON renders nothing rather than throwing", async () => {
+    const items = [
+      makeLineItem({ id: "li-1", model: { name: "PAR Can" }, unitPrice: 15, priceBreakdown: "{not valid json" }),
+    ];
+
+    await expect(runTablePlugin(items, { showPricing: true })).resolves.toBeDefined();
+  });
+});

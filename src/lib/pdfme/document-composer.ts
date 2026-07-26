@@ -37,6 +37,7 @@ import {
   FOOTER_HEIGHT,
   SECTION_GAP,
 } from "./template-constants";
+import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
 
 // ─── Height constants (pt) — must match gearflow-table.ts's actual draw sizes ─
 const PT_PER_MM = 2.835;
@@ -168,6 +169,15 @@ function calculateRemainingItemHeight(item: DocumentLineItem, config: TableLayou
 /** Rendered height (mm) of one parent item incl. all sub-rows (per-unit, kit/group/accessory children, grandchildren). */
 export function calculateItemHeight(item: DocumentLineItem, config: TableLayoutConfig): number {
   let heightPt = PARENT_ROW_PT;
+
+  // Price breakdown (#943) — must match gearflowTable.ts's own `breakdownLabel`
+  // check exactly, or an auto-priced line's breakdown text silently drops off
+  // the tail of a paginated table (the exact footgun this file's header comment
+  // warns about for any DocumentLineItem shape change).
+  if (item.priceBreakdown && config.showPricing) {
+    const parsed = parsePriceBreakdown(item.priceBreakdown);
+    if (parsed && formatPriceBreakdown(parsed)) heightPt += 7 + 2;
+  }
 
   if (item.notes && config.showNotes) {
     heightPt += item.notes.split("\n").length * (7 + 2);

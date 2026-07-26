@@ -14,6 +14,17 @@ import {
   drawRichText, measureRichTextHeight,
 } from "./helpers";
 import type { DocumentLineItem, TablePluginConfig } from "../types";
+import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
+
+/** Formatted breakdown label for a line, or "" when there's nothing to show
+ *  (no stored breakdown, malformed JSON, or a manually-priced line). Shared by
+ *  the row-height bounds check and the actual draw call so they can never
+ *  disagree about whether this line reserves an extra text row. */
+function breakdownLabel(item: DocumentLineItem, config: TablePluginConfig): string {
+  if (!item.priceBreakdown || !config.showPricing) return "";
+  const parsed = parsePriceBreakdown(item.priceBreakdown);
+  return parsed ? formatPriceBreakdown(parsed) : "";
+}
 
 interface TableSchema extends Schema {
   type: "gearflowTable";
@@ -366,6 +377,9 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         if (item.subHireId != null && item.supplierName) {
           rowContentHeight += fontSize + 1; // "via Supplier" line
         }
+        if (breakdownLabel(item, config)) {
+          rowContentHeight += noteLineHeight; // "2 wk @ $X + 3 d @ $Y" / "charged as N wk (capped)" line
+        }
         if (item.notes && config.showNotes) {
           rowContentHeight += measureRichTextHeight(item.notes, noteLineHeight);
         }
@@ -463,11 +477,26 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               });
             }
 
+            // Price breakdown (#943) — "2 wk @ $X + 3 d @ $Y" / "charged as N wk
+            // (capped)" for an auto-priced line, or nothing for a manual price.
+            let breakdownLineOffset = 0;
+            const breakdown = breakdownLabel(item, config);
+            if (breakdown) {
+              breakdownLineOffset = noteFontSize + 2;
+              page.drawText(breakdown, {
+                x: descX,
+                y: textY - fontSize - 1 - supplierLineOffset,
+                size: noteFontSize,
+                font: fonts.regular,
+                color: noteTextColor,
+              });
+            }
+
             // Notes (with markdown support)
             if (item.notes && config.showNotes) {
               drawRichText(page, item.notes, {
                 x: descX,
-                y: textY - fontSize - 1 - supplierLineOffset,
+                y: textY - fontSize - 1 - supplierLineOffset - breakdownLineOffset,
                 fontSize: noteFontSize,
                 lineHeight: noteFontSize + 2,
                 color: noteTextColor,

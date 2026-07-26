@@ -19,6 +19,7 @@
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { getProjectWindow } from "./projectWindow";
 
 // ─── Pure stock breakdown (copied byte-for-byte from overbooking-core.ts) ─────
 
@@ -150,17 +151,17 @@ export function computeModelAvailability(
 
   let overlapping: Doc<"projectLineItems">[];
   if (hasDates) {
+    // WS2 (#941) — each CANDIDATE project's overlap is tested against its PROJECT
+    // window (getProjectWindow; falls back to rental when unset), not its rental
+    // window directly.
     const conflictProjectIds = new Set(
       projects
-        .filter(
-          (p) =>
-            !p.isTemplate &&
-            !DEAD_PROJECT_STATUSES.includes(p.status ?? "") &&
-            p.rentalStartDate != null &&
-            p.rentalEndDate != null &&
-            (p.rentalStartDate as number) <= rentalEnd &&
-            (p.rentalEndDate as number) >= rentalStart,
-        )
+        .filter((p) => {
+          if (p.isTemplate) return false;
+          if (DEAD_PROJECT_STATUSES.includes(p.status ?? "")) return false;
+          const { start, end } = getProjectWindow(p);
+          return start != null && end != null && start <= rentalEnd && end >= rentalStart;
+        })
         .map((p) => p.id),
     );
     overlapping = lines.filter(
@@ -242,8 +243,10 @@ export async function findAssetConflict(
     if (p.id === excludeProjectId) continue;
     if (p.isTemplate) continue;
     if (DEAD_PROJECT_STATUSES.includes(p.status ?? "")) continue;
-    if (p.rentalStartDate == null || p.rentalEndDate == null) continue;
-    if ((p.rentalStartDate as number) <= rentalEnd && (p.rentalEndDate as number) >= rentalStart) {
+    // WS2 (#941) — candidate's PROJECT window, not rental directly.
+    const { start, end } = getProjectWindow(p);
+    if (start == null || end == null) continue;
+    if (start <= rentalEnd && end >= rentalStart) {
       conflictSet.add(p.id);
     }
   }
@@ -304,8 +307,10 @@ export async function findKitConflict(
     if (p.id === excludeProjectId) continue;
     if (p.isTemplate) continue;
     if (DEAD_PROJECT_STATUSES.includes(p.status ?? "")) continue;
-    if (p.rentalStartDate == null || p.rentalEndDate == null) continue;
-    if ((p.rentalStartDate as number) <= rentalEnd && (p.rentalEndDate as number) >= rentalStart) {
+    // WS2 (#941) — candidate's PROJECT window, not rental directly.
+    const { start, end } = getProjectWindow(p);
+    if (start == null || end == null) continue;
+    if (start <= rentalEnd && end >= rentalStart) {
       conflictSet.add(p.id);
     }
   }

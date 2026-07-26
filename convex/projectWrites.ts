@@ -14,6 +14,15 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getKitByCuid } from "./lib/kits";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
+import {
+  assertLifecycleGuard,
+  crossesIntoSnapshotStatus,
+  isRevertOutOfHardLock,
+  LOCKED_PROJECT_FIELDS,
+  requireHardLockOverrideAllowed,
+} from "./lib/projectLocks";
+import { captureProjectSnapshot } from "./lib/projectSnapshots";
+import { autoCommitOpenSession } from "./projectUnlockSessionsWrites";
 
 /** Forward status transitions that a project's open BLOCKING comments must gate
  *  (parity with src/server/projects.ts BLOCKED_FORWARD_PROJECT_STATUSES). */
@@ -112,9 +121,13 @@ export const updateStatusNative = mutation({
     // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
     // Expand-contract (mirrors convex/lineItemWrites.ts).
     emitSideEffects: v.optional(v.boolean()),
+    // #792: required only when this move REVERTS the project OUT of the
+    // HARD_LOCKED tier (COMPLETED/INVOICED → anything earlier) — audience +
+    // justification checked below. Ignored for every other transition.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
@@ -133,8 +146,53 @@ export const updateStatusNative = mutation({
     if (from !== status && BLOCKED_FORWARD_STATUSES.has(status)) {
       await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
     }
+
+    // #792: reverting OUT of HARD_LOCKED (COMPLETED/INVOICED → earlier) is a
+    // trivial bypass of the hard lock unless restricted the same as opening a
+    // FULL unlock session — audience (admin/owner/PM) + a bounded justification,
+    // audited. COMPLETED → INVOICED stays HARD_LOCKED on both ends and is NOT a
+    // revert (normal forward move, ungated here).
+    if (from !== status && isRevertOutOfHardLock(from, status)) {
+      await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
+      const trimmed = justification?.trim();
+      if (!trimmed || trimmed.length < 10) {
+        throw new ConvexError({
+          code: "JUSTIFICATION_REQUIRED",
+          message: "Reverting a completed project's status requires a justification (at least 10 characters).",
+        });
+      }
+      assertStrLen(trimmed, "justification", { max: 1000 });
+    }
+
     await ctx.db.patch(project._id, { status, updatedAt: now });
     await bumpProjectCounters(ctx, orgId, project, { ...project, status });
+
+    // #792: whole-project snapshot on every crossing into CONFIRMED/COMPLETED —
+    // forward advance OR a revert-then-re-advance re-crossing. Read AFTER the
+    // status patch above so the snapshot's own `project` entry carries the new
+    // status too (statusFrom/statusTo record the transition separately).
+    if (crossesIntoSnapshotStatus(from, status)) {
+      const patched = await ctx.db.get(project._id);
+      if (patched) {
+        await captureProjectSnapshot(ctx, {
+          orgId,
+          project: patched,
+          reason: status as "CONFIRMED" | "COMPLETED",
+          statusFrom: from,
+          statusTo: status,
+          actor,
+          now,
+        });
+      }
+    }
+
+    // #957 precedence: "a forward status transition auto-commits any open
+    // session with an audit note — a session never silently spans a status
+    // change." Applied on every actual status change, not only forward ones,
+    // so a revert can't leave a stale session straddling two tiers either.
+    if (from !== status) {
+      await autoCommitOpenSession(ctx, orgId, id, project.projectNumber, actor, now);
+    }
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -147,6 +205,7 @@ export const updateStatusNative = mutation({
       userName: actor.userName,
       summary: `Changed project ${project.projectNumber} status from ${from} to ${status}`,
       details: { changes: [{ field: "status", from, to: status }] },
+      metadata: justification?.trim() ? { justification: justification.trim() } : undefined,
       projectId: id,
       createdAt: now,
     });
@@ -316,6 +375,13 @@ export const updateNative = mutation({
     // strip organizationId/id (no cross-tenant reassign) + the recalc-owned money anchors
     // and isTemplate (no client-forged totals / in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
+
+    // #791/#792 finance soft-lock: any of the locked project fields being set or
+    // cleared on a FINANCE_LOCKED+ project requires an open unlock session.
+    const touchesLockedField = LOCKED_PROJECT_FIELDS.some((f) => f in setObj || clear.includes(f));
+    if (touchesLockedField) {
+      await assertLifecycleGuard(ctx, project, { kind: "financial" });
+    }
 
     // Bound-check the recalc-INPUT money fields — `set` is v.any() (Convex only
     // enforces "is a number", not range/finiteness), and a browser-direct caller

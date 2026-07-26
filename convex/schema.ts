@@ -1669,6 +1669,10 @@ export default defineSchema({
     color: v.optional(v.string()),
     defaultRate: v.optional(v.number()),
     rateType: v.optional(enums.CrewRateType),
+    // Client-facing charge rate for this role (WS10 #949) — same `rateType` unit as
+    // `defaultRate` (one rateType per role governs both the cost AND charge cascades).
+    // null/absent = no auto-pricing for this role (margin hidden, not a fake 0%/-100%).
+    chargeRate: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     isActive: v.optional(v.boolean()),
   })
@@ -1820,6 +1824,16 @@ export default defineSchema({
     discount: v.optional(v.number()),
     lineTotal: v.optional(v.number()),
     costTotal: v.optional(v.number()),
+    // Charge-side auto-pricing (WS10 #949). `chargeRateOverride` overrides the PER-
+    // ASSIGNMENT charge-rate cascade for this service's crew (cascade:
+    // chargeRateOverride -> role.chargeRate -> null); `crewChargeTotal` is the
+    // resulting sum (convex/lib/serviceCost.ts recalcServiceChargeFromCrew), the
+    // charge-side twin of `costTotal`. Deliberately NOT named `chargeTotal` — that
+    // name is already used (project-service-read.ts / project-services.ts) for the
+    // AGGREGATE "sum of lineTotal across services" concept, a different quantity
+    // (post-discount, post-manual-override) than this pre-discount per-service input.
+    chargeRateOverride: v.optional(v.number()),
+    crewChargeTotal: v.optional(v.number()),
     taxable: v.optional(v.boolean()),
     lineItemId: v.optional(v.string()),
     vehicleDescription: v.optional(v.string()),

@@ -11,7 +11,7 @@ import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen } from "./lib/fieldGuards";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
-import { recalcServiceCostFromCrew } from "./lib/serviceCost";
+import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
 import * as enums from "./lib/validators";
 
 /**
@@ -103,7 +103,10 @@ async function cascadeDelete(ctx: MutationCtx, doc: { _id: import("./_generated/
 /** Recalc every service + project touched by a bulk crew delete. Pulled out of
  *  bulkDeleteNative's handler to keep its own complexity down (R-3.6). */
 async function recalcAfterBulkDelete(ctx: MutationCtx, orgId: string, serviceIds: Set<string>, projectIds: Set<string>, now: number): Promise<void> {
-  for (const serviceId of serviceIds) await recalcServiceCostFromCrew(ctx, serviceId, orgId, now);
+  for (const serviceId of serviceIds) {
+    await recalcServiceCostFromCrew(ctx, serviceId, orgId, now);
+    await recalcServiceChargeFromCrew(ctx, serviceId, orgId, now);
+  }
   const taxRate = await orgDefaultTaxRate(ctx, orgId);
   for (const projectId of projectIds) await recalcProjectTotals(ctx, projectId, orgId, taxRate, now);
 }
@@ -167,7 +170,10 @@ export const createNative = mutation({
     // this is the ONLY crew-write path outside projectServicesWrites.ts's own crew
     // reconcile (e.g. the crew-panel dialog linking straight to a service), so it
     // must recalc too (single source of truth, issue #796).
-    if (a.serviceId) await recalcServiceCostFromCrew(ctx, a.serviceId, a.orgId, a.now);
+    if (a.serviceId) {
+      await recalcServiceCostFromCrew(ctx, a.serviceId, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, a.serviceId, a.orgId, a.now);
+    }
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
     await recalcProjectTotals(ctx, a.projectId, a.orgId, taxRate, a.now);
 
@@ -225,8 +231,14 @@ export const updateNative = mutation({
     // service) + the project totals. Single source of truth, issue #796.
     const oldServiceId = doc.serviceId ?? null;
     const newServiceId = a.serviceId ?? null;
-    if (oldServiceId) await recalcServiceCostFromCrew(ctx, oldServiceId, a.orgId, a.now);
-    if (newServiceId && newServiceId !== oldServiceId) await recalcServiceCostFromCrew(ctx, newServiceId, a.orgId, a.now);
+    if (oldServiceId) {
+      await recalcServiceCostFromCrew(ctx, oldServiceId, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, oldServiceId, a.orgId, a.now);
+    }
+    if (newServiceId && newServiceId !== oldServiceId) {
+      await recalcServiceCostFromCrew(ctx, newServiceId, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, newServiceId, a.orgId, a.now);
+    }
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
     await recalcProjectTotals(ctx, doc.projectId, a.orgId, taxRate, a.now);
 
@@ -277,7 +289,10 @@ export const deleteNative = mutation({
     const pn = await projectNumber(ctx, a.orgId, doc.projectId);
     const serviceId = doc.serviceId ?? null;
     await cascadeDelete(ctx, doc, a.orgId);
-    if (serviceId) await recalcServiceCostFromCrew(ctx, serviceId, a.orgId, a.now);
+    if (serviceId) {
+      await recalcServiceCostFromCrew(ctx, serviceId, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, serviceId, a.orgId, a.now);
+    }
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
     await recalcProjectTotals(ctx, doc.projectId, a.orgId, taxRate, a.now);
     await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name, summary: `Removed ${name} from ${pn}`, projectId: doc.projectId });

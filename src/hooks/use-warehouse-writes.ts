@@ -61,7 +61,10 @@ export function useWarehouseWrites() {
     // ── PR-C: checkout keystone ──────────────────────────────────────────────────
     checkOutItems: async (
       projectId: string,
-      items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string }>,
+      // includeAccessoryIds narrows this item's accessory cascade to a
+      // verified subset — the "Deploy Verified Only" partial-action escape
+      // hatch (issue #794 follow-up), mirroring the kit prep dialog's UX.
+      items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }>,
       includeAccessories = true,
     ): Promise<{ updatedLineIds: string[] }> => {
       return checkOutItemsM({

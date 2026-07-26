@@ -411,6 +411,22 @@ function WarehouseProjectPage({
   const [defaultOverrideReason, setDefaultOverrideReason] = useState("");
   const [optionalSkipReasons, setOptionalSkipReasons] = useState<Record<string, { preset: string; note: string }>>({});
 
+  // Accessory partial-verification confirm (issue #794's remaining acceptance
+  // criterion) — mirrors the kit prep dialog's "Deploy Verified Only"/"Deploy
+  // All" UX, but for the actual Deploy action: an accessory parent whose
+  // PACKED accessories are only partially click-to-verified offers a choice
+  // instead of silently cascading everything.
+  const [accessoryVerifyConfirm, setAccessoryVerifyConfirm] = useState<{
+    parentLineItemId: string;
+    parentAssetId?: string;
+    parentName: string;
+    verifiedCount: number;
+    totalCount: number;
+    /** Verified accessories' own asset/bulkAsset identities — what
+     *  `checkOutItems`'s `includeAccessoryIds` actually narrows by. */
+    verifiedAccessoryIds: string[];
+  } | null>(null);
+
   // Check form state — opens when a scanned item's model has check items
   const [checkFormOpen, setCheckFormOpen] = useState(false);
   const [checkFormData, setCheckFormData] = useState<{
@@ -710,7 +726,7 @@ function WarehouseProjectPage({
   }, [projectId, warehouseWrites]);
 
   const checkOutMutation = useServerMutation({
-    mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
+    mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>; includeAccessories?: boolean }) => {
       const result = await warehouseWrites.checkOutItems(projectId, params.items, params.includeAccessories);
       // Sync container status for affected containers — ONE batch call (was one
       // round-trip per container).
@@ -1929,13 +1945,43 @@ function WarehouseProjectPage({
   }
 
   // Deploy selected prepped items (no checks needed — items are already prepped)
-  function runCheckOut(items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) {
+  function runCheckOut(items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>) {
     checkOutMutation
       // Accessories always cascade with their parent (they're permanently
-      // attached) — there's no longer a warehouse toggle for it.
+      // attached) — there's no longer a warehouse toggle for it, except for
+      // the per-item includeAccessoryIds narrowing an item may carry (the
+      // "Deploy Verified Only" partial-action escape hatch below).
       .mutateAsync({ items, includeAccessories: true })
       .then(() => toast.success(`Deployed ${items.length} item${items.length === 1 ? "" : "s"}`))
       .catch(() => {});
+  }
+
+  // Kit-style partial-verification check for the actual Deploy action (issue
+  // #794's remaining acceptance criterion): find the first accessory parent
+  // in the batch whose PACKED accessories are only partly click-to-verified.
+  // Fully-verified, fully-unverified, and accessory-free parents all pass
+  // through untouched — only a genuine partial split needs a choice.
+  // `verifiedKitItems` tracks accessory CHILD LINE ids (the same convention
+  // KitChildRows uses), but the checkout mutation's `includeAccessoryIds`
+  // narrows by accessory ASSET/BULK-ASSET identity — the two are translated
+  // here so the caller never has to know about the mismatch.
+  function findPartiallyVerifiedAccessoryParent(parentLineItemIds: string[]) {
+    for (const id of parentLineItemIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (!li || !isAccessoryParent(li)) continue;
+      const packed = accessoryChildrenOf(li).filter(
+        (c) => c.status !== "CANCELLED" && c.status !== "CHECKED_OUT" && c.prepStatus === "PACKED",
+      );
+      if (packed.length === 0) continue;
+      const verified = packed.filter((c) => verifiedKitItems.has(c.id));
+      if (verified.length > 0 && verified.length < packed.length) {
+        const verifiedAccessoryIds = verified
+          .map((c) => c.assetId ?? c.bulkAssetId ?? "")
+          .filter((v): v is string => v !== "");
+        return { li, verifiedCount: verified.length, totalCount: packed.length, verifiedAccessoryIds };
+      }
+    }
+    return null;
   }
 
   const handleCheckOutSelected = async () => {
@@ -1985,6 +2031,21 @@ function WarehouseProjectPage({
       setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
       setOptionalSkipReasons({});
       setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
+      return;
+    }
+
+    const partial = findPartiallyVerifiedAccessoryParent(serializedLineItemIds);
+    if (partial) {
+      const rest = items.filter((i) => i.lineItemId !== partial.li.id);
+      if (rest.length > 0) runCheckOut(rest);
+      setAccessoryVerifyConfirm({
+        parentLineItemId: partial.li.id,
+        parentAssetId: partial.li.assetId || undefined,
+        parentName: modelDisplayName(partial.li),
+        verifiedCount: partial.verifiedCount,
+        totalCount: partial.totalCount,
+        verifiedAccessoryIds: partial.verifiedAccessoryIds,
+      });
       return;
     }
 
@@ -2921,6 +2982,58 @@ function WarehouseProjectPage({
                 onClick={confirmAccessoryGate}
               >
                 Deploy anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Accessory partial-verification confirm — "Deploy Verified Only" vs
+          "Deploy All", the kit-prep-style dialog applied to the real Deploy
+          action (issue #794's remaining acceptance criterion). */}
+      {accessoryVerifyConfirm && (
+        <Dialog open={true} onOpenChange={() => setAccessoryVerifyConfirm(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Deploy without full verification?</DialogTitle>
+            </DialogHeader>
+            <p className="text-ui-text text-muted">
+              <span className="font-medium text-ink">{accessoryVerifyConfirm.parentName}</span> has{" "}
+              <span className="font-medium text-ink tabular-nums">
+                {accessoryVerifyConfirm.verifiedCount}/{accessoryVerifyConfirm.totalCount}
+              </span>{" "}
+              accessories verified. You can deploy the parent with only the verified accessories,
+              or deploy with everything.
+            </p>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="line" size="sm" onClick={() => setAccessoryVerifyConfirm(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="line"
+                size="sm"
+                onClick={() => {
+                  runCheckOut([{
+                    lineItemId: accessoryVerifyConfirm.parentLineItemId,
+                    assetId: accessoryVerifyConfirm.parentAssetId,
+                    includeAccessoryIds: accessoryVerifyConfirm.verifiedAccessoryIds,
+                  }]);
+                  setAccessoryVerifyConfirm(null);
+                }}
+              >
+                Deploy Verified Only ({accessoryVerifyConfirm.verifiedCount})
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  runCheckOut([{
+                    lineItemId: accessoryVerifyConfirm.parentLineItemId,
+                    assetId: accessoryVerifyConfirm.parentAssetId,
+                  }]);
+                  setAccessoryVerifyConfirm(null);
+                }}
+              >
+                Deploy All ({accessoryVerifyConfirm.totalCount})
               </Button>
             </DialogFooter>
           </DialogContent>

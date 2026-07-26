@@ -183,9 +183,16 @@ function kitNeedsPrepping(c: LineItem): boolean {
 }
 
 /** Accessory parent, Pick/Prep test: own asset still needs prep, OR any
- *  accessory child does (extracted so isInPickPrepStage stays under R-3.6). */
+ *  accessory child does (extracted so isInPickPrepStage stays under R-3.6).
+ *  Deliberately does NOT early-return on the parent's own CHECKED_OUT/
+ *  RETURNED status — a "Deploy Verified Only" partial deploy can leave the
+ *  parent already deployed while an unverified accessory sibling is still
+ *  sitting unprepped, and that sibling must stay actionable here (issue #794's
+ *  partial-deploy criterion) instead of vanishing once its parent moves on. */
 function accessoryParentNeedsPrep(item: LineItem): boolean {
-  if (item.prepStatus !== "PACKED") return true;
+  if (item.quantity <= 0) return false; // exhausted originals post prep-split
+  const ownNeedsPrep = item.status !== "CHECKED_OUT" && item.status !== "RETURNED" && item.prepStatus !== "PACKED";
+  if (ownNeedsPrep) return true;
   return accessoryChildrenOf(item).some(
     (c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED" && c.prepStatus !== "PACKED",
   );
@@ -198,10 +205,13 @@ export function isInPickPrepStage(item: LineItem): boolean {
   // unpacked, even once some units are prepped/deployed (kit parents are
   // handled by their child rollup below, never as a bulk line).
   if (isBulkItem(item) && !isKitParent(item)) return bulkUnpackedRemaining(item) > 0;
+  // Accessory parents are checked BEFORE the blanket CHECKED_OUT/RETURNED
+  // early-return (see accessoryParentNeedsPrep) — everyone else still exits
+  // early on it.
+  if (isAccessoryParent(item)) return accessoryParentNeedsPrep(item);
   if (item.status === "CHECKED_OUT" || item.status === "RETURNED") return false;
   if (isKitParent(item)) return (item.childLineItems ?? []).some(kitNeedsPrepping);
   if (item.quantity <= 0) return false; // exhausted originals post prep-split
-  if (isAccessoryParent(item)) return accessoryParentNeedsPrep(item);
   return item.prepStatus !== "PACKED";
 }
 
@@ -215,9 +225,14 @@ function kitPreppedNotDeployed(c: LineItem): boolean {
 }
 
 /** Accessory parent, Deploy test: own asset is prepped-and-waiting, OR any
- *  accessory child is (extracted so isInPreppedStage stays under R-3.6). */
+ *  accessory child is (extracted so isInPreppedStage stays under R-3.6).
+ *  Same "don't hide behind the parent's own terminal status" reasoning as
+ *  accessoryParentNeedsPrep above — a left-behind packed accessory must stay
+ *  visible here even once its parent is already CHECKED_OUT. */
 function accessoryParentPreppedNotDeployed(item: LineItem): boolean {
-  if (item.prepStatus === "PACKED") return true;
+  if (item.quantity <= 0) return false;
+  const ownWaiting = item.status !== "CHECKED_OUT" && item.status !== "RETURNED" && item.prepStatus === "PACKED";
+  if (ownWaiting) return true;
   return accessoryChildrenOf(item).some(
     (c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED" && c.status !== "RETURNED" && c.prepStatus === "PACKED",
   );
@@ -227,10 +242,10 @@ function accessoryParentPreppedNotDeployed(item: LineItem): boolean {
 export function isInPreppedStage(item: LineItem): boolean {
   if (item.status === "CANCELLED") return false;
   if (isBulkItem(item) && !isKitParent(item)) return bulkPackedWaiting(item) > 0;
+  if (isAccessoryParent(item)) return accessoryParentPreppedNotDeployed(item);
   if (item.status === "CHECKED_OUT" || item.status === "RETURNED") return false;
   if (isKitParent(item)) return (item.childLineItems ?? []).some(kitPreppedNotDeployed);
   if (item.quantity <= 0) return false;
-  if (isAccessoryParent(item)) return accessoryParentPreppedNotDeployed(item);
   return item.prepStatus === "PACKED";
 }
 

@@ -153,6 +153,26 @@ describe("isInPreppedStage", () => {
   test("accessory parent: hidden when neither the parent nor the accessory is packed", () => {
     expect(isInPreppedStage(accessoryParent({ prepStatus: "PENDING" }, { prepStatus: "PENDING" }))).toBe(false);
   });
+
+  // "Deploy Verified Only" deploys the parent asset while deliberately
+  // leaving an unverified-but-packed accessory behind (issue #794's
+  // partial-deploy criterion) — that accessory must stay visible in the
+  // Deploy tab so it can be caught up later, not vanish because its parent's
+  // own status raced ahead to CHECKED_OUT.
+  test("left-behind accessory: still shown once the parent itself is already CHECKED_OUT", () => {
+    const item = accessoryParent({ status: "CHECKED_OUT", prepStatus: "PACKED" }, { status: "CONFIRMED", prepStatus: "PACKED" });
+    expect(isInPreppedStage(item)).toBe(true);
+  });
+
+  test("left-behind accessory: does NOT reappear in Pick/Prep (it's already packed, just not deployed)", () => {
+    const item = accessoryParent({ status: "CHECKED_OUT", prepStatus: "PACKED" }, { status: "CONFIRMED", prepStatus: "PACKED" });
+    expect(isInPickPrepStage(item)).toBe(false);
+  });
+
+  test("fully caught up: hidden from Deploy once parent AND accessory are both CHECKED_OUT", () => {
+    const item = accessoryParent({ status: "CHECKED_OUT", prepStatus: "PACKED" }, { status: "CHECKED_OUT", prepStatus: "PACKED" });
+    expect(isInPreppedStage(item)).toBe(false);
+  });
 });
 
 describe("isInReturnedStage (de-prep staging)", () => {

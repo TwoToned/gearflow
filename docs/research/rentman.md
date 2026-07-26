@@ -1,6 +1,8 @@
 # Rentman — competitive/product research
 
-**Status:** Research notes (not a spec). **Date:** 2026-07-26.
+**Status:** Research notes (not a spec). **Date:** 2026-07-26
+(updated same day with deep dives on Warehouse prep/scan §7, Maintenance §8,
+and Statistics §9).
 **Method:** Hands-on walkthrough of a full Rentman demo instance
 (`ttptest.rentmanapp.com`, account "Two Toned Production", region `us-west-2`,
 API endpoint version `4.896`, frontend `5.1320`) with pre-loaded demo data,
@@ -282,7 +284,126 @@ invoice moment, payment condition, tax schema per contact).
 
 ---
 
-## 7. Configuration & extensibility
+## 7. Warehouse prep & scanning (deep dive)
+
+The **Warehouse** module's landing page is the operations command centre for a
+given day + warehouse. Layout:
+
+- Top: a **Transports** timeline (vehicles vs time, with the project/function
+  they're assigned to) and a **Scheduled crew** timeline (crew vs time) for the
+  selected day.
+- Bottom: a **Kanban board of projects by warehouse status** —
+  `Confirmed → Prepped → On location → Expected back → Delayed`. Each project
+  card carries its number, warehouse, client, start-of-planning-period, notes,
+  a **QR code** (scan to open that project's booking), and per-card **Book** and
+  **Change status** actions. Projects flow left→right as gear is prepped and
+  shipped.
+- A **Scan return** button (top-right) opens the check-in flow.
+
+![Warehouse prep board](./assets/rentman/warehouse-prep-board.png)
+
+**Booking / picking / scanning** (`/warehouse/booking/<project>`) is where gear
+is actually pulled and checked out:
+
+- Two status columns side by side (**Confirmed → Prepped**), each scoped to a
+  warehouse.
+- A **Scan code** field (barcode/QR entry, with an audio-feedback toggle so a
+  handheld scanner "beeps" on each hit) — scan an item's barcode to advance it.
+- Equipment is grouped (e.g. "Sound"); each line shows **quantity progress**
+  (`1/1`), code, name, and a per-line action to **assign specific serial
+  numbers** to the booking.
+- For kits/combinations, an *"Equipment not yet assigned to combination …"* row
+  lets you bind specific serials/exemplars to the kit instance being packed.
+- **Book everything** bulk-advances a whole group/status.
+
+![Warehouse booking & scan](./assets/rentman/warehouse-booking-scan.png)
+
+**Scan return** (`/warehouse/scanretour/…`) is the check-in counterpart: a
+warehouse-scoped screen with a single **Scan code** field ("scan equipment items
+to book them back"), scan preferences, and audio feedback — no project needed,
+just scan whatever is coming back. Each scan writes a row to the Warehouse
+tracking log (§6) and transitions the item's warehouse status. This desktop flow
+mirrors Rentman's native warehouse/crew mobile apps.
+
+![Warehouse scan return](./assets/rentman/warehouse-scan-return.png)
+
+---
+
+## 8. Maintenance
+
+A dedicated module for the service lifecycle of individual assets (serials):
+
+- **Repairs** — repair records per serial: Number, Equipment, Serial number,
+  Stock location, and a free-text remark (e.g. "Broken Fader", "Bulb Blew Up",
+  "Defective RJ45 port"), grouped by warehouse with a **Repair status** filter
+  and **Add repair**. Repairs can be raised manually or generated from the
+  warehouse scan flow (the tracking log shows `Repair created` actions), which
+  pulls the item out of available stock.
+  ![Repairs](./assets/rentman/maintenance-repairs.png)
+
+- **Inspections** — completed/scheduled inspection records (Inspection date,
+  Name e.g. "Yearly cleaning", Description, Status e.g. *Approved*, Notes), with
+  Import + **Add inspection**.
+  ![Inspections](./assets/rentman/maintenance-inspections.png)
+
+- **Equipment to inspect** — the worklist of serials **due** for a scheduled
+  inspection: Equipment, Manufacturer code, inspection Name (e.g. "Yearly
+  cleaning"), Internal reference. Driven by the **periodic inspection** schedules
+  configured on the equipment record and in Configuration.
+  ![Equipment to inspect](./assets/rentman/maintenance-equipment-to-inspect.png)
+
+- **Lost equipment** — a register of lost items (**Add lost equipment**), which
+  removes them from available stock (empty in the demo).
+- **Inventory counts** — stock-count/stocktake sessions (**New inventory
+  count**) to reconcile physical vs system stock per warehouse (empty in the
+  demo).
+
+Together these are the "why isn't this item available" side of the availability
+engine: an item in repair, lost, or failing inspection is subtracted from
+bookable stock, and the Statistics module reports **repair history** and
+**percentage unusable** per item (§9).
+
+---
+
+## 9. Statistics & reporting
+
+A reporting workspace built on saved **statistic** definitions. The landing page
+is a library of reports grouped by **report type**:
+
+- **Crew** (e.g. "Frequently planned freelancers")
+- **Projects per account manager** (generated revenue; planning-vs-actual diff)
+- **Projects per project type** (generated revenue; to-be-expected revenue)
+- **Rental equipment** (repair history; revenue; planned rental equipment)
+- **Sales equipment** (revenue of sale items)
+- **Subrental per supplier** (subhire spend per supplier)
+
+**Add statistic** creates a new named report of one of these types.
+
+![Statistics library](./assets/rentman/statistics-library.png)
+
+Each statistic has three tabs:
+
+- **Data** — name, type, description (metadata).
+- **List** — the report table: rows grouped (e.g. by default equipment group:
+  Active Speakers, Amplifiers, Controllers, Conventional…), with a **date-range
+  selector**, configurable **column sets**, filters, and a totals row. For
+  rental equipment the columns are effectively an **asset-ROI/utilization**
+  view: Revenue, Costs of repair, Subrental costs, **Average daily rental**,
+  Average discount, **Usage percentage**, **Percentage unusable**.
+  ![Statistics list](./assets/rentman/statistics-list.png)
+- **Chart** — pick a chart type (bar, …) and one or two columns to plot
+  (e.g. Revenue vs Subrental costs) as a dual-axis chart per item, with
+  **Download**.
+  ![Statistics chart](./assets/rentman/statistics-chart.png)
+
+This is the layer that answers "which gear earns its keep" — combining revenue,
+repair cost, subrental cost and utilisation per item — plus revenue reporting by
+account manager / project type / supplier. (Dashboards in §1 are the at-a-glance
+widget version; Statistics is the drill-down/export version.)
+
+---
+
+## 10. Configuration & extensibility
 
 The Configuration panel is the admin surface:
 
@@ -330,7 +451,7 @@ flags, and usable as **document merge variables**.
 
 ---
 
-## 8. Technical architecture (inferred from traffic)
+## 11. Technical architecture (inferred from traffic)
 
 The frontend talks to a **single RPC gateway**, not a REST resource tree:
 
@@ -410,7 +531,7 @@ Entities observed in traffic:
 
 ---
 
-## 9. Takeaways for GearFlow
+## 12. Takeaways for GearFlow
 
 Things Rentman does that map directly onto (or challenge) GearFlow's domain:
 
@@ -440,16 +561,27 @@ Things Rentman does that map directly onto (or challenge) GearFlow's domain:
 9. **Architecture note:** Rentman is an RPC/query gateway over a typed data
    model (Dutch schema names), with socket.io realtime — a contrast to
    GearFlow's Convex + Prisma + server-actions stack.
+10. **Warehouse ops are a status Kanban + barcode scan loop** (§7): prep board
+    (Confirmed→Prepped→On location→Expected back→Delayed), per-project QR,
+    booking screen with serial-to-kit assignment, and a project-less "scan
+    return" check-in. Every scan writes an audit-log row and moves stock. This
+    is the operational spine GearFlow's own prep/docket flow competes with.
+11. **Asset lifecycle feeds availability** (§8): repairs, lost items, and due
+    inspections each subtract an item from bookable stock; utilisation is then
+    reported per item (§9). Availability isn't just "booked vs owned" — it's
+    "booked vs owned minus in-repair/lost/failing-inspection".
+12. **Reporting = saved report definitions with List + Chart** (§9), and the
+    rental-equipment report is an **asset-ROI view** (revenue, repair cost,
+    subrental cost, average daily rental, usage %, % unusable). A concrete
+    target for GearFlow's own model-ROI/utilisation analytics.
 
 ### Gaps / not fully explored
 
-- Statistics/reporting module (only glanced).
-- The Warehouse **prep/scan** interface itself (barcode scanning UX) — seen via
-  its output (tracking log + statuses) but not driven end-to-end.
-- Maintenance (repairs/inspections/inventory counts) — surfaced in nav and on
-  the equipment record, not walked in depth.
 - Mobile apps (Rentman has native crew/warehouse apps) — not in scope for a
-  web-demo pass.
+  web-demo pass; the desktop booking/scan-return screens (§7) are their
+  counterpart.
+- Cross-docking overview and Inventory-count *session* UX (both empty in the
+  demo — seen as entry points, no live data to walk).
 - The **public REST API** (`OPENAPI`) schema — inferred from the internal
   gateway; the documented external API at `api.rentman.net` would be the next
   reference to confirm entity names/fields for any real integration.

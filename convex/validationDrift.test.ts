@@ -28,6 +28,8 @@ import { modelFields } from "./modelWrites";
 import { locationFields } from "./locationsWrites";
 import { supplierFields } from "./suppliersWrites";
 import { subTestFields } from "./subTestRecords";
+import { updateFields as supplierOrderUpdateFields } from "./supplierOrdersWrites";
+import { itemFields as supplierOrderItemFields } from "./supplierOrderItemsWrites";
 
 import { clientSchema } from "@/lib/validations/client";
 import { clientContactSchema } from "@/lib/validations/client-contact";
@@ -39,6 +41,7 @@ import { notificationPreferenceSchema } from "@/lib/validations/notification-pre
 import { modelSchema } from "@/lib/validations/model";
 import { supplierSchema } from "@/lib/validations/supplier";
 import { subTestRecordSchema } from "@/lib/validations/test-tag";
+import { supplierOrderUpdateSchema, supplierOrderItemSchema } from "@/lib/validations/supplier-order";
 
 /** Unwrap a Zod schema (through .refine/.default/.optional wrappers) to its object shape keys. */
 function zodKeys(schema: unknown): string[] {
@@ -112,6 +115,11 @@ const PAIRS: Pair[] = [
     // id + createdAt + the parent FK are server-managed.
     allowConvexOnly: ["createdAt", "id", "testTagRecordId"],
   },
+  // WS7 #946 — supplierOrder HEADER EDIT (status/orderDate/expectedDate/notes only;
+  // supplierId/orderNumber/type/projectId are create-time-only, not part of this pair).
+  { name: "supplierOrderUpdate", zod: supplierOrderUpdateSchema, convex: supplierOrderUpdateFields },
+  // WS7 #946 — supplierOrderItem CRUD (new browser path; previously had none).
+  { name: "supplierOrderItem", zod: supplierOrderItemSchema, convex: supplierOrderItemFields },
 ];
 
 describe("validation field-set parity (Zod client ↔ Convex server) — R-8.6.1", () => {

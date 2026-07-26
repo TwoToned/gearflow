@@ -1135,6 +1135,14 @@ function CrewCountBadge({ needed, assigned }: { needed: number; assigned: number
 // originates from the client).
 
 type ServiceCrewTableRow = { crewMemberId: string; rateOverride?: number; rateType?: "" | "HOURLY" | "DAILY" | "FLAT"; estimatedHours?: number };
+type CrewRateTableMember = { id: string; firstName: string; lastName: string; image: string | null };
+
+const memberDisplayName = (member: CrewRateTableMember | undefined, fallback: string): string =>
+  member ? `${member.firstName} ${member.lastName}` : fallback;
+
+/** "" | undefined → undefined, otherwise parse to a number — shared by the rate
+ *  override and hours inputs below. */
+const parseOptionalNumber = (v: string): number | undefined => (v === "" ? undefined : Number(v));
 
 function CrewRateTable({
   rows,
@@ -1145,7 +1153,7 @@ function CrewRateTable({
   total,
 }: {
   rows: ServiceCrewTableRow[];
-  crewMemberById: Map<string, { id: string; firstName: string; lastName: string; image: string | null }>;
+  crewMemberById: Map<string, CrewRateTableMember>;
   previewCost: (row: ServiceCrewTableRow) => { rate: number; rateType: string; cost: number };
   onChangeRow: (crewMemberId: string, patch: Partial<ServiceCrewTableRow>) => void;
   onRemoveRow: (crewMemberId: string) => void;
@@ -1155,103 +1163,110 @@ function CrewRateTable({
     <div className="space-y-1.5">
       <Label>Crew rates</Label>
       <div className="space-y-2 rounded-[var(--r)] border border-line p-2">
-        {rows.map((row) => {
-          const member = crewMemberById.get(row.crewMemberId);
-          const { rate, rateType, cost } = previewCost(row);
-          const isOverridden = row.rateOverride != null && row.rateOverride > 0;
-          return (
-            <div
-              key={row.crewMemberId}
-              className="flex flex-wrap items-end gap-2 rounded-[var(--r)] bg-paper-2/60 p-2"
-            >
-              <div className="flex min-w-0 flex-1 items-center gap-2 basis-full sm:basis-auto">
-                <PersonAvatar
-                  name={member ? `${member.firstName} ${member.lastName}` : "?"}
-                  src={member?.image ?? undefined}
-                  className="size-6 shrink-0"
-                />
-                <span className="truncate text-ui-text font-medium text-ink-2">
-                  {member ? `${member.firstName} ${member.lastName}` : "Unknown"}
-                </span>
-              </div>
-              <div className="w-24 space-y-0.5">
-                <Label className="text-[10px] text-faint">Rate override</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={row.rateOverride ?? ""}
-                  onChange={(e) =>
-                    onChangeRow(row.crewMemberId, {
-                      rateOverride: e.target.value === "" ? undefined : Number(e.target.value),
-                    })
-                  }
-                  placeholder={formatCurrency(rate)}
-                  className="h-8 text-caption"
-                />
-              </div>
-              <div className="w-24 space-y-0.5">
-                <Label className="text-[10px] text-faint">Rate type</Label>
-                <Select
-                  value={row.rateType || rateType}
-                  onValueChange={(v) => onChangeRow(row.crewMemberId, { rateType: v as ServiceCrewTableRow["rateType"] })}
-                >
-                  <SelectTrigger className="h-8 text-caption">
-                    <SelectValue>{crewRateTypeLabels[row.rateType || rateType]}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DAILY">Daily</SelectItem>
-                    <SelectItem value="HOURLY">Hourly</SelectItem>
-                    <SelectItem value="FLAT">Flat</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {(row.rateType || rateType) === "HOURLY" && (
-                <div className="w-20 space-y-0.5">
-                  <Label className="text-[10px] text-faint">Hours</Label>
-                  <Input
-                    type="number"
-                    step="0.5"
-                    min={0}
-                    value={row.estimatedHours ?? ""}
-                    onChange={(e) =>
-                      onChangeRow(row.crewMemberId, {
-                        estimatedHours: e.target.value === "" ? undefined : Number(e.target.value),
-                      })
-                    }
-                    className="h-8 text-caption"
-                  />
-                </div>
-              )}
-              <div className="w-20 space-y-0.5 text-right">
-                <Label className="text-[10px] text-faint">Cost</Label>
-                <div className="flex h-8 items-center justify-end text-caption font-medium tabular-nums text-ink">
-                  {formatCurrency(cost)}
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="touch-target size-8 shrink-0"
-                onClick={() => onRemoveRow(row.crewMemberId)}
-                aria-label={`Remove ${member ? `${member.firstName} ${member.lastName}` : "crew member"}`}
-              >
-                <X className="h-3.5 w-3.5 text-muted" />
-              </Button>
-              {!isOverridden && (
-                <p className="w-full text-[10px] text-faint">
-                  Using default rate — {formatCurrency(rate)}/{rateType.toLowerCase()}
-                </p>
-              )}
-            </div>
-          );
-        })}
+        {rows.map((row) => (
+          <CrewRateTableRow
+            key={row.crewMemberId}
+            row={row}
+            member={crewMemberById.get(row.crewMemberId)}
+            previewCost={previewCost}
+            onChangeRow={onChangeRow}
+            onRemoveRow={onRemoveRow}
+          />
+        ))}
         <div className="flex items-center justify-between border-t border-line pt-2 text-ui-text">
           <span className="font-medium text-ink-2">Total labour cost</span>
           <span className="font-semibold tabular-nums text-ink">{formatCurrency(total)}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CrewRateTableRow({
+  row,
+  member,
+  previewCost,
+  onChangeRow,
+  onRemoveRow,
+}: {
+  row: ServiceCrewTableRow;
+  member: CrewRateTableMember | undefined;
+  previewCost: (row: ServiceCrewTableRow) => { rate: number; rateType: string; cost: number };
+  onChangeRow: (crewMemberId: string, patch: Partial<ServiceCrewTableRow>) => void;
+  onRemoveRow: (crewMemberId: string) => void;
+}) {
+  const { rate, rateType, cost } = previewCost(row);
+  const effectiveRateType = row.rateType || rateType;
+  const isOverridden = row.rateOverride != null && row.rateOverride > 0;
+
+  return (
+    <div className="flex flex-wrap items-end gap-2 rounded-[var(--r)] bg-paper-2/60 p-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 basis-full sm:basis-auto">
+        <PersonAvatar name={memberDisplayName(member, "?")} src={member?.image ?? undefined} className="size-6 shrink-0" />
+        <span className="truncate text-ui-text font-medium text-ink-2">{memberDisplayName(member, "Unknown")}</span>
+      </div>
+      <div className="w-24 space-y-0.5">
+        <Label className="text-[10px] text-faint">Rate override</Label>
+        <Input
+          type="number"
+          step="0.01"
+          min={0}
+          value={row.rateOverride ?? ""}
+          onChange={(e) => onChangeRow(row.crewMemberId, { rateOverride: parseOptionalNumber(e.target.value) })}
+          placeholder={formatCurrency(rate)}
+          className="h-8 text-caption"
+        />
+      </div>
+      <div className="w-24 space-y-0.5">
+        <Label className="text-[10px] text-faint">Rate type</Label>
+        <Select
+          value={effectiveRateType}
+          onValueChange={(v) => onChangeRow(row.crewMemberId, { rateType: v as ServiceCrewTableRow["rateType"] })}
+        >
+          <SelectTrigger className="h-8 text-caption">
+            <SelectValue>{crewRateTypeLabels[effectiveRateType]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="DAILY">Daily</SelectItem>
+            <SelectItem value="HOURLY">Hourly</SelectItem>
+            <SelectItem value="FLAT">Flat</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {effectiveRateType === "HOURLY" && (
+        <div className="w-20 space-y-0.5">
+          <Label className="text-[10px] text-faint">Hours</Label>
+          <Input
+            type="number"
+            step="0.5"
+            min={0}
+            value={row.estimatedHours ?? ""}
+            onChange={(e) => onChangeRow(row.crewMemberId, { estimatedHours: parseOptionalNumber(e.target.value) })}
+            className="h-8 text-caption"
+          />
+        </div>
+      )}
+      <div className="w-20 space-y-0.5 text-right">
+        <Label className="text-[10px] text-faint">Cost</Label>
+        <div className="flex h-8 items-center justify-end text-caption font-medium tabular-nums text-ink">
+          {formatCurrency(cost)}
+        </div>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="touch-target size-8 shrink-0"
+        onClick={() => onRemoveRow(row.crewMemberId)}
+        aria-label={`Remove ${memberDisplayName(member, "crew member")}`}
+      >
+        <X className="h-3.5 w-3.5 text-muted" />
+      </Button>
+      {!isOverridden && (
+        <p className="w-full text-[10px] text-faint">
+          Using default rate — {formatCurrency(rate)}/{rateType.toLowerCase()}
+        </p>
+      )}
     </div>
   );
 }

@@ -100,6 +100,14 @@ async function cascadeDelete(ctx: MutationCtx, doc: { _id: import("./_generated/
   await bumpCountersForTable(ctx, "crewAssignments", doc, null);
 }
 
+/** Recalc every service + project touched by a bulk crew delete. Pulled out of
+ *  bulkDeleteNative's handler to keep its own complexity down (R-3.6). */
+async function recalcAfterBulkDelete(ctx: MutationCtx, orgId: string, serviceIds: Set<string>, projectIds: Set<string>, now: number): Promise<void> {
+  for (const serviceId of serviceIds) await recalcServiceCostFromCrew(ctx, serviceId, orgId, now);
+  const taxRate = await orgDefaultTaxRate(ctx, orgId);
+  for (const projectId of projectIds) await recalcProjectTotals(ctx, projectId, orgId, taxRate, now);
+}
+
 async function logAssignment(ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; id: string; name: string; summary: string; projectId?: string }) {
   await writeActivityLog(ctx, {
     id: a.auditId, organizationId: a.orgId, action: a.action, entityType: "crew_assignment", entityId: a.id,
@@ -299,9 +307,7 @@ export const bulkDeleteNative = mutation({
       deleted++;
     }
     if (deleted > 0) {
-      for (const serviceId of serviceIds) await recalcServiceCostFromCrew(ctx, serviceId, a.orgId, a.now);
-      const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
-      for (const projectId of projectIds) await recalcProjectTotals(ctx, projectId, a.orgId, taxRate, a.now);
+      await recalcAfterBulkDelete(ctx, a.orgId, serviceIds, projectIds, a.now);
       await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.ids[0], name: `${deleted} assignment${deleted === 1 ? "" : "s"}`, summary: `Removed ${deleted} crew assignment${deleted === 1 ? "" : "s"}`, projectId: [...projectIds][0] });
     }
     return { deleted, skipped };

@@ -15,13 +15,11 @@ import gearflowDayHeader from "./gearflow-day-header";
 import { gearflowDataTable } from "./gearflow-data-table";
 import { gearflowSummaryBox } from "./gearflow-summary-box";
 import { gearflowTextBlock } from "./gearflow-text-block";
-import gearflowRect from "./gearflow-rect";
 
 export const gearflowPlugins = {
   // Built-in pdfme plugins
   text,
   // Custom plugins — project documents
-  gearflowRect,
   gearflowTable,
   gearflowFinancialSummary,
   gearflowPageHeader,
@@ -41,9 +39,7 @@ export const gearflowPlugins = {
   // each plugin under its `rvltFlow*` name too lets new/saved templates use the
   // rebranded type while every existing template (persisted with `gearflow*`
   // types) keeps rendering. Additive only — do NOT remove the legacy keys until
-  // stored templates have been migrated. Mirrored in CUSTOM_PLUGIN_TYPES
-  // (token-resolver.ts); keep the two in sync.
-  rvltFlowRect: gearflowRect,
+  // stored templates have been migrated.
   rvltFlowTable: gearflowTable,
   rvltFlowFinancialSummary: gearflowFinancialSummary,
   rvltFlowPageHeader: gearflowPageHeader,
@@ -62,7 +58,6 @@ export const gearflowPlugins = {
 export const rvltFlowPlugins = gearflowPlugins;
 
 export {
-  gearflowRect,
   gearflowTable,
   gearflowFinancialSummary,
   gearflowPageHeader,

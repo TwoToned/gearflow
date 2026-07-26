@@ -44,18 +44,16 @@
 - `/admin/settings` — Platform name, icon, logo, registration policy, 2FA global policy, default currency/tax
 - **Mobile**: `AdminShell` component with hamburger menu replacing desktop sidebar
 
-## Document Templates (`/settings/documents`)
-- Template cards grouped by document type (Quote, Invoice, Packing List, etc.)
-- System defaults shown as virtual cards — "Customise" duplicates into org-owned `DocumentTemplate`
-- Each template has version history, draft/published state, and default flag
-- **Template Editor** (`/template-designer/[id]`): Full-screen Zoho Books-style editor
-  - Left icon nav: General, Header, Details, Table, Totals, Other
-  - Middle: form controls for each section (toggles, inputs, dropdowns)
-  - Right: live PDF preview with real org branding + sample data (pdf.js canvas)
-  - Debounced preview regeneration (600ms) via POST `/api/documents/template-preview`
-- **Permissions**: `document.manage_templates` — owner, admin, manager roles
-- **DB model**: `DocumentTemplate` — `basePdf`, `schemas`, `settings` (all JSON), `isDefault`, `isDraft`, `version`
-- **Template selection priority** (at PDF generation time): specific `templateId` → org's published default → system default
+## Document Templates — removed (#790)
+
+There is no document template settings page and no template designer of any
+kind — `/settings/documents` and the underlying customization engine
+(stored per-org templates, `document.manage_templates` permission) were
+deleted outright in the PDF system redesign. PDF generation for the 5
+project document types now uses one fixed pipeline (`document-layouts.ts` →
+`document-composer.ts`) with no per-org overrides; org-level branding
+(colour, logo mode, company details) still lives at `/settings/branding` —
+see FEATUREDOCS/13.
 
 ## Dashboard & Reporting
 - **Dashboard** (`/dashboard`): the user's home screen. Leads with a personalised greeting

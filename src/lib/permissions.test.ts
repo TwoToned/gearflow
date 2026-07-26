@@ -207,10 +207,6 @@ describe("hasPermission", () => {
       expect(hasPermission("warehouse", "warehouse", "scan")).toBe(true);
     });
 
-    it("warehouse cannot manage templates", () => {
-      expect(hasPermission("warehouse", "document", "manage_templates")).toBe(false);
-    });
-
     it("manager can generate documents", () => {
       expect(hasPermission("manager", "project", "generate_documents")).toBe(true);
     });

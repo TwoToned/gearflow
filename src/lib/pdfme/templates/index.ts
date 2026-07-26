@@ -1,18 +1,12 @@
 /**
- * Template registry — maps document types to their template + input builders.
+ * T&T report template registry — maps report types to their template + input
+ * builders. Project documents (quote, invoice, packing-list, return-sheet,
+ * delivery-docket) go through `document-composer.ts` instead; call sheets use
+ * `call-sheet-services.ts` directly.
  */
 import type { Template } from "@pdfme/common";
-import type { DocumentData, DocumentType, TestTagReportType } from "../types";
-import type { TemplateSettings } from "../template-settings";
+import type { TestTagReportType } from "../types";
 
-import { buildQuoteTemplate, buildQuoteInputs } from "./quote";
-import { buildInvoiceTemplate, buildInvoiceInputs } from "./invoice";
-import { buildPackingListTemplate, buildPackingListInputs } from "./packing-list";
-import { buildReturnSheetTemplate, buildReturnSheetInputs } from "./return-sheet";
-import { buildDeliveryDocketTemplate, buildDeliveryDocketInputs } from "./delivery-docket";
-import { buildCallSheetTemplate, buildCallSheetInputs } from "./call-sheet";
-
-// T&T report templates
 import { buildTtRegisterTemplate, buildTtRegisterInputs } from "./tt-register";
 import { buildTtOverdueTemplate, buildTtOverdueInputs } from "./tt-overdue";
 import { buildTtSessionTemplate, buildTtSessionInputs } from "./tt-session";
@@ -23,32 +17,6 @@ import { buildTtTesterActivityTemplate, buildTtTesterActivityInputs } from "./tt
 import { buildTtFailedItemsTemplate, buildTtFailedItemsInputs } from "./tt-failed-items";
 import { buildTtBulkSummaryTemplate, buildTtBulkSummaryInputs } from "./tt-bulk-summary";
 import { buildTtComplianceCertTemplate, buildTtComplianceCertInputs } from "./tt-compliance-cert";
-
-// ─── Project Document Builders ─────────────────────────────────────────────
-
-export interface TemplateBuilder {
-  buildTemplate: (settings?: TemplateSettings) => Template;
-  buildInputs: (data: DocumentData, callSheetDate?: Date, settings?: TemplateSettings) => Record<string, string>;
-}
-
-const templateBuilders: Record<DocumentType, TemplateBuilder> = {
-  quote: { buildTemplate: buildQuoteTemplate, buildInputs: buildQuoteInputs },
-  invoice: { buildTemplate: buildInvoiceTemplate, buildInputs: buildInvoiceInputs },
-  "packing-list": { buildTemplate: buildPackingListTemplate, buildInputs: buildPackingListInputs },
-  "return-sheet": { buildTemplate: buildReturnSheetTemplate, buildInputs: buildReturnSheetInputs },
-  "delivery-docket": { buildTemplate: buildDeliveryDocketTemplate, buildInputs: buildDeliveryDocketInputs },
-  "call-sheet": { buildTemplate: buildCallSheetTemplate, buildInputs: buildCallSheetInputs },
-};
-
-export function getTemplateBuilder(docType: DocumentType): TemplateBuilder {
-  const builder = templateBuilders[docType];
-  if (!builder) {
-    throw new Error(`Unknown document type: ${docType}`);
-  }
-  return builder;
-}
-
-// ─── T&T Report Builders ───────────────────────────────────────────────────
 
 interface TtReportBuilder {
   buildTemplate: () => Template;
@@ -76,12 +44,3 @@ export function getTtReportBuilder(reportType: TestTagReportType): TtReportBuild
   }
   return builder;
 }
-
-export {
-  buildQuoteTemplate, buildQuoteInputs,
-  buildInvoiceTemplate, buildInvoiceInputs,
-  buildPackingListTemplate, buildPackingListInputs,
-  buildReturnSheetTemplate, buildReturnSheetInputs,
-  buildDeliveryDocketTemplate, buildDeliveryDocketInputs,
-  buildCallSheetTemplate, buildCallSheetInputs,
-};

@@ -7,7 +7,7 @@
  * exercises the whole chain against a realistic equipment tree:
  *
  *   attachLineItemTree  →  (build-document-data enrichment)  →  structureLineItems
- *     →  getFilteredParentItems (status filter)  →  estimateSectionHeight (height)
+ *     →  getFilteredParentItems (status filter)  →  calculateItemHeight (height)
  *     →  gearflowTable.pdf (render)
  *
  * The safety property under test is parity: the attached Convex model/supplier
@@ -18,8 +18,8 @@
  * Also covers the Phase 6 location decommission: `locationName` (now resolved from
  * the Convex location map by `locationId` in build-document-data, not a Prisma
  * `asset.location` join) survives the pipeline as the packer-sort field; and the
- * height-reservation consumer (`estimateSectionHeight` → `calculateItemHeight`,
- * the v0.8.1.1 tail-drop class) reserves space for every structured item.
+ * height-reservation consumer (`calculateItemHeight`, the v0.8.1.1 tail-drop
+ * class) reserves space for every structured item.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -27,7 +27,8 @@ import {
   type LineItemAttachMaps,
 } from "@/lib/line-item-tree-read";
 import { structureLineItems, type CategoryForStructuring, type SubHireGroupForStructuring } from "./structure-line-items";
-import { getFilteredParentItems, estimateSectionHeight } from "./section-renderer";
+import { getFilteredParentItems, calculateItemHeight } from "./document-composer";
+import { DOCUMENT_LAYOUTS } from "./document-layouts";
 import { runTablePlugin } from "./plugins/test-utils";
 import type { ConvexModel } from "@/lib/models-read";
 import type { ConvexSupplier } from "@/lib/suppliers-read";
@@ -167,7 +168,7 @@ describe("full PDF pipeline parity (attach → structure → filter → render)"
     const data = { line_items: structured } as DocumentData;
     // The status filter must keep every top-level item (all CHECKED_OUT) — a
     // mismatch here is the classic silent tail-drop the mandate guards against.
-    const parents = getFilteredParentItems(data, "packing-list");
+    const parents = getFilteredParentItems(data, DOCUMENT_LAYOUTS["packing-list"].filterByStatus);
     expect(parents.length).toBe(structured.filter((i) => !i.isKitChild && !i.isContainerLineItem).length);
 
     const calls = await runTablePlugin(structured, { documentType: "packing-list", showCategories: true });
@@ -194,14 +195,15 @@ describe("full PDF pipeline parity (attach → structure → filter → render)"
   });
 
   it("reserves height for every structured item (consumer #2 — tail-drop guard)", () => {
-    // estimateSectionHeight → calculateTableItemHeights → getFilteredParentItems +
-    // calculateItemHeight. The whole structured list must reserve strictly more
-    // height than a single-item subset — proving the height path sums per-item and
-    // never caps/drops tail items (the v0.8.1.1 silent tail-drop class). Also
-    // guards that the synthetic group-row / kit-parent shapes don't throw here.
-    const section = { id: "s", type: "table", settings: { showKitChildren: true } } as never;
-    const hAll = estimateSectionHeight(section, { line_items: structured } as DocumentData, "packing-list");
-    const hOne = estimateSectionHeight(section, { line_items: structured.slice(0, 1) } as DocumentData, "packing-list");
+    // calculateItemHeight sums per item. The whole structured list must reserve
+    // strictly more height than a single-item subset — proving the height path
+    // sums per-item and never caps/drops tail items (the v0.8.1.1 silent
+    // tail-drop class). Also guards that the synthetic group-row / kit-parent
+    // shapes don't throw here.
+    const tableBlock = DOCUMENT_LAYOUTS["packing-list"].blocks.find((b) => b.kind === "table");
+    if (tableBlock?.kind !== "table") throw new Error("packing-list layout has no table block");
+    const hAll = structured.reduce((sum, item) => sum + calculateItemHeight(item, tableBlock.config), 0);
+    const hOne = calculateItemHeight(structured[0], tableBlock.config);
     expect(Number.isFinite(hAll)).toBe(true);
     expect(hAll).toBeGreaterThan(hOne);
   });

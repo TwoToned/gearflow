@@ -30,7 +30,6 @@ import {
   type CategoryForStructuring,
   type SubHireGroupForStructuring,
 } from "./structure-line-items";
-import { getDefaultSettings, type TemplateSettings } from "./template-settings";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
@@ -71,17 +70,16 @@ export async function buildDocumentData(
     crewMemberId?: string;
     crewRoleId?: string;
     /**
-     * Pre-resolved template settings (already merged against the docType
-     * defaults). When omitted, the docType defaults are used. The data
-     * builder reads `settings.table.expandProjectGroups` to decide how to
-     * structure line items; downstream renderers consume the same settings
-     * object for visual concerns.
+     * When true, Project Groups expand into a header row + each child line
+     * item below (warehouse docs). When false (default), each group
+     * collapses to a single virtual row (client-facing docs). Comes from
+     * the doc type's fixed layout (`document-layouts.ts`) — see
+     * `DOCUMENT_LAYOUTS[docType].expandProjectGroups`.
      */
-    settings?: TemplateSettings;
+    expandProjectGroups?: boolean;
   }
 ): Promise<DocumentData> {
-  const settings = options?.settings ?? getDefaultSettings(docType);
-  const expandProjectGroups = settings.table.expandProjectGroups;
+  const expandProjectGroups = options?.expandProjectGroups ?? false;
   // Packer-walk sort piggy-backs on expandProjectGroups today — every doc
   // type that expands groups (packing-list, return-sheet, delivery-docket)
   // also wants packer order. A separate setting can split them later if a

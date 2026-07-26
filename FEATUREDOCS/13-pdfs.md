@@ -39,6 +39,21 @@ delivery-docket):
 - Header repeats on every continuation page; footer on every page.
 - Totals/signature/notes blocks are kept whole (pushed to the next page if
   they don't fit, never split).
+- Every page's footer carries "Page X of Y" (omitted on single-page
+  documents) — `pageNumber` is computed once in `composeDocument` per page
+  index against the final page count and rendered right-aligned by
+  `gearflowPageFooter`.
+
+**Quote/invoice table simplification (2026-07-26):** the quote/invoice table
+dropped its separate "Days" column — it duplicated the per-line `duration`
+value next to the rate/total columns without adding information the reader
+needed, and produced confusing/misleading output on lines whose duration
+didn't match the project's overall rental span. `duration` is still a real
+per-line DB field (`project-line-item-read.ts`); it's just no longer
+rendered as its own column. `getAssetTag()` (`gearflow-table.ts`) also
+dedupes unit tags before applying the "+N more" truncation — a bulk line's
+units all share one `bulkAsset` tag, so without dedup a 10-unit bulk line
+rendered as `"TTP00099, TTP00099 +8"` instead of the single tag.
 
 Call sheets don't go through this pipeline — they use their own service-based
 builder (`templates/call-sheet-services.ts`, queries `ProjectService`/
@@ -86,7 +101,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 | `gearflowTable` | Equipment table — grouping (by `groupName` or `prepContainer`), kit children (3 levels), badges, checkboxes, conditions, per-unit expansion. Container line items (`isContainerLineItem`) are excluded. |
 | `gearflowFinancialSummary` | Subtotal/discount/tax/total block with optional deposit/balance |
 | `gearflowPageHeader` | Three modes: logo, icon, none — org info + doc title |
-| `gearflowPageFooter` | Centered footer with top border |
+| `gearflowPageFooter` | Centered footer with top border; right-aligned "Page X of Y" when the document has more than one page (`FooterConfig.pageNumber`, computed per-page in `composeDocument`) |
 | `gearflowCheckbox` | Empty/checked checkbox square |
 | `gearflowSignatureLine` | Signature blocks with configurable columns |
 | `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |

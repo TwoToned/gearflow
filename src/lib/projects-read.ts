@@ -51,6 +51,12 @@ export interface ProjectRow {
   eventEndTime: string | null;
   loadOutDate: Date | null;
   loadOutTime: string | null;
+  /** WS2 (#941) — the gear-committed window; falls back to rental* when unset.
+   *  Use `getProjectWindow` to resolve, don't read these raw for availability. */
+  projectStartDate: Date | null;
+  projectStartTime: string | null;
+  projectEndDate: Date | null;
+  projectEndTime: string | null;
   rentalStartDate: Date | null;
   rentalEndDate: Date | null;
   projectManagerId: string | null;
@@ -101,6 +107,10 @@ export function mapProject(d: ConvexProject): ProjectRow {
     eventEndTime: orNull(d.eventEndTime),
     loadOutDate: toDate(d.loadOutDate),
     loadOutTime: orNull(d.loadOutTime),
+    projectStartDate: toDate(d.projectStartDate),
+    projectStartTime: orNull(d.projectStartTime),
+    projectEndDate: toDate(d.projectEndDate),
+    projectEndTime: orNull(d.projectEndTime),
     rentalStartDate: toDate(d.rentalStartDate),
     rentalEndDate: toDate(d.rentalEndDate),
     projectManagerId: orNull(d.projectManagerId),

@@ -40,7 +40,7 @@ async function seedProject(t: T, id = "p1", status: Doc<"projects">["status"] = 
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: ORG, projectNumber: `P-${id}`, name: "Gig", status,
-      defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 0,
+      total: 0,
     });
   });
 }

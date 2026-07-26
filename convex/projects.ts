@@ -21,7 +21,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("projects")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: cross-domain server-read helper (getProjectsByOrg) + the clients dashboard's org-wide rollup — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });
@@ -68,7 +68,7 @@ export const listPage = query({
     // entirely on every unfiltered/non-search page load instead of always collecting
     // the whole locations table.
     const [rows, clients, locations] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: T3-style pagination rework approved but unshipped (no search index on projects yet) — see docs/exceptions.md R-8.3.3
       ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
       a.search
         ? ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
@@ -120,7 +120,7 @@ export const listBoard = query({
   handler: async (ctx, { orgId, search }) => {
     await requireOrgRead(ctx, orgId);
     const [rows, clients] = await Promise.all([
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: kanban board aggregates all org projects into status columns (perf design)
+      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: "browse everything" kanban view, Option A (perf design) — see docs/exceptions.md R-8.3.3
       ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org enrichment map (board) — see docs/exceptions.md R-8.3.3
     ]);
     const clientMap = new Map(clients.map((c) => [c.id, c]));

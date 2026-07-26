@@ -292,18 +292,13 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
   }
 
   // 8. Flagged assets.
-  // projectLineItem is Convex-only — read the org's lines, filter by prepStatus
-  // in JS, take 50. Asset tags + project headers are resolved from Convex.
-  const allOrgLines = await (await getConvexClient()).query(
-    api.projectLineItems.list,
-    { orgId: organizationId },
+  // projectLineItem is Convex-only — bounded read via the prepStatus index (up
+  // to 50 flagged lines), not a whole-org scan. Asset tags + project headers
+  // are resolved from Convex.
+  const flagged = await (await getConvexClient()).query(
+    api.projectLineItems.listFlagged,
+    { orgId: organizationId, limit: 50 },
   );
-  const flagged = allOrgLines
-    .filter(
-      (li) =>
-        li.prepStatus === "FLAGGED_FAULTY" || li.prepStatus === "FLAGGED_TT_OVERDUE",
-    )
-    .slice(0, 50);
   if (flagged.length > 0) {
     const assets = await getAssetsByOrg(organizationId);
     const assetTagMap = new Map(assets.map((a) => [a.id, a.assetTag]));

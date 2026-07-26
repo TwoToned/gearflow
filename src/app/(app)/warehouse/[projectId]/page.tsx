@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -90,6 +91,10 @@ import {
   isBulkItem,
   modelDisplayName,
   isKitParent,
+  isAccessoryParent,
+  accessoryChildrenOf,
+  isExpandableParent,
+  expandableChildrenOf,
   collectAllVerifiableIds,
   bulkUnitKey,
   bulkUnpackedRemaining,
@@ -99,7 +104,6 @@ import {
   pullItem,
   prepItemDirect,
   prepItemsBatch,
-  getAssetAccessories,
   deprepKit,
   deprepItemsBatch,
   prepKitChildren,
@@ -112,6 +116,7 @@ import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useCurrentRole } from "@/lib/use-permissions";
 import { isInternalStockLine } from "@/lib/warehouse-subhire-filter";
 
 const statusLabels: Record<string, string> = {
@@ -172,6 +177,16 @@ function groupItems(
       result.push({
         kind: "kit-group",
         groupKey: `kit-${item.id}`,
+        item,
+        children: deployChildren,
+      });
+    } else if (isAccessoryParent(item)) {
+      // Deploy tab: accessories render like a kit's children — always visible,
+      // not gated behind the prep asset-picker (issue #794 follow-up).
+      const deployChildren = accessoryChildrenOf(item).filter((c) => c.status !== "CHECKED_OUT" && c.status !== "CANCELLED");
+      result.push({
+        kind: "accessory-group",
+        groupKey: `acc-${item.id}`,
         item,
         children: deployChildren,
       });
@@ -242,6 +257,14 @@ function groupCheckinItems(items: LineItem[]): GroupEntry[] {
       result.push({
         kind: "kit-group",
         groupKey: `kit-in-${item.id}`,
+        item,
+        children: returnChildren,
+      });
+    } else if (isAccessoryParent(item)) {
+      const returnChildren = accessoryChildrenOf(item).filter((c) => c.status === "CHECKED_OUT");
+      result.push({
+        kind: "accessory-group",
+        groupKey: `acc-in-${item.id}`,
         item,
         children: returnChildren,
       });
@@ -357,10 +380,6 @@ function WarehouseProjectPage({
     availableAssets: AvailableAsset[];
     selectedAssetId: string;
     checkItemCount: number;
-    // Per-accessory pack toggles, loaded once an asset is picked. `loadedFor`
-    // tracks which asset they were fetched for so re-picking refreshes them.
-    accessories?: Array<{ id: string; name: string | null; checked: boolean }>;
-    accessoriesLoadedFor?: string;
   }>>([]);
   const [assetPickerBulkItems, setAssetPickerBulkItems] = useState<Array<{
     lineItemId: string;
@@ -377,6 +396,17 @@ function WarehouseProjectPage({
     totalCount: number;
     verifiedIds: string[];
   } | null>(null);
+
+  // Accessory checkout gate (issue #794 follow-up) — soft-blocks Deploy when a
+  // parent's DEFAULT accessories aren't packed, and asks "why" for missing
+  // OPTIONALs. `pendingCheckOutItems` is the batch waiting on this dialog.
+  const [accessoryGate, setAccessoryGate] = useState<{
+    pendingCheckOutItems: Array<{ lineItemId: string; assetId?: string; quantity?: number }>;
+    missingDefaults: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }>;
+    missingOptionals: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }>;
+  } | null>(null);
+  const [defaultOverrideReason, setDefaultOverrideReason] = useState("");
+  const [optionalSkipReasons, setOptionalSkipReasons] = useState<Record<string, { preset: string; note: string }>>({});
 
   // Check form state — opens when a scanned item's model has check items
   const [checkFormOpen, setCheckFormOpen] = useState(false);
@@ -650,6 +680,10 @@ function WarehouseProjectPage({
 
   // Browser-direct warehouse writes (PR-A: return / undeploy / container family).
   const warehouseWrites = useWarehouseWrites();
+  // Manager-tier roles can bypass the accessory-gate reason prompt (issue #794
+  // follow-up design decision) — the dialog still records SOME reason either way.
+  const { role: currentRole } = useCurrentRole();
+  const isManagerTier = currentRole === "owner" || currentRole === "admin" || currentRole === "manager";
   // Browser-direct check-record writes (deprep/pack/flag/store + kit/child/adhoc).
   const checkRecordWrites = useCheckRecordWrites();
 
@@ -1414,18 +1448,18 @@ function WarehouseProjectPage({
     if (item.status === "CANCELLED") return false;
     // Bulk lines are quantity-aware: show while any ordered unit is still
     // unpacked, even once some units are prepped/deployed. This is what keeps
-    // "prep 1 of 10" from yanking the other 9 out of Pick. (Kit parents are
-    // handled by their child rollup below, never as a bulk line.)
-    if (isBulkItem(item) && !isKitParent(item)) return bulkUnpackedRemaining(item) > 0;
+    // "prep 1 of 10" from yanking the other 9 out of Pick. (Kit/accessory
+    // parents are handled by their child rollup below, never as a bulk line.)
+    if (isBulkItem(item) && !isExpandableParent(item)) return bulkUnpackedRemaining(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     // A returned piece of gear is DONE with the prep half of the flow — it lives
     // in the Returned / De-prep stage, never back here. (Without this, a returned
     // item whose prepStatus is no longer PACKED fell through below and reappeared
     // in Pick/Prep, looking like it had never been sent out.)
     if (item.status === "RETURNED") return false;
-    // Kit parents: show if any children still need prepping
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
+    // Kit/accessory parents: show if any children still need prepping
+    if (isExpandableParent(item)) {
+      const children = expandableChildrenOf(item);
       return children.some((c) => {
         if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
         if (c.prepStatus === "PACKED") return false;
@@ -1451,13 +1485,13 @@ function WarehouseProjectPage({
     if (item.status === "CANCELLED") return false;
     // Bulk lines are quantity-aware: show while any unit is packed and waiting to
     // deploy, even if some of the line's units are already out or still to pick.
-    // (Kit parents fall through to the child rollup below, never treated as bulk.)
-    if (isBulkItem(item) && !isKitParent(item)) return bulkPackedWaiting(item) > 0;
+    // (Kit/accessory parents fall through to the child rollup below, never treated as bulk.)
+    if (isBulkItem(item) && !isExpandableParent(item)) return bulkPackedWaiting(item) > 0;
     if (item.status === "CHECKED_OUT") return false;
     if (item.status === "RETURNED") return false;
-    // Kit parents: show if any children are prepped but not deployed
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
+    // Kit/accessory parents: show if any children are prepped but not deployed
+    if (isExpandableParent(item)) {
+      const children = expandableChildrenOf(item);
       return children.some((c) => {
         if (c.status === "CHECKED_OUT" || c.status === "CANCELLED" || c.status === "RETURNED") return false;
         if (c.prepStatus === "PACKED") return true;
@@ -1478,8 +1512,8 @@ function WarehouseProjectPage({
   // resets off PACKED and it leaves this list. Mirrors the checkedOutItems shape
   // so it can flow through the same Deploy-tab rendering in "deprep" mode.
   const returnedItems = equipmentItems.filter((item) => {
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
+    if (isExpandableParent(item)) {
+      const children = expandableChildrenOf(item);
       return children.some((c) => {
         if (c.status === "RETURNED" && c.prepStatus === "PACKED") return true;
         if (c.kitId && c.childLineItems?.length) {
@@ -1496,8 +1530,8 @@ function WarehouseProjectPage({
   // De-prepped: returned gear checked back into inventory (prepStatus reset off
   // PACKED). Terminal stage — a read-only confirmation list.
   const deprepedItems = equipmentItems.filter((item) => {
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
+    if (isExpandableParent(item)) {
+      const children = expandableChildrenOf(item);
       return children.some((c) => {
         if (c.status === "RETURNED" && c.prepStatus !== "PACKED") return true;
         if (c.kitId && c.childLineItems?.length) {
@@ -1515,9 +1549,9 @@ function WarehouseProjectPage({
   const checkOutItemsList = preppedItems;
 
   const checkedOutItems = equipmentItems.filter((item) => {
-    // Kit parents: show in return tab if any children/grandchildren are deployed
-    if (isKitParent(item)) {
-      const children = (item.childLineItems || []) as LineItem[];
+    // Kit/accessory parents: show in return tab if any children/grandchildren are deployed
+    if (isExpandableParent(item)) {
+      const children = expandableChildrenOf(item);
       return children.some((c) => {
         if (c.status === "CHECKED_OUT") return true;
         // Nested kit: check grandchildren too
@@ -1628,7 +1662,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group") {
+      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -1645,7 +1679,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group") {
+      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -1661,7 +1695,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group") {
+      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -1677,7 +1711,7 @@ function WarehouseProjectPage({
         keys.push(entry.item.id);
       } else if (entry.kind === "serialized-group") {
         entry.items.forEach((i) => keys.push(i.id));
-      } else if (entry.kind === "kit-group") {
+      } else if (entry.kind === "kit-group" || entry.kind === "accessory-group") {
         keys.push(entry.item.id);
       } else {
         for (let u = 0; u < entry.unitCount; u++) keys.push(bulkUnitKey(entry.item.id, u));
@@ -1957,7 +1991,49 @@ function WarehouseProjectPage({
   };
 
   // --- Checkout / Checkin selected ---
+  // A single accessory child's classification for the Deploy gate below — null
+  // when it's not "missing" (already deployed/cancelled, or already packed).
+  function missingAccessoryRow(li: LineItem, c: LineItem): { parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string; isOptional: boolean } | null {
+    if (c.status === "CANCELLED" || c.status === "CHECKED_OUT" || c.prepStatus === "PACKED") return null;
+    return {
+      parentLineItemId: li.id,
+      parentName: modelDisplayName(li),
+      accessoryLineItemId: c.id,
+      accessoryName: c.model?.name || c.description || "Accessory",
+      isOptional: c.accessoryInclusion === "OPTIONAL",
+    };
+  }
+
+  // For each about-to-deploy parent line, find its ACCESSORY children that
+  // aren't packed yet — "missing" in the sense that deploying now leaves them
+  // behind. DEFAULT-tier misses soft-block Deploy; OPTIONAL-tier misses just
+  // need a reason (issue #794 follow-up).
+  function computeMissingAccessories(parentLineItemIds: string[]) {
+    const missingDefaults: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }> = [];
+    const missingOptionals: Array<{ parentLineItemId: string; parentName: string; accessoryLineItemId: string; accessoryName: string }> = [];
+    for (const id of parentLineItemIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (!li) continue;
+      for (const c of accessoryChildrenOf(li)) {
+        const row = missingAccessoryRow(li, c);
+        if (!row) continue;
+        const { isOptional, ...rest } = row;
+        (isOptional ? missingOptionals : missingDefaults).push(rest);
+      }
+    }
+    return { missingDefaults, missingOptionals };
+  }
+
   // Deploy selected prepped items (no checks needed — items are already prepped)
+  function runCheckOut(items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) {
+    checkOutMutation
+      // Accessories always cascade with their parent (they're permanently
+      // attached) — there's no longer a warehouse toggle for it.
+      .mutateAsync({ items, includeAccessories: true })
+      .then(() => toast.success(`Deployed ${items.length} item${items.length === 1 ? "" : "s"}`))
+      .catch(() => {});
+  }
+
   const handleCheckOutSelected = async () => {
     const bulkQtyMap = new Map<string, number>();
     const serializedLineItemIds: string[] = [];
@@ -2000,12 +2076,49 @@ function WarehouseProjectPage({
 
     if (items.length === 0) return;
 
-    checkOutMutation
-      // Accessories always cascade with their parent (they're permanently
-      // attached) — there's no longer a warehouse toggle for it.
-      .mutateAsync({ items, includeAccessories: true })
-      .then(() => toast.success(`Deployed ${selectedOutCount} items`))
-      .catch(() => {});
+    const { missingDefaults, missingOptionals } = computeMissingAccessories(serializedLineItemIds);
+    if (missingDefaults.length > 0 || missingOptionals.length > 0) {
+      setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
+      setOptionalSkipReasons({});
+      setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
+      return;
+    }
+
+    runCheckOut(items);
+  };
+
+  const confirmAccessoryGate = async () => {
+    if (!accessoryGate) return;
+    const { pendingCheckOutItems, missingDefaults, missingOptionals } = accessoryGate;
+
+    const skipped: Array<{ accessoryLineItemId: string; tier: "DEFAULT" | "OPTIONAL"; reason: string }> = [
+      ...missingDefaults.map((d) => ({
+        accessoryLineItemId: d.accessoryLineItemId,
+        tier: "DEFAULT" as const,
+        reason: defaultOverrideReason.trim(),
+      })),
+      ...missingOptionals.map((o) => {
+        const entry = optionalSkipReasons[o.accessoryLineItemId];
+        const preset = entry?.preset || "Not needed for this job";
+        const note = entry?.note?.trim();
+        return {
+          accessoryLineItemId: o.accessoryLineItemId,
+          tier: "OPTIONAL" as const,
+          reason: note ? `${preset} — ${note}` : preset,
+        };
+      }),
+    ];
+
+    const parentName = missingDefaults[0]?.parentName ?? missingOptionals[0]?.parentName ?? "line item";
+    try {
+      await warehouseWrites.logAccessoryCheckoutOverride(projectId, parentName, skipped);
+    } catch {
+      // Never let the audit trail write block the actual deploy.
+    }
+    setAccessoryGate(null);
+    setDefaultOverrideReason("");
+    setOptionalSkipReasons({});
+    runCheckOut(pendingCheckOutItems);
   };
 
   // De-prep selected returned items: run return checks where the model has them,
@@ -2152,23 +2265,19 @@ function WarehouseProjectPage({
       }
     }
 
-    // Items without checks go through prepItemDirect. Carry the ticked accessory
-    // set: undefined = include all (accessories never loaded), [] = exclude all,
-    // a list = pack exactly those. Only serialised picked items have toggles.
+    // Items without checks go through prepItemDirect. Accessories are no
+    // longer a prep-time toggle (issue #794 follow-up) — they pack in full,
+    // like a kit's members, and checkout gating decides what's missing.
     const withoutChecks: Array<{
       lineItemId: string;
       assetId?: string;
       quantity?: number;
-      includeAccessoryIds?: string[];
     }> = [
       ...allPickedItems.filter(
         (i) => !i.checkItemCount || i.checkItemCount === 0 || !i.modelId
       ).map((i) => ({
         lineItemId: i.lineItemId,
         assetId: i.assetId,
-        includeAccessoryIds: i.accessories
-          ? i.accessories.filter((a) => a.checked).map((a) => a.id)
-          : undefined,
       })),
       ...bulkNoChecks.map((bi) => ({ lineItemId: bi.lineItemId, quantity: bi.quantity })),
     ];
@@ -2184,9 +2293,6 @@ function WarehouseProjectPage({
           lineItemId: i.lineItemId,
           assetId: i.assetId || "",
           bulkAssetId: i.li?.bulkAssetId || undefined,
-          includeAccessoryIds: i.accessories
-            ? i.accessories.filter((a) => a.checked).map((a) => a.id)
-            : undefined,
         };
       }),
       ...bulkCheckQueue,
@@ -2207,7 +2313,6 @@ function WarehouseProjectPage({
         assetId: i.assetId,
         quantity: i.quantity,
         prepContainer: selectedContainer || null,
-        includeAccessoryIds: i.includeAccessoryIds,
       })),
     )
       .then(() => {
@@ -2821,6 +2926,103 @@ function WarehouseProjectPage({
         </Dialog>
       )}
 
+      {/* Accessory checkout gate (issue #794 follow-up) */}
+      {accessoryGate && (
+        <Dialog open={true} onOpenChange={() => setAccessoryGate(null)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Missing accessories</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {accessoryGate.missingDefaults.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-ui-text font-medium text-t-out">
+                    These default accessories aren&apos;t packed yet:
+                  </p>
+                  <ul className="text-ui-text text-muted list-disc pl-5 space-y-0.5">
+                    {accessoryGate.missingDefaults.map((d) => (
+                      <li key={d.accessoryLineItemId}>
+                        {d.accessoryName} <span className="text-faint">— {d.parentName}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Label htmlFor="default-override-reason" className="text-ui-text">
+                    {isManagerTier ? "Reason (pre-filled — edit or confirm)" : "Reason for deploying without them"}
+                  </Label>
+                  <Textarea
+                    id="default-override-reason"
+                    value={defaultOverrideReason}
+                    onChange={(e) => setDefaultOverrideReason(e.target.value)}
+                    placeholder="Why is it OK to deploy without these?"
+                    rows={2}
+                    className="text-ui-text"
+                  />
+                </div>
+              )}
+              {accessoryGate.missingOptionals.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-ui-text font-medium text-ink">
+                    These optional accessories aren&apos;t packed yet:
+                  </p>
+                  <div className="space-y-2">
+                    {accessoryGate.missingOptionals.map((o) => (
+                      <div key={o.accessoryLineItemId} className="rounded-[var(--r)] border border-line p-2 space-y-1.5">
+                        <p className="text-ui-text text-ink">
+                          {o.accessoryName} <span className="text-faint">— {o.parentName}</span>
+                        </p>
+                        <Select
+                          value={optionalSkipReasons[o.accessoryLineItemId]?.preset ?? "Not needed for this job"}
+                          onValueChange={(val) =>
+                            setOptionalSkipReasons((prev) => ({
+                              ...prev,
+                              [o.accessoryLineItemId]: { preset: val, note: prev[o.accessoryLineItemId]?.note ?? "" },
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue>{optionalSkipReasons[o.accessoryLineItemId]?.preset ?? "Not needed for this job"}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Out of stock">Out of stock</SelectItem>
+                            <SelectItem value="Not needed for this job">Not needed for this job</SelectItem>
+                            <SelectItem value="Customer declined">Customer declined</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <input
+                          type="text"
+                          value={optionalSkipReasons[o.accessoryLineItemId]?.note ?? ""}
+                          onChange={(e) =>
+                            setOptionalSkipReasons((prev) => ({
+                              ...prev,
+                              [o.accessoryLineItemId]: { preset: prev[o.accessoryLineItemId]?.preset ?? "Not needed for this job", note: e.target.value },
+                            }))
+                          }
+                          placeholder="Optional note..."
+                          className={`flex h-9 w-full rounded-[var(--r)] border border-line bg-transparent px-2.5 text-ui-text text-ink ${focusRing}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="line" size="sm" onClick={() => setAccessoryGate(null)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={accessoryGate.missingDefaults.length > 0 && defaultOverrideReason.trim() === ""}
+                onClick={confirmAccessoryGate}
+              >
+                Deploy anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* Add to Project Prompt */}
       <Dialog open={addPromptOpen} onOpenChange={setAddPromptOpen}>
         <DialogContent className="sm:max-w-sm">
@@ -2891,26 +3093,6 @@ function WarehouseProjectPage({
                           i === idx ? { ...item, selectedAssetId: assetId } : item
                         )
                       );
-                      // Load this asset's accessories so they can be toggled.
-                      if (assetId) {
-                        getAssetAccessories(assetId)
-                          .then((acc) => {
-                            const list = [
-                              ...acc.serialised.map((s) => ({ id: s.id, name: s.name, checked: true })),
-                              ...acc.bulk.map((b) => ({
-                                id: b.id,
-                                name: b.quantity > 1 && b.name ? `${b.quantity}× ${b.name}` : b.name,
-                                checked: true,
-                              })),
-                            ];
-                            setAssetPickerItems((prev) =>
-                              prev.map((item, i) =>
-                                i === idx ? { ...item, accessories: list, accessoriesLoadedFor: assetId } : item
-                              )
-                            );
-                          })
-                          .catch(() => {});
-                      }
                     }}
                   >
                     <SelectTrigger>
@@ -2941,33 +3123,6 @@ function WarehouseProjectPage({
                         ))}
                     </SelectContent>
                   </Select>
-                )}
-                {pickerItem.accessories && pickerItem.accessories.length > 0 && (
-                  <div className="pl-3 pt-1 space-y-1 border-l border-line ml-1">
-                    <p className="text-caption text-faint">Include accessories:</p>
-                    {pickerItem.accessories.map((acc) => (
-                      <label key={acc.id} className="flex items-center gap-2 text-ui-text text-muted cursor-pointer">
-                        <Checkbox
-                          checked={acc.checked}
-                          onCheckedChange={() => {
-                            setAssetPickerItems((prev) =>
-                              prev.map((item, i) =>
-                                i === idx
-                                  ? {
-                                      ...item,
-                                      accessories: item.accessories?.map((a) =>
-                                        a.id === acc.id ? { ...a, checked: !a.checked } : a
-                                      ),
-                                    }
-                                  : item
-                              )
-                            );
-                          }}
-                        />
-                        <span>{acc.name || "Accessory"}</span>
-                      </label>
-                    ))}
-                  </div>
                 )}
               </div>
             ))}

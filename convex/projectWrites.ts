@@ -18,6 +18,7 @@ import {
   assertLifecycleGuard,
   crossesIntoSnapshotStatus,
   isRevertOutOfHardLock,
+  lifecycleAuditMetadata,
   LOCKED_PROJECT_FIELDS,
   requireHardLockOverrideAllowed,
 } from "./lib/projectLocks";
@@ -379,9 +380,7 @@ export const updateNative = mutation({
     // #791/#792 finance soft-lock: any of the locked project fields being set or
     // cleared on a FINANCE_LOCKED+ project requires an open unlock session.
     const touchesLockedField = LOCKED_PROJECT_FIELDS.some((f) => f in setObj || clear.includes(f));
-    if (touchesLockedField) {
-      await assertLifecycleGuard(ctx, project, { kind: "financial" });
-    }
+    const lockGuard = touchesLockedField ? await assertLifecycleGuard(ctx, project, { kind: "financial" }) : null;
 
     // Bound-check the recalc-INPUT money fields — `set` is v.any() (Convex only
     // enforces "is a number", not range/finiteness), and a browser-direct caller
@@ -466,6 +465,7 @@ export const updateNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Updated project ${project.projectNumber} - ${name}`,
+      metadata: lockGuard ? lifecycleAuditMetadata(lockGuard) : undefined,
       projectId: id,
       createdAt: now,
     });

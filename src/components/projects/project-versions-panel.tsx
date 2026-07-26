@@ -109,7 +109,7 @@ export function ProjectVersionsPanel({ open, onOpenChange, projectId, orgId }: P
             </Button>
 
             {diff && (diff.before || diff.after) && (
-              <div className="grid grid-cols-3 gap-3 rounded-[var(--radius)] border-2 border-line p-3.5 text-sm">
+              <div className="grid grid-cols-1 gap-3 rounded-[var(--radius)] border-2 border-line p-3.5 text-sm sm:grid-cols-3">
                 <div>
                   <p className="text-xs text-ink-2">Subtotal</p>
                   <p>{money(diff.before?.subtotal ?? null)} → {money(diff.after?.subtotal ?? null)}</p>

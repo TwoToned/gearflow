@@ -31,7 +31,11 @@ import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS }
  *  project's `status` to resolve its lock tier. */
 async function requireLineProjectInOrg(ctx: MutationCtx, projectId: string, orgId: string) {
   const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
-  if (!project || project.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+  if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+  // Distinct from NOT_FOUND (parity with the pre-existing assertProjectInOrg this
+  // helper folds in) — a cross-org project is a security-relevant Forbidden, not a
+  // generic not-found, so the two read differently in logs/audits.
+  if (project.organizationId !== orgId) throw new ConvexError("Forbidden: project belongs to another organization.");
   return project;
 }
 

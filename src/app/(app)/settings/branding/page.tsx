@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { BrandingSettings } from "@/components/settings/branding-settings";
+import { DocumentSettings } from "@/components/settings/document-settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrganization } from "@/hooks/use-organization";
@@ -28,20 +29,37 @@ export default function BrandingSettingsPage() {
 
   return (
     <FadeIn>
-    <SettingsCard>
-      <FormSection
-        title="Branding & Colors"
-        description="Customize your organization's colors across the UI and PDF documents."
-      >
-        <div className="sm:col-span-2">
-          <BrandingSettings
-            orgName={name}
-            settings={settings}
-            onBrandingChange={(branding) => setSettings((prev) => ({ ...prev, branding }))}
-          />
-        </div>
-      </FormSection>
-    </SettingsCard>
+    <div className="space-y-6">
+      <SettingsCard>
+        <FormSection
+          title="Branding & Colors"
+          description="Customize your organization's colors across the UI and PDF documents."
+        >
+          <div className="sm:col-span-2">
+            <BrandingSettings
+              orgName={name}
+              settings={settings}
+              onBrandingChange={(branding) => setSettings((prev) => ({ ...prev, branding }))}
+            />
+          </div>
+        </FormSection>
+      </SettingsCard>
+
+      <SettingsCard>
+        <FormSection
+          title="Documents"
+          description="Footer text and quote terms shown on generated PDF documents."
+        >
+          <div className="sm:col-span-2">
+            <DocumentSettings
+              orgName={name}
+              settings={settings}
+              onDocumentsChange={(documents) => setSettings((prev) => ({ ...prev, documents }))}
+            />
+          </div>
+        </FormSection>
+      </SettingsCard>
+    </div>
     </FadeIn>
   );
 }

@@ -292,6 +292,14 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
     case "quoteValidityNote":
       return 8;
 
+    case "termsAndConditions": {
+      // Optional — collapses to zero height (and is skipped entirely by the
+      // page-layout walk) when the org hasn't set any T&Cs text.
+      if (!data.quote_terms_and_conditions) return 0;
+      const lines = data.quote_terms_and_conditions.split("\n").length;
+      return Math.max(lines * 4 + 4, 8);
+    }
+
     case "signature":
       return 20;
   }
@@ -556,6 +564,9 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
 
   for (const block of bodyBlocks) {
     const height = estimateBlockHeight(block, data, ctx);
+    // Optional content blocks (e.g. termsAndConditions with no text set)
+    // collapse to zero height and are omitted entirely — no schema, no gap.
+    if (height <= 0) continue;
 
     if (currentY + height > maxY && currentPage.entries.length > 0) {
       if (block.kind === "table") {
@@ -782,7 +793,24 @@ function buildEntryFields(
             fontSize: 9,
             fontColor: "#333333",
           },
-          input: "This quote is valid for 30 days from the date of issue.",
+          input: `This quote is valid until ${data.quote_valid_until}.`,
+        },
+      ];
+
+    case "termsAndConditions":
+      return [
+        {
+          schema: {
+            name,
+            type: "text",
+            content: "",
+            position: { x: MARGIN, y },
+            width: CONTENT_WIDTH,
+            height,
+            fontSize: 8,
+            fontColor: "#666666",
+          },
+          input: data.quote_terms_and_conditions,
         },
       ];
 
@@ -808,23 +836,20 @@ export interface ComposeResult {
 
 /**
  * Compose a fixed-layout document into a multi-page pdfme Template + inputs.
- * This is the sole entry point for the 5 project document types.
+ * This is the sole entry point for the 5 project document types. Footer text
+ * comes from `data.document_footer_text`/`document_footer_second_line` (org
+ * "documents" settings — see org-settings-types.ts); empty falls back to an
+ * auto-generated "{org} | {email} | {phone}" line.
  */
-export function composeDocument(
-  docType: ProjectDocumentType,
-  data: DocumentData,
-  docColor: string,
-  footerText?: string,
-  footerSecondLine?: string,
-): ComposeResult {
+export function composeDocument(docType: ProjectDocumentType, data: DocumentData, docColor: string): ComposeResult {
   const layout = getDocumentLayout(docType);
   const pages = computePages(layout, data, docType);
 
   const allSchemas: (Schema & Record<string, unknown>)[][] = [];
   const mergedInputs: Record<string, string> = {};
   const footerConfig: FooterConfig = {
-    text: footerText || `${data.org_name} | ${data.org_email} | ${data.org_phone}`,
-    secondLine: footerSecondLine || "",
+    text: data.document_footer_text || `${data.org_name} | ${data.org_email} | ${data.org_phone}`,
+    secondLine: data.document_footer_second_line || "",
   };
 
   for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {

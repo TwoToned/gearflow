@@ -7,7 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertNumRange } from "./lib/fieldGuards";
-import { isCheckoffRow } from "./lib/maintenanceRecordAssetKind";
+import { isCheckoffRow, computeCheckoffProgress } from "./lib/maintenanceRecordAssetKind";
 
 /**
  * WS6 #945 — recurring preventative maintenance CHECK-OFF writes. Serialised
@@ -37,17 +37,6 @@ import { isCheckoffRow } from "./lib/maintenanceRecordAssetKind";
  */
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
-
-/** Sum of WS6 CHECKOFF progress recorded against a cycle so far — a serialised
- *  unit counts once (by distinct assetId); a bulk session's `quantity` sums.
- *  Deliberately generic over both shapes (a cycle is one or the other, never
- *  both, since it's driven by a single model's assetType) rather than needing
- *  to look up the model's assetType to pick a formula. */
-function computeProgress(rows: Doc<"maintenanceRecordAssets">[]): number {
-  const bulkQty = rows.reduce((sum, r) => sum + (r.quantity ?? 0), 0);
-  const serializedCount = new Set(rows.filter((r) => r.assetId != null).map((r) => r.assetId)).size;
-  return bulkQty + serializedCount;
-}
 
 async function checkoffRowsFor(ctx: MutationCtx, recordId: string): Promise<Doc<"maintenanceRecordAssets">[]> {
   return (
@@ -84,7 +73,7 @@ async function maybeCompleteCycle(ctx: MutationCtx, record: Doc<"maintenanceReco
   const snapshot = record.poolQuantitySnapshot ?? 0;
   if (snapshot <= 0) return; // nothing to complete against (no pool captured at generation)
   const rows = await checkoffRowsFor(ctx, record.id);
-  const progress = computeProgress(rows);
+  const progress = computeCheckoffProgress(rows);
   if (progress >= snapshot) {
     await ctx.db.patch(record._id, {
       status: "COMPLETED",
@@ -192,7 +181,7 @@ export const checkOffBulkSession = mutation({
 
     const snapshot = record.poolQuantitySnapshot ?? 0;
     const existingRows = await checkoffRowsFor(ctx, a.recordId);
-    const already = computeProgress(existingRows);
+    const already = computeCheckoffProgress(existingRows);
     const remaining = Math.max(0, snapshot - already);
 
     let quantity: number;

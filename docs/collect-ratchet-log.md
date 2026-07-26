@@ -11,3 +11,4 @@ distinct from "debt paid down" instead of both looking like the same baseline co
 | 2026-07-26 | 666 | 661 | -5 | (decrease — existing collects bounded/paginated) |
 | 2026-07-26 | 661 | 662 | +1 | restoring projectMedia.list() — it was incorrectly deleted as dead code; media-read.ts's MEDIA_SPECS dispatch calls it indirectly, caught by CI Type Check on PR #918 |
 | 2026-07-26 | 662 | 655 | -7 | (decrease — existing collects bounded/paginated) |
+| 2026-07-26 | 655 | 654 | -1 | (decrease — existing collects bounded/paginated) |

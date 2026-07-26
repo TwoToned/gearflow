@@ -12,17 +12,6 @@ import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
-export const list = query({
-  args: { orgId: v.string() },
-  handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
-    return await ctx.db
-      .query("projectManagers")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-      .collect();
-  },
-});
-
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
@@ -40,6 +29,18 @@ export const listByProject = query({
     return (await ctx.db
       .query("projectManagers")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+      .collect()).filter((r) => r.organizationId === orgId);
+  },
+});
+
+export const listByUserId = query({
+  args: { userId: v.string(), orgId: v.string() },
+  handler: async (ctx, { userId, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    // by_userId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    return (await ctx.db
+      .query("projectManagers")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .collect()).filter((r) => r.organizationId === orgId);
   },
 });

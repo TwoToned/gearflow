@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 
 /**
@@ -17,10 +18,13 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireService(ctx);
-    return await ctx.db
-      .query("assetScanLogs")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-      .collect();
+    // r9.8-ok: sole caller (getScanLog's no-filter fallback) needs the org's full
+    // set to sort by scannedAt desc and slice an arbitrary page number (not a
+    // forward-only cursor) — capped, not a bare collect — see docs/exceptions.md R-8.3.3
+    const { rows } = await collectCapped(
+      ctx.db.query("assetScanLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)),
+    );
+    return rows;
   },
 });
 

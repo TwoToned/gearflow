@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgRead, requireOrgReadDoc, requireService, requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -10,6 +11,7 @@ import { ensureBulkUnit, ensureSerialisedUnit, expandAccessoryChildLines, syncLi
 import { nextOrdinal } from "./lib/lineItemUnits";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import { getProjectWindow } from "./lib/projectWindow";
 
 /**
  * Thin CRUD for ProjectLineItem (Convex table "projectLineItems"). GENERATED — Phase 2/5.
@@ -817,21 +819,34 @@ export const swapLineItemAsset = mutation({
     const startMs = project?.rentalStartDate ?? null;
     const endMs = project?.rentalEndDate ?? null;
     if (startMs != null && endMs != null) {
-      // Range-scan only projects that could overlap [startMs, endMs] — an
-      // overlapping project must have rentalStartDate <= endMs — instead of
-      // collecting the whole org projects table on every asset reassign. The JS
-      // e >= startMs check completes the overlap test; null-start projects are
-      // outside the range = correctly skipped (the old loop skipped them too).
-      const overlapping = new Set<string>();
+      // Range-scan only projects that could overlap [startMs, endMs] — instead of
+      // collecting the whole org projects table on every asset reassign. TWO scans
+      // (WS2 #941): rentalStartDate <= endMs (as before — its unbounded-below range
+      // also sweeps in projectStartDate-unset rows, since undefined sorts first in a
+      // Convex index) PLUS projectStartDate <= endMs, so a candidate whose PROJECT
+      // window (e.g. an early load-in) starts before endMs is found even when its
+      // rental window starts later. The JS getProjectWindow overlap check completes
+      // the test on the merged candidate set; null-window projects are excluded.
+      const candidates = new Map<string, Doc<"projects">>();
       for await (const p of ctx.db
         .query("projects")
         .withIndex("by_organizationId_rentalStartDate", (q) =>
           q.eq("organizationId", a.organizationId).lte("rentalStartDate", endMs),
         )) {
+        candidates.set(p.id, p);
+      }
+      for await (const p of ctx.db
+        .query("projects")
+        .withIndex("by_organizationId_projectStartDate", (q) =>
+          q.eq("organizationId", a.organizationId).lte("projectStartDate", endMs),
+        )) {
+        candidates.set(p.id, p);
+      }
+      const overlapping = new Set<string>();
+      for (const p of candidates.values()) {
         if (p.isTemplate) continue;
         if (DEAD_PROJECT_STATUSES.has(p.status ?? "")) continue;
-        const s = p.rentalStartDate ?? null;
-        const e = p.rentalEndDate ?? null;
+        const { start: s, end: e } = getProjectWindow(p);
         if (s == null || e == null) continue;
         if (s <= endMs && e >= startMs) overlapping.add(p.id);
       }

@@ -160,6 +160,21 @@ describe("swapLineItemAsset (browser-direct)", () => {
     ).rejects.toThrow(/already booked/i);
   });
 
+  // WS2 (#941) — the double-booking guard reads the candidate's PROJECT window too.
+  test("rejects swapping onto an asset booked on a project whose RENTAL window doesn't overlap but PROJECT window does", async () => {
+    const t = makeT(); await seed(t, { p2Overlaps: false });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "L3", organizationId: ORG, projectId: "P2", modelId: "mdl", assetId: "A2", status: "CONFIRMED", quantity: 1, type: "EQUIPMENT" });
+      const p2 = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "P2")).first();
+      if (p2) await ctx.db.patch(p2._id, { projectStartDate: NOW, projectEndDate: NOW + 3 * DAY });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.projectLineItems.swapLineItemAsset, {
+        organizationId: ORG, lineItemId: "L1", newAssetId: "A2", now: NOW, actor, auditId: "a1",
+      }),
+    ).rejects.toThrow(/already booked/i);
+  });
+
   test("rejects a member without project:manage_line_items", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {

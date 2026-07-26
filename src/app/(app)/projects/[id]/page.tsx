@@ -65,6 +65,8 @@ import { useMediaWrites } from "@/hooks/use-media-writes";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { useOptimisticProjectNotes, useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
+import { useConfirmStatusGate } from "@/hooks/use-confirm-status-gate";
+import { ConfirmStatusImpactDialog } from "@/components/projects/confirm-status-impact-dialog";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
@@ -179,6 +181,13 @@ export default function ProjectDetailPage({
     },
     onError: (e) => toast.error(e.message),
   });
+
+  // Confirm-time gate (WS3 #942, non-blocking): previews "would confirming
+  // this now create a hard overbooking / leave crew unconfirmed" before a
+  // transition INTO CONFIRMED, and only then. Every other status change
+  // proceeds exactly as before (requestStatusChange calls onProceed
+  // synchronously-equivalent when there's nothing to warn about).
+  const confirmGate = useConfirmStatusGate(orgId, id, project?.status, (next) => statusMutation.mutate(next));
 
   const archiveMutation = useServerMutation({
     mutationFn: () => projectWrites.archive(id),
@@ -438,17 +447,25 @@ export default function ProjectDetailPage({
             {!project.isTemplate && (
               <ProjectLifecycle
                 status={project.status}
-                advancing={statusMutation.isPending}
+                advancing={statusMutation.isPending || confirmGate.checking}
                 canAdvance={canUpdate}
-                onAdvance={(next) => statusMutation.mutate(next)}
+                onAdvance={(next) => confirmGate.requestStatusChange(next)}
                 statuses={allStatuses.map((s) => ({
                   value: s,
                   label: projectStatusLabels[s] || formatLabel(s),
                 }))}
-                onStatusChange={(s) => statusMutation.mutate(s)}
+                onStatusChange={(s) => confirmGate.requestStatusChange(s)}
               />
             )}
           </div>
+
+          <ConfirmStatusImpactDialog
+            open={!!confirmGate.pending}
+            impact={confirmGate.pending?.impact ?? null}
+            pending={statusMutation.isPending}
+            onConfirm={confirmGate.confirmPending}
+            onCancel={confirmGate.cancelPending}
+          />
 
           {/* ── Summary Strip ──────────────────────────────────────── */}
           {!project.isTemplate && (

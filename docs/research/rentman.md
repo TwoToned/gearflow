@@ -12,9 +12,9 @@ shape. Screenshots referenced below live in
 
 Rentman is a cloud rental-management platform for the AV / event-production
 industry (equipment rental, dry-hire, staging, lighting, sound). It is the most
-direct incumbent to compare GearFlow against. This doc captures **what it does,
+direct incumbent to compare RVLT Flow against. This doc captures **what it does,
 how the workflows hang together, and how it is modelled** — the parts most
-relevant to GearFlow's domain.
+relevant to RVLT Flow's domain.
 
 ---
 
@@ -531,15 +531,15 @@ Entities observed in traffic:
 
 ---
 
-## 12. Takeaways for GearFlow
+## 12. Takeaways for RVLT Flow
 
-Things Rentman does that map directly onto (or challenge) GearFlow's domain:
+Things Rentman does that map directly onto (or challenge) RVLT Flow's domain:
 
 1. **Two-clock scheduling** (usage period vs planning/warehouse period, per
-   line) is fundamental to availability. Worth confirming GearFlow models both.
+   line) is fundamental to availability. Worth confirming RVLT Flow models both.
 2. **Serialized vs bulk vs virtual/physical-combination** is the core inventory
    taxonomy, and stock is *derived* differently per type (serial count vs
-   contents). This mirrors GearFlow's kit/child/accessory footguns
+   contents). This mirrors RVLT Flow's kit/child/accessory footguns
    (see `CLAUDE.md` PDF-consumer + `isKitChild` notes) — Rentman treats a kit's
    content-status as first-class (Complete/Incomplete per instance).
 3. **Availability engine → shortages → subrent/transfer** is one continuous
@@ -548,7 +548,7 @@ Things Rentman does that map directly onto (or challenge) GearFlow's domain:
 4. **Financial overview by category with estimated/planned/actual + profit** is
    richer than a flat quote total; factor groups (tiered/multi-day pricing),
    discount groups, and dual credit/debit ledgers per item are the pricing
-   primitives. (Aligns with GearFlow's "server is the authority on price"
+   primitives. (Aligns with RVLT Flow's "server is the authority on price"
    rule.)
 5. **Crew & transport as first-class "functions"** grouped per show-day, with a
    cross-project planner that does availability matching by skill + free time.
@@ -560,12 +560,12 @@ Things Rentman does that map directly onto (or challenge) GearFlow's domain:
    an opt-in ChatGPT "fill in with AI" for equipment specs and quote text.
 9. **Architecture note:** Rentman is an RPC/query gateway over a typed data
    model (Dutch schema names), with socket.io realtime — a contrast to
-   GearFlow's Convex + Prisma + server-actions stack.
+   RVLT Flow's Convex + Prisma + server-actions stack.
 10. **Warehouse ops are a status Kanban + barcode scan loop** (§7): prep board
     (Confirmed→Prepped→On location→Expected back→Delayed), per-project QR,
     booking screen with serial-to-kit assignment, and a project-less "scan
     return" check-in. Every scan writes an audit-log row and moves stock. This
-    is the operational spine GearFlow's own prep/docket flow competes with.
+    is the operational spine RVLT Flow's own prep/docket flow competes with.
 11. **Asset lifecycle feeds availability** (§8): repairs, lost items, and due
     inspections each subtract an item from bookable stock; utilisation is then
     reported per item (§9). Availability isn't just "booked vs owned" — it's
@@ -573,7 +573,7 @@ Things Rentman does that map directly onto (or challenge) GearFlow's domain:
 12. **Reporting = saved report definitions with List + Chart** (§9), and the
     rental-equipment report is an **asset-ROI view** (revenue, repair cost,
     subrental cost, average daily rental, usage %, % unusable). A concrete
-    target for GearFlow's own model-ROI/utilisation analytics.
+    target for RVLT Flow's own model-ROI/utilisation analytics.
 
 ### Gaps / not fully explored
 

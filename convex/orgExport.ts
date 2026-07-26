@@ -116,7 +116,7 @@ export const listOrgIds = query({
   args: {},
   handler: async (ctx) => {
     await requireService(ctx);
-    const orgs = await ctx.db.query("organizations").collect(); // r9.8-ok: tenant-count table, admin/script-only listing
+    const orgs = await ctx.db.query("organizations").collect(); // r9.8-ok: tenant-count table, admin/script-only listing — see docs/exceptions.md R-8.3.3
     return orgs.map((o) => o.id);
   },
 });

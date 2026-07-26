@@ -19,7 +19,7 @@ export const list = query({
     await requireService(ctx);
     return await ctx.db
       .query("clientMedia")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — org-wide primary-media map
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — org-wide primary-media map — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });

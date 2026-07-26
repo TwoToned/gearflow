@@ -19,7 +19,7 @@ export const getOrgTags = query({
     const byOrg = (table: "models" | "assets" | "bulkAssets" | "kits" | "locations" | "categories" | "maintenanceRecords" | "projects" | "clients") =>
       ctx.db
         .query(table)
-        .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
+        .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
         .collect();
 
     const tables = await Promise.all([

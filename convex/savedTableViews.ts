@@ -18,7 +18,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("savedTableViews")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small per-org/user saved views
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small per-org/user saved views — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });

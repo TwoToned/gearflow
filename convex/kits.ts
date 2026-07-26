@@ -25,7 +25,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     return await ctx.db
       .query("kits")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive catalog read (perf design); accepted R-9.8 tradeoff
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive catalog read (perf design); accepted R-9.8 tradeoff — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });
@@ -70,9 +70,9 @@ export const listPage = query({
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, categories, locations] = await Promise.all([
-      ctx.db.query("kits").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design)
-      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org config map (enrichment)
-      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org config map (enrichment)
+      ctx.db.query("kits").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design) — see docs/exceptions.md R-8.3.3
+      ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org config map (enrichment) — see docs/exceptions.md R-8.3.3
+      ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org config map (enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
     const locationMap = new Map(locations.map((l) => [l.id, l]));
@@ -128,20 +128,20 @@ export const counts = query({
 
     const serialized = await ctx.db
       .query("kitSerializedItems")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set — see docs/exceptions.md R-8.3.3
       .collect();
     for (const s of serialized) if (s.kitId) ensure(s.kitId).serializedItems++;
 
     const bulk = await ctx.db
       .query("kitBulkItems")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set — see docs/exceptions.md R-8.3.3
       .collect();
     for (const b of bulk) if (b.kitId) ensure(b.kitId).bulkItems++;
 
     // Primary photo per kit (PHOTO + isPrimary), file resolved org-scoped.
     const media = await ctx.db
       .query("kitMedia")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation: per-org tallies need the full set — see docs/exceptions.md R-8.3.3
       .collect();
     for (const m of media) {
       if (m.type !== "PHOTO" || !m.isPrimary) continue;
@@ -230,7 +230,7 @@ export const availableAssets = query({
     await requireOrgRead(ctx, orgId);
     const [assets, models] = await Promise.all([
       ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: availability picker: scans org assets to find available candidates — accepted, revisit if large
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment)
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
     return assets
@@ -251,7 +251,7 @@ export const availableBulkAssets = query({
     await requireOrgRead(ctx, orgId);
     const [bulk, models] = await Promise.all([
       ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: availability picker: scans org assets to find available candidates — accepted, revisit if large
-      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment)
+      ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
     return bulk

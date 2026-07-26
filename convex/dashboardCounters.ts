@@ -54,11 +54,11 @@ export interface CounterValues {
  */
 export async function computeCounters(ctx: QueryCtx, orgId: string): Promise<CounterValues> {
   const [assets, bulkAssets, projects, crewMembers, crewAssignments] = await Promise.all([
-    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path
-    ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path
-    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path
-    ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path
-    ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path
+    ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path — see docs/exceptions.md R-8.3.3
+    ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path — see docs/exceptions.md R-8.3.3
+    ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path — see docs/exceptions.md R-8.3.3
+    ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path — see docs/exceptions.md R-8.3.3
+    ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: counter reconcile/recompute, not the hot path — see docs/exceptions.md R-8.3.3
   ]);
 
   const activeAssetDocs = assets.filter((a) => a.isActive !== false);

@@ -69,9 +69,9 @@ export const listPage = query({
     // the whole locations table.
     const [rows, clients, locations] = await Promise.all([
       ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
-      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment)
+      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
       a.search
-        ? ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org catalog/config map (list enrichment)
+        ? ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
         : Promise.resolve([]),
     ]);
     const clientMap = new Map(clients.map((c) => [c.id, c]));
@@ -121,7 +121,7 @@ export const listBoard = query({
     await requireOrgRead(ctx, orgId);
     const [rows, clients] = await Promise.all([
       ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: kanban board aggregates all org projects into status columns (perf design)
-      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org enrichment map (board)
+      ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org enrichment map (board) — see docs/exceptions.md R-8.3.3
     ]);
     const clientMap = new Map(clients.map((c) => [c.id, c]));
     const clientNameFor = (id: string | null | undefined) => (id ? clientMap.get(id)?.name : undefined);

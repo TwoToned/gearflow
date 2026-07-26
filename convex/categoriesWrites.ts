@@ -155,7 +155,7 @@ export const removeNative = mutation({
     // Delete guards (old Prisma _count): children = categories whose parentId is this
     // id; models = models whose categoryId is this id (both org-scoped).
     const children = (
-      await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org config/catalog set
+      await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect() // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
     ).filter((c) => c.parentId === a.id);
     if (children.length > 0) throw new ConvexError("Cannot delete category with subcategories");
     const models = (

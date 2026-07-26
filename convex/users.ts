@@ -34,7 +34,7 @@ export const listAll = query({
   args: {},
   handler: async (ctx) => {
     await requireService(ctx);
-    const rows = await ctx.db.query("users").collect(); // r9.8-ok: small platform-wide table, auth-mirror reconcile utility
+    const rows = await ctx.db.query("users").collect(); // r9.8-ok: small platform-wide table, auth-mirror reconcile utility — see docs/exceptions.md R-8.3.3
     return rows.map((r) => ({ id: r.id, email: r.email ?? null, name: r.name ?? null }));
   },
 });

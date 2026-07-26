@@ -16,7 +16,7 @@ export const list = query({
   args: {},
   handler: async (ctx, _args) => {
     await requireService(ctx);
-    return await ctx.db.query("siteSettings").collect(); // r9.8-ok: small singleton-scale config table
+    return await ctx.db.query("siteSettings").collect(); // r9.8-ok: small singleton-scale config table — see docs/exceptions.md R-8.3.3
   },
 });
 

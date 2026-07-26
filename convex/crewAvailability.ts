@@ -16,7 +16,7 @@ const overlaps = (aStart: number, aEnd: number, rStart: number, rEnd: number) =>
 const iso = (ms: number | null | undefined) => (ms == null ? null : new Date(ms).toISOString());
 
 async function orgMemberIds(ctx: QueryCtx, orgId: string): Promise<Set<string>> {
-  const members = await ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded by the org's crew roster (member-id set)
+  const members = await ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded by the org's crew roster (member-id set) — see docs/exceptions.md R-8.3.3
   return new Set(members.map((m) => m.id));
 }
 
@@ -76,9 +76,9 @@ export const plannerData = query({
   handler: async (ctx, { orgId, startMs, endMs }) => {
     await requireOrgRead(ctx, orgId);
     const [allMembers, allAssignments, roles, projects, allAvail] = await Promise.all([
-      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
+      ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph — see docs/exceptions.md R-8.3.3
       ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
-      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
+      ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph — see docs/exceptions.md R-8.3.3
       ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
       ctx.db.query("crewAvailabilities").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
     ]);

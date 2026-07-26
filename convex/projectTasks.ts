@@ -56,7 +56,7 @@ export const assignees = query({
     await requireOrgRead(ctx, orgId);
     const members = await ctx.db
       .query("members")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
       .collect();
     members.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)); // Prisma orderBy createdAt asc
     const users: { id: string; name: string; image: string | null }[] = [];
@@ -66,7 +66,7 @@ export const assignees = query({
     }
     const crewDocs = await ctx.db
       .query("crewMembers")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
       .collect();
     const crew = crewDocs
       .filter((c) => c.status !== "ARCHIVED")

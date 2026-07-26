@@ -50,7 +50,7 @@ export const listAll = query({
   args: {},
   handler: async (ctx) => {
     await requireService(ctx);
-    const rows = await ctx.db.query("members").collect(); // r9.8-ok: small platform-wide table, auth-mirror reconcile utility
+    const rows = await ctx.db.query("members").collect(); // r9.8-ok: small platform-wide table, auth-mirror reconcile utility — see docs/exceptions.md R-8.3.3
     return rows.map((r) => ({
       id: r.id,
       organizationId: r.organizationId,

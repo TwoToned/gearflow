@@ -34,6 +34,7 @@ import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
+import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
@@ -261,6 +262,7 @@ export default function ProjectDetailPage({
                       label={projectStatusLabels[project.status] || formatLabel(project.status)}
                     />
                   )}
+                  {!project.isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">

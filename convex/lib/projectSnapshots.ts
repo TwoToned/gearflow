@@ -1,6 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { Doc } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { LOCKED_GROUP_FIELDS, LOCKED_LINE_ITEM_FIELDS, LOCKED_PROJECT_FIELDS, LOCKED_SERVICE_FIELDS } from "./projectLocks";
 
 /**
@@ -19,6 +19,52 @@ export type UnlockScope = "FINANCIAL" | "FULL";
 function stripDoc(doc: Record<string, unknown> & { _id: unknown; _creationTime: unknown }): Record<string, unknown> {
   const { _id, _creationTime, ...rest } = doc;
   return rest;
+}
+
+export interface SnapshotEntryLike {
+  entityType: SnapshotEntityType;
+  entityId: string;
+  data: Record<string, unknown>;
+}
+
+/** Read-only: the SAME entity set/shape `captureProjectSnapshot` would write,
+ *  without writing anything — lets the Versions UI diff "snapshot ↔ current"
+ *  through the identical shape as "snapshot ↔ snapshot" (one diff code path,
+ *  see src/lib/project-snapshot-diff.ts). Safe on a QueryCtx. */
+export async function collectCurrentEntries(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  project: Doc<"projects">,
+): Promise<SnapshotEntryLike[]> {
+  const out: SnapshotEntryLike[] = [];
+  out.push({ entityType: "project", entityId: project.id, data: stripDoc(project as unknown as Record<string, unknown> & { _id: unknown; _creationTime: unknown }) });
+
+  const categories = (
+    await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
+  ).filter((c) => c.organizationId === orgId);
+  for (const c of categories) out.push({ entityType: "category", entityId: c.id, data: stripDoc(c) });
+
+  const groups = (
+    await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
+  ).filter((g) => g.organizationId === orgId);
+  for (const g of groups) out.push({ entityType: "group", entityId: g.id, data: stripDoc(g) });
+
+  const lineItems = (
+    await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
+  ).filter((li) => li.organizationId === orgId);
+  for (const li of lineItems) out.push({ entityType: "lineItem", entityId: li.id, data: stripDoc(li) });
+
+  const services = (
+    await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
+  ).filter((s) => s.organizationId === orgId);
+  for (const s of services) out.push({ entityType: "service", entityId: s.id, data: stripDoc(s) });
+
+  const crew = (
+    await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
+  ).filter((c) => c.organizationId === orgId);
+  for (const c of crew) out.push({ entityType: "crewAssignment", entityId: c.id, data: stripDoc(c) });
+
+  return out;
 }
 
 export interface CaptureSnapshotArgs {

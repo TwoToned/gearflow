@@ -239,7 +239,7 @@ export function lifecycleAuditMetadata(
  *  org role admin/owner, OR present in the project's `projectManagers` set.
  *  Server-checked — narrower than the general `project:update` permission. */
 export async function isHardLockOverrideAllowed(
-  ctx: MutationCtx,
+  ctx: QueryCtx | MutationCtx,
   orgId: string,
   projectId: string,
   userId: string,

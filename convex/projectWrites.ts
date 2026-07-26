@@ -782,6 +782,24 @@ export const deleteNative = mutation({
     ).filter((r) => r.organizationId === orgId);
     for (const r of rollups) await ctx.db.delete(r._id);
 
+    // Step 9 — #792: lifecycle snapshots + entries + unlock sessions (no FK to
+    // cascade automatically — extend this list, don't forget it, the way
+    // projectModelRevenues above was once missed).
+    const snapshots = (
+      await ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((s) => s.organizationId === orgId);
+    for (const snap of snapshots) {
+      const entries = (
+        await ctx.db.query("projectSnapshotEntries").withIndex("by_snapshotId", (q) => q.eq("snapshotId", snap.id)).collect()
+      ).filter((e) => e.organizationId === orgId);
+      for (const e of entries) await ctx.db.delete(e._id);
+      await ctx.db.delete(snap._id);
+    }
+    const unlockSessions = (
+      await ctx.db.query("projectUnlockSessions").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((s) => s.organizationId === orgId);
+    for (const s of unlockSessions) await ctx.db.delete(s._id);
+
     // Finally — project row + active-project counter + DELETE audit.
     await bumpProjectCounters(ctx, orgId, project, null);
     await ctx.db.delete(project._id);

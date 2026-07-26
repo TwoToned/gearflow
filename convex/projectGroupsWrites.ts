@@ -9,7 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import * as enums from "./lib/validators";
-import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_GROUP_FIELDS } from "./lib/projectLocks";
+import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the

@@ -57,6 +57,11 @@ rail + live preview, single clean page, "More details" accordion.
 ## Pricing Modes
 - **KIT_PRICE**: Single price on parent row, children have `unitPrice: 0`
 - **ITEMIZED**: Individual prices on each child row, parent has `unitPrice: 0`
+- No discount concept exists for kits today (unlike individual line items, which
+  have a `discount` field). Adding one — plumbed through `recalcProjectTotals` and
+  its parity tests, plus the PDF pipeline's line-item consumers — is scoped out as
+  a deliberate follow-up; see "Deferred from issue #883" in
+  [FEATUREDOCS/47](./47-cross-type-equipment-unification.md).
 
 ## Warehouse Operations
 - Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren (nested kits)

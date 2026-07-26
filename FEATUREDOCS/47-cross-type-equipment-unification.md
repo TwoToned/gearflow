@@ -240,6 +240,55 @@ button was added to match the other dialogs, and labels/title are sentence
 case. The group `ComboboxPicker` (creatable) and the `addLineItem` mutation
 are unchanged.
 
+### Shared discount/section primitives + edit-dialog fixes (issue #883)
+
+The visual pass above unified *markup* only. Issue #883 asked for the next
+step: converge the underlying state-management/validation approach and close
+the pricing-capability gaps between `equipment-add-form.tsx` (the reference
+pattern) and its siblings. This pass shipped the safe, well-tested slice of
+that ask; see "What this work did NOT change" for what's deliberately
+deferred and why.
+
+**`line-item-form-fields.tsx` (new, shared).** `SectionTitle` and `Field`
+were hand-duplicated in `equipment-add-form.tsx`, `kit-add-form.tsx`, and
+`custom-item-add-form.tsx` — now one module, imported by all three (plus
+`bulk-edit-line-items-dialog.tsx`'s discount row). The `$`/`%` discount
+toggle — previously reimplemented independently in
+`equipment-add-form.tsx` and `edit-line-item-dialog.tsx`, in three slightly
+different sizes across the codebase (`h-11 w-11`, `w-9 h-9`, and unsized) —
+is now the single `DiscountField` component, standardised on the reference
+form's `h-11 w-11` sizing (matching the `Input`'s own `min-h-11`, which the
+smaller toggles were previously misaligned against). Its `%`→dollar
+resolution math is `resolveDiscountAmount(mode, discount, gross)`, unit
+tested directly (`line-item-form-fields.test.tsx`). It also fixes a latent
+edge case in both prior copies: a `%` discount entered before a unit price
+existed (so `gross` was unresolvable) used to fall through and get sent
+as a raw *dollar* amount equal to the percentage number; it's now dropped
+instead of misapplied.
+
+**Custom items get the `%` toggle on add.** `custom-item-add-form.tsx` was
+the one add form with a dollar-only discount input (its own edit path,
+`edit-line-item-dialog.tsx`, already supported `%`). It now uses
+`DiscountField` and resolves `%` the same way equipment-add does, including
+in the live summary preview. Covered by
+`custom-item-add-form.smoke.test.tsx`.
+
+**`edit-line-item-dialog.tsx` gets an `isOptional` toggle — and a real bug
+fix.** The dialog had no `isOptional` field in its payload at all. Because
+`lineItemSchema.isOptional` defaults to `false` when the key is absent, and
+`buildLineItemSetClear` unconditionally writes `isOptional` into the patch,
+**every save through this dialog silently reset the item back to
+non-optional**, even when the row was never touched. The dialog now seeds
+the checkbox from `item.isOptional` and includes it in the payload it hands
+to `onSubmit`, closing both the data-loss bug and the capability gap named
+in the issue. Regression-tested in `edit-line-item-dialog.smoke.test.tsx`
+(seeds from the item, round-trips unchanged, and reflects a toggle).
+
+**`Button loading` idiom.** `edit-line-item-dialog.tsx`,
+`price-edit-dialog.tsx`, and `bulk-edit-line-items-dialog.tsx` replaced their
+inline `Loader2`-in-button-children spinners with the registry `Button
+loading` prop already used by every add form.
+
 Both move-item dialogs replaced the combined `move-line-item-dialog.tsx`
 in v0.9.3.0. The server action (`moveLineItemToGroup`) is unchanged —
 this is purely a UI split. The combined dialog landed in v0.9.1.0 and
@@ -329,3 +378,54 @@ SubHireGroup synthetic parents — pre-dates this work, no changes needed.
   warehouse + PDF pipelines still see them.
 - The merge behaviour described in [10-projects.md §Sub-hire merge rules](./10-projects.md) —
   unchanged.
+
+### Deferred from issue #883 (deliberately, not an oversight)
+
+Issue #883 named six directions; this pass covers the shared-component
+extraction, the custom-item `%` gap, and the edit-line-item `isOptional`
+gap/bug (all above). The rest is **explicitly deferred**, not silently
+dropped:
+
+- **Kit/group discount capability.** The issue's biggest data-shape ask —
+  giving `projectGroups` (and kits, which price through the same group
+  concept) a `discount` field to match individual line items. `price` on
+  `projectGroups` feeds `recalcProjectTotals`
+  (`convex/lineItemWrites.ts` `recalcNative` → the shared core proven
+  byte-parity-tested in `convex/recalc.test.ts`) — a real revenue-calculation
+  path on a live production app (flow.rvlt.app), not just a form field. It
+  also touches the five-consumer PDF pipeline this file's sibling doc
+  (CLAUDE.md's "PDF generation — data-shape changes need cross-cutting
+  audits" section) warns about for any line-item data-shape change. Doing
+  this safely needs its own scoped PR: the schema field, the recalc-math
+  change plus updated parity tests, the mutation-layer bound checks
+  (`fieldGuards.ts`), and the PDF cross-cutting audit — not bundled into a
+  form-consistency pass.
+- **Full RHF + `zodResolver` conversion of `kit-add-form.tsx` and
+  `custom-item-add-form.tsx`.** The reference form
+  (`equipment-add-form.tsx`) uses RHF/Zod for bounds enforcement on submit,
+  but doesn't render inline per-field error text either — so the concrete
+  benefit here is centralized bounds enforcement, which
+  `customLineItemSchema.parse(...)`-on-submit already provides for custom
+  items today. Converting a working, live add flow's state management for a
+  mostly-architectural win carries real regression risk for limited
+  user-visible upside; not worth it without dedicated QA. `kit-add-form.tsx`
+  has no schema at all yet (raw values straight to the mutation) — adding
+  one is lower-risk than the RHF conversion and is a reasonable next step.
+- **Rebuilding `edit-line-item-dialog.tsx` on the exact same
+  section/`SectionTitle`/placement layout as `equipment-add-form.tsx`.**
+  This pass fixed the `isOptional` gap/bug and swapped in the shared
+  discount component, but left the dialog's flat (non-sectioned) layout
+  alone. Placement (category/group) editing for an existing line item
+  already has a dedicated flow — the kebab menu's "Move to category" dialog
+  (`MoveItemToCategoryDialog` + `moveLineItemMut`) — so closing this gap
+  means either merging two working dialogs or deliberately keeping them
+  separate; either way it's a UX-redesign decision that deserves a
+  `/design-review` pass with an actual browser, not a blind layout rewrite
+  in a text editor.
+- **Dialog-chrome ownership (issue's point 5).** The decision made here:
+  keep the existing split. Add forms share `UnifiedAddDialog`'s segmented
+  tab switcher and so are hosted-body by construction; edit dialogs
+  (`EditLineItemDialog`, `EditGroupDialog`, `PriceEditDialog`) are opened
+  from many independent trigger points (row kebabs, toolbar actions) with
+  no shared parent chrome to host into, so self-owned `Dialog`s are the
+  right call for them. This is a deliberate choice, not an unresolved gap.

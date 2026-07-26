@@ -226,6 +226,7 @@ Custom items are ad-hoc line items for gear not in the system — borrowed equip
 - Appear on all PDFs (`getProjectForDocument` fetches all non-cancelled items regardless of type)
 - Appear on pull sheet (`getProjectPullSheet` filters `type: "EQUIPMENT"`)
 - A custom item inside a project group counts as an **extra** on top of the group's bundle price — it is not absorbed into the group total and no longer vanishes from the project total.
+- The add form supports a `$`/`%` discount toggle (`DiscountField` in `src/components/projects/line-item-form-fields.tsx`), matching every other add/edit surface — `%` resolves to a flat dollar amount client-side before the `customLineItemSchema.parse()` call (issue #883; previously add-time only took a flat `$` amount, while the generic edit path already supported `%`).
 
 **Distinction from sub-hires:** Sub-hires represent formally ordered gear from a supplier with a structured order workflow. Custom items are anonymous ad-hoc entries with no supplier and no order tracking.
 

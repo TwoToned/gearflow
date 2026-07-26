@@ -208,6 +208,7 @@ export {
 import { describeRow } from "./equipment-row-descriptors";
 import { LineAssetsIndicator } from "./line-assets-indicator";
 import { MetricLine, GroupCard, CategoryCardHeading, CardAddButton } from "./equipment-cards";
+import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
@@ -1075,6 +1076,11 @@ export function LineItemRow({
   const updatedAtKey =
     item.updatedAt instanceof Date ? item.updatedAt.getTime() : item.updatedAt ?? null;
   const [justChanged, setJustChanged] = useState(false);
+  // "Report Issue" (GitHub #898) — only offered while the line is CHECKED_OUT
+  // (deployed on the job); Pick/Prep/Returned lines go through the ordinary
+  // check-queue flow instead.
+  const [reportIssueOpen, setReportIssueOpen] = useState(false);
+  const canReportIssue = item.status === "CHECKED_OUT";
   const prevUpdatedAt = useRef(updatedAtKey);
   useEffect(() => {
     if (updatedAtKey === prevUpdatedAt.current) return;
@@ -1198,6 +1204,15 @@ export function LineItemRow({
             <DropdownMenuItem onClick={() => handleMarker("resolved")}>
               <RefreshCw className="mr-2 h-3.5 w-3.5" />
               Resolve marker
+            </DropdownMenuItem>
+          )}
+          {canReportIssue && (
+            <DropdownMenuItem
+              onClick={() => setReportIssueOpen(true)}
+              className="text-warn data-[highlighted]:bg-warn-soft data-[highlighted]:text-warn"
+            >
+              <AlertTriangle className="mr-2 h-3.5 w-3.5" />
+              Report issue
             </DropdownMenuItem>
           )}
           <DropdownMenuItem
@@ -1364,6 +1379,15 @@ export function LineItemRow({
               </div>
             ))}
           </div>
+        )}
+        {canReportIssue && (
+          <ReportIssueDialog
+            open={reportIssueOpen}
+            onOpenChange={setReportIssueOpen}
+            targetLabel={name}
+            projectId={projectId}
+            lineItemId={item.id}
+          />
         )}
       </div>
     );
@@ -1613,6 +1637,15 @@ export function LineItemRow({
                     Resolve marker
                   </DropdownMenuItem>
                 )}
+                {canReportIssue && (
+                  <DropdownMenuItem
+                    onClick={() => setReportIssueOpen(true)}
+                    className="text-warn data-[highlighted]:bg-warn-soft data-[highlighted]:text-warn"
+                  >
+                    <AlertTriangle className="mr-2 h-3.5 w-3.5" />
+                    Report issue
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                   onClick={onRemove}
                   className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
@@ -1665,6 +1698,15 @@ export function LineItemRow({
         <TableCell />
       </TableRow>
     ))}
+    {canReportIssue && (
+      <ReportIssueDialog
+        open={reportIssueOpen}
+        onOpenChange={setReportIssueOpen}
+        targetLabel={name}
+        projectId={projectId}
+        lineItemId={item.id}
+      />
+    )}
     </>
   );
 }

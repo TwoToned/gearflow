@@ -39,6 +39,9 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Check item** | A pass/fail, measurement, notes, or dropdown quality check performed on an asset during deploy/return. See [37-check-items.md](../FEATUREDOCS/37-check-items.md). |
 | **Test & Tag (T&T)** | AS/NZS 3760:2022 electrical safety compliance testing on assets. See [14-test-and-tag.md](../FEATUREDOCS/14-test-and-tag.md). |
 | **Child asset / accessory** | An asset permanently attached to a parent serialized asset (e.g. a cable to a fixture) so it travels with it through projects and warehouse flows (`isKitChild`, `childKind`). See [48-child-assets-accessories.md](../FEATUREDOCS/48-child-assets-accessories.md). |
+| **Default accessory** | A model-level bulk accessory with `inclusion: "DEFAULT"` (or absent — zero-migration) — auto-attaches when the model is added to a project; the PM can deselect it per line without touching the model template. See [48-child-assets-accessories.md](../FEATUREDOCS/48-child-assets-accessories.md). |
+| **Optional accessory** | A model-level bulk accessory with `inclusion: "OPTIONAL"` — never auto-attaches; offered as an opt-in pick in the add-time Accessories section. |
+| **Accessory plan** | `ProjectLineItem.accessoryPlan` — the durable per-line override of the model's default/optional accessory template (`{ excluded, added }`). Resolved by `resolveLineAccessoryPlan`, the single function every accessory-expansion site (office add, warehouse prep, warehouse checkout) consults. |
 
 ## Documented aliases
 

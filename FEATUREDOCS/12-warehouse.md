@@ -164,14 +164,14 @@ a time (return had to be clicked 16×). Fixes:
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
 - Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
-- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). **There is no warehouse UI for accessories** — the "Include accessories" toggle was removed; `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return silently whenever their parent does. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return silently whenever their parent does. **The effective accessory set is the line's stored `accessoryPlan`** (issue #794 — defaults minus what the PM deselected at add-time, plus any optionals opted into), resolved by one shared function (`resolveLineAccessoryPlan`) that prep, checkout, and the office add form all consult — a deselected default can no longer be silently re-expanded at checkout. `checkOutItems` additionally accepts a per-item `includeAccessoryIds` allow-list (the "Deploy Verified Only" narrowing kits already have) which `expandAccessoriesForAsset`/`checkoutAccessoryChildren` honour, but **no warehouse tab UI drives it yet** — accessory children still don't get their own grouping/verification-circle/partial-deploy treatment in the Deploy/Return/Prep/De-prep tabs (unlike kits); that's tracked as a follow-up. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
 - Split bulk items (qty=1 with bulkAssetId) use the serialized return path
 - Items grouped by `prepContainer` with section headers (same as Deploy tab)
 - Container line items auto-return when all contents are returned (`syncContainerStatus`)
-- Permanent accessories cascade back with their parent automatically on return — no separate rows or toggle. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories cascade back with their parent automatically on return — no separate rows or toggle; return-side partial cascade is unchanged/out of scope for issue #794 (deploy-side only). See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ### De-prep Tab
 - Shows gear at the **Returned** stage: `status === "RETURNED"` and `prepStatus === "PACKED"` (`returnedItems` filter; kit parents surface if any child/grandchild matches). Once de-prepped, `prepStatus` resets off PACKED and the item leaves this tab.
@@ -217,6 +217,17 @@ Before deploying or returning a kit (or prep-kit) with unverified items:
 
 ## Kit Groups in Deploy/Return Tabs
 Kits and prep-kits appear as expandable groups in the Deploy and Return tabs. Uses `kit-group` GroupEntry variant. Parent line item has `kitId` set, children have `isKitChild: true`. Checkbox selection routes to `kitCheckOutMutation`/`kitCheckInMutation`.
+
+**Accessory parents do NOT get this treatment yet.** Issue #794 asked for accessory-parent
+lines (top-level, no `kitId`, has `ACCESSORY` children) to render the same way — expandable,
+with verification circles and the partial-deploy dialog. That's shipped for the **Online Pick
+List** and **printable Pull Sheet** (accessories render indented, badged "Accessory", and
+count toward pick progress — see below), and `KitChildRows`/`MobileKitChildCards` now render
+an "Accessory" badge when reused for one. But `groupItems`/`groupCheckinItems` in the main
+warehouse page (Deploy/Return/Prep/De-prep tabs) still only special-case `kit-group` — an
+accessory parent falls through to the plain serialized/single-item branch, so it does NOT
+yet get its own expandable group, verification circles, or "Deploy Verified Only" dialog in
+those four tabs. Tracked as a follow-up (TODOS.md).
 
 ### Nested Kit Rendering (`KitChildRows`)
 Children of a kit/prep-kit that are themselves kits render with:
@@ -311,7 +322,7 @@ The warehouse page has a "Documents" dropdown with access to all project PDFs (P
 - Delivery docket counts only deployed children (`CHECKED_OUT`). Pull slip counts all children.
 
 ## Online Pick List
-Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children. Permanent accessories render indented under their parent asset line, badged "Accessory", and count toward pick progress (`pick-list-progress.ts`) — the same rows appear on the printable pull sheet (`pull-sheet/page.tsx`). On mobile the pull sheet uses **`StickyTable`** (frozen checkbox + Item columns, the rest scroll sideways with smart wrapping so nothing overlaps; empty cells render blank, no "—" noise). All sticky/scroll enhancements reset under `@media print`, so the physical printed sheet is unchanged. See `FEATUREDOCS/25-datatable.md` → Mobile data-table primitives. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+Dialog with full item list showing deployment status per line item. Mobile full-screen with safe area padding. Kit and prep-kit groups show as expandable sections with children. Permanent accessories render indented under their parent asset line, badged "Accessory", and count toward pick progress (`pick-list-progress.ts`) — the same rows appear on the printable pull sheet (`pull-sheet/page.tsx`). (Issue #794 current-state audit found `pickListProgress` counted these rows but neither `online-pick-list.tsx` nor `pull-sheet/page.tsx` actually rendered them, making the progress bar un-completable on any project with accessories — both now render `getAccessoryChildren(item)` as independent, indented, individually-checkable rows.) On mobile the pull sheet uses **`StickyTable`** (frozen checkbox + Item columns, the rest scroll sideways with smart wrapping so nothing overlaps; empty cells render blank, no "—" noise). All sticky/scroll enhancements reset under `@media print`, so the physical printed sheet is unchanged. See `FEATUREDOCS/25-datatable.md` → Mobile data-table primitives. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
 ## Warehouse Dashboard Display (TV Screen)
 

@@ -1,10 +1,21 @@
 # Child Assets / Accessories
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 Permanently attach accessories (cables, clamps, adaptors) to a parent serialised
 asset so they travel together — onto projects, through warehouse checkout/checkin,
 and onto documents. Roadmap Phase 1.1; foundational for Bulk Check-In (1.3).
+
+**Issue #794 ("Redo accessories")** reworked the office-side of this: model
+accessories now have a `DEFAULT`/`OPTIONAL` tier, the PM gets an add-time picker
+(deselect defaults, opt into optionals) instead of the old all-or-nothing
+"Include accessories" checkbox, and the choice is durable per-line
+(`accessoryPlan`) rather than re-derived from raw config at every expansion —
+which also fixed a real bug where warehouse checkout could silently resurrect an
+accessory the PM had deselected. Full design + competitive research:
+`docs/designs/accessories-v2.md`. The warehouse-side "treat accessory parents
+like kit groups" ask is **partially shipped** (Online Pick List + Pull Sheet) —
+see the "Deploy/return/prep/de-prep tabs" note below for what's still open.
 
 Accessories are **not kits**. A kit is a physical container with its own asset
 tag and rental contract; an accessory is inseparable from its parent — no
@@ -28,6 +39,66 @@ mechanism but reusing its parent/child *line-item* shape.
   drain the whole shelf in one click. Bulk only at the model level; serialised
   accessories stay asset-level (you can't pick "the" specific cable for every
   asset of a model).
+  - **`inclusion`: `"DEFAULT" | "OPTIONAL"`** (issue #794). Absent = `DEFAULT`
+    (zero-migration back-compat). `DEFAULT` auto-attaches when the model is
+    added to a project (the PM can deselect it per line — see `accessoryPlan`
+    below). `OPTIONAL` never auto-attaches; it's offered as an opt-in pick in
+    the add-time picker. `ModelAccessoriesManager` (Model detail page) has a
+    Default/Optional select on add, plus an edit action (`updateNative`, the
+    quantity/inclusion/notes patch mutation that used to be a dead end — the
+    dup-guard's "Edit the quantity instead" error now has somewhere to go).
+
+## Per-line accessory selection (`accessoryPlan`) — issue #794
+
+`ProjectLineItem.accessoryPlan` is the durable, per-line override of the model
+template: `{ excluded: string[]; added: { bulkAssetId, quantityPerParent? }[] }`.
+`excluded` holds `bulkAssetId`s of model DEFAULTs the PM deselected for *this*
+line only (the model template is untouched); `added` holds model OPTIONALs the
+PM opted into, with an optional per-parent quantity override. Absent plan (the
+common case, unaffected by this feature) means template behaviour: every
+DEFAULT, no OPTIONALs — existing lines and rows never touched by the picker
+behave exactly as before.
+
+**One resolver, three call sites.** `resolveLineAccessoryPlan(ctx, orgId,
+assetId, plan)` (`convex/lib/fulfillment.ts`) computes the effective set —
+asset-level serialised + bulk children (always included, no plan control) ∪
+model DEFAULTs minus `plan.excluded` ∪ model OPTIONALs in `plan.added` (asset
+still wins `bulkAssetId` conflicts). It replaced the old `resolveAssetAccessories`
+(which unioned every model bulk accessory regardless of tier) and is now the
+*only* place that reads `modelBulkAccessories` for expansion purposes.
+`expandAccessoryChildLines` (office add, both the by-asset and by-model
+branches) and `expandAccessoriesForAsset` (warehouse prep/checkout) both call
+it with the line's own `accessoryPlan` — no site is allowed to re-derive the
+set from raw config, which is what let a deselected default resurrect itself
+at checkout before this fix (see "Exclude accessories" below).
+
+**Where it's set / edited:**
+- **Add-time** — `equipment-add-form.tsx` renders an inline "Accessories"
+  section (both by-model and by-asset-tag add) whenever the chosen model has
+  any `modelBulkAccessories` row: DEFAULTs pre-checked (unchecking records an
+  exclusion), OPTIONALs unchecked (checking opts in). No section when the
+  model has none. `checkAvailability`/`lookupAssetByTag` both return an
+  `accessories: ModelAccessoryDetail[]` list (resolved bulk-asset tag + model
+  name) for the picker. The computed plan is submitted as a top-level
+  `accessoryPlan` arg on `addLineItemSmartNative`/`addNative`, stored on the
+  new parent row, and passed straight through to `expandAccessoryChildLines`.
+- **Post-add** — `lineItemWrites.updateAccessoryPlanNative` reconciles an
+  existing line's children to a new plan (`reconcileLineAccessoryChildren`):
+  creates newly-added children, deletes newly-excluded ones (and their
+  units), rescales a kept bulk child's quantity if the line quantity or
+  override changed. **Hard-blocks** once any unit of the *parent* line has
+  deployed (`checkedOutQuantity > 0` or `status === "CHECKED_OUT"`), and
+  separately refuses to delete a child that itself has a `CHECKED_OUT` unit —
+  "office decides, warehouse verifies" holds even for edits. No row-menu
+  entry point wired into `equipment-rows.tsx` yet — the mutation exists and
+  is tested, but reopening the picker from the project equipment tab is a
+  follow-up (TODOS.md).
+- **Simplification vs. the full design** (`docs/designs/accessories-v2.md`):
+  the add-form picker surfaces the model's DEFAULT/OPTIONAL bulk accessories
+  only — it does not additionally list the specific asset's own
+  serialised/bulk children as a read-only "attached to this unit" group on a
+  by-asset-tag add. Those still always auto-attach (unaffected, no plan
+  control), just not shown in the picker UI itself.
 - **`AccessoryAllocationMode`** — `SHIPS_WITH` (default) | `DEDICATED`.
   - `SHIPS_WITH`: the parent "ships with" N of a bulk asset; the N are drawn
     from the live pool at prep/checkout (a normal booking). The shared pool is
@@ -128,19 +199,27 @@ what every existing query keys off.
    each badged "Accessory". Accessory children are hidden from the flat list by
    `isHiddenFromList` (they're `isKitChild:true`).
 
-   **Deploy/return tabs** — ⚠️ **stale, needs a follow-up audit.** This section
-   previously described a dedicated `accessory-child-rows.tsx`
-   (`AccessoryChildRows` / `getAccessoryChildren`) component wired into
-   `deploy-tab.tsx`/`return-tab.tsx`; that file no longer exists in current code
-   and no `AccessoryChildRows` component could be found anywhere in the repo.
-   `getAccessoryChildren` now lives in
-   [`src/components/warehouse/pick-list-progress.ts`](../src/components/warehouse/pick-list-progress.ts),
-   but it's used for pick-progress counting (consumed by `online-pick-list.tsx`),
-   not for rendering rows in the deploy/return tabs. Whether the deploy/return
-   tabs still render accessory children distinctly (vs. folded into the generic
-   `KitChildRows` path, which does not check `childKind`) is unverified — treat
-   this paragraph as unconfirmed until someone re-audits `deploy-tab.tsx` /
-   `return-tab.tsx` against current behaviour.
+   **Deploy/return/prep/de-prep tabs (main warehouse page) — confirmed gap, not
+   stale.** `getAccessoryChildren` lives in
+   [`src/components/warehouse/pick-list-progress.ts`](../src/components/warehouse/pick-list-progress.ts)
+   and is used for pick-progress counting (`online-pick-list.tsx` /
+   `pull-sheet/page.tsx`, both of which now render the rows it counts — issue
+   #794 fixed the render-side gap there). It is **not** consulted by
+   `src/app/(app)/warehouse/[projectId]/page.tsx`'s `groupItems`/
+   `groupCheckinItems`: those only special-case `isKitParent` (`kitId` set,
+   `!isKitChild`), so an accessory parent (top-level, no `kitId`, has
+   `ACCESSORY` children) falls through to the plain serialized-group/single
+   branch. `equipmentItems`'s flat-list filter DOES already hide accessory
+   *children* the same way it hides kit children (both set `isKitChild:true`),
+   so nothing double-renders — they're just invisible rather than shown as an
+   expandable group. `KitChildRows`/`MobileKitChildCards` gained an "Accessory"
+   badge (`childKind === "ACCESSORY"`) so the pieces are ready to reuse once a
+   parent hooks them up, but no such parent exists in the four main tabs yet.
+   No verification circles, no "X/Y verified" badge, no "Deploy Verified
+   Only"/"Deploy All" partial-deploy dialog for accessory groups there —
+   accessories still cascade silently, all-or-nothing, whenever their parent
+   moves stage. Tracked as a follow-up (TODOS.md); see FEATUREDOCS/12 § Kit
+   Groups in Deploy/Return Tabs for the same note from the warehouse side.
 
    **Known gap (not yet wired):** the pick/prep tab (`pick-prep-tab.tsx`) does
    not yet show accessories nested; expansion still happens at prep server-side.
@@ -195,30 +274,42 @@ what every existing query keys off.
   asset override wins, warehouse scan-time inheritance + idempotency, unique
   constraint, "removing the template doesn't affect past expansions" (5).
 
-## Exclude accessories toggle
+## Exclude accessories toggle (retired from the office add flow — issue #794)
 
-Both `addLineItem` and `checkOutItems` accept an optional `includeAccessories`
-parameter (default `true`):
+Both `addLineItem`/`addLineItemSmartNative` and `checkOutItems` still accept the
+boolean `includeAccessories` parameter (default `true`), and both mutations still
+gate the whole expansion call on it. But **the office add form no longer has an
+"Include accessories" checkbox** — it always passes `includeAccessories: true` and
+controls inclusion per-accessory through `accessoryPlan` instead ("exclude
+everything" is now just a plan that excludes every DEFAULT). The boolean is kept
+for API/import callers that don't have a plan to offer (bulk-import flows, the
+`requireService` mirror `createLineItem`) — passing `false` still skips expansion
+entirely, same as before.
 
-- **`addLineItem(projectId, data, allowOverbook, forceSeparate, includeAccessories)`**
-  — when `false`, skips `expandAccessoryChildren` so no accessory child lines are
-  created alongside the parent. Useful for return-only or bulk-import flows where
-  accessories are managed separately.
 - **`checkOutItems(projectId, items, includeAccessories)`** — when `false`, skips
   `expandAccessoriesForAsset` and `checkoutAccessoryChildren` so no accessories
-  are deployed. The parent line still checks out with its units and status.
+  are deployed at all. When `true` (the office-flow default), each item MAY also
+  carry a per-item `includeAccessoryIds: string[]` allow-list — the "Deploy
+  Verified Only" narrowing kits already have — which further restricts *which*
+  accessories cascade for that specific checkout call (see `resolveLineAccessoryPlan`
+  above for how the effective set itself is computed). No warehouse tab UI drives
+  `includeAccessoryIds` yet; it's plumbed and tested at the mutation layer only.
 
-The project equipment tab (`equipment-add-form.tsx`) shows a **"Include accessories"**
-checkbox when the selected model or asset has accessories (`hasAccessories` on the
-`checkAvailability` / `lookupAssetByTag` response). Unchecking it passes
-`includeAccessories: false` to the server action. The `hasAccessories` field was
-added to both return types as part of the Quattro review.
+`hasAccessories` (on `checkAvailability`/`lookupAssetByTag`) is superseded by the
+richer `accessories: ModelAccessoryDetail[]` list the same two functions now also
+return, which drives the add-form picker.
 
 ## Not in v1
 
 Bulk parents (only serialised assets can be parents), nested accessories,
 per-accessory pricing (`unitPrice` is nullable so a future ITEMIZED mode is a
-data change), kit↔accessory conversion.
+data change), kit↔accessory conversion, a `MANDATORY` inclusion tier, serialised
+*model-level* accessories, `DEDICATED` re-enable in the office UI, return-side
+partial cascade (issue #794 scopes the "Deploy Verified Only" narrowing to
+deploy only), and full kit-parity grouping/verification-circles/partial-deploy
+for accessory parents in the main warehouse Deploy/Return/Prep/De-prep tabs (see
+FEATUREDOCS/12 § Kit Groups in Deploy/Return Tabs — shipped for the Online Pick
+List / Pull Sheet, not yet for those four tabs).
 
 ## Multi-quantity / model-level parents
 

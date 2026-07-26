@@ -145,7 +145,10 @@ export const rolePermissions: Record<string, PermissionMap> = {
     client: ["read"],
     warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["read"],
-    maintenance: ["read"],
+    // "create" added so the warehouse role can use "Report Issue" on the
+    // deploy/return tabs (FEATUREDOCS/62) — the role otherwise has no write
+    // access to the maintenance resource.
+    maintenance: ["read", "create"],
     location: ["read"],
     document: [],
     orgSettings: [],

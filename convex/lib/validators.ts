@@ -65,6 +65,22 @@ export const MaintenanceResult = v.union(
   v.literal("FAIL"),
   v.literal("CONDITIONAL"),
 );
+/**
+ * Incident-report classification captured by the "Report Issue" flow
+ * (FEATUREDOCS/62-incident-reporting.md). Set on a `maintenanceRecords` row to mark
+ * it as originating from an incident report (vs. an ordinary manually-created
+ * maintenance record) and to drive the asset-status mapping on report:
+ * BROKEN_DAMAGED/NEEDS_SERVICE -> IN_MAINTENANCE, LOST_MISSING -> LOST.
+ */
+export const IncidentType = v.union(
+  v.literal("BROKEN_DAMAGED"),
+  v.literal("LOST_MISSING"),
+  v.literal("NEEDS_SERVICE"),
+);
+export const IncidentSeverity = v.union(
+  v.literal("MINOR"),
+  v.literal("MAJOR"),
+);
 export const ClientType = v.union(
   v.literal("COMPANY"),
   v.literal("INDIVIDUAL"),

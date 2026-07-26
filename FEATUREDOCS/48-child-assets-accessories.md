@@ -13,9 +13,17 @@ accessories now have a `DEFAULT`/`OPTIONAL` tier, the PM gets an add-time picker
 (`accessoryPlan`) rather than re-derived from raw config at every expansion —
 which also fixed a real bug where warehouse checkout could silently resurrect an
 accessory the PM had deselected. Full design + competitive research:
-`docs/designs/accessories-v2.md`. The warehouse-side "treat accessory parents
-like kit groups" ask is **partially shipped** (Online Pick List + Pull Sheet) —
-see the "Deploy/return/prep/de-prep tabs" note below for what's still open.
+`docs/designs/accessories-v2.md`.
+
+**Follow-up (same issue, second pass)** shipped three more pieces the first
+pass left open: (1) the main warehouse page's Pick/Prep, Deploy, and Return
+tabs now render accessory parents as an expandable group with per-child verify
+circles, exactly like a kit — see "Deploy/return/prep/de-prep tabs" below; (2)
+deselecting a DEFAULT accessory on the add-form now requires a confirm + typed
+reason instead of a bare checkbox — see "Add-form DEFAULT-removal friction"
+below; (3) Deploy now soft-blocks when a parent's DEFAULT accessories aren't
+packed yet, and asks for a reason when OPTIONALs are skipped — see "Checkout
+accessory gate" below.
 
 Accessories are **not kits**. A kit is a physical container with its own asset
 tag and rental contract; an accessory is inseparable from its parent — no
@@ -72,6 +80,20 @@ it with the line's own `accessoryPlan` — no site is allowed to re-derive the
 set from raw config, which is what let a deselected default resurrect itself
 at checkout before this fix (see "Exclude accessories" below).
 
+**`ProjectLineItem.accessoryInclusion`** (follow-up) — a denormalized copy of
+the tier (`"DEFAULT" | "OPTIONAL"`), stamped directly onto each accessory
+CHILD line at creation/reconcile time by every insert site in
+`convex/lib/fulfillment.ts` (`resolveLineAccessoryPlan`'s asset-level bulk
+children are always `"DEFAULT"` — physical attachment, no tier control;
+model-level bulk children take the resolved `inclusion`) plus
+`reconcileLineAccessoryChildren`'s insert/rescale helpers. Exists so warehouse
+checkout gating (below) can read a child's tier straight off the row without
+re-resolving the parent's `accessoryPlan`/model config — the same "one
+resolver" principle applied to the read side. `rescaleKeptBulkChild` also
+re-syncs an existing child's `accessoryInclusion` on reconcile, so a model
+config change (DEFAULT → OPTIONAL after the line was added) doesn't leave a
+stale tier on an already-expanded child.
+
 **Where it's set / edited:**
 - **Add-time** — `equipment-add-form.tsx` renders an inline "Accessories"
   section (both by-model and by-asset-tag add) whenever the chosen model has
@@ -82,6 +104,19 @@ at checkout before this fix (see "Exclude accessories" below).
   name) for the picker. The computed plan is submitted as a top-level
   `accessoryPlan` arg on `addLineItemSmartNative`/`addNative`, stored on the
   new parent row, and passed straight through to `expandAccessoryChildLines`.
+  **DEFAULT-removal friction (follow-up):** deselecting a DEFAULT accessory no
+  longer excludes it immediately — it opens a confirm dialog requiring a typed
+  reason before the exclusion takes effect (re-checking the box clears the
+  stored reason with no prompt). OPTIONAL accessories are unaffected — still a
+  plain, frictionless checkbox, since opting IN needs no justification.
+  `AccessoryPlanInput`/`AccessoryPlanArg` gained `excludedReasons:
+  { bulkAssetId, reason }[]`, submitted alongside `excluded`/`added`.
+  `lineItemWrites.ts`'s `logExcludedDefaultAccessories` writes one distinct
+  activity-log entry per reasoned exclusion (`"Removed default accessory
+  <tag> from <line>: <reason>"`), wired into `addNative`,
+  `addLineItemSmartNative`, and `updateAccessoryPlanNative` right after each's
+  existing add/edit audit entry — so the "why" is visible in the trail next to
+  the "what changed", not just on the plan itself.
 - **Post-add** — `lineItemWrites.updateAccessoryPlanNative` reconciles an
   existing line's children to a new plan (`reconcileLineAccessoryChildren`):
   creates newly-added children, deletes newly-excluded ones (and their
@@ -199,30 +234,42 @@ what every existing query keys off.
    each badged "Accessory". Accessory children are hidden from the flat list by
    `isHiddenFromList` (they're `isKitChild:true`).
 
-   **Deploy/return/prep/de-prep tabs (main warehouse page) — confirmed gap, not
-   stale.** `getAccessoryChildren` lives in
-   [`src/components/warehouse/pick-list-progress.ts`](../src/components/warehouse/pick-list-progress.ts)
-   and is used for pick-progress counting (`online-pick-list.tsx` /
-   `pull-sheet/page.tsx`, both of which now render the rows it counts — issue
-   #794 fixed the render-side gap there). It is **not** consulted by
+   **Deploy/return/prep/de-prep tabs (main warehouse page) — shipped.**
    `src/app/(app)/warehouse/[projectId]/page.tsx`'s `groupItems`/
-   `groupCheckinItems`: those only special-case `isKitParent` (`kitId` set,
-   `!isKitChild`), so an accessory parent (top-level, no `kitId`, has
-   `ACCESSORY` children) falls through to the plain serialized-group/single
-   branch. `equipmentItems`'s flat-list filter DOES already hide accessory
-   *children* the same way it hides kit children (both set `isKitChild:true`),
-   so nothing double-renders — they're just invisible rather than shown as an
-   expandable group. `KitChildRows`/`MobileKitChildCards` gained an "Accessory"
-   badge (`childKind === "ACCESSORY"`) so the pieces are ready to reuse once a
-   parent hooks them up, but no such parent exists in the four main tabs yet.
-   No verification circles, no "X/Y verified" badge, no "Deploy Verified
-   Only"/"Deploy All" partial-deploy dialog for accessory groups there —
-   accessories still cascade silently, all-or-nothing, whenever their parent
-   moves stage. Tracked as a follow-up (TODOS.md); see FEATUREDOCS/12 § Kit
-   Groups in Deploy/Return Tabs for the same note from the warehouse side.
+   `groupCheckinItems` now detect an accessory parent (`isAccessoryParent` in
+   `warehouse-types.ts`: top-level, no `kitId`, has an `ACCESSORY` child) and
+   emit a fifth `GroupEntry` kind, `"accessory-group"` — inserted in the same
+   priority slot as `kit-group` (checked before `isBulkItem`), so a
+   multi-quantity model-level accessory parent is never misclassified as a
+   plain bulk line. `isExpandableParent`/`expandableChildrenOf` generalise
+   `isKitParent`'s "does this line need child-rollup" checks across the five
+   equipment-stage filters (`pickPrepItems`, `preppedItems`, `returnedItems`,
+   `deprepedItems`, `checkedOutItems`) so an accessory parent moves through
+   Pick → Prep → Deploy → Return exactly like a kit parent, gated on its
+   children's status/prepStatus rather than its own.
+   `PickPrepTab`/`DeployTab`/`ReturnTab` (desktop table + mobile card variants,
+   6 render sites total) render `"accessory-group"` with the same
+   `KitChildRows`/`MobileKitChildCards` components kits use (already
+   `childKind === "ACCESSORY"`-badge-aware from the first pass) — an "Accessories"
+   badge instead of "Kit", the parent's own asset tag instead of a kit tag, but
+   the same expand/collapse, the same `collectAllVerifiableIds`-driven
+   "X/Y verified" badge, and the same verify-circle interaction. There is
+   still no "Deploy Verified Only"/"Deploy All" partial-action dialog for
+   accessory groups specifically (kits have `kitConfirm` for this) — tracked
+   as a follow-up.
 
-   **Known gap (not yet wired):** the pick/prep tab (`pick-prep-tab.tsx`) does
-   not yet show accessories nested; expansion still happens at prep server-side.
+   **Prep-time asset picker — accessory checkbox removed.** The "Assign
+   assets" dialog (`handleAssetPickerConfirm` flow) used to call
+   `getAssetAccessories` once a specific serialised asset was picked and show
+   a per-accessory "Include accessories" checkbox list — the exact "asks about
+   accessories in the prep menu" behaviour this follow-up removes. Accessories
+   are no longer a prep-time toggle: they pack in full (mirroring a kit's
+   members) and the checkout gate below decides what's actually missing.
+   `getAssetAccessories` (`src/server/check-records.ts`) had no other caller
+   and was deleted rather than left as dead code; `includeAccessoryIds` stays
+   wired through `prepItemDirect`/`prepItemsBatch`/the check-item queue for
+   other callers, it's just never populated by the removed UI now (always
+   `undefined` ⇒ "include all", the documented default).
 4. **PDFs** — accessories render indented under the parent on **all** docs
    (internal and customer-facing). An accessory parent is detected by
    "top-level line, no `kitId`, has `ACCESSORY` children"; both the render
@@ -273,6 +320,16 @@ what every existing query keys off.
 - `src/server/model-accessories.int.test.ts` — model inheritance: office add,
   asset override wins, warehouse scan-time inheritance + idempotency, unique
   constraint, "removing the template doesn't affect past expansions" (5).
+- `convex/lineItemWrites.test.ts` (`excludedReasons audit trail`) —
+  reasoned-removal writes a distinct audit entry; no reason ⇒ no extra entry;
+  empty reason rejected (3).
+- `src/components/warehouse/warehouse-types.test.ts` — `isAccessoryParent`,
+  `accessoryChildrenOf`, `isExpandableParent`/`expandableChildrenOf` (kit vs.
+  accessory vs. plain line) (10).
+- `convex/warehouseWrites.test.ts` (`logAccessoryCheckoutOverride`) — writes
+  both the activity log and the line's `notes`; appends rather than
+  overwrites existing notes; empty reason rejected; cross-org line silently
+  skipped; viewer denied (5).
 
 ## Exclude accessories toggle (retired from the office add flow — issue #794)
 
@@ -299,6 +356,31 @@ entirely, same as before.
 richer `accessories: ModelAccessoryDetail[]` list the same two functions now also
 return, which drives the add-form picker.
 
+## Checkout accessory gate (follow-up)
+
+Deploying a line whose accessories aren't packed no longer cascades silently.
+`handleCheckOutSelected` (main warehouse page) computes, for every
+about-to-deploy parent, which of its `accessoryChildrenOf` children aren't yet
+`prepStatus === "PACKED"` (and aren't `CANCELLED`/already `CHECKED_OUT`) —
+`computeMissingAccessories`. A DEFAULT-tier miss is a **soft block**: a dialog
+opens instead of deploying, listing the missing DEFAULTs and requiring a typed
+reason (or, for a manager-tier role — `owner`/`admin`/`manager`, via
+`useCurrentRole()` — the reason field is pre-filled and the operator can
+confirm immediately). An OPTIONAL-tier miss doesn't block at all, but does ask
+for a reason: a preset dropdown ("Out of stock" / "Not needed for this job" /
+"Customer declined" / "Other") plus an optional free-text note. Confirming
+either kind runs `warehouseWrites.logAccessoryCheckoutOverride` — a new
+`convex/warehouseWrites.ts` mutation that writes the reason to **both** the
+activity log (one entry per skipped accessory, e.g. `"Deployed <parent>
+without default accessory <name>: <reason>"`) and that accessory child line's
+own `notes` field (merge-appended, same "join with `; `" convention as custom
+line item notes) — then the actual `checkOutItems` call proceeds unchanged.
+The gate is client-side pre-flight only; it does not touch
+`checkoutAccessoryChildren`/`expandAccessoriesForAsset` in
+`convex/warehouseOps.ts` — an accessory that was never prepped simply has no
+unit to flip, so the existing cascade does nothing for it either way, exactly
+as if the operator had scanned the parent alone.
+
 ## Not in v1
 
 Bulk parents (only serialised assets can be parents), nested accessories,
@@ -306,10 +388,10 @@ per-accessory pricing (`unitPrice` is nullable so a future ITEMIZED mode is a
 data change), kit↔accessory conversion, a `MANDATORY` inclusion tier, serialised
 *model-level* accessories, `DEDICATED` re-enable in the office UI, return-side
 partial cascade (issue #794 scopes the "Deploy Verified Only" narrowing to
-deploy only), and full kit-parity grouping/verification-circles/partial-deploy
-for accessory parents in the main warehouse Deploy/Return/Prep/De-prep tabs (see
-FEATUREDOCS/12 § Kit Groups in Deploy/Return Tabs — shipped for the Online Pick
-List / Pull Sheet, not yet for those four tabs).
+deploy only), and a "Deploy Verified Only"/"Deploy All" `kitConfirm`-style
+partial-action dialog for accessory groups specifically in the main warehouse
+tabs (full expandable-group rendering + verification circles + the checkout
+gate shipped this follow-up; only the partial-action dialog is still kit-only).
 
 ## Multi-quantity / model-level parents
 

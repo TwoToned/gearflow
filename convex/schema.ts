@@ -5,7 +5,8 @@ import * as enums from "./lib/validators";
 /**
  * RVLT Flow Convex schema — generated from prisma/schema.prisma (Phase 1).
  *
- * 100 tables mirroring the Prisma models. Conventions:
+ * 101 tables mirroring the Prisma models (100, +1 `serviceSchedules` — WS6 #945,
+ * a Convex-native table with no Prisma equivalent, see below). Conventions:
  *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`
  *    field with a `by_cuid` index — NOT dropped in favour of Convex's `_id`. The
  *    app holds cuids everywhere (URLs, FK strings, server-action args), so every
@@ -319,6 +320,16 @@ export default defineSchema({
     defaultEquipmentClass: v.optional(enums.EquipmentClass),
     defaultApplianceType: v.optional(enums.ApplianceType),
     defaultTestProfileId: v.optional(v.string()),
+    // DEPRECATED (WS6 #945): superseded by `serviceSchedules` (fixed interval +
+    // anchor date, not "N days since last service"). The one-time migrate
+    // backfill (backfillMaintenanceSchedules.ts) seeds one schedule per model
+    // that had this set (days -> nearest month); the app no longer writes this
+    // field (removed from modelSchema/model-form.tsx). Left readable/nulled-out
+    // on old rows rather than dropped from the schema in this same PR — mirrors
+    // the WS9 clientContacts widen/migrate-now, narrow/drop-later precedent — so
+    // a schema-strictness deploy doesn't race the backfill actually being run in
+    // prod. Remove this field (+ its convex/models.ts/modelWrites.ts plumbing)
+    // in a follow-up narrow PR once the backfill has been confirmed in prod.
     maintenanceIntervalDays: v.optional(v.number()),
     assetType: v.optional(enums.AssetType),
     barcodeLabelTemplate: v.optional(v.string()),
@@ -756,6 +767,15 @@ export default defineSchema({
     result: v.optional(enums.MaintenanceResult),
     nextDueDate: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
+    // WS6 #945 — recurring preventative maintenance. Absent on every pre-existing
+    // row (ad-hoc REPAIR/INSPECTION/etc. records, and the dead-end nextDueDate
+    // above) = not schedule-generated (zero-migration, back-compat).
+    // `serviceScheduleId` links a generated cycle back to its `serviceSchedules`
+    // row; `poolQuantitySnapshot` freezes the pool denominator (unit count for
+    // SERIALIZED, summed totalQuantity for BULK) AT GENERATION TIME, so "18 of
+    // 120" stays stable even if the model's fleet is resized mid-cycle.
+    serviceScheduleId: v.optional(v.string()),
+    poolQuantitySnapshot: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -770,19 +790,70 @@ export default defineSchema({
     // Range-scan an org's OPEN maintenance whose scheduledDate has arrived
     // (dashboardStats.maintenanceDue) — bounds the reactive read-set to the due
     // records instead of collecting the whole org's maintenance table.
-    .index("by_organizationId_status_scheduledDate", ["organizationId", "status", "scheduledDate"]),
+    .index("by_organizationId_status_scheduledDate", ["organizationId", "status", "scheduledDate"])
+    // WS6 #945: find a schedule's existing cycles (merge semantics — "is there
+    // already an open cycle for this schedule?") and the idempotency lookup for
+    // a specific (schedule, dueDate) pair, without a whole-org scan.
+    .index("by_serviceScheduleId", ["serviceScheduleId"])
+    .index("by_serviceScheduleId_scheduledDate", ["serviceScheduleId", "scheduledDate"]),
 
+  // ServiceSchedule (WS6 #945) — fixed-calendar recurring preventative-maintenance
+  // cadence for a model (issue #936 tracking issue's Tier-2 "recurring PM,
+  // non-blocking" decision). Convex-native — no Prisma equivalent; superseded
+  // `models.maintenanceIntervalDays` (a one-time migrate backfill seeds one
+  // schedule per model that had it — see backfillMaintenanceSchedules.ts).
+  // Cadence is INTERVAL + ANCHOR, not "N days after last service": the whole
+  // pool comes due together on a fixed calendar cycle and late completion does
+  // NOT shift the next due date (see convex/lib/serviceScheduleCore.ts).
+  serviceSchedules: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    modelId: v.string(),
+    name: v.string(),
+    intervalMonths: v.number(),
+    anchorDate: v.number(), // epoch ms — the first/reference due date
+    instructions: v.optional(v.string()),
+    isActive: v.optional(v.boolean()), // absent = active (default true, zero-migration)
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_modelId", ["modelId"])
+    .index("by_organizationId_modelId", ["organizationId", "modelId"]),
 
-  // MaintenanceRecordAsset
+  // MaintenanceRecordAsset — polymorphic (WS6 #945, checkRecords-pattern extension).
+  // Two row KINDS share this table (discriminated by `kind`, absent = "LINK" for
+  // zero-migration back-compat with every pre-existing row):
+  //   • "LINK" (default/legacy) — the ORIGINAL meaning: this asset is linked to
+  //     the maintenance record for the hold/release state machine
+  //     (maintenanceWrites.ts). `assetId` is always set.
+  //   • "CHECKOFF" — a WS6 recurring-PM progress row, NEVER touched by the
+  //     hold/release machinery (maintenanceWrites.ts filters these out — see the
+  //     `isLinkRow` helper there). Append-only + auditable, checkRecords-style:
+  //       - serialised unit done:  { assetId, completedAt, completedById }
+  //       - bulk session:          { bulkAssetId, quantity, completedAt, completedById }
+  //     "Check all remaining" is one session row for the outstanding quantity.
+  // Keeping both kinds in one table (rather than a new table) mirrors the
+  // checkRecords polymorphic shape the spec calls out; the `kind` discriminator
+  // is what keeps the two meanings from colliding when a PM record is later
+  // edited through the ordinary maintenance form (which only ever touches LINK
+  // rows).
   maintenanceRecordAssets: defineTable({
     id: v.string(),
     maintenanceRecordId: v.string(),
-    assetId: v.string(),
+    assetId: v.optional(v.string()),
+    kind: v.optional(v.union(v.literal("LINK"), v.literal("CHECKOFF"))),
+    bulkAssetId: v.optional(v.string()),
+    quantity: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    completedById: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_maintenanceRecordId", ["maintenanceRecordId"])
     .index("by_assetId", ["assetId"])
-    .index("by_maintenanceRecordId_assetId", ["maintenanceRecordId", "assetId"]),
+    .index("by_maintenanceRecordId_assetId", ["maintenanceRecordId", "assetId"])
+    .index("by_bulkAssetId", ["bulkAssetId"]),
 
   // Client
   clients: defineTable({

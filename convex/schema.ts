@@ -1059,6 +1059,8 @@ export default defineSchema({
     description: v.optional(v.string()),
     quantity: v.optional(v.number()),
     price: v.optional(v.number()),
+    // Flat $ amount off `price × quantity` (#883) — mirrors projectLineItems.discount.
+    discount: v.optional(v.number()),
     suggestedPrice: v.optional(v.number()),
     rentalPeriod: v.optional(enums.RentalPeriod),
     rentalQuantity: v.optional(v.number()),

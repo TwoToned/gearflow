@@ -57,7 +57,10 @@ export async function recalcProjectTotals(
                 li.status !== "CANCELLED",
             )
             .reduce((s, li) => s + num(li.lineTotal), 0);
-    return sum + bundlePrice * (g.quantity ?? 0) + customExtras;
+    // Discount is a flat $ amount off the bundle total (#883) — same shape as
+    // projectLineItems.discount, subtracted once (not per-unit), clamped at 0.
+    const bundleTotal = Math.max(0, bundlePrice * (g.quantity ?? 0) - num(g.discount));
+    return sum + bundleTotal + customExtras;
   }, 0);
 
   // 2. Standalone (ungrouped) line items — includes ungrouped custom items.

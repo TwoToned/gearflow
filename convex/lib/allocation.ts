@@ -77,6 +77,7 @@ export interface AllocGroup {
   id: string;
   price?: number | null;
   quantity?: number | null;
+  discount?: number | null;
 }
 
 export interface AllocationInput {
@@ -447,8 +448,11 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
 
     // Round the PRODUCT, not the price: recalcProjectTotals bills `price × quantity`
     // and rounds the sum, so rounding the price first would allocate a pool the
-    // project never charged for.
-    const poolCents = poolOf((g.price ?? 0) * Math.max(0, g.quantity ?? 0));
+    // project never charged for. Discount (#883) is subtracted the same way
+    // recalcProjectTotals does — a flat $ amount off the bundle total, clamped at 0
+    // BEFORE the project-level discount factor poolOf applies.
+    const bundleTotal = Math.max(0, (g.price ?? 0) * Math.max(0, g.quantity ?? 0) - (g.discount ?? 0));
+    const poolCents = poolOf(bundleTotal);
 
     const customCents = customs.map((c) => Math.max(0, poolOf(c.lineTotal)));
     const customSum = customCents.reduce((a, b) => a + b, 0);

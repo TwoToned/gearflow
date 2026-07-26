@@ -8,6 +8,9 @@ export const projectGroupSchema = z.object({
   description: z.string().max(2000).optional(),
   quantity: z.coerce.number().int().min(1).default(1),
   price: z.coerce.number().min(0).optional(),
+  // Flat $ amount off `price × quantity` (#883) — same bound as line-item discount
+  // (src/lib/validations/line-item.ts discountField).
+  discount: z.coerce.number().min(0).max(999999.99).optional(),
   rentalPeriod: z.enum(["DAILY", "WEEKLY"]).optional(),
   rentalQuantity: z.coerce.number().int().min(1).optional(),
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
@@ -17,9 +20,11 @@ export type ProjectGroupFormValues = z.input<typeof projectGroupSchema>;
 
 // R-8.6.3: derived from `projectGroupSchema` (`.pick()` + `.required()`)
 // rather than re-declared — same field/constraints, just mandatory here.
+// `price` is required (the mutation always needs one to set); `discount` stays
+// optional so callers can omit it to leave the existing discount untouched.
 export const updateGroupPriceSchema = projectGroupSchema
-  .pick({ price: true })
-  .required();
+  .pick({ price: true, discount: true })
+  .required({ price: true });
 
 export const moveLineItemSchema = z.object({
   lineItemId: z.string().min(1),

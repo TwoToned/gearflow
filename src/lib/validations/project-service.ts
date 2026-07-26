@@ -1,4 +1,18 @@
 import { z } from "zod";
+import { crewRateFieldsSchema } from "./crew";
+
+/**
+ * One row of the per-service crew rate table (services-panel.tsx). Rate fields are
+ * the SAME bounds as crewAssignmentSchema (src/lib/validations/crew.ts) — a crew
+ * member's rate has exactly one authoritative shape whether it's set from the crew
+ * side or the service side (R-3.1 single source of truth, issue #796).
+ */
+export const serviceCrewMemberSchema = z.object({
+  crewMemberId: z.string().min(1),
+  ...crewRateFieldsSchema,
+});
+
+export type ServiceCrewMemberFormValues = z.input<typeof serviceCrewMemberSchema>;
 
 export const projectServiceSchema = z.object({
   type: z.enum(["DELIVERY", "PICKUP", "BUMP_IN", "BUMP_OUT", "LABOUR", "MISC"]),
@@ -37,7 +51,7 @@ export const projectServiceSchema = z.object({
 
   crewCountRequired: z.coerce.number().optional(),
   crewRoleId: z.string().optional(),
-  crewMemberIds: z.array(z.string()).optional(),
+  crew: z.array(serviceCrewMemberSchema).optional(),
 });
 
 export type ProjectServiceFormValues = z.input<typeof projectServiceSchema>;

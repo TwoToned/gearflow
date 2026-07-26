@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import {
+  AlertTriangle,
   ScanBarcode,
   ChevronRight,
   Package,
@@ -74,6 +75,8 @@ export interface ReturnTabProps {
   /** Move the selected deployed units back to Prepped (un-deploy). */
   handleUndeploy: (ids: Set<string>) => void;
   undeployIsPending: boolean;
+  /** Opens the "Report issue" dialog (GitHub #898) for a single CHECKED_OUT line item. */
+  onReportIssue: (item: LineItem) => void;
 
   // Shared helpers
   toggleSelection: (set: Set<string>, setFn: (s: Set<string>) => void, key: string) => void;
@@ -113,6 +116,7 @@ export function ReturnTab({
   checkInIsPending,
   handleUndeploy,
   undeployIsPending,
+  onReportIssue,
   toggleSelection,
   toggleGroupSelection,
   toggleAll,
@@ -274,7 +278,22 @@ export function ReturnTab({
                               </TableCell>
                               <TableCell className="text-center tabular-nums">1</TableCell>
                               <TableCell>
-                                <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                                <div className="flex items-center gap-1.5">
+                                  <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-7"
+                                    title="Report issue"
+                                    aria-label={`Report issue — ${item.asset?.assetTag || "item"}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onReportIssue(item);
+                                    }}
+                                  >
+                                    <AlertTriangle className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           </Fragment>
@@ -460,7 +479,22 @@ export function ReturnTab({
                         )}
                       </TableCell>
                       <TableCell>
-                        <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                        <div className="flex items-center gap-1.5">
+                          <StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            title="Report issue"
+                            aria-label={`Report issue — ${assetTag || modelDisplayName(item)}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onReportIssue(item);
+                            }}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                     </Fragment>
@@ -508,6 +542,7 @@ export function ReturnTab({
                             assetTag={item.asset?.assetTag || "—"}
                             qtyLabel={1}
                             status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                            onReportIssue={() => onReportIssue(item)}
                           />
                         ))}
                       </ScanGroupCard>
@@ -638,6 +673,7 @@ export function ReturnTab({
                         </>
                       ) : 1}
                       status={<StatusIndicator category="lineItem" value="CHECKED_OUT" label="Deployed" variant="pill" />}
+                      onReportIssue={() => onReportIssue(item)}
                     />
                   );
                 })}

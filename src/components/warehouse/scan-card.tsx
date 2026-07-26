@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import { ChevronRight, Container } from "lucide-react";
+import { AlertTriangle, ChevronRight, Container } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,6 +28,7 @@ export function ScanItemCard({
   qtyLabel,
   status,
   indent = false,
+  onReportIssue,
 }: {
   selected: boolean;
   onToggleSelect: () => void;
@@ -39,32 +40,54 @@ export function ScanItemCard({
   status: React.ReactNode;
   /** Nested (child / unit) rows sit on a subtle inset and indent the content. */
   indent?: boolean;
+  /** When provided, renders a small "Report issue" icon button beside `status`. */
+  onReportIssue?: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onToggleSelect}
-      aria-pressed={selected}
-      className={`flex w-full min-h-11 items-center gap-3 rounded-[var(--r)] px-3 py-2.5 text-left transition-colors hover:bg-elev active:bg-elev ${focusRing} ${
-        indent ? "bg-paper-2/40 pl-8" : "bg-card ring-1 ring-line"
+    <div
+      className={`flex w-full min-h-11 items-center rounded-[var(--r)] ${
+        indent ? "bg-paper-2/40" : "bg-card ring-1 ring-line"
       }`}
     >
-      <span className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center">
-        <Checkbox checked={selected} className="pointer-events-none" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-medium text-ui-text text-ink">{name}</span>
-          {badges}
+      <button
+        type="button"
+        onClick={onToggleSelect}
+        aria-pressed={selected}
+        className={`flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-[var(--r)] px-3 py-2.5 text-left transition-colors hover:bg-elev active:bg-elev ${focusRing} ${
+          indent ? "pl-8" : ""
+        }`}
+      >
+        <span className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center">
+          <Checkbox checked={selected} className="pointer-events-none" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-ui-text text-ink">{name}</span>
+            {badges}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+            <span className="t-mono text-caption text-muted">{assetTag}</span>
+            <span className="text-caption text-muted tabular-nums">Qty {qtyLabel}</span>
+          </div>
+          {subtext}
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-2">
-          <span className="t-mono text-caption text-muted">{assetTag}</span>
-          <span className="text-caption text-muted tabular-nums">Qty {qtyLabel}</span>
-        </div>
-        {subtext}
-      </div>
-      <span className="shrink-0">{status}</span>
-    </button>
+        <span className="shrink-0">{status}</span>
+      </button>
+      {onReportIssue && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReportIssue();
+          }}
+          title="Report issue"
+          aria-label="Report issue"
+          className={`mr-1.5 inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-warn-soft hover:text-warn ${focusRing}`}
+        >
+          <AlertTriangle className="h-4 w-4" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -82,6 +105,7 @@ export function ScanGroupCard({
   qtyLabel,
   status,
   showKitGlyph = false,
+  onReportIssue,
   children,
 }: {
   /** For a kit group: the group's own line id selection. */
@@ -98,6 +122,8 @@ export function ScanGroupCard({
   qtyLabel: React.ReactNode;
   status: React.ReactNode;
   showKitGlyph?: boolean;
+  /** When provided, renders a small "Report issue" icon button beside `status`. */
+  onReportIssue?: () => void;
   /** Child cards, shown only when expanded. */
   children?: React.ReactNode;
 }) {
@@ -132,6 +158,20 @@ export function ScanGroupCard({
           </span>
         </button>
         <span className="shrink-0">{status}</span>
+        {onReportIssue && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReportIssue();
+            }}
+            title="Report issue"
+            aria-label="Report issue"
+            className={`inline-flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-warn-soft hover:text-warn ${focusRing}`}
+          >
+            <AlertTriangle className="h-4 w-4" />
+          </button>
+        )}
       </div>
       {expanded && children}
     </Fragment>

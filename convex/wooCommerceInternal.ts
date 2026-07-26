@@ -161,7 +161,7 @@ export const listClientContactsByOrg = internalQuery({
   handler: async (ctx, { orgId }) =>
     await ctx.db
       .query("clientContacts")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
       .collect(),
 });
 

@@ -16,7 +16,7 @@ export const list = query({
     await requireOrgRead(ctx, orgId);
     const schedules = await ctx.db
       .query("serviceSchedules")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small admin-created catalog table — see docs/exceptions.md R-8.3.3
       .collect();
 
     const modelIds = [...new Set(schedules.map((s) => s.modelId))];

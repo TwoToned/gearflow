@@ -116,7 +116,7 @@ export const listByOrg = query({
     await requireService(ctx);
     return await ctx.db
       .query("clientContacts")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
       .collect();
   },
 });

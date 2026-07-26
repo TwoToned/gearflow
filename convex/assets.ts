@@ -178,19 +178,35 @@ export const registryPhotos = query({
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
     type Photo = { url: string | null; thumbnailUrl: string | null };
-    const build = async (table: "assetMedia" | "modelMedia", fk: "assetId" | "modelId"): Promise<Record<string, Photo>> => {
-      const out: Record<string, Photo> = {};
-      const rows = await ctx.db.query(table).withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: aggregation — org-wide primary-photo map
-      for (const m of rows) {
-        if (m.type !== "PHOTO" || !m.isPrimary) continue;
-        const parentId = (m as Record<string, unknown>)[fk] as string;
-        const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
-        const resolved = file && file.organizationId === orgId ? file : null;
-        out[parentId] = { url: resolved?.url ?? null, thumbnailUrl: resolved?.thumbnailUrl ?? null };
-      }
-      return out;
+    const resolveFile = async (fileId: string): Promise<Photo> => {
+      const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).unique();
+      const resolved = file && file.organizationId === orgId ? file : null;
+      return { url: resolved?.url ?? null, thumbnailUrl: resolved?.thumbnailUrl ?? null };
     };
-    const [assetPhotos, modelPhotos] = await Promise.all([build("assetMedia", "assetId"), build("modelMedia", "modelId")]);
+
+    // assetMedia is fleet-scale (grows with the org's asset count) — narrowed via
+    // the isPrimary index instead of an org-wide collect (R-9.8/#901). isPrimary is
+    // a plain boolean with no "default when absent" semantics, so an exact-match
+    // index is safe (unlike status/date fields elsewhere in this codebase).
+    const assetPhotos: Record<string, Photo> = {};
+    const primaryAssetMedia = await ctx.db
+      .query("assetMedia")
+      .withIndex("by_organizationId_isPrimary", (q) => q.eq("organizationId", orgId).eq("isPrimary", true))
+      .collect();
+    for (const m of primaryAssetMedia) {
+      if (m.type !== "PHOTO") continue;
+      assetPhotos[m.assetId] = await resolveFile(m.fileId);
+    }
+
+    // modelMedia stays a full org collect — catalog-scale (a handful of media rows
+    // per model), same table/reasoning as the registered modelMedia.ts:list() row.
+    const modelPhotos: Record<string, Photo> = {};
+    const allModelMedia = await ctx.db.query("modelMedia").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: aggregation — org-wide primary-photo map — see docs/exceptions.md R-8.3.3
+    for (const m of allModelMedia) {
+      if (m.type !== "PHOTO" || !m.isPrimary) continue;
+      modelPhotos[m.modelId] = await resolveFile(m.fileId);
+    }
+
     return { assetPhotos, modelPhotos };
   },
 });

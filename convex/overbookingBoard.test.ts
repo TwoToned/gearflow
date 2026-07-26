@@ -159,3 +159,22 @@ describe("overbookingBoard.bundle", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("overbookingBoard.counts (dashboard chips)", () => {
+  test("matches the full bundle's section lengths exactly (chip/board parity)", async () => {
+    const t = makeT();
+    await seed(t);
+    const [bundle, counts] = await Promise.all([
+      t.withIdentity(asUser).query(api.overbookingBoard.bundle, { orgId: ORG, rangeStart: RANGE_START, rangeEnd: RANGE_END }),
+      t.withIdentity(asUser).query(api.overbookingBoard.counts, { orgId: ORG, rangeStart: RANGE_START, rangeEnd: RANGE_END }),
+    ]);
+    expect(counts).toEqual({
+      hardCount: bundle.gearHard.length,
+      pencilledCount: bundle.gearPencilled.length,
+      saleStockCount: bundle.saleStockToProcure.length,
+    });
+    expect(counts.hardCount).toBe(1);
+    expect(counts.pencilledCount).toBe(1);
+    expect(counts.saleStockCount).toBe(1);
+  });
+});

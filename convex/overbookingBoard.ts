@@ -134,6 +134,51 @@ async function fetchExtraProjects(
   return projectDocsById;
 }
 
+function validateRange(rangeStart: number, rangeEnd: number): void {
+  if (rangeEnd < rangeStart) {
+    throw new ConvexError("overbookingBoard: rangeEnd must be >= rangeStart");
+  }
+  if (rangeEnd - rangeStart > MAX_RANGE_DAYS * 86_400_000) {
+    throw new ConvexError(`overbookingBoard: range exceeds ${MAX_RANGE_DAYS} days`);
+  }
+}
+
+/**
+ * The shared read+aggregate core behind both `bundle` (the full board page)
+ * and `counts` (the cheap dashboard-chip query) — same reads either way (the
+ * DB work is identical), factored out so the two callers can't drift and so
+ * `counts` can return just the small numbers a chip needs instead of every
+ * row's full detail.
+ */
+async function computeBoardBundle(ctx: QueryCtx, orgId: string, rangeStart: number, rangeEnd: number) {
+  const range = { start: rangeStart, end: rangeEnd };
+
+  const projectDocsById = await fetchCandidateProjects(ctx, orgId, rangeEnd);
+  const candidateProjects = candidateBoardProjects([...projectDocsById.values()], range);
+  const candidateProjectIds = candidateProjects.map((p) => p.id);
+
+  const { lineItems, referencedModelIds, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds);
+  const { allOrgBulkAssets, models: modelsForSaleStock } = await fetchSaleStockData(ctx, orgId, models, referencedModelIds);
+  const { services, assignmentsByServiceId } = await fetchServicesData(ctx, orgId, rangeStart, rangeEnd);
+  const { rangedAssignments, availabilityBlocks } = await fetchCrewData(ctx, orgId, rangeStart, rangeEnd);
+
+  await fetchExtraProjects(ctx, orgId, projectDocsById, [
+    ...services.map((s) => s.projectId),
+    ...rangedAssignments.map((a) => a.projectId),
+  ]);
+  const projectRefById = new Map(
+    [...projectDocsById.values()].map((p) => [p.id, { id: p.id, name: p.name, projectNumber: p.projectNumber }]),
+  );
+
+  const gear = computeGearShortageBoard(range, candidateProjects, lineItems, models, assets, bulkAssetsForModels);
+  const saleStockToProcure = computeSaleStockToProcure(allOrgBulkAssets, modelsForSaleStock);
+  const servicesMissingCrew = computeServicesMissingCrew(range, services, assignmentsByServiceId, projectRefById);
+  const unconfirmedCrew = computeUnconfirmedCrew(range, rangedAssignments, projectDocsById);
+  const crewDoubleBookings = computeCrewDoubleBookings(range, rangedAssignments, availabilityBlocks, projectRefById);
+
+  return { range, gear, saleStockToProcure, servicesMissingCrew, unconfirmedCrew, crewDoubleBookings };
+}
+
 /**
  * The Overbookings & Gaps board (WS3 #942) — one org-wide, date-ranged read
  * aggregating six sections: overbooked gear (hard), pencilled collisions, sale
@@ -151,38 +196,13 @@ export const bundle = query({
   args: { orgId: v.string(), rangeStart: v.number(), rangeEnd: v.number() },
   handler: async (ctx, { orgId, rangeStart, rangeEnd }) => {
     await requireOrgPermission(ctx, orgId, "project", "read");
-    if (rangeEnd < rangeStart) {
-      throw new ConvexError("overbookingBoard.bundle: rangeEnd must be >= rangeStart");
-    }
-    if (rangeEnd - rangeStart > MAX_RANGE_DAYS * 86_400_000) {
-      throw new ConvexError(`overbookingBoard.bundle: range exceeds ${MAX_RANGE_DAYS} days`);
-    }
-    const range = { start: rangeStart, end: rangeEnd };
-
-    const projectDocsById = await fetchCandidateProjects(ctx, orgId, rangeEnd);
-    const candidateProjects = candidateBoardProjects([...projectDocsById.values()], range);
-    const candidateProjectIds = candidateProjects.map((p) => p.id);
-
-    const { lineItems, referencedModelIds, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds);
-    const { allOrgBulkAssets, models: modelsForSaleStock } = await fetchSaleStockData(ctx, orgId, models, referencedModelIds);
-    const { services, assignmentsByServiceId } = await fetchServicesData(ctx, orgId, rangeStart, rangeEnd);
-    const { rangedAssignments, availabilityBlocks } = await fetchCrewData(ctx, orgId, rangeStart, rangeEnd);
-
-    await fetchExtraProjects(ctx, orgId, projectDocsById, [
-      ...services.map((s) => s.projectId),
-      ...rangedAssignments.map((a) => a.projectId),
-    ]);
-    const projectRefById = new Map(
-      [...projectDocsById.values()].map((p) => [p.id, { id: p.id, name: p.name, projectNumber: p.projectNumber }]),
+    validateRange(rangeStart, rangeEnd);
+    const { range, gear, saleStockToProcure, servicesMissingCrew, unconfirmedCrew, crewDoubleBookings } = await computeBoardBundle(
+      ctx,
+      orgId,
+      rangeStart,
+      rangeEnd,
     );
-
-    // ─── Aggregate every section via the pure lib functions ───────────────────
-    const gear = computeGearShortageBoard(range, candidateProjects, lineItems, models, assets, bulkAssetsForModels);
-    const saleStockToProcure = computeSaleStockToProcure(allOrgBulkAssets, modelsForSaleStock);
-    const servicesMissingCrew = computeServicesMissingCrew(range, services, assignmentsByServiceId, projectRefById);
-    const unconfirmedCrew = computeUnconfirmedCrew(range, rangedAssignments, projectDocsById);
-    const crewDoubleBookings = computeCrewDoubleBookings(range, rangedAssignments, availabilityBlocks, projectRefById);
-
     return {
       range,
       gearHard: gear.hard,
@@ -191,6 +211,29 @@ export const bundle = query({
       servicesMissingCrew,
       unconfirmedCrew,
       crewDoubleBookings,
+    };
+  },
+});
+
+/**
+ * Cheap dashboard-chip counts (spec decision, WS3 #942): "hard count / pencilled
+ * count / sale-stock-to-procure count" for the `NeedsAttention` chips
+ * (`dashboard/page.tsx`), backed by the SAME bounded reads `bundle` uses (not a
+ * second, different query) but returning only small numbers — the dashboard
+ * shouldn't subscribe to the full board's row-level payload just to show three
+ * chip counts. Uses the board's default 30-day horizon; the dashboard doesn't
+ * offer a range picker.
+ */
+export const counts = query({
+  args: { orgId: v.string(), rangeStart: v.number(), rangeEnd: v.number() },
+  handler: async (ctx, { orgId, rangeStart, rangeEnd }) => {
+    await requireOrgPermission(ctx, orgId, "project", "read");
+    validateRange(rangeStart, rangeEnd);
+    const { gear, saleStockToProcure } = await computeBoardBundle(ctx, orgId, rangeStart, rangeEnd);
+    return {
+      hardCount: gear.hard.length,
+      pencilledCount: gear.pencilled.length,
+      saleStockCount: saleStockToProcure.length,
     };
   },
 });

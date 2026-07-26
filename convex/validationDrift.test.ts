@@ -16,6 +16,7 @@
 import { describe, expect, it } from "vitest";
 
 import { clientFields } from "./clientWrites";
+import { clientContactFields } from "./clientContactWrites";
 import { assignmentFields } from "./crewAssignmentsWrites";
 import { entryFields } from "./crewTimeEntriesWrites";
 import { checkRecordFields } from "./checkRecords";
@@ -29,6 +30,7 @@ import { supplierFields } from "./suppliersWrites";
 import { subTestFields } from "./subTestRecords";
 
 import { clientSchema } from "@/lib/validations/client";
+import { clientContactSchema } from "@/lib/validations/client-contact";
 import { crewAssignmentSchema, crewTimeEntrySchema } from "@/lib/validations/crew";
 import { checkRecordSchema, checkItemSchema } from "@/lib/validations/check-item";
 import { categorySchema } from "@/lib/validations/category";
@@ -62,6 +64,7 @@ interface Pair {
 
 const PAIRS: Pair[] = [
   { name: "client", zod: clientSchema, convex: clientFields },
+  { name: "clientContact", zod: clientContactSchema, convex: clientContactFields },
   {
     name: "crewAssignment",
     zod: crewAssignmentSchema,

@@ -5,7 +5,7 @@ import * as enums from "./lib/validators";
 /**
  * RVLT Flow Convex schema — generated from prisma/schema.prisma (Phase 1).
  *
- * 98 tables mirroring the Prisma models. Conventions:
+ * 100 tables mirroring the Prisma models. Conventions:
  *  - The Prisma primary cuid `@id` is PRESERVED as a stored `id: v.string()`
  *    field with a `by_cuid` index — NOT dropped in favour of Convex's `_id`. The
  *    app holds cuids everywhere (URLs, FK strings, server-action args), so every
@@ -813,6 +813,30 @@ export default defineSchema({
     .index("by_isActive", ["isActive"])
     .searchIndex("search_name", { searchField: "name", filterFields: ["organizationId", "isActive"] }),
 
+  // ClientContact (WS9 #948 — multiple contacts per client, expand phase).
+  // DIRECT (carries organizationId). Child table for `clients` — a client with zero
+  // contacts stays valid; the embedded clients.contactName/Email/Phone fields stay
+  // live as read-only legacy during the migration window (see FEATUREDOCS/62).
+  // `isPrimary`: exclusive-per-client, "absent = false" (mirrors mediaWrites.ts's
+  // setPrimaryNative pattern). Cap of 50 contacts/client enforced in the write layer.
+  clientContacts: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    clientId: v.string(),
+    name: v.optional(v.string()),
+    role: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    isPrimary: v.optional(v.boolean()),
+    sortOrder: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_clientId", ["clientId"]),
+
   // Project
   projects: defineTable({
     id: v.string(),
@@ -820,6 +844,10 @@ export default defineSchema({
     projectNumber: v.string(),
     name: v.string(),
     clientId: v.optional(v.string()),
+    // Per-project contact picker (WS9 #948) — defaults to the client's primary
+    // contact when unset. Org + belongs-to-project's-client validated on write
+    // (projectWrites.ts); cleared when the project's clientId changes.
+    clientContactId: v.optional(v.string()),
     status: v.optional(enums.ProjectStatus),
     type: v.optional(enums.ProjectType),
     description: v.optional(v.string()),

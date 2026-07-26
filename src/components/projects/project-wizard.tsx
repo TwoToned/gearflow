@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller, type Path, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parseISO, isValid } from "date-fns";
-import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck, PartyPopper } from "lucide-react";
+import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { cn, focusRing, disabledState } from "@/lib/utils";
 import {
@@ -81,6 +81,11 @@ export interface EditableProject {
   eventEndTime?: string | null;
   loadOutDate?: unknown;
   loadOutTime?: string | null;
+  /** WS2 (#941) — the gear-committed window; blank means "same as rental". */
+  projectStartDate?: unknown;
+  projectStartTime?: string | null;
+  projectEndDate?: unknown;
+  projectEndTime?: string | null;
   rentalStartDate?: unknown;
   rentalEndDate?: unknown;
   crewNotes?: string | null;
@@ -98,7 +103,7 @@ export interface EditableProject {
 type StepKey = "basics" | "schedule" | "site" | "review";
 const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFormValues>[] }[] = [
   { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", fields: ["name", "projectNumber", "clientId", "type", "description", "tags"] },
-  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten load-in / load-out later.", fields: ["rentalStartDate", "rentalEndDate", "loadInDate", "loadInTime", "loadOutDate", "loadOutTime", "eventStartDate", "eventStartTime", "eventEndDate", "eventEndTime"] },
+  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten the project window later.", fields: ["rentalStartDate", "rentalEndDate", "projectStartDate", "projectStartTime", "projectEndDate", "projectEndTime"] },
   { key: "site", label: "Site", tip: "Where it's happening and who to call on the day. All optional.", fields: ["locationId", "siteContactName", "siteContactPhone", "siteContactEmail"] },
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
 ];
@@ -176,6 +181,9 @@ export function ProjectWizard({
           siteContactPhone: project.siteContactPhone ?? "",
           siteContactEmail: project.siteContactEmail ?? "",
           // Dates → the form's "yyyy-MM-dd" string shape; times stay "HH:mm".
+          // loadInDate/loadOutDate/eventStartDate/eventEndDate are DEPRECATED — the
+          // wizard reads them for a pre-WS2 project (so an old value isn't silently
+          // dropped) but never writes them; project*/rental* are the two windows now.
           loadInDate: normalizeDate(project.loadInDate),
           loadInTime: project.loadInTime ?? "",
           eventStartDate: normalizeDate(project.eventStartDate),
@@ -184,6 +192,10 @@ export function ProjectWizard({
           eventEndTime: project.eventEndTime ?? "",
           loadOutDate: normalizeDate(project.loadOutDate),
           loadOutTime: project.loadOutTime ?? "",
+          projectStartDate: normalizeDate(project.projectStartDate),
+          projectStartTime: project.projectStartTime ?? "",
+          projectEndDate: normalizeDate(project.projectEndDate),
+          projectEndTime: project.projectEndTime ?? "",
           rentalStartDate: normalizeDate(project.rentalStartDate),
           rentalEndDate: normalizeDate(project.rentalEndDate),
           crewNotes: project.crewNotes ?? "",
@@ -200,6 +212,7 @@ export function ProjectWizard({
           description: "", locationId: "", siteContactName: "", siteContactPhone: "", siteContactEmail: "",
           loadInDate: undefined, loadInTime: "", eventStartDate: undefined, eventStartTime: "",
           eventEndDate: undefined, eventEndTime: "", loadOutDate: undefined, loadOutTime: "",
+          projectStartDate: undefined, projectStartTime: "", projectEndDate: undefined, projectEndTime: "",
           rentalStartDate: undefined, rentalEndDate: undefined,
           crewNotes: "", internalNotes: "", clientNotes: "", tags: [],
         },
@@ -443,7 +456,7 @@ export function ProjectWizard({
                 <ReviewRow label="Managers" value={managerIds.length ? `${managerIds.length} assigned` : undefined} />
                 <ReviewRow label="Project code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />
                 <ReviewRow label="Rental" value={dateRange(v.rentalStartDate, v.rentalEndDate)} />
-                <ReviewRow label="Event" value={dateRange(v.eventStartDate, v.eventEndDate)} />
+                <ReviewRow label="Project window" value={dateRange(v.projectStartDate, v.projectEndDate) || "Same as rental"} />
                 <ReviewRow label="Location" value={locationName} />
                 <ReviewRow label="Site contact" value={v.siteContactName} />
                 <ReviewRow label="Tags" value={(v.tags && v.tags.length) ? v.tags.join(", ") : undefined} />
@@ -510,10 +523,14 @@ function normalizeDate(value?: unknown): string | undefined {
 }
 
 /**
- * One calendar to rule the schedule. The hire window (a date range) is the
- * spine — pick it with a preset or the range calendar, and load-in / show /
- * load-out dates derive from it. The granular per-moment times live in an
- * optional disclosure so the common case is "tap a preset, done".
+ * Two windows (WS2 #941, locked decision): RENTAL (chargeable — what's invoiced)
+ * and PROJECT (gear committed — when equipment leaves/returns the warehouse;
+ * availability/conflicts read this one). Rental is the spine — pick it with a
+ * preset or the range calendar. Project defaults to "same as rental" (ghost text,
+ * ungenerated — R-3.1: it stays genuinely blank in the form/DB, not a copy) until
+ * the user explicitly diverges it, e.g. an earlier load-in or later load-out than
+ * the charged dates. Soft (non-blocking) hints flag when the project window
+ * doesn't fully contain the rental window — that's unusual, not necessarily wrong.
  */
 function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   const v = form.watch();
@@ -521,19 +538,18 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
     start: fromDateStr(v.rentalStartDate),
     end: fromDateStr(v.rentalEndDate),
   };
+  const projectRange: DateRange = {
+    start: fromDateStr(v.projectStartDate),
+    end: fromDateStr(v.projectEndDate),
+  };
 
   const setRange = (r: DateRange) => {
     form.setValue("rentalStartDate", toDateStr(r.start), { shouldDirty: true });
     form.setValue("rentalEndDate", toDateStr(r.end), { shouldDirty: true });
-    // Derive the per-moment dates into any field the user hasn't filled yet —
-    // never clobber an explicit edit made in the fine-tune section.
-    const fill = (name: Path<ProjectFormValues>, d?: Date) => {
-      if (d && !form.getValues(name)) form.setValue(name, toDateStr(d), { shouldDirty: true });
-    };
-    fill("loadInDate", r.start);
-    fill("eventStartDate", r.start);
-    fill("eventEndDate", r.end ?? r.start);
-    fill("loadOutDate", r.end ?? r.start);
+  };
+  const setProjectRange = (r: DateRange) => {
+    form.setValue("projectStartDate", toDateStr(r.start), { shouldDirty: true });
+    form.setValue("projectEndDate", toDateStr(r.end), { shouldDirty: true });
   };
 
   const lenLabel = rangeLengthLabel(range);
@@ -543,11 +559,28 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
       : `${format(range.start, "EEE d MMM")} — pick an end date`
     : "No dates yet";
 
+  const projectLenLabel = rangeLengthLabel(projectRange);
+  const projectSummary = projectRange.start
+    ? projectRange.end
+      ? `${format(projectRange.start, "EEE d MMM")} → ${format(projectRange.end, "EEE d MMM")}`
+      : `${format(projectRange.start, "EEE d MMM")} — pick an end date`
+    : "Same as rental window";
+
+  // Soft (non-blocking) hint: a diverging project window is expected to CONTAIN
+  // the rental window (gear leaves before/at the charged start, returns after/at
+  // the charged end). Flag it, don't block — an unusual booking is still valid.
+  const softWarning =
+    projectRange.start && range.start && projectRange.start > range.start
+      ? "The project window starts after the rental window — usually load-in is on or before the rental start."
+      : projectRange.end && range.end && projectRange.end < range.end
+        ? "The project window ends before the rental window — usually load-out is on or after the rental end."
+        : undefined;
+
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label>Hire window</Label>
-        <p className="t-micro text-muted">When does the gear leave and come back? Everything else fills in from this.</p>
+        <Label>Rental window</Label>
+        <p className="t-micro text-muted">When does the gear leave and come back? This is what gets charged.</p>
       </div>
 
       {/* Duration presets */}
@@ -593,16 +626,48 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
         </div>
       </div>
 
-      {/* Fine-tune: per-moment dates + times, derived from the window */}
-      <Accordion type="single" collapsible>
-        <AccordionItem value="times" className="border-line">
-          <AccordionTrigger>Load-in, show & load-out times</AccordionTrigger>
+      {/* Project window — blank by default ("same as rental"), diverges only when set */}
+      <Accordion type="single" collapsible defaultValue={projectRange.start ? "project-window" : undefined}>
+        <AccordionItem value="project-window" className="border-line">
+          <AccordionTrigger>
+            Project window
+            {!projectRange.start && <span className="ml-2 t-micro font-normal text-faint">(same as rental)</span>}
+          </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-4 pt-1">
-              <MomentRow icon={Truck} label="Load in" dateName="loadInDate" timeName="loadInTime" form={form} />
-              <MomentRow icon={PartyPopper} label="Show starts" dateName="eventStartDate" timeName="eventStartTime" form={form} />
-              <MomentRow icon={PartyPopper} label="Show ends" dateName="eventEndDate" timeName="eventEndTime" form={form} />
-              <MomentRow icon={Truck} label="Load out" dateName="loadOutDate" timeName="loadOutTime" form={form} />
+            <div className="space-y-3 pt-1">
+              <p className="t-micro text-muted">
+                When the gear is actually committed — set this only if load-in/load-out fall outside the rental
+                window (e.g. an earlier bump-in or a later strike).
+              </p>
+              <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
+                <RangeCalendar value={projectRange} onChange={setProjectRange} />
+                <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                  <span className={cn("text-table-cell font-medium", projectRange.start ? "text-ink" : "text-faint")}>
+                    {projectSummary}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {projectLenLabel && (
+                      <span className="rounded-full bg-red-soft px-2.5 py-0.5 text-[12px] font-semibold text-ink">{projectLenLabel}</span>
+                    )}
+                    {projectRange.start && (
+                      <button
+                        type="button"
+                        onClick={() => setProjectRange({ start: undefined, end: undefined })}
+                        className={cn("rounded-full px-2.5 py-0.5 text-[12px] font-medium text-faint transition-colors hover:text-t-out", focusRing)}
+                      >
+                        Reset to rental
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {softWarning && (
+                <p className="t-micro text-red" role="status">{softWarning}</p>
+              )}
+              <div className="space-y-4 pt-1">
+                <MomentRow icon={Truck} label="Project starts" dateName="projectStartDate" timeName="projectStartTime" form={form} />
+                <MomentRow icon={Truck} label="Project ends" dateName="projectEndDate" timeName="projectEndTime" form={form} />
+              </div>
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -626,8 +691,8 @@ function MomentRow({
         <Icon className="h-4 w-4" />
       </span>
       <span className="w-24 shrink-0 text-table-cell font-medium text-ink-2">{label}</span>
-      <Input type="date" {...form.register(dateName)} className="flex-1" />
-      <Input type="time" {...form.register(timeName)} className="w-28" />
+      <Input type="date" aria-label={`${label} date`} {...form.register(dateName)} className="flex-1" />
+      <Input type="time" aria-label={`${label} time`} {...form.register(timeName)} className="w-28" />
     </div>
   );
 }

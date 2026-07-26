@@ -79,7 +79,7 @@ API route (?type=quote|invoice|pull-slip|delivery-docket|return-sheet)
        ├─ buildDocumentData(...)                       ── unchanged (org branding, line
        │                                                  items via structureLineItems)
        ├─ DOCUMENT_LAYOUTS[docType]                    ── hardcoded fixed layout (plain TS)
-       ├─ composeDocument(layout, data, branding)      ── slimmed flow/pagination core
+       ├─ composeDocument(layout, data, branding)      ── net-new simple flow/pagination engine
        └─ renderPdfTemplate(template, inputs)          ── unchanged vendor boundary
 ```
 
@@ -90,16 +90,26 @@ signature, custom text) with fixed per-doc options (which columns, checkboxes,
 demoted from persisted-JSON-shaped config to code. There is exactly **one** definition
 per doc type — no variants, no merge step (R-3.1: single source of truth).
 
-**`document-composer.ts` (slimmed from `section-renderer.ts`).** Keep the parts that
-make pagination work; delete the parts that made it customizable:
+**`document-composer.ts` (net new, small — target a few hundred LOC).**
+`section-renderer.ts` is **deleted outright, not slimmed** — a 1,485-line engine
+built to render arbitrary user-authored section trees is the wrong starting point
+for fixed layouts. The replacement is a purpose-built linear flow engine: walk the
+layout's blocks top-to-bottom, measure each against remaining page height (using the
+existing `template-constants.ts` row/height constants), and start a new page when a
+block doesn't fit. It must honour a short list of invariants — everything else the
+old engine did is deliberately out:
 
-| Keep (the pagination core) | Delete (the customization engine) |
+| The new engine MUST do | The old engine's features it must NOT have |
 |---|---|
-| Column-aware height estimation (`template-constants.ts`) | Visibility conditions (`condition-evaluator.ts`) |
-| Atomic row page-breaks (never split mid-row) | `{token}` resolution (`token-resolver.ts`) |
-| Table overflow → `startIndex` continuation on next page | Block model, `layoutHint` columns, `flattenBlocks` |
-| Repeated table/page headers on continuation pages | Block styling / `gearflowRect` backgrounds |
-| Overflow checks for totals/signature/notes/text blocks | Per-template `TemplateSettings` + `resolveTemplateSettings` merge |
+| Atomic table rows (never split a row, incl. kit/accessory child groups) | Visibility conditions (`condition-evaluator.ts`) |
+| Table overflow → continue on next page via the plugins' existing `startIndex`/`endIndex` | `{token}` resolution (`token-resolver.ts`) |
+| Repeated page header + table column headers on continuation pages | Block model, `layoutHint` columns, `flattenBlocks` |
+| Keep totals/signature/notes blocks whole (push to next page if they don't fit) | Block styling / `gearflowRect` backgrounds |
+| Footer on every page | Per-template `TemplateSettings` + `resolveTemplateSettings` merge; per-section width/position math |
+
+The pagination *test cases* from `section-renderer.test.ts` (tail-drop, row
+atomicity, header repetition) are ported as the new engine's spec; its
+implementation is not.
 
 Per-doc behaviour that used to come from settings (`expandProjectGroups`, packer sort,
 status filters, checkbox/per-unit modes) becomes constants in the layout definition.
@@ -148,8 +158,8 @@ just `org documentColor`.
 `convex/brandTemplates.ts`, `convex/sectionPresets.ts`,
 `src/app/api/documents/template-preview/route.tsx`,
 `src/app/(app)/settings/documents/page.tsx` (+ its nav entry).
-\* replaced by the slimmed `document-composer.ts` / `document-layouts.ts` — expect the
-composer to keep a fraction of section-renderer's 1,485 lines.
+\* deleted outright — replaced by the net-new `document-composer.ts` /
+`document-layouts.ts` (a few hundred lines total), not by a slimmed copy.
 
 **Inside surviving files:** `generate-pdf.ts` drops `loadTemplate`,
 `expandSectionsForDates`, `generatePdfFromSections/FromSettings/FromData` and the
@@ -201,8 +211,9 @@ regression harness for the swap and stay forever. (The plugin-only harness in
 
 ### Phase 1 — One pipeline
 1. Add `document-layouts.ts` (fixed layouts ≈ today's `getDefaultSections()` output)
-   and `document-composer.ts` (slimmed from `section-renderer.ts` per the keep/delete
-   table above).
+   and the net-new `document-composer.ts` (per the invariants table above; ported
+   pagination test cases from `section-renderer.test.ts` as its spec).
+   `section-renderer.ts` is deleted in this phase, not carried forward.
 2. `generatePdf()` becomes: build data → compose → render. Remove `loadTemplate`,
    settings resolution, `templateId`.
 3. Routes + UI: drop `templateId` params and the always-empty template submenu.
@@ -258,7 +269,7 @@ ARCHITECTURE.md; CHANGELOG.
 
 | Risk | Mitigation |
 |---|---|
-| Composer slim-down breaks a pagination invariant (the v0.8.1.x class of bug) | Phase 0 harness lands *before* any engine change; port section-renderer's pagination tests |
+| The new engine misses a pagination invariant the old one handled (the v0.8.1.x class of bug) | Phase 0 harness lands *before* the swap; section-renderer's pagination test cases ported as the new engine's spec |
 | A prod org still renders via a dormant stored template and its output changes | Pre-Phase-2 prod row check; change is intended (rip-out) but announced, not discovered |
 | Visual diffs on default docs (fixed layouts ≈ section defaults ≠ legacy single-page layout) | Accepted — the legacy path truncates; parity target is the section-default look, reviewed against DESIGN.md in Phase 4 |
 | `structure-line-items` option plumbing regressions when settings→constants | Existing 1,162-line test file + Phase 0 suite |

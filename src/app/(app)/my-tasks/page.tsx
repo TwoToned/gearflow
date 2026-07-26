@@ -46,6 +46,13 @@ function dueLabel(task: NativeMyOpenTask): string | null {
   return new Date(task.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function groupByBucket(tasks: NativeMyOpenTask[], now: Date): Map<Bucket, NativeMyOpenTask[]> {
+  const grouped = new Map<Bucket, NativeMyOpenTask[]>();
+  for (const b of BUCKET_ORDER) grouped.set(b, []);
+  for (const t of tasks) grouped.get(bucketFor(t, now))!.push(t);
+  return grouped;
+}
+
 const PRIORITY_DOT: Record<ProjectTaskPriority, string> = {
   LOW: "bg-faint",
   NORMAL: "bg-blue",
@@ -71,69 +78,112 @@ export default function MyTasksPage() {
   }
 
   const isLoading = !!orgId && tasks === undefined;
-  const grouped = new Map<Bucket, NativeMyOpenTask[]>();
-  if (tasks) {
-    for (const b of BUCKET_ORDER) grouped.set(b, []);
-    for (const t of tasks) grouped.get(bucketFor(t, now))!.push(t);
-  }
+  const grouped = tasks ? groupByBucket(tasks, now) : null;
 
   return (
     <div className="space-y-6">
       <FadeIn>
-        <PageHeader
-          title="My tasks"
-          description="Open tasks assigned to you, across every project."
-        />
+        <PageHeader title="My tasks" description="Open tasks assigned to you, across every project." />
       </FadeIn>
 
       {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 rounded-[var(--r)] border border-line px-3 py-2.5">
-              <Skeleton className="size-4 rounded-full" />
-              <Skeleton className="h-3.5 flex-1" />
-              <Skeleton className="h-4 w-16" />
-            </div>
-          ))}
-        </div>
+        <TaskListSkeleton />
       ) : !tasks || tasks.length === 0 ? (
-        <FadeIn delay={0.04}>
-          <div className="flex flex-col items-center gap-2 rounded-[var(--r-lg)] border-2 border-dashed border-line-2 py-14 text-center">
-            <FlowMascot className="h-11 w-11" eyeColor="var(--ok)" />
-            <p className="text-[14px] font-medium text-ink">All clear — nothing open on you</p>
-            <p className="t-micro text-muted">Tasks assigned to you (or your crew record) land here.</p>
-          </div>
-        </FadeIn>
+        <AllClearEmptyState />
       ) : (
         <div className="space-y-5">
-          {BUCKET_ORDER.map((bucket, i) => {
-            const list = grouped.get(bucket) ?? [];
-            if (list.length === 0) return null;
-            const overdueBucket = bucket === "Overdue";
-            return (
-              <FadeIn key={bucket} delay={0.04 + i * 0.04} className="space-y-1.5">
-                <h2
-                  className={cn(
-                    "flex items-center gap-2 t-overline",
-                    overdueBucket ? "text-t-out" : "text-muted",
-                  )}
-                >
-                  {bucket}
-                  <span className="text-faint">{list.length}</span>
-                </h2>
-                <StaggerList className="space-y-2">
-                  {list.map((task) => (
-                    <StaggerItem key={task.id}>
-                      <TaskRow task={task} canEdit={canEdit} onCycle={() => cycleStatus(task)} />
-                    </StaggerItem>
-                  ))}
-                </StaggerList>
-              </FadeIn>
-            );
-          })}
+          {BUCKET_ORDER.map((bucket, i) => (
+            <TaskBucketSection
+              key={bucket}
+              bucket={bucket}
+              tasks={grouped!.get(bucket) ?? []}
+              index={i}
+              canEdit={canEdit}
+              onCycle={cycleStatus}
+            />
+          ))}
         </div>
       )}
     </div>
+  );
+}
+
+function TaskListSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 rounded-[var(--r)] border border-line px-3 py-2.5">
+          <Skeleton className="size-4 rounded-full" />
+          <Skeleton className="h-3.5 flex-1" />
+          <Skeleton className="h-4 w-16" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AllClearEmptyState() {
+  return (
+    <FadeIn delay={0.04}>
+      <div className="flex flex-col items-center gap-2 rounded-[var(--r-lg)] border-2 border-dashed border-line-2 py-14 text-center">
+        <FlowMascot className="h-11 w-11" eyeColor="var(--ok)" />
+        <p className="text-[14px] font-medium text-ink">All clear — nothing open on you</p>
+        <p className="t-micro text-muted">Tasks assigned to you (or your crew record) land here.</p>
+      </div>
+    </FadeIn>
+  );
+}
+
+function TaskBucketSection({
+  bucket,
+  tasks,
+  index,
+  canEdit,
+  onCycle,
+}: {
+  bucket: Bucket;
+  tasks: NativeMyOpenTask[];
+  index: number;
+  canEdit: boolean;
+  onCycle: (task: NativeMyOpenTask) => void;
+}) {
+  if (tasks.length === 0) return null;
+  return (
+    <FadeIn delay={0.04 + index * 0.04} className="space-y-1.5">
+      <h2 className={cn("flex items-center gap-2 t-overline", bucket === "Overdue" ? "text-t-out" : "text-muted")}>
+        {bucket}
+        <span className="text-faint">{tasks.length}</span>
+      </h2>
+      <StaggerList className="space-y-2">
+        {tasks.map((task) => (
+          <StaggerItem key={task.id}>
+            <TaskRow task={task} canEdit={canEdit} onCycle={() => onCycle(task)} />
+          </StaggerItem>
+        ))}
+      </StaggerList>
+    </FadeIn>
+  );
+}
+
+function TaskStatusIcon({ status }: { status: ProjectTaskStatus }) {
+  if (status === "DONE") return <CheckCircle2 className="h-[18px] w-[18px] text-primary" />;
+  if (status === "IN_PROGRESS") return <CircleDot className="h-[18px] w-[18px] text-blue" />;
+  return <Circle className="h-[18px] w-[18px]" />;
+}
+
+function TaskDueBadge({ task }: { task: NativeMyOpenTask }) {
+  const due = dueLabel(task);
+  if (!due) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-badge font-medium",
+        task.overdue ? "bg-out-soft text-t-out" : "bg-paper-2 text-muted",
+      )}
+    >
+      <CalendarClock className="h-3 w-3" />
+      {due}
+    </span>
   );
 }
 
@@ -146,16 +196,6 @@ function TaskRow({
   canEdit: boolean;
   onCycle: () => void;
 }) {
-  const due = dueLabel(task);
-  const isDone = task.status === "DONE";
-  const statusIcon = isDone ? (
-    <CheckCircle2 className="h-[18px] w-[18px] text-primary" />
-  ) : task.status === "IN_PROGRESS" ? (
-    <CircleDot className="h-[18px] w-[18px] text-blue" />
-  ) : (
-    <Circle className="h-[18px] w-[18px]" />
-  );
-
   return (
     <div className="flex items-start gap-3 rounded-[var(--r)] border border-line bg-card px-3 py-2.5 shadow-[var(--sh-card)]">
       {canEdit ? (
@@ -165,11 +205,11 @@ function TaskRow({
           onClick={onCycle}
           className={cn("mt-0.5 shrink-0 rounded-full text-muted hover:text-primary", focusRing)}
         >
-          {statusIcon}
+          <TaskStatusIcon status={task.status} />
         </button>
       ) : (
         <span className="mt-0.5 shrink-0 text-muted" aria-hidden>
-          {statusIcon}
+          <TaskStatusIcon status={task.status} />
         </span>
       )}
 
@@ -183,17 +223,7 @@ function TaskRow({
           <span className="truncate text-table-cell text-ink-2">{task.title}</span>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          {due && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-badge font-medium",
-                task.overdue ? "bg-out-soft text-t-out" : "bg-paper-2 text-muted",
-              )}
-            >
-              <CalendarClock className="h-3 w-3" />
-              {due}
-            </span>
-          )}
+          <TaskDueBadge task={task} />
           <Link
             href={`/projects/${task.projectId}`}
             className={cn(

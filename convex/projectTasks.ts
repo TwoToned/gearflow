@@ -155,6 +155,94 @@ async function resolveCrewIdsForUser(ctx: QueryCtx, userId: string, orgId: strin
   return crewLinks.filter((c) => c.organizationId === orgId).map((c) => c.id);
 }
 
+/**
+ * Union across both assignee shapes × both open statuses, de-duped by id (a
+ * task is assigned to a user XOR a crew record, never both, but the union
+ * itself needs the guard since it's built from several disjoint scans).
+ */
+async function collectMyOpenTasks(
+  ctx: QueryCtx,
+  userId: string,
+  crewIds: string[],
+  orgId: string,
+): Promise<Map<string, MyOpenTaskDoc>> {
+  const byId = new Map<string, MyOpenTaskDoc>();
+  const keep = (r: MyOpenTaskDoc) => {
+    if (r.organizationId !== orgId) return; // global index — org re-check
+    byId.set(r.id, r);
+  };
+  for (const status of OPEN_TASK_STATUSES) {
+    const userRows = await ctx.db
+      .query("projectTasks")
+      .withIndex("by_assigneeUserId_status", (q) => q.eq("assigneeUserId", userId).eq("status", status))
+      .collect();
+    for (const r of userRows) keep(r as unknown as MyOpenTaskDoc);
+
+    for (const crewId of crewIds) {
+      const crewRows = await ctx.db
+        .query("projectTasks")
+        .withIndex("by_assigneeCrewId_status", (q) => q.eq("assigneeCrewId", crewId).eq("status", status))
+        .collect();
+      for (const r of crewRows) keep(r as unknown as MyOpenTaskDoc);
+    }
+  }
+  return byId;
+}
+
+/**
+ * Sort: overdue → due asc (undated last) → priority. A single ascending sort
+ * on dueDate (undated = +Infinity) already puts overdue tasks first (their
+ * due date is the smallest, being in the past) and undated tasks last;
+ * priority breaks ties within the same due date.
+ */
+function sortMyOpenTasks(tasks: MyOpenTaskDoc[]): MyOpenTaskDoc[] {
+  return [...tasks].sort((a, b) => {
+    const aDue = a.dueDate ?? Infinity;
+    const bDue = b.dueDate ?? Infinity;
+    if (aDue !== bDue) return aDue - bDue;
+    const aPri = PRIORITY_SORT_WEIGHT[a.priority ?? "NORMAL"] ?? 1;
+    const bPri = PRIORITY_SORT_WEIGHT[b.priority ?? "NORMAL"] ?? 1;
+    return aPri - bPri;
+  });
+}
+
+/** Per-task project join {projectName, projectNumber} via point-reads. */
+async function resolveProjectsFor(
+  ctx: QueryCtx,
+  tasks: MyOpenTaskDoc[],
+): Promise<Map<string, { name: string; projectNumber: string }>> {
+  const projectIds = [...new Set(tasks.map((t) => t.projectId))];
+  const projects = new Map<string, { name: string; projectNumber: string }>();
+  await Promise.all(
+    projectIds.map(async (pid) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique();
+      if (p) projects.set(pid, { name: p.name, projectNumber: p.projectNumber });
+    }),
+  );
+  return projects;
+}
+
+function serializeMyOpenTask(
+  t: MyOpenTaskDoc,
+  projects: Map<string, { name: string; projectNumber: string }>,
+  now: number,
+) {
+  const project = projects.get(t.projectId) ?? { name: "", projectNumber: "" };
+  return {
+    id: t.id,
+    title: t.title,
+    status: t.status ?? "TODO",
+    priority: t.priority ?? "NORMAL",
+    dueDate: t.dueDate ?? null,
+    overdue: t.dueDate != null && t.dueDate < now,
+    projectId: t.projectId,
+    projectName: project.name,
+    projectNumber: project.projectNumber,
+    assigneeUserId: t.assigneeUserId ?? null,
+    assigneeCrewId: t.assigneeCrewId ?? null,
+  };
+}
+
 export const myOpenTasks = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
@@ -164,75 +252,11 @@ export const myOpenTasks = query({
     const userId = auth.userId;
 
     const crewIds = await resolveCrewIdsForUser(ctx, userId, orgId);
+    const byId = await collectMyOpenTasks(ctx, userId, crewIds, orgId);
+    const bounded = sortMyOpenTasks([...byId.values()]).slice(0, MY_OPEN_TASKS_LIMIT);
+    const projects = await resolveProjectsFor(ctx, bounded);
 
-    // Union across both assignee shapes × both open statuses, de-duped by id
-    // (a task is assigned to a user XOR a crew record, never both, but the
-    // union itself needs the guard since it's built from several disjoint scans).
-    const byId = new Map<string, MyOpenTaskDoc>();
-    for (const status of OPEN_TASK_STATUSES) {
-      const userRows = await ctx.db
-        .query("projectTasks")
-        .withIndex("by_assigneeUserId_status", (q) => q.eq("assigneeUserId", userId).eq("status", status))
-        .collect();
-      for (const r of userRows) {
-        const row = r as unknown as MyOpenTaskDoc;
-        if (row.organizationId !== orgId) continue; // global index — org re-check
-        byId.set(row.id, row);
-      }
-      for (const crewId of crewIds) {
-        const crewRows = await ctx.db
-          .query("projectTasks")
-          .withIndex("by_assigneeCrewId_status", (q) => q.eq("assigneeCrewId", crewId).eq("status", status))
-          .collect();
-        for (const r of crewRows) {
-          const row = r as unknown as MyOpenTaskDoc;
-          if (row.organizationId !== orgId) continue; // global index — org re-check
-          byId.set(row.id, row);
-        }
-      }
-    }
-
-    // Sort: overdue → due asc (undated last) → priority. A single ascending
-    // sort on dueDate (undated = +Infinity) already puts overdue tasks first
-    // (their due date is the smallest, being in the past) and undated tasks
-    // last; priority breaks ties within the same due date.
-    const tasks = [...byId.values()];
-    tasks.sort((a, b) => {
-      const aDue = a.dueDate ?? Infinity;
-      const bDue = b.dueDate ?? Infinity;
-      if (aDue !== bDue) return aDue - bDue;
-      const aPri = PRIORITY_SORT_WEIGHT[a.priority ?? "NORMAL"] ?? 1;
-      const bPri = PRIORITY_SORT_WEIGHT[b.priority ?? "NORMAL"] ?? 1;
-      return aPri - bPri;
-    });
-    const bounded = tasks.slice(0, MY_OPEN_TASKS_LIMIT);
-
-    // Per-task project join {projectName, projectNumber} via point-reads.
-    const projectIds = [...new Set(bounded.map((t) => t.projectId))];
-    const projects = new Map<string, { name: string; projectNumber: string }>();
-    await Promise.all(
-      projectIds.map(async (pid) => {
-        const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique();
-        if (p) projects.set(pid, { name: p.name, projectNumber: p.projectNumber });
-      }),
-    );
-
-    return bounded.map((t) => {
-      const project = projects.get(t.projectId);
-      return {
-        id: t.id,
-        title: t.title,
-        status: t.status ?? "TODO",
-        priority: t.priority ?? "NORMAL",
-        dueDate: t.dueDate ?? null,
-        overdue: t.dueDate != null && t.dueDate < now,
-        projectId: t.projectId,
-        projectName: project?.name ?? "",
-        projectNumber: project?.projectNumber ?? "",
-        assigneeUserId: t.assigneeUserId ?? null,
-        assigneeCrewId: t.assigneeCrewId ?? null,
-      };
-    });
+    return bounded.map((t) => serializeMyOpenTask(t, projects, now));
   },
 });
 

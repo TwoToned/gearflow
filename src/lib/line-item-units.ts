@@ -125,9 +125,14 @@ export function deriveOrderLineStatus(
  *   - Manual flags (`FLAGGED_FAULTY`, `FLAGGED_TT_OVERDUE`) survive —
  *     they're operator overrides set by `completeCheckAndFlag` and
  *     must not be wiped by a later unit-rollup.
- *   - Any unit with `prepStatus === "PACKED"` ⇒ line is `PACKED`
+ *   - Any *live* unit with `prepStatus === "PACKED"` ⇒ line is `PACKED`
  *     (the deploy tab needs to see it; quantity-aware deploy UX
  *     handles partial states separately via the rollup counters).
+ *     RETURNED/CANCELLED units are excluded from this check: returning a
+ *     unit never clears its `prepStatus` (kept as return-time history), so
+ *     counting it here would re-promote the line back to PACKED the moment
+ *     deprep resets it to PENDING — the exact bug where a returned item
+ *     never leaves the Return tab for De-prepped (gearflow#797).
  *   - Otherwise, the existing `line.prepStatus` survives — preserves
  *     PULLED while the operator is still scanning, and `PENDING` on
  *     fresh lines.
@@ -142,7 +147,16 @@ export function deriveOrderLinePrepStatus(
   ) {
     return currentPrepStatus;
   }
-  if (units.some((u) => u.prepStatus === "PACKED")) return "PACKED";
+  if (
+    units.some(
+      (u) =>
+        u.prepStatus === "PACKED" &&
+        u.status !== "RETURNED" &&
+        u.status !== "CANCELLED",
+    )
+  ) {
+    return "PACKED";
+  }
   return currentPrepStatus;
 }
 

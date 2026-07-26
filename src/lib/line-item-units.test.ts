@@ -158,6 +158,28 @@ describe("deriveOrderLinePrepStatus", () => {
       ]),
     ).toBe("FLAGGED_TT_OVERDUE");
   });
+
+  it("gearflow#797: a RETURNED unit's stale PACKED prepStatus does not re-promote the line", () => {
+    // Return never clears a unit's prepStatus (kept as history), so after
+    // deprep resets the line to PENDING, the still-PACKED RETURNED unit must
+    // not immediately flip it back to PACKED — else the item never leaves
+    // the Return tab for De-prepped.
+    const units = [unit({ status: "RETURNED", prepStatus: "PACKED" })];
+    expect(deriveOrderLinePrepStatus("PENDING", units)).toBe("PENDING");
+  });
+
+  it("gearflow#797: a CANCELLED unit's stale PACKED prepStatus does not re-promote the line", () => {
+    const units = [unit({ status: "CANCELLED", prepStatus: "PACKED" })];
+    expect(deriveOrderLinePrepStatus("PENDING", units)).toBe("PENDING");
+  });
+
+  it("gearflow#797: a live PACKED unit still promotes the line even alongside a returned one", () => {
+    const units = [
+      unit({ status: "RETURNED", prepStatus: "PACKED" }),
+      unit({ status: "CONFIRMED", prepStatus: "PACKED" }),
+    ];
+    expect(deriveOrderLinePrepStatus("PENDING", units)).toBe("PACKED");
+  });
 });
 
 describe("nextOrdinal", () => {

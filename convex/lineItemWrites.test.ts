@@ -949,6 +949,74 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     });
   });
 
+  describe("accessoryPlan (issue #794)", () => {
+    async function seedModelWithAccessories(t: ReturnType<typeof makeT>) {
+      await seedProjectModel(t, { dailyRate: 10 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+      await t.run(async (ctx) => {
+        await ctx.db.insert("bulkAssets", { id: "ba-def", organizationId: ORG, modelId: "m1", assetTag: "BA-DEF", isActive: true });
+        await ctx.db.insert("bulkAssets", { id: "ba-opt", organizationId: ORG, modelId: "m1", assetTag: "BA-OPT", isActive: true });
+        await ctx.db.insert("modelBulkAccessories", { id: "mba-def", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-def", quantity: 2, addedById: USER });
+        await ctx.db.insert("modelBulkAccessories", { id: "mba-opt", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-opt", quantity: 1, inclusion: "OPTIONAL", addedById: USER });
+      });
+    }
+    const children = (t: ReturnType<typeof makeT>) =>
+      t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "sm1")).collect());
+
+    test("no plan: DEFAULT expands, OPTIONAL does not", async () => {
+      const t = makeT();
+      await seedModelWithAccessories(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, smartArgs({ modelId: "m1", quantity: 2 }, { over: true, acc: true }));
+      const kids = await children(t);
+      expect(kids.map((c) => c.bulkAssetId)).toEqual(["ba-def"]);
+      expect(kids[0].quantity).toBe(4); // 2 × parent qty 2
+    });
+
+    test("plan.excluded deselects a DEFAULT", async () => {
+      const t = makeT();
+      await seedModelWithAccessories(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, {
+        ...smartArgs({ modelId: "m1", quantity: 1 }, { over: true, acc: true }),
+        accessoryPlan: { excluded: ["ba-def"], added: [] },
+      });
+      expect(await children(t)).toHaveLength(0);
+    });
+
+    test("plan.added opts an OPTIONAL in (default quantity, or an override)", async () => {
+      const t = makeT();
+      await seedModelWithAccessories(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, {
+        ...smartArgs({ modelId: "m1", quantity: 3 }, { over: true, acc: true }),
+        accessoryPlan: { excluded: [], added: [{ bulkAssetId: "ba-opt", quantityPerParent: 5 }] },
+      });
+      const kids = (await children(t)).sort((a, b) => (a.bulkAssetId ?? "").localeCompare(b.bulkAssetId ?? ""));
+      expect(kids.map((c) => c.bulkAssetId)).toEqual(["ba-def", "ba-opt"]);
+      expect(kids.find((c) => c.bulkAssetId === "ba-opt")?.quantity).toBe(15); // override 5 × parent qty 3
+    });
+
+    test("the plan is persisted on the parent line", async () => {
+      const t = makeT();
+      await seedModelWithAccessories(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, {
+        ...smartArgs({ modelId: "m1", quantity: 1 }, { over: true, acc: true }),
+        accessoryPlan: { excluded: ["ba-def"], added: [] },
+      });
+      const line = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).unique());
+      expect(line?.accessoryPlan).toEqual({ excluded: ["ba-def"], added: [] });
+    });
+
+    test("rejects an oversized accessoryPlan array (R-8.6.2)", async () => {
+      const t = makeT();
+      await seedModelWithAccessories(t);
+      const excluded = Array.from({ length: 201 }, (_, i) => `ba-${i}`);
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, {
+          ...smartArgs({ modelId: "m1", quantity: 1 }, { over: true, acc: true }),
+          accessoryPlan: { excluded, added: [] },
+        }),
+      ).rejects.toThrow(/accessoryPlan/);
+    });
+  });
+
   test("cross-org modelId is rejected (by_cuid is global)", async () => {
     const t = makeT();
     await member(t, "member");
@@ -1007,6 +1075,108 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, smartArgs({ subhireOrderNumber: "x".repeat(101) })),
     ).rejects.toThrow(/subhireOrderNumber/);
+  });
+});
+
+describe("lineItemWrites.updateAccessoryPlanNative", () => {
+  async function seed(t: ReturnType<typeof makeT>, lineExtra: Record<string, unknown> = {}) {
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+      await ctx.db.insert("bulkAssets", { id: "ba-def", organizationId: ORG, modelId: "m1", assetTag: "BA-DEF", isActive: true });
+      await ctx.db.insert("bulkAssets", { id: "ba-opt", organizationId: ORG, modelId: "m1", assetTag: "BA-OPT", isActive: true });
+      await ctx.db.insert("modelBulkAccessories", { id: "mba-def", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-def", quantity: 2, addedById: USER });
+      await ctx.db.insert("modelBulkAccessories", { id: "mba-opt", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-opt", quantity: 1, inclusion: "OPTIONAL", addedById: USER });
+      await ctx.db.insert("projectLineItems", {
+        id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", modelId: "m1", quantity: 2,
+        status: "CONFIRMED", isKitChild: false, checkedOutQuantity: 0, createdAt: NOW, updatedAt: NOW, ...lineExtra,
+      });
+      await ctx.db.insert("projectLineItems", {
+        id: "child-def", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", parentLineItemId: "li1",
+        isKitChild: true, childKind: "ACCESSORY", bulkAssetId: "ba-def", quantity: 4, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+  }
+  const updateArgs = (plan: { excluded: string[]; added: { bulkAssetId: string; quantityPerParent?: number }[] }) => ({
+    id: "li1", organizationId: ORG, accessoryPlan: plan, actor: ACTOR, auditId: "log1", now: NOW,
+  });
+  const children = (t: ReturnType<typeof makeT>) =>
+    t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "li1")).collect());
+
+  test("excluding the DEFAULT removes its existing child line", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, updateArgs({ excluded: ["ba-def"], added: [] }));
+    expect(await children(t)).toHaveLength(0);
+  });
+
+  test("opting an OPTIONAL in creates a new child line, scaled by line quantity", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, updateArgs({ excluded: [], added: [{ bulkAssetId: "ba-opt" }] }));
+    const kids = await children(t);
+    expect(kids.map((c) => c.bulkAssetId).sort()).toEqual(["ba-def", "ba-opt"]);
+    expect(kids.find((c) => c.bulkAssetId === "ba-opt")?.quantity).toBe(2); // 1 × line qty 2
+  });
+
+  test("the plan is saved on the line", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, updateArgs({ excluded: ["ba-def"], added: [] }));
+    const line = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).unique());
+    expect(line?.accessoryPlan).toEqual({ excluded: ["ba-def"], added: [] });
+  });
+
+  test("hard-blocks once the line has deployed", async () => {
+    const t = makeT();
+    await seed(t, { status: "CHECKED_OUT", checkedOutQuantity: 2 });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, updateArgs({ excluded: ["ba-def"], added: [] })),
+    ).rejects.toThrow(/already deployed/i);
+    // No write happened.
+    expect((await children(t))[0]?.bulkAssetId).toBe("ba-def");
+  });
+
+  test("refuses to drop an accessory child that has itself already deployed", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "u1", organizationId: ORG, lineItemId: "child-def", ordinal: 0, bulkAssetId: "ba-def",
+        quantity: 4, returnedQuantity: 0, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, updateArgs({ excluded: ["ba-def"], added: [] })),
+    ).rejects.toThrow(/already deployed/i);
+  });
+
+  test("rejects a line that has no model or asset", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", isKitChild: false, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, { id: "li2", organizationId: ORG, accessoryPlan: { excluded: [], added: [] }, actor: ACTOR, auditId: "log1", now: NOW }),
+    ).rejects.toThrow(/no model or asset/i);
+  });
+
+  test("rejects an accessory CHILD line (only a parent can have a plan)", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, { id: "child-def", organizationId: ORG, accessoryPlan: { excluded: [], added: [] }, actor: ACTOR, auditId: "log1", now: NOW }),
+    ).rejects.toThrow(/Only a parent/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, updateArgs({ excluded: [], added: [] })),
+    ).rejects.toThrow(/insufficient permissions/i);
   });
 });
 

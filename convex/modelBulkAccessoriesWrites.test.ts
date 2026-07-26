@@ -118,4 +118,69 @@ describe("modelBulkAccessoriesWrites", () => {
     });
     await expect(add(t, {}, { subject: USER, orgId: ORG, role: "viewer" })).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  test("add stores inclusion (absent = DEFAULT back-compat)", async () => {
+    const t = makeT(); await seed(t);
+    await add(t, { id: "acc1", bulkAssetId: "ba1" });
+    await add(t, { id: "acc2", bulkAssetId: "ba2", inclusion: "OPTIONAL", auditId: "a2" });
+    const rows = await listAcc(t);
+    expect(rows.find((r) => r.id === "acc1")?.inclusion).toBeUndefined();
+    expect(rows.find((r) => r.id === "acc2")?.inclusion).toBe("OPTIONAL");
+  });
+
+  describe("updateNative", () => {
+    const update = (t: T, over: Record<string, unknown> = {}) =>
+      t.withIdentity(asUser).mutation(api.modelBulkAccessoriesWrites.updateNative, {
+        modelId: "mdl", orgId: ORG, accessoryId: "acc1", now: NOW, actor, auditId: "u1", ...over,
+      });
+
+    test("edits quantity and inclusion, leaves bulkAssetId untouched", async () => {
+      const t = makeT(); await seed(t);
+      await add(t, { id: "acc1", bulkAssetId: "ba1", quantity: 1 });
+      await update(t, { quantity: 4, inclusion: "OPTIONAL" });
+      const row = (await listAcc(t)).find((r) => r.id === "acc1");
+      expect(row?.quantity).toBe(4);
+      expect(row?.inclusion).toBe("OPTIONAL");
+      expect(row?.bulkAssetId).toBe("ba1");
+    });
+
+    test("partial update leaves omitted fields alone", async () => {
+      const t = makeT(); await seed(t);
+      await add(t, { id: "acc1", bulkAssetId: "ba1", quantity: 2, notes: "keep me" });
+      await update(t, { inclusion: "OPTIONAL" });
+      const row = (await listAcc(t)).find((r) => r.id === "acc1");
+      expect(row?.quantity).toBe(2);
+      expect(row?.notes).toBe("keep me");
+      expect(row?.inclusion).toBe("OPTIONAL");
+    });
+
+    test("rejects a non-positive / non-integer quantity", async () => {
+      const t = makeT(); await seed(t);
+      await add(t, { id: "acc1", bulkAssetId: "ba1" });
+      await expect(update(t, { quantity: 0 })).rejects.toThrow(/at least 1/i);
+      await expect(update(t, { quantity: 1.5 })).rejects.toThrow(/whole number/i);
+    });
+
+    test("rejects an accessory whose org/model doesn't match", async () => {
+      const t = makeT(); await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("modelBulkAccessories", { id: "accX", organizationId: OTHER, modelId: "mdl", bulkAssetId: "ba1", quantity: 1, addedById: "x" });
+      });
+      await expect(update(t, { accessoryId: "accX", quantity: 2 })).rejects.toThrow(/not on this model/i);
+    });
+
+    test("rejects a member without model:update permission", async () => {
+      const t = makeT(); await seed(t);
+      await add(t, { id: "acc1", bulkAssetId: "ba1" });
+      await t.run(async (ctx) => {
+        const m = await ctx.db.query("members").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+        if (m) await ctx.db.patch(m._id, { role: "viewer" });
+      });
+      await expect(
+        t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.modelBulkAccessoriesWrites.updateNative, {
+          modelId: "mdl", orgId: ORG, accessoryId: "acc1", quantity: 3, now: NOW, actor, auditId: "u2",
+        }),
+      ).rejects.toThrow(/Forbidden|permission/i);
+    });
+  });
 });

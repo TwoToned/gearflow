@@ -5,6 +5,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { AccessoryInclusion } from "./lib/validators";
 
 /**
  * Native MODEL-BULK-ACCESSORY write mutations (Phase 3 browser-direct — replaces the
@@ -36,12 +37,13 @@ export const addNative = mutation({
     orgId: v.string(),
     bulkAssetId: v.string(),
     quantity: v.number(),
+    inclusion: v.optional(AccessoryInclusion),
     notes: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
   },
-  handler: async (ctx, { id, modelId, orgId, bulkAssetId, quantity, notes, now, actor: suppliedActor, auditId }) => {
+  handler: async (ctx, { id, modelId, orgId, bulkAssetId, quantity, inclusion, notes, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "modelAccessory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "model", "update");
@@ -73,6 +75,7 @@ export const addNative = mutation({
       modelId,
       bulkAssetId,
       quantity,
+      inclusion,
       sortOrder,
       notes,
       addedAt: now,
@@ -88,11 +91,66 @@ export const addNative = mutation({
       entityName: model.name,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Added default accessory: ${quantity}× ${bulkAsset.assetTag} to model ${model.name}`,
+      summary: `Added ${inclusion === "OPTIONAL" ? "optional" : "default"} accessory: ${quantity}× ${bulkAsset.assetTag} to model ${model.name}`,
       createdAt: now,
     });
 
     return { id };
+  },
+});
+
+/** Edit an existing model accessory's quantity/inclusion/notes. `bulkAssetId` is
+ *  immutable (remove + re-add to change it) — this closes the "Edit the quantity
+ *  instead" dead end from the addNative dup-guard error (issue #794). */
+export const updateNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: {
+    modelId: v.string(),
+    orgId: v.string(),
+    accessoryId: v.string(),
+    quantity: v.optional(v.number()),
+    inclusion: v.optional(AccessoryInclusion),
+    notes: v.optional(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, { modelId, orgId, accessoryId, quantity, inclusion, notes, now, actor: suppliedActor, auditId }) => {
+    await assertWritesEnabled(ctx, "modelAccessory");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "model", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+    if (quantity !== undefined) assertNumRange(quantity, "quantity", { min: 1, integer: true });
+    assertStrLen(notes, "notes", { max: 500 });
+
+    const acc = await ctx.db.query("modelBulkAccessories").withIndex("by_cuid", (q) => q.eq("id", accessoryId)).first();
+    if (!acc || acc.organizationId !== orgId || acc.modelId !== modelId) {
+      throw new ConvexError("That default accessory is not on this model.");
+    }
+
+    await ctx.db.patch(acc._id, {
+      ...(quantity !== undefined ? { quantity } : {}),
+      ...(inclusion !== undefined ? { inclusion } : {}),
+      ...(notes !== undefined ? { notes } : {}),
+    });
+
+    const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
+    const bulkAsset = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", acc.bulkAssetId)).first();
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "model",
+      entityId: modelId,
+      entityName: model?.name ?? modelId,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Edited accessory ${bulkAsset?.assetTag ?? acc.bulkAssetId} on model ${model?.name ?? modelId}`,
+      createdAt: now,
+    });
+
+    return { ok: true };
   },
 });
 

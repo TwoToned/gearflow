@@ -901,6 +901,9 @@ const checkoutItemArg = v.object({
   assetId: v.optional(v.string()),
   quantity: v.optional(v.number()),
   notes: v.optional(v.string()),
+  // Narrows this item's accessory cascade to a verified subset (mirrors
+  // warehouseOps.ts's checkoutItemArg — issue #794).
+  includeAccessoryIds: v.optional(v.array(v.string())),
 });
 
 // ─── checkOutItems — the loose-gear / line deploy. Parity: checkOutItems server

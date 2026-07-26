@@ -177,6 +177,24 @@ export const LineItemChildKind = v.union(
   v.literal("KIT"),
   v.literal("ACCESSORY"),
 );
+/** Model-level accessory tier (issue #794): DEFAULT auto-attaches when the model
+ *  is added to a project (PM may deselect per line via accessoryPlan.excluded);
+ *  OPTIONAL never auto-attaches — offered in the add-time picker, opted in via
+ *  accessoryPlan.added. Absent on existing rows = DEFAULT (zero-migration). */
+export const AccessoryInclusion = v.union(
+  v.literal("DEFAULT"),
+  v.literal("OPTIONAL"),
+);
+/** Mutation-arg shape for `projectLineItems.accessoryPlan` (schema.ts) — one
+ *  definition shared by every add-line mutation that accepts a plan at create
+ *  time (R-3.1/R-8.2.4), instead of three hand-repeated `v.object`s. */
+export const AccessoryPlanArg = v.object({
+  excluded: v.array(v.string()),
+  added: v.array(v.object({
+    bulkAssetId: v.string(),
+    quantityPerParent: v.optional(v.number()),
+  })),
+});
 export const AllocationBasis = v.union(
   v.literal("DIRECT"),
   v.literal("KIT_PERCENT"),

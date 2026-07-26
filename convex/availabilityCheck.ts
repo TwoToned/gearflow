@@ -30,6 +30,26 @@ export const checkBundle = query({
         .collect(),
     ]);
 
+    // Resolve each model accessory's bulk-asset tag + model name for the add-form
+    // picker (issue #794) — the same detail level models.ts's bulkAccessories shape
+    // returns, so the picker can show "4x PowerCON cable" not a bare bulkAssetId.
+    const accessoryDetails = await Promise.all(
+      accessories.map(async (a) => {
+        const ba = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.bulkAssetId)).unique();
+        const baModel = ba?.modelId
+          ? await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", ba.modelId!)).unique()
+          : null;
+        return {
+          id: a.id,
+          bulkAssetId: a.bulkAssetId,
+          quantity: a.quantity,
+          inclusion: (a.inclusion ?? "DEFAULT") as "DEFAULT" | "OPTIONAL",
+          assetTag: ba?.assetTag ?? a.bulkAssetId,
+          modelName: baModel?.name ?? null,
+        };
+      }),
+    );
+
     // projectLineItems.listByModelId org-filters; match it.
     const lines = lineRaw.filter((r) => r.organizationId === orgId);
     // REFERENCED-ONLY projects: the consumer (line-items.ts) builds a projectById
@@ -51,6 +71,7 @@ export const checkBundle = query({
       lines,
       projects: projectDocs.filter((p): p is NonNullable<typeof p> => !!p && p.organizationId === orgId),
       bulkAccessoryCount: accessories.length,
+      accessories: accessoryDetails,
     };
   },
 });

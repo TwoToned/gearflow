@@ -701,6 +701,8 @@ export default defineSchema({
     modelId: v.string(),
     bulkAssetId: v.string(),
     quantity: v.number(),
+    // Absent = DEFAULT (zero-migration back-compat, issue #794).
+    inclusion: v.optional(enums.AccessoryInclusion),
     sortOrder: v.optional(v.number()),
     notes: v.optional(v.string()),
     addedAt: v.optional(v.number()),
@@ -894,6 +896,10 @@ export default defineSchema({
     isKitChild: v.optional(v.boolean()),
     childKind: v.optional(enums.LineItemChildKind),
     parentLineItemId: v.optional(v.string()),
+    // Durable per-line accessory selection (issue #794) — the parent line's
+    // authority for its effective accessory set. Absent = template behaviour
+    // (all model DEFAULTs, no OPTIONALs). See resolveLineAccessoryPlan.
+    accessoryPlan: v.optional(enums.AccessoryPlanArg),
     pricingMode: v.optional(enums.KitPricingMode),
     description: v.optional(v.string()),
     quantity: v.optional(v.number()),

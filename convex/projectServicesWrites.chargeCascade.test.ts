@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
 
@@ -35,7 +36,7 @@ async function member(t: T, role: string) {
   });
 }
 
-async function seedProject(t: T, id = "p1", status = "CONFIRMED") {
+async function seedProject(t: T, id = "p1", status: Doc<"projects">["status"] = "CONFIRMED") {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: ORG, projectNumber: `P-${id}`, name: "Gig", status,

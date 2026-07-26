@@ -43,7 +43,7 @@ export async function recalcServiceCostFromCrew(
  * assignments' resolved charge rate (`resolveChargeRate` — role-first, NO member
  * level, per-service `chargeRateOverride` -> `role.chargeRate` -> null), reusing
  * the SAME pure duration math (`calculateEstimatedCost`) the cost side uses. Same
- * trigger as the cost twin: any service with >=1 crew assignment, type-agnostic —
+ * trigger as the cost twin: >=1 crew assignment on the service, type-agnostic —
  * this is deliberate symmetry with `recalcServiceCostFromCrew` (serviceCost.ts:31),
  * not a labour-only special case.
  *

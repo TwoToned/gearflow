@@ -7,7 +7,7 @@ import { requireService } from "./lib/auth";
  * WS9 #948 — expand-migrate backfill: one `ClientContact{isPrimary:true}` row per
  * client whose EMBEDDED contact (contactName/contactEmail/contactPhone) carries any
  * field. See docs/designs/pdf-system-redesign.md's sibling —
- * FEATUREDOCS/62-client-contacts.md — for the full widen→migrate→defer-narrow plan;
+ * FEATUREDOCS/63-client-contacts.md — for the full widen→migrate→defer-narrow plan;
  * this PR is the widen+migrate half only (narrow/drop-the-3-legacy-fields is a
  * SEPARATE follow-up).
  *

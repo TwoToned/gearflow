@@ -35,10 +35,10 @@ async function member(t: T, role: string) {
   });
 }
 
-async function seedProject(t: T, id = "p1") {
+async function seedProject(t: T, id = "p1", status = "CONFIRMED") {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
-      id, organizationId: ORG, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
+      id, organizationId: ORG, projectNumber: `P-${id}`, name: "Gig", status,
       defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 0,
     });
   });
@@ -129,7 +129,9 @@ describe("charge cascade — updateServiceNative", () => {
   test("clearing a manual unitPrice re-exposes the crew-driven auto price", async () => {
     const t = makeT();
     await member(t, "member");
-    await seedProject(t);
+    // QUOTED (OPEN lock tier, #957) — this test exercises charge-cascade pricing
+    // math via updateServiceNative's money-field path, not lifecycle-lock gating.
+    await seedProject(t, "p1", "QUOTED");
     await seedCrewWithChargeRate(t);
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
       id: "s1", orgId: ORG, projectId: "p1", ...baseInput, unitPrice: 999,

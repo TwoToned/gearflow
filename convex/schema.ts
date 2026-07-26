@@ -902,7 +902,7 @@ export default defineSchema({
   // ClientContact (WS9 #948 — multiple contacts per client, expand phase).
   // DIRECT (carries organizationId). Child table for `clients` — a client with zero
   // contacts stays valid; the embedded clients.contactName/Email/Phone fields stay
-  // live as read-only legacy during the migration window (see FEATUREDOCS/62).
+  // live as read-only legacy during the migration window (see FEATUREDOCS/63).
   // `isPrimary`: exclusive-per-client, "absent = false" (mirrors mediaWrites.ts's
   // setPrimaryNative pattern). Cap of 50 contacts/client enforced in the write layer.
   clientContacts: defineTable({

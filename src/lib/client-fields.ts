@@ -14,7 +14,7 @@ export type ClientFieldsInput = Partial<ClientFormValues> & { name: string };
  * arg keep the fields for the widen-migrate-narrow window — narrowing them off is
  * a separate follow-up). The child `clientContacts` table is now the single
  * write path for a client's contact info ("no dual-write" — see
- * FEATUREDOCS/62-client-contacts.md); callers that collect a primary contact at
+ * FEATUREDOCS/63-client-contacts.md); callers that collect a primary contact at
  * create-time (ClientForm, QuickCreateClient) write it via a SEPARATE
  * `clientContactWrites.addNative` call after the client itself is created — see
  * `useClientWrites().create()`.

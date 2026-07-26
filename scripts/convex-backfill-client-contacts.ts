@@ -1,6 +1,6 @@
 /**
  * WS9 #948 — expand-migrate backfill driver. See convex/backfillClientContacts.ts
- * and FEATUREDOCS/62-client-contacts.md.
+ * and FEATUREDOCS/63-client-contacts.md.
  *
  *   npx tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-client-contacts.ts          # dry-run
  *   npx tsx --env-file=.env --env-file=.env.local scripts/convex-backfill-client-contacts.ts --apply  # writes

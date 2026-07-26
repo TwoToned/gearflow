@@ -45,7 +45,7 @@ export function getPrimaryContact<T extends ClientContactLike>(contacts: readonl
  * Resolved display fields for a client, preferring (in order): an explicitly
  * selected contact (e.g. a project's `clientContactId`), else the client's primary
  * contact, else the legacy embedded `clients.contactName/Email/Phone` fields (the
- * migration-window fallback — see FEATUREDOCS/62). Never returns `undefined`
+ * migration-window fallback — see FEATUREDOCS/63). Never returns `undefined`
  * fields; absent values are `null`.
  */
 export function resolveClientContactDisplay(

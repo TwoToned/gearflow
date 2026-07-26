@@ -23,6 +23,7 @@ const baseItem: LineItemData = {
   description: "Custom cable run",
   quantity: 2,
   unitPrice: 100,
+  lineTotal: 190,
   discount: 10,
   isOptional: true,
   notes: "note",

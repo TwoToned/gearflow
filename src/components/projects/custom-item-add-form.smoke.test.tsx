@@ -42,7 +42,10 @@ describe("CustomItemAddForm", () => {
 
   it("submits the %-resolved discount as a flat dollar amount", async () => {
     const lineItemWrites = await import("@/hooks/use-line-item-writes");
-    const addCustom = vi.fn(async () => ({ id: "new-id" }));
+    const addCustom = vi.fn(async (_projectId: string, data: { discount?: number }) => {
+      void data;
+      return { id: "new-id" };
+    });
     vi.spyOn(lineItemWrites, "useLineItemWrites").mockReturnValue({
       enabled: true,
       addCustom,
@@ -65,7 +68,7 @@ describe("CustomItemAddForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add item" }));
 
     expect(addCustom).toHaveBeenCalledTimes(1);
-    const [, parsed] = addCustom.mock.calls[0];
+    const [, parsed] = addCustom.mock.calls[0]!;
     expect(parsed.discount).toBe(20);
   });
 });

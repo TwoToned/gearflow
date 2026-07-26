@@ -1586,18 +1586,6 @@ function ServiceDialog({
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="showOnDocuments"
-                  checked={form.watch("showOnDocuments")}
-                  onCheckedChange={(checked) =>
-                    form.setValue("showOnDocuments", !!checked)
-                  }
-                />
-                <Label htmlFor="showOnDocuments" className="text-ui-text font-normal cursor-pointer">
-                  Show on quote / invoice
-                </Label>
-              </div>
             </div>
 
             {/* Cost to Business */}

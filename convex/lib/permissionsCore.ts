@@ -145,7 +145,14 @@ export const rolePermissions: Record<string, PermissionMap> = {
     client: ["read"],
     warehouse: ["read", "check_out", "check_in", "scan", "close"],
     testTag: ["read"],
-    maintenance: ["read"],
+    // "create" added so the warehouse role can use "Report Issue" on the
+    // deploy/return tabs (FEATUREDOCS/64) — the role otherwise had no write
+    // access to the maintenance resource. "update" added separately (WS6 #945)
+    // so floor staff can tick off recurring preventative-maintenance cycles
+    // (convex/maintenanceCheckoffWrites.ts gates on maintenance:update) — a real
+    // workshop task, not an office one. Still no delete: warehouse can't remove
+    // maintenance records, only raise/check off them.
+    maintenance: ["read", "create", "update"],
     location: ["read"],
     document: [],
     orgSettings: [],
@@ -220,6 +227,20 @@ export type OrgRole = (typeof ORG_ROLES)[number];
 
 /** Built-in roles that can be assigned (excludes owner — owner is transferred) */
 export const ASSIGNABLE_BUILT_IN_ROLES = ["admin", "manager", "member", "viewer"] as const;
+
+/**
+ * Roles with manager-or-above standing (owner/admin/manager) — the single source of
+ * truth for the "cost + margin visible to manager+ only" gate (WS10 #949 labour
+ * charge rates & margin; POLICY.md R-8.4.4 one definition, read everywhere). Shared
+ * by the Convex-side field strip (`convex/crewRoles.ts` `listForSettings`) and the
+ * client-side `useIsManagerPlus()` hook (`src/lib/use-permissions.ts`) so the two
+ * can never disagree about who counts as "manager+".
+ */
+const MANAGER_PLUS_ROLES = new Set(["owner", "admin", "manager"]);
+
+export function isManagerPlusRole(role: string | null | undefined): boolean {
+  return role != null && MANAGER_PLUS_ROLES.has(role);
+}
 
 /** Check if a role string is a built-in role */
 export function isBuiltInRole(role: string): boolean {

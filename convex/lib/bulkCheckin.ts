@@ -60,3 +60,71 @@ export function distributeReturn(children: CheckInItem[], quantity: number): Dis
   }
   return { allocations, distributed: requested - remaining, requested };
 }
+
+// ─── Aggregation — ported from src/lib/bulk-checkin.ts (issue #944 WS5) ───────
+// Convex can't import from src/, and the read half (aggregateCheckInTotals) never
+// got its Convex copy when distributeReturn/itemGroupKey were ported alongside
+// warehouseOps.checkInBulkTotals — this closes that gap so both halves of the
+// bulk-check-in engine have exactly one Convex-side definition (R-3.1).
+
+type BulkCheckInKind = "BULK" | "SERIALIZED";
+
+export interface BulkCheckInTotal {
+  key: string;
+  kind: BulkCheckInKind;
+  itemType: CheckInItemType;
+  modelId: string | null;
+  bulkAssetId: string | null;
+  label: string;
+  modelNumber: string | null;
+  totalDue: number;
+  childCount: number;
+}
+
+export function aggregateCheckInTotals(items: CheckInItem[]): BulkCheckInTotal[] {
+  const groups = new Map<string, BulkCheckInTotal>();
+
+  for (const item of items) {
+    if (item.outstanding <= 0) continue;
+    const key = itemGroupKey(item);
+    if (!key) continue;
+
+    const existing = groups.get(key);
+    if (existing) {
+      existing.totalDue += item.outstanding;
+      existing.childCount += 1;
+      continue;
+    }
+
+    groups.set(key, {
+      key,
+      kind: item.bulkAssetId ? "BULK" : "SERIALIZED",
+      itemType: item.itemType,
+      modelId: item.modelId,
+      bulkAssetId: item.bulkAssetId,
+      label: item.modelName ?? (item.itemType === "ACCESSORY" ? "Accessory" : "Item"),
+      modelNumber: item.modelNumber,
+      totalDue: item.outstanding,
+      childCount: 1,
+    });
+  }
+
+  return [...groups.values()].sort(
+    (a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label) || a.key.localeCompare(b.key),
+  );
+}
+
+/**
+ * A project-scoped grouping key — `itemGroupKey` prefixed with the owning
+ * project's id. The org-wide returns station (WS5, issue #944) resolves a bulk
+ * tag scan across EVERY project at once, so grouping must not merge two
+ * different projects' outstanding quantities under the same bare identity key
+ * (e.g. two projects both holding "bulk:cable-xlr-5m" would otherwise collapse
+ * into one `distributeReturn` pool and let a return on project A silently draw
+ * down project B's count). Reviving `distributeReturn`/`itemGroupKey` for the
+ * multi-project case means keying by `(projectId, itemGroupKey)` instead.
+ */
+export function scopedGroupKey(projectId: string, item: CheckInItem): string | null {
+  const base = itemGroupKey(item);
+  return base ? `${projectId}::${base}` : null;
+}

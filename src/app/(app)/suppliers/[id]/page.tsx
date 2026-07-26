@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { useSupplierWrites } from "@/hooks/use-supplier-writes";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { assetStatusLabels, supplierOrderStatusLabels, supplierOrderTypeLabels, projectStatusLabels, formatLabel } from "@/lib/status-labels";
+import { assetStatusLabels, supplierOrderStatusLabels, supplierOrderTypeLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -110,17 +110,19 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
   const orders = useMemo(() => ordersData?.orders || [], [ordersData]);
   const assets = assetsData?.assets || [];
-  const subhires = subhiresData?.lineItems || [];
+  // WS7 #946 — the Subhires tab now lists sub-hire HEADS (order #, status,
+  // cost/charge/margin, linked PO), replacing the old projectLineItems-based read
+  // that couldn't show any of that (see FEATUREDOCS/22/39 — a visible behaviour change).
+  const subhires = subhiresData?.subHires || [];
 
-  // At-a-glance strip — derived client-side from the orders this page already
-  // loads (total orders count, open orders, lifetime spend).
+  // At-a-glance strip — total/open orders count come straight off the orders this
+  // page already loads; spend is the server-computed DE-DUPLICATED rollup
+  // (suppliers.detail's `spend`) — a linked sub-hire+order pair counts once, not
+  // twice (see convex/suppliers.ts's computeSupplierSpend).
   const atAGlance = useMemo(() => {
     const totalOrders = supplier?._count?.orders ?? orders.length;
-    const openOrders = orders.filter((o) => OPEN_ORDER_STATUSES.has(o.status)).length;
-    const spend = orders.reduce(
-      (sum, o) => sum + (o.total != null ? Number(o.total) : 0),
-      0,
-    );
+    const openOrders = supplier?.spend?.openOrderCount ?? orders.filter((o) => OPEN_ORDER_STATUSES.has(o.status)).length;
+    const spend = supplier?.spend?.totalSpend ?? 0;
     return { totalOrders, openOrders, spend };
   }, [orders, supplier]);
 
@@ -248,46 +250,64 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
   const subhireColumns: ColumnDef<(typeof subhires)[number]>[] = [
     {
-      id: "project",
-      header: "Project",
+      id: "orderNumber",
+      header: "Order #",
       mobile: "title",
-      cell: (item) => (
-        <Link href={`/projects/${item.project?.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
-          {item.project?.projectNumber} - {item.project?.name}
-        </Link>
-      ),
-    },
-    {
-      id: "model",
-      header: "Model",
-      mobile: "subtitle",
-      cell: (item) => item.model?.name || item.description,
+      cell: (sh) => <span className="t-mono font-medium text-ink">{sh.orderNumber}</span>,
     },
     {
       id: "status",
       header: "Status",
       mobile: "badge",
-      cell: (item) =>
-        item.project?.status ? (
-          <StatusIndicator
-            category="project"
-            value={item.project.status}
-            label={projectStatusLabels[item.project.status] || formatLabel(item.project.status)}
-            variant="pill"
-          />
-        ) : null,
+      cell: (sh) => (
+        <StatusIndicator category="subHire" value={sh.status} label={formatLabel(sh.status)} variant="pill" />
+      ),
     },
     {
-      id: "qty",
-      header: "Qty",
-      mobile: "meta",
-      cell: (item) => <span className="t-data">{item.quantity}</span>,
+      id: "project",
+      header: "Project",
+      mobile: "subtitle",
+      cell: (sh) =>
+        sh.project ? (
+          <Link href={`/projects/${sh.project.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
+            {sh.project.projectNumber}
+          </Link>
+        ) : "—",
     },
     {
-      id: "orderNumber",
-      header: "Order #",
+      id: "cost",
+      header: "Cost",
       mobile: "meta",
-      cell: (item) => <span className="t-mono">{item.subhireOrderNumber || "—"}</span>,
+      cell: (sh) => <span className="t-data">{formatCurrency(sh.totalCost)}</span>,
+    },
+    {
+      id: "charge",
+      header: "Charge",
+      mobile: "meta",
+      cell: (sh) => <span className="t-data">{formatCurrency(sh.totalCharge)}</span>,
+    },
+    {
+      id: "margin",
+      header: "Margin",
+      mobile: "meta",
+      cell: (sh) => (
+        <span className={cn("t-data", sh.margin > 0 ? "text-success" : sh.margin < 0 ? "text-destructive" : "")}>
+          {sh.margin > 0 ? "+" : ""}{formatCurrency(sh.margin)}
+        </span>
+      ),
+    },
+    {
+      id: "linkedOrder",
+      header: "Linked PO",
+      mobile: "meta",
+      cell: (sh) =>
+        sh.linkedOrder ? (
+          <Link href={`/suppliers/${id}/orders/${sh.linkedOrder.id}`} className={cn("rounded-sm t-mono text-link hover:underline", focusRing)}>
+            {sh.linkedOrder.orderNumber}
+          </Link>
+        ) : (
+          <span className="text-muted">—</span>
+        ),
     },
   ];
 
@@ -541,39 +561,51 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                 </TabsContent>
 
                 <TabsContent value="subhires" className="mt-4">
-                  <h3 className="t-heading mb-4 text-ink">Subhire line items</h3>
+                  <h3 className="t-heading mb-4 text-ink">Subhire orders</h3>
                   {subhires.length === 0 ? (
-                    <EmptyState title="No subhire items" description="Subhire line items from this supplier will appear here." />
+                    <EmptyState title="No subhire orders" description="Sub-hire orders from this supplier will appear here." />
                   ) : (
                     <>
                     <div className="hidden rounded-[var(--r)] border border-line md:block">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Project</TableHead>
-                            <TableHead>Model</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="hidden md:table-cell">Order #</TableHead>
+                            <TableHead>Order #</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead className="hidden md:table-cell">Project</TableHead>
+                            <TableHead className="hidden text-right sm:table-cell">Cost</TableHead>
+                            <TableHead className="hidden text-right sm:table-cell">Charge</TableHead>
+                            <TableHead className="text-right">Margin</TableHead>
+                            <TableHead className="hidden md:table-cell">Linked PO</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {subhires.map((item) => (
-                            <TableRow key={item.id}>
+                          {subhires.map((sh) => (
+                            <TableRow key={sh.id}>
+                              <TableCell className="t-mono font-medium text-ink">{sh.orderNumber}</TableCell>
                               <TableCell>
-                                <Link href={`/projects/${item.project?.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
-                                  {item.project?.projectNumber} - {item.project?.name}
-                                </Link>
+                                <StatusIndicator category="subHire" value={sh.status} label={formatLabel(sh.status)} variant="pill" />
                               </TableCell>
-                              <TableCell>{item.model?.name || item.description}</TableCell>
-                              <TableCell className="text-right t-data">{item.quantity}</TableCell>
-                              <TableCell className="hidden text-muted md:table-cell t-mono">
-                                {item.subhireOrderNumber || "—"}
+                              <TableCell className="hidden md:table-cell">
+                                {sh.project ? (
+                                  <Link href={`/projects/${sh.project.id}`} className={cn("rounded-sm text-ui-text text-link hover:underline", focusRing)}>
+                                    {sh.project.projectNumber}
+                                  </Link>
+                                ) : "—"}
                               </TableCell>
-                              <TableCell>
-                                {item.project?.status ? (
-                                  <StatusIndicator category="project" value={item.project.status} label={projectStatusLabels[item.project.status] || formatLabel(item.project.status)} variant="pill" />
-                                ) : null}
+                              <TableCell className="hidden text-right sm:table-cell t-data">{formatCurrency(sh.totalCost)}</TableCell>
+                              <TableCell className="hidden text-right sm:table-cell t-data">{formatCurrency(sh.totalCharge)}</TableCell>
+                              <TableCell className={cn("text-right t-data", sh.margin > 0 ? "text-success" : sh.margin < 0 ? "text-destructive" : "")}>
+                                {sh.margin > 0 ? "+" : ""}{formatCurrency(sh.margin)}
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                {sh.linkedOrder ? (
+                                  <Link href={`/suppliers/${id}/orders/${sh.linkedOrder.id}`} className={cn("rounded-sm t-mono text-link hover:underline", focusRing)}>
+                                    {sh.linkedOrder.orderNumber}
+                                  </Link>
+                                ) : (
+                                  <span className="text-muted">—</span>
+                                )}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -584,7 +616,7 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                       className="md:hidden"
                       data={subhires}
                       columns={subhireColumns}
-                      getRowId={(item) => item.id}
+                      getRowId={(sh) => sh.id}
                     />
                     </>
                   )}
@@ -659,6 +691,36 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                       <div className="flex justify-between gap-2">
                         <span className="text-muted shrink-0">Lead time</span>
                         <span className="font-medium text-ink text-right">{supplier.defaultLeadTime}</span>
+                      </div>
+                    )}
+                  </div>
+                </SidebarSection>
+              )}
+
+              {/* Spend breakdown (WS7 #946) — the de-duplicated total shown in the
+                  hero strip, broken into its committed-order / sub-hire components
+                  plus the quoted-vs-invoiced variance summary across linked pairs. */}
+              {supplier.spend && (
+                <SidebarSection title="Spend">
+                  <div className="space-y-1.5 text-ui-text">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted">Committed orders</span>
+                      <span className="font-medium text-ink t-data">{formatCurrency(supplier.spend.committedOrderSpend)}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted">Sub-hires</span>
+                      <span className="font-medium text-ink t-data">{formatCurrency(supplier.spend.subHireSpend)}</span>
+                    </div>
+                    <div className="flex justify-between gap-2 border-t border-line pt-1.5">
+                      <span className="text-muted">Total (de-duplicated)</span>
+                      <span className="font-semibold text-ink t-data">{formatCurrency(supplier.spend.totalSpend)}</span>
+                    </div>
+                    {supplier.spend.variance.linkedCount > 0 && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted">Variance ({supplier.spend.variance.linkedCount} linked)</span>
+                        <span className={cn("font-medium t-data", supplier.spend.variance.total > 0 ? "text-destructive" : supplier.spend.variance.total < 0 ? "text-success" : "text-ink")}>
+                          {supplier.spend.variance.total > 0 ? "+" : ""}{formatCurrency(supplier.spend.variance.total)}
+                        </span>
                       </div>
                     )}
                   </div>

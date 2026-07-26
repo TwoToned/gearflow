@@ -9,6 +9,8 @@ import {
   useNativeHome,
   useNativeBlocking,
   useNativeActivity,
+  useNativeMyOpenTasks,
+  useNativeOverbookingCounts,
 } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
@@ -17,7 +19,6 @@ import {
   Wrench,
   ArrowRight,
   ShieldAlert,
-  AtSign,
   AlertTriangle,
   UserCheck,
   Plus,
@@ -71,10 +72,20 @@ export default function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activity = useNativeActivity(orgId) as any;
   const subHireStats = useNativeSubHireStats(orgId);
+  const overbookingCounts = useNativeOverbookingCounts(orgId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myHome = useNativeHome(orgId) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myBlockers = useNativeBlocking(orgId) as any;
+  const myTasks = useNativeMyOpenTasks(orgId);
+
+  // Delay ladder derived from section index instead of hand-numbered literals
+  // (§ "Dashboard reorder" — the old 0.04/0.05/0.08/0.1/0.12/0.14/0.16 chain
+  // meant inserting a section required renumbering every one after it).
+  // `nextSectionDelay()` is called once per top-level FadeIn'd section below,
+  // in render order, top to bottom.
+  let sectionIndex = 0;
+  const nextSectionDelay = () => 0.04 + 0.04 * sectionIndex++;
 
   const now = new Date();
   const hour = now.getHours();
@@ -121,11 +132,15 @@ export default function DashboardPage() {
         />
       </FadeIn>
 
-      {/* ── Bento board ── */}
-      <div className="grid auto-rows-[minmax(0,auto)] grid-cols-2 gap-3 lg:grid-cols-4">
-        {/* On the floor now — hero tile */}
-        <FadeIn delay={0.04} className="col-span-2 lg:row-span-2">
-          <div className={`${TILE} flex h-full flex-col p-5`}>
+      {/* ══ Zone 1: My work ══
+          "On the floor now" + MyWorkSection (which now owns the tasks-due
+          block and the per-project blocker badges/snippets — the standalone
+          blockers panel that used to sit between the bento board and
+          MyWorkSection is gone; blockers now render in exactly two places:
+          here, and the "needs attention" chip in zone 2 below). */}
+      <div className="space-y-3">
+        <FadeIn delay={nextSectionDelay()}>
+          <div className={`${TILE} flex flex-col p-5`}>
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {liveJobs.length > 0 && <LivePulse />}
@@ -136,35 +151,56 @@ export default function DashboardPage() {
             {!myHome ? (
               <div className="space-y-2"><Skeleton className="h-16 w-full rounded-[var(--r)]" /><Skeleton className="h-16 w-full rounded-[var(--r)]" /></div>
             ) : liveJobs.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+              <div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
                 <FlowMascot className="h-10 w-10" eyeColor="var(--ok)" />
                 <p className="text-[14px] font-medium text-ink">Nothing out right now</p>
                 <p className="t-micro text-muted">The warehouse is full and calm. Enjoy it.</p>
               </div>
             ) : (
-              <StaggerList className="flex flex-col gap-2">
+              <StaggerList className="flex flex-col gap-2 sm:grid sm:grid-cols-2">
                 {liveJobs.slice(0, 4).map((p) => (<StaggerItem key={p.id as string}><LiveJobRow project={p} now={now} /></StaggerItem>))}
               </StaggerList>
             )}
           </div>
         </FadeIn>
 
+        <FadeIn delay={nextSectionDelay()}>
+          <MyWorkSection
+            projects={myProjects}
+            blockers={(myBlockers ?? []) as Record<string, unknown>[]}
+            tasks={(myTasks ?? []) as unknown as Record<string, unknown>[]}
+          />
+        </FadeIn>
+      </div>
+
+      {/* ══ Zone 2: Org risk ══ */}
+      <FadeIn delay={nextSectionDelay()}>
+        <div className={`${TILE} p-5`}>
+          <h2 className="t-overline mb-3 text-muted">Needs attention</h2>
+          <NeedsAttention
+            stats={stats}
+            loading={statsLoading}
+            blockers={myBlockers ?? []}
+            subHireOverdue={subHireStats?.overdueReturns ?? 0}
+            overbookingCounts={overbookingCounts}
+          />
+          {/* WS3 #942 — the Overbookings & Gaps board's three chips (hard
+              overbookings / pencilled collisions / sale stock to procure)
+              render inside NeedsAttention above, backed by the cheap
+              overbookingBoard.counts query (not the full board subscription). */}
+        </div>
+      </FadeIn>
+
+      {/* ══ Zone 3: Demoted (stats, upcoming, activity) ══ */}
+      <div className="grid auto-rows-[minmax(0,auto)] grid-cols-2 gap-3 lg:grid-cols-4">
         {/* Stat tiles */}
         <StatTile label="Active jobs" value={stats?.activeProjects} loading={statsLoading} hue="blue" sub="in flight" href="/projects" />
         <StatTile label="Overdue returns" value={overdue} loading={statsLoading} hue="red" sub={overdue > 0 ? "chase them" : "all back"} href="/projects" problem={overdue > 0} />
         <DeployTile deployed={deployed} total={total} util={util} loading={statsLoading} />
         <StatTile label="Crew booked" value={stats?.activeCrew} loading={statsLoading} hue="purple" sub="on the books" href="/crew" />
 
-        {/* Needs attention */}
-        <FadeIn delay={0.08} className="col-span-2">
-          <div className={`${TILE} h-full p-5`}>
-            <h2 className="t-overline mb-3 text-muted">Needs attention</h2>
-            <NeedsAttention stats={stats} loading={statsLoading} blockers={myBlockers ?? []} subHireOverdue={subHireStats?.overdueReturns ?? 0} />
-          </div>
-        </FadeIn>
-
         {/* Upcoming */}
-        <FadeIn delay={0.1} className="col-span-2">
+        <FadeIn delay={nextSectionDelay()} className="col-span-2">
           <div className={`${TILE} h-full p-5`}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="t-overline text-muted">Upcoming</h2>
@@ -202,7 +238,7 @@ export default function DashboardPage() {
         </FadeIn>
 
         {/* Recent activity — full width */}
-        <FadeIn delay={0.12} className="col-span-2 lg:col-span-4">
+        <FadeIn delay={nextSectionDelay()} className="col-span-2 lg:col-span-4">
           <div className={`${TILE} p-5`}>
             <h2 className="t-overline mb-4 text-muted">Recent activity</h2>
             {!activity ? (
@@ -217,41 +253,6 @@ export default function DashboardPage() {
           </div>
         </FadeIn>
       </div>
-
-      {/* ── Blockers (alert context — plain, no personality) ── */}
-      {myBlockers && myBlockers.length > 0 && (
-        <FadeIn delay={0.14}>
-          <div className="rounded-[var(--r-lg)] border border-line border-l-[3px] border-l-t-out bg-card p-5 shadow-[var(--sh-card)] sm:p-6">
-            <div className="mb-3 flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-t-out" />
-              <h2 className="text-card-title font-semibold text-ink">Blockers needing you</h2>
-              <span className="rounded-full bg-out-soft px-1.5 py-0.5 text-[11px] font-medium text-t-out">{myBlockers.length}</span>
-            </div>
-            <StaggerList className="space-y-1">
-              {myBlockers.map((b: Record<string, unknown>) => (
-                <StaggerItem key={b.threadId as string}>
-                  <Link href={`/projects/${b.projectId}`} className={cn("group block rounded-[var(--r)] px-3 py-2.5 transition-colors hover:bg-out-soft", focusRing)}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[11px] text-muted">{b.projectNumber as string}</span>
-                          <span className="truncate text-[14px] font-medium text-ink">{b.projectName as string}</span>
-                          {b.reason === "mention" && (<span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-out-soft px-1.5 py-0.5 text-[11px] text-t-out"><AtSign className="h-2.5 w-2.5" /> mentioned</span>)}
-                        </div>
-                        {b.snippet ? <p className="mt-0.5 truncate text-[12px] text-muted">&ldquo;{b.snippet as string}&rdquo;</p> : null}
-                      </div>
-                      <span className="shrink-0 text-[11px] text-muted">{b.createdByName as string} &middot; {formatDistanceToNow(new Date(b.createdAt as number), { addSuffix: true })}</span>
-                    </div>
-                  </Link>
-                </StaggerItem>
-              ))}
-            </StaggerList>
-          </div>
-        </FadeIn>
-      )}
-
-      {/* ── Your jobs ── */}
-      <FadeIn delay={0.16}><MyWorkSection projects={myProjects} blockers={(myBlockers ?? []) as Record<string, unknown>[]} /></FadeIn>
     </div>
   );
 }
@@ -303,13 +304,22 @@ function DeployTile({ deployed, total, util, loading }: { deployed: number; tota
   );
 }
 
-function NeedsAttention({ stats, loading, blockers, subHireOverdue }: { stats?: { overdueReturns?: number; maintenanceDue?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number }) {
+function NeedsAttention({ stats, loading, blockers, subHireOverdue, overbookingCounts }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number; overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number } }) {
   if (loading) return <div className="flex gap-2"><Skeleton className="h-8 w-36 rounded-full" /><Skeleton className="h-8 w-28 rounded-full" /></div>;
   const chips = [
     blockers.length > 0 && { href: `/projects/${blockers[0].projectId}`, label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: ShieldAlert },
     (stats?.overdueReturns ?? 0) > 0 && { href: "/projects", label: `${stats?.overdueReturns} overdue return${(stats?.overdueReturns ?? 0) > 1 ? "s" : ""}`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
     subHireOverdue > 0 && { href: "/suppliers", label: `${subHireOverdue} sub-hire overdue`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
+    // WS3 #942 — Overbookings & Gaps board chips: hard = red (a real, already-
+    // committed overbooking), pencilled + sale-stock = amber (a heads-up, not
+    // yet a hard problem).
+    (overbookingCounts?.hardCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.hardCount} hard overbooking${(overbookingCounts?.hardCount ?? 0) > 1 ? "s" : ""}`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
+    (overbookingCounts?.pencilledCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.pencilledCount} pencilled collision${(overbookingCounts?.pencilledCount ?? 0) > 1 ? "s" : ""}`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: AlertTriangle },
+    (overbookingCounts?.saleStockCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.saleStockCount} sale stock to procure`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Boxes },
     (stats?.maintenanceDue ?? 0) > 0 && { href: "/maintenance", label: `${stats?.maintenanceDue} maintenance due`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
+    // WS6 #945 — separate chip for recurring PM (excluded from maintenanceDue
+    // above so the two never double-count the same schedule-generated cycle).
+    (stats?.modelsDueForService ?? 0) > 0 && { href: "/maintenance/due", label: `${stats?.modelsDueForService} model${(stats?.modelsDueForService ?? 0) > 1 ? "s" : ""} due for service`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
     (stats?.pendingCrewOffers ?? 0) > 0 && { href: "/crew", label: `${stats?.pendingCrewOffers} crew offer${(stats?.pendingCrewOffers ?? 0) > 1 ? "s" : ""} pending`, cls: "bg-blue-soft text-blue hover:bg-blue-soft/70", Icon: UserCheck },
   ].filter(Boolean) as { href: string; label: string; cls: string; Icon: LucideIcon }[];
 

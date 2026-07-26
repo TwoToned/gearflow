@@ -16,6 +16,7 @@
 import { describe, expect, it } from "vitest";
 
 import { clientFields } from "./clientWrites";
+import { clientContactFields } from "./clientContactWrites";
 import { assignmentFields } from "./crewAssignmentsWrites";
 import { entryFields } from "./crewTimeEntriesWrites";
 import { checkRecordFields } from "./checkRecords";
@@ -27,8 +28,13 @@ import { modelFields } from "./modelWrites";
 import { locationFields } from "./locationsWrites";
 import { supplierFields } from "./suppliersWrites";
 import { subTestFields } from "./subTestRecords";
+import { projectWriteFields } from "./projects";
+import { updateFields as supplierOrderUpdateFields } from "./supplierOrdersWrites";
+import { itemFields as supplierOrderItemFields } from "./supplierOrderItemsWrites";
 
 import { clientSchema } from "@/lib/validations/client";
+import { clientContactSchema } from "@/lib/validations/client-contact";
+import { projectSchema } from "@/lib/validations/project";
 import { crewAssignmentSchema, crewTimeEntrySchema } from "@/lib/validations/crew";
 import { checkRecordSchema, checkItemSchema } from "@/lib/validations/check-item";
 import { categorySchema } from "@/lib/validations/category";
@@ -37,6 +43,7 @@ import { notificationPreferenceSchema } from "@/lib/validations/notification-pre
 import { modelSchema } from "@/lib/validations/model";
 import { supplierSchema } from "@/lib/validations/supplier";
 import { subTestRecordSchema } from "@/lib/validations/test-tag";
+import { supplierOrderUpdateSchema, supplierOrderItemSchema } from "@/lib/validations/supplier-order";
 
 /** Unwrap a Zod schema (through .refine/.default/.optional wrappers) to its object shape keys. */
 function zodKeys(schema: unknown): string[] {
@@ -62,6 +69,7 @@ interface Pair {
 
 const PAIRS: Pair[] = [
   { name: "client", zod: clientSchema, convex: clientFields },
+  { name: "clientContact", zod: clientContactSchema, convex: clientContactFields },
   {
     name: "crewAssignment",
     zod: crewAssignmentSchema,
@@ -88,7 +96,18 @@ const PAIRS: Pair[] = [
   { name: "checkItem", zod: checkItemSchema, convex: checkItemFields },
   { name: "bulkAsset", zod: bulkAssetSchema, convex: bulkFields },
   { name: "notificationPreference", zod: notificationPreferenceSchema, convex: prefFields },
-  { name: "model", zod: modelSchema, convex: modelFields },
+  {
+    name: "model",
+    zod: modelSchema,
+    convex: modelFields,
+    // WS6 #945: maintenanceIntervalDays was removed from the interactive
+    // create/edit form's Zod schema (superseded by serviceSchedules) but is
+    // deliberately LEFT wired in modelWrites.ts because CSV bulk import/export
+    // (src/server/csv.ts) still reads/writes this column via the generic
+    // convex/models.ts CRUD — migrating that surface is a separate follow-up.
+    // See the deprecation comment on convex/schema.ts's models.maintenanceIntervalDays.
+    allowConvexOnly: ["maintenanceIntervalDays"],
+  },
   { name: "location", zod: locationSchema, convex: locationFields },
   { name: "supplier", zod: supplierSchema, convex: supplierFields },
   {
@@ -98,6 +117,30 @@ const PAIRS: Pair[] = [
     // id + createdAt + the parent FK are server-managed.
     allowConvexOnly: ["createdAt", "id", "testTagRecordId"],
   },
+  {
+    name: "project",
+    zod: projectSchema,
+    convex: projectWriteFields,
+    // name + projectNumber are top-level createNative args (not part of the shared
+    // projectWriteFields spread — projectNumber has its own auto-number/clash-guard
+    // handling; name is a required createNative arg, not optional like the rest of
+    // projectWriteFields).
+    allowZodOnly: ["name", "projectNumber"],
+    // Server-managed: the recalc-owned money anchors (never client input, see
+    // PROJECT_MONEY_ANCHORS in projectWrites.ts), isTemplate (set at create, never
+    // patched in place), audit timestamps, and projectManagerId (managed via the
+    // separate projectManagers join table writes, not this field).
+    allowConvexOnly: [
+      "equipmentRevenue", "serviceCostTotal", "labourCostTotal", "subHireCostTotal",
+      "margin", "subtotal", "discountAmount", "taxAmount", "total",
+      "isTemplate", "createdAt", "updatedAt", "projectManagerId",
+    ],
+  },
+  // WS7 #946 — supplierOrder HEADER EDIT (status/orderDate/expectedDate/notes only;
+  // supplierId/orderNumber/type/projectId are create-time-only, not part of this pair).
+  { name: "supplierOrderUpdate", zod: supplierOrderUpdateSchema, convex: supplierOrderUpdateFields },
+  // WS7 #946 — supplierOrderItem CRUD (new browser path; previously had none).
+  { name: "supplierOrderItem", zod: supplierOrderItemSchema, convex: supplierOrderItemFields },
 ];
 
 describe("validation field-set parity (Zod client ↔ Convex server) — R-8.6.1", () => {

@@ -21,6 +21,7 @@ import type { api } from "../../convex/_generated/api";
 import type { ConvexProject } from "@/lib/projects-read";
 import type { MappedLineItem } from "@/lib/project-line-item-read";
 import { mapLineItemDoc } from "@/lib/project-equipment-reconstruct";
+import { getProjectWindow } from "@/lib/project-window";
 
 // ─── Stock breakdown (moved from availability.ts) ────────────────────────────
 
@@ -105,6 +106,26 @@ export interface OverbookedInfo {
   hasOverbookedChildren?: boolean;
   /** Kit parent: has children with reduced stock (unavailable assets) */
   hasReducedChildren?: boolean;
+  /**
+   * WS3 (#942) — the HARD-layer overage (non-`isOptional` lines on a
+   * CONFIRMED-or-later project). Identical value to `overBy` — `overBy` IS the
+   * hard number (preserving every existing badge/consumer's behaviour
+   * byte-for-byte); `hardOverBy` is the explicit, self-documenting name new
+   * two-layer-aware callers (the Overbookings & Gaps board, the confirm-time
+   * gate) should read instead of relying on `overBy`'s meaning by convention.
+   */
+  hardOverBy?: number;
+  /**
+   * WS3 (#942) — the ADDITIONAL overage that would exist if every currently
+   * PENCILLED booking for this model (an `isOptional` line, or any line on a
+   * not-yet-confirmed project) were also treated as hard demand. Zero when
+   * there is no pencilled demand, or when it wouldn't push the model over
+   * capacity beyond the hard overage alone. This is what "pencilled warns,
+   * never blocks" measures: a non-zero value flags a collision that would only
+   * bite if a quoted/optional line is later confirmed — never a violation of
+   * today's hard rule.
+   */
+  pencilledOverBy?: number;
 }
 
 // ─── Window / booking aggregation (moved from availability-read.ts) ──────────
@@ -117,6 +138,48 @@ export const EXCLUDED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
   "INVOICED",
 ]);
 
+// ─── Two-layer hard/pencilled availability (WS3 #942) ─────────────────────────
+
+/**
+ * Statuses where the GIG ITSELF is still speculative — every one of its lines,
+ * optional or not, stays PENCILLED (spec decision, WS3 #942/"Overbookings & Gaps").
+ * Mirrors `stageIndexForStatus` stages before "confirmed"
+ * (`src/components/projects/project-lifecycle.tsx`) without importing the
+ * component. Never overlaps `EXCLUDED_PROJECT_STATUSES` — a project in one of
+ * those is already excluded from the booking window entirely upstream
+ * (`projectMatchesWindow`), so this set only needs to partition the "still alive"
+ * statuses into pencilled vs hard.
+ */
+export const PENCILLED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  "ENQUIRY",
+  "QUOTING",
+  "QUOTED",
+]);
+
+/**
+ * Statuses where the gig is locked in — every non-`isOptional` line HARD-holds
+ * stock; an `isOptional` line stays pencilled regardless (the "confirmed gigs
+ * hard-hold everything except optional lines" rule).
+ */
+export const HARD_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  "CONFIRMED",
+  "PREPPING",
+  "CHECKED_OUT",
+  "ON_SITE",
+]);
+
+/**
+ * True once a project's status has passed QUOTED into CONFIRMED-or-later — the
+ * "gig is locked in" boundary the two-layer pencil rule keys off. A project in
+ * `EXCLUDED_PROJECT_STATUSES` (CANCELLED/RETURNED/COMPLETED/INVOICED) never
+ * reaches this function in practice (excluded earlier by `projectMatchesWindow`),
+ * but for any status this doesn't explicitly recognise as hard, the safe default
+ * is `false` (pencilled) — never silently promote an unrecognised status to hard.
+ */
+export function isConfirmedOrLater(status: string | null | undefined): boolean {
+  return status != null && HARD_PROJECT_STATUSES.has(status);
+}
+
 /** The booking date window (inclusive overlap). */
 export interface DateWindow {
   start: Date;
@@ -125,16 +188,21 @@ export interface DateWindow {
 
 /**
  * Reproduces the Prisma `project` `where` used by every availability read:
- * non-template, active status, and rental window overlaps `[start, end]`.
- * A project with no rental dates is excluded (null fails the date comparison,
- * matching Prisma's behaviour on `lte`/`gte` against null).
+ * non-template, active status, and PROJECT window (WS2 #941 — the gear-committed
+ * window, `getProjectWindow`; defaults to the rental window when unset) overlaps
+ * `[start, end]`. A project with no resolvable window is excluded (null fails the
+ * date comparison, matching Prisma's behaviour on `lte`/`gte` against null).
+ *
+ * NOTE: this is the AVAILABILITY window — pricing reads the rental window
+ * directly and is untouched by this (see #943).
  */
 export function projectMatchesWindow(p: ConvexProject, window: DateWindow): boolean {
   if (p.isTemplate === true) return false;
   if (p.status != null && EXCLUDED_PROJECT_STATUSES.has(p.status)) return false;
-  if (p.rentalStartDate == null || p.rentalEndDate == null) return false;
-  // rentalStartDate <= end AND rentalEndDate >= start
-  return p.rentalStartDate <= window.end.getTime() && p.rentalEndDate >= window.start.getTime();
+  const { start, end } = getProjectWindow(p);
+  if (start == null || end == null) return false;
+  // start <= window.end AND end >= window.start
+  return start <= window.end.getTime() && end >= window.start.getTime();
 }
 
 /** Build a `projectId → ConvexProject` map from the org's projects. */
@@ -147,6 +215,13 @@ export function indexProjectsById(projects: ConvexProject[]): Map<string, Convex
  * projects whose window overlaps (or, when `window` is null, only `thisProjectId`).
  * Returns total-by-model and this-project-by-model maps, mirroring
  * `computeOverbookedStatus`'s aggregation.
+ *
+ * WS3 (#942) additionally splits every sum into HARD (non-`isOptional` line on a
+ * `isConfirmedOrLater` project) vs PENCILLED (an `isOptional` line, on ANY
+ * project, OR any line on a not-yet-confirmed project) — the two are a strict
+ * partition of every counted booking, so `hard + pencilled === total` for every
+ * model at every key. `total`/`thisProject` are kept (unchanged shape/values) so
+ * this stays a drop-in superset for any existing caller.
  */
 export function sumBookingsByModel(
   modelIds: string[],
@@ -154,31 +229,58 @@ export function sumBookingsByModel(
   projectsById: Map<string, ConvexProject>,
   window: DateWindow | null,
   thisProjectId: string,
-): { totalByModel: Map<string, number>; thisProjectByModel: Map<string, number> } {
+): {
+  totalByModel: Map<string, number>;
+  thisProjectByModel: Map<string, number>;
+  hardTotalByModel: Map<string, number>;
+  hardThisProjectByModel: Map<string, number>;
+  pencilledTotalByModel: Map<string, number>;
+  pencilledThisProjectByModel: Map<string, number>;
+} {
   const modelSet = new Set(modelIds);
   const totalByModel = new Map<string, number>();
   const thisProjectByModel = new Map<string, number>();
+  const hardTotalByModel = new Map<string, number>();
+  const hardThisProjectByModel = new Map<string, number>();
+  const pencilledTotalByModel = new Map<string, number>();
+  const pencilledThisProjectByModel = new Map<string, number>();
+
+  const bump = (map: Map<string, number>, modelId: string, qty: number) =>
+    map.set(modelId, (map.get(modelId) ?? 0) + qty);
 
   for (const li of lineItems) {
     if (li.modelId == null || !modelSet.has(li.modelId)) continue;
     if (li.status === "CANCELLED") continue;
     if (li.subHireId != null) continue;
 
+    let p: ConvexProject | undefined;
     if (window) {
-      const p = projectsById.get(li.projectId);
+      p = projectsById.get(li.projectId);
       if (!p || !projectMatchesWindow(p, window)) continue;
     } else {
       // Dateless: only this project's bookings (no overlap possible).
       if (li.projectId !== thisProjectId) continue;
+      p = projectsById.get(li.projectId);
     }
 
-    totalByModel.set(li.modelId, (totalByModel.get(li.modelId) ?? 0) + li.quantity);
+    const isPencilled = li.isOptional === true || !isConfirmedOrLater(p?.status);
+
+    bump(totalByModel, li.modelId, li.quantity);
+    bump(isPencilled ? pencilledTotalByModel : hardTotalByModel, li.modelId, li.quantity);
     if (li.projectId === thisProjectId) {
-      thisProjectByModel.set(li.modelId, (thisProjectByModel.get(li.modelId) ?? 0) + li.quantity);
+      bump(thisProjectByModel, li.modelId, li.quantity);
+      bump(isPencilled ? pencilledThisProjectByModel : hardThisProjectByModel, li.modelId, li.quantity);
     }
   }
 
-  return { totalByModel, thisProjectByModel };
+  return {
+    totalByModel,
+    thisProjectByModel,
+    hardTotalByModel,
+    hardThisProjectByModel,
+    pencilledTotalByModel,
+    pencilledThisProjectByModel,
+  };
 }
 
 // ─── Pure overbooked reconstruction (the body of computeOverbookedStatus) ────
@@ -193,6 +295,13 @@ export type OverbookLineItem = {
   kitId: string | null;
   status: string;
   subHireId?: string | null;
+  /**
+   * WS3 (#942) — an optional line always stays PENCILLED, even on a
+   * CONFIRMED-or-later project. Optional (defaults to `false`/non-optional) so
+   * every pre-WS3 caller — none of which pass this field — keeps its existing
+   * all-hard behaviour unchanged.
+   */
+  isOptional?: boolean;
 };
 
 /** The raw-doc bundle `overbooking.bundle` returns. */
@@ -256,8 +365,12 @@ export function reconstructOverbookedStatus(
 
   const orgLineItems = bundle.lineItems.map(mapLineItemDoc);
   const projectsById = indexProjectsById(bundle.projects as unknown as ConvexProject[]);
-  const { totalByModel: totalBookedByModel, thisProjectByModel: thisProjectBookedByModel } =
-    sumBookingsByModel(modelIds, orgLineItems, projectsById, window, projectId);
+  const {
+    totalByModel: totalBookedByModel,
+    thisProjectByModel: thisProjectBookedByModel,
+    hardTotalByModel,
+    hardThisProjectByModel,
+  } = sumBookingsByModel(modelIds, orgLineItems, projectsById, window, projectId);
 
   const convexModelMap = new Map(bundle.models.map((m) => [m.id, m]));
   const assetsAll = bundle.assets;
@@ -293,23 +406,40 @@ export function reconstructOverbookedStatus(
     unavailableByModel.set(modelId, unavailable);
   }
 
-  // For each model, check if this project's total booking exceeds available
+  // For each model, check if this project's total booking exceeds available.
+  // WS3 (#942): the gate below now runs on the HARD-only sums (non-`isOptional`
+  // lines on a confirmed-or-later project) — an optional line, or ANY line on a
+  // still-quoted project, drops out of this sum entirely. This is the two-layer
+  // rule: existing per-project badges/PDFs/warehouse pull-sheet flags are
+  // UNCHANGED for the common case (no optional lines, confirmed project — hard
+  // === what totalBooked always was), and only lose a flag when the overage was
+  // caused purely by pencilled demand — "that's the rule working," not a
+  // regression. `totalBooked`/`totalStock`/`effectiveStock` stay full-combined
+  // values (unchanged meaning) for back-compat with every existing consumer.
   for (const modelId of modelIds) {
     const totalStock = stockByModel.get(modelId) || 0;
     const effectiveStock = effectiveStockByModel.get(modelId) || 0;
     const unavailable = unavailableByModel.get(modelId) || 0;
     const totalBooked = totalBookedByModel.get(modelId) || 0;
-    const bookedByOthers = totalBooked - (thisProjectBookedByModel.get(modelId) || 0);
-    const bookedByThisProject = thisProjectBookedByModel.get(modelId) || 0;
 
-    // Check against effective stock (factors in unavailable assets)
-    const availableForProject = effectiveStock - bookedByOthers;
+    const hardBookedByThisProject = hardThisProjectByModel.get(modelId) || 0;
+    const hardBookedByOthers = (hardTotalByModel.get(modelId) || 0) - hardBookedByThisProject;
+    const hardAvailableForProject = effectiveStock - hardBookedByOthers;
 
-    if (bookedByThisProject > availableForProject) {
-      const overBy = bookedByThisProject - availableForProject;
+    if (hardBookedByThisProject > hardAvailableForProject) {
+      const overBy = hardBookedByThisProject - hardAvailableForProject;
       // Would it be overbooked if all assets were available?
-      const wouldBeOverWithFullStock = bookedByThisProject > (totalStock - bookedByOthers);
+      const wouldBeOverWithFullStock = hardBookedByThisProject > (totalStock - hardBookedByOthers);
       const reducedOnly = !wouldBeOverWithFullStock && unavailable > 0;
+
+      // WS3 (#942) — pencilledOverBy: the ADDITIONAL overage if every currently
+      // pencilled booking for this model (org-wide, not just this project) also
+      // became hard demand, using the SAME (effectiveStock, others) baseline.
+      const combinedBookedByThisProject = thisProjectBookedByModel.get(modelId) || 0;
+      const combinedBookedByOthers = totalBooked - combinedBookedByThisProject;
+      const combinedAvailableForProject = effectiveStock - combinedBookedByOthers;
+      const combinedOverBy = Math.max(0, combinedBookedByThisProject - combinedAvailableForProject);
+      const pencilledOverBy = Math.max(0, combinedOverBy - overBy);
 
       const info: OverbookedInfo = {
         overBy,
@@ -318,6 +448,8 @@ export function reconstructOverbookedStatus(
         totalBooked,
         unavailableAssets: unavailable > 0 ? unavailable : undefined,
         reducedOnly,
+        hardOverBy: overBy,
+        pencilledOverBy,
       };
       // Mark all line items of this model on this project as overbooked
       for (const li of relevantItems) {

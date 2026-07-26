@@ -8,9 +8,11 @@
  * epoch-ms) are identical on the docs, so no date/Prisma mapping is needed.
  *
  * A conflict: a serialized asset held by project P (line.assetId row OR live unit row)
- * that also appears on a line/unit of a DIFFERENT live project P2 whose rental window
+ * that also appears on a line/unit of a DIFFERENT live project P2 whose PROJECT
+ * window (WS2 #941 — getProjectWindow; falls back to the rental window when unset)
  * overlaps P's. Dateless projects can't conflict.
  */
+import { getProjectWindow } from "./projectWindow";
 
 /** Project statuses where the booking is released — excluded from conflict checks. */
 export const DEAD_PROJECT_STATUSES = ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"] as const;
@@ -36,6 +38,9 @@ export interface CProject {
   status?: string;
   rentalStartDate?: number | null;
   rentalEndDate?: number | null;
+  /** WS2 (#941) — set only when the gear-committed window diverges from rental. */
+  projectStartDate?: number | null;
+  projectEndDate?: number | null;
 }
 export interface CAsset {
   id: string;
@@ -64,10 +69,9 @@ export function overlappingProjectIds(
     if (p.id === excludeProjectId) continue;
     if (p.isTemplate) continue;
     if ((DEAD_PROJECT_STATUSES as readonly string[]).includes(p.status ?? "")) continue;
-    const s = p.rentalStartDate ?? null;
-    const e = p.rentalEndDate ?? null;
-    if (s == null || e == null) continue;
-    if (s <= endMs && e >= startMs) ids.add(p.id);
+    const { start, end } = getProjectWindow(p);
+    if (start == null || end == null) continue;
+    if (start <= endMs && end >= startMs) ids.add(p.id);
   }
   return ids;
 }

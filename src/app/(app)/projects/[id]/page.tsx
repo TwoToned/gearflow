@@ -36,6 +36,7 @@ import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
+import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
@@ -67,6 +68,8 @@ import { useMediaWrites } from "@/hooks/use-media-writes";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { useOptimisticProjectNotes, useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
+import { useConfirmStatusGate } from "@/hooks/use-confirm-status-gate";
+import { ConfirmStatusImpactDialog } from "@/components/projects/confirm-status-impact-dialog";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
@@ -75,6 +78,10 @@ import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
+import { UnlockSessionBanner } from "@/components/projects/unlock-session-banner";
+import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
+import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -142,6 +149,14 @@ export default function ProjectDetailPage({
   // plain ref) so EquipmentTab re-renders its portal once the node mounts.
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
+  // #957 lifecycle lock — reactive tier/session status, the unlock-session
+  // open action, and the Versions panel.
+  const lockStatus = useProjectLockStatus(id, orgId);
+  const unlockSession = useUnlockSession(id, orgId);
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
+  const [unlockPending, setUnlockPending] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
 
@@ -169,6 +184,13 @@ export default function ProjectDetailPage({
     },
     onError: (e) => toast.error(e.message),
   });
+
+  // Confirm-time gate (WS3 #942, non-blocking): previews "would confirming
+  // this now create a hard overbooking / leave crew unconfirmed" before a
+  // transition INTO CONFIRMED, and only then. Every other status change
+  // proceeds exactly as before (requestStatusChange calls onProceed
+  // synchronously-equivalent when there's nothing to warn about).
+  const confirmGate = useConfirmStatusGate(orgId, id, project?.status, (next) => statusMutation.mutate(next));
 
   const archiveMutation = useServerMutation({
     mutationFn: () => projectWrites.archive(id),
@@ -263,6 +285,7 @@ export default function ProjectDetailPage({
                       label={projectStatusLabels[project.status] || formatLabel(project.status)}
                     />
                   )}
+                  {!project.isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
@@ -382,6 +405,10 @@ export default function ProjectDetailPage({
                           Runsheet
                         </Link>
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setVersionsOpen(true)}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Versions
+                      </DropdownMenuItem>
                       <CanDo resource="project" action="create">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
                           <Copy className="mr-2 h-4 w-4" />
@@ -424,17 +451,25 @@ export default function ProjectDetailPage({
             {!project.isTemplate && (
               <ProjectLifecycle
                 status={project.status}
-                advancing={statusMutation.isPending}
+                advancing={statusMutation.isPending || confirmGate.checking}
                 canAdvance={canUpdate}
-                onAdvance={(next) => statusMutation.mutate(next)}
+                onAdvance={(next) => confirmGate.requestStatusChange(next)}
                 statuses={allStatuses.map((s) => ({
                   value: s,
                   label: projectStatusLabels[s] || formatLabel(s),
                 }))}
-                onStatusChange={(s) => statusMutation.mutate(s)}
+                onStatusChange={(s) => confirmGate.requestStatusChange(s)}
               />
             )}
           </div>
+
+          <ConfirmStatusImpactDialog
+            open={!!confirmGate.pending}
+            impact={confirmGate.pending?.impact ?? null}
+            pending={statusMutation.isPending}
+            onConfirm={confirmGate.confirmPending}
+            onCancel={confirmGate.cancelPending}
+          />
 
           {/* ── Summary Strip ──────────────────────────────────────── */}
           {!project.isTemplate && (
@@ -488,10 +523,31 @@ export default function ProjectDetailPage({
                       projectAddress={project.location?.address || ""}
                       projectLatitude={project.location?.latitude ?? null}
                       projectLongitude={project.location?.longitude ?? null}
-                      projectLoadInDate={project.loadInDate ? new Date(project.loadInDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectLoadOutDate={project.loadOutDate ? new Date(project.loadOutDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
+                      // WS2 (#941): fed from the PROJECT window (falling back to the
+                      // deprecated loadIn/loadOut fields for a project the backfill
+                      // hasn't reached yet) — ServicesPanel's own loadIn/eventStart
+                      // fallback-of-a-fallback logic is unchanged, so both props
+                      // carrying the same window value is harmless.
+                      projectLoadInDate={
+                        (project.projectStartDate ?? project.loadInDate)
+                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectLoadOutDate={
+                        (project.projectEndDate ?? project.loadOutDate)
+                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectEventStartDate={
+                        (project.projectStartDate ?? project.loadInDate)
+                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectEventEndDate={
+                        (project.projectEndDate ?? project.loadOutDate)
+                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
                     />
                   </div>
                 </TabsContent>
@@ -509,6 +565,36 @@ export default function ProjectDetailPage({
                         billingWeeksOverride={project.billingWeeksOverride as number | null}
                         billingDaysOverride={project.billingDaysOverride as number | null}
                       />
+                      {lockStatus.openSession && orgId && (
+                        <UnlockSessionBanner
+                          projectId={id}
+                          orgId={orgId}
+                          session={{
+                            scope: lockStatus.openSession.scope,
+                            justification: lockStatus.openSession.justification,
+                            openedByName: lockStatus.openSession.openedByName,
+                          }}
+                        />
+                      )}
+                      {!lockStatus.openSession && lockStatus.tier !== "OPEN" && (
+                        <div className="flex items-center justify-between rounded-[var(--radius)] border-2 border-line bg-paper-2 px-4 py-3">
+                          <p className="text-sm text-ink-2">
+                            {lockStatus.tier === "HARD_LOCKED"
+                              ? "This project is completed and hard-locked."
+                              : "This project's financials are locked."}
+                          </p>
+                          <CanDo resource="project" action="update">
+                            <Button
+                              variant="line"
+                              size="sm"
+                              onClick={() => setUnlockDialogOpen(true)}
+                              disabled={lockStatus.tier === "HARD_LOCKED" && !lockStatus.canOverrideHardLock}
+                            >
+                              {lockStatus.tier === "HARD_LOCKED" ? "Open full unlock session" : "Unlock financials"}
+                            </Button>
+                          </CanDo>
+                        </div>
+                      )}
                       {(() => {
                         // Compute group pricing stats from categories
                         const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
@@ -633,18 +719,25 @@ export default function ProjectDetailPage({
                           {formatDate(project.rentalEndDate as string | null)}
                         </span>
                       </div>
-                      {/* Load in/out + event rows render only when set — no stack
-                          of "—" placeholders. If all four are unset, show one
-                          faint line instead. */}
+                      {/* WS2 (#941) — the PROJECT window rows render only when set (no
+                          stack of "—" placeholders); loadIn/loadOut are the deprecated
+                          fallback for a project the backfill hasn't reached yet. If
+                          nothing is set at all, show one faint line instead. */}
                       {(() => {
                         const scheduleRows = [
-                          { label: "Load in", date: project.loadInDate, time: project.loadInTime },
-                          { label: "Load out", date: project.loadOutDate, time: project.loadOutTime },
-                          { label: "Event start", date: project.eventStartDate, time: project.eventStartTime },
-                          { label: "Event end", date: project.eventEndDate, time: project.eventEndTime },
+                          {
+                            label: "Project starts",
+                            date: project.projectStartDate ?? project.loadInDate,
+                            time: project.projectStartTime ?? project.loadInTime,
+                          },
+                          {
+                            label: "Project ends",
+                            date: project.projectEndDate ?? project.loadOutDate,
+                            time: project.projectEndTime ?? project.loadOutTime,
+                          },
                         ].filter((r) => r.date != null);
                         if (scheduleRows.length === 0) {
-                          return <p className="text-caption text-faint">No load-in/out times set</p>;
+                          return <p className="text-caption text-faint">No project window set — same as rental</p>;
                         }
                         return scheduleRows.map((r) => (
                           <div key={r.label} className="flex justify-between gap-2">
@@ -795,6 +888,34 @@ export default function ProjectDetailPage({
         }}
         pending={archiveMutation.isPending}
       />
+      {orgId && (
+        <>
+          <UnlockSessionDialog
+            open={unlockDialogOpen}
+            onOpenChange={setUnlockDialogOpen}
+            scope={lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL"}
+            pending={unlockPending}
+            onConfirm={async (justification) => {
+              setUnlockPending(true);
+              try {
+                await unlockSession.open(lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL", justification);
+                setUnlockDialogOpen(false);
+                toast.success("Unlocked");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Failed to unlock");
+              } finally {
+                setUnlockPending(false);
+              }
+            }}
+          />
+          <ProjectVersionsPanel
+            open={versionsOpen}
+            onOpenChange={setVersionsOpen}
+            projectId={id}
+            orgId={orgId}
+          />
+        </>
+      )}
     </RequirePermission>
   );
 }

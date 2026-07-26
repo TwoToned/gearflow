@@ -36,3 +36,17 @@ export function useClientSearch(
 ): ClientDoc[] | undefined {
   return useAuthedQuery(api.search.clients, orgId ? { orgId, query } : "skip");
 }
+
+export type ClientContactDoc = Doc<"clientContacts">;
+
+/**
+ * A client's contacts (WS9 #948) — powers the project wizard / project sidebar
+ * contact picker. Pass `clientId`/`orgId: undefined` to skip (e.g. no client
+ * selected yet).
+ */
+export function useClientContacts(
+  clientId: string | undefined,
+  orgId: string | undefined,
+): ClientContactDoc[] | undefined {
+  return useAuthedQuery(api.clientContacts.forClient, clientId && orgId ? { clientId, orgId } : "skip");
+}

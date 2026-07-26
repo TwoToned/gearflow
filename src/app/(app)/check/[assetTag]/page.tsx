@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { use, useState, useRef } from "react";
+import { use, useState, useRef, useEffect } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
 import {
@@ -16,6 +16,8 @@ import { useRouter } from "next/navigation";
 
 import { lookupAssetForAdHocCheck } from "@/server/check-records";
 import { useCheckRecordWrites } from "@/hooks/use-check-record-writes";
+import { useScanFeedback } from "@/hooks/use-scan-feedback";
+import { ScanAudioToggle } from "@/components/scan-audio-toggle";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { focusRing } from "@/lib/utils";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -39,6 +41,7 @@ export default function AdHocCheckPage({
 
   const [completed, setCompleted] = useState(false);
   const checkRecordWrites = useCheckRecordWrites();
+  const scanFeedback = useScanFeedback();
 
   const { data: result, isLoading } = useServerQuery({
     queryKey: ["ad-hoc-lookup", orgId, decodedTag],
@@ -57,6 +60,15 @@ export default function AdHocCheckPage({
     } | null;
   } | undefined;
 
+  // Unknown tag — resolved (we know it's not in the system) but needs the
+  // operator's attention, not a hard error. Fires once per tag lookup.
+  useEffect(() => {
+    if (!isLoading && lookup && !lookup.found) {
+      scanFeedback.play("exception");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, lookup?.found, decodedTag]);
+
   const submitMutation = useServerMutation({
     mutationFn: (checks: Array<{
       checkItemId: string;
@@ -70,21 +82,28 @@ export default function AdHocCheckPage({
         checks,
       }),
     onSuccess: () => {
+      scanFeedback.play("success");
       setCompleted(true);
       toast.success("Ad-hoc check saved");
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      scanFeedback.play("error");
+      toast.error(e.message);
+    },
   });
 
   return (
     <RequirePermission resource="warehouse" action="scan">
       <PageMeta title="Ad-Hoc Check" />
       <div className="mx-auto max-w-xl space-y-6">
-        <div>
-          <h1 className="t-title text-ink">Ad-hoc check</h1>
-          <p className="text-ui-text text-muted mt-1">
-            Perform a quality check on an asset outside of a project.
-          </p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 className="t-title text-ink">Ad-hoc check</h1>
+            <p className="text-ui-text text-muted mt-1">
+              Perform a quality check on an asset outside of a project.
+            </p>
+          </div>
+          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
         </div>
 
         {/* Scanner for navigating to different tags */}

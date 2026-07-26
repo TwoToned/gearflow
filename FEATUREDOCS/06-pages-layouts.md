@@ -1,6 +1,6 @@
 # Page Routes & Layouts
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 ## Layout Architecture
 
@@ -57,6 +57,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | Path | Page |
 |------|------|
 | `/dashboard` | Overview, stats, recent activity, upcoming projects |
+| `/my-tasks` | This user's open tasks (direct + crew assignment) across every project, grouped Overdue/Today/This week/Later |
 | `/assets/registry` | Serialized + bulk asset list |
 | `/assets/registry/new` | Create asset(s) |
 | `/assets/registry/[id]` | Asset detail (tabs: info, history, maintenance, media) |
@@ -67,7 +68,8 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/assets/models/[id]/edit` | Edit model |
 | `/assets/categories` | Category list (table with indented children) |
 | `/assets/categories/[id]` | Category detail (subcategories, models & kits tabs) |
-| `/availability` | Availability calendar (top-level) |
+| `/availability` | Availability calendar (top-level) — draws RENTAL window bars, not the PROJECT window (deliberate, WS2 #941 — pricing's window is what's visually "booked"; see [11-availability.md](./11-availability.md)) |
+| `/overbookings` | Overbookings & Gaps board (WS3 #942) — org-wide hard/pencilled overbooking + crew-gap risk over a selectable date range; see [65-overbookings-gaps-board.md](./65-overbookings-gaps-board.md) |
 | `/kits` | Kit list |
 | `/kits/new` | Create kit |
 | `/kits/[id]` | Kit detail (contents, media, status) |
@@ -84,7 +86,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/crew/[id]/edit` | Edit crew member |
 | `/clients` | Client list |
 | `/clients/new` | Create client |
-| `/clients/[id]` | Client detail |
+| `/clients/[id]` | Client detail (projects, notes, files tabs; sidebar contacts manager — see FEATUREDOCS/63) |
 | `/clients/[id]/edit` | Edit client |
 | `/suppliers` | Supplier list |
 | `/suppliers/new` | Create supplier |
@@ -92,6 +94,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/suppliers/[id]/edit` | Edit supplier |
 | `/suppliers/[id]/orders/new` | Create supplier order |
 | `/warehouse` | Warehouse project list |
+| `/warehouse/returns` | Returns station — org-wide, project-less scan-and-return (issue #944; static route, resolved before the `[projectId]` dynamic sibling — see FEATUREDOCS/12) |
 | `/warehouse/[projectId]` | Check out/in interface |
 | `/warehouse/[projectId]/pull-sheet` | Pull sheet preview + print |
 | `/locations` | Location hierarchy |
@@ -123,7 +126,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 ### Public (Token-Authenticated)
 | Path | Page |
 |------|------|
-| `/warehouse/display/[token]` | Warehouse TV dashboard (dark, auto-refresh, no login) |
+| `/warehouse/display/[token]` | Warehouse TV dashboard (dark, auto-refresh, no login) — dispatch/return/prep cards read the PROJECT window (`getProjectWindow`, WS2 #941), see [11-availability.md](./11-availability.md) |
 
 ### Admin
 | Path | Page |

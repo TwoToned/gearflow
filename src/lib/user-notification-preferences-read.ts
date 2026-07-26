@@ -49,6 +49,7 @@ export function resolvePreferenceValues(
     pendingOffers: coerce(raw.pendingOffers, NOTIFICATION_PREFERENCE_DEFAULTS.pendingOffers),
     pendingTimesheets: coerce(raw.pendingTimesheets, NOTIFICATION_PREFERENCE_DEFAULTS.pendingTimesheets),
     flaggedAsset: coerce(raw.flaggedAsset, NOTIFICATION_PREFERENCE_DEFAULTS.flaggedAsset),
+    incidentReport: coerce(raw.incidentReport, NOTIFICATION_PREFERENCE_DEFAULTS.incidentReport),
   };
 }
 

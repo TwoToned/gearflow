@@ -182,4 +182,31 @@ describe("regenerateSubHireLines — full pipeline", () => {
     // Rows were recreated (new cuids), not reused.
     expect(new Set(second.map((l) => l.id))).not.toEqual(new Set(first.map((l) => l.id)));
   });
+
+  // WS7 #946 — projectLineItems.supplierOrderId was a dormant field with NO writer
+  // anywhere prior to this change; every generated line (parent, kit-child, and
+  // standalone) must now carry the sub-hire's linked purchase order, if any.
+  test("stamps supplierOrderId (the WS7 #946 link) onto every generated line when the sub-hire is linked", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await seedRealisticSubHire(ctx);
+      await ctx.db.insert("supplierOrders", { id: "po1", organizationId: ORG, supplierId: "sup1", orderNumber: "PO-1", type: "SUBHIRE" });
+      const sh = await ctx.db.query("subHires").withIndex("by_cuid", (q) => q.eq("id", "sh1")).first();
+      if (sh) await ctx.db.patch(sh._id, { supplierOrderId: "po1" });
+      await regenerateSubHireLines(ctx, "sh1", ORG, NOW + 1);
+    });
+    const lines = await linesForProject(t);
+    expect(lines).toHaveLength(3); // parent + kit-child + standalone
+    for (const l of lines) expect(l.supplierOrderId).toBe("po1");
+  });
+
+  test("no supplierOrderId on generated lines when the sub-hire is unlinked", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await seedRealisticSubHire(ctx); // no supplierOrderId set
+      await regenerateSubHireLines(ctx, "sh1", ORG, NOW + 1);
+    });
+    const lines = await linesForProject(t);
+    for (const l of lines) expect(l.supplierOrderId).toBeUndefined();
+  });
 });

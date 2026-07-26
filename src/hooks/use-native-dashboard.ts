@@ -19,6 +19,9 @@ export interface NativeDashboardStats {
   activeCrew: number;
   pendingCrewOffers: number;
   maintenanceDue: number;
+  /** WS6 #945 — distinct models with an open, due recurring-PM cycle. Separate
+   *  from `maintenanceDue` (which excludes schedule-generated records). */
+  modelsDueForService: number;
   overdueReturns: number;
   countersReady: boolean;
 }
@@ -104,6 +107,62 @@ export function useNativeBlocking(orgId: string | undefined) {
 export function useNativeActivity(orgId: string | undefined) {
   const enabled = !!orgId;
   return useAuthedQuery(api.dashboardActivity.bundle, enabled ? { orgId: orgId! } : "skip");
+}
+
+export interface NativeMyOpenTask {
+  id: string;
+  title: string;
+  status: "TODO" | "IN_PROGRESS" | "DONE";
+  priority: "LOW" | "NORMAL" | "HIGH";
+  dueDate: number | null;
+  overdue: boolean;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  assigneeUserId: string | null;
+  assigneeCrewId: string | null;
+}
+
+/**
+ * projectTasks.myOpenTasks: this user's open tasks across every project
+ * (direct + crew assignment), sorted overdue → due asc → undated last →
+ * priority, bounded to 100. Backs both the `/my-tasks` page and the
+ * dashboard's My work tasks-due block. Minute-bucketed `now`, same
+ * convention as the rest of this file (queries can't read the clock).
+ */
+export function useNativeMyOpenTasks(orgId: string | undefined) {
+  const enabled = !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  return useAuthedQuery(
+    api.projectTasks.myOpenTasks,
+    enabled ? { orgId: orgId!, now: nowBucket } : "skip",
+  ) as NativeMyOpenTask[] | undefined;
+}
+
+export interface NativeOverbookingCounts {
+  hardCount: number;
+  pencilledCount: number;
+  saleStockCount: number;
+}
+
+/**
+ * overbookingBoard.counts: the three Overbookings & Gaps dashboard-chip counts
+ * (WS3 #942) — hard overbookings, pencilled collisions, sale stock to
+ * procure — over the board's default 30-day horizon (the dashboard has no
+ * range picker; open `/overbookings` for that). Deliberately the CHEAP counts
+ * query, not the full `bundle` subscription the board page uses — a chip
+ * needs three numbers, not every row.
+ */
+const DAY_MS = 24 * 60 * MINUTE;
+
+export function useNativeOverbookingCounts(orgId: string | undefined): NativeOverbookingCounts | undefined {
+  const enabled = !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  const rangeEnd = enabled ? nowBucket + 30 * DAY_MS : 0;
+  return useAuthedQuery(
+    api.overbookingBoard.counts,
+    enabled ? { orgId: orgId!, rangeStart: nowBucket, rangeEnd } : "skip",
+  ) as NativeOverbookingCounts | undefined;
 }
 
 export interface NativeSubHireStats {

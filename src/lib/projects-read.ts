@@ -2,6 +2,7 @@ import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { ProjectStatus, ProjectType } from "@/generated/prisma/client";
+import { getProjectWindow } from "@/lib/project-window";
 
 export type ConvexProject = Doc<"projects">;
 export type ConvexProjectService = Doc<"projectServices">;
@@ -36,6 +37,7 @@ export interface ProjectRow {
   projectNumber: string;
   name: string;
   clientId: string | null;
+  clientContactId: string | null;
   status: ProjectStatus;
   type: ProjectType;
   description: string | null;
@@ -51,6 +53,12 @@ export interface ProjectRow {
   eventEndTime: string | null;
   loadOutDate: Date | null;
   loadOutTime: string | null;
+  /** WS2 (#941) — the gear-committed window; falls back to rental* when unset.
+   *  Use `getProjectWindow` to resolve, don't read these raw for availability. */
+  projectStartDate: Date | null;
+  projectStartTime: string | null;
+  projectEndDate: Date | null;
+  projectEndTime: string | null;
   rentalStartDate: Date | null;
   rentalEndDate: Date | null;
   projectManagerId: string | null;
@@ -89,6 +97,7 @@ export function mapProject(d: ConvexProject): ProjectRow {
     projectNumber: d.projectNumber,
     name: d.name,
     clientId: orNull(d.clientId),
+    clientContactId: orNull(d.clientContactId),
     status: (d.status ?? "ENQUIRY") as ProjectStatus,
     type: (d.type ?? "OTHER") as ProjectType,
     description: orNull(d.description),
@@ -104,6 +113,10 @@ export function mapProject(d: ConvexProject): ProjectRow {
     eventEndTime: orNull(d.eventEndTime),
     loadOutDate: toDate(d.loadOutDate),
     loadOutTime: orNull(d.loadOutTime),
+    projectStartDate: toDate(d.projectStartDate),
+    projectStartTime: orNull(d.projectStartTime),
+    projectEndDate: toDate(d.projectEndDate),
+    projectEndTime: orNull(d.projectEndTime),
     rentalStartDate: toDate(d.rentalStartDate),
     rentalEndDate: toDate(d.rentalEndDate),
     projectManagerId: orNull(d.projectManagerId),
@@ -162,20 +175,26 @@ function epochToDate(ms: number | undefined | null): Date | null {
  * scalar-only `prisma.project.findUnique(... select dates ...)` read — the
  * `project` row is dual-written to Convex, so these come from the Convex doc.
  * Epoch-ms is converted back to `Date` because `serialize()` round-trips Dates.
+ *
+ * WS2 (#941) — collapsed from the four load/event moments to WINDOW (the
+ * resolved project window via `getProjectWindow` — falls back to rental when
+ * unset) + RENTAL (the raw chargeable dates, kept as a distinct fallback so a
+ * project whose only dates are rental ones still offers those days).
  */
 export type CallSheetMilestoneDates = {
-  loadInDate: Date | null;
-  eventStartDate: Date | null;
-  eventEndDate: Date | null;
-  loadOutDate: Date | null;
+  windowStart: Date | null;
+  windowEnd: Date | null;
+  rentalStartDate: Date | null;
+  rentalEndDate: Date | null;
 };
 
 export function mapCallSheetMilestoneDates(project: ConvexProject): CallSheetMilestoneDates {
+  const window = getProjectWindow(project);
   return {
-    loadInDate: epochToDate(project.loadInDate),
-    eventStartDate: epochToDate(project.eventStartDate),
-    eventEndDate: epochToDate(project.eventEndDate),
-    loadOutDate: epochToDate(project.loadOutDate),
+    windowStart: epochToDate(window.start ?? undefined),
+    windowEnd: epochToDate(window.end ?? undefined),
+    rentalStartDate: epochToDate(project.rentalStartDate),
+    rentalEndDate: epochToDate(project.rentalEndDate),
   };
 }
 

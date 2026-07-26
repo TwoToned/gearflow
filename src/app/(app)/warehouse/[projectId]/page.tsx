@@ -33,6 +33,8 @@ import {
   getAvailableAssetsForModels,
 } from "@/server/warehouse";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
+import { useScanFeedback } from "@/hooks/use-scan-feedback";
+import { ScanAudioToggle } from "@/components/scan-audio-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -79,6 +81,7 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { OnlinePickList } from "@/components/warehouse/online-pick-list";
 import { ItemCheckForm } from "@/components/warehouse/item-check-form";
+import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 import { CloseOutTab } from "@/components/warehouse/close-out-tab";
 import { PickPrepTab } from "@/components/warehouse/pick-prep-tab";
 import { DeployTab } from "@/components/warehouse/deploy-tab";
@@ -93,12 +96,15 @@ import {
   isKitParent,
   isAccessoryParent,
   accessoryChildrenOf,
-  isExpandableParent,
-  expandableChildrenOf,
   collectAllVerifiableIds,
   bulkUnitKey,
   bulkUnpackedRemaining,
   bulkPackedWaiting,
+  isInPickPrepStage,
+  isInPreppedStage,
+  isInReturnedStage,
+  isInDeprepedStage,
+  isInCheckedOutStage,
 } from "@/components/warehouse/warehouse-types";
 import {
   pullItem,
@@ -408,6 +414,22 @@ function WarehouseProjectPage({
   const [defaultOverrideReason, setDefaultOverrideReason] = useState("");
   const [optionalSkipReasons, setOptionalSkipReasons] = useState<Record<string, { preset: string; note: string }>>({});
 
+  // Accessory partial-verification confirm (issue #794's remaining acceptance
+  // criterion) — mirrors the kit prep dialog's "Deploy Verified Only"/"Deploy
+  // All" UX, but for the actual Deploy action: an accessory parent whose
+  // PACKED accessories are only partially click-to-verified offers a choice
+  // instead of silently cascading everything.
+  const [accessoryVerifyConfirm, setAccessoryVerifyConfirm] = useState<{
+    parentLineItemId: string;
+    parentAssetId?: string;
+    parentName: string;
+    verifiedCount: number;
+    totalCount: number;
+    /** Verified accessories' own asset/bulkAsset identities — what
+     *  `checkOutItems`'s `includeAccessoryIds` actually narrows by. */
+    verifiedAccessoryIds: string[];
+  } | null>(null);
+
   // Check form state — opens when a scanned item's model has check items
   const [checkFormOpen, setCheckFormOpen] = useState(false);
   const [checkFormData, setCheckFormData] = useState<{
@@ -428,6 +450,11 @@ function WarehouseProjectPage({
     fromDeprep?: boolean;
   } | null>(null);
   const [checkFormSubmitting, setCheckFormSubmitting] = useState(false);
+
+  // "Report issue" dialog (GitHub #898) — opened from a CHECKED_OUT line item
+  // row on the Return tab (Deployed gear). Non-null target = dialog open.
+  const [reportIssueTarget, setReportIssueTarget] = useState<LineItem | null>(null);
+  const handleReportIssue = (item: LineItem) => setReportIssueTarget(item);
 
   // Queue for multi-item check flows
   type CheckQueueItem = {
@@ -686,6 +713,8 @@ function WarehouseProjectPage({
   const isManagerTier = currentRole === "owner" || currentRole === "admin" || currentRole === "manager";
   // Browser-direct check-record writes (deprep/pack/flag/store + kit/child/adhoc).
   const checkRecordWrites = useCheckRecordWrites();
+  // Scan-verdict audio feedback (success/error/exception tones) — see FEATUREDOCS/12.
+  const scanFeedback = useScanFeedback();
 
   // Post-write refresh is now a no-op: the native subscription pushes every
   // warehouseOps change live over the WebSocket, so an explicit refetch is
@@ -707,7 +736,7 @@ function WarehouseProjectPage({
   }, [projectId, warehouseWrites]);
 
   const checkOutMutation = useServerMutation({
-    mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
+    mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>; includeAccessories?: boolean }) => {
       const result = await warehouseWrites.checkOutItems(projectId, params.items, params.includeAccessories);
       // Sync container status for affected containers — ONE batch call (was one
       // round-trip per container).
@@ -949,10 +978,14 @@ function WarehouseProjectPage({
               // No checks — mark kit children as prepped
               prepKitChildren(projectId, kitLi.id)
                 .then(() => {
+                  scanFeedback.play("success");
                   toast.success(`Kit prepped: ${kitResult.assetName}`);
                   invalidate();
                 })
-                .catch((e) => showError(e, { fallbackTitle: "Failed to prep kit" }));
+                .catch((e) => {
+                  scanFeedback.play("error");
+                  showError(e, { fallbackTitle: "Failed to prep kit" });
+                });
               setScanValue("");
               scanInputRef.current?.focus();
             }
@@ -962,6 +995,7 @@ function WarehouseProjectPage({
             not_on_project: "Kit not assigned to this project",
             already_checked_out: "Kit already deployed",
           };
+          scanFeedback.play("error");
           toast.error(messages[kitResult.reason as string] || "Cannot prep this kit");
           setScanValue("");
           scanInputRef.current?.focus();
@@ -990,8 +1024,10 @@ function WarehouseProjectPage({
             next.add(kitGroupKey);
             return next;
           });
+          scanFeedback.play("success");
           toast.success(`Verified: ${memberResult.assetName}`);
         } else {
+          scanFeedback.play("error");
           toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
         setScanValue("");
@@ -1001,6 +1037,9 @@ function WarehouseProjectPage({
 
       if (result.found && result.type === "asset_child") {
         const r = result as { assetName: string; parentAssetTag: string | null };
+        // Disambiguation needed — scanned an accessory, not its parent. Resolved
+        // but needs attention, not a hard failure.
+        scanFeedback.play("exception");
         toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent; accessories move with it.`);
         setScanValue("");
         scanInputRef.current?.focus();
@@ -1034,15 +1073,22 @@ function WarehouseProjectPage({
           // No check items — prep directly (set prepStatus=PACKED, no deploy)
           prepItemDirect(projectId, result.lineItemId, result.assetId || undefined, undefined, selectedContainer || null)
             .then(() => {
+              scanFeedback.play("success");
               toast.success(`Prepped: ${result.assetName || "Asset"}`);
               setScanValue("");
               scanInputRef.current?.focus();
               invalidate();
             })
-            .catch((e) => showError(e));
+            .catch((e) => {
+              scanFeedback.play("error");
+              showError(e);
+            });
         }
       } else if (result.found && !result.lineItemId) {
         if (result.reason === "not_on_project" && "modelId" in result && result.modelId) {
+          // Asset found but not on this project — resolved but needs a decision
+          // (add it?), not a hard failure.
+          scanFeedback.play("exception");
           // Prompt user to add asset to the project
           setAddPromptData({
             assetName: result.assetName || "Unknown asset",
@@ -1071,16 +1117,24 @@ function WarehouseProjectPage({
           asset_unavailable: `Asset is ${assetStatus.replace("_", " ").toLowerCase()} and cannot be deployed`,
           tt_blocked: `Test & Tag ${ttStatus.toLowerCase()}${ttNextDue ? ` — next test due ${ttNextDue}` : ""}. Cannot deploy until tested.`,
         };
+        // "already_returned" is resolved but needs attention (all units are back
+        // already) rather than a hard failure — every other reason here blocks
+        // the scan outright.
+        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error");
         toast.error(messages[result.reason as string] || "Cannot deploy this asset");
         setScanValue("");
         scanInputRef.current?.focus();
       } else {
+        // Unknown tag — resolved (we know it's not in the system) but needs the
+        // operator's attention, not a hard error.
+        scanFeedback.play("exception");
         toast.error("Asset not found");
         setScanValue("");
         scanInputRef.current?.focus();
       }
     },
     onError: (e) => {
+      scanFeedback.play("error");
       showError(e);
       setScanValue("");
       scanInputRef.current?.focus();
@@ -1097,11 +1151,16 @@ function WarehouseProjectPage({
         if (kitLi && kitLi.prepStatus === "PACKED") {
           kitCheckOutMutation
             .mutateAsync(kitResult.kitId)
-            .then(() => toast.success(`Deployed kit: ${kitResult.assetName}`))
-            .catch(() => {});
+            .then(() => {
+              scanFeedback.play("success");
+              toast.success(`Deployed kit: ${kitResult.assetName}`);
+            })
+            .catch(() => scanFeedback.play("error"));
         } else if (kitResult.reason === "already_checked_out") {
+          scanFeedback.play("error");
           toast.error("Kit already deployed");
         } else {
+          scanFeedback.play("error");
           toast.error("Kit is not prepped yet — prep it first in Pick/Prep");
         }
         setDeployScanValue("");
@@ -1111,6 +1170,7 @@ function WarehouseProjectPage({
 
       if (result.found && result.type === "kit_member") {
         const memberResult = result as { kitId: string | null; kitAssetTag: string | null; assetName: string };
+        scanFeedback.play("error");
         toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} — scan the kit barcode to deploy`);
         setDeployScanValue("");
         deployScanInputRef.current?.focus();
@@ -1119,6 +1179,8 @@ function WarehouseProjectPage({
 
       if (result.found && result.type === "asset_child") {
         const r = result as { assetName: string; parentAssetTag: string | null };
+        // Disambiguation needed — scanned an accessory, not its parent.
+        scanFeedback.play("exception");
         toast.error(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to deploy; it moves with the parent.`);
         setDeployScanValue("");
         deployScanInputRef.current?.focus();
@@ -1130,22 +1192,31 @@ function WarehouseProjectPage({
         if (matchedLi?.prepStatus === "PACKED" && matchedLi.status !== "CHECKED_OUT") {
           checkOutMutation
             .mutateAsync({ items: [{ lineItemId: result.lineItemId, assetId: result.assetId || undefined }] })
-            .then(() => toast.success(`Deployed: ${result.assetName || "Item"}`))
-            .catch(() => {});
+            .then(() => {
+              scanFeedback.play("success");
+              toast.success(`Deployed: ${result.assetName || "Item"}`);
+            })
+            .catch(() => scanFeedback.play("error"));
         } else if (matchedLi?.status === "CHECKED_OUT") {
+          scanFeedback.play("error");
           toast.error("Item already deployed");
         } else {
+          scanFeedback.play("error");
           toast.error("Item is not prepped yet — prep it first in Pick/Prep");
         }
       } else if (result.found && !result.lineItemId) {
+        scanFeedback.play("error");
         toast.error(result.reason === "not_on_project" ? "Asset not on this project" : "Cannot deploy this item");
       } else {
+        // Unknown tag.
+        scanFeedback.play("exception");
         toast.error("Asset not found");
       }
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
     },
     onError: (e) => {
+      scanFeedback.play("error");
       showError(e);
       setDeployScanValue("");
       deployScanInputRef.current?.focus();
@@ -1183,12 +1254,13 @@ function WarehouseProjectPage({
               kitCheckInMutation
                 .mutateAsync({ kitId: kitResult.kitId, returnCondition: returnCondition as "GOOD" | "DAMAGED" | "MISSING" })
                 .then(() => {
+                  scanFeedback.play("success");
                   toast.success(`Kit returned: ${kitResult.assetName}`);
                   setReturnScanValue("");
                   setReturnNotes("");
                   returnScanInputRef.current?.focus();
                 })
-                .catch(() => {});
+                .catch(() => scanFeedback.play("error"));
             }
           }
         } else {
@@ -1196,6 +1268,7 @@ function WarehouseProjectPage({
             not_on_project: "Kit not assigned to this project",
             not_checked_out: "Kit is not deployed",
           };
+          scanFeedback.play("error");
           toast.error(messages[kitResult.reason as string] || "Cannot return this kit");
           setReturnScanValue("");
           returnScanInputRef.current?.focus();
@@ -1224,8 +1297,10 @@ function WarehouseProjectPage({
             next.add(kitGroupKey);
             return next;
           });
+          scanFeedback.play("success");
           toast.success(`Verified: ${memberResult.assetName}`);
         } else {
+          scanFeedback.play("error");
           toast.error(`This asset is in a kit${memberResult.kitAssetTag ? ` (${memberResult.kitAssetTag})` : ""} not on this project.`);
         }
         setReturnScanValue("");
@@ -1235,6 +1310,8 @@ function WarehouseProjectPage({
 
       if (result.found && result.type === "asset_child") {
         const r = result as { assetName: string; parentAssetTag: string | null };
+        // Disambiguation needed — scanned an accessory, not its parent.
+        scanFeedback.play("exception");
         toast.info(`${r.assetName} is an accessory${r.parentAssetTag ? ` of ${r.parentAssetTag}` : ""} — scan the parent to return; it comes back with the parent.`);
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
@@ -1278,12 +1355,13 @@ function WarehouseProjectPage({
               }],
             })
             .then(() => {
+              scanFeedback.play("success");
               toast.success(`Returned: ${result.assetName || "Asset"}`);
               setReturnScanValue("");
               setReturnNotes("");
               returnScanInputRef.current?.focus();
             })
-            .catch(() => {});
+            .catch(() => scanFeedback.play("error"));
         }
       } else if (result.found && !result.lineItemId) {
         const messages: Record<string, string> = {
@@ -1292,16 +1370,22 @@ function WarehouseProjectPage({
           already_returned: "All units already returned",
           already_checked_out: "Already deployed",
         };
+        // "already_returned" is resolved but needs attention (nothing left to
+        // return), not a hard failure — every other reason here blocks the scan.
+        scanFeedback.play(result.reason === "already_returned" ? "exception" : "error");
         toast.error(messages[result.reason as string] || "Cannot return this asset");
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
       } else {
+        // Unknown tag.
+        scanFeedback.play("exception");
         toast.error("Asset not found");
         setReturnScanValue("");
         returnScanInputRef.current?.focus();
       }
     },
     onError: (e) => {
+      scanFeedback.play("error");
       showError(e);
       setReturnScanValue("");
       returnScanInputRef.current?.focus();
@@ -1444,126 +1528,27 @@ function WarehouseProjectPage({
   const stageCounts = summarizeWarehouseStages(equipmentItems);
 
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
-  const pickPrepItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    // Bulk lines are quantity-aware: show while any ordered unit is still
-    // unpacked, even once some units are prepped/deployed. This is what keeps
-    // "prep 1 of 10" from yanking the other 9 out of Pick. (Kit/accessory
-    // parents are handled by their child rollup below, never as a bulk line.)
-    if (isBulkItem(item) && !isExpandableParent(item)) return bulkUnpackedRemaining(item) > 0;
-    if (item.status === "CHECKED_OUT") return false;
-    // A returned piece of gear is DONE with the prep half of the flow — it lives
-    // in the Returned / De-prep stage, never back here. (Without this, a returned
-    // item whose prepStatus is no longer PACKED fell through below and reappeared
-    // in Pick/Prep, looking like it had never been sent out.)
-    if (item.status === "RETURNED") return false;
-    // Kit/accessory parents: show if any children still need prepping
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
-        if (c.prepStatus === "PACKED") return false;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus !== "PACKED"
-          );
-        }
-        return true;
-      });
-    }
-    // After prep-splitting, exhausted originals have qty=0 — hide them
-    if (item.quantity <= 0) return false;
-    if (item.prepStatus === "PACKED") return false;
-    return true;
-  });
-
+  // Pick/Prep, Deploy, De-prep-staging, De-prepped, and Return tab membership —
+  // see isInPickPrepStage/isInPreppedStage/isInReturnedStage/isInDeprepedStage/
+  // isInCheckedOutStage in warehouse-types.ts for the shared, tested logic.
+  const pickPrepItems = equipmentItems.filter(isInPickPrepStage);
   // Deploy: items that are prepped (PACKED) but not yet deployed (CHECKED_OUT).
   // Returned gear is excluded — it lives in the De-prep stage, NOT back here
   // (the "to return it goes back to deploy" confusion).
-  const preppedItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    // Bulk lines are quantity-aware: show while any unit is packed and waiting to
-    // deploy, even if some of the line's units are already out or still to pick.
-    // (Kit/accessory parents fall through to the child rollup below, never treated as bulk.)
-    if (isBulkItem(item) && !isExpandableParent(item)) return bulkPackedWaiting(item) > 0;
-    if (item.status === "CHECKED_OUT") return false;
-    if (item.status === "RETURNED") return false;
-    // Kit/accessory parents: show if any children are prepped but not deployed
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED" || c.status === "RETURNED") return false;
-        if (c.prepStatus === "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.status !== "RETURNED" && gc.prepStatus === "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    if (item.quantity <= 0) return false;
-    return item.prepStatus === "PACKED";
-  });
-
+  const preppedItems = equipmentItems.filter(isInPreppedStage);
   // De-prep: gear that's physically back (RETURNED) but still packed — it needs
   // return checks and putting back into inventory. Once de-prepped, prepStatus
   // resets off PACKED and it leaves this list. Mirrors the checkedOutItems shape
   // so it can flow through the same Deploy-tab rendering in "deprep" mode.
-  const returnedItems = equipmentItems.filter((item) => {
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "RETURNED" && c.prepStatus === "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status === "RETURNED" && gc.prepStatus === "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    return item.status === "RETURNED" && item.prepStatus === "PACKED";
-  });
-
+  const returnedItems = equipmentItems.filter(isInReturnedStage);
   // De-prepped: returned gear checked back into inventory (prepStatus reset off
   // PACKED). Terminal stage — a read-only confirmation list.
-  const deprepedItems = equipmentItems.filter((item) => {
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "RETURNED" && c.prepStatus !== "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status === "RETURNED" && gc.prepStatus !== "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    return item.status === "RETURNED" && item.prepStatus !== "PACKED";
-  });
+  const deprepedItems = equipmentItems.filter(isInDeprepedStage);
 
   // Keep old name for compatibility with deploy tab selection logic
   const checkOutItemsList = preppedItems;
 
-  const checkedOutItems = equipmentItems.filter((item) => {
-    // Kit/accessory parents: show in return tab if any children/grandchildren are deployed
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT") return true;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
-        }
-        return false;
-      });
-    }
-    if (isBulkItem(item)) return item.status === "CHECKED_OUT" && item.checkedOutQuantity > item.returnedQuantity;
-    return item.status === "CHECKED_OUT";
-  });
+  const checkedOutItems = equipmentItems.filter(isInCheckedOutStage);
 
   const groupedPrep = groupItems(pickPrepItems, "prep", "prep");
   const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");
@@ -2025,13 +2010,43 @@ function WarehouseProjectPage({
   }
 
   // Deploy selected prepped items (no checks needed — items are already prepped)
-  function runCheckOut(items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) {
+  function runCheckOut(items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>) {
     checkOutMutation
       // Accessories always cascade with their parent (they're permanently
-      // attached) — there's no longer a warehouse toggle for it.
+      // attached) — there's no longer a warehouse toggle for it, except for
+      // the per-item includeAccessoryIds narrowing an item may carry (the
+      // "Deploy Verified Only" partial-action escape hatch below).
       .mutateAsync({ items, includeAccessories: true })
       .then(() => toast.success(`Deployed ${items.length} item${items.length === 1 ? "" : "s"}`))
       .catch(() => {});
+  }
+
+  // Kit-style partial-verification check for the actual Deploy action (issue
+  // #794's remaining acceptance criterion): find the first accessory parent
+  // in the batch whose PACKED accessories are only partly click-to-verified.
+  // Fully-verified, fully-unverified, and accessory-free parents all pass
+  // through untouched — only a genuine partial split needs a choice.
+  // `verifiedKitItems` tracks accessory CHILD LINE ids (the same convention
+  // KitChildRows uses), but the checkout mutation's `includeAccessoryIds`
+  // narrows by accessory ASSET/BULK-ASSET identity — the two are translated
+  // here so the caller never has to know about the mismatch.
+  function findPartiallyVerifiedAccessoryParent(parentLineItemIds: string[]) {
+    for (const id of parentLineItemIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (!li || !isAccessoryParent(li)) continue;
+      const packed = accessoryChildrenOf(li).filter(
+        (c) => c.status !== "CANCELLED" && c.status !== "CHECKED_OUT" && c.prepStatus === "PACKED",
+      );
+      if (packed.length === 0) continue;
+      const verified = packed.filter((c) => verifiedKitItems.has(c.id));
+      if (verified.length > 0 && verified.length < packed.length) {
+        const verifiedAccessoryIds = verified
+          .map((c) => c.assetId ?? c.bulkAssetId ?? "")
+          .filter((v): v is string => v !== "");
+        return { li, verifiedCount: verified.length, totalCount: packed.length, verifiedAccessoryIds };
+      }
+    }
+    return null;
   }
 
   const handleCheckOutSelected = async () => {
@@ -2081,6 +2096,21 @@ function WarehouseProjectPage({
       setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
       setOptionalSkipReasons({});
       setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
+      return;
+    }
+
+    const partial = findPartiallyVerifiedAccessoryParent(serializedLineItemIds);
+    if (partial) {
+      const rest = items.filter((i) => i.lineItemId !== partial.li.id);
+      if (rest.length > 0) runCheckOut(rest);
+      setAccessoryVerifyConfirm({
+        parentLineItemId: partial.li.id,
+        parentAssetId: partial.li.assetId || undefined,
+        parentName: modelDisplayName(partial.li),
+        verifiedCount: partial.verifiedCount,
+        totalCount: partial.totalCount,
+        verifiedAccessoryIds: partial.verifiedAccessoryIds,
+      });
       return;
     }
 
@@ -2543,6 +2573,8 @@ function WarehouseProjectPage({
           {project.client && <p className="text-muted">{project.client.name}</p>}
         </div>
         <div className="flex gap-2">
+          {/* Scan audio toggle — shared across prep/deploy/return scan verdicts */}
+          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           {/* Mobile: Pick List button shown prominently */}
           <Button variant="line" className="sm:hidden" onClick={() => setPickListOpen(true)}>
             <ClipboardList className="mr-2 h-4 w-4" />
@@ -2772,6 +2804,7 @@ function WarehouseProjectPage({
           checkInIsPending={checkInMutation.isPending}
           handleUndeploy={handleUndeploy}
           undeployIsPending={undeployMutation.isPending || undeployKitsMutation.isPending}
+          onReportIssue={handleReportIssue}
           toggleSelection={toggleSelection}
           toggleGroupSelection={toggleGroupSelection}
           toggleAll={toggleAll}
@@ -3017,6 +3050,58 @@ function WarehouseProjectPage({
                 onClick={confirmAccessoryGate}
               >
                 Deploy anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Accessory partial-verification confirm — "Deploy Verified Only" vs
+          "Deploy All", the kit-prep-style dialog applied to the real Deploy
+          action (issue #794's remaining acceptance criterion). */}
+      {accessoryVerifyConfirm && (
+        <Dialog open={true} onOpenChange={() => setAccessoryVerifyConfirm(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Deploy without full verification?</DialogTitle>
+            </DialogHeader>
+            <p className="text-ui-text text-muted">
+              <span className="font-medium text-ink">{accessoryVerifyConfirm.parentName}</span> has{" "}
+              <span className="font-medium text-ink tabular-nums">
+                {accessoryVerifyConfirm.verifiedCount}/{accessoryVerifyConfirm.totalCount}
+              </span>{" "}
+              accessories verified. You can deploy the parent with only the verified accessories,
+              or deploy with everything.
+            </p>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="line" size="sm" onClick={() => setAccessoryVerifyConfirm(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="line"
+                size="sm"
+                onClick={() => {
+                  runCheckOut([{
+                    lineItemId: accessoryVerifyConfirm.parentLineItemId,
+                    assetId: accessoryVerifyConfirm.parentAssetId,
+                    includeAccessoryIds: accessoryVerifyConfirm.verifiedAccessoryIds,
+                  }]);
+                  setAccessoryVerifyConfirm(null);
+                }}
+              >
+                Deploy Verified Only ({accessoryVerifyConfirm.verifiedCount})
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  runCheckOut([{
+                    lineItemId: accessoryVerifyConfirm.parentLineItemId,
+                    assetId: accessoryVerifyConfirm.parentAssetId,
+                  }]);
+                  setAccessoryVerifyConfirm(null);
+                }}
+              >
+                Deploy All ({accessoryVerifyConfirm.totalCount})
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -3368,6 +3453,20 @@ function WarehouseProjectPage({
           }}
         />
       )}
+      <ReportIssueDialog
+        open={reportIssueTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setReportIssueTarget(null);
+        }}
+        targetLabel={
+          reportIssueTarget?.asset?.assetTag
+          ?? reportIssueTarget?.bulkAsset?.assetTag
+          ?? (reportIssueTarget ? modelDisplayName(reportIssueTarget) : "item")
+        }
+        projectId={projectId}
+        lineItemId={reportIssueTarget?.id}
+        assetId={reportIssueTarget?.assetId ?? undefined}
+      />
     </div>
     </FadeIn>
     </RequirePermission>

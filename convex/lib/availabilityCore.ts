@@ -19,6 +19,7 @@
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { getProjectWindow } from "./projectWindow";
 
 // ─── Pure stock breakdown (copied byte-for-byte from overbooking-core.ts) ─────
 
@@ -56,6 +57,50 @@ export function computeStockBreakdown(model: {
 
 /** Project statuses whose bookings are released (mirrors server literal list). */
 const DEAD_PROJECT_STATUSES = ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"];
+
+// ─── Two-layer hard/pencilled availability (WS3 #942) ─────────────────────────
+// Byte-for-byte duplicate of `src/lib/overbooking-core.ts`'s
+// PENCILLED_PROJECT_STATUSES/HARD_PROJECT_STATUSES/isConfirmedOrLater — the
+// Convex bundler can't resolve the `@/` alias, so this is pinned against the
+// original by a cross-import equality test in `availabilityCore.test.ts` (same
+// pattern as the stock-math pin above).
+
+/**
+ * Statuses where the GIG ITSELF is still speculative — every one of its lines,
+ * optional or not, stays PENCILLED (spec decision, WS3 #942/"Overbookings & Gaps").
+ * Mirrors `stageIndexForStatus` stages before "confirmed"
+ * (`src/components/projects/project-lifecycle.tsx`) without importing the
+ * component. Never overlaps `DEAD_PROJECT_STATUSES` — a project in one of those
+ * is already excluded from the booking window entirely upstream, so this set
+ * only needs to partition the "still alive" statuses into pencilled vs hard.
+ */
+export const PENCILLED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  "ENQUIRY",
+  "QUOTING",
+  "QUOTED",
+]);
+
+/**
+ * Statuses where the gig is locked in — every non-`isOptional` line HARD-holds
+ * stock; an `isOptional` line stays pencilled regardless (the "confirmed gigs
+ * hard-hold everything except optional lines" rule).
+ */
+export const HARD_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  "CONFIRMED",
+  "PREPPING",
+  "CHECKED_OUT",
+  "ON_SITE",
+]);
+
+/**
+ * True once a project's status has passed QUOTED into CONFIRMED-or-later — the
+ * "gig is locked in" boundary the two-layer pencil rule keys off. For any status
+ * this doesn't explicitly recognise as hard, the safe default is `false`
+ * (pencilled) — never silently promote an unrecognised status to hard.
+ */
+export function isConfirmedOrLater(status: string | null | undefined): boolean {
+  return status != null && HARD_PROJECT_STATUSES.has(status);
+}
 
 // ─── Model availability bundle (mirror of availabilityCheck.checkBundle) ──────
 
@@ -150,17 +195,17 @@ export function computeModelAvailability(
 
   let overlapping: Doc<"projectLineItems">[];
   if (hasDates) {
+    // WS2 (#941) — each CANDIDATE project's overlap is tested against its PROJECT
+    // window (getProjectWindow; falls back to rental when unset), not its rental
+    // window directly.
     const conflictProjectIds = new Set(
       projects
-        .filter(
-          (p) =>
-            !p.isTemplate &&
-            !DEAD_PROJECT_STATUSES.includes(p.status ?? "") &&
-            p.rentalStartDate != null &&
-            p.rentalEndDate != null &&
-            (p.rentalStartDate as number) <= rentalEnd &&
-            (p.rentalEndDate as number) >= rentalStart,
-        )
+        .filter((p) => {
+          if (p.isTemplate) return false;
+          if (DEAD_PROJECT_STATUSES.includes(p.status ?? "")) return false;
+          const { start, end } = getProjectWindow(p);
+          return start != null && end != null && start <= rentalEnd && end >= rentalStart;
+        })
         .map((p) => p.id),
     );
     overlapping = lines.filter(
@@ -242,8 +287,10 @@ export async function findAssetConflict(
     if (p.id === excludeProjectId) continue;
     if (p.isTemplate) continue;
     if (DEAD_PROJECT_STATUSES.includes(p.status ?? "")) continue;
-    if (p.rentalStartDate == null || p.rentalEndDate == null) continue;
-    if ((p.rentalStartDate as number) <= rentalEnd && (p.rentalEndDate as number) >= rentalStart) {
+    // WS2 (#941) — candidate's PROJECT window, not rental directly.
+    const { start, end } = getProjectWindow(p);
+    if (start == null || end == null) continue;
+    if (start <= rentalEnd && end >= rentalStart) {
       conflictSet.add(p.id);
     }
   }
@@ -304,8 +351,10 @@ export async function findKitConflict(
     if (p.id === excludeProjectId) continue;
     if (p.isTemplate) continue;
     if (DEAD_PROJECT_STATUSES.includes(p.status ?? "")) continue;
-    if (p.rentalStartDate == null || p.rentalEndDate == null) continue;
-    if ((p.rentalStartDate as number) <= rentalEnd && (p.rentalEndDate as number) >= rentalStart) {
+    // WS2 (#941) — candidate's PROJECT window, not rental directly.
+    const { start, end } = getProjectWindow(p);
+    if (start == null || end == null) continue;
+    if (start <= rentalEnd && end >= rentalStart) {
       conflictSet.add(p.id);
     }
   }

@@ -9,6 +9,8 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 import { assertStrLen, assertNumRange, assertArrayMax } from "./lib/fieldGuards";
+import { assertProjectInOrg } from "./projectLineItems";
+import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import * as enums from "./lib/validators";
 
 /**
@@ -120,10 +122,12 @@ async function computeStillHeldIds(
 ): Promise<Set<string>> {
   const stillHeld = new Set<string>();
   for (const assetId of assetIds) {
-    const links = await ctx.db
-      .query("maintenanceRecordAssets")
-      .withIndex("by_assetId", (q) => q.eq("assetId", assetId))
-      .collect();
+    const links = (
+      await ctx.db
+        .query("maintenanceRecordAssets")
+        .withIndex("by_assetId", (q) => q.eq("assetId", assetId))
+        .collect()
+    ).filter(isLinkRow); // WS6: a CHECKOFF row sharing this assetId never holds anything
     for (const l of links) {
       if (l.maintenanceRecordId === excludeRecordId) continue;
       const rec = await ctx.db
@@ -161,8 +165,27 @@ async function releaseAssets(
   }
 }
 
-/** Existing asset links for a record (parent-scoped; the parent org is checked). */
+/**
+ * Existing asset LINKS for a record (parent-scoped; the parent org is checked).
+ * Filters out WS6 CHECKOFF rows — a recurring-PM progress row sharing this
+ * record's id is never a hold/release link (see maintenanceRecordAssetKind.ts).
+ */
 async function existingLinks(ctx: MutationCtx, recordId: string) {
+  return (
+    await ctx.db
+      .query("maintenanceRecordAssets")
+      .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", recordId))
+      .collect()
+  ).filter(isLinkRow);
+}
+
+/**
+ * ALL `maintenanceRecordAssets` rows for a record, BOTH kinds — used only by the
+ * cascade delete (deleteNative below). Deleting a record must remove its WS6
+ * CHECKOFF progress history too, not just its hold/release LINK rows, or a
+ * deleted record would leave orphaned rows pointing at a nonexistent parent.
+ */
+async function allRecordAssetRows(ctx: MutationCtx, recordId: string) {
   return await ctx.db
     .query("maintenanceRecordAssets")
     .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", recordId))
@@ -184,18 +207,24 @@ async function insertLink(
   const asset = await fetchOrgAsset(ctx, orgId, assetId);
   if (!asset) throw new ConvexError("Asset not found in organization: " + assetId);
 
-  const pair = await ctx.db
-    .query("maintenanceRecordAssets")
-    .withIndex("by_maintenanceRecordId_assetId", (q) =>
-      q.eq("maintenanceRecordId", recordId).eq("assetId", assetId),
-    )
-    .first();
-  if (pair) return; // idempotent on the unique (recordId, assetId) pair
+  // WS6: the composite index can also return a CHECKOFF row sharing this
+  // (record, asset) pair (a serialised unit already checked off on this cycle) —
+  // that is NOT a hold/release link, so only a LINK row satisfies idempotency.
+  const pair = (
+    await ctx.db
+      .query("maintenanceRecordAssets")
+      .withIndex("by_maintenanceRecordId_assetId", (q) =>
+        q.eq("maintenanceRecordId", recordId).eq("assetId", assetId),
+      )
+      .collect()
+  ).find(isLinkRow);
+  if (pair) return; // idempotent on the unique (recordId, assetId) LINK pair
 
-  // The (recordId, assetId) pair does NOT exist (checked above), so any row already
-  // holding this linkId is a genuine collision — reusing it for a DIFFERENT (record,
-  // asset) would either corrupt by_cuid or silently drop the requested link (leaving
-  // the asset held IN_MAINTENANCE with no link to release it). Reject unconditionally.
+  // The (recordId, assetId) LINK pair does NOT exist (checked above), so any row
+  // already holding this linkId is a genuine collision — reusing it for a
+  // DIFFERENT (record, asset) would either corrupt by_cuid or silently drop the
+  // requested link (leaving the asset held IN_MAINTENANCE with no link to
+  // release it). Reject unconditionally.
   const idDup = await ctx.db
     .query("maintenanceRecordAssets")
     .withIndex("by_cuid", (q) => q.eq("id", linkId))
@@ -205,6 +234,7 @@ async function insertLink(
     id: linkId,
     maintenanceRecordId: recordId,
     assetId,
+    kind: "LINK",
   });
 }
 
@@ -220,6 +250,11 @@ export const createNative = mutation({
     status: v.optional(enums.MaintenanceStatus),
     title: v.string(),
     description: v.optional(v.string()),
+    // Optional project link (issue #944 WS5 "Raise repair" shortcut — a damaged
+    // return row on the returns station raises a repair record scoped to the
+    // project it was deployed on). Org-checked before insert (assertProjectInOrg);
+    // absent for every other createNative caller, which never linked a project.
+    projectId: v.optional(v.string()),
     reportedById: v.optional(v.string()),
     assignedToId: v.optional(v.string()),
     scheduledDate: v.optional(v.number()), // epoch ms
@@ -242,6 +277,8 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "maintenance", "create");
     const actor = await resolveActor(ctx, a.actor);
     assertMaintenanceFields(a);
+
+    if (a.projectId) await assertProjectInOrg(ctx, a.projectId, a.orgId);
 
     // Client-supplied reporter/assignee user FKs — validate org membership (the Better-Auth
     // user table has no org column; a foreign user id would leak that user's name on reads).
@@ -272,6 +309,7 @@ export const createNative = mutation({
       type: a.type,
       status,
       title: a.title,
+      ...(a.projectId ? { projectId: a.projectId } : {}),
       ...(a.description ? { description: a.description } : {}),
       reportedById: a.reportedById || actor.userId,
       ...(a.assignedToId ? { assignedToId: a.assignedToId } : {}),
@@ -387,7 +425,7 @@ export const updateNative = mutation({
     if (a.assignedToId && a.assignedToId !== record.assignedToId) await assertMemberInOrg(ctx, a.orgId, a.assignedToId);
 
     const links = await existingLinks(ctx, a.id);
-    const existingAssetIds = links.map((l) => l.assetId);
+    const existingAssetIds = links.map((l) => l.assetId).filter((id): id is string => id != null);
     const newAssetIds = Array.from(new Set(a.assetLinks.map((l) => l.assetId)));
     // Parity with the deleted server action's maintenanceSchema refinement: a record
     // must always retain at least one asset (an empty edit would release + unlink every
@@ -453,7 +491,7 @@ export const updateNative = mutation({
 
     // Link diff: drop removed links, add the genuinely-new ones.
     for (const l of links) {
-      if (toRemove.includes(l.assetId)) await ctx.db.delete(l._id);
+      if (l.assetId && toRemove.includes(l.assetId)) await ctx.db.delete(l._id);
     }
     for (const link of a.assetLinks) {
       if (existingAssetIds.includes(link.assetId)) continue;
@@ -502,7 +540,7 @@ export const deleteNative = mutation({
     }
 
     const links = await existingLinks(ctx, a.id);
-    const linkedAssetIds = links.map((l) => l.assetId);
+    const linkedAssetIds = links.map((l) => l.assetId).filter((id): id is string => id != null);
 
     const holding = isHoldingStatus(statusOf(record));
     if (holding && linkedAssetIds.length > 0) {
@@ -511,8 +549,10 @@ export const deleteNative = mutation({
     }
 
     await ctx.db.delete(record._id);
-    // Re-implement the maintenanceRecord → maintenanceRecordAsset Cascade.
-    for (const l of links) await ctx.db.delete(l._id);
+    // Re-implement the maintenanceRecord → maintenanceRecordAsset Cascade —
+    // BOTH kinds (LINK + WS6 CHECKOFF), so a deleted record's progress history
+    // doesn't orphan.
+    for (const l of await allRecordAssetRows(ctx, a.id)) await ctx.db.delete(l._id);
 
     await writeActivityLog(ctx, {
       id: a.auditId,

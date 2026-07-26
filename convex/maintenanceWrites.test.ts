@@ -143,6 +143,27 @@ describe("maintenanceWrites.createNative — state machine", () => {
       t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.maintenanceWrites.createNative, { ...baseCreate, status: "SCHEDULED" }),
     ).rejects.toThrow(/Forbidden|permission/i);
   });
+
+  // Issue #944 WS5 — the returns-station "Raise repair" shortcut links the new
+  // record to the project the damaged item was deployed on.
+  test("accepts an org-scoped projectId and persists it on the record", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", total: 0 });
+    });
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, status: "SCHEDULED", projectId: "p1" });
+    expect((await rec(t, "rec1"))?.projectId).toBe("p1");
+  });
+
+  test("rejects a cross-org projectId", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pX", organizationId: OTHER, projectNumber: "P-X", name: "Foreign gig", total: 0 });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, status: "SCHEDULED", projectId: "pX" }),
+    ).rejects.toThrow(/another organization/i);
+  });
 });
 
 // R-8.6.2 — a direct-mutation caller (bypassing maintenanceSchema.parse() in the

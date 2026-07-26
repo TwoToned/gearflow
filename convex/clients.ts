@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
+import { resolveClientContactDisplay } from "./lib/clientContactCore";
 import * as enums from "./lib/validators";
 
 /**
@@ -59,7 +60,22 @@ export const listPage = query({
     const sortBy = a.sortBy ?? "name";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
-    const rows = await ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
+    const rawRows = await ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
+
+    // Contacts (WS9 #948) — `contactName`/`contactEmail` columns become
+    // primary-contact-derived (falling back to the legacy embedded fields during
+    // the migration window). Same bounded-org-scan class as the clients collect above.
+    const allContacts = await ctx.db.query("clientContacts").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(); // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
+    const contactsByClient = new Map<string, typeof allContacts>();
+    for (const c of allContacts) {
+      const list = contactsByClient.get(c.clientId) ?? [];
+      list.push(c);
+      contactsByClient.set(c.clientId, list);
+    }
+    const rows = rawRows.map((c) => {
+      const resolved = resolveClientContactDisplay(c, contactsByClient.get(c.id) ?? []);
+      return { ...c, contactName: resolved.name ?? undefined, contactEmail: resolved.email ?? undefined };
+    });
 
     const filtered = rows.filter((c) => {
       if ((c.isActive ?? true) !== true) return false;
@@ -118,6 +134,15 @@ export const detail = query({
     const client = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!client || client.organizationId !== orgId) return null;
 
+    // Contacts (WS9 #948) — by_clientId is a GLOBAL index, org re-check per row.
+    // Sorted by sortOrder so the primary contact (sortOrder 0 by convention, but
+    // resolved by `isPrimary` not position) renders first in the manager UI.
+    const contacts = (
+      await ctx.db.query("clientContacts").withIndex("by_clientId", (q) => q.eq("clientId", id)).collect()
+    )
+      .filter((c) => c.organizationId === orgId)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
     // Recent projects for this client — newest first, capped at 20 (parity with the
     // action). by_clientId is a GLOBAL index → re-check organizationId per row.
     const clientProjects = (
@@ -172,7 +197,7 @@ export const detail = query({
       });
     }
 
-    return { ...client, projects, media };
+    return { ...client, projects, media, contacts };
   },
 });
 

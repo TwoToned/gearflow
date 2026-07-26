@@ -199,7 +199,7 @@ same gap, tracked as a follow-up, not fixed by this change). Regression:
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
 - Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
-- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return silently whenever their parent does. **The effective accessory set is the line's stored `accessoryPlan`** (issue #794 — defaults minus what the PM deselected at add-time, plus any optionals opted into), resolved by one shared function (`resolveLineAccessoryPlan`) that prep, checkout, and the office add form all consult — a deselected default can no longer be silently re-expanded at checkout. `checkOutItems` additionally accepts a per-item `includeAccessoryIds` allow-list (the "Deploy Verified Only" narrowing kits already have) which `expandAccessoriesForAsset`/`checkoutAccessoryChildren` honour, but **no warehouse tab UI drives it yet** — accessory children still don't get their own grouping/verification-circle/partial-deploy treatment in the Deploy/Return/Prep/De-prep tabs (unlike kits); that's tracked as a follow-up. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return by default whenever their parent does. **The effective accessory set is the line's stored `accessoryPlan`** (issue #794 — defaults minus what the PM deselected at add-time, plus any optionals opted into), resolved by one shared function (`resolveLineAccessoryPlan`) that prep, checkout, and the office add form all consult — a deselected default can no longer be silently re-expanded at checkout. Accessory children get the same grouping/verification-circle treatment kits do (`"accessory-group"` `GroupEntry`) and a Deploy-time gate blocks/asks-why on missing accessories — see [Child Assets / Accessories](./48-child-assets-accessories.md). `checkOutItems`'s per-item `includeAccessoryIds` allow-list is now driven from the warehouse UI too: a partially click-to-verified accessory parent gets a `kitConfirm`-style **"Deploy Verified Only" / "Deploy All"** choice (issue #794's remaining acceptance criterion) — picking "Verified Only" deploys the parent with just the verified accessories via `includeAccessoryIds`, leaving the rest sitting PACKED-but-not-deployed to be caught up on a later, separate deploy of the same line.
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
@@ -217,13 +217,47 @@ same gap, tracked as a follow-up, not fixed by this change). Regression:
 The project-wide accessory-totals check-in tab was **removed from the warehouse UI**
 (accessories are no longer surfaced as a separate warehouse concern — they cascade
 silently with their parent). `src/server/bulk-checkin.ts`, its int test, and the
-`bulk-checkin-tab.tsx` component are gone; only the pure helper library
-`src/lib/bulk-checkin.ts` (+ its unit tests) remains, dormant. See
-[Bulk Check-In Totals](./52-bulk-checkin.md) for the dormant backend.
+`bulk-checkin-tab.tsx` component are gone. The engine survives as Convex-native
+code (`convex/lib/bulkCheckin.ts` → `warehouseOps.checkInBulkTotals`) with a live
+caller as of issue #944 — the returns station's bulk-tag scan
+(`returnsWrites.returnBulkNative`, see [Returns Station](#returns-station) below).
+See [Bulk Check-In Totals](./52-bulk-checkin.md) for the full engine writeup.
 
 ### Scan Flow
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
 - `lookupAssetForScan()` treats scanned serialized assets as serialized (not bulk) even if the matching line item has qty > 1
+
+#### Scan Feedback (Audio)
+The three scan mutations on `warehouse/[projectId]/page.tsx` — `scanMutation` (Pick/Prep),
+`deployScanMutation` (Deploy tab), `returnScanMutation` (Return tab) — play an audio tone
+on every resolve result via the shared **`useScanFeedback`** hook (`@/hooks/use-scan-feedback`,
+backed by `src/lib/scan-feedback.ts`; see FEATUREDOCS/14 §"Audio / Scan Feedback" for the
+underlying implementation and the legacy `playBeep` defects it replaced). A
+`<ScanAudioToggle>` icon button (`@/components/scan-audio-toggle`) sits in the page header,
+next to the Documents/pick-list actions, controlling all three scanners at once.
+
+Each resolve branch maps to one of the 4 tone kinds:
+- **`success`** — every `toast.success(...)` branch: kit/item prepped, deployed, returned,
+  or a kit-member scan verified.
+- **`error`** — hard failures that block the scan outright: not on project, already
+  deployed, not prepped yet, TT-blocked, asset unavailable, wrong-kit member scans, etc.
+- **`exception`** — resolved but needs the operator's attention rather than a clean
+  success or a hard stop. Three specific branches, shared across all three mutations:
+  1. `reason === "already_returned"` (all units are already back — nothing to do, but
+     it's not an error).
+  2. The final `else` fallback when `lookupAssetForScan` doesn't recognise the tag at all
+     ("Asset not found" — unknown tag).
+  3. `result.type === "asset_child"` (scanned an accessory instead of its parent — the
+     UI redirects with "scan the parent"; disambiguation, not failure).
+  The Pick/Prep mutation's "asset found but not on this project, want to add it?" prompt
+  (`setAddPromptData` / `setAddPromptOpen`) also plays `exception` for the same reason —
+  it's a decision point, not a verdict.
+- **`info`** — not currently wired to a warehouse call site; reserved for neutral
+  heads-up moments (see FEATUREDOCS/14). Available to future consumers of the hook, e.g.
+  the WS5 returns station.
+
+A mutation's own `onError` (the server call itself failing — network, permission, etc.,
+distinct from a resolved-but-rejected scan result) always plays `error`.
 
 ### Kit/Prep-Kit Flows
 - Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren
@@ -242,6 +276,143 @@ silently with their parent). `src/server/bulk-checkin.ts`, its int test, and the
 
 4. Returning a parent asset cascades the return to its permanent accessories via `checkinAccessoryChildren` (`line-item-fulfillment.ts`) — shared, so both `checkInItems` AND the **check-and-store** flow (`completeCheckAndStore`) release the accessories; de-prep also clears them from the deploy-staging board. On a multi-quantity model line, the cascade is **scoped to the returned unit** (`returnedAssetId`): serialised accessories return only with their own host asset, and the shared bulk accessory clears one unit's share per return, fully releasing once every host unit is back. The cascade only fires when the parent return actually flipped a unit (`unitsFlipped > 0`), so re-scanning an already-returned unit can't double-return the shared accessory. See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
+## Returns Station
+
+`/warehouse/returns` (issue #944 WS5) — an **org-wide, project-less** returns
+desk: one scan field resolving each tag to its active deployment(s), with no
+project pre-selection. Complements the per-project Return Tab above (which
+still exists and is the right tool when you already know the job) — the
+returns station is for "gear is coming back through the dock, figure out which
+job(s) it belongs to as you go."
+
+### Board query — `convex/warehouseReturns.ts`
+- `bundle(orgId)` range-reads **every CHECKED_OUT `projectLineItems` row across
+  the whole org** via a new `by_organizationId_status` composite index (not
+  `by_projectId_status` — there is no project to scope by), capped at
+  `MAX_ROWS` (registered bounded-read exception, see `docs/exceptions.md`
+  R-9.8 "returns-board-orgwide-checkedout"). Groups the results by project,
+  ordered **overdue-first** (a server-side port of `getProjectUrgency` from
+  `src/app/(app)/warehouse/page.tsx`'s "The floor" landing page — kept in
+  lockstep deliberately, not imported, since that file is a client component).
+- **One-shot fetch, not a live subscription.** The `/warehouse/*` route group's
+  LCP budget is already over its registered threshold
+  (`docs/exceptions.md` R-8.9.3) — a whole-org reactive subscription here would
+  make that worse. The client (`useReturnsBoard`, `src/hooks/use-returns.ts`)
+  fetches once, keeps a session-local list, and refetches on a manual refresh
+  button + after every mutation.
+- Top-level rows are standalone/sub-hire/custom/kit-parent lines
+  (`isKitChild` false). ACCESSORY children cascade attached to their parent row
+  (not independent rows — mirrors the PDF pipeline's parent/child convention,
+  see CLAUDE.md's PDF section). Kit MEMBER lines roll up under the kit
+  parent — a kit always returns as a whole via `checkInKit`, never
+  member-by-member. Sub-hire and custom lines are **display-only**
+  (`scannable: false`) — there's no asset/bulk tag to scan for either. Partial
+  returns are included by construction: `returnLineUnits` only flips a line's
+  own `status` to RETURNED once every unit is back, so a partially-returned
+  line is still CHECKED_OUT and lands in the same range-read.
+- `unitsForLine(orgId, lineItemId)` expands one line's CHECKED_OUT units
+  (asset tag chips) **on demand** when a row is opened — the board query
+  deliberately stays line-level to keep the initial payload small.
+
+### Scan resolution — `convex/returnsLookup.ts`
+`resolve({orgId, value})` (SAFE_TAG pattern, same shape as `convex/scanLookup.ts`)
+resolves a scanned tag: asset/bulk/kit tag lookup → the org-wide
+`projectLineItemUnits.by_organizationId_assetId_status` /
+`by_organizationId_bulkAssetId_status` indexes → CHECKED_OUT unit(s) → line →
+project. This is the project-less twin of `src/server/warehouse.ts`'s
+`lookupAssetForScan` (which is hard-wired to one `projectId` — the returns
+station has no project to wire it to). Guards, matching `lookupAssetForScan`'s:
+
+| Scan result | Response `kind` | UI behaviour |
+|---|---|---|
+| Kit member asset | `guard_kit_member` | "Part of a kit — scan the kit instead" |
+| Permanent accessory child | `guard_accessory_child` | "Returns with its parent" |
+| Retired asset/bulk/kit | `exception` (`retired`) | Logged to the session exceptions list, never blocks |
+| No active deployment anywhere | `exception` (`no_active_deployment`) | Same — logged, not blocking |
+| Unknown tag | `not_found` | Same — logged, not blocking |
+| Asset checked out on exactly 1 project | `asset` | Returns immediately, condition GOOD |
+| Asset checked out on >1 project | `asset_multi` | Disambiguation dialog — **never auto-picks** |
+| Bulk tag out on exactly 1 project | `bulk` | Returns the full outstanding quantity immediately |
+| Bulk tag out on >1 project | `bulk_multi` | Per-project quantity prompt |
+| Kit tag, exactly 1 CHECKED_OUT parent line | `kit` | Whole-kit return via `checkInKit` |
+
+**Exceptions never block the dock.** Every non-return outcome above is pushed
+onto a session-local React exceptions list (not a new table — `assetScanLogs`
+remains the durable backstop, written by the normal check-in path when a
+return does succeed) and the operator keeps scanning.
+
+### Mutations — `convex/returnsWrites.ts`
+- **`returnScanNative`** — single scan-and-return for a known `lineItemId`
+  (+ optional `assetId`). Derives `projectId` from the line **server-side**
+  (`loadLineInOrg`, org-checked by_cuid) — there is no `projectId` argument
+  anywhere in this mutation for a client to spoof. Delegates the actual state
+  transition to `warehouseOps.checkinItemsCore` (the same core
+  `warehouseWrites.checkInItems` uses), so behaviour (condition routing, scan
+  log, accessory cascade, rollup) is identical to the per-project Return Tab.
+- **`returnBulkNative`** — bulk-tag scan resolved to one project. See
+  [Bulk Check-In Totals](./52-bulk-checkin.md) for the distribution engine.
+- **`returnBatchNative`** — multi-select batch return, cap 100 (server-enforced,
+  not just a client UI limit), per-item try/catch with labelled
+  `{lineItemId, success, error?}` results — one bad item never fails the rest
+  of the batch, matching the "exceptions never block the dock" principle at
+  the write layer too. One batch-summary audit row when ≥1 item succeeds.
+- **`correctReturnConditionNative`** — the post-hoc "mark damaged / missing"
+  action on an already-returned session row. Condition defaults to GOOD at
+  scan time and is **never prompted mid-scan** (spec decision — speed over
+  per-item friction). By the time an operator marks a row damaged, the unit is
+  already RETURNED (not CHECKED_OUT), so re-running `checkinItemsCore` would be
+  a silent no-op (`returnLineUnits` only flips units that are still
+  CHECKED_OUT) — this mutation instead patches the already-returned
+  unit/line's `returnCondition`/`returnNotes` directly and re-derives the
+  asset's status from the corrected condition.
+- **Auto-advance side effect.** When a project's LAST outstanding CHECKED_OUT
+  line just returned, the project auto-advances to `RETURNED` (existing
+  status-mutation semantics — feeds batch close-out same as today). Patches
+  the project directly inside the same `warehouse:check_in`-authorized
+  transaction rather than calling `projectWrites.updateStatusNative` (which
+  separately gates on `project:update` — the dedicated `warehouse` role has
+  `check_in` but only `project:read`, so routing through that mutation would
+  make the auto-advance silently fail for exactly the role this station is
+  built for). No new webhook event for v1.
+
+### Raise repair
+A damaged row's session-list entry gets a **"Raise repair"** action (gated on
+`maintenance:create` — the dedicated `warehouse` role does NOT have it, only
+`maintenance:read`, so the button doesn't render for that role) → calls the
+existing `maintenanceWrites.createNative` mutation (extended with an optional
+`projectId` arg for this — org-checked via `assertProjectInOrg`) with
+`{type: REPAIR, status: SCHEDULED, projectId, title: "Damaged on return —
+{model} {tag}", description: returnNotes}` + an asset link. Explicit operator
+action, never automatic.
+
+### Known gap — DAMAGED bulk returns still restore availability
+Carried over from the existing behaviour documented above
+("Standalone bulk checkout/checkin now maintains `bulkAssets.availableQuantity`"):
+a bulk asset has no per-unit condition bucket, so `returnLineUnits`' bulk
+branch restores `availableQuantity` **unconditionally regardless of
+`returnCondition`** — a damaged bulk return through the returns station (same
+as through the per-project Return Tab) still silently makes that quantity look
+available again. Explicitly OUT OF SCOPE for issue #944 — filed as a follow-up,
+not fixed here.
+
+### Nav
+Sidebar: a "Returns" sub-item under Warehouse. Warehouse landing page
+(`/warehouse`): a hub card linking to `/warehouse/returns`. **Not** in the
+mobile bottom nav (Warehouse's own bottom-nav entry still points at the
+project-scoped `/warehouse` list — see DESIGN.md §16 for what belongs in the
+bottom nav vs. the sidebar).
+
+### Audio feedback
+`src/lib/scan-feedback.ts` — a minimal local Web Audio API beep helper
+(success/error/exception tones), built inline per the issue's own instruction
+because the sibling quick-wins tracking issue (#937, "QW-1 shared beep") hadn't
+landed a shared `useScanFeedback` helper yet when this was built. Follows the
+one existing precedent in the codebase (`playBeep()` in
+`src/app/(app)/test-and-tag/quick-test/page.tsx`), extended from binary
+success/fail to the three outcomes the returns station has. **Consolidation
+TODO:** once #937 lands, replace this file's usage with the shared helper and
+delete it — don't let two beep helpers coexist long-term.
+
 ## Kit Verification
 Before deploying or returning a kit (or prep-kit) with unverified items:
 - Confirmation dialog shows "X/Y items verified — deploy/return anyway?"
@@ -259,17 +430,47 @@ top-level, no-`kitId` line with an `ACCESSORY` child, and `groupItems`/
 `groupCheckinItems` emit a fifth `GroupEntry` kind, `"accessory-group"` —
 checked in the same slot as `kit-group` (before `isBulkItem`), across all four
 tabs (Pick/Prep, Deploy, Return, De-prep — De-prep reuses `DeployTab` with
-`mode="deprep"`, same grouping). `isExpandableParent`/`expandableChildrenOf`
-generalise the five equipment-stage filters' kit-only children check to cover
-both kinds, so an accessory parent moves through Pick → Prep → Deploy →
-Return staged exactly like a kit, gated on child status/prepStatus. Rendering
-reuses `KitChildRows`/`MobileKitChildCards` unchanged (an "Accessories" badge
-instead of "Kit", the parent's own asset tag instead of a kit tag) — same
-expand/collapse, same `collectAllVerifiableIds`-driven "X/Y verified" badge,
-same clickable verify circles. **Not shipped:** a `kitConfirm`-style "Deploy
-Verified Only"/"Deploy All" partial-action dialog specifically for accessory
-groups (kits still have theirs; an accessory group's checkbox selects the
-whole parent, no partial-selection dialog yet) — tracked as a follow-up.
+`mode="deprep"`, same grouping). Rendering reuses `KitChildRows`/
+`MobileKitChildCards` unchanged (an "Accessories" badge instead of "Kit", the
+parent's own asset tag instead of a kit tag) — same expand/collapse, same
+`collectAllVerifiableIds`-driven "X/Y verified" badge, same clickable verify
+circles.
+
+**Stage membership: own state OR child state, NOT children-only.** A kit
+parent line is a synthetic rollup with no prep/deploy state of its own — the
+five equipment-stage filters (`isInPickPrepStage`/`isInPreppedStage`/
+`isInReturnedStage`/`isInDeprepedStage`/`isInCheckedOutStage` in
+`warehouse-types.ts`) gate a kit parent purely on its children, unchanged. An
+accessory parent is different: it's a real, independently-fulfilled asset that
+also happens to carry accessory children, so its membership is "the asset's
+own status/prepStatus OR any accessory child's" — treating it exactly like a
+kit (children-only) was a shipped **production bug** (fixed same follow-up):
+the parent vanished from Pick/Prep or Deploy whenever its own state and its
+accessory's state diverged, which is the common case once prep/deploy start
+moving independently. The accessory-parent branches also do NOT early-return
+on the parent's own `CHECKED_OUT`/`RETURNED` status the way every other branch
+does — see the next paragraph for why.
+
+**"Deploy Verified Only" / "Deploy All" — shipped (issue #794's remaining
+acceptance criterion).** A `kitConfirm`-style dialog now exists for the
+accessory parent's own `handleCheckOutSelected` path (not the kit-prep-only
+`kitConfirm` dialog, which is about PREP despite its `action: "deploy"` label
+— see the "Kit Verification" section above): if an accessory parent's PACKED
+accessories are only partially click-to-verified, deploying it opens a choice
+— "Deploy Verified Only (N)" calls `checkOutItems` with `includeAccessoryIds`
+narrowed to just the verified accessories' own asset/bulkAsset identities (NOT
+their line-item ids — `verifiedKitItems` tracks line-item ids, the mutation's
+allow-list wants asset identity, translated in
+`findPartiallyVerifiedAccessoryParent`), or "Deploy All (N)" cascades
+everything as before. Picking "Verified Only" deploys the parent asset while
+the un-verified accessory stays PACKED-but-not-`CHECKED_OUT` — exactly the
+"leave it behind, pick it up separately later" behaviour the issue asked for.
+That's also why the stage filters don't early-return on the parent's own
+terminal status: once the parent is `CHECKED_OUT` but a sibling accessory
+isn't, the line must keep showing in the Deploy tab so the operator can
+re-select the (already-deployed) parent and deploy again — `checkOutItems` is
+idempotent for an already-deployed asset (no-ops the asset move, cascades
+whatever accessories are still outstanding).
 See [FEATUREDOCS/48](./48-child-assets-accessories.md) for the checkout gate
 that pairs with this (blocks Deploy when a parent's DEFAULT accessories aren't
 packed, asks for a reason on missing OPTIONALs) and for the Online Pick List /

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgRead } from "./lib/auth";
+import { getProjectWindow } from "./lib/projectWindow";
 import type { Doc } from "./_generated/dataModel";
 
 /** Parity with src/lib/overbooking-core.ts EXCLUDED_PROJECT_STATUSES (Convex functions
@@ -8,6 +9,15 @@ import type { Doc } from "./_generated/dataModel";
  *  booking-overlap window (projectMatchesWindow), matching DEAD_PROJECT_STATUSES in
  *  convex/projectLineItems.ts (swapLineItemAsset). */
 const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"]);
+
+// WS2 (#941) — a range `.lte(rentalEndDate)` on by_organizationId_projectStartDate
+// with no lower bound sweeps in every row whose projectStartDate is undefined
+// (undefined sorts before all numbers in a Convex index — the dashboardStats.ts
+// MIN_TS idiom) — i.e. EVERY not-yet-backfilled project, defeating the whole point
+// of a targeted index scan. Pin the lower bound so this scan only ever returns
+// projects with projectStartDate explicitly set; the rental-index scan below is the
+// fallback that finds the (currently overwhelming majority) unset case.
+const MIN_TS = -8_640_000_000_000_000;
 
 /**
  * ONE-round-trip read of everything `computeOverbookedStatus` needs: for the given
@@ -52,14 +62,23 @@ export const bundle = query({
     async function buildLineItemDocs(): Promise<Doc<"projectLineItems">[]> {
       if (thisProjectId != null) {
         // SCOPED path. Candidate projects = thisProjectId + (when a window is given)
-        // any org project overlapping it — the same range-scan `swapLineItemAsset`
-        // uses (projectLineItems.ts:789-800): a project can only overlap
-        // [rentalStartDate, rentalEndDate] if its rentalStartDate <= rentalEndDate, so
-        // range-scan on that bound and finish the two-sided overlap check in JS on the
-        // much smaller candidate set. This turns an O(all-time bookings for this
-        // model) read into O(projects live/overlapping right now) — the dominant
-        // Database-I/O cost (Phase 0 baseline, 2026-07: 77% of org DB I/O) came from
-        // the unbounded version.
+        // any org project whose AVAILABILITY window (WS2 #941 — getProjectWindow)
+        // overlaps it — a project can only overlap [rentalStartDate, rentalEndDate]
+        // if its window start <= rentalEndDate, so range-scan on that bound and
+        // finish the two-sided overlap check in JS on the much smaller candidate
+        // set. This turns an O(all-time bookings for this model) read into
+        // O(projects live/overlapping right now) — the dominant Database-I/O cost
+        // (Phase 0 baseline, 2026-07: 77% of org DB I/O) came from the unbounded
+        // version.
+        //
+        // TWO range-scans, unioned: by_organizationId_rentalStartDate (as before —
+        // its unbounded-below range also sweeps in projectStartDate-unset rows,
+        // since undefined sorts first) catches every project whose window falls
+        // back to rental; by_organizationId_projectStartDate (MIN_TS-bounded, so it
+        // only visits BACKFILLED rows) catches a project whose PROJECT window
+        // starts earlier than its rental window even when rentalStartDate itself is
+        // set and > rentalEndDate. This is the "rental-index fallback while
+        // projectStartDate is unbackfilled" the spec calls for.
         const candidateProjectIds = new Set<string>([thisProjectId]);
         if (rentalStartDate != null && rentalEndDate != null) {
           for await (const p of ctx.db
@@ -70,8 +89,20 @@ export const bundle = query({
             projectDocCache.set(p.id, p);
             if (p.isTemplate) continue;
             if (DEAD_PROJECT_STATUSES.has(p.status ?? "")) continue;
-            const s = p.rentalStartDate ?? null;
-            const e = p.rentalEndDate ?? null;
+            const { start: s, end: e } = getProjectWindow(p);
+            if (s == null || e == null) continue;
+            if (s <= rentalEndDate && e >= rentalStartDate) candidateProjectIds.add(p.id);
+          }
+          for await (const p of ctx.db
+            .query("projects")
+            .withIndex("by_organizationId_projectStartDate", (q) =>
+              q.eq("organizationId", orgId).gt("projectStartDate", MIN_TS).lte("projectStartDate", rentalEndDate),
+            )) {
+            projectDocCache.set(p.id, p);
+            if (candidateProjectIds.has(p.id)) continue; // already resolved by the rental-index scan above
+            if (p.isTemplate) continue;
+            if (DEAD_PROJECT_STATUSES.has(p.status ?? "")) continue;
+            const { start: s, end: e } = getProjectWindow(p);
             if (s == null || e == null) continue;
             if (s <= rentalEndDate && e >= rentalStartDate) candidateProjectIds.add(p.id);
           }

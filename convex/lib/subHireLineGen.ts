@@ -58,6 +58,10 @@ export async function regenerateSubHireLines(
     id: head.id,
     orderNumber: head.orderNumber,
     supplierId: head.supplierId,
+    // WS7 #946 — the linked purchase order's cuid (if any), stamped onto every
+    // generated line so the dormant `projectLineItems.supplierOrderId` finally
+    // gets a writer (was previously set nowhere; only supplierId/orderNumber were).
+    supplierOrderId: head.supplierOrderId ?? null,
     defaultTargetGroupId: head.defaultTargetGroupId ?? null,
     defaultTargetCategoryId: head.defaultTargetCategoryId ?? null,
     groups: allGroups.map((g) => ({ ...g, items: allItems.filter((it) => it.groupId === g.id) })),
@@ -150,6 +154,7 @@ export async function regenerateSubHireLines(
       subHireId: subHire.id,
       subHireGroupId: group.id,
       supplierId: subHire.supplierId,
+      supplierOrderId: subHire.supplierOrderId ?? undefined,
       showSubhireOnDocs: showAsSubhired,
       subhireOrderNumber: subHire.orderNumber,
       categoryId: placement.categoryId ?? undefined,
@@ -183,6 +188,7 @@ export async function regenerateSubHireLines(
         subHireId: subHire.id,
         subHireItemId: item.id,
         supplierId: subHire.supplierId,
+        supplierOrderId: subHire.supplierOrderId ?? undefined,
         showSubhireOnDocs: item.showOnDocs,
         subhireOrderNumber: subHire.orderNumber,
         modelId: item.modelId ?? undefined,
@@ -223,6 +229,7 @@ export async function regenerateSubHireLines(
       subHireId: subHire.id,
       subHireItemId: item.id,
       supplierId: subHire.supplierId,
+      supplierOrderId: subHire.supplierOrderId ?? undefined,
       showSubhireOnDocs: item.showOnDocs,
       subhireOrderNumber: subHire.orderNumber,
       modelId: item.modelId ?? undefined,

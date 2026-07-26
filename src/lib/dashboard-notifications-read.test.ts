@@ -46,6 +46,9 @@ function maint(p: {
     result: null,
     nextDueDate: null,
     tags: [],
+    incidentType: null,
+    incidentSeverity: null,
+    lineItemId: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };

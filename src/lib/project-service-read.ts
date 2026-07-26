@@ -84,6 +84,13 @@ export interface ProjectServiceRow {
   discount: number | null;
   lineTotal: number | null;
   costTotal: number | null;
+  /** Per-service override of the crew charge-rate cascade (WS10 #949) — see
+   *  convex/schema.ts's projectServices.chargeRateOverride comment. */
+  chargeRateOverride: number | null;
+  /** Auto-computed sum of the resolved crew charge rate (pre-discount) — feeds
+   *  `lineTotal` when `unitPrice` is unset. null = no charge rate configured
+   *  anywhere for this service's crew (margin hidden, not a fake 0%). */
+  crewChargeTotal: number | null;
   taxable: boolean;
   lineItemId: string | null;
   vehicleDescription: string | null;
@@ -154,6 +161,8 @@ export function mapProjectServiceBase(
     discount: orNull(d.discount),
     lineTotal: orNull(d.lineTotal),
     costTotal: orNull(d.costTotal),
+    chargeRateOverride: orNull(d.chargeRateOverride),
+    crewChargeTotal: orNull(d.crewChargeTotal),
     taxable: d.taxable ?? true,
     lineItemId: orNull(d.lineItemId),
     vehicleDescription: orNull(d.vehicleDescription),

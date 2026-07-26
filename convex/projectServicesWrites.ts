@@ -10,11 +10,13 @@ import { assertFinite } from "./lib/moneyGuards";
 import { assertNumRange } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
-import { recalcServiceCostFromCrew } from "./lib/serviceCost";
+import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
 import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
+import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
+import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 
 /**
  * Native PROJECT-SERVICE write mutations (Phase 3 browser-direct — replaces the
@@ -123,6 +125,8 @@ const serviceInputArgs = {
   duration: v.optional(v.number()),
   discount: v.optional(v.number()),
   costTotal: v.optional(v.number()),
+  // Charge-side auto-pricing override (WS10 #949) — see buildServiceFields / schema.ts.
+  chargeRateOverride: v.optional(v.number()),
   taxable: v.boolean(),
   vehicleDescription: v.optional(v.string()),
   numberOfTrips: v.optional(v.number()),
@@ -151,6 +155,7 @@ type ServiceInput = {
   duration?: number;
   discount?: number;
   costTotal?: number;
+  chargeRateOverride?: number;
   taxable: boolean;
   vehicleDescription?: string;
   numberOfTrips?: number;
@@ -179,6 +184,7 @@ function buildServiceFields(a: ServiceInput) {
   assertFinite(a.unitPrice, "unitPrice");
   assertFinite(a.discount, "discount");
   assertFinite(a.costTotal, "costTotal");
+  assertFinite(a.chargeRateOverride, "chargeRateOverride");
   assertServiceFields({ quantity: a.quantity });
   // Bound money NON-NEGATIVE (browser-direct bypasses the server Zod min(0)). A negative
   // discount would INFLATE the customer-facing service line total (max(0, unitPrice - disc)
@@ -190,6 +196,8 @@ function buildServiceFields(a: ServiceInput) {
     throw new ConvexError({ code: "INVALID_MONEY", message: "Service discount cannot be negative." });
   if (a.costTotal != null && a.costTotal < 0)
     throw new ConvexError({ code: "INVALID_MONEY", message: "Service cost cannot be negative." });
+  if (a.chargeRateOverride != null && a.chargeRateOverride < 0)
+    throw new ConvexError({ code: "INVALID_MONEY", message: "Charge rate override cannot be negative." });
   const serviceDate = a.date ?? null;
   let serviceEndDate = a.endDate ?? serviceDate;
   if (!MULTI_DAY_TYPES.has(a.type)) serviceEndDate = serviceDate;
@@ -219,6 +227,7 @@ function buildServiceFields(a: ServiceInput) {
     discount: a.discount ?? null,
     lineTotal,
     costTotal: a.costTotal ?? null,
+    chargeRateOverride: a.chargeRateOverride ?? null,
     taxable: a.taxable,
     vehicleDescription: a.vehicleDescription || null,
     numberOfTrips: a.numberOfTrips || null,
@@ -383,7 +392,7 @@ async function insertServiceAssignment(
 
 async function logService(
   ctx: MutationCtx,
-  a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string; projectId?: string; entityType?: string },
+  a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; entityId: string; entityName: string; summary: string; projectId?: string; entityType?: string; metadata?: Record<string, unknown> },
 ): Promise<void> {
   await writeActivityLog(ctx, {
     id: a.auditId,
@@ -395,6 +404,7 @@ async function logService(
     userId: a.actor.userId,
     userName: a.actor.userName,
     summary: a.summary,
+    metadata: a.metadata,
     projectId: a.projectId,
     createdAt: a.now,
   });
@@ -422,6 +432,8 @@ export const createServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -430,7 +442,15 @@ export const createServiceNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     if (!a.title) throw new ConvexError("Title is required");
-    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    const svcProject = await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    // #791: adding a crew-less service while locked defaults costTotal to $0
+    // (server-enforced) — a crew-attached service's cost keeps auto-deriving from
+    // the crew rate table below regardless (issue #796 single source of truth).
+    // #793: adding is a structural mutation at JUSTIFY+.
+    const guard = await assertLifecycleGuard(ctx, svcProject, { kind: "structural", justification: a.justification });
+    if (guard.defaultToZero && (!a.crew || a.crew.length === 0)) {
+      a.costTotal = 0;
+    }
     // Validate the default crew role even when no crew members are attached (it's stored
     // on the service regardless — line ~406).
     if (a.crewRoleId) await assertCrewRoleInOrg(ctx, a.crewRoleId, a.orgId);
@@ -479,6 +499,7 @@ export const createServiceNative = mutation({
       ...(fields.discount != null ? { discount: fields.discount } : {}),
       ...(fields.lineTotal != null ? { lineTotal: fields.lineTotal } : {}),
       ...(fields.costTotal != null ? { costTotal: fields.costTotal } : {}),
+      ...(fields.chargeRateOverride != null ? { chargeRateOverride: fields.chargeRateOverride } : {}),
       taxable: fields.taxable,
       ...(fields.vehicleDescription != null ? { vehicleDescription: fields.vehicleDescription } : {}),
       ...(fields.numberOfTrips != null ? { numberOfTrips: fields.numberOfTrips } : {}),
@@ -516,8 +537,10 @@ export const createServiceNative = mutation({
       }
       // Roll the crew's resolved cost up into costTotal — the service's own
       // manually-entered costTotal (set just above) only survives when it has NO
-      // crew (issue #796 single source of truth).
+      // crew (issue #796 single source of truth). The charge twin (WS10 #949) does
+      // the same for crewChargeTotal/lineTotal, protecting a manually-typed unitPrice.
       await recalcServiceCostFromCrew(ctx, a.id, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, a.id, a.orgId, a.now);
     }
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -527,6 +550,7 @@ export const createServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "created", entityId: a.id, entityName: a.title,
       summary: `Created ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: a.projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -555,6 +579,8 @@ export const updateServiceNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #791/#793: required (one or the other, never both) once locked.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
@@ -564,6 +590,19 @@ export const updateServiceNative = mutation({
 
     if (!a.title) throw new ConvexError("Title is required");
     const existing = await requireServiceInOrg(ctx, a.id, a.orgId);
+
+    // #791/#793 lock gate: this mutation resends the WHOLE service form (incl.
+    // unchanged pricing) on every save, so "touches money" means the incoming
+    // price fields actually DIFFER from the stored row, not merely present.
+    const moneyChanged =
+      (a.unitPrice ?? null) !== (existing.unitPrice ?? null) ||
+      (a.discount ?? null) !== (existing.discount ?? null) ||
+      (a.costTotal ?? null) !== (existing.costTotal ?? null);
+    const svcUpdateProject = await requireProjectInOrg(ctx, existing.projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, svcUpdateProject, {
+      kind: moneyChanged ? "financial" : "structural",
+      justification: a.justification,
+    });
 
     const { fields, serviceDate, serviceEndDate } = buildServiceFields(a);
 
@@ -598,6 +637,7 @@ export const updateServiceNative = mutation({
     setOrClear("discount", fields.discount);
     setOrClear("lineTotal", fields.lineTotal);
     setOrClear("costTotal", fields.costTotal);
+    setOrClear("chargeRateOverride", fields.chargeRateOverride);
     setOrClear("vehicleDescription", fields.vehicleDescription);
     setOrClear("numberOfTrips", fields.numberOfTrips);
     setOrClear("crewCountRequired", fields.crewCountRequired);
@@ -682,8 +722,10 @@ export const updateServiceNative = mutation({
       }
 
       // Roll the crew's resolved cost up into costTotal (only while it HAS crew —
-      // a crew-less service keeps its manually-entered costTotal untouched).
+      // a crew-less service keeps its manually-entered costTotal untouched). The
+      // charge twin (WS10 #949) does the same for crewChargeTotal/lineTotal.
       await recalcServiceCostFromCrew(ctx, a.id, a.orgId, a.now);
+      await recalcServiceChargeFromCrew(ctx, a.id, a.orgId, a.now);
     }
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -693,6 +735,7 @@ export const updateServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "updated", entityId: a.id, entityName: a.title,
       summary: `Updated ${SERVICE_TYPE_LABELS[a.type]} service "${a.title}"`, projectId: existing.projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -704,7 +747,11 @@ export const updateServiceNative = mutation({
 // ─────────────────────────────────────────────────────────────────────────────
 export const deleteServiceNative = mutation({
   returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectService");
     await enforceBrowserWriteLimit(ctx);
@@ -713,6 +760,8 @@ export const deleteServiceNative = mutation({
 
     const service = await requireServiceInOrg(ctx, a.id, a.orgId);
     const { projectId, title, type } = service;
+    const delSvcProject = await requireProjectInOrg(ctx, projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, delSvcProject, { kind: "structural", justification: a.justification });
     await cascadeDeleteService(ctx, service, a.orgId);
 
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
@@ -722,6 +771,7 @@ export const deleteServiceNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now,
       action: "deleted", entityId: a.id, entityName: title,
       summary: `Deleted ${SERVICE_TYPE_LABELS[type]} service "${title}"`, projectId,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { id: a.id };
@@ -858,17 +908,25 @@ type GenTemplate = {
   showOnDocuments: boolean;
 };
 
+/**
+ * WS2 (#941) — service dates now derive from the PROJECT window (getProjectWindow),
+ * not the deprecated loadIn/loadOut/event* fields: DELIVERY/BUMP_IN sit at the
+ * window start (the old loadInDate role), BUMP_OUT/PICKUP at the window end (the
+ * old loadOutDate role), and LABOUR/MISC span the whole window (the old
+ * eventStartDate..eventEndDate role — the project window is the closest single
+ * replacement now that the event pair is gone).
+ */
 function getServiceDateForType(
   type: string,
-  p: { loadInDate: number | null; loadOutDate: number | null; eventStartDate: number | null; eventEndDate: number | null },
+  window: { start: number | null; end: number | null },
 ): { date: number | null; endDate: number | null } {
   switch (type) {
-    case "DELIVERY": return { date: p.loadInDate, endDate: p.loadInDate };
-    case "BUMP_IN": return { date: p.loadInDate, endDate: p.loadInDate };
-    case "BUMP_OUT": return { date: p.loadOutDate, endDate: p.loadOutDate };
-    case "PICKUP": return { date: p.loadOutDate, endDate: p.loadOutDate };
-    case "LABOUR": return { date: p.eventStartDate, endDate: p.eventEndDate ?? p.eventStartDate };
-    default: return { date: p.eventStartDate, endDate: p.eventEndDate ?? p.eventStartDate }; // MISC
+    case "DELIVERY": return { date: window.start, endDate: window.start };
+    case "BUMP_IN": return { date: window.start, endDate: window.start };
+    case "BUMP_OUT": return { date: window.end, endDate: window.end };
+    case "PICKUP": return { date: window.end, endDate: window.end };
+    case "LABOUR": return { date: window.start, endDate: window.end ?? window.start };
+    default: return { date: window.start, endDate: window.end ?? window.start }; // MISC
   }
 }
 
@@ -884,14 +942,12 @@ export const generateServicesNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const project = await requireProjectInOrg(ctx, a.projectId, a.orgId);
-    const loadInDate = project.loadInDate ?? null;
-    const loadOutDate = project.loadOutDate ?? null;
-    const eventStartDate = project.eventStartDate ?? null;
-    const eventEndDate = project.eventEndDate ?? null;
-    if (loadInDate == null && loadOutDate == null && eventStartDate == null) {
-      throw new ConvexError("Project must have at least one date (load in, load out, or event start) to generate services");
+    // WS2 (#941) — service generation reads the PROJECT window (falls back to
+    // rental when unset), not the deprecated loadIn/loadOut/event* fields.
+    const window = getProjectWindow(project);
+    if (window.start == null) {
+      throw new ConvexError("Project must have a project or rental start date to generate services");
     }
-    const dateBundle = { loadInDate, loadOutDate, eventStartDate, eventEndDate };
 
     let location: { address: string | null; latitude: number | null; longitude: number | null } | null = null;
     if (project.locationId) {
@@ -935,7 +991,7 @@ export const generateServicesNative = mutation({
         defaultUnitPrice: null,
         showOnDocuments: false,
       }));
-      if (eventStartDate != null) {
+      if (window.start != null) {
         templatesToUse.push({
           type: "LABOUR", title: "Show Day", description: null, defaultCrewCount: null,
           defaultVehicle: null, defaultPricingType: null, defaultUnitPrice: null, showOnDocuments: false,
@@ -956,7 +1012,7 @@ export const generateServicesNative = mutation({
     }> = [];
 
     for (const tmpl of templatesToUse) {
-      const { date, endDate } = getServiceDateForType(tmpl.type, dateBundle);
+      const { date, endDate } = getServiceDateForType(tmpl.type, window);
       if (date == null) continue;
       if (tmpl.type === "LABOUR" && endDate != null && endDate > date) {
         for (let cur = date; cur <= endDate; cur += DAY) {
@@ -1086,8 +1142,10 @@ export const cloneServicesNative = mutation({
     const validRoles = new Set<string>();
     for (const rid of roleIds) if (await isCrewRoleInOrg(ctx, rid, a.orgId)) validRoles.add(rid);
 
-    const sourceFirst = source.loadInDate ?? source.eventStartDate ?? null;
-    const targetFirst = target.loadInDate ?? target.eventStartDate ?? null;
+    // WS2 (#941) — the day-shift between source/target project windows
+    // (getProjectWindow; falls back to rental) replaces loadInDate ?? eventStartDate.
+    const sourceFirst = getProjectWindow(source).start;
+    const targetFirst = getProjectWindow(target).start;
     const dayOffset = sourceFirst != null && targetFirst != null ? Math.round((targetFirst - sourceFirst) / DAY) : 0;
     const offsetDate = (ms: number | null | undefined): number | null => {
       if (ms == null || dayOffset === 0) return ms ?? null;
@@ -1129,6 +1187,10 @@ export const cloneServicesNative = mutation({
         ...(svc.discount != null ? { discount: svc.discount } : {}),
         ...(svc.lineTotal != null ? { lineTotal: svc.lineTotal } : {}),
         ...(svc.costTotal != null ? { costTotal: svc.costTotal } : {}),
+        // Charge-side fields copy verbatim, same as costTotal above — no recalc call
+        // here (parity with the pre-existing cost-side clone behaviour).
+        ...(svc.chargeRateOverride != null ? { chargeRateOverride: svc.chargeRateOverride } : {}),
+        ...(svc.crewChargeTotal != null ? { crewChargeTotal: svc.crewChargeTotal } : {}),
         taxable: svc.taxable ?? true,
         ...(svc.vehicleDescription != null ? { vehicleDescription: svc.vehicleDescription } : {}),
         ...(svc.numberOfTrips != null ? { numberOfTrips: svc.numberOfTrips } : {}),

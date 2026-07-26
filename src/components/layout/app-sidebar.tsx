@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  ListTodo,
   Package,
   Boxes,
   FolderOpen,
@@ -26,6 +27,8 @@ import {
   HardHat,
   Clock,
   MoreHorizontal,
+  AlertTriangle,
+  Undo2,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -90,9 +93,22 @@ interface RailItem {
 // Primary modules. Hues per DESIGN.md §3.7/§15.5.
 const RAIL: RailItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, hue: "blue" },
+  // No `resource` gate — personal scope (this user's own assignments), not an
+  // org resource. A resource gate here would fail-open-flash on load like every
+  // other gated item; skipping it entirely (rather than gating on "project")
+  // means viewer/warehouse roles keep their own task list even without
+  // project:read. Sidebar-only per DESIGN.md §16 — NOT in the mobile bottom nav
+  // (that's the 5 daily-operator workflows; see mobile-nav.tsx).
+  { title: "My tasks", url: "/my-tasks", icon: ListTodo, hue: "blue" },
   {
     title: "Projects", url: "/projects", icon: FolderOpen, hue: "blue", resource: "project",
-    subs: [{ title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" }],
+    subs: [
+      { title: "Templates", url: "/projects/templates", icon: BookTemplate, resource: "project" },
+      // WS3 #942 — org-wide hard/pencilled overbooking + crew-gap board.
+      // Blue (Projects hue, per spec) rather than its own hue — this is a
+      // projects-adjacent risk view, not a separate module.
+      { title: "Overbookings", url: "/overbookings", icon: AlertTriangle, resource: "project" },
+    ],
   },
   { title: "Schedule", url: "/availability", icon: CalendarRange, hue: "green", resource: "asset" },
   {
@@ -111,7 +127,10 @@ const RAIL: RailItem[] = [
       { title: "Fleet ROI", url: "/assets/roi", icon: TrendingUp, resource: "model" },
     ],
   },
-  { title: "Warehouse", url: "/warehouse", icon: Warehouse, hue: "teal", resource: "warehouse" },
+  {
+    title: "Warehouse", url: "/warehouse", icon: Warehouse, hue: "teal", resource: "warehouse",
+    subs: [{ title: "Returns", url: "/warehouse/returns", icon: Undo2, resource: "warehouse" }],
+  },
   {
     title: "Test & Tag", url: "/test-and-tag", icon: ShieldCheck, hue: "teal", resource: "testTag",
     subs: [

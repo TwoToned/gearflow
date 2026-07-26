@@ -172,6 +172,16 @@ test.describe("harness: primary revenue path", () => {
     await test.step("add the model as a line item + pricing (flow 6)", async () => {
       await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByRole("menuitem", { name: "Add item" }).click();
+      // WS3 (#942) added a persistent "Overbookings" sidebar nav item, which
+      // matches a page-wide /overbook/i locator used below — but the model
+      // search ("Search models" button) opens a Radix Popover/Command portalled
+      // to document.body as a SIBLING of the dialog, not a DOM descendant, so
+      // it can't be reached through a dialog-scoped locator (that hung forever
+      // waiting for a placeholder that's structurally outside the dialog root —
+      // see CLAUDE.md's Radix-portal note). Keep the search flow unscoped on
+      // `page`, and only scope the two assertions that actually collide with
+      // the sidebar text (title "Add equipment" for the "Own stock" tab/kind).
+      const addDialog = page.getByRole("dialog", { name: "Add equipment" });
       await page.getByRole("tab", { name: "Own stock" }).click();
       await page.getByRole("button", { name: "Search models" }).click();
       await page.getByPlaceholder(/Search by name/).fill(modelName);
@@ -185,8 +195,8 @@ test.describe("harness: primary revenue path", () => {
       // a while, so wait for the SPECIFIC "1 available" text (not just the
       // generic "available out of" phrase, which matches the placeholder too)
       // before asserting there's no overbook warning.
-      await expect(page.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
-      await expect(page.getByText(/overbook/i)).toHaveCount(0);
+      await expect(addDialog.getByText(/1 available/i)).toBeVisible({ timeout: 40000 });
+      await expect(addDialog.getByText(/overbook/i)).toHaveCount(0);
 
       await page.getByRole("button", { name: "Add to project" }).click();
       // The dialog closes on a successful add.

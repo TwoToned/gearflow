@@ -51,6 +51,7 @@ export const create = mutation({
     pendingOffers: v.optional(v.boolean()),
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
+    incidentReport: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -72,6 +73,7 @@ export const createIfMissing = mutation({
     pendingOffers: v.optional(v.boolean()),
     pendingTimesheets: v.optional(v.boolean()),
     flaggedAsset: v.optional(v.boolean()),
+    incidentReport: v.optional(v.boolean()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -97,6 +99,7 @@ export const update = mutation({
       pendingOffers: v.optional(v.boolean()),
       pendingTimesheets: v.optional(v.boolean()),
       flaggedAsset: v.optional(v.boolean()),
+      incidentReport: v.optional(v.boolean()),
       updatedAt: v.optional(v.number()),
     }),
   },
@@ -135,6 +138,7 @@ export const prefFields = {
   pendingOffers: v.boolean(),
   pendingTimesheets: v.boolean(),
   flaggedAsset: v.boolean(),
+  incidentReport: v.boolean(),
 };
 
 const prefValuesValidator = v.object(prefFields);

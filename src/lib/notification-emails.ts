@@ -211,3 +211,24 @@ export function flaggedAssetEmail(data: FlaggedAssetEmailData) {
     ),
   };
 }
+
+export interface IncidentReportEmailData extends BaseEmailData {
+  assetLabel: string;
+  description: string;
+}
+
+export function incidentReportEmail(data: IncidentReportEmailData) {
+  const link = absolute(data.appBaseUrl, data.href);
+  return {
+    subject: `Reported issue: ${data.assetLabel}`,
+    html: emailWrapper(
+      `
+        <h2>New equipment issue reported</h2>
+        <p>Hi ${escapeHtml(data.recipientName)},</p>
+        <p>An issue was reported on <strong>${escapeHtml(data.assetLabel)}</strong>: ${escapeHtml(data.description)}</p>
+        ${ctaButton(link, "View report")}
+      `,
+      data,
+    ),
+  };
+}

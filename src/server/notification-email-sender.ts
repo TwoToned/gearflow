@@ -36,6 +36,7 @@ import {
 import { env } from "@/env";
 import {
   flaggedAssetEmail,
+  incidentReportEmail,
   overdueMaintenanceEmail,
   overdueReturnEmail,
   pendingOffersEmail,
@@ -322,6 +323,42 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
             reason,
             projectNumber: proj?.projectNumber ?? "",
             projectName: proj?.name ?? "",
+          }),
+      });
+    }
+  }
+
+  // 9. Incident reports (GitHub #898, FEATUREDOCS/62) — maintenance records
+  // created via "Report Issue" or an immediate check-item FAIL, still open.
+  const incidentRecords = (await getMaintenanceRecordsByOrg(organizationId))
+    .filter((m) => m.incidentType != null && m.status !== "COMPLETED" && m.status !== "CANCELLED")
+    .slice(0, 50);
+  if (incidentRecords.length > 0) {
+    const incidentLinks = await getMaintenanceAssetLinksByRecordIds(incidentRecords.map((m) => m.id));
+    const incidentAssets = await getAssetsByOrg(organizationId);
+    const incidentAssetMap = new Map(incidentAssets.map((a) => [a.id, a]));
+    const linksByRecord = new Map<string, typeof incidentLinks>();
+    for (const l of incidentLinks) {
+      const arr = linksByRecord.get(l.maintenanceRecordId) ?? [];
+      arr.push(l);
+      linksByRecord.set(l.maintenanceRecordId, arr);
+    }
+    for (const m of incidentRecords) {
+      const recordLinks = linksByRecord.get(m.id) ?? [];
+      const asset = recordLinks[0] ? incidentAssetMap.get(recordLinks[0].assetId) : undefined;
+      const label = asset?.assetTag ?? m.title;
+      out.push({
+        key: `incident-${m.id}`,
+        type: "incident_report",
+        build: (recipient, c) =>
+          incidentReportEmail({
+            recipientName: recipient.name,
+            orgName: c.organizationName,
+            appBaseUrl: c.appBaseUrl,
+            href: m.projectId ? `/warehouse/${m.projectId}` : `/maintenance/${m.id}`,
+            notificationKey: `incident-${m.id}`,
+            assetLabel: label,
+            description: m.description ?? m.title,
           }),
       });
     }

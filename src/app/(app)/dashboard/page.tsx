@@ -10,6 +10,7 @@ import {
   useNativeBlocking,
   useNativeActivity,
   useNativeMyOpenTasks,
+  useNativeOverbookingCounts,
 } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
@@ -71,6 +72,7 @@ export default function DashboardPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activity = useNativeActivity(orgId) as any;
   const subHireStats = useNativeSubHireStats(orgId);
+  const overbookingCounts = useNativeOverbookingCounts(orgId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myHome = useNativeHome(orgId) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -175,11 +177,17 @@ export default function DashboardPage() {
       <FadeIn delay={nextSectionDelay()}>
         <div className={`${TILE} p-5`}>
           <h2 className="t-overline mb-3 text-muted">Needs attention</h2>
-          <NeedsAttention stats={stats} loading={statsLoading} blockers={myBlockers ?? []} subHireOverdue={subHireStats?.overdueReturns ?? 0} />
-          {/* Extension point: sibling issue's org-risk board chips (fleet/
-              maintenance/sub-hire exposure boards) slot in here alongside the
-              needs-attention chips above — owned by another team, not stubbed
-              ahead of that work. */}
+          <NeedsAttention
+            stats={stats}
+            loading={statsLoading}
+            blockers={myBlockers ?? []}
+            subHireOverdue={subHireStats?.overdueReturns ?? 0}
+            overbookingCounts={overbookingCounts}
+          />
+          {/* WS3 #942 — the Overbookings & Gaps board's three chips (hard
+              overbookings / pencilled collisions / sale stock to procure)
+              render inside NeedsAttention above, backed by the cheap
+              overbookingBoard.counts query (not the full board subscription). */}
         </div>
       </FadeIn>
 
@@ -296,12 +304,18 @@ function DeployTile({ deployed, total, util, loading }: { deployed: number; tota
   );
 }
 
-function NeedsAttention({ stats, loading, blockers, subHireOverdue }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number }) {
+function NeedsAttention({ stats, loading, blockers, subHireOverdue, overbookingCounts }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number; overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number } }) {
   if (loading) return <div className="flex gap-2"><Skeleton className="h-8 w-36 rounded-full" /><Skeleton className="h-8 w-28 rounded-full" /></div>;
   const chips = [
     blockers.length > 0 && { href: `/projects/${blockers[0].projectId}`, label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: ShieldAlert },
     (stats?.overdueReturns ?? 0) > 0 && { href: "/projects", label: `${stats?.overdueReturns} overdue return${(stats?.overdueReturns ?? 0) > 1 ? "s" : ""}`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
     subHireOverdue > 0 && { href: "/suppliers", label: `${subHireOverdue} sub-hire overdue`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
+    // WS3 #942 — Overbookings & Gaps board chips: hard = red (a real, already-
+    // committed overbooking), pencilled + sale-stock = amber (a heads-up, not
+    // yet a hard problem).
+    (overbookingCounts?.hardCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.hardCount} hard overbooking${(overbookingCounts?.hardCount ?? 0) > 1 ? "s" : ""}`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: AlertTriangle },
+    (overbookingCounts?.pencilledCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.pencilledCount} pencilled collision${(overbookingCounts?.pencilledCount ?? 0) > 1 ? "s" : ""}`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: AlertTriangle },
+    (overbookingCounts?.saleStockCount ?? 0) > 0 && { href: "/overbookings", label: `${overbookingCounts?.saleStockCount} sale stock to procure`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Boxes },
     (stats?.maintenanceDue ?? 0) > 0 && { href: "/maintenance", label: `${stats?.maintenanceDue} maintenance due`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
     // WS6 #945 — separate chip for recurring PM (excluded from maintenanceDue
     // above so the two never double-count the same schedule-generated cycle).

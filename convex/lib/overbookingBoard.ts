@@ -42,8 +42,8 @@ export interface BoardProject {
 export interface BoardLineItem {
   id: string;
   projectId: string;
-  modelId: string | null;
-  quantity: number;
+  modelId?: string | null;
+  quantity?: number | null;
   status?: string | null;
   subHireId?: string | null;
   isOptional?: boolean | null;
@@ -112,6 +112,100 @@ export interface GearBoardResult {
  * sub-windows within `range`), so a shortage here is a "somewhere in this
  * range, demand exceeds stock" signal, not a per-day guarantee.
  */
+type ModelAgg = {
+  hardQty: number;
+  combinedQty: number;
+  hardProjectIds: Set<string>;
+  pencilledProjectIds: Set<string>;
+  spanStart: number;
+  spanEnd: number;
+};
+
+/** Fold `lineItems` into a per-model hard/pencilled demand aggregate. */
+function isRelevantDemandLine(li: BoardLineItem, projectById: Map<string, BoardProject>): boolean {
+  if (li.modelId == null) return false;
+  if ((li.status ?? "") === "CANCELLED") return false;
+  if (li.subHireId != null) return false;
+  return projectById.has(li.projectId);
+}
+
+function getOrCreateAgg(byModel: Map<string, ModelAgg>, modelId: string, clampedStart: number, clampedEnd: number): ModelAgg {
+  const existing = byModel.get(modelId);
+  if (existing) return existing;
+  const created: ModelAgg = { hardQty: 0, combinedQty: 0, hardProjectIds: new Set(), pencilledProjectIds: new Set(), spanStart: clampedStart, spanEnd: clampedEnd };
+  byModel.set(modelId, created);
+  return created;
+}
+
+function applyDemandLine(agg: ModelAgg, li: BoardLineItem, p: BoardProject, clampedStart: number, clampedEnd: number): void {
+  const isPencilled = li.isOptional === true || !isConfirmedOrLater(p.status);
+  const qty = li.quantity ?? 0;
+  agg.combinedQty += qty;
+  agg.spanStart = Math.min(agg.spanStart, clampedStart);
+  agg.spanEnd = Math.max(agg.spanEnd, clampedEnd);
+  if (isPencilled) {
+    agg.pencilledProjectIds.add(p.id);
+  } else {
+    agg.hardQty += qty;
+    agg.hardProjectIds.add(p.id);
+  }
+}
+
+function aggregateDemandByModel(
+  range: DateRange,
+  lineItems: BoardLineItem[],
+  projectById: Map<string, BoardProject>,
+): Map<string, ModelAgg> {
+  const byModel = new Map<string, ModelAgg>();
+
+  for (const li of lineItems) {
+    if (!isRelevantDemandLine(li, projectById)) continue;
+    const p = projectById.get(li.projectId)!;
+    const { start, end } = getProjectWindow(p);
+    const clampedStart = Math.max(range.start, start ?? range.start);
+    const clampedEnd = Math.min(range.end, end ?? range.end);
+    const agg = getOrCreateAgg(byModel, li.modelId!, clampedStart, clampedEnd);
+    applyDemandLine(agg, li, p, clampedStart, clampedEnd);
+  }
+
+  return byModel;
+}
+
+function groupByModelId<T extends { modelId?: string | null; isActive?: boolean | null }>(rows: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const r of rows) {
+    if (!r.modelId || r.isActive === false) continue;
+    const arr = map.get(r.modelId);
+    if (arr) arr.push(r); else map.set(r.modelId, [r]);
+  }
+  return map;
+}
+
+/** Effective (bookable) stock for one model, mirroring overbooking-core.ts. */
+function effectiveStockForModel(model: BoardModel, assetsForModel: BoardAsset[], bulksForModel: BoardBulkAsset[]): number {
+  const assetType = resolveModelAssetType(model.assetType, bulksForModel.length > 0, assetsForModel.length > 0);
+  return computeStockBreakdown({
+    assetType,
+    assets: assetsForModel.map((a) => ({ status: a.status ?? "AVAILABLE" })),
+    bulkAssets: bulksForModel.map((b) => ({ totalQuantity: b.totalQuantity ?? 0 })),
+  }).effectiveStock;
+}
+
+function projectRef(p: BoardProject | undefined): { id: string; name: string; projectNumber: string } {
+  return { id: p?.id ?? "", name: p?.name ?? "", projectNumber: p?.projectNumber ?? "" };
+}
+
+function shortageRow(modelId: string, m: BoardModel, agg: ModelAgg, qty: number, projectIds: Set<string>, projectById: Map<string, BoardProject>): GearShortageRow {
+  return {
+    modelId,
+    modelName: m.name,
+    qty,
+    spanStart: agg.spanStart,
+    spanEnd: agg.spanEnd,
+    projects: [...projectIds].map((id) => projectRef(projectById.get(id))),
+  };
+}
+
 export function computeGearShortageBoard(
   range: DateRange,
   projects: BoardProject[],
@@ -122,58 +216,10 @@ export function computeGearShortageBoard(
 ): GearBoardResult {
   const candidates = candidateBoardProjects(projects, range);
   const projectById = new Map(candidates.map((p) => [p.id, p]));
+  const byModel = aggregateDemandByModel(range, lineItems, projectById);
 
-  type ModelAgg = {
-    hardQty: number;
-    combinedQty: number;
-    hardProjectIds: Set<string>;
-    pencilledProjectIds: Set<string>;
-    spanStart: number;
-    spanEnd: number;
-  };
-  const byModel = new Map<string, ModelAgg>();
-
-  for (const li of lineItems) {
-    if (li.modelId == null) continue;
-    if ((li.status ?? "") === "CANCELLED") continue;
-    if (li.subHireId != null) continue;
-    const p = projectById.get(li.projectId);
-    if (!p) continue; // not a candidate project for this range
-
-    const isPencilled = li.isOptional === true || !isConfirmedOrLater(p.status);
-    const { start, end } = getProjectWindow(p);
-    const clampedStart = Math.max(range.start, start ?? range.start);
-    const clampedEnd = Math.min(range.end, end ?? range.end);
-
-    let agg = byModel.get(li.modelId);
-    if (!agg) {
-      agg = { hardQty: 0, combinedQty: 0, hardProjectIds: new Set(), pencilledProjectIds: new Set(), spanStart: clampedStart, spanEnd: clampedEnd };
-      byModel.set(li.modelId, agg);
-    }
-    agg.combinedQty += li.quantity;
-    agg.spanStart = Math.min(agg.spanStart, clampedStart);
-    agg.spanEnd = Math.max(agg.spanEnd, clampedEnd);
-    if (isPencilled) {
-      agg.pencilledProjectIds.add(p.id);
-    } else {
-      agg.hardQty += li.quantity;
-      agg.hardProjectIds.add(p.id);
-    }
-  }
-
-  // Stock per model (mirrors overbooking-core.ts's stockByModel derivation).
-  const assetMap = new Map<string, BoardAsset[]>();
-  for (const a of assets) {
-    if (!a.modelId || a.isActive === false) continue;
-    const arr = assetMap.get(a.modelId);
-    if (arr) arr.push(a); else assetMap.set(a.modelId, [a]);
-  }
-  const bulkMap = new Map<string, BoardBulkAsset[]>();
-  for (const b of bulkAssets) {
-    if (!b.modelId || b.isActive === false) continue;
-    const arr = bulkMap.get(b.modelId);
-    if (arr) arr.push(b); else bulkMap.set(b.modelId, [b]);
-  }
+  const assetMap = groupByModelId(assets);
+  const bulkMap = groupByModelId(bulkAssets);
   const modelById = new Map(models.map((m) => [m.id, m]));
 
   const hard: GearShortageRow[] = [];
@@ -182,48 +228,19 @@ export function computeGearShortageBoard(
   for (const [modelId, agg] of byModel) {
     const m = modelById.get(modelId);
     if (!m) continue;
-    const bulks = bulkMap.get(modelId) ?? [];
-    const assetsForModel = assetMap.get(modelId) ?? [];
-    const assetType = resolveModelAssetType(m.assetType, bulks.length > 0, assetsForModel.length > 0);
-    const { effectiveStock } = computeStockBreakdown({
-      assetType,
-      assets: assetsForModel.map((a) => ({ status: a.status ?? "AVAILABLE" })),
-      bulkAssets: bulks.map((b) => ({ totalQuantity: b.totalQuantity ?? 0 })),
-    });
+    const effectiveStock = effectiveStockForModel(m, assetMap.get(modelId) ?? [], bulkMap.get(modelId) ?? []);
 
     const hardShortage = Math.max(0, agg.hardQty - effectiveStock);
     const combinedShortage = Math.max(0, agg.combinedQty - effectiveStock);
     const pencilledCollision = Math.max(0, combinedShortage - hardShortage);
 
-    if (hardShortage > 0) {
-      hard.push({
-        modelId,
-        modelName: m.name,
-        qty: hardShortage,
-        spanStart: agg.spanStart,
-        spanEnd: agg.spanEnd,
-        projects: [...agg.hardProjectIds].map((id) => projectRef(projectById.get(id))),
-      });
-    }
-    if (pencilledCollision > 0) {
-      pencilled.push({
-        modelId,
-        modelName: m.name,
-        qty: pencilledCollision,
-        spanStart: agg.spanStart,
-        spanEnd: agg.spanEnd,
-        projects: [...agg.pencilledProjectIds].map((id) => projectRef(projectById.get(id))),
-      });
-    }
+    if (hardShortage > 0) hard.push(shortageRow(modelId, m, agg, hardShortage, agg.hardProjectIds, projectById));
+    if (pencilledCollision > 0) pencilled.push(shortageRow(modelId, m, agg, pencilledCollision, agg.pencilledProjectIds, projectById));
   }
 
   hard.sort((a, b) => b.qty - a.qty);
   pencilled.sort((a, b) => b.qty - a.qty);
   return { hard, pencilled };
-}
-
-function projectRef(p: BoardProject | undefined): { id: string; name: string; projectNumber: string } {
-  return { id: p?.id ?? "", name: p?.name ?? "", projectNumber: p?.projectNumber ?? "" };
 }
 
 // ─── Section 3: sale stock to procure ─────────────────────────────────────────
@@ -252,13 +269,13 @@ export function computeSaleStockToProcure(bulkAssets: BoardBulkAsset[], models: 
     if (arr) arr.push(b); else byModel.set(b.modelId, [b]);
   }
   const rows: SaleStockRow[] = [];
-  for (const [modelId, rows_] of byModel) {
-    const shortfallQty = rows_.reduce((sum, b) => sum + Math.abs(b.saleStockQuantity ?? 0), 0);
+  for (const [modelId, bulkRows] of byModel) {
+    const shortfallQty = bulkRows.reduce((sum, b) => sum + Math.abs(b.saleStockQuantity ?? 0), 0);
     rows.push({
       modelId,
       modelName: modelNameById.get(modelId) ?? "Unknown model",
       shortfallQty,
-      contributingBulkAssets: rows_.map((b) => ({ id: b.id, assetTag: b.assetTag, saleStockQuantity: b.saleStockQuantity ?? 0 })),
+      contributingBulkAssets: bulkRows.map((b) => ({ id: b.id, assetTag: b.assetTag, saleStockQuantity: b.saleStockQuantity ?? 0 })),
     });
   }
   return rows.sort((a, b) => b.shortfallQty - a.shortfallQty);
@@ -305,6 +322,36 @@ export interface MissingCrewRow {
  * `crewCountRequired`. A `crewCountRequired` of `null`/`0` is explicitly
  * skipped, never flagged (spec decision) — an unstated requirement is not a gap.
  */
+function serviceInRange(s: BoardService, range: DateRange): boolean {
+  const d = s.date ?? s.endDate;
+  return d != null && d >= range.start && d <= range.end;
+}
+
+function missingCrewRowFor(
+  s: BoardService,
+  assignmentsByServiceId: Map<string, BoardAssignment[]>,
+  projectsById: Map<string, { id: string; name: string; projectNumber: string }>,
+): MissingCrewRow | null {
+  const required = s.crewCountRequired;
+  if (required == null || required <= 0) return null;
+  const assignments = assignmentsByServiceId.get(s.id) ?? [];
+  const filled = assignments.filter((a) => !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status ?? "")).length;
+  if (filled >= required) return null;
+
+  const p = projectsById.get(s.projectId);
+  return {
+    serviceId: s.id,
+    projectId: s.projectId,
+    projectName: p?.name ?? "",
+    projectNumber: p?.projectNumber ?? "",
+    title: s.title,
+    date: s.date ?? null,
+    crewCountRequired: required,
+    assignedCount: filled,
+    shortfall: required - filled,
+  };
+}
+
 export function computeServicesMissingCrew(
   range: DateRange,
   services: BoardService[],
@@ -313,27 +360,10 @@ export function computeServicesMissingCrew(
 ): MissingCrewRow[] {
   const rows: MissingCrewRow[] = [];
   for (const s of services) {
-    if (s.crewCountRequired == null || s.crewCountRequired <= 0) continue;
     if ((s.status ?? "") === "CANCELLED") continue;
-    const d = s.date ?? s.endDate;
-    if (d == null || d < range.start || d > range.end) continue;
-
-    const assignments = assignmentsByServiceId.get(s.id) ?? [];
-    const filled = assignments.filter((a) => !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status ?? "")).length;
-    if (filled >= s.crewCountRequired) continue;
-
-    const p = projectsById.get(s.projectId);
-    rows.push({
-      serviceId: s.id,
-      projectId: s.projectId,
-      projectName: p?.name ?? "",
-      projectNumber: p?.projectNumber ?? "",
-      title: s.title,
-      date: s.date ?? null,
-      crewCountRequired: s.crewCountRequired,
-      assignedCount: filled,
-      shortfall: s.crewCountRequired - filled,
-    });
+    if (!serviceInRange(s, range)) continue;
+    const row = missingCrewRowFor(s, assignmentsByServiceId, projectsById);
+    if (row) rows.push(row);
   }
   return rows.sort((a, b) => (a.date ?? 0) - (b.date ?? 0));
 }
@@ -408,14 +438,67 @@ export interface BoardAvailabilityBlock {
  * classification `crewAvailability.ts` uses per-member, aggregated org-wide
  * instead of one member at a time.
  */
+type AssignmentRef = DoubleBookingRow["a"];
+
+function groupBy<T>(items: T[], keyOf: (item: T) => string): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const arr = map.get(key);
+    if (arr) arr.push(item); else map.set(key, [item]);
+  }
+  return map;
+}
+
+function assignmentRef(a: BoardAssignment, projectsById: Map<string, { id: string; name: string; projectNumber: string }>): AssignmentRef {
+  const p = projectsById.get(a.projectId);
+  return { assignmentId: a.id, projectId: a.projectId, projectName: p?.name ?? "", projectNumber: p?.projectNumber ?? "", startDate: a.startDate ?? null, endDate: a.endDate ?? null };
+}
+
+/** (a) hard rows: an UNAVAILABLE availability block overlapping one of the member's assignments. */
+function hardConflictRows(
+  crewMemberId: string,
+  memberAssignments: BoardAssignment[],
+  blocks: BoardAvailabilityBlock[],
+  range: DateRange,
+  projectsById: Map<string, { id: string; name: string; projectNumber: string }>,
+): DoubleBookingRow[] {
+  const rows: DoubleBookingRow[] = [];
+  for (const block of blocks.filter((b) => timeOverlaps(b.startDate, b.endDate, range.start, range.end))) {
+    const { severity, label } = classifyAvailabilityBlock(block.type, block.reason);
+    if (severity !== "hard") continue;
+    const clashing = memberAssignments.find((a) => timeOverlaps(a.startDate!, a.endDate!, block.startDate, block.endDate));
+    if (!clashing) continue;
+    rows.push({ crewMemberId, severity: "hard", label, a: assignmentRef(clashing, projectsById), b: null });
+  }
+  return rows;
+}
+
+/** (b) soft rows: two overlapping assignments (different projects) for the same member. */
+function softConflictRows(
+  crewMemberId: string,
+  memberAssignments: BoardAssignment[],
+  projectsById: Map<string, { id: string; name: string; projectNumber: string }>,
+): DoubleBookingRow[] {
+  const rows: DoubleBookingRow[] = [];
+  for (let i = 0; i < memberAssignments.length; i++) {
+    for (let j = i + 1; j < memberAssignments.length; j++) {
+      const a1 = memberAssignments[i];
+      const a2 = memberAssignments[j];
+      if (a1.projectId === a2.projectId) continue; // same job, not a conflict
+      if (!timeOverlaps(a1.startDate!, a1.endDate!, a2.startDate!, a2.endDate!)) continue;
+      rows.push({ crewMemberId, severity: "soft", label: "Double-booked", a: assignmentRef(a1, projectsById), b: assignmentRef(a2, projectsById) });
+    }
+  }
+  return rows;
+}
+
 export function computeCrewDoubleBookings(
   range: DateRange,
   assignments: BoardAssignment[],
   availabilityBlocks: BoardAvailabilityBlock[],
   projectsById: Map<string, { id: string; name: string; projectNumber: string }>,
 ): DoubleBookingRow[] {
-  const rows: DoubleBookingRow[] = [];
-
   const relevantAssignments = assignments.filter(
     (a) =>
       !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status ?? "") &&
@@ -423,45 +506,13 @@ export function computeCrewDoubleBookings(
       a.endDate != null &&
       timeOverlaps(a.startDate, a.endDate, range.start, range.end),
   );
-  const byMember = new Map<string, BoardAssignment[]>();
-  for (const a of relevantAssignments) {
-    const arr = byMember.get(a.crewMemberId);
-    if (arr) arr.push(a); else byMember.set(a.crewMemberId, [a]);
-  }
+  const byMember = groupBy(relevantAssignments, (a) => a.crewMemberId);
+  const blocksByMember = groupBy(availabilityBlocks, (b) => b.crewMemberId);
 
-  const ref = (a: BoardAssignment) => {
-    const p = projectsById.get(a.projectId);
-    return { assignmentId: a.id, projectId: a.projectId, projectName: p?.name ?? "", projectNumber: p?.projectNumber ?? "", startDate: a.startDate ?? null, endDate: a.endDate ?? null };
-  };
-
-  // (a) hard — UNAVAILABLE availability block overlapping an assignment.
-  const blocksByMember = new Map<string, BoardAvailabilityBlock[]>();
-  for (const b of availabilityBlocks) {
-    const arr = blocksByMember.get(b.crewMemberId);
-    if (arr) arr.push(b); else blocksByMember.set(b.crewMemberId, [b]);
-  }
+  const rows: DoubleBookingRow[] = [];
   for (const [crewMemberId, memberAssignments] of byMember) {
-    const blocks = (blocksByMember.get(crewMemberId) ?? []).filter((b) => timeOverlaps(b.startDate, b.endDate, range.start, range.end));
-    for (const block of blocks) {
-      const { severity, label } = classifyAvailabilityBlock(block.type, block.reason);
-      if (severity !== "hard") continue;
-      const clashing = memberAssignments.find((a) => timeOverlaps(a.startDate!, a.endDate!, block.startDate, block.endDate));
-      if (!clashing) continue;
-      rows.push({ crewMemberId, severity: "hard", label, a: ref(clashing), b: null });
-    }
-  }
-
-  // (b) soft — two overlapping assignments for the same member.
-  for (const [crewMemberId, memberAssignments] of byMember) {
-    for (let i = 0; i < memberAssignments.length; i++) {
-      for (let j = i + 1; j < memberAssignments.length; j++) {
-        const a1 = memberAssignments[i];
-        const a2 = memberAssignments[j];
-        if (a1.projectId === a2.projectId) continue; // same job, not a conflict
-        if (!timeOverlaps(a1.startDate!, a1.endDate!, a2.startDate!, a2.endDate!)) continue;
-        rows.push({ crewMemberId, severity: "soft", label: "Double-booked", a: ref(a1), b: ref(a2) });
-      }
-    }
+    rows.push(...hardConflictRows(crewMemberId, memberAssignments, blocksByMember.get(crewMemberId) ?? [], range, projectsById));
+    rows.push(...softConflictRows(crewMemberId, memberAssignments, projectsById));
   }
 
   return rows.sort((x, y) => (x.severity === y.severity ? 0 : x.severity === "hard" ? -1 : 1));

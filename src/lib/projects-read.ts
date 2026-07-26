@@ -144,9 +144,9 @@ export async function getProjectByIdMapped(id: string, orgId: string): Promise<P
 /** Returns the set of projectIds where userId appears as a project manager. */
 export async function getProjectIdsForManager(orgId: string, userId: string): Promise<Set<string>> {
   const entries = await withConvexReadRetry(async () =>
-    (await getConvexClient()).query(api.projectManagers.list, { orgId }),
+    (await getConvexClient()).query(api.projectManagers.listByUserId, { userId, orgId }),
   );
-  return new Set(entries.filter((e) => e.userId === userId).map((e) => e.projectId));
+  return new Set(entries.map((e) => e.projectId));
 }
 
 /** Convert an optional epoch-ms field to a Date (serialize keeps Date), else null. */

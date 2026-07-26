@@ -151,13 +151,11 @@ export async function findCompletedOrderLog(
   organizationId: string,
   wooOrderId: number,
 ): Promise<WooCommerceOrderLogRow | null> {
-  const rawRows = (await withConvexReadRetry(async () =>
-    (await getConvexClient()).query(api.wooCommerceOrderLogs.list, {
+  const match = (await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.wooCommerceOrderLogs.findCompletedByOrder, {
       orgId: organizationId,
+      wooOrderId,
     }),
-  )) as RawWooCommerceOrderLog[];
-  const match = rawRows.find(
-    (r) => r.wooOrderId === wooOrderId && r.status === "COMPLETED",
-  );
+  )) as RawWooCommerceOrderLog | null;
   return match ? mapWooCommerceOrderLog(match, null) : null;
 }

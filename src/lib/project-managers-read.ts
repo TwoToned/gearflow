@@ -55,7 +55,7 @@ export async function getProjectManagerRows(
   projectId: string,
 ): Promise<ProjectManagerRow[]> {
   const docs = await withConvexReadRetry(async () =>
-    (await getConvexClient()).query(api.projectManagers.list, { orgId: organizationId }),
+    (await getConvexClient()).query(api.projectManagers.listByProject, { projectId, orgId: organizationId }),
   );
   return filterAndSortManagers(docs, projectId, organizationId);
 }

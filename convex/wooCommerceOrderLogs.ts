@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 
 /**
@@ -17,10 +18,14 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireService(ctx);
-    return await ctx.db
-      .query("wooCommerceOrderLogs")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
-      .collect();
+    // r9.8-ok: sole caller (getWooCommerceOrderLogsPage) needs the org's full
+    // matching set to filter/sort/paginate in JS; no composite index for the
+    // (status, createdAt-desc) combination exists yet. Capped, not a bare
+    // collect — see docs/exceptions.md R-8.3.3
+    const { rows } = await collectCapped(
+      ctx.db.query("wooCommerceOrderLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)),
+    );
+    return rows;
   },
 });
 
@@ -29,6 +34,21 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     await requireService(ctx);
     return await ctx.db.query("wooCommerceOrderLogs").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+  },
+});
+
+/**
+ * The first COMPLETED log for a (org, wooOrderId) — the webhook idempotency check,
+ * via the by_wooOrderId index instead of a whole-org collect + JS `.find()`. Public
+ * twin of wooCommerceInternal.findCompletedLogByOrder (that one's an internalQuery,
+ * unreachable from the Next.js webhook route's client SDK call).
+ */
+export const findCompletedByOrder = query({
+  args: { orgId: v.string(), wooOrderId: v.number() },
+  handler: async (ctx, { orgId, wooOrderId }) => {
+    await requireService(ctx);
+    const rows = await ctx.db.query("wooCommerceOrderLogs").withIndex("by_wooOrderId", (q) => q.eq("wooOrderId", wooOrderId)).collect();
+    return rows.find((r) => r.organizationId === orgId && r.status === "COMPLETED") ?? null;
   },
 });
 

@@ -8,9 +8,11 @@ import { useServerQuery } from "@/hooks/use-server-query";
 
 import { toast } from "sonner";
 import Link from "next/link";
-import { ArrowLeft, Volume2, VolumeX, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 
 import { useTestTagWrites } from "@/hooks/use-test-tag-writes";
+import { useScanFeedback } from "@/hooks/use-scan-feedback";
+import { ScanAudioToggle } from "@/components/scan-audio-toggle";
 import { useConvex } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -34,24 +36,6 @@ import { ElectricalStep } from "./components/electrical-step";
 import { SubTestStep } from "./components/sub-test-step";
 import { ResultStep } from "./components/result-step";
 
-// ─── Audio ──────────────────────────────────────────────────────────────────
-
-function playBeep(success: boolean) {
-  try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = success ? 800 : 300;
-    gain.gain.value = 0.1;
-    osc.start();
-    osc.stop(ctx.currentTime + (success ? 0.15 : 0.4));
-  } catch {
-    /* ignore if audio not available */
-  }
-}
-
 // ─── Step Labels ────────────────────────────────────────────────────────────
 
 const STEP_CONFIG: { key: WizardStep; label: string }[] = [
@@ -70,7 +54,7 @@ function QuickTestContent() {
   const orgId = activeOrg?.id;
   const convex = useConvex();
   const ttWrites = useTestTagWrites();
-  const [audioEnabled, setAudioEnabled] = useState(true);
+  const scanFeedback = useScanFeedback();
   const [sessionLogExpanded, setSessionLogExpanded] = useState(false);
 
   const [state, dispatch] = useReducer(wizardReducer, initialWizardState);
@@ -208,7 +192,7 @@ function QuickTestContent() {
       });
     },
     onSuccess: () => {
-      if (audioEnabled) playBeep(state.overallResult === "PASS");
+      scanFeedback.play(state.overallResult === "PASS" ? "success" : "error");
       toast.success(`${state.overallResult} — ${state.asset?.testTagId}`);
       dispatch({
         type: "RECORD_SAVED",
@@ -221,7 +205,7 @@ function QuickTestContent() {
       });
     },
     onError: (e) => {
-      if (audioEnabled) playBeep(false);
+      scanFeedback.play("error");
       toast.error(e.message);
       dispatch({ type: "SET_SAVING", isSaving: false });
     },
@@ -289,15 +273,7 @@ function QuickTestContent() {
             </Select>
 
             {/* Audio toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setAudioEnabled(!audioEnabled)}
-              title={audioEnabled ? "Disable audio" : "Enable audio"}
-              aria-label={audioEnabled ? "Disable audio" : "Enable audio"}
-            >
-              {audioEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-            </Button>
+            <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           </div>
         </div>
 

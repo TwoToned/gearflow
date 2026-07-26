@@ -28,7 +28,6 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
-import { CrewPanel } from "@/components/projects/crew-panel";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { TasksPanel } from "@/components/projects/tasks-panel";
@@ -519,7 +518,9 @@ export default function ProjectDetailPage({
                   </div>
                 </TabsContent>
 
-                {/* Labour & Logistics Tab — unified services + crew */}
+                {/* Labour & Logistics Tab — services (incl. per-service crew rate
+                    tables) is the sole crew UI; ServicesPanel renders the project
+                    crew list itself (see FEATUREDOCS/31, issue #796). */}
                 <TabsContent value="labour">
                   <div className="space-y-6 pt-4">
                     <ServicesPanel
@@ -532,8 +533,6 @@ export default function ProjectDetailPage({
                       projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
                       projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
                     />
-                    <div className="h-px bg-line" />
-                    <CrewPanel projectId={id} />
                   </div>
                 </TabsContent>
 

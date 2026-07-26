@@ -7,7 +7,6 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Plus,
   Pencil,
   Trash2,
   Users,
@@ -130,7 +129,6 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   // a crew booking on this project.
   useProjectCrewLiveSync(projectId, orgId);
 
-  const [addOpen, setAddOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
@@ -296,12 +294,6 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
             open={callSheetOpen}
             onOpenChange={setCallSheetOpen}
           />
-          <CanDo resource="crew" action="create">
-            <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add crew
-            </Button>
-          </CanDo>
         </div>
       </div>
 
@@ -368,18 +360,11 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
             <Users className="h-8 w-8 text-muted" />
             <div className="space-y-1">
               <p className="text-ui-text font-medium text-ink-2">No crew booked yet</p>
-              <p className="text-caption text-muted">Add the hands you need for bump-in, the show, and bump-out.</p>
+              <p className="text-caption text-muted">
+                Assign crew from a service above (Add service, or edit an existing one) —
+                that&apos;s also where their rate gets set.
+              </p>
             </div>
-            <CanDo resource="crew" action="create">
-              <Button
-                variant="line"
-                size="sm"
-                onClick={() => setAddOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-                Add crew member
-              </Button>
-            </CanDo>
           </div>
         </div>
       ) : (
@@ -486,21 +471,13 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         })()
       )}
 
-      {/* Add dialog */}
-      <AssignmentDialog
-        projectId={projectId}
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        mode="add"
-      />
-
-      {/* Edit dialog */}
+      {/* Edit dialog — crew are only ever CREATED via a service (issue #796); this
+          edits an existing assignment's rate/dates/role/status/notes. */}
       {editingAssignment && (
         <AssignmentDialog
           projectId={projectId}
           open={!!editId}
           onOpenChange={(open) => !open && setEditId(null)}
-          mode="edit"
           assignment={editingAssignment}
         />
       )}
@@ -894,15 +871,16 @@ interface AssignmentDialogProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  mode: "add" | "edit";
-  assignment?: Assignment;
+  assignment: Assignment;
 }
 
+/** Edits an EXISTING crew assignment (rate, dates, role, phase, status, notes). Crew
+ *  are only ever created via a service's rate table now (services-panel.tsx,
+ *  issue #796) — there is no "add" mode here anymore. */
 function AssignmentDialog({
   projectId,
   open,
   onOpenChange,
-  mode,
   assignment,
 }: AssignmentDialogProps) {
   const { data: activeOrg } = useActiveOrganization();
@@ -910,11 +888,6 @@ function AssignmentDialog({
   const cpConvex = useConvex();
   const { isAuthenticated: cpAuthed } = useConvexAuth();
   const dlgWrites = useCrewAssignmentWrites();
-  const { data: crewMembers } = useServerQuery({
-    queryKey: ["crew-for-assignment", orgId, projectId, cpAuthed],
-    queryFn: () => cpConvex.query(crewApi.crewAssignments.membersForAssignment, { projectId, orgId: orgId as string }),
-    enabled: open && mode === "add" && !!orgId && cpAuthed,
-  });
 
   // Reactive crew roles (Convex), skipped while the dialog is closed (mirrors the
   // old enabled:open). Re-apply getCrewRoleOptions's active filter + sortOrder/
@@ -948,48 +921,34 @@ function AssignmentDialog({
 
   const form = useForm<CrewAssignmentFormValues>({
     resolver: zodResolver(crewAssignmentSchema),
-    defaultValues: assignment
-      ? {
-          crewMemberId: assignment.crewMemberId as string,
-          crewRoleId: (assignment.crewRoleId as string) || "",
-          status: assignment.status as CrewAssignmentFormValues["status"],
-          phase: (assignment.phase as CrewAssignmentFormValues["phase"]) || "",
-          isProjectManager: (assignment.isProjectManager as boolean) || false,
-          startDate: assignment.startDate
-            ? new Date(assignment.startDate as string)
-            : undefined,
-          endDate: assignment.endDate
-            ? new Date(assignment.endDate as string)
-            : undefined,
-          startTime: (assignment.startTime as string) || "",
-          endTime: (assignment.endTime as string) || "",
-          rateOverride:
-            assignment.rateOverride != null
-              ? Number(assignment.rateOverride)
-              : undefined,
-          rateType: (assignment.rateType as CrewAssignmentFormValues["rateType"]) || "",
-          estimatedHours:
-            assignment.estimatedHours != null
-              ? Number(assignment.estimatedHours)
-              : undefined,
-          notes: (assignment.notes as string) || "",
-          internalNotes: (assignment.internalNotes as string) || "",
-          generateShifts: false,
-          serviceId: (assignment.serviceId as string) || "",
-        }
-      : {
-          crewMemberId: "",
-          crewRoleId: "",
-          status: "PENDING",
-          phase: "",
-          isProjectManager: false,
-          startTime: "",
-          endTime: "",
-          notes: "",
-          internalNotes: "",
-          generateShifts: true,
-          serviceId: "",
-        },
+    defaultValues: {
+      crewMemberId: assignment.crewMemberId as string,
+      crewRoleId: (assignment.crewRoleId as string) || "",
+      status: assignment.status as CrewAssignmentFormValues["status"],
+      phase: (assignment.phase as CrewAssignmentFormValues["phase"]) || "",
+      isProjectManager: (assignment.isProjectManager as boolean) || false,
+      startDate: assignment.startDate
+        ? new Date(assignment.startDate as string)
+        : undefined,
+      endDate: assignment.endDate
+        ? new Date(assignment.endDate as string)
+        : undefined,
+      startTime: (assignment.startTime as string) || "",
+      endTime: (assignment.endTime as string) || "",
+      rateOverride:
+        assignment.rateOverride != null
+          ? Number(assignment.rateOverride)
+          : undefined,
+      rateType: (assignment.rateType as CrewAssignmentFormValues["rateType"]) || "",
+      estimatedHours:
+        assignment.estimatedHours != null
+          ? Number(assignment.estimatedHours)
+          : undefined,
+      notes: (assignment.notes as string) || "",
+      internalNotes: (assignment.internalNotes as string) || "",
+      generateShifts: false,
+      serviceId: (assignment.serviceId as string) || "",
+    },
   });
 
   // Conflict detection
@@ -1012,7 +971,7 @@ function AssignmentDialog({
       watchCrewMemberId,
       startDateStr,
       endDateStr,
-      mode === "edit" ? assignment?.id : null,
+      assignment.id,
     ],
     queryFn: () =>
       cpConvex.query(crewApi.crewAvailability.conflicts, {
@@ -1020,7 +979,7 @@ function AssignmentDialog({
         crewMemberId: watchCrewMemberId,
         startMs: new Date(startDateStr).getTime(),
         endMs: new Date(endDateStr).getTime(),
-        excludeAssignmentId: mode === "edit" ? (assignment?.id as string) : undefined,
+        excludeAssignmentId: assignment.id as string,
       }),
     enabled: !!watchCrewMemberId && !!startDateStr && !!endDateStr && !!orgId && cpAuthed,
   });
@@ -1032,23 +991,9 @@ function AssignmentDialog({
     (c: CrewConflict) => c.severity === "soft"
   );
 
-  const createMut = useServerMutation({
-    mutationFn: (data: CrewAssignmentFormValues) =>
-      dlgWrites.create(projectId, data),
-    onSuccess: () => {
-      toast.success("Crew member assigned");
-      refreshProjectCrew(projectId);
-      refreshProjectLabourCost(projectId);
-      refreshProjectServices(projectId);
-      onOpenChange(false);
-      form.reset();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
   const updateMut = useServerMutation({
     mutationFn: (data: CrewAssignmentFormValues) =>
-      dlgWrites.update(assignment!.id as string, data),
+      dlgWrites.update(assignment.id as string, data),
     onSuccess: () => {
       toast.success("Assignment updated");
       refreshProjectCrew(projectId);
@@ -1060,39 +1005,16 @@ function AssignmentDialog({
   });
 
   const onSubmit = (data: CrewAssignmentFormValues) => {
-    if (mode === "add") {
-      createMut.mutate(data);
-    } else {
-      updateMut.mutate(data);
-    }
+    updateMut.mutate(data);
   };
 
-  const isPending = createMut.isPending || updateMut.isPending;
+  const isPending = updateMut.isPending;
 
   const roleOptions = (roles || []).map(
     (r: { id: string; name: string; department: string | null }) => ({
       value: r.id,
       label: r.name,
       description: r.department || undefined,
-    })
-  );
-
-  const crewOptions = (crewMembers || []).map(
-    (m: {
-      id: string;
-      firstName: string;
-      lastName: string;
-      crewRole?: { name: string } | null;
-      assignments?: { id: string }[];
-    }) => ({
-      value: m.id,
-      label: `${m.firstName} ${m.lastName}`,
-      description: [
-        m.crewRole?.name,
-        (m.assignments || []).length > 0 ? "(already assigned)" : null,
-      ]
-        .filter(Boolean)
-        .join(" ") || undefined,
     })
   );
 
@@ -1111,32 +1033,10 @@ function AssignmentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {mode === "add" ? "Add crew to project" : "Edit assignment"}
-          </DialogTitle>
+          <DialogTitle>Edit assignment</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          {/* Crew member picker (add mode only) */}
-          {mode === "add" && (
-            <div className="space-y-1.5">
-              <Label>Crew member *</Label>
-              <ComboboxPicker
-                options={crewOptions}
-                value={form.watch("crewMemberId")}
-                onChange={(v) => form.setValue("crewMemberId", v)}
-                placeholder="Search crew..."
-                searchPlaceholder="Type to search..."
-                emptyMessage="No crew members found"
-              />
-              {form.formState.errors.crewMemberId && (
-                <p className="text-caption text-t-out">
-                  {form.formState.errors.crewMemberId.message}
-                </p>
-              )}
-            </div>
-          )}
-
           {/* Service */}
           {serviceOptions.length > 0 && (
             <div className="space-y-1.5">
@@ -1318,32 +1218,30 @@ function AssignmentDialog({
             />
           </div>
 
-          {/* Status (edit mode) */}
-          {mode === "edit" && (
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select
-                value={form.watch("status")}
-                onValueChange={(v) =>
-                  form.setValue(
-                    "status",
-                    v as CrewAssignmentFormValues["status"]
-                  )
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue>{assignmentStatusLabels[form.watch("status") ?? ""] ?? form.watch("status")}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {allStatuses.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {assignmentStatusLabels[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Status */}
+          <div className="space-y-1.5">
+            <Label>Status</Label>
+            <Select
+              value={form.watch("status")}
+              onValueChange={(v) =>
+                form.setValue(
+                  "status",
+                  v as CrewAssignmentFormValues["status"]
+                )
+              }
+            >
+              <SelectTrigger>
+                <SelectValue>{assignmentStatusLabels[form.watch("status") ?? ""] ?? form.watch("status")}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {allStatuses.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {assignmentStatusLabels[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* PM checkbox */}
           <div className="flex items-center gap-2">
@@ -1358,22 +1256,6 @@ function AssignmentDialog({
               Project manager
             </Label>
           </div>
-
-          {/* Generate shifts (add mode) */}
-          {mode === "add" && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="generateShifts"
-                checked={form.watch("generateShifts")}
-                onCheckedChange={(v) =>
-                  form.setValue("generateShifts", v === true)
-                }
-              />
-              <Label htmlFor="generateShifts" className="cursor-pointer">
-                Auto-generate daily shifts
-              </Label>
-            </div>
-          )}
 
           {/* Notes */}
           <div className="space-y-1.5">
@@ -1436,7 +1318,7 @@ function AssignmentDialog({
             </Button>
             <Button type="submit" disabled={isPending}>
               {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {mode === "add" ? "Add to project" : "Save changes"}
+              Save changes
             </Button>
           </DialogFooter>
         </form>

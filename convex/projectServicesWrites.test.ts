@@ -420,24 +420,36 @@ describe("bulk", () => {
 
 // ─── generateServicesNative ───────────────────────────────────────────────────
 describe("generateServicesNative", () => {
+  // WS2 (#941): dates now derive from the PROJECT window (getProjectWindow), not
+  // loadIn/loadOut/event*. DELIVERY/BUMP_IN sit at the window start, BUMP_OUT/
+  // PICKUP at the window end, LABOUR spans the whole window (a 2-day window here
+  // fans LABOUR out across both days).
   test("default-set generate is idempotent (dedup by type:date)", async () => {
     const t = makeT();
     await member(t, "member");
-    await seedProject(t, "p1", ORG, { loadInDate: NOW, loadOutDate: NOW + DAY, eventStartDate: NOW + 2 * DAY });
+    await seedProject(t, "p1", ORG, { projectStartDate: NOW, projectEndDate: NOW + DAY });
     const r1 = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, { projectId: "p1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logg" });
-    expect(r1.created).toBe(5); // DELIVERY, BUMP_IN, BUMP_OUT, PICKUP, LABOUR(Show Day)
+    expect(r1.created).toBe(6); // DELIVERY, BUMP_IN, BUMP_OUT, PICKUP, LABOUR(Show Day) x2 days
     const r2 = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, { projectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logg2" });
     expect(r2.created).toBe(0); // dedup
-    expect((await logById(t, "logg"))?.summary).toBe("Generated 5 services for P-p1");
+    expect((await logById(t, "logg"))?.summary).toBe("Generated 6 services for P-p1");
   });
 
-  test("no project date → throws", async () => {
+  test("falls back to the rental window when the project window is unset", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { rentalStartDate: NOW, rentalEndDate: NOW });
+    const r1 = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, { projectId: "p1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logg" });
+    expect(r1.created).toBe(5); // DELIVERY, BUMP_IN, BUMP_OUT, PICKUP, LABOUR(Show Day) — single day
+  });
+
+  test("no project or rental date → throws", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t);
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, { projectId: "p1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logg" }),
-    ).rejects.toThrow(/at least one date/i);
+    ).rejects.toThrow(/project or rental start date/i);
   });
 
   test("viewer denied", async () => {

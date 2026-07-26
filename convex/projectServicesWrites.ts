@@ -14,6 +14,7 @@ import { recalcServiceCostFromCrew } from "./lib/serviceCost";
 import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
+import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 
 /**
@@ -858,17 +859,25 @@ type GenTemplate = {
   showOnDocuments: boolean;
 };
 
+/**
+ * WS2 (#941) — service dates now derive from the PROJECT window (getProjectWindow),
+ * not the deprecated loadIn/loadOut/event* fields: DELIVERY/BUMP_IN sit at the
+ * window start (the old loadInDate role), BUMP_OUT/PICKUP at the window end (the
+ * old loadOutDate role), and LABOUR/MISC span the whole window (the old
+ * eventStartDate..eventEndDate role — the project window is the closest single
+ * replacement now that the event pair is gone).
+ */
 function getServiceDateForType(
   type: string,
-  p: { loadInDate: number | null; loadOutDate: number | null; eventStartDate: number | null; eventEndDate: number | null },
+  window: { start: number | null; end: number | null },
 ): { date: number | null; endDate: number | null } {
   switch (type) {
-    case "DELIVERY": return { date: p.loadInDate, endDate: p.loadInDate };
-    case "BUMP_IN": return { date: p.loadInDate, endDate: p.loadInDate };
-    case "BUMP_OUT": return { date: p.loadOutDate, endDate: p.loadOutDate };
-    case "PICKUP": return { date: p.loadOutDate, endDate: p.loadOutDate };
-    case "LABOUR": return { date: p.eventStartDate, endDate: p.eventEndDate ?? p.eventStartDate };
-    default: return { date: p.eventStartDate, endDate: p.eventEndDate ?? p.eventStartDate }; // MISC
+    case "DELIVERY": return { date: window.start, endDate: window.start };
+    case "BUMP_IN": return { date: window.start, endDate: window.start };
+    case "BUMP_OUT": return { date: window.end, endDate: window.end };
+    case "PICKUP": return { date: window.end, endDate: window.end };
+    case "LABOUR": return { date: window.start, endDate: window.end ?? window.start };
+    default: return { date: window.start, endDate: window.end ?? window.start }; // MISC
   }
 }
 
@@ -884,14 +893,12 @@ export const generateServicesNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const project = await requireProjectInOrg(ctx, a.projectId, a.orgId);
-    const loadInDate = project.loadInDate ?? null;
-    const loadOutDate = project.loadOutDate ?? null;
-    const eventStartDate = project.eventStartDate ?? null;
-    const eventEndDate = project.eventEndDate ?? null;
-    if (loadInDate == null && loadOutDate == null && eventStartDate == null) {
-      throw new ConvexError("Project must have at least one date (load in, load out, or event start) to generate services");
+    // WS2 (#941) — service generation reads the PROJECT window (falls back to
+    // rental when unset), not the deprecated loadIn/loadOut/event* fields.
+    const window = getProjectWindow(project);
+    if (window.start == null) {
+      throw new ConvexError("Project must have a project or rental start date to generate services");
     }
-    const dateBundle = { loadInDate, loadOutDate, eventStartDate, eventEndDate };
 
     let location: { address: string | null; latitude: number | null; longitude: number | null } | null = null;
     if (project.locationId) {
@@ -935,7 +942,7 @@ export const generateServicesNative = mutation({
         defaultUnitPrice: null,
         showOnDocuments: false,
       }));
-      if (eventStartDate != null) {
+      if (window.start != null) {
         templatesToUse.push({
           type: "LABOUR", title: "Show Day", description: null, defaultCrewCount: null,
           defaultVehicle: null, defaultPricingType: null, defaultUnitPrice: null, showOnDocuments: false,
@@ -956,7 +963,7 @@ export const generateServicesNative = mutation({
     }> = [];
 
     for (const tmpl of templatesToUse) {
-      const { date, endDate } = getServiceDateForType(tmpl.type, dateBundle);
+      const { date, endDate } = getServiceDateForType(tmpl.type, window);
       if (date == null) continue;
       if (tmpl.type === "LABOUR" && endDate != null && endDate > date) {
         for (let cur = date; cur <= endDate; cur += DAY) {

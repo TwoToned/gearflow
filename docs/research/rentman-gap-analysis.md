@@ -6,6 +6,9 @@
 `docs/designs/app-cleanup-unification.md`, with code-level verification of every
 "does not exist" claim (grep/route checks, 2026-07-26).
 
+**Follow-up:** [`rentman-gap-priorities.md`](./rentman-gap-priorities.md) rates every gap
+below by severity/worth and recommends build/defer/skip verdicts.
+
 **How to read this:** §1 is what Rentman has that we don't. §2 is what we have that
 Rentman doesn't. §3 is features both products have, where the *shape* differs enough to
 matter. A ⚠️ marks places where we **built the thing and then deleted it** — those are

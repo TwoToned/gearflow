@@ -14,8 +14,12 @@ It is the parent index above the individual design docs in `docs/designs/`.
   `XL` (multi-month). AI-assisted build time is a small fraction of this.
 - Each phase item is a candidate for its own `/autoplan` run — one feature, one
   plan, one review pipeline. Do not batch unrelated items into a single plan.
-- Finance stays out of scope. Xero owns invoices, payments, quotes, GST. RVLT Flow
-  is operational tooling. (See `docs/designs/app-cleanup-unification.md`.)
+- Finance repositioned (2026-07-26): **RVLT Flow owns the quoting pipeline and
+  invoice generation** — quotes, deposit / partial-payment / final invoices.
+  Xero (and later other finance apps) owns the ledger, payment collection, and
+  reconciliation, fed via integrations starting with Xero. This supersedes the
+  earlier "Xero owns invoices, payments, quotes, GST" stance (recorded in
+  `docs/designs/app-cleanup-unification.md`). Tracking: issue #934.
 
 ## The big reframe
 

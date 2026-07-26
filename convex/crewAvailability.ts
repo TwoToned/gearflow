@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgRead } from "./lib/auth";
+import { EXCLUDED_ASSIGNMENT_STATUSES as EXCLUDED, overlaps, iso, classifyAvailabilityBlock } from "./lib/crewConflicts";
 
 /**
  * Browser-direct crew-availability + planner reads (Phase 3 — replace getCrewAvailability
@@ -9,11 +10,11 @@ import { requireOrgRead } from "./lib/auth";
  * returned as ISO strings to match the deleted actions' serialized shape. Overlap is
  * inclusive: `startMs <= rangeEnd && endMs >= rangeStart`. Excluded assignment statuses:
  * CANCELLED / DECLINED.
+ *
+ * `overlaps`/`EXCLUDED`/severity classification now live in `./lib/crewConflicts` (WS3
+ * #942) — shared with `overbookingBoard.ts`'s org-wide "crew double-bookings" section,
+ * which reuses this exact severity model instead of re-deriving it.
  */
-
-const EXCLUDED = new Set(["CANCELLED", "DECLINED"]);
-const overlaps = (aStart: number, aEnd: number, rStart: number, rEnd: number) => aStart <= rEnd && aEnd >= rStart;
-const iso = (ms: number | null | undefined) => (ms == null ? null : new Date(ms).toISOString());
 
 async function orgMemberIds(ctx: QueryCtx, orgId: string): Promise<Set<string>> {
   const members = await ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: bounded by the org's crew roster (member-id set) — see docs/exceptions.md R-8.3.3
@@ -49,11 +50,11 @@ export const conflicts = query({
           .filter((b) => b.organizationId === orgId && overlaps(b.startDate, b.endDate, startMs, endMs))
       : [];
     for (const b of blocks) {
-      const t = b.type ?? "UNAVAILABLE";
+      const { severity, label } = classifyAvailabilityBlock(b.type, b.reason);
       out.push({
         type: "availability",
-        severity: t === "UNAVAILABLE" ? "hard" : "soft",
-        label: t === "UNAVAILABLE" ? `Unavailable${b.reason ? `: ${b.reason}` : ""}` : t === "TENTATIVE" ? `Tentative${b.reason ? `: ${b.reason}` : ""}` : `Preferred${b.reason ? `: ${b.reason}` : ""}`,
+        severity,
+        label,
         startDate: new Date(b.startDate).toISOString(),
         endDate: new Date(b.endDate).toISOString(),
       });

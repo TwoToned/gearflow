@@ -46,7 +46,13 @@ export const bundle = query({
     // Range-scan by (org, status, MIN_TS < scheduledDate <= now) per open status so
     // the reactive read-set is only the dated-and-due records, not the whole
     // maintenance table (Appendix B). The lower bound keeps undated rows out.
+    //
+    // WS6 #945: schedule-generated PM cycles (serviceScheduleId set) are
+    // EXCLUDED from this count — they get their own "N models due for service"
+    // chip (modelsDueForService below) instead of double-counting into the
+    // legacy ad-hoc-maintenance tile (see FEATUREDOCS/17's chip note).
     let maintenanceDue = 0;
+    const dueForServiceModelIds = new Set<string>();
     for (const status of OPEN_MAINTENANCE_STATUSES) {
       const due = await ctx.db
         .query("maintenanceRecords")
@@ -54,8 +60,19 @@ export const bundle = query({
           q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lte("scheduledDate", now),
         )
         .collect();
-      maintenanceDue += due.length;
+      for (const r of due) {
+        if (!r.serviceScheduleId) {
+          maintenanceDue++;
+          continue;
+        }
+        const schedule = await ctx.db
+          .query("serviceSchedules")
+          .withIndex("by_cuid", (q) => q.eq("id", r.serviceScheduleId!))
+          .unique();
+        if (schedule) dueForServiceModelIds.add(schedule.modelId);
+      }
     }
+    const modelsDueForService = dueForServiceModelIds.size;
 
     // ── Date-derived: overdueReturns (CHECKED_OUT line items in overdue projects) ──
     // Overdue = non-template project past its rentalEndDate, not in a terminal
@@ -98,6 +115,10 @@ export const bundle = query({
       activeCrew: counter.activeCrew,
       pendingCrewOffers: counter.pendingCrewOffers,
       maintenanceDue,
+      // WS6 #945 — distinct models with an open, due (or in-progress) recurring
+      // PM cycle. Separate from `maintenanceDue` by design (see the exclusion
+      // note above) so the two chips never double-count the same work.
+      modelsDueForService,
       overdueReturns,
       // False until the sharded counters are seeded, so the client shows a loading
       // state instead of wrong-zeros mid-migration (see useNativeDashboardStats).

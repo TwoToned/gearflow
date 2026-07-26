@@ -22,9 +22,9 @@ const SERVICE = { subject: "gearflow-service", svc: true };
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 const ACTOR = { userId: USER, userName: "Alice" };
 
-async function seedProject(t: ReturnType<typeof convexTest>, role?: string, isTemplate = false) {
+async function seedProject(t: ReturnType<typeof convexTest>, role?: string, isTemplate = false, status = "CONFIRMED") {
   await t.run(async (ctx) => {
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status, isTemplate, createdAt: NOW, updatedAt: NOW });
     if (role) await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
   });
 }
@@ -186,7 +186,9 @@ describe("projectWrites.updateNative", () => {
   const uargs = { id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
   test("member patches fields + UPDATE audit (label from doc)", async () => {
     const t = makeT();
-    await seedProject(t, "member");
+    // OPEN tier (#957) — this test is about the general patch + audit shape, not
+    // the finance lock, so taxRate stays editable without an unlock session.
+    await seedProject(t, "member", false, "QUOTED");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { name: "Renamed Gig", taxRate: 10, updatedAt: NOW }, clear: [] });
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
@@ -235,7 +237,10 @@ describe("projectWrites.updateNative", () => {
   });
   test("rejects an out-of-bounds money field a browser caller bypassing Zod could forge", async () => {
     const t = makeT();
-    await seedProject(t, "member");
+    // OPEN tier (#957) — this test is specifically about the money-field BOUNDS
+    // check (assertProjectMoneyFields), not the finance lock; a locked project
+    // would reject the write with FINANCIALS_LOCKED before ever reaching it.
+    await seedProject(t, "member", false, "QUOTED");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { taxRate: 150, updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/tax rate/i);
@@ -333,6 +338,114 @@ describe("projectWrites.updateNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { crewNotes: "x".repeat(5001), updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/crewNotes/);
   });
+
+  // WS9 #948 — per-project contact picker.
+  describe("clientContactId", () => {
+    async function seedClientWithContact(t: ReturnType<typeof convexTest>, clientId: string, contactId: string) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: clientId, organizationId: ORG, name: `Client ${clientId}`, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("clientContacts", { id: contactId, organizationId: ORG, clientId, name: "Jane Doe", isPrimary: true, sortOrder: 0 });
+      });
+    }
+
+    test("accepts a contact that belongs to the project's client", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
+      });
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.clientContactId).toBe("cc1");
+    });
+
+    test("rejects a contact belonging to a DIFFERENT client (wrong-client contact)", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await seedClientWithContact(t, "c2", "cc2");
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+          ...uargs, set: { clientId: "c1", clientContactId: "cc2", updatedAt: NOW }, clear: [],
+        }),
+      ).rejects.toThrow(/not found on this project's client/i);
+    });
+
+    test("rejects a cross-org contact even if it happens to share the clientId string", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Own Co", createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("clientContacts", { id: "ccX", organizationId: "other_org", clientId: "c1", name: "Ghost", isPrimary: true, sortOrder: 0 });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+          ...uargs, set: { clientId: "c1", clientContactId: "ccX", updatedAt: NOW }, clear: [],
+        }),
+      ).rejects.toThrow(/not found on this project's client/i);
+    });
+
+    test("is cleared automatically when the project's clientId changes without an explicit new contact", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await seedClientWithContact(t, "c2", "cc2");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
+      });
+      // Switch clients WITHOUT touching clientContactId — the stale cc1 pick must
+      // not silently carry over onto c2's documents.
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
+      });
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.clientId).toBe("c2");
+      expect(p?.clientContactId).toBeUndefined();
+    });
+
+    test("is cleared when clientId is cleared outright", async () => {
+      const t = makeT();
+      await seedProject(t, "member");
+      await seedClientWithContact(t, "c1", "cc1");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+        ...uargs, set: { updatedAt: NOW + 1 }, clear: ["clientId"],
+      });
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.clientId).toBeUndefined();
+      expect(p?.clientContactId).toBeUndefined();
+    });
+
+    test("createNative rejects a clientContactId belonging to a different client", async () => {
+      const t = makeT();
+      await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" }); });
+      await seedClientWithContact(t, "c1", "cc1");
+      await seedClientWithContact(t, "c2", "cc2");
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, {
+          id: "pnew", organizationId: ORG, projectNumber: "P-NEW", name: "New Gig",
+          clientId: "c1", clientContactId: "cc2",
+          actor: ACTOR, auditId: "log-new",
+        }),
+      ).rejects.toThrow(/not found on this project's client/i);
+    });
+
+    test("createNative accepts a clientContactId belonging to the SAME client", async () => {
+      const t = makeT();
+      await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" }); });
+      await seedClientWithContact(t, "c1", "cc1");
+      const result = await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, {
+        id: "pnew", organizationId: ORG, projectNumber: "P-NEW", name: "New Gig",
+        clientId: "c1", clientContactId: "cc1",
+        actor: ACTOR, auditId: "log-new",
+      });
+      expect(result.created).toBe(true);
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "pnew")).first());
+      expect(p?.clientContactId).toBe("cc1");
+    });
+  });
 });
 
 describe("projectWrites.createNative", () => {
@@ -410,6 +523,63 @@ describe("projectWrites.createNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, clientId: "foreign-client" } as typeof cargs),
     ).rejects.toThrow(/not found in your organization/i);
+  });
+
+  // QW-4 (#953) — discount cascade: a new project with a client and no explicit
+  // discountPercent snapshots the client's defaultDiscount at create time.
+  describe("discount cascade (client.defaultDiscount)", () => {
+    async function seedClient(t: ReturnType<typeof convexTest>, id: string, defaultDiscount?: number) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" });
+        await ctx.db.insert("clients", { id, organizationId: ORG, name: "Acme Co", defaultDiscount, createdAt: NOW, updatedAt: NOW });
+      });
+    }
+
+    test("default applied: no discountPercent supplied → stamps the client's defaultDiscount", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", 15);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, clientId: "c1" } as typeof cargs);
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBe(15);
+    });
+
+    test("explicit value wins: caller's discountPercent overrides the client default", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", 15);
+      await t.withIdentity(asUser(ORG)).mutation(
+        api.projectWrites.createNative,
+        { ...cargs, clientId: "c1", discountPercent: 5 } as typeof cargs,
+      );
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBe(5);
+    });
+
+    test("explicit 0 wins: an explicit 0% discount is NOT overwritten by the client default (no truthiness bug)", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", 15);
+      await t.withIdentity(asUser(ORG)).mutation(
+        api.projectWrites.createNative,
+        { ...cargs, clientId: "c1", discountPercent: 0 } as typeof cargs,
+      );
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBe(0);
+    });
+
+    test("no client → no default applied (discountPercent stays unset)", async () => {
+      const t = makeT();
+      await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, cargs);
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBeUndefined();
+    });
+
+    test("client with no defaultDiscount set → discountPercent stays unset", async () => {
+      const t = makeT();
+      await seedClient(t, "c1", undefined);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, clientId: "c1" } as typeof cargs);
+      const p = await t.run((ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first());
+      expect(p?.discountPercent).toBeUndefined();
+    });
   });
 });
 

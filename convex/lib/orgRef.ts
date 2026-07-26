@@ -35,6 +35,25 @@ export async function assertRefInOrg(
 }
 
 /**
+ * Org + belongs-to-client validate a project's `clientContactId` (WS9 #948) — the
+ * contact must exist, belong to the caller's org, AND belong to the SAME client the
+ * project is being pointed at. Without the client check, a caller could pin a
+ * project at contact X (client A) while setting clientId to client B, silently
+ * mixing the two clients' PII on documents.
+ */
+export async function assertClientContactBelongsToClient(
+  ctx: MutationCtx,
+  contactId: string,
+  clientId: string,
+  orgId: string,
+): Promise<void> {
+  const doc = await ctx.db.query("clientContacts").withIndex("by_cuid", (q) => q.eq("id", contactId)).first();
+  if (!doc || doc.organizationId !== orgId || doc.clientId !== clientId) {
+    throw new ConvexError({ code: "FORBIDDEN", message: "Referenced client contact not found on this project's client." });
+  }
+}
+
+/**
  * Org-validate a client-supplied USER-id FK (reportedById/assignedToId/linked userId) —
  * the Better-Auth `user` table has no organizationId, so membership is checked via the
  * `member` table's global `by_org_user` index. Throws if the user is not a member of the

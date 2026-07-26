@@ -178,13 +178,29 @@ Auto-generated via atomic counter in `Organization.metadata.subHireOrderCounter`
 
 ## Files
 
+**Doc-drift correction (WS7 #946, 2026-07-26):** this table previously cited
+`prisma/schema.prisma` as owning the SubHire/SubHireGroup/SubHireItem/SupplierModelRate
+models and `src/server/sub-hires.ts` as holding "all server actions" — both stale.
+Sub-hire data has lived in **Convex** (`convex/schema.ts`) since the Convex-native
+migration (Postgres now only holds Better-Auth + audit models), and PR-2 of that
+migration deleted every write from `src/server/sub-hires.ts` — it now holds only the
+5 reads (`getSubHires`/`getSubHire`/`getSupplierModelRate`/`getSupplierRateHistory`/
+`checkSubHireOpportunity`) + the media trio. All CRUD/placement/pricing/orchestration
+writes are browser-direct native mutations.
+
 | File | Role |
 |------|------|
-| `prisma/schema.prisma` | SubHire, SubHireGroup, SubHireItem, SupplierModelRate models + placement FKs |
+| `convex/schema.ts` | `subHires`, `subHireGroups`, `subHireItems`, `supplierModelRates` tables + placement FKs + `supplierOrderId` (WS7 #946 link) |
+| `convex/subHiresWrites.ts` | ALL browser-direct write mutations: head/status/payment CRUD, item CRUD, group CRUD, placement, order pricing, changeProject, duplicate, PO link/unlink |
+| `convex/lib/subHireTotals.ts` | `recalcSubHireTotals` (money) + `upsertSupplierModelRate` |
+| `convex/lib/subHireLineGen.ts` | `regenerateSubHireLines` — delete-and-recreate of a sub-hire's `projectLineItems` |
+| `src/lib/sub-hire-read.ts` | Server-side read helpers mapping the Convex rows back to the Prisma-row shape pages expect |
+| `src/lib/sub-hire-to-order.ts` | WS7 #946 — pure prefill mapping for "Create purchase order from this sub-hire" |
 | `src/lib/validations/sub-hire.ts` | Zod schemas (subHire, subHireItem, subHireGroup, subHireOrderPricing, subHirePlacement) |
 | `src/lib/permissions.ts` | subHire resource |
-| `src/server/sub-hires.ts` | All server actions (CRUD, placement, line item generation, sync, rates) |
-| `src/components/projects/sub-hire-order-dialog.tsx` | Dialog component (list/create/manage views, item form, PlacementPicker, item row with showOnDocs) |
+| `src/server/sub-hires.ts` | READS ONLY (getSubHires/getSubHire/rate memory/opportunity check) + media add/remove |
+| `src/hooks/use-sub-hire-writes.ts` | Browser-direct write hook wrapping every `subHiresWrites.ts` mutation |
+| `src/components/projects/sub-hire-order-dialog.tsx` | Dialog component (list/create/manage views, item form, PlacementPicker, item row with showOnDocs, PO link panel + create-order dialog) |
 | `src/components/projects/equipment-tab.tsx` | Sub-hire orders section + dialog wiring + expanded items with groups |
 | `src/components/projects/add-equipment-dialog.tsx` | Overbook shortcut callback |
 
@@ -215,6 +231,54 @@ PR with browser QA against a seeded project.
 
 Leave-and-layer. Legacy `isSubhire` line items remain as-is. New sub-hires use the `SubHire` entity. Both "Add Subhire" (legacy line item) and "Sub-Hire Orders" (new dialog) appear in the equipment tab.
 
+## Purchase Order Link (WS7 #946)
+
+`SubHire` gains an optional `supplierOrderId` — a 1:1 FK to `SupplierOrder`
+(`convex/schema.ts`, `.index("by_supplierOrderId", ["supplierOrderId"])`) so a
+sub-hire's cost side can be reconciled against the actual invoiced purchase order.
+Data-only linkage — **no supplier-facing documents or emails** change.
+
+- **Validation** (`convex/subHiresWrites.ts`): `requireLinkableSupplierOrder`
+  org-checks the order (`assertRefInOrg`-equivalent via `by_cuid`, a GLOBAL index)
+  AND enforces the **same-supplier invariant** — `order.supplierId` must equal the
+  sub-hire's supplier. A link across two different suppliers is rejected.
+- **Set / clear**: `linkSubHireToSupplierOrderNative` / `unlinkSubHireFromSupplierOrderNative`
+  — kept as their own small mutations rather than folded into `updateSubHireNative`
+  (mirrors `attachInvoiceNative`/`removeInvoiceNative` on the order side). Both
+  regenerate the sub-hire's project lines afterward so `projectLineItems.supplierOrderId`
+  (previously a dormant field with no writer at all) picks up the link immediately.
+- **Clear-on-supplier-change**: changing the sub-hire's supplier via
+  `updateSubHireNative` clears an existing `supplierOrderId` (the asset-form
+  `supplierOrderId` precedent, issue #789) — a link only makes sense when both sides
+  still name the same supplier.
+- **Duplicate**: `duplicateSubHireNative` does NOT copy `supplierOrderId` — a
+  duplicated sub-hire starts unlinked (the source order was raised for the
+  *original* sub-hire's items, not the copy's).
+- **Delete**: deleting a sub-hire never touches the linked order — the FK is
+  one-directional (`subHires.supplierOrderId → supplierOrders.id`; the order carries
+  no back-reference), so removing the sub-hire row simply removes the FK with it.
+  The order is orphaned, never cascade-deleted. Conversely, `supplierOrdersWrites.deleteNative`
+  refuses to delete an order that a sub-hire (or an asset) still references.
+- **Create-order-from-sub-hire**: `SubHireManageView`'s "Create purchase order"
+  action (`src/components/projects/sub-hire-order-dialog.tsx`) creates a new
+  `SUBHIRE`-type order prefilled from the sub-hire (supplier, hireStart→orderDate,
+  hireEnd→expectedDate, project), copies every sub-hire item across (cost →
+  `unitPrice`), then links the two. Prefill mapping is a pure, unit-tested helper —
+  `src/lib/sub-hire-to-order.ts` (`buildOrderHeaderPrefill`,
+  `mapSubHireItemsToOrderItems`, `defaultOrderNumberFor` → `PO-{orderNumber}`,
+  user-editable before create). The modal reads via non-reactive server actions
+  (see Performance notes below) — an explicit `invalidate()` after create refreshes
+  the manage view with the new link.
+- **Reconciliation (quoted vs invoiced)**: shown on the manage view's "Purchase
+  order" panel once linked — quoted = `subHire.totalCost`; invoiced = the linked
+  order's `total`; variance = invoiced − quoted, **derived on every read, never
+  denormalised** (`getSubHire` in `src/server/sub-hires.ts` computes it fresh each
+  time). **The P&L keeps using `subHire.totalCost` only** — sub-hire order totals do
+  NOT feed `recalculateProjectTotals`/`recalc.ts`; variance is informational (spec
+  decision, WS7 #946). See [22-suppliers](./22-suppliers.md#supplier-orders-purchase-orders)
+  for the order-side lifecycle this link connects to, including the supplier-page
+  spend rollups that de-duplicate a linked pair to count once.
+
 ## Not in Scope (v1)
 
 - Partial returns (per-item return tracking)
@@ -222,3 +286,4 @@ Leave-and-layer. Legacy `isSubhire` line items remain as-is. New sub-hires use t
 - Pro-rated cost attribution across months
 - Backfill of legacy sub-hire line items
 - Per-ungrouped-item placement picker in UI (server action exists, UI deferred)
+- Charge-back-aware damage costs (still unbuilt — see [10-projects](./10-projects.md#operational-pl-panel))

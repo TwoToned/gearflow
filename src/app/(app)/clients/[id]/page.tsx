@@ -9,8 +9,6 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Pencil,
   Archive,
-  Mail,
-  Phone,
   MapPin,
   FileText,
   ChevronRight,
@@ -23,6 +21,8 @@ import { toast } from "sonner";
 
 import { api } from "../../../../../convex/_generated/api";
 import { useClientWrites } from "@/hooks/use-native-client-writes";
+import { ClientContactsManager, ReadOnlyContactsList } from "@/components/clients/client-contacts-manager";
+import { getPrimaryContact } from "@/lib/client-contact-helpers";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -108,6 +108,15 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
       </div>
     );
   }
+
+  // Primary contact (WS9 #948) — resolved via the shared helper (contacts child
+  // table first, legacy embedded fields during the migration window as fallback).
+  const contacts = client.contacts ?? [];
+  const resolvedPrimary = getPrimaryContact(contacts);
+  const primaryContact = resolvedPrimary
+    ? { name: resolvedPrimary.name ?? null, email: resolvedPrimary.email ?? null, phone: resolvedPrimary.phone ?? null }
+    : { name: client.contactName ?? null, email: client.contactEmail ?? null, phone: client.contactPhone ?? null };
+  const additionalContactCount = Math.max(0, contacts.length - 1);
 
   // Compute financial / activity summary from the projects the page already loads.
   const totalProjects = client.projects.length;
@@ -199,34 +208,39 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   />
                   {!client.isActive && <Badge status="overbooked">Archived</Badge>}
                 </div>
-                {/* Meta line: primary contact · email · phone */}
+                {/* Meta line: primary contact · email · phone (+N more) */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
-                  {client.contactName ? (
-                    <span className="text-ink-2">{client.contactName}</span>
+                  {primaryContact?.name ? (
+                    <span className="text-ink-2">{primaryContact.name}</span>
                   ) : (
                     <span>No primary contact</span>
                   )}
-                  {client.contactEmail && (
+                  {primaryContact?.email && (
                     <>
                       <span aria-hidden>&middot;</span>
                       <a
-                        href={`mailto:${client.contactEmail}`}
+                        href={`mailto:${primaryContact.email}`}
                         className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
                       >
-                        {client.contactEmail}
+                        {primaryContact.email}
                       </a>
                     </>
                   )}
-                  {client.contactPhone && (
+                  {primaryContact?.phone && (
                     <>
                       <span aria-hidden>&middot;</span>
                       <a
-                        href={`tel:${client.contactPhone}`}
+                        href={`tel:${primaryContact.phone}`}
                         className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
                       >
-                        {client.contactPhone}
+                        {primaryContact.phone}
                       </a>
                     </>
+                  )}
+                  {additionalContactCount > 0 && (
+                    <span className="rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-muted">
+                      +{additionalContactCount} more
+                    </span>
                   )}
                   {orgId && (
                     <PresenceAvatarStack entityType="client" entityId={id} size="sm" />
@@ -397,36 +411,13 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
             {/* ── Sidebar ──────────────────────────────────────────── */}
             <DetailSidebar>
-                {/* Contact */}
-                <SidebarSection title="Contact">
-                  {client.contactName || client.contactEmail || client.contactPhone ? (
-                    <div className="space-y-2 text-table-cell">
-                      {client.contactName && (
-                        <p className="font-medium text-ink">{client.contactName}</p>
-                      )}
-                      {client.contactEmail && (
-                        <div className="flex items-center gap-2 text-muted">
-                          <Mail className="h-3.5 w-3.5 shrink-0" />
-                          <a
-                            href={`mailto:${client.contactEmail}`}
-                            className={cn("truncate rounded-sm text-link hover:underline", focusRing)}
-                          >
-                            {client.contactEmail}
-                          </a>
-                        </div>
-                      )}
-                      {client.contactPhone && (
-                        <div className="flex items-center gap-2 text-muted">
-                          <Phone className="h-3.5 w-3.5 shrink-0" />
-                          <a href={`tel:${client.contactPhone}`} className={cn("rounded-sm text-link hover:underline", focusRing)}>
-                            {client.contactPhone}
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-table-cell text-muted">No contact info yet</p>
-                  )}
+                {/* Contacts (WS9 #948) — replaces the single-contact section; a
+                    separate per-project SITE contact (venue/on-site person) lives
+                    on the project itself and is intentionally independent. */}
+                <SidebarSection title="Contacts">
+                  <CanDo resource="client" action="update" fallback={<ReadOnlyContactsList contacts={contacts} legacy={client} />}>
+                    <ClientContactsManager clientId={id} contacts={contacts} />
+                  </CanDo>
                 </SidebarSection>
 
                 {/* Address & billing — merged: addresses + payment terms */}

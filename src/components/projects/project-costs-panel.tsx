@@ -120,6 +120,13 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
       <div className="space-y-1.5">
         <Row label="Services" value={formatCurrency(data.serviceCostTotal)} negative />
         <Row label="Labour" value={formatCurrency(data.labourCostTotal)} negative />
+        {/* Revenue for service-linked LABOUR services, once crew charge rates make
+            them billable (WS10 #949) — shown alongside the pre-existing labour
+            cost row rather than replacing it (that cost also covers standalone,
+            non-service-linked crew, which never has a charge side). */}
+        {data.labourServiceRevenue > 0 && (
+          <Row label="Labour revenue" value={formatCurrency(data.labourServiceRevenue)} muted />
+        )}
         <Row label="Sub-hire" value={formatCurrency(data.subHireCostTotal)} negative />
         {data.maintenanceCostTotal > 0 && (
           <Row label={`Maintenance (${data.counts.maintenanceRecords})`} value={formatCurrency(data.maintenanceCostTotal)} negative />

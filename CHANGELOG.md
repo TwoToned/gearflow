@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **#948** — Clients can now have multiple contacts (name/role/email/phone/notes,
+  one exclusive primary), fully optional. Projects can select a specific contact
+  (defaults to the client's primary) that PDFs, WooCommerce matching, and search
+  now resolve through. Legacy single-contact fields stay live as a fallback during
+  the migration window.
+- **#949** — Crew roles now carry a charge rate alongside their existing cost
+  rate. Services with crew assigned auto-price from the role's charge rate (with
+  a per-service override), and show margin (charge − cost) to manager+ users on
+  the service card, the services summary tile, and the project P&L panel. New
+  `/crew/settings` admin page for managing roles (previously undocumented but
+  referenced route with no implementation).
+- **#945** — Recurring preventative maintenance: model-wide service schedules
+  on a fixed calendar cadence (interval + anchor date), a daily generation cron,
+  and a `/maintenance/due` worklist for checking off serialised units or bulk
+  quantity sessions. Schedule due-ness never affects availability — a hard,
+  regression-tested invariant.
+- **#946** — Sub-hires can now link to a supplier order (FK, same-supplier
+  enforced), with a "create order from sub-hire" prefill action, order header
+  editing and item CRUD (previously read-only), computed order totals, and
+  quoted-vs-invoiced reconciliation. Supplier detail pages show de-duplicated
+  spend rollups across linked and unlinked sub-hires/orders.
 - **#790** — Org-level document settings (footer text, terms & conditions, quote
   validity days) on a new "Documents" card at `/settings/branding`. Quotes now show
   a T&Cs block (omitted when unset) and a real computed "valid until" date instead

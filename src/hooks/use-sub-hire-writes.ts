@@ -91,6 +91,8 @@ export function useSubHireWrites() {
   const placementM = useMutation(api.subHiresWrites.updateSubHirePlacementNative);
   const changeProjectM = useMutation(api.subHiresWrites.changeSubHireProjectNative);
   const duplicateM = useMutation(api.subHiresWrites.duplicateSubHireNative);
+  const linkOrderM = useMutation(api.subHiresWrites.linkSubHireToSupplierOrderNative);
+  const unlinkOrderM = useMutation(api.subHiresWrites.unlinkSubHireFromSupplierOrderNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -298,6 +300,15 @@ export function useSubHireWrites() {
 
     duplicate: async (sourceId: string): Promise<{ id: string; orderNumber: string }> => {
       return duplicateM({ id: createId(), orgId: requireOrg(), sourceId, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    // ─── Purchase-order link (WS7 #946) ─────────────────────────────────────
+    linkToSupplierOrder: async (subHireId: string, supplierOrderId: string): Promise<void> => {
+      await linkOrderM({ id: subHireId, orgId: requireOrg(), supplierOrderId, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+
+    unlinkFromSupplierOrder: async (subHireId: string): Promise<void> => {
+      await unlinkOrderM({ id: subHireId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
     },
   };
 }

@@ -51,7 +51,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 12 | [Warehouse](./FEATUREDOCS/12-warehouse.md) | Deploy/return flows, kit verification, conflict detection, org-wide returns station |
 | 13 | [PDFs](./FEATUREDOCS/13-pdfs.md) | Document generation, nested kit rendering, T&T reports |
 | 14 | [Test & Tag](./FEATUREDOCS/14-test-and-tag.md) | AS/NZS 3760:2022 compliance module |
-| 15 | [Maintenance](./FEATUREDOCS/15-maintenance.md) | Maintenance records, multi-asset |
+| 15 | [Maintenance](./FEATUREDOCS/15-maintenance.md) | Maintenance records, multi-asset, recurring preventative-maintenance schedules |
 | 16 | [Search](./FEATUREDOCS/16-search.md) | Global search, command palette, @ navigation |
 | 17 | [Notifications](./FEATUREDOCS/17-notifications.md) | Alert types, dismiss behaviour |
 | 18 | [Media & Storage](./FEATUREDOCS/18-media-storage.md) | File uploads, S3 proxy, photo cascade |
@@ -88,6 +88,8 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 59 | [Bulk Operations](./FEATUREDOCS/59-bulk-operations.md) | Multi-select + bulk actions across all four project surfaces — **Equipment** (delete/move/edit), **Services** (status/delete), **Crew** (status/remove), **Tasks** (move/priority/delete). Shared `useSelection` + `BulkActionBar` + `BulkDeleteDialog`; batched server actions loop single-item Convex mutations with one recalc + one audit each. |
 | 60 | [Assets on a Job](./FEATUREDOCS/60-assets-on-a-job.md) | Project Equipment tab shows which specific serialised assets are prepped/deployed/returned on a job (inline tag for single, expandable per-unit rows + status badge for multi-qty, kit-member tags), with a per-unit "reassign to another same-model line" picker to correct the scan auto-pick. RETURNED units are retained through check-in/close-out (+ deprep guard + `assetScanLog` backstop), so a finished job still shows what went out. Extends [line-item-fulfillment-model](./docs/designs/archive/line-item-fulfillment-model.md). |
 | 61 | [Observability](./FEATUREDOCS/61-observability.md) | Analytics + error tracking on PostHog (`posthog-js`/`posthog-node`), PII-hardened. Replaced Sentry entirely (#650) — client/server exception capture, Core Web Vitals, and deploy-pipeline sourcemap upload (`@posthog/nextjs-config`, BuildKit-secret-mounted CLI token) that hard-fails the build if misconfigured rather than silently skipping. |
+| 62 | [Project Lifecycle Locks](./FEATUREDOCS/62-project-lifecycle-locks.md) | Status-tier lock model (#957): finance soft-lock at CONFIRMED+ (#791), ON_SITE justification gate (#793), COMPLETED hard-lock + whole-project version snapshots + Versions/diff UI (#792). One shared `assertLifecycleGuard` + lock-tier module every gate site calls; unlock sessions (FINANCIAL/FULL scope) with justified-open/commit/discard + snapshot-backed restore. |
+| 63 | [Client Contacts](./FEATUREDOCS/63-client-contacts.md) | Multiple contacts per client (#948, WS9) — a new `clientContacts` child table (fully optional, exclusive `isPrimary`), a per-project `clientContactId` picker, and one shared `getPrimaryContact` resolver used by the client detail page, PDFs, search, and WooCommerce matching. Expand-migrate phase only — the legacy embedded `clients.contactName/Email/Phone` fields stay live as a read-only fallback; dropping them is a separate follow-up. |
 
 See also [`docs/glossary.md`](./docs/glossary.md) for core domain terms and documented
 aliases (POLICY.md R-3.10).

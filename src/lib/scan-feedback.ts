@@ -1,66 +1,122 @@
 /**
- * Minimal scan-feedback audio helper (issue #944 WS5).
+ * Pure, client-only audio feedback for scan verdicts — barcode/tag scanning
+ * across Warehouse prep/deploy/return, the T&T quick-test wizard, and the
+ * `/check/[assetTag]` ad-hoc station. See FEATUREDOCS/12 (Scan Feedback) and
+ * FEATUREDOCS/14 (Audio note).
  *
- * The WS5 spec calls for consuming a "QW-1 shared beep" helper from the sibling
- * quick-wins tracking issue (#937), which other sessions were working on
- * concurrently and had not landed at the time this was built. Per the issue's own
- * instruction, this is a minimal LOCAL success/error/exception tone helper (Web
- * Audio API), following the one existing scan-feedback precedent in this codebase
- * — `playBeep()` in `src/app/(app)/test-and-tag/quick-test/page.tsx` (success vs.
- * failure tone, try/catch-swallowed `AudioContext`) — extended from a binary
- * success/fail to the three outcomes the returns station actually has (a
- * successful return, a hard error, and a session-local exception that still
- * doesn't block the dock).
- *
- * ⚠️ CONSOLIDATION TODO: once #937's `useScanFeedback` (or equivalent) lands,
- * replace this file's usage with it and delete this file — don't let two beep
- * helpers coexist long-term (POLICY.md R-3.1 single source of truth).
+ * Replaces the old per-call-site `playBeep` (T&T quick-test) which created a
+ * brand-new `AudioContext` on every beep and never closed it — Chrome caps
+ * concurrent contexts at ~6, so head-down scanning eventually went silent.
+ * This module keeps a single **lazy, module-level shared `AudioContext`**,
+ * calls `resume()` before every play (browsers auto-suspend contexts created
+ * outside a user gesture — the old code never resumed, so beeps could be
+ * silently dropped), and ramps gain out instead of hard-stopping (no click).
  */
 
-export type ScanFeedbackTone = "success" | "error" | "exception";
+export type ScanFeedbackKind = "success" | "error" | "exception" | "info";
 
-const TONE: Record<ScanFeedbackTone, { frequency: number; durationSec: number }> = {
-  // A clean high beep for "returned, moving on" — mirrors quick-test's success tone.
-  success: { frequency: 800, durationSec: 0.15 },
-  // A low buzz for "hard failure, nothing happened" — mirrors quick-test's fail tone.
-  error: { frequency: 300, durationSec: 0.4 },
-  // A distinct mid double-purpose tone for "logged as an exception, dock keeps
-  // moving" — deliberately NOT the same as either success or error, since an
-  // exception is neither: it's a resolvable identity with no active return to
-  // make (retired / no active deployment / disambiguation needed), and it must
-  // read as "noted, not blocking" rather than "something broke".
-  exception: { frequency: 550, durationSec: 0.25 },
-};
+interface TonePlan {
+  /** Oscillator frequency in Hz. */
+  frequency: number;
+  /** Blip duration in ms. */
+  durationMs: number;
+  /** Gap before a second blip, in ms. Omitted = single blip. */
+  secondBlipGapMs?: number;
+}
 
 /**
- * Play a short tone for the given scan outcome. Best-effort: swallows any
- * failure (no AudioContext support, autoplay policy, etc.) — a missing beep must
- * never block or interrupt the scan flow itself.
+ * Tone vocabulary (spec decision, 4 kinds):
+ * - `success`   — clean scan resolved as expected (800 Hz / 150 ms — byte-identical
+ *                 to the old T&T "pass" beep).
+ * - `error`     — hard failure, scan rejected (300 Hz / 400 ms — byte-identical to
+ *                 the old T&T "fail" beep).
+ * - `exception` — resolved but needs attention: not a clean success, not a hard
+ *                 error (e.g. already-returned asset, unknown tag, disambiguation
+ *                 needed — "scan the parent instead"). 500 Hz double-blip.
+ * - `info`      — neutral heads-up, e.g. a quantity prompt opening (600 Hz / 80 ms).
  */
-export function playScanFeedback(tone: ScanFeedbackTone): void {
+export const SCAN_FEEDBACK_TONES: Record<ScanFeedbackKind, TonePlan> = {
+  success: { frequency: 800, durationMs: 150 },
+  error: { frequency: 300, durationMs: 400 },
+  exception: { frequency: 500, durationMs: 120, secondBlipGapMs: 90 },
+  info: { frequency: 600, durationMs: 80 },
+};
+
+const GAIN = 0.1;
+/** Ramp-out window at the tail of each blip, so the stop doesn't click. */
+const RAMP_OUT_MS = 15;
+
+export type AudioContextFactory = () => AudioContext;
+
+function defaultAudioContextFactory(): AudioContext {
+  const Ctor =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctor) throw new Error("Web Audio API unavailable");
+  return new Ctor();
+}
+
+let contextFactory: AudioContextFactory = defaultAudioContextFactory;
+let sharedContext: AudioContext | null = null;
+
+/**
+ * Inject a fake `AudioContext` factory for tests (jsdom has no Web Audio API).
+ * Pass `null` to restore the real browser factory. Also used by the T&T page's
+ * legacy tests if they construct their own fake — see `scan-feedback.test.ts`.
+ */
+export function setScanFeedbackContextFactory(factory: AudioContextFactory | null): void {
+  contextFactory = factory ?? defaultAudioContextFactory;
+  sharedContext = null;
+}
+
+function getSharedContext(): AudioContext | null {
   try {
-    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const { frequency, durationSec } = TONE[tone];
-    osc.frequency.value = frequency;
-    gain.gain.value = 0.1;
-    // Release the context once the tone finishes — AudioContext instances aren't
-    // free and quick-test's precedent never closes them; a returns-station batch
-    // scan session can fire many more tones per minute than a single T&T test, so
-    // close explicitly to avoid accumulating contexts. Assigned before `.stop()`
-    // is called (not that it matters for a real AudioContext — `onended` always
-    // fires at a future audio-clock time — but it's the conventional order).
-    osc.onended = () => {
-      void ctx.close().catch(() => {});
-    };
-    osc.start();
-    osc.stop(ctx.currentTime + durationSec);
+    if (!sharedContext || sharedContext.state === "closed") {
+      sharedContext = contextFactory();
+    }
+    return sharedContext;
   } catch {
-    /* ignore if audio not available */
+    return null;
+  }
+}
+
+function playBlip(ctx: AudioContext, plan: TonePlan, startAt: number): number {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.frequency.value = plan.frequency;
+
+  const durationS = plan.durationMs / 1000;
+  const rampOutS = Math.min(RAMP_OUT_MS / 1000, durationS / 2);
+  const rampStart = startAt + durationS - rampOutS;
+
+  gain.gain.setValueAtTime(GAIN, startAt);
+  gain.gain.setValueAtTime(GAIN, rampStart);
+  gain.gain.linearRampToValueAtTime(0, startAt + durationS);
+
+  osc.start(startAt);
+  osc.stop(startAt + durationS);
+
+  return startAt + durationS;
+}
+
+/**
+ * Play a scan feedback tone. Safe to call unconditionally — any Web Audio
+ * failure (autoplay policy, missing API, closed context) is swallowed so
+ * callers never need their own try/catch.
+ */
+export function playScanFeedback(kind: ScanFeedbackKind): void {
+  const ctx = getSharedContext();
+  if (!ctx) return;
+  try {
+    void ctx.resume();
+    const plan = SCAN_FEEDBACK_TONES[kind];
+    const firstBlipEnd = playBlip(ctx, plan, ctx.currentTime);
+    if (plan.secondBlipGapMs != null) {
+      playBlip(ctx, plan, firstBlipEnd + plan.secondBlipGapMs / 1000);
+    }
+  } catch {
+    // Audio is a non-critical enhancement — never let it break a scan flow.
   }
 }

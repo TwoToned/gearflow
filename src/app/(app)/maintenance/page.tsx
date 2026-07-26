@@ -370,6 +370,14 @@ export default function MaintenancePage() {
         <PageHeader
           title="Maintenance"
           description="Repairs, inspections, and scheduled servicing."
+          actions={
+            <Button size="sm" variant="line" asChild>
+              <Link href="/maintenance/due">
+                <Wrench className="mr-2 h-4 w-4" />
+                Due for service
+              </Link>
+            </Button>
+          }
         />
 
         {overdueMaintenance > 0 && (

@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { isLinkRow } from "../../convex/lib/maintenanceRecordAssetKind";
 
 /**
  * Server-side read helpers for the `maintenanceRecordAsset` join (Phase B write
@@ -27,11 +28,19 @@ export interface MaintenanceRecordAssetRow {
   assetId: string;
 }
 
+/**
+ * `maintenanceRecordAssets` is polymorphic (WS6 #945 — see the schema.ts
+ * comment on the table): a row is either a hold/release LINK (what this
+ * module's callers care about) or a recurring-PM CHECKOFF progress row. Only
+ * LINK rows are mapped here — `mapLink` is only ever called after filtering to
+ * `isLinkRow`, so `assetId` is guaranteed set even though the underlying doc
+ * type carries it as optional.
+ */
 export function mapLink(d: RawLink): MaintenanceRecordAssetRow {
   return {
     id: d.id,
     maintenanceRecordId: d.maintenanceRecordId,
-    assetId: d.assetId,
+    assetId: d.assetId as string,
   };
 }
 
@@ -51,7 +60,7 @@ export async function getMaintenanceAssetLinksByRecordIds(
       { maintenanceRecordIds },
     ),
   )) as RawLink[];
-  return rows.map(mapLink);
+  return rows.filter(isLinkRow).map(mapLink);
 }
 
 /**
@@ -69,7 +78,7 @@ export async function getMaintenanceAssetLinksByAssetIds(
       assetIds,
     }),
   )) as RawLink[];
-  return rows.map(mapLink);
+  return rows.filter(isLinkRow).map(mapLink);
 }
 
 // ─── Convex-only writes (Phase B) ────────────────────────────────────────────

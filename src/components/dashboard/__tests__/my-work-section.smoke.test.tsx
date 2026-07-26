@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
 
 const base = {
@@ -37,5 +37,33 @@ describe("MyWorkSection smoke", () => {
 
   it("renders empty + all-clear without throwing", () => {
     expect(() => render(<MyWorkSection projects={[]} />)).not.toThrow();
+  });
+
+  it("renders the tasks-due block with a 'N more' link when tasks exceed the shown count", () => {
+    const projects = [{ ...base, id: "a", status: "CONFIRMED", rentalStartDate: null, rentalEndDate: null }];
+    const tasks = Array.from({ length: 7 }, (_, i) => ({
+      id: `t${i}`,
+      title: `Task ${i}`,
+      status: i === 0 ? "IN_PROGRESS" : "TODO",
+      priority: "NORMAL",
+      dueDate: i === 0 ? Date.now() - 86_400_000 : null,
+      overdue: i === 0,
+      projectId: "a",
+      projectName: "Gig",
+      projectNumber: "260601",
+    }));
+    render(<MyWorkSection projects={projects} tasks={tasks} />);
+    // Only the first 5 are shown as rows...
+    expect(screen.getByText("Task 0")).toBeDefined();
+    expect(screen.getByText("Task 4")).toBeDefined();
+    expect(screen.queryByText("Task 5")).toBeNull();
+    // ...and the remaining 2 surface as a "more" link to /my-tasks.
+    const moreLink = screen.getByText(/2 more/);
+    expect(moreLink.closest("a")?.getAttribute("href")).toBe("/my-tasks");
+  });
+
+  it("omits the tasks-due block entirely when there are no open tasks", () => {
+    render(<MyWorkSection projects={[]} tasks={[]} />);
+    expect(screen.queryByText("Tasks due")).toBeNull();
   });
 });

@@ -24,6 +24,11 @@ export function useClientWrites() {
   const notesM = useMutation(api.clientWrites.updateNotesNative);
   const archiveM = useMutation(api.clientWrites.archiveNative);
   const archiveManyM = useMutation(api.clientWrites.archiveManyNative);
+  // WS9 #948 — two-phase create: the client row itself carries no embedded
+  // contact fields anymore (toClientFields omits them), so a primary contact
+  // collected at create-time (ClientForm / QuickCreateClient) is written here as
+  // a SEPARATE clientContacts row right after the client is minted.
+  const addContactM = useMutation(api.clientContactWrites.addNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -52,6 +57,26 @@ export function useClientWrites() {
         actor: actor(),
         auditId: createId(),
       });
+
+      // Two-phase: the client id is already minted client-side, so the primary
+      // contact (if the form collected one) is a second call against that SAME id.
+      // Best-effort in the sense that the client itself is already committed — a
+      // contact-write failure here surfaces to the caller but never rolls back
+      // the client (matches "a client with zero contacts stays valid").
+      if (parsed.contactName || parsed.contactEmail || parsed.contactPhone) {
+        await addContactM({
+          id: createId(),
+          orgId: org,
+          clientId: id,
+          name: parsed.contactName || undefined,
+          email: parsed.contactEmail || undefined,
+          phone: parsed.contactPhone || undefined,
+          isPrimary: true,
+          now,
+          actor: actor(),
+          auditId: createId(),
+        });
+      }
       return { id };
     },
     update: async (id: string, data: ClientFieldsInput): Promise<{ id: string }> => {

@@ -17,7 +17,8 @@
   - Generic SaaS dashboard language ("Manage your X directory")
   - Personality copy, mascots, or Kalam font in alert/compliance/overdue/conflict contexts
   - Full-row background tints on table hover (use left-edge indicator)
-  - 7-column stat card grids (use inline metrics strip)
+  - 7-column stat card grids (use a bounded bento grid of individually-bordered tiles,
+    max 4 per row on desktop — see "Dashboard Layout" below)
   - Floating-card-in-space login (use split-panel with brand mark)
   - Centered-everything layouts
   - Placeholder emoji or purely decorative icons
@@ -311,8 +312,24 @@ All detail pages (project, asset, model, kit, client, crew, supplier, maintenanc
 ### Dashboard Layout
 - Dynamic greeting (Good morning/afternoon/evening) + date
 - Alert badges (red/amber) only when problems exist
-- Inline metrics strip (single surface, vertical dividers) instead of stat card grid
-- Activity feed with staggered entrance
+- **Bento grid of hard-offset-shadow tiles** (`TILE`/`TILE_LINK` in `dashboard/page.tsx`), NOT an
+  inline metrics strip with vertical dividers — that was an earlier draft that never shipped;
+  stat tiles are individually-bordered cards (§2 hard offset shadows), each linking to its
+  detail page.
+- **Three fixed zones, in this order (no widget boards — the zones are the layout, not a
+  drag-and-drop grid a user can rearrange):**
+  1. **My work** — `MyWorkSection` (renamed header "My work"): the "On the floor now" live-jobs
+     tile, a tasks-due block (top 5 open tasks assigned to the user, "N more →" to `/my-tasks`),
+     and the user's managed projects with per-project blocker badges + latest-blocker snippet.
+  2. **Org risk** — the "Needs attention" chip tray (overdue returns, maintenance due, crew
+     offers pending, blockers). Chips only render when a problem exists (no permanent zero-chip
+     UI). Carries a code-comment extension point for sibling-feature org-risk board chips —
+     never a stub or a dead link ahead of that work landing.
+  3. **Demoted** — stat tiles, upcoming projects, recent activity feed (staggered entrance).
+  Blockers surface in exactly two places — the My work zone's per-project badges, and the Org
+  risk needs-attention chip — never in a separate standalone blockers panel.
+- FadeIn delays are derived from section render order (`nextSectionDelay()` in `dashboard/page.tsx`),
+  not hand-numbered literals — inserting a section never requires renumbering the ones after it.
 
 ### Breadcrumb Navigation
 ```
@@ -488,7 +505,7 @@ Archivo is loaded via `next/font/google` with weights 400–900. Always referenc
   - Warehouse (check-out/in, scanning)
   - Crew (schedule, roster)
   - Assets (gear, kits)
-- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports
+- Sidebar-only (desktop + overflow): Settings, Admin, Clients, Suppliers, Test & Tag, Maintenance, Reports, My tasks (personal-scope cross-project task list — the task *count* already surfaces on the Dashboard, so it doesn't need a bottom-nav slot too)
 - Settings accessible via avatar menu on mobile
 
 ### Deep Navigation on Mobile

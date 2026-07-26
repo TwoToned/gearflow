@@ -3,6 +3,7 @@ import { ConvexError } from "convex/values";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import {
   decideOrgPermission,
+  isManagerPlusRole,
   type Resource,
   type OrgPermissionDecision,
 } from "./permissionsCore";
@@ -188,6 +189,28 @@ export async function requireOrgPermission(
   if (decision !== "allow") {
     throw new ConvexError(orgPermissionMessage(decision));
   }
+}
+
+/**
+ * Manager+ (owner/admin/manager) standing for the caller within `orgId` — the
+ * server-side half of the "cost + margin visible to manager+ only" gate (WS10 #949).
+ * Service identity (trusted backend) always counts as manager+ — it already ran its
+ * own authorization. A user token re-queries the member row (NOT the JWT's `role`
+ * claim, which can be stale after a demotion) — same lookup `requireOrgPermission`
+ * uses, so the two can never disagree.
+ */
+export async function isCallerManagerPlus(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+): Promise<boolean> {
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind === "service") return true;
+  if (auth?.kind !== "user" || auth.orgId !== orgId) return false;
+  const row = await ctx.db
+    .query("members")
+    .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", auth.userId))
+    .first();
+  return isManagerPlusRole(row?.role ?? null);
 }
 
 // ─── Actor identity (Phase 3 — browser-direct security baseline) ────────────

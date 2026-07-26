@@ -1,9 +1,66 @@
 # Availability & Overbooking Engine
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
+
+## The Two-Window Date Model (WS2 #941)
+
+Locked decision: a project carries exactly two windows, both optional and both
+nullable-per-side:
+
+- **Rental** (`rentalStartDate`/`rentalEndDate`) — the chargeable window.
+  **Pricing reads this directly** and is untouched by WS2 (a separate
+  workstream, #943).
+- **Project** (`projectStartDate`/`projectStartTime`/`projectEndDate`/
+  `projectEndTime`) — the gear-committed window (when equipment actually
+  leaves/returns the warehouse — the old load-in/load-out role). **Blank by
+  default** on most projects; when unset it falls back to the rental window.
+
+**`getProjectWindow(p) → {start, end}`** (`src/lib/project-window.ts` +
+byte-for-byte duplicate `convex/lib/projectWindow.ts`, pinned by a cross-import
+parity test) is the ONE authoritative resolver: `projectStartDate ??
+rentalStartDate`, `projectEndDate ?? rentalEndDate` — each side independently.
+**Availability and conflict detection read this window, never the rental
+window directly.** The old `loadInDate`/`loadOutDate`/`eventStartDate`/
+`eventEndDate` fields are **deprecated** (kept, unwritten, for one rollout
+cycle — narrowing is a follow-up once every consumer + the backfill are
+confirmed complete). A one-time paginated backfill
+(`convex/backfillProjectWindow.ts`, driver
+`scripts/convex-backfill-project-window.ts`) copies `projectStartDate ⇐
+loadInDate` / `projectEndDate ⇐ loadOutDate` (times carried) for existing
+projects; `eventStartDate`/`eventEndDate` are dropped, not migrated — there is
+no field for them in the two-window model, so a project whose only date was an
+event date resolves via the rental fallback like any other undated project.
+
+### The six parity-pinned overlap sites (all flipped together, #941)
+The "does project A's window overlap project B's window" comparison is
+duplicated in exactly six places (Convex can't import `src/lib/*`, so pure
+math is byte-copied into `convex/lib/`) — all six now call `getProjectWindow`
+on the CANDIDATE/other-project side instead of reading `rentalStartDate`/
+`rentalEndDate` directly:
+
+1. `src/lib/overbooking-core.ts` `projectMatchesWindow` (org-wide overbooking)
+2. `convex/lib/availabilityBookings.ts` `projectMatchesWindow` (model/kit/asset
+   booking reads) — its sibling `projectMatchesCalendarWindow` is **UNCHANGED
+   by design**: the calendar keeps drawing rental (pricing) bars, see below.
+3. `convex/lib/availabilityCore.ts` — `computeModelAvailability`'s candidate
+   filter + `findAssetConflict` + `findKitConflict`
+4. `convex/lib/reservationConflicts.ts` `overlappingProjectIds`
+5. `convex/projectLineItems.ts` `swapLineItemAsset`'s double-booking guard
+6. `src/server/line-items.ts` `checkAvailability`
+
+The QUERY window each site is fed (i.e. what represents "this project's own
+dates" for the comparison) is left as `rentalStartDate`/`rentalEndDate` at
+every call site for this PR — most projects have no divergent project window,
+so the common case is unaffected; retargeting the callers' own window source
+to `getProjectWindow` too is a scoped follow-up.
+
+`convex/overbooking.ts`'s scoped `bundle` candidate range-scan (see below) is
+a SEPARATE, perf-only concern from the six sites above — it decides which
+projects' line items even get FETCHED into the bundle before the six sites'
+math runs on them, and had to be re-keyed too (see the dedicated subsection).
 
 ## How It Works (`src/lib/availability.ts`)
-1. For each line item's model, query all other projects with overlapping rental dates
+1. For each line item's model, query all other projects with an overlapping PROJECT window (`getProjectWindow`)
 2. Exclude finished statuses: `CANCELLED, RETURNED, COMPLETED, INVOICED`
 3. Exclude templates: `isTemplate: false`
 4. Calculate `effectiveStock = totalStock - unavailableAssets` (IN_MAINTENANCE, LOST, RETIRED)
@@ -15,15 +72,34 @@
 `convex/overbooking.ts` `bundle` reads the org's line items/assets/bulk-assets/projects/models
 for a set of model ids in one backend-local round trip. It takes optional `thisProjectId` /
 `rentalStartDate` / `rentalEndDate`: when supplied, the line-item read is scoped to projects
-overlapping that window (range-scan on `projects.by_organizationId_rentalStartDate`, excluding
-dead statuses, then per-project reads via `by_projectId`) instead of an unbounded all-time
-`by_modelId` scan across every project that has ever booked the model. All three callers
+whose window overlaps that range instead of an unbounded all-time `by_modelId` scan across
+every project that has ever booked the model. All three callers
 (`src/lib/availability.ts`, `use-native-project-equipment.ts`, `use-native-equipment-tab.ts`)
 pass these args. The args are optional so a caller on a stale app build still gets a correct
 (just unscoped) result — don't remove that fallback without confirming the rollout is complete.
 See docs/designs/perf-convex-efficiency-2026-06.md Finding #0 for the measured impact
 (this query was 77% of the org's monthly Convex Database I/O before scoping) and
 `convex/overbooking.test.ts` for the scoped/unscoped parity test.
+
+**WS2 (#941) re-key:** the candidate scan is now TWO range-scans, unioned:
+1. `projects.by_organizationId_rentalStartDate` (unchanged from the perf fix
+   above) — its unbounded-below range also sweeps in every row whose
+   `projectStartDate` is undefined (undefined sorts before all numbers in a
+   Convex index — the `dashboardStats.ts` `MIN_TS` idiom), which covers every
+   project whose window falls back to rental.
+2. `projects.by_organizationId_projectStartDate` (new index), `MIN_TS`-bounded
+   below so it only visits **backfilled** rows — without that bound it would
+   sweep in the same undefined-`projectStartDate` majority as scan 1 and
+   degrade back into an org-wide read, defeating the whole scoping fix. This
+   is the "rental-index fallback while `projectStartDate` is unbackfilled" the
+   design calls for: it exists specifically to catch a project whose PROJECT
+   window overlaps the query range even though its RENTAL window doesn't
+   (e.g. an early load-in scheduled well before the confirmed rental dates) —
+   scan 1 alone would silently miss it, so its line items would never even
+   reach `bundle.lineItems` for the six sites' math to filter correctly.
+
+Both scans' candidates run through the SAME `getProjectWindow`-based JS overlap
+check before being added to the fetch set.
 
 ## Dateless Stock Checks
 When a project has **no rental dates**, availability is still calculated:

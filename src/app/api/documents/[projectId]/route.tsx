@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
 import { generatePdf } from "@/lib/pdfme/generate-pdf";
-import type { DocumentType } from "@/lib/pdfme/types";
+import type { ProjectDocumentType } from "@/lib/pdfme/document-layouts";
 
-/** Map URL type param values to pdfme DocumentType */
-const typeMap: Record<string, DocumentType> = {
+/** Map URL type param values to pdfme ProjectDocumentType */
+const typeMap: Record<string, ProjectDocumentType> = {
   quote: "quote",
   invoice: "invoice",
   "pull-slip": "packing-list",
@@ -20,7 +20,6 @@ export async function GET(
   const { projectId } = await params;
   const url = new URL(request.url);
   const type = url.searchParams.get("type") || "quote";
-  const templateId = url.searchParams.get("templateId") || undefined;
 
   let session;
   try {
@@ -37,7 +36,7 @@ export async function GET(
   }
 
   try {
-    const pdf = await generatePdf(projectId, organizationId, docType, undefined, templateId);
+    const pdf = await generatePdf(projectId, organizationId, docType);
     const filename = `${docType}-${projectId}.pdf`;
     return new NextResponse(Buffer.from(pdf), {
       headers: {

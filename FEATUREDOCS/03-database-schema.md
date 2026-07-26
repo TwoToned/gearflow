@@ -43,7 +43,7 @@ Prep, DocumentTemplate, AssetScanLog, CustomRole, SiteSettings — was dropped
 at the Convex cutover. Don't add a Prisma model for a new domain entity; add
 a Convex table + `*Writes.ts` mutations instead.
 
-## Convex domain schema (`convex/schema.ts`) — 100+ tables
+## Convex domain schema (`convex/schema.ts`) — 100 tables
 
 Grouped by area (table names are the Convex identifiers, e.g. `assets`,
 `projectLineItems`):
@@ -63,13 +63,18 @@ Grouped by area (table names are the Convex identifiers, e.g. `assets`,
 - **Suppliers & sub-hire** — `suppliers`, `supplierOrders`,
   `supplierOrderItems`, `supplierModelRates`, `subHires`, `subHireItems`,
   `subHireGroups`.
-- **Projects & line items** — `projects`, `projectLineItems`,
+- **Projects & line items** — `projects` (incl. `clientContactId`, the per-project
+  contact picker — see [FEATUREDOCS/63](./63-client-contacts.md)), `projectLineItems`,
   `projectLineItemUnits` (the per-unit fulfillment model — see
   `docs/designs/archive/line-item-fulfillment-model.md`), `lineItemMergeMaps`,
   `projectCategories`, `categorySlots`, `projectGroups`, `projectManagers`,
   `projectModelRevenues`, `groupTemplates` + `groupTemplateItems`,
   `projectTasks`, `projectNumberSequences`.
-- **Clients** — `clients`.
+- **Clients** — `clients`, `clientContacts` (multiple contacts per client — see
+  [FEATUREDOCS/63](./63-client-contacts.md)). `defaultDiscount` snapshots onto
+  `Project.discountPercent` at project-create time only (server-side in
+  `projectWrites.createNative`, plus the WooCommerce order-assembly path) — see
+  FEATUREDOCS/10 "Discount default cascade".
 - **Crew** — `crewMembers`, `crewRoles`, `crewSkills`, `crewAssignments`,
   `crewShifts`, `crewAvailabilities`, `crewTimeEntries`.
 - **Project services** — `projectServices`, `serviceTemplates`.
@@ -82,7 +87,6 @@ Grouped by area (table names are the Convex identifiers, e.g. `assets`,
   Convex is the sole copy of uploaded files, no S3 fallback), plus one join
   table per entity: `modelMedia`, `assetMedia`, `kitMedia`, `projectMedia`,
   `clientMedia`, `locationMedia`, `subHireMedia`.
-- **Documents** — `documentTemplates`, `sectionPresets`, `brandTemplates`.
 - **Notifications** — `notificationDismissals`,
   `userNotificationPreferences`, `notificationEmailLogs`, `sentEmails`
   (idempotency ledger for Convex-scheduled emails).

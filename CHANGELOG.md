@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **#948** — Clients can now have multiple contacts (name/role/email/phone/notes,
+  one exclusive primary), fully optional. Projects can select a specific contact
+  (defaults to the client's primary) that PDFs, WooCommerce matching, and search
+  now resolve through. Legacy single-contact fields stay live as a fallback during
+  the migration window.
+- **#949** — Crew roles now carry a charge rate alongside their existing cost
+  rate. Services with crew assigned auto-price from the role's charge rate (with
+  a per-service override), and show margin (charge − cost) to manager+ users on
+  the service card, the services summary tile, and the project P&L panel. New
+  `/crew/settings` admin page for managing roles (previously undocumented but
+  referenced route with no implementation).
+- **#945** — Recurring preventative maintenance: model-wide service schedules
+  on a fixed calendar cadence (interval + anchor date), a daily generation cron,
+  and a `/maintenance/due` worklist for checking off serialised units or bulk
+  quantity sessions. Schedule due-ness never affects availability — a hard,
+  regression-tested invariant.
+- **#946** — Sub-hires can now link to a supplier order (FK, same-supplier
+  enforced), with a "create order from sub-hire" prefill action, order header
+  editing and item CRUD (previously read-only), computed order totals, and
+  quoted-vs-invoiced reconciliation. Supplier detail pages show de-duplicated
+  spend rollups across linked and unlinked sub-hires/orders.
+- **#790** — Org-level document settings (footer text, terms & conditions, quote
+  validity days) on a new "Documents" card at `/settings/branding`. Quotes now show
+  a T&Cs block (omitted when unset) and a real computed "valid until" date instead
+  of a static "valid for 30 days" blurb.
+
+### Fixed
+
+- **#790** — The quote layout no longer shows a "/day" (or other rental-period)
+  suffix next to prices. Audited discount/item-notes/group-notes rendering on the
+  quote end-to-end and confirmed they already flow correctly through the new
+  pipeline (regression-tested in `document-composer.test.ts`).
+
+- **#790** — Project documents (quote, invoice, pull slip, delivery docket, return sheet)
+  longer than one page silently dropped their tail: since no stored `DocumentTemplate` could
+  be created anymore, every document fell through to the legacy single-page builders, which
+  had no pagination. Replaced with one fixed-layout pipeline (`document-layouts.ts` →
+  `document-composer.ts`, a net-new purpose-built pagination engine) that paginates every
+  doc type by default — atomic table rows, repeated headers, no tail-drop. See
+  `docs/designs/pdf-system-redesign.md` and FEATUREDOCS/13.
+
+### Removed
+
+- **#790** — Deleted the PDF customization engine (~8,300 LOC): dual render pipelines,
+  the 13-type section/block model, `{token}` resolution, visibility conditions, stored
+  per-org document/brand templates, and the dormant Convex `documentTemplates`/
+  `brandTemplates`/`sectionPresets` tables + CRUD. No template designer of any kind exists
+  or is planned. `/settings/documents` (read-only template list) and its nav entry are
+  gone; the project page's document dropdown no longer has a per-type custom-template
+  submenu. Org-level branding (`/settings/branding`) is unaffected.
+
 ### Fixed
 
 - **R-8.1.7** (#894) — The "Create a project" wizard (`/projects/new`) silently lost keyboard

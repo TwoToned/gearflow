@@ -12,7 +12,13 @@
  * All dates are epoch-ms (Convex-native). The caller (the query) maps raw Convex
  * docs into these minimal shapes, runs the builders, then resolves client names +
  * ISO strings for the public shape.
+ *
+ * WS2 (#941): `projectMatchesWindow` reads the PROJECT window (getProjectWindow —
+ * defaults to the rental window when unset), not the rental window directly.
+ * `projectMatchesCalendarWindow` is UNCHANGED — the calendar keeps drawing rental
+ * bars (pricing's window), by design (see #943).
  */
+import { getProjectWindow } from "./projectWindow";
 
 /** Project statuses excluded from availability/booking windows (Prisma `notIn`). */
 export const EXCLUDED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
@@ -57,6 +63,10 @@ export interface BookingProject {
   isTemplate: boolean;
   rentalStartMs: number | null;
   rentalEndMs: number | null;
+  /** WS2 (#941) — set only when the project's gear-committed window diverges
+   *  from the rental window; `getProjectWindow` falls back to rental* when null. */
+  projectStartMs: number | null;
+  projectEndMs: number | null;
 }
 
 /** A booking row as the calendar UI consumes it — `clientName` resolved by the caller. */
@@ -75,15 +85,22 @@ export interface BookingRow {
 
 /**
  * Reproduces the Prisma `project` `where` used by every availability *booking* read:
- * non-template, active status, and rental window overlaps `[start, end]`. A project
- * with no rental dates is excluded (null fails the date comparison, matching Prisma's
- * behaviour on `lte`/`gte` against null).
+ * non-template, active status, and PROJECT window (WS2 #941 — falls back to the
+ * rental window when unset) overlaps `[start, end]`. A project with no resolvable
+ * window is excluded (null fails the date comparison, matching Prisma's behaviour
+ * on `lte`/`gte` against null).
  */
 export function projectMatchesWindow(p: BookingProject, window: DateWindowMs): boolean {
   if (p.isTemplate === true) return false;
   if (p.status != null && EXCLUDED_PROJECT_STATUSES.has(p.status)) return false;
-  if (p.rentalStartMs == null || p.rentalEndMs == null) return false;
-  return p.rentalStartMs <= window.endMs && p.rentalEndMs >= window.startMs;
+  const { start, end } = getProjectWindow({
+    projectStartDate: p.projectStartMs,
+    projectEndDate: p.projectEndMs,
+    rentalStartDate: p.rentalStartMs,
+    rentalEndDate: p.rentalEndMs,
+  });
+  if (start == null || end == null) return false;
+  return start <= window.endMs && end >= window.startMs;
 }
 
 /**

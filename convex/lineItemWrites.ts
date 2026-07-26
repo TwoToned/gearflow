@@ -17,7 +17,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, type AccessoryPlan } from "./lib/fulfillment";
-import { createKitLineItemCore, assertProjectInOrg } from "./projectLineItems";
+import { createKitLineItemCore } from "./projectLineItems";
 import {
   loadModelAvailabilityBundle,
   computeModelAvailability,
@@ -26,6 +26,19 @@ import {
 } from "./lib/availabilityCore";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
+import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS } from "./lib/projectLocks";
+
+/** Fetch the line's parent project, org-checked — every gate site needs the
+ *  project's `status` to resolve its lock tier. */
+async function requireLineProjectInOrg(ctx: MutationCtx, projectId: string, orgId: string) {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+  // Distinct from NOT_FOUND (parity with the pre-existing assertProjectInOrg this
+  // helper folds in) — a cross-org project is a security-relevant Forbidden, not a
+  // generic not-found, so the two read differently in logs/audits.
+  if (project.organizationId !== orgId) throw new ConvexError("Forbidden: project belongs to another organization.");
+  return project;
+}
 
 /**
  * Native LINE-ITEM write mutations (Phase 5, the money domain — done safely).
@@ -150,9 +163,11 @@ export const removeNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -161,6 +176,9 @@ export const removeNative = mutation({
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!line) throw new ConvexError({ code: "NOT_FOUND", message: "This item was deleted by someone else. Refresh the page." });
     if (line.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+
+    const project = await requireLineProjectInOrg(ctx, line.projectId, orgId);
+    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
 
     // Child items (kit members, sub-hire group children, accessory children) are
     // removed via their parent, never individually — same guard as removeLineItem.
@@ -191,6 +209,7 @@ export const removeNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Removed line item from project",
+      metadata: lifecycleAuditMetadata(guard, justification),
       projectId: line.projectId,
       createdAt: now,
     });
@@ -241,9 +260,12 @@ export const removeManyNative = mutation({
     orgId: v.string(),
     actor: actorValidator,
     auditId: v.string(),
+    // #793: "one justification per user action, applied to each affected row's
+    // audit entry" — checked once per distinct project this bulk selection touches.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { ids, orgId, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { ids, orgId, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     assertBulkSizeOk(ids.length);
@@ -255,6 +277,7 @@ export const removeManyNative = mutation({
     // Affected projectIds in first-seen order (recalc each once; audit uses [0]).
     const affected: string[] = [];
     const affectedSet = new Set<string>();
+    const guardedProjectIds = new Set<string>();
 
     for (const id of ids) {
       const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -262,6 +285,11 @@ export const removeManyNative = mutation({
       if (!line || line.organizationId !== orgId || line.isKitChild) {
         skipped++;
         continue;
+      }
+      if (!guardedProjectIds.has(line.projectId)) {
+        const project = await requireLineProjectInOrg(ctx, line.projectId, orgId);
+        await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
+        guardedProjectIds.add(line.projectId);
       }
       const children = (await ctx.db
         .query("projectLineItems")
@@ -356,9 +384,12 @@ export const patchNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
+    // #791/#793: required (one or the other, never both — no double-prompt) once
+    // the project is locked and no unlock session is open.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, set, clear, entityName, allowOverbook, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+  handler: async (ctx, { id, orgId, set, clear, entityName, allowOverbook, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -372,6 +403,18 @@ export const patchNative = mutation({
     // client must never patch (see LINE_IMMUTABLE_ON_PATCH), then bound-check the money
     // fields it CAN set — a browser-direct caller bypasses the server-side Zod.
     const setObj = sanitizeClientSet(set, LINE_IMMUTABLE_ON_PATCH);
+
+    // #791/#793 lock gate: a money-field edit goes through the FINANCIAL unlock-
+    // session flow only (never ALSO prompted by the structural justify dialog —
+    // #957 precedence); a purely structural edit (description/notes/quantity/...)
+    // goes through the JUSTIFY-tier per-edit gate instead.
+    const project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
+    const touchesMoney = LOCKED_LINE_ITEM_FIELDS.some((f) => f in setObj || clear.includes(f));
+    const guard = await assertLifecycleGuard(ctx, project, {
+      kind: touchesMoney ? "financial" : "structural",
+      justification,
+    });
+
     assertLineMoneyFields(setObj as {
       quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
     });
@@ -486,6 +529,7 @@ export const patchNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Updated line item on project",
+      metadata: lifecycleAuditMetadata(guard, justification),
       projectId: doc.projectId,
       createdAt: now,
     });
@@ -548,9 +592,11 @@ export const patchManyNative = mutation({
     }),
     actor: actorValidator,
     auditId: v.string(),
+    // #791/#793: checked once per distinct project this bulk selection touches.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { ids, orgId, patch, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { ids, orgId, patch, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     assertBulkSizeOk(ids.length);
@@ -562,6 +608,11 @@ export const patchManyNative = mutation({
     // Affected projectIds in first-seen order (recalc each once; audit uses [0]).
     const affected: string[] = [];
     const affectedSet = new Set<string>();
+    const guardedProjectIds = new Set<string>();
+    // `discount` is the only money field patchMany touches — pricingType/notes/
+    // isOptional are structural (#793), so a bulk edit with no discount goes
+    // through the JUSTIFY per-edit gate instead of the FINANCIAL unlock flow.
+    const touchesMoney = patch.discount !== undefined;
 
     for (const id of ids) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -569,6 +620,11 @@ export const patchManyNative = mutation({
       if (!doc || doc.organizationId !== orgId || doc.isKitChild) {
         skipped++;
         continue;
+      }
+      if (!guardedProjectIds.has(doc.projectId)) {
+        const project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
+        await assertLifecycleGuard(ctx, project, { kind: touchesMoney ? "financial" : "structural", justification });
+        guardedProjectIds.add(doc.projectId);
       }
 
       // Build set/clear IN-mutation — byte-parity with updateLineItemsBatch, reading the
@@ -804,14 +860,25 @@ export const addCustomNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
-    await assertProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org (see helper)
+    const project = await requireLineProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org
+
+    // #791: adding while locked defaults to $0 (server-enforced, not just a client
+    // suggestion — a browser-direct caller must not be able to smuggle a real price
+    // into a confirmed quote). #793: adding is a structural mutation at JUSTIFY+.
+    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
+    if (guard.defaultToZero) {
+      fields.unitPrice = 0;
+      fields.discount = undefined;
+    }
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     // customLineItemSchema bounds (src/lib/validations/line-item.ts): description is
@@ -854,6 +921,7 @@ export const addCustomNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Added custom item "${fields.description ?? ""}" to project`,
+      metadata: lifecycleAuditMetadata(guard, justification),
       projectId,
       createdAt: now,
     });
@@ -936,9 +1004,11 @@ export const addNative = mutation({
     // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
     // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
     orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, accessoryPlan, allowOverbook, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, accessoryPlan, allowOverbook, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -948,7 +1018,16 @@ export const addNative = mutation({
     // org. Verify the target project IS that org's — else a member could insert a line
     // (stamped with their org) into ANOTHER org's project, which recalcProjectTotals
     // (collects lines by projectId, no org filter) would sweep into that org's totals.
-    await assertProjectInOrg(ctx, projectId, organizationId);
+    const addProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+
+    // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
+    // structural mutation at JUSTIFY+.
+    const guard = await assertLifecycleGuard(ctx, addProject, { kind: "structural", justification });
+    if (guard.defaultToZero) {
+      fields.unitPrice = 0;
+      fields.discount = undefined;
+    }
+
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
     assertAccessoryPlanFields(accessoryPlan);
@@ -982,9 +1061,8 @@ export const addNative = mutation({
     // does, so it's non-breaking for the legit path and self-sufficient for a future
     // browser-direct caller. Sub-hire items never consume our stock (excluded).
     if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
-      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
-      const rentalStart = project?.rentalStartDate ?? null;
-      const rentalEnd = project?.rentalEndDate ?? null;
+      const rentalStart = addProject.rentalStartDate ?? null;
+      const rentalEnd = addProject.rentalEndDate ?? null;
       const hasDates = rentalStart != null && rentalEnd != null;
 
       if (fields.assetId) {
@@ -1090,6 +1168,7 @@ export const addNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Added line item to project",
+      metadata: lifecycleAuditMetadata(guard, justification),
       projectId,
       createdAt: now,
     });
@@ -1227,9 +1306,11 @@ export const addKitNative = mutation({
     // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
     // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
     orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1237,13 +1318,19 @@ export const addKitNative = mutation({
 
     // The client supplies projectId; verify it's the caller's org before reading it or
     // sweeping its lines (by_cuid is global) — same guard addNative applies.
-    await assertProjectInOrg(ctx, projectId, organizationId);
+    const kitProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+
+    // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
+    // structural mutation at JUSTIFY+.
+    const guard = await assertLifecycleGuard(ctx, kitProject, { kind: "structural", justification });
+    const effectiveUnitPrice = guard.defaultToZero ? 0 : unitPrice;
+    const effectiveDiscount = guard.defaultToZero ? undefined : discount;
 
     // Every other add* mutation in this file bounds unitPrice/lineTotal before insert
     // (assertLineMoneyFields) — this one didn't, so a browser caller sending
     // `unitPrice: NaN` (or Infinity/negative) flowed straight into the line and then
     // poisoned recalcProjectTotals' project.total/subtotal/margin to NaN.
-    assertLineMoneyFields({ unitPrice, discount });
+    assertLineMoneyFields({ unitPrice: effectiveUnitPrice, discount: effectiveDiscount });
 
     // Dup-guard the client-minted kit-line id (by_cuid is global + non-unique).
     const dupKit = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1266,14 +1353,13 @@ export const addKitNative = mutation({
         });
       }
       // (b) Dated double-booking on an overlapping project (parent kit line only).
-      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
-      if (project?.rentalStartDate != null && project?.rentalEndDate != null) {
+      if (kitProject.rentalStartDate != null && kitProject.rentalEndDate != null) {
         const conflict = await findKitConflict(ctx, {
           kitId,
           orgId: organizationId,
           excludeProjectId: projectId,
-          rentalStart: project.rentalStartDate,
-          rentalEnd: project.rentalEndDate,
+          rentalStart: kitProject.rentalStartDate,
+          rentalEnd: kitProject.rentalEndDate,
         });
         if (conflict) {
           throw new ConvexError({
@@ -1287,7 +1373,7 @@ export const addKitNative = mutation({
     }
 
     await createKitLineItemCore(ctx, {
-      id, organizationId, projectId, kitId, unitPrice, discount, pricingMode, groupName, categoryId, groupId, now,
+      id, organizationId, projectId, kitId, unitPrice: effectiveUnitPrice, discount: effectiveDiscount, pricingMode, groupName, categoryId, groupId, now,
     });
 
     // Parity with the deleted addKitLineItem: when the client can't resolve the kit
@@ -1306,6 +1392,7 @@ export const addKitNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Added kit ${resolvedKitLabel} to project`,
+      metadata: lifecycleAuditMetadata(guard, justification),
       projectId,
       kitId,
       createdAt: now,
@@ -1474,11 +1561,13 @@ export const addLineItemSmartNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
   handler: async (ctx, {
     id, organizationId, projectId, fields, allowOverbook, forceSeparate, includeAccessories, accessoryPlan,
-    actor: suppliedActor, auditId, emitSideEffects, now,
+    actor: suppliedActor, auditId, emitSideEffects, justification, now,
   }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
@@ -1487,7 +1576,17 @@ export const addLineItemSmartNative = mutation({
 
     // Client-supplied projectId: prove it's the caller's org before reading/sweeping its
     // lines (by_cuid + by_projectId are GLOBAL). Then bound-check the money inputs.
-    await assertProjectInOrg(ctx, projectId, organizationId);
+    const smartProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+
+    // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
+    // structural mutation at JUSTIFY+. `guard.defaultToZero` is applied differently
+    // below on the two paths: a fresh INSERT forces $0 (below); a MERGE-into-existing
+    // instead ignores the client's unitPrice/discount override entirely (ie. keeps
+    // the existing line's own price) — resetting an already-priced existing line to
+    // $0 just because its quantity grew would be a worse surprise than the lock is
+    // meant to prevent, but accepting the override would smuggle a real price past it.
+    const guard = await assertLifecycleGuard(ctx, smartProject, { kind: "structural", justification });
+
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
     assertAccessoryPlanFields(accessoryPlan);
@@ -1506,9 +1605,8 @@ export const addLineItemSmartNative = mutation({
 
     // ── Availability / double-booking (copied verbatim from addNative) ─────────
     if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
-      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
-      const rentalStart = project?.rentalStartDate ?? null;
-      const rentalEnd = project?.rentalEndDate ?? null;
+      const rentalStart = smartProject.rentalStartDate ?? null;
+      const rentalEnd = smartProject.rentalEndDate ?? null;
       const hasDates = rentalStart != null && rentalEnd != null;
 
       if (fields.assetId) {
@@ -1590,11 +1688,16 @@ export const addLineItemSmartNative = mutation({
 
       if (existing) {
         const newQuantity = (existing.quantity ?? 0) + fields.quantity;
+        // #791: while locked (no open session), ignore the client's unitPrice/discount
+        // override entirely — a merge must not smuggle a real price past the lock, but
+        // an already-priced existing line also isn't reset to $0 just because it grew.
+        const mergeUnitPriceInput = guard.defaultToZero ? undefined : fields.unitPrice;
+        const mergeDiscountInput = guard.defaultToZero ? undefined : fields.discount;
         // lineTotal recomputed server-side (never trusts the client). Mirrors the server
         // merge exactly: parsed value first, else the existing row's value.
-        const mergedUnitPrice = fields.unitPrice ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined);
+        const mergedUnitPrice = mergeUnitPriceInput ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined);
         const mergedDuration = fields.duration || existing.duration || 1;
-        const mergedDiscount = fields.discount ?? (existing.discount != null ? Number(existing.discount) : undefined);
+        const mergedDiscount = mergeDiscountInput ?? (existing.discount != null ? Number(existing.discount) : undefined);
         const newLineTotal = calcLineTotalNative(mergedUnitPrice, newQuantity, mergedDuration, mergedDiscount);
         const mergedNotes = fields.notes
           ? existing.notes ? `${existing.notes}; ${fields.notes}` : fields.notes
@@ -1604,10 +1707,10 @@ export const addLineItemSmartNative = mutation({
         // which strips undefined — so `?? undefined` meant "leave the field untouched").
         const mergeSet = dropUndefined({
           quantity: newQuantity,
-          unitPrice: fields.unitPrice ?? existing.unitPrice ?? undefined,
+          unitPrice: mergeUnitPriceInput ?? existing.unitPrice ?? undefined,
           pricingType: fields.pricingType || existing.pricingType,
           duration: fields.duration || existing.duration || undefined,
-          discount: fields.discount ?? existing.discount ?? undefined,
+          discount: mergeDiscountInput ?? existing.discount ?? undefined,
           lineTotal: newLineTotal ?? undefined,
           groupName: fields.groupName || existing.groupName || undefined,
           notes: mergedNotes || undefined,
@@ -1625,6 +1728,7 @@ export const addLineItemSmartNative = mutation({
           userId: actor.userId,
           userName: actor.userName,
           summary: `Merged line item into existing on project (qty ${existing.quantity ?? 0} -> ${newQuantity})`,
+          metadata: lifecycleAuditMetadata(guard, justification),
           projectId,
           createdAt: now,
         });
@@ -1658,12 +1762,15 @@ export const addLineItemSmartNative = mutation({
     // ── Auto-pricing (src/server/line-items.ts:361-401) ────────────────────────
     // PER_DAY model-backed line, no manual price → fill from the model's rate using the
     // project's default rental period/quantity. Manual prices are kept.
-    let autoUnitPrice = fields.unitPrice;
+    // #791: while locked (no open session) a fresh insert forces $0 instead — skip the
+    // rate autofill entirely and drop any client-supplied discount too.
+    let autoUnitPrice = guard.defaultToZero ? 0 : fields.unitPrice;
     let autoDuration = fields.duration;
+    const insertDiscount = guard.defaultToZero ? undefined : fields.discount;
     // `== null` (not `!unitPrice`) — an EXPLICIT $0 manual price (a free item) is a real
     // choice and must be kept, not overwritten by the model rate. (The server addLineItem
     // has the `!parsed.unitPrice` truthiness bug; this fixes it in the native port.)
-    if (fields.modelId && fields.pricingType === "PER_DAY" && fields.unitPrice == null) {
+    if (!guard.defaultToZero && fields.modelId && fields.pricingType === "PER_DAY" && fields.unitPrice == null) {
       const [model, proj] = await Promise.all([
         ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", fields.modelId!)).first(),
         ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
@@ -1682,7 +1789,7 @@ export const addLineItemSmartNative = mutation({
       }
     }
 
-    const lineTotal = calcLineTotalNative(autoUnitPrice, fields.quantity, autoDuration ?? 1, fields.discount);
+    const lineTotal = calcLineTotalNative(autoUnitPrice, fields.quantity, autoDuration ?? 1, insertDiscount);
 
     // ── Insert (mirrors createLineItem / addNative) ────────────────────────────
     const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1702,7 +1809,7 @@ export const addLineItemSmartNative = mutation({
       unitPrice: autoUnitPrice ?? undefined,
       pricingType: fields.pricingType,
       duration: autoDuration ?? undefined,
-      discount: fields.discount ?? undefined,
+      discount: insertDiscount ?? undefined,
       lineTotal: lineTotal ?? undefined,
       groupName: fields.groupName || undefined,
       notes: fields.notes || undefined,
@@ -1745,6 +1852,7 @@ export const addLineItemSmartNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: "Added line item to project",
+      metadata: lifecycleAuditMetadata(guard, justification),
       projectId,
       createdAt: now,
     });

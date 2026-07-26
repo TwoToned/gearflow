@@ -6,12 +6,14 @@
  */
 
 import { getProjectById } from "@/lib/projects-read";
-import { getProjectServicesByOrg, sumProjectServiceRevenue } from "@/lib/project-services-read";
+import { getProjectServicesByOrg, sumProjectServiceRevenue, sumProjectLabourServiceRevenue } from "@/lib/project-services-read";
 import { getMaintenanceRecordsByOrg, aggregateMaintenanceForProject } from "@/lib/maintenance-read";
 
 export interface ProjectOperationalCosts {
   equipmentRevenue: number;
   serviceRevenue: number;
+  /** WS10 #949 — see convex/projectCosts.ts's costsShape comment. */
+  labourServiceRevenue: number;
   total: number;
   serviceCostTotal: number;
   labourCostTotal: number;
@@ -37,6 +39,7 @@ export async function computeProjectOperationalCosts(
     getMaintenanceRecordsByOrg(organizationId),
   ]);
   const serviceRevenueTotal = sumProjectServiceRevenue(orgServices, projectId);
+  const labourServiceRevenue = sumProjectLabourServiceRevenue(orgServices, projectId);
   const maintenanceAgg = aggregateMaintenanceForProject(orgMaintenance, projectId);
 
   const equipmentRevenue = Number(project.equipmentRevenue ?? 0);
@@ -56,6 +59,7 @@ export async function computeProjectOperationalCosts(
   return {
     equipmentRevenue,
     serviceRevenue,
+    labourServiceRevenue,
     total,
     serviceCostTotal,
     labourCostTotal,
@@ -73,6 +77,7 @@ function emptyResult(): ProjectOperationalCosts {
   return {
     equipmentRevenue: 0,
     serviceRevenue: 0,
+    labourServiceRevenue: 0,
     total: 0,
     serviceCostTotal: 0,
     labourCostTotal: 0,

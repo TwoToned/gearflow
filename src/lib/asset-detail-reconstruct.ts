@@ -148,6 +148,11 @@ export function reconstructAsset(bundle: AssetBundleData) {
           completedDate: toDate(rec.completedDate),
           scheduledDate: toDate(rec.scheduledDate),
           createdAt: toDate(rec.createdAt),
+          // Set only on records created via "Report Issue" / an immediate
+          // check-item FAIL (GitHub #898) — distinguishes an incident report from
+          // an ordinary manually-created maintenance record.
+          incidentType: rec.incidentType ?? null,
+          incidentSeverity: rec.incidentSeverity ?? null,
         },
       }];
     })

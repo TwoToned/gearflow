@@ -10,6 +10,7 @@ import {
   includesLower,
   type SearchTerms,
 } from "./lib/searchScore";
+import { getPrimaryContact, type ClientContactLike } from "./lib/clientContactCore";
 
 /**
  * Native global search — the LIVE-Convex replacement for the frozen-Postgres
@@ -121,6 +122,13 @@ function rankLimit<T extends { q: number }>(rows: T[], tiebreak: (r: T) => strin
 function nonNull<T>(x: T | null): x is T {
   return x !== null;
 }
+
+// Generic field coercions, used both by the per-entity scoring blocks (clients'
+// contact widen, WS9 #948) and the child-drill assembly further down.
+type AnyDoc = Record<string, unknown>;
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+const num = (v: unknown): number => (typeof v === "number" ? v : 0);
+const bool = (v: unknown): boolean => v === true;
 
 export const search = query({
   args: { orgId: v.string(), query: v.string() },
@@ -272,18 +280,30 @@ export const search = query({
       (p) => p.name, 10,
     );
 
-    // Clients (isActive) — LIMIT 10
+    // Clients (isActive) — LIMIT 10. Contacts (WS9 #948) widen the match to
+    // each client's contacts' names/emails via a per-client drill over the
+    // by_clientId index (collectByIndex, already declared above) instead of a
+    // 16th org-wide `orgScan` — see the SCAN_CAP read-budget note at the top of
+    // this file. `subtitle`/`q` prefer the resolved PRIMARY contact, falling back
+    // to the legacy embedded contactName/contactEmail during the migration window.
+    const clientContactsRaw = await collectByIndex(ctx, "clientContacts", "by_clientId", "clientId", allClients.map((c) => c.id));
+    const contactsByClient = groupBy(clientContactsRaw as Record<string, unknown>[], (cc) => str(cc.clientId));
     const clients = rankLimit(
       allClients
         .filter((c) => c.isActive === true)
         .map((c) => {
+          const clientContacts = contactsByClient.get(c.id) ?? [];
+          const contactNames = clientContacts.map((cc) => str(cc.name)).filter(Boolean);
+          const contactEmails = clientContacts.map((cc) => str(cc.email)).filter(Boolean);
+          const primary = getPrimaryContact(clientContacts as unknown as ClientContactLike[]);
+          const primarySubtitle = primary?.name ?? primary?.email ?? c.contactName ?? c.contactEmail ?? null;
           if (!matchesQuery(terms, {
-            ilikeFields: [c.name, c.contactName, c.contactEmail],
+            ilikeFields: [c.name, c.contactName, c.contactEmail, ...contactNames, ...contactEmails],
             normFields: [c.name],
-            fuzzyFields: [c.name, c.contactName],
+            fuzzyFields: [c.name, c.contactName, ...contactNames],
             tags: c.tags,
           })) return null;
-          return { ...c, q: bestSimilarity(terms, [c.name, c.contactName]) };
+          return { ...c, primarySubtitle, q: bestSimilarity(terms, [c.name, c.contactName, ...contactNames]) };
         })
         .filter(nonNull),
       (c) => c.name, 10,
@@ -432,10 +452,7 @@ export const search = query({
         collectByIndex(ctx, "categories", "by_parentId", "parentId", categories.map((c) => c.id)),
       ]);
 
-    type C = Record<string, unknown>;
-    const str = (v: unknown): string => (typeof v === "string" ? v : "");
-    const num = (v: unknown): number => (typeof v === "number" ? v : 0);
-    const bool = (v: unknown): boolean => v === true;
+    type C = AnyDoc;
     const byField = (f: string) => (a: C, b: C) => str(a[f]).localeCompare(str(b[f]));
 
     // Child ordering — mirror the SQL secondary ORDER BY within each parent group
@@ -554,7 +571,7 @@ export const search = query({
     for (const c of clients) {
       results.push({
         id: c.id, type: "client",
-        title: c.name, subtitle: c.contactName || c.contactEmail || null,
+        title: c.name, subtitle: c.primarySubtitle,
         href: `/clients/${c.id}`, relevance: c.q,
       });
       for (const p of projectsByClient.get(c.id) || []) {

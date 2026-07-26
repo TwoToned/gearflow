@@ -291,6 +291,7 @@ export function useProjectWrites(orgId: string | undefined) {
       isTemplate,
       name: parsed.name,
       clientId: parsed.clientId || undefined,
+      clientContactId: parsed.clientContactId || undefined,
       status: parsed.status,
       type: parsed.type,
       description: parsed.description || undefined,
@@ -306,6 +307,10 @@ export function useProjectWrites(orgId: string | undefined) {
       eventEndTime: parsed.eventEndTime || undefined,
       loadOutDate: parsed.loadOutDate?.getTime(),
       loadOutTime: parsed.loadOutTime || undefined,
+      projectStartDate: parsed.projectStartDate?.getTime(),
+      projectStartTime: parsed.projectStartTime || undefined,
+      projectEndDate: parsed.projectEndDate?.getTime(),
+      projectEndTime: parsed.projectEndTime || undefined,
       rentalStartDate: parsed.rentalStartDate?.getTime(),
       rentalEndDate: parsed.rentalEndDate?.getTime(),
       crewNotes: parsed.crewNotes || undefined,
@@ -399,6 +404,7 @@ export function useProjectWrites(orgId: string | undefined) {
       else set[key] = value;
     };
     setOrClear("clientId", parsed.clientId || null);
+    setOrClear("clientContactId", parsed.clientContactId || null);
     setOrClear("description", parsed.description || null);
     setOrClear("locationId", parsed.locationId || null);
     setOrClear("siteContactName", parsed.siteContactName || null);
@@ -412,6 +418,10 @@ export function useProjectWrites(orgId: string | undefined) {
     setOrClear("eventEndTime", parsed.eventEndTime || null);
     setOrClear("loadOutDate", parsed.loadOutDate?.getTime() ?? null);
     setOrClear("loadOutTime", parsed.loadOutTime || null);
+    setOrClear("projectStartDate", parsed.projectStartDate?.getTime() ?? null);
+    setOrClear("projectStartTime", parsed.projectStartTime || null);
+    setOrClear("projectEndDate", parsed.projectEndDate?.getTime() ?? null);
+    setOrClear("projectEndTime", parsed.projectEndTime || null);
     setOrClear("rentalStartDate", parsed.rentalStartDate?.getTime() ?? null);
     setOrClear("rentalEndDate", parsed.rentalEndDate?.getTime() ?? null);
     setOrClear("defaultRentalPeriod", parsed.defaultRentalPeriod || null);

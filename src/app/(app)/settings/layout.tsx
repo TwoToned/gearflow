@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Building2,
   CreditCard,
-  FileText,
   Package,
   ShieldCheck,
   Palette,
@@ -38,7 +37,6 @@ import {
 type SettingsPermission =
   | "orgSettings"
   | "orgMembers"
-  | "document"
   | "checkItem"
   | "project";
 
@@ -62,7 +60,7 @@ const settingsNav: SettingsNavSection[] = [
     items: [
       { title: "General", href: "/settings", icon: Building2, permission: "orgSettings" },
       { title: "Billing", href: "/settings/billing", icon: CreditCard, permission: "orgSettings" },
-      { title: "Branding", href: "/settings/branding", icon: Palette, permission: "orgSettings" },
+      { title: "Branding & documents", href: "/settings/branding", icon: Palette, permission: "orgSettings" },
       { title: "Team", href: "/settings/team", icon: Users, permission: "orgMembers" },
       { title: "Single Sign-On", href: "/settings/sso", icon: Shield, permission: "orgSettings" },
     ],
@@ -81,7 +79,6 @@ const settingsNav: SettingsNavSection[] = [
   {
     label: "Documents",
     items: [
-      { title: "Documents", href: "/settings/documents", icon: FileText, permission: "document" },
       { title: "Calendars", href: "/settings/calendars", icon: CalendarSync, permission: "orgSettings" },
       { title: "Displays", href: "/settings/displays", icon: MonitorPlay, permission: "orgSettings" },
     ],
@@ -102,7 +99,6 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const router = useRouter();
   const canReadSettings = useCanDo("orgSettings", "read");
   const canReadMembers = useCanDo("orgMembers", "read");
-  const canManageTemplates = useCanDo("document", "manage_templates");
   const canReadCheckItems = useCanDo("checkItem", "read");
   const canManageLineItems = useCanDo("project", "manage_line_items");
   const { data: activeOrg } = useActiveOrganization();
@@ -121,7 +117,6 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const hasPermission = (permission: SettingsPermission): boolean => {
     if (permission === "orgSettings") return canReadSettings;
     if (permission === "orgMembers") return canReadMembers;
-    if (permission === "document") return canManageTemplates;
     if (permission === "checkItem") return canReadCheckItems;
     if (permission === "project") return canManageLineItems;
     return true;

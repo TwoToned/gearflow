@@ -225,6 +225,38 @@ silently with their parent). `src/server/bulk-checkin.ts`, its int test, and the
 - `quickAddAndCheckOut()` adds items to project and **preps** them (sets `status: "CONFIRMED"`, `prepStatus: "PACKED"`) — does NOT deploy directly
 - `lookupAssetForScan()` treats scanned serialized assets as serialized (not bulk) even if the matching line item has qty > 1
 
+#### Scan Feedback (Audio)
+The three scan mutations on `warehouse/[projectId]/page.tsx` — `scanMutation` (Pick/Prep),
+`deployScanMutation` (Deploy tab), `returnScanMutation` (Return tab) — play an audio tone
+on every resolve result via the shared **`useScanFeedback`** hook (`@/hooks/use-scan-feedback`,
+backed by `src/lib/scan-feedback.ts`; see FEATUREDOCS/14 §"Audio / Scan Feedback" for the
+underlying implementation and the legacy `playBeep` defects it replaced). A
+`<ScanAudioToggle>` icon button (`@/components/scan-audio-toggle`) sits in the page header,
+next to the Documents/pick-list actions, controlling all three scanners at once.
+
+Each resolve branch maps to one of the 4 tone kinds:
+- **`success`** — every `toast.success(...)` branch: kit/item prepped, deployed, returned,
+  or a kit-member scan verified.
+- **`error`** — hard failures that block the scan outright: not on project, already
+  deployed, not prepped yet, TT-blocked, asset unavailable, wrong-kit member scans, etc.
+- **`exception`** — resolved but needs the operator's attention rather than a clean
+  success or a hard stop. Three specific branches, shared across all three mutations:
+  1. `reason === "already_returned"` (all units are already back — nothing to do, but
+     it's not an error).
+  2. The final `else` fallback when `lookupAssetForScan` doesn't recognise the tag at all
+     ("Asset not found" — unknown tag).
+  3. `result.type === "asset_child"` (scanned an accessory instead of its parent — the
+     UI redirects with "scan the parent"; disambiguation, not failure).
+  The Pick/Prep mutation's "asset found but not on this project, want to add it?" prompt
+  (`setAddPromptData` / `setAddPromptOpen`) also plays `exception` for the same reason —
+  it's a decision point, not a verdict.
+- **`info`** — not currently wired to a warehouse call site; reserved for neutral
+  heads-up moments (see FEATUREDOCS/14). Available to future consumers of the hook, e.g.
+  the WS5 returns station.
+
+A mutation's own `onError` (the server call itself failing — network, permission, etc.,
+distinct from a resolved-but-rejected scan result) always plays `error`.
+
 ### Kit/Prep-Kit Flows
 - Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren
 - Kit checkin: `checkInKit()` — same pattern, handles grandchildren and prep-kit assets

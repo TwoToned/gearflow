@@ -227,7 +227,6 @@ export async function buildCallSheetFromServices(
     allDates?: boolean;
     crewMemberId?: string;
     crewRoleId?: string;
-    templateId?: string;
   },
 ): Promise<Uint8Array> {
   // 1. Get org/project data for header/footer

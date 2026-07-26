@@ -97,7 +97,11 @@ describe("write-parity: line-items", () => {
   test("addNative == createLineItem (same resulting parent line, except lineTotal)", async () => {
     const t = makeT();
     // Model the fields reference — addNative now org-validates the modelId FK.
-    await t.run(async (ctx) => { await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" }); });
+    // Project row — addNative now resolves the project's lock tier (#957).
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "M1" });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    });
     await t.withIdentity(SERVICE).mutation(api.projectLineItems.createLineItem, { id: "svc", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, now: NOW });
     await t.withIdentity(SERVICE).mutation(api.lineItemWrites.addNative, { id: "nat", organizationId: ORG, projectId: "p1", fields, includeAccessories: false, allowOverbook: true, actor: ACTOR, auditId: "log1", now: NOW });
     const svc = normalize(await readByCuid(t, "projectLineItems", "svc"));
@@ -114,12 +118,23 @@ describe("write-parity: line-items", () => {
     // for this fixture's fields (unitPrice:15, quantity:2, no duration ⇒ 1).
     expect((nat as Record<string, unknown>).lineTotal).toBe(30);
     delete (nat as Record<string, unknown>).lineTotal;
+    // allocatedRevenue/allocationBasis are ANOTHER deliberate divergence, surfaced now
+    // that this fixture has a real project row (needed for addNative's #957 lock-tier
+    // check): createLineItem is the same dead raw-insert path noted above and never
+    // runs the revenue-allocation pipeline (stays 0/NO_REVENUE regardless), while
+    // addNative does run it once a project exists (30/DIRECT here) — not a parity bug.
+    delete (nat as Record<string, unknown>).allocatedRevenue;
+    delete (nat as Record<string, unknown>).allocationBasis;
+    delete (svc as Record<string, unknown>).allocatedRevenue;
+    delete (svc as Record<string, unknown>).allocationBasis;
     expect(nat).toEqual(svc);
   });
 
   test("removeNative == removeLineItemCascade (both gone)", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
+      // Project row — removeNative now resolves the project's lock tier (#957).
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectLineItems", { id: "svc", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
       await ctx.db.insert("projectLineItems", { id: "nat", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
     });

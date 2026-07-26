@@ -17,6 +17,7 @@ import {
 } from "@/lib/org-settings-read";
 import { env } from "@/env";
 import { validateProjectNumberFormat } from "@/lib/project-number";
+import { orgDocumentSettingsSchema } from "@/lib/validations/org-settings";
 import type { OrgSettings, TestTagSettings } from "@/lib/org-settings-types";
 
 export async function getOrganization() {
@@ -48,6 +49,13 @@ export async function updateOrganization(data: {
   if (pnFormat) {
     const err = validateProjectNumberFormat(pnFormat);
     if (err) throw new Error(`Project number format: ${err}`);
+  }
+
+  if (data.settings.documents) {
+    const parsed = orgDocumentSettingsSchema.safeParse(data.settings.documents);
+    if (!parsed.success) {
+      throw new Error(`Document settings: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+    }
   }
 
   // Identity (name) stays on the Better Auth org row; business settings + tax

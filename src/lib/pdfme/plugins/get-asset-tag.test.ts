@@ -138,4 +138,33 @@ describe("getAssetTag", () => {
     });
     expect(getAssetTag(li, false)).toBe("BULK-XLR");
   });
+
+  it("bulk line with many units sharing one tag → the tag alone, not duplicated + overflow", () => {
+    // Bulk assets aren't individually serialized: every unit on a bulk line
+    // carries the SAME bulkAsset tag. Naive first-2-plus-N logic on the raw
+    // (non-deduped) list renders "TTP00099, TTP00099 +8" — dedupe first.
+    const li = lineItem({
+      quantity: 10,
+      units: Array.from({ length: 10 }, (_, i) => ({
+        id: `u${i}`,
+        asset: null,
+        bulkAsset: { assetTag: "TTP00099" },
+        status: "CHECKED_OUT",
+      })),
+    });
+    expect(getAssetTag(li, false)).toBe("TTP00099");
+  });
+
+  it("mixed units where some share a tag → dedupes before the '+N' count", () => {
+    const li = lineItem({
+      quantity: 4,
+      units: [
+        { id: "u0", asset: { assetTag: "TAG-A" }, bulkAsset: null, status: "CHECKED_OUT" },
+        { id: "u1", asset: { assetTag: "TAG-A" }, bulkAsset: null, status: "CHECKED_OUT" },
+        { id: "u2", asset: { assetTag: "TAG-B" }, bulkAsset: null, status: "CHECKED_OUT" },
+        { id: "u3", asset: { assetTag: "TAG-C" }, bulkAsset: null, status: "CHECKED_OUT" },
+      ],
+    });
+    expect(getAssetTag(li, false)).toBe("TAG-A, TAG-B +1");
+  });
 });

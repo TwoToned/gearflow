@@ -9,7 +9,7 @@
  *     → attachLineItemTree + attachAssetBulkAssetTree  (buildDocumentLineItemData's
  *       pure core, fed flat Convex docs)
  *     → (build-document-data enrichment) → structureLineItems
- *     → getFilteredParentItems (status filter) → estimateSectionHeight (height)
+ *     → getFilteredParentItems (status filter) → calculateItemHeight (height)
  *     → gearflowTable.pdf (render)
  *
  * Safety properties under test: the reconstruction drops CANCELLED tombstones,
@@ -34,7 +34,8 @@ import type { ConvexModel } from "@/lib/models-read";
 import type { ConvexCategory } from "@/lib/categories-read";
 import type { ConvexAsset } from "@/lib/assets-read";
 import { structureLineItems, type CategoryForStructuring } from "./structure-line-items";
-import { getFilteredParentItems, estimateSectionHeight } from "./section-renderer";
+import { getFilteredParentItems, calculateItemHeight } from "./document-composer";
+import { DOCUMENT_LAYOUTS } from "./document-layouts";
 import { runTablePlugin } from "./plugins/test-utils";
 import type { DocumentData, DocumentLineItem } from "./types";
 
@@ -133,15 +134,16 @@ describe("keystone reconstruction → full PDF pipeline", () => {
 
     it("keeps every top-level item through the status filter (no tail-drop)", () => {
       const data = { line_items: structured } as DocumentData;
-      const parents = getFilteredParentItems(data, "packing-list");
+      const parents = getFilteredParentItems(data, DOCUMENT_LAYOUTS["packing-list"].filterByStatus);
       const expectedTop = structured.filter((i) => !i.isKitChild && !i.isContainerLineItem).length;
       expect(parents.length).toBe(expectedTop);
     });
 
     it("reserves height for the whole structured list (consumer #2 tail-drop guard)", () => {
-      const section = { id: "s", type: "table", settings: { showKitChildren: true } } as never;
-      const hAll = estimateSectionHeight(section, { line_items: structured } as DocumentData, "packing-list");
-      const hOne = estimateSectionHeight(section, { line_items: structured.slice(0, 1) } as DocumentData, "packing-list");
+      const tableBlock = DOCUMENT_LAYOUTS["packing-list"].blocks.find((b) => b.kind === "table");
+      if (tableBlock?.kind !== "table") throw new Error("packing-list layout has no table block");
+      const hAll = structured.reduce((sum, item) => sum + calculateItemHeight(item, tableBlock.config), 0);
+      const hOne = calculateItemHeight(structured[0], tableBlock.config);
       expect(Number.isFinite(hAll)).toBe(true);
       expect(hAll).toBeGreaterThan(hOne);
     });

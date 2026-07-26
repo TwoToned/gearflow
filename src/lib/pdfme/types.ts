@@ -202,6 +202,15 @@ export interface DocumentData {
 
   // Metadata
   document_date: string;
+  /** Org-level document settings (src/lib/org-settings-types.ts `documents`).
+   *  footer_text/footer_second_line: empty string = composer auto-generates
+   *  from org_name/org_email/org_phone. */
+  document_footer_text: string;
+  document_footer_second_line: string;
+  /** Quote-only: plain-text T&Cs block and a real computed "valid until" date
+   *  (generatedAt + org's quoteValidityDays, default 30). */
+  quote_terms_and_conditions: string;
+  quote_valid_until: string;
 
   // PM
   pm_name: string;
@@ -240,6 +249,8 @@ export interface TablePluginConfig {
   showRowNumbers: boolean;
   filterOptional: boolean;
   filterByStatus: string[] | null;
+  /** Suppress the "/day" (or other period) price suffix — quote layout only (#790 Phase 4). */
+  hidePricingPeriodSuffix: boolean;
 }
 
 /** Config for financial summary plugin */

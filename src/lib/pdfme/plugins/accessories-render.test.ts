@@ -8,14 +8,21 @@
  * must:
  *   - filter the children out of the top-level list (they're not parents),
  *   - render them indented under the parent (gearflow-table),
- *   - reserve their height (section-renderer estimateSectionHeight) so the
+ *   - reserve their height (document-composer's calculateItemHeight) so the
  *     plugin doesn't silently tail-drop them.
  */
 
 import { describe, it, expect } from "vitest";
 import { runTablePlugin, makeLineItem } from "./test-utils";
-import { getFilteredParentItems, estimateSectionHeight } from "../section-renderer";
+import { getFilteredParentItems, calculateItemHeight } from "../document-composer";
+import { DOCUMENT_LAYOUTS, type TableLayoutConfig } from "../document-layouts";
 import type { DocumentLineItem } from "../types";
+
+function tableConfig(docType: "packing-list" | "delivery-docket"): TableLayoutConfig {
+  const block = DOCUMENT_LAYOUTS[docType].blocks.find((b) => b.kind === "table");
+  if (block?.kind !== "table") throw new Error(`${docType} layout has no table block`);
+  return block.config;
+}
 
 function lightWithAccessories(): DocumentLineItem {
   const clamp = makeLineItem({
@@ -88,7 +95,7 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
   it("filters accessory children out of the top-level parent list", () => {
     const parent = lightWithAccessories();
     const data = { line_items: [parent, ...(parent.childLineItems ?? [])] } as never;
-    const parents = getFilteredParentItems(data, "delivery-docket");
+    const parents = getFilteredParentItems(data, DOCUMENT_LAYOUTS["delivery-docket"].filterByStatus);
     const ids = parents.map((p) => p.id);
     expect(ids).toContain("parent-light");
     expect(ids).not.toContain("acc-clamp");
@@ -158,26 +165,19 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
   });
 
   it("reserves height for a grouped accessory parent's accessories", () => {
-    const section = { id: "s", type: "table", settings: { showKitChildren: true } } as never;
-    const withAcc = { line_items: [groupWithAccessoryMember(true)] } as never;
-    const withoutAcc = { line_items: [groupWithAccessoryMember(false)] } as never;
-    const hAcc = estimateSectionHeight(section, withAcc, "packing-list");
-    const hPlain = estimateSectionHeight(section, withoutAcc, "packing-list");
+    const config = tableConfig("packing-list");
+    const hAcc = calculateItemHeight(groupWithAccessoryMember(true), config);
+    const hPlain = calculateItemHeight(groupWithAccessoryMember(false), config);
     expect(hAcc).toBeGreaterThan(hPlain);
   });
 
   it("reserves height for accessory children (no tail-drop)", () => {
-    const tableSection = {
-      id: "s1",
-      type: "table",
-      settings: { showKitChildren: true },
-    } as never;
-    const withAcc = { line_items: [lightWithAccessories()] } as never;
-    const withoutAcc = {
-      line_items: [makeLineItem({ id: "parent-light", asset: { id: "a", assetTag: "LIGHT-1" } as never, model: { name: "LED Par" } as never })],
-    } as never;
-    const hAcc = estimateSectionHeight(tableSection, withAcc, "delivery-docket");
-    const hPlain = estimateSectionHeight(tableSection, withoutAcc, "delivery-docket");
+    const config = tableConfig("delivery-docket");
+    const hAcc = calculateItemHeight(lightWithAccessories(), config);
+    const hPlain = calculateItemHeight(
+      makeLineItem({ id: "parent-light", asset: { id: "a", assetTag: "LIGHT-1" } as never, model: { name: "LED Par" } as never }),
+      config,
+    );
     // The accessory parent must be taller — its two child rows are reserved.
     expect(hAcc).toBeGreaterThan(hPlain);
   });

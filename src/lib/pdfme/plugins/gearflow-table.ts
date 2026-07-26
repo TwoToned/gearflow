@@ -65,7 +65,6 @@ function getColumnsForDocType(config: TablePluginConfig, totalWidth: number): Co
         { key: "description", label: "Description", width: 0, flex: 3, align: "left" },
         { key: "qty", label: "Qty", width: 30, align: "center" },
         { key: "unitPrice", label: config.documentType === "invoice" ? "Rate" : "Unit Price", width: 60, align: "right" },
-        { key: "days", label: "Days", width: 30, align: "center" },
         { key: "total", label: config.documentType === "invoice" ? "Amount" : "Total", width: 60, align: "right" },
       ], totalWidth);
 
@@ -139,9 +138,11 @@ function getItemName(item: DocumentLineItem, isKit: boolean): string {
  * Get asset tag display for a line. Preference order:
  *   1. Kit row → the kit's own tag
  *   2. Units present (post-cutover, multi-quantity deployed line) →
- *      join up to 2 unit tags, then "+N more" if there are extras.
- *      One unit collapses to its single tag so single-asset lines
- *      look identical to the pre-cutover output.
+ *      dedupe tags first (bulk assets share one tag across many units,
+ *      so a 10-unit bulk line has 10 identical unit tags, not 10 distinct
+ *      ones), then join up to 2 distinct tags, "+N more" for extras. One
+ *      distinct tag collapses to itself so single-asset lines and bulk
+ *      lines both render one clean tag instead of duplicating it.
  *   3. Legacy line.asset (kit children, un-migrated splits)
  *   4. Bulk asset tag
  *   5. "-"
@@ -154,9 +155,11 @@ export function getAssetTag(item: DocumentLineItem, isKit: boolean): string {
   if (isKit) {
     return item.kit?.assetTag || "-";
   }
-  const unitTags = (item.units ?? [])
-    .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
-    .filter((t): t is string => !!t);
+  const unitTags = [...new Set(
+    (item.units ?? [])
+      .map((u) => u.asset?.assetTag ?? u.bulkAsset?.assetTag)
+      .filter((t): t is string => !!t)
+  )];
   if (unitTags.length > 0) {
     if (unitTags.length === 1) return unitTags[0];
     if (unitTags.length === 2) return unitTags.join(", ");
@@ -508,24 +511,11 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
             if (!config.showPricing) break;
             const priceStr = isItemized ? "-"
               : item.unitPrice != null
-                ? `${formatCurrency(item.unitPrice)}${PRICING_LABELS[item.pricingType] || ""}`
+                ? `${formatCurrency(item.unitPrice)}${config.hidePricingPeriodSuffix ? "" : PRICING_LABELS[item.pricingType] || ""}`
                 : "-";
             const priceWidth = fonts.regular.widthOfTextAtSize(priceStr, fontSize);
             page.drawText(priceStr, {
               x: colEndX - priceWidth - cellPadding,
-              y: textY,
-              size: fontSize,
-              font: fonts.regular,
-              color: textColor,
-            });
-            break;
-          }
-
-          case "days": {
-            const dayStr = String(item.duration);
-            const dayWidth = fonts.regular.widthOfTextAtSize(dayStr, fontSize);
-            page.drawText(dayStr, {
-              x: cellX + (col.width - dayWidth) / 2 - cellPadding,
               y: textY,
               size: fontSize,
               font: fonts.regular,
@@ -768,19 +758,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                 break;
               }
 
-              case "days": {
-                const dayStr = String(child.duration);
-                const dayWidth = fonts.regular.widthOfTextAtSize(dayStr, childFontSize);
-                page.drawText(dayStr, {
-                  x: childCellX + (col.width - dayWidth) / 2 - cellPadding,
-                  y: childTextY,
-                  size: childFontSize,
-                  font: fonts.regular,
-                  color: childTextColor,
-                });
-                break;
-              }
-
               case "total": {
                 if (!config.showPricing) break;
                 const totalStr = formatCurrency(child.lineTotal);
@@ -940,19 +917,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                     const pW = fonts.regular.widthOfTextAtSize(pStr, grandchildFontSize);
                     page.drawText(pStr, {
                       x: colEndX - pW - cellPadding,
-                      y: nestedTextY,
-                      size: grandchildFontSize,
-                      font: fonts.regular,
-                      color: grandchildTextColor,
-                    });
-                    break;
-                  }
-
-                  case "days": {
-                    const dStr = String(nested.duration);
-                    const dW = fonts.regular.widthOfTextAtSize(dStr, grandchildFontSize);
-                    page.drawText(dStr, {
-                      x: nestedCellX + (col.width - dW) / 2 - cellPadding,
                       y: nestedTextY,
                       size: grandchildFontSize,
                       font: fonts.regular,

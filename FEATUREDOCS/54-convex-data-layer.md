@@ -44,6 +44,18 @@ domain entity means adding a Convex table + `*Writes.ts` mutations, not a Prisma
   exists because `auth.ts`'s hooks mirror data into Convex (which needs the service
   token, which would need `auth.ts`) — importing the full instance from the signer
   would be circular (POLICY.md R-3.5).
+- **The JWKS endpoint Convex verifies those tokens against is cached (#803).**
+  Convex's customJwt provider fetches `CONVEX_AUTH_JWKS_URL`
+  (`/api/auth/jwks`, served by Better Auth) to verify the ES256 token attached
+  to every function call. Better Auth's own handler reads the `jwks` table on
+  every request and sets no cache headers, so each fetch was a full dynamic
+  origin round trip (measured 0.9–5.6s TTFB from us-east, where Convex Cloud
+  runs) — a fixed per-call overhead shared by every Convex op, the uniform-slowdown
+  signature behind the T-P6 `convex_op_latency` incident. `src/lib/jwks-route-cache.ts`
+  now memoizes the JWKS response in-process (5 min TTL, stale-on-error — the key
+  set only ever changes at bootstrap; no rotation is configured) and serves it
+  with `Cache-Control: public, max-age=300, s-maxage=300, stale-while-revalidate=86400`
+  from the `[...all]` auth route. All other auth routes pass through untouched.
 - **Cross-domain joins that need two `*-read.ts` modules both ways** (e.g. a model
   needs its category, AND a category's counts need the org's models) live in a
   dedicated `*-join.ts` module (`model-category-join.ts`), not in either domain's

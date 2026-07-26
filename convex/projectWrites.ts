@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
 import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
@@ -8,12 +9,22 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
 import { assertStrLen } from "./lib/fieldGuards";
-import { assertRefInOrg } from "./lib/orgRef";
+import { assertRefInOrg, assertClientContactBelongsToClient } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getKitByCuid } from "./lib/kits";
 import { assertNoBlockingCommentsInMutation } from "./lib/blockingCommentsGate";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
+import {
+  assertLifecycleGuard,
+  crossesIntoSnapshotStatus,
+  isRevertOutOfHardLock,
+  lifecycleAuditMetadata,
+  LOCKED_PROJECT_FIELDS,
+  requireHardLockOverrideAllowed,
+} from "./lib/projectLocks";
+import { captureProjectSnapshot } from "./lib/projectSnapshots";
+import { autoCommitOpenSession } from "./projectUnlockSessionsWrites";
 
 /** Forward status transitions that a project's open BLOCKING comments must gate
  *  (parity with src/server/projects.ts BLOCKED_FORWARD_PROJECT_STATUSES). */
@@ -112,9 +123,13 @@ export const updateStatusNative = mutation({
     // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
     // Expand-contract (mirrors convex/lineItemWrites.ts).
     emitSideEffects: v.optional(v.boolean()),
+    // #792: required only when this move REVERTS the project OUT of the
+    // HARD_LOCKED tier (COMPLETED/INVOICED → anything earlier) — audience +
+    // justification checked below. Ignored for every other transition.
+    justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, justification, now }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
@@ -133,8 +148,53 @@ export const updateStatusNative = mutation({
     if (from !== status && BLOCKED_FORWARD_STATUSES.has(status)) {
       await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
     }
+
+    // #792: reverting OUT of HARD_LOCKED (COMPLETED/INVOICED → earlier) is a
+    // trivial bypass of the hard lock unless restricted the same as opening a
+    // FULL unlock session — audience (admin/owner/PM) + a bounded justification,
+    // audited. COMPLETED → INVOICED stays HARD_LOCKED on both ends and is NOT a
+    // revert (normal forward move, ungated here).
+    if (from !== status && isRevertOutOfHardLock(from, status)) {
+      await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
+      const trimmed = justification?.trim();
+      if (!trimmed || trimmed.length < 10) {
+        throw new ConvexError({
+          code: "JUSTIFICATION_REQUIRED",
+          message: "Reverting a completed project's status requires a justification (at least 10 characters).",
+        });
+      }
+      assertStrLen(trimmed, "justification", { max: 1000 });
+    }
+
     await ctx.db.patch(project._id, { status, updatedAt: now });
     await bumpProjectCounters(ctx, orgId, project, { ...project, status });
+
+    // #792: whole-project snapshot on every crossing into CONFIRMED/COMPLETED —
+    // forward advance OR a revert-then-re-advance re-crossing. Read AFTER the
+    // status patch above so the snapshot's own `project` entry carries the new
+    // status too (statusFrom/statusTo record the transition separately).
+    if (crossesIntoSnapshotStatus(from, status)) {
+      const patched = await ctx.db.get(project._id);
+      if (patched) {
+        await captureProjectSnapshot(ctx, {
+          orgId,
+          project: patched,
+          reason: status as "CONFIRMED" | "COMPLETED",
+          statusFrom: from,
+          statusTo: status,
+          actor,
+          now,
+        });
+      }
+    }
+
+    // #957 precedence: "a forward status transition auto-commits any open
+    // session with an audit note — a session never silently spans a status
+    // change." Applied on every actual status change, not only forward ones,
+    // so a revert can't leave a stale session straddling two tiers either.
+    if (from !== status) {
+      await autoCommitOpenSession(ctx, orgId, id, project.projectNumber, actor, now);
+    }
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -147,6 +207,7 @@ export const updateStatusNative = mutation({
       userName: actor.userName,
       summary: `Changed project ${project.projectNumber} status from ${from} to ${status}`,
       details: { changes: [{ field: "status", from, to: status }] },
+      metadata: justification?.trim() ? { justification: justification.trim() } : undefined,
       projectId: id,
       createdAt: now,
     });
@@ -283,6 +344,54 @@ const PROJECT_NEVER_CLEAR = new Set<string>([
 ]);
 
 /**
+ * clientContactId (WS9 #948) validate/clear-on-client-change for the general
+ * `updateNative` set/clear patch — split out of the handler to keep its own
+ * complexity from growing further (that function is already a pre-existing
+ * complexity hotspot). Validates against the project's (possibly
+ * reassigned-in-this-same-call) clientId when explicitly set; throws on an
+ * invalid pairing. Returns true when the caller's `setObj`/`clear` should have
+ * `clientContactId` cleared — a contact tied to the OLD client must never
+ * silently carry over onto a newly-assigned (or newly-cleared) client.
+ */
+async function shouldClearStaleClientContactId(
+  ctx: MutationCtx,
+  orgId: string,
+  project: { clientId?: string; clientContactId?: string },
+  setObj: Record<string, unknown>,
+  clear: string[],
+): Promise<boolean> {
+  const effectiveClientId = typeof setObj.clientId === "string" ? setObj.clientId : project.clientId;
+  if (typeof setObj.clientContactId === "string") {
+    if (!effectiveClientId) {
+      throw new ConvexError({ code: "INVALID_FIELD", message: "clientContactId requires a clientId." });
+    }
+    await assertClientContactBelongsToClient(ctx, setObj.clientContactId, effectiveClientId, orgId);
+    return false;
+  }
+  const clientIdChanged = typeof setObj.clientId === "string" && setObj.clientId !== project.clientId;
+  const clientIdCleared = clear.includes("clientId");
+  return (clientIdChanged || clientIdCleared) && !!project.clientContactId;
+}
+
+/**
+ * clientContactId (WS9 #948) validate-on-create — must belong to the SAME client
+ * being set, or a caller could pin the project's PDFs/Xero mapping at another
+ * client's contact.
+ */
+async function assertClientContactOnCreate(
+  ctx: MutationCtx,
+  orgId: string,
+  clientId: string | undefined,
+  clientContactId: string | undefined,
+): Promise<void> {
+  if (!clientContactId) return;
+  if (!clientId) {
+    throw new ConvexError({ code: "INVALID_FIELD", message: "clientContactId requires a clientId." });
+  }
+  await assertClientContactBelongsToClient(ctx, clientContactId, clientId, orgId);
+}
+
+/**
  * updateNative — general project field patch (set/clear) + UPDATE audit, atomic.
  * RBAC(project, update). STALE-COMMENT FIX: the former `updateProject` server action
  * this mutation replaced is gone — `projectSchema.parse()` now runs client-side in
@@ -316,6 +425,11 @@ export const updateNative = mutation({
     // strip organizationId/id (no cross-tenant reassign) + the recalc-owned money anchors
     // and isTemplate (no client-forged totals / in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
+
+    // #791/#792 finance soft-lock: setting or clearing a locked project field
+    // on a FINANCE_LOCKED+ project requires an open unlock session.
+    const touchesLockedField = LOCKED_PROJECT_FIELDS.some((f) => f in setObj || clear.includes(f));
+    const lockGuard = touchesLockedField ? await assertLifecycleGuard(ctx, project, { kind: "financial" }) : null;
 
     // Bound-check the recalc-INPUT money fields — `set` is v.any() (Convex only
     // enforces "is a number", not range/finiteness), and a browser-direct caller
@@ -351,6 +465,9 @@ export const updateNative = mutation({
     // double-booking guard for this project's future line-item adds.
     assertFinite(typeof setObj.rentalStartDate === "number" ? setObj.rentalStartDate : undefined, "rentalStartDate");
     assertFinite(typeof setObj.rentalEndDate === "number" ? setObj.rentalEndDate : undefined, "rentalEndDate");
+    // projectStartDate/projectEndDate (WS2 #941) — same NaN hazard via getProjectWindow.
+    assertFinite(typeof setObj.projectStartDate === "number" ? setObj.projectStartDate : undefined, "projectStartDate");
+    assertFinite(typeof setObj.projectEndDate === "number" ? setObj.projectEndDate : undefined, "projectEndDate");
 
     // Org-validate a reassigned clientId — `set` is v.any(), and clientId is read via a
     // GLOBAL by_cuid index (src/lib/clients-read.ts getClientById), never re-checked
@@ -367,6 +484,13 @@ export const updateNative = mutation({
     // its name + physical street address. Validate on write (the only reliable guard).
     if (typeof setObj.locationId === "string") {
       await assertRefInOrg(ctx, "locations", setObj.locationId, orgId);
+    }
+
+    // clientContactId (WS9 #948) — validate/clear-on-client-change, extracted to
+    // keep this already-large handler's own complexity from growing further.
+    if (await shouldClearStaleClientContactId(ctx, orgId, project, setObj, clear)) {
+      delete setObj.clientContactId;
+      if (!clear.includes("clientContactId")) clear = [...clear, "clientContactId"];
     }
 
     // A general update that also moves the status FORWARD into PREPPING/CHECKED_OUT/ON_SITE
@@ -400,6 +524,7 @@ export const updateNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Updated project ${project.projectNumber} - ${name}`,
+      metadata: lockGuard ? lifecycleAuditMetadata(lockGuard) : undefined,
       projectId: id,
       createdAt: now,
     });
@@ -422,6 +547,12 @@ export const updateNative = mutation({
  *    clash-guard; on a rendered-code clash the counter advances and we retry
  *    (bounded), so a lagging counter skips past manually-entered codes. Atomic — the
  *    sequence bump and the create commit (or roll back) together.
+ *
+ * Handler complexity 15 (R-3.6 ceiling) — the field-bound-check gauntlet
+ * (money/dates/strings/clientId/clientContactId/locationId) plus the two
+ * mutually-exclusive number paths account for the branch count; each guard is
+ * already its own named assertion function, so further splitting would only
+ * relocate the branches, not reduce them.
  */
 export const createNative = mutation({
   returns: v.object({ created: v.boolean(), id: v.string() }),
@@ -454,6 +585,11 @@ export const createNative = mutation({
     // See updateNative's comment — NaN here defeats the double-booking overlap check.
     assertFinite(fields.rentalStartDate, "rentalStartDate");
     assertFinite(fields.rentalEndDate, "rentalEndDate");
+    // projectStartDate/projectEndDate (WS2 #941) feed getProjectWindow, which now
+    // backs the SAME overlap checks rentalStartDate/rentalEndDate do — same NaN
+    // hazard, same guard.
+    assertFinite(fields.projectStartDate, "projectStartDate");
+    assertFinite(fields.projectEndDate, "projectEndDate");
 
     // Bound-check the string fields projectSchema constrains — same rationale as
     // updateNative's assertProjectFields call.
@@ -474,9 +610,31 @@ export const createNative = mutation({
     if (fields.clientId) {
       await assertRefInOrg(ctx, "clients", fields.clientId, fields.organizationId);
     }
+    // clientContactId (WS9 #948) — extracted to a helper (keeps this already-large
+    // handler's own complexity from growing further — same rationale as
+    // shouldClearStaleClientContactId for updateNative).
+    await assertClientContactOnCreate(ctx, fields.organizationId, fields.clientId, fields.clientContactId);
     // locationId — same cross-tenant leak class as clientId (see updateNative's comment).
     if (fields.locationId) {
       await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
+    }
+
+    // Discount cascade (#953 / QW-4): when the caller doesn't pass an explicit
+    // discountPercent, snapshot the client's `defaultDiscount` onto the project
+    // AT CREATE TIME (server-authoritative, R-9.3 — never trust a client-computed
+    // discount). `== null` (not falsy) is deliberate: an explicit 0% discount is a
+    // real caller choice and must win over the client default, never be silently
+    // overwritten by it (the lineItemWrites.ts `unitPrice == null` lesson — see the
+    // auto-pricing comment there for the truthiness bug this avoids). This is a
+    // ONE-TIME snapshot: reassigning the project's client later does NOT
+    // retroactively recompute discountPercent — updateNative has no equivalent
+    // cascade, by design.
+    let discountPercent = fields.discountPercent;
+    if (discountPercent == null && fields.clientId) {
+      const client = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", fields.clientId!)).first();
+      if (client && client.organizationId === fields.organizationId && client.defaultDiscount != null) {
+        discountPercent = client.defaultDiscount;
+      }
     }
 
     // Dup-guard the client-minted cuid first (applies to both number paths). The
@@ -538,7 +696,7 @@ export const createNative = mutation({
     // mint a project with forged financials (projectWriteFields exposes them as args).
     // Non-breaking: createProject never sends these. (bumpProjectCounters keys off
     // status/isTemplate, not money, so it's unaffected by the strip.)
-    const insertFields = { ...fields, projectNumber };
+    const insertFields = { ...fields, projectNumber, discountPercent };
     for (const k of PROJECT_MONEY_ANCHORS) delete (insertFields as Record<string, unknown>)[k];
 
     await ctx.db.insert("projects", insertFields);
@@ -715,6 +873,24 @@ export const deleteNative = mutation({
       await ctx.db.query("projectModelRevenues").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);
     for (const r of rollups) await ctx.db.delete(r._id);
+
+    // Step 9 — #792: lifecycle snapshots + entries + unlock sessions (no FK to
+    // cascade automatically — extend this list, don't forget it, the way
+    // projectModelRevenues above was once missed).
+    const snapshots = (
+      await ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((s) => s.organizationId === orgId);
+    for (const snap of snapshots) {
+      const entries = (
+        await ctx.db.query("projectSnapshotEntries").withIndex("by_snapshotId", (q) => q.eq("snapshotId", snap.id)).collect()
+      ).filter((e) => e.organizationId === orgId);
+      for (const e of entries) await ctx.db.delete(e._id);
+      await ctx.db.delete(snap._id);
+    }
+    const unlockSessions = (
+      await ctx.db.query("projectUnlockSessions").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
+    ).filter((s) => s.organizationId === orgId);
+    for (const s of unlockSessions) await ctx.db.delete(s._id);
 
     // Finally — project row + active-project counter + DELETE audit.
     await bumpProjectCounters(ctx, orgId, project, null);

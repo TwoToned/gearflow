@@ -19,7 +19,7 @@ import {
 
 export interface AppNotification {
   id: string;
-  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset";
+  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset" | "incident_report";
   title: string;
   description: string;
   href: string;
@@ -255,6 +255,41 @@ export async function getNotifications(): Promise<AppNotification[]> {
         href: `/warehouse/${li.projectId}`,
         severity: "warning",
         timestamp: li.updatedAt ? new Date(li.updatedAt as number).toISOString() : now.toISOString(),
+      });
+    }
+  }
+
+  // 10. Incident reports (GitHub #898, FEATUREDOCS/64) — maintenance records
+  // created via "Report Issue" or an immediate check-item FAIL, still open (not
+  // COMPLETED/CANCELLED). A distinct type from `flagged_asset`: that one is keyed
+  // off ProjectLineItem.prepStatus, this one off MaintenanceRecord.incidentType.
+  const incidentRecords = (await getMaintenanceRecordsByOrg(organizationId))
+    .filter((m) => m.incidentType != null && m.status !== "COMPLETED" && m.status !== "CANCELLED")
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 10);
+
+  if (incidentRecords.length > 0) {
+    const incidentLinks = await getMaintenanceAssetLinksByRecordIds(incidentRecords.map((m) => m.id));
+    const incidentAssets = await getAssetsByOrg(organizationId);
+    const incidentAssetMap = new Map(incidentAssets.map((a) => [a.id, a]));
+    const incidentLinksByRecord = new Map<string, typeof incidentLinks>();
+    for (const l of incidentLinks) {
+      const arr = incidentLinksByRecord.get(l.maintenanceRecordId) ?? [];
+      arr.push(l);
+      incidentLinksByRecord.set(l.maintenanceRecordId, arr);
+    }
+    for (const m of incidentRecords) {
+      const recordLinks = incidentLinksByRecord.get(m.id) ?? [];
+      const asset = recordLinks[0] ? incidentAssetMap.get(recordLinks[0].assetId) : undefined;
+      const tag = asset?.assetTag ?? m.title;
+      notifications.push({
+        id: `incident-${m.id}`,
+        type: "incident_report",
+        title: `Reported: ${tag}`,
+        description: m.description ? m.description.slice(0, 140) : m.title,
+        href: m.projectId ? `/warehouse/${m.projectId}` : `/maintenance/${m.id}`,
+        severity: m.incidentSeverity === "MAJOR" ? "error" : "warning",
+        timestamp: m.createdAt.toISOString(),
       });
     }
   }

@@ -113,6 +113,23 @@ vi.mock("@/components/ui/select", () => ({
   SelectValue: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
+// PhotoGridInput does real upload network calls — replace with a stub exposing
+// a button that appends one fake photo URL via onChange, matching the "required
+// photo" gate a FAILed row now enforces (GitHub #898).
+vi.mock("@/components/ui/photo-grid-input", () => ({
+  PhotoGridInput: ({
+    value,
+    onChange,
+  }: {
+    value: string[];
+    onChange: (urls: string[]) => void;
+  }) => (
+    <button type="button" onClick={() => onChange([...value, "https://example.com/photo.jpg"])}>
+      Add photo
+    </button>
+  ),
+}));
+
 // ─── Import after mocks ─────────────────────────────────────────────────────
 
 import { ItemCheckForm } from "../item-check-form";
@@ -204,6 +221,14 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     key("f"); // fail ci-1, auto-advance to ci-4
     key("p"); // pass ci-4, auto-advance to ci-5
     key("p"); // pass ci-5
+
+    // A FAILed row requires an inline reason + photo before it can submit.
+    key("Enter");
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText("Describe the failure..."), {
+      target: { value: "Wouldn't power on" },
+    });
+    fireEvent.click(screen.getByText("Add photo"));
     key("Enter");
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
@@ -247,6 +272,14 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     key("ArrowUp"); // back to ci-4
     key("ArrowUp"); // back to ci-1
     key("p");
+
+    // ci-4's FAIL still needs its reason + photo before Enter can submit.
+    key("Enter");
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByPlaceholderText("Describe the failure..."), {
+      target: { value: "Visible crack" },
+    });
+    fireEvent.click(screen.getByText("Add photo"));
     key("Enter");
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const [checks] = onSubmit.mock.calls[0];

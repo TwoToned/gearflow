@@ -76,7 +76,8 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
     defaultTestProfileId: model.defaultTestProfileId || undefined,
     defaultEquipmentClass: model.defaultEquipmentClass || undefined,
     defaultApplianceType: model.defaultApplianceType || undefined,
-    maintenanceIntervalDays: model.maintenanceIntervalDays || undefined,
+    // maintenanceIntervalDays intentionally omitted — superseded by
+    // serviceSchedules (WS6 #945), removed from modelSchema/the form.
     assetType: model.assetType,
     barcodeLabelTemplate: model.barcodeLabelTemplate || "",
     isActive: model.isActive,

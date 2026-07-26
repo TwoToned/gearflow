@@ -1,27 +1,34 @@
 /**
  * One answer to "when is this job?".
  *
- * A project carries six nullable dates with different meanings, and most jobs set
- * only some of them:
+ * WS2 (#941) collapsed the date model to TWO windows:
  *
- * - `eventStartDate` / `eventEndDate` — when the show actually happens. What a
- *   human means by "when is this job".
- * - `rentalStartDate` / `rentalEndDate` — the window the gear is committed for.
- *   This is the window `overbooking-core.ts` enforces availability against.
- * - `loadInDate` / `loadOutDate` — the logistics moments either side.
+ * - `projectStartDate` / `projectEndDate` — the gear-committed window (when it
+ *   leaves/returns the warehouse). What a human means by "when is this job".
+ *   Blank on most projects — falls back to the rental window (see
+ *   `getProjectWindow`, `src/lib/project-window.ts`).
+ * - `rentalStartDate` / `rentalEndDate` — the chargeable window. Pricing reads
+ *   this directly (untouched by WS2 — see #943).
+ *
+ * The legacy `eventStartDate`/`eventEndDate`/`loadInDate`/`loadOutDate` fields are
+ * DEPRECATED (no longer written by any consumer — see FEATUREDOCS/10) and are
+ * intentionally NOT consulted here; the backfill migrates `loadInDate` into
+ * `projectStartDate` so old projects still resolve correctly once it's run.
  *
  * Callers (agents especially) had no way to know which to read, so they guessed —
  * one asked for `startDate`, a field that does not exist on a project, got `null`,
  * and concluded the dates were missing. This resolves the hierarchy once,
  * server-side, and reports which field the answer came from.
  *
- * IMPORTANT: this is the *human* answer. For availability and overbooking, always
- * use `rentalStartDate`/`rentalEndDate` (or the `check_availability` verb) — the
- * event window is not what the inventory maths runs on.
+ * IMPORTANT: this is the *human* answer. For availability and overbooking, use
+ * `getProjectWindow` (or the `check_availability` verb) directly — same
+ * precedence, but without the ISO-string/ProjectDates wire mapping. For pricing,
+ * always use `rentalStartDate`/`rentalEndDate` directly — the project window is
+ * not what pricing runs on.
  */
 
 /** Which pair of fields the range was resolved from. */
-export type PrimaryDateSource = "event" | "rental" | "load" | "none";
+export type PrimaryDateSource = "project" | "rental" | "none";
 
 export interface PrimaryDateRange {
   /** ISO 8601, or null when the project has no usable start date at all. */
@@ -36,12 +43,10 @@ export interface PrimaryDateRange {
 export type DateLike = Date | number | string | null | undefined;
 
 interface ProjectDates {
-  eventStartDate?: DateLike;
-  eventEndDate?: DateLike;
+  projectStartDate?: DateLike;
+  projectEndDate?: DateLike;
   rentalStartDate?: DateLike;
   rentalEndDate?: DateLike;
-  loadInDate?: DateLike;
-  loadOutDate?: DateLike;
 }
 
 /** Normalise any of the three wire shapes to an ISO string, or null if unusable. */
@@ -54,16 +59,15 @@ function toIso(value: DateLike): string | null {
 /**
  * Resolve the project's primary date range.
  *
- * Precedence is by START date: event, then rental, then load-in. The end is taken
- * from the SAME pair when present, so a range never straddles two different
- * meanings; a single-day job (start, no end) reports `end === start` rather than
- * null, which is what a caller sorting or filtering by date actually wants.
+ * Precedence is by START date: project, then rental. The end is taken from the
+ * SAME pair when present, so a range never straddles two different meanings; a
+ * single-day job (start, no end) reports `end === start` rather than null, which
+ * is what a caller sorting or filtering by date actually wants.
  */
 export function resolvePrimaryDateRange(project: ProjectDates): PrimaryDateRange {
   const pairs: Array<[PrimaryDateSource, DateLike, DateLike]> = [
-    ["event", project.eventStartDate, project.eventEndDate],
+    ["project", project.projectStartDate, project.projectEndDate],
     ["rental", project.rentalStartDate, project.rentalEndDate],
-    ["load", project.loadInDate, project.loadOutDate],
   ];
 
   for (const [source, rawStart, rawEnd] of pairs) {

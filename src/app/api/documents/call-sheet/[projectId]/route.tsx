@@ -13,7 +13,6 @@ export async function GET(
   const allDates = url.searchParams.get("allDates") === "true";
   const crewMemberId = url.searchParams.get("crewMemberId") || undefined;
   const crewRoleId = url.searchParams.get("crewRoleId") || undefined;
-  const templateId = url.searchParams.get("templateId") || undefined;
 
   let session;
   try {
@@ -68,7 +67,6 @@ export async function GET(
       allDates,
       crewMemberId,
       crewRoleId,
-      templateId,
     });
 
     const filename = `CallSheet-${projectId}.pdf`;

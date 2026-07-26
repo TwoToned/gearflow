@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireService, isCallerManagerPlus, redactFields } from "./lib/auth";
+import { crewRoleUsage } from "./lib/crewRoleUsage";
 import * as enums from "./lib/validators";
 
 /**
@@ -21,6 +22,45 @@ export const list = query({
       .query("crewRoles")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
       .collect();
+  },
+});
+
+/**
+ * Roles-admin list (WS10 #949, `/crew/settings`) — same rows as `list`, but with
+ * the cost (`defaultRate`) and charge (`chargeRate`) columns stripped for anyone
+ * below manager+ standing (R-9.3 server-is-the-authority: the roles admin table
+ * hides both rate columns from non-managers, so the redaction must happen here,
+ * not just in the client component). Deliberately a SEPARATE query from `list` —
+ * `list` is also used by cost-preview call sites elsewhere in the app (the
+ * per-service crew rate table) that still need `defaultRate` to compute a live
+ * preview regardless of viewer role; narrowing THAT query would regress those
+ * call sites, which are out of scope for this ticket.
+ */
+export const listForSettings = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    const rows = await ctx.db
+      .query("crewRoles")
+      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
+      .collect();
+    const managerPlus = await isCallerManagerPlus(ctx, orgId);
+    return managerPlus ? rows : rows.map((r) => redactFields(r, ["defaultRate", "chargeRate"]));
+  },
+});
+
+/**
+ * Usage counts for a role (WS10 #949) — the pre-check half of "archive-with-usage-
+ * guard": the settings page calls this BEFORE confirming an archive so the user
+ * sees "used by N crew / M assignments / P services" up front, not just after the
+ * fact. Read-only; archiving itself is never blocked by these counts (non-
+ * destructive — see `crewRolesWrites.ts` `archiveNative`).
+ */
+export const usage = query({
+  args: { id: v.string(), orgId: v.string() },
+  handler: async (ctx, { id, orgId }) => {
+    await requireOrgRead(ctx, orgId);
+    return await crewRoleUsage(ctx, id, orgId);
   },
 });
 

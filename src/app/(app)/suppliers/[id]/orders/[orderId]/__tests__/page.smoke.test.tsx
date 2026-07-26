@@ -17,6 +17,9 @@ beforeAll(() => {
   Element.prototype.scrollIntoView ??= () => {};
 });
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
+}));
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
   useSession: () => ({ data: { user: { id: "user1", name: "Alice" } } }),

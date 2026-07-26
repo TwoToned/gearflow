@@ -25,7 +25,9 @@ export const modelSchema = z.object({
   defaultTestProfileId: z.string().optional(),
   defaultEquipmentClass: z.enum(["CLASS_I", "CLASS_II", "CLASS_II_DOUBLE_INSULATED", "LEAD_CORD_ASSEMBLY"]).optional(),
   defaultApplianceType: z.enum(["APPLIANCE", "CORD_SET", "EXTENSION_LEAD", "POWER_BOARD", "RCD_PORTABLE", "RCD_FIXED", "THREE_PHASE", "MICROWAVE", "OTHER"]).optional(),
-  maintenanceIntervalDays: z.coerce.number().int().min(0).optional(),
+  // maintenanceIntervalDays removed (WS6 #945) — superseded by serviceSchedules
+  // (fixed interval + anchor date, managed on the /maintenance/due worklist,
+  // not per-model). See convex/schema.ts's deprecation comment on the field.
   assetType: z.enum(["SERIALIZED", "BULK"]).default("SERIALIZED"),
   barcodeLabelTemplate: z.string().optional(),
   isActive: z.boolean().default(true),

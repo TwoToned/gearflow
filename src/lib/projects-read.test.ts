@@ -50,23 +50,33 @@ function assignment(overrides: Partial<ConvexCrewAssignment> = {}): ConvexCrewAs
 }
 
 describe("mapCallSheetMilestoneDates", () => {
-  it("converts epoch-ms milestone fields to Date", () => {
+  // WS2 (#941): collapsed to WINDOW (getProjectWindow) + RENTAL.
+  it("converts epoch-ms window + rental fields to Date", () => {
     const t = Date.UTC(2026, 5, 1);
     const result = mapCallSheetMilestoneDates(
-      project({ loadInDate: t, eventStartDate: t + 1, eventEndDate: t + 2, loadOutDate: t + 3 }),
+      project({ projectStartDate: t, projectEndDate: t + 1, rentalStartDate: t + 2, rentalEndDate: t + 3 }),
     );
-    expect(result.loadInDate).toEqual(new Date(t));
-    expect(result.eventStartDate).toEqual(new Date(t + 1));
-    expect(result.eventEndDate).toEqual(new Date(t + 2));
-    expect(result.loadOutDate).toEqual(new Date(t + 3));
+    expect(result.windowStart).toEqual(new Date(t));
+    expect(result.windowEnd).toEqual(new Date(t + 1));
+    expect(result.rentalStartDate).toEqual(new Date(t + 2));
+    expect(result.rentalEndDate).toEqual(new Date(t + 3));
   });
 
-  it("maps absent milestone fields to null", () => {
+  it("falls back to rental for the window when projectStart/End are unset", () => {
+    const t = Date.UTC(2026, 5, 1);
+    const result = mapCallSheetMilestoneDates(project({ rentalStartDate: t, rentalEndDate: t + 3 }));
+    expect(result.windowStart).toEqual(new Date(t));
+    expect(result.windowEnd).toEqual(new Date(t + 3));
+    expect(result.rentalStartDate).toEqual(new Date(t));
+    expect(result.rentalEndDate).toEqual(new Date(t + 3));
+  });
+
+  it("maps absent fields to null", () => {
     const result = mapCallSheetMilestoneDates(project());
-    expect(result.loadInDate).toBeNull();
-    expect(result.eventStartDate).toBeNull();
-    expect(result.eventEndDate).toBeNull();
-    expect(result.loadOutDate).toBeNull();
+    expect(result.windowStart).toBeNull();
+    expect(result.windowEnd).toBeNull();
+    expect(result.rentalStartDate).toBeNull();
+    expect(result.rentalEndDate).toBeNull();
   });
 });
 

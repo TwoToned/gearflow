@@ -323,22 +323,38 @@ the human-readable label even when the selected `SelectItem` isn't currently mou
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 
-### PDF generation — data-shape changes need cross-cutting audits
-The PDF pipeline has **five independent consumers** of the `DocumentLineItem` shape. Any change to the shape (new field, new synthetic row type, new relationship between parent and children) must be verified against ALL of them — fixing one and shipping leaves silent bugs in the others:
+### PDF generation — one pipeline, data-shape changes still need cross-cutting audits
+**#790 redesign (2026-07-26):** ripped out the PDF customization engine (dual
+render pipelines, stored per-org templates, section/block model, `{token}`
+resolution, visibility conditions, brand templates, Convex `documentTemplates`/
+`brandTemplates`/`sectionPresets`) — ~8,300 LOC deleted. There is now **one**
+pipeline for the 5 project doc types: `document-layouts.ts` (fixed layout per
+doc type, plain TS, no persistence) → `document-composer.ts` (net-new,
+purpose-built pagination engine, a few hundred LOC) → `pdf-render.ts`. No
+template designer of any kind exists or is planned. See
+`docs/designs/pdf-system-redesign.md` and FEATUREDOCS/13 for the full
+architecture. This also fixed a live truncation bug: the legacy fallback
+builders were single-page only, so any default document longer than one page
+silently dropped its tail — the new composer paginates every doc type by
+default.
+
+The PDF pipeline still has **independent consumers** of the `DocumentLineItem`
+shape (down from 5 across 2 files pre-redesign to 3 across 2 files). Any
+change to the shape (new field, new synthetic row type, new relationship
+between parent and children) must be verified against ALL of them — fixing
+one and shipping leaves silent bugs in the others:
 
 1. **`gearflow-table.ts` rendering** — what gets drawn (bold, indented, etc.)
-2. **`section-renderer.ts` `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
-3. **`section-renderer.ts` `getFilteredParentItems`** — top-level status filter (miss this → items disappear from docket / return-sheet)
-4. **`gearflow-table.ts` top-level filter** — plugin-level status filter (mirrors #3, must stay in sync)
-5. **`gearflow-table.ts` `buildDeliveryDocketGroups`** + plugin docket bucketing — custom kit-promotion logic
+2. **`document-composer.ts`'s `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
+3. **`document-composer.ts`'s `getFilteredParentItems`** — top-level status filter (miss this → items disappear from docket / return-sheet). `gearflow-table.ts`'s own top-level filter mirrors this and must stay in sync (documented cross-reference in both files).
 
 **Synthetic rows (e.g. `isGroupRow: true`) are footguns.** Their hard-coded fields (`status: "CONFIRMED"`, etc.) silently fail any filter that compares against them. Every status/filter site must special-case the synthetic row type, or compute the field dynamically from children.
 
-**Parent/child kinds.** A line is a child when `isKitChild: true` (covers kit members, sub-hire group children, AND accessory children) — that flag is the structural "is a child" test the ~40 `isKitChild: false` DB filters depend on. `childKind` (`KIT | ACCESSORY`) is the *behaviour* discriminator. An **accessory parent** is NOT a kit (no `kitId`); detect it as "top-level line, no `kitId`, has `ACCESSORY` children" and treat it like a kit parent for child rendering (gearflow-table) AND height reservation (section-renderer) — accessories always render (inseparable, not gated by `showKitChildren`). See [FEATUREDOCS/48](./FEATUREDOCS/48-child-assets-accessories.md).
+**Parent/child kinds.** A line is a child when `isKitChild: true` (covers kit members, sub-hire group children, AND accessory children) — that flag is the structural "is a child" test the ~40 `isKitChild: false` DB filters depend on. `childKind` (`KIT | ACCESSORY`) is the *behaviour* discriminator. An **accessory parent** is NOT a kit (no `kitId`); detect it as "top-level line, no `kitId`, has `ACCESSORY` children" and treat it like a kit parent for child rendering (gearflow-table) AND height reservation (document-composer) — accessories always render (inseparable, not gated by `showKitChildren`). See [FEATUREDOCS/48](./FEATUREDOCS/48-child-assets-accessories.md).
 
-**Test coverage rule:** unit tests at the plugin layer alone are NOT enough. For any data-shape change, write at least one integration test that exercises the full pipeline (structureLineItems → calculateItemHeight → filter → plugin render) against a realistic fixture. The plugin-only harness in `src/lib/pdfme/plugins/test-utils.ts` is great for rendering assertions but misses the pipeline bugs.
+**Test coverage rule:** unit tests at the plugin layer alone are NOT enough. For any data-shape change, write at least one integration test that exercises the full pipeline (structureLineItems → calculateItemHeight → filter → plugin render) against a realistic fixture. The plugin-only harness in `src/lib/pdfme/plugins/test-utils.ts` is great for rendering assertions but misses the pipeline bugs. `document-composer.test.ts` is the standing regression harness — a 120+ item fixture per doc type asserting full parent-item index coverage across pages.
 
-History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed the height-calc miss (tail items dropped). v0.8.1.2 fixed the status-filter miss (groups invisible on dockets). Each was a separate user-impacting deploy that an upfront cross-cutting audit would have caught.
+History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed the height-calc miss (tail items dropped). v0.8.1.2 fixed the status-filter miss (groups invisible on dockets). Each was a separate user-impacting deploy that an upfront cross-cutting audit would have caught — the #790 redesign collapsed the dual-pipeline root cause of these into one.
 
 ### Convex Mutation Rules
 

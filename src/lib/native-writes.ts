@@ -99,6 +99,33 @@ const ASSET_WRITE_ERROR_MAP: Record<
     message: "This kit is already booked during those dates.",
     hint: "Pick a different kit, adjust the rental dates, or remove it from the other project.",
   },
+  // #791/#792/#793 lifecycle-lock gates (convex/lib/projectLocks.ts).
+  FINANCIALS_LOCKED: {
+    title: "Financials are locked",
+    message: "This project's financials are locked. Open an unlock session (Financials tab) to edit money fields.",
+    hint: "Any user with edit access can open an unlock session — it's logged and auditable.",
+  },
+  JUSTIFICATION_REQUIRED: {
+    title: "Justification required",
+    message: "Describe why this change is needed before it's saved.",
+  },
+  PROJECT_LOCKED: {
+    title: "Project is hard-locked",
+    message: "This project is completed and locked. Open a full unlock session to make changes.",
+    hint: "Full unlock sessions are restricted to org admins/owners and this project's assigned PM(s).",
+  },
+  SESSION_ALREADY_OPEN: {
+    title: "Unlock session already open",
+    message: "An unlock session is already open on this project.",
+  },
+  NO_OPEN_SESSION: {
+    title: "No unlock session open",
+    message: "There's no open unlock session on this project.",
+  },
+  FORBIDDEN_HARD_LOCK_OVERRIDE: {
+    title: "Not allowed",
+    message: "Only org admins/owners or this project's assigned PM(s) can open a full unlock session.",
+  },
 };
 
 export function mapAssetWriteError(e: unknown): unknown {

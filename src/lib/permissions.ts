@@ -20,6 +20,7 @@ export {
   ORG_ROLES,
   ASSIGNABLE_BUILT_IN_ROLES,
   isBuiltInRole,
+  isManagerPlusRole,
 } from "../../convex/lib/permissionsCore";
 export type {
   Resource,
@@ -139,7 +140,6 @@ export const PERMISSION_REGISTRY: Record<
     actions: [
       { key: "generate", label: "Generate" },
       { key: "send", label: "Send" },
-      { key: "manage_templates", label: "Manage Templates" },
     ],
   },
   orgSettings: {

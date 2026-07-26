@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller, type Path, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parseISO, isValid } from "date-fns";
-import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck, PartyPopper } from "lucide-react";
+import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { cn, focusRing, disabledState } from "@/lib/utils";
 import {
@@ -20,7 +20,7 @@ import { projectSchema, type ProjectFormValues } from "@/lib/validations/project
 import { peekNextProjectNumber, checkProjectNumberAvailable } from "@/server/projects";
 import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
-import { useClientSearch, useClient } from "@/hooks/use-clients";
+import { useClientSearch, useClient, useClientContacts } from "@/hooks/use-clients";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
@@ -66,6 +66,7 @@ export interface EditableProject {
   projectNumber?: string | null;
   name?: string | null;
   clientId?: string | null;
+  clientContactId?: string | null;
   status?: ProjectFormValues["status"] | null;
   type?: ProjectFormValues["type"] | null;
   description?: string | null;
@@ -81,6 +82,11 @@ export interface EditableProject {
   eventEndTime?: string | null;
   loadOutDate?: unknown;
   loadOutTime?: string | null;
+  /** WS2 (#941) — the gear-committed window; blank means "same as rental". */
+  projectStartDate?: unknown;
+  projectStartTime?: string | null;
+  projectEndDate?: unknown;
+  projectEndTime?: string | null;
   rentalStartDate?: unknown;
   rentalEndDate?: unknown;
   crewNotes?: string | null;
@@ -97,8 +103,8 @@ export interface EditableProject {
 
 type StepKey = "basics" | "schedule" | "site" | "review";
 const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFormValues>[] }[] = [
-  { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", fields: ["name", "projectNumber", "clientId", "type", "description", "tags"] },
-  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten load-in / load-out later.", fields: ["rentalStartDate", "rentalEndDate", "loadInDate", "loadInTime", "loadOutDate", "loadOutTime", "eventStartDate", "eventStartTime", "eventEndDate", "eventEndTime"] },
+  { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", fields: ["name", "projectNumber", "clientId", "clientContactId", "type", "description", "tags"] },
+  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten the project window later.", fields: ["rentalStartDate", "rentalEndDate", "projectStartDate", "projectStartTime", "projectEndDate", "projectEndTime"] },
   { key: "site", label: "Site", tip: "Where it's happening and who to call on the day. All optional.", fields: ["locationId", "siteContactName", "siteContactPhone", "siteContactEmail"] },
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
 ];
@@ -158,7 +164,7 @@ export function ProjectWizard({
   const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
   const locationOptions = rawLocations.map((l) => ({ value: l.id, label: l.parentId ? `${locNameById.get(l.parentId) ?? ""} → ${l.name}` : l.name, description: l.address || undefined }));
   const orgTags = useOrgTags(orgId);
-  const { data: membersData } = useServerQuery({ queryKey: ["org-members", orgId], queryFn: () => getOrgMembers({ pageSize: 200 }) });
+  const { data: membersData, error: membersError } = useServerQuery({ queryKey: ["org-members", orgId], queryFn: () => getOrgMembers({ pageSize: 200 }) });
   const memberOptions = (membersData?.members || []).map((m) => ({ value: m.user.id, label: m.user.name || m.user.email, description: m.user.name ? m.user.email : undefined }));
 
   const form = useForm<ProjectFormValues>({
@@ -168,6 +174,7 @@ export function ProjectWizard({
           projectNumber: project.projectNumber ?? "",
           name: project.name ?? "",
           clientId: project.clientId ?? "",
+          clientContactId: project.clientContactId ?? "",
           status: project.status ?? "ENQUIRY",
           type: project.type ?? "OTHER",
           description: project.description ?? "",
@@ -176,6 +183,9 @@ export function ProjectWizard({
           siteContactPhone: project.siteContactPhone ?? "",
           siteContactEmail: project.siteContactEmail ?? "",
           // Dates → the form's "yyyy-MM-dd" string shape; times stay "HH:mm".
+          // loadInDate/loadOutDate/eventStartDate/eventEndDate are DEPRECATED — the
+          // wizard reads them for a pre-WS2 project (so an old value isn't silently
+          // dropped) but never writes them; project*/rental* are the two windows now.
           loadInDate: normalizeDate(project.loadInDate),
           loadInTime: project.loadInTime ?? "",
           eventStartDate: normalizeDate(project.eventStartDate),
@@ -184,6 +194,10 @@ export function ProjectWizard({
           eventEndTime: project.eventEndTime ?? "",
           loadOutDate: normalizeDate(project.loadOutDate),
           loadOutTime: project.loadOutTime ?? "",
+          projectStartDate: normalizeDate(project.projectStartDate),
+          projectStartTime: project.projectStartTime ?? "",
+          projectEndDate: normalizeDate(project.projectEndDate),
+          projectEndTime: project.projectEndTime ?? "",
           rentalStartDate: normalizeDate(project.rentalStartDate),
           rentalEndDate: normalizeDate(project.rentalEndDate),
           crewNotes: project.crewNotes ?? "",
@@ -196,18 +210,67 @@ export function ProjectWizard({
           tags: project.tags ?? [],
         }
       : {
-          projectNumber: "", name: "", clientId: "", status: "ENQUIRY", type: "OTHER",
+          projectNumber: "", name: "", clientId: "", clientContactId: "", status: "ENQUIRY", type: "OTHER",
           description: "", locationId: "", siteContactName: "", siteContactPhone: "", siteContactEmail: "",
           loadInDate: undefined, loadInTime: "", eventStartDate: undefined, eventStartTime: "",
           eventEndDate: undefined, eventEndTime: "", loadOutDate: undefined, loadOutTime: "",
+          projectStartDate: undefined, projectStartTime: "", projectEndDate: undefined, projectEndTime: "",
           rentalStartDate: undefined, rentalEndDate: undefined,
           crewNotes: "", internalNotes: "", clientNotes: "", tags: [],
         },
   });
 
   const v = form.watch();
-  // Resolve the selected client's label directly (it may not be in the current search page).
-  const selectedClientName = useClient(v.clientId || undefined)?.name;
+  // Resolve the selected client directly (it may not be in the current search page) —
+  // used for the display label AND the discount-default prefill below.
+  const selectedClient = useClient(v.clientId || undefined);
+  const selectedClientName = selectedClient?.name;
+
+  // QW-4 (#953): prefill Discount from the selected client's `defaultDiscount` — a
+  // UX convenience only; the server-authoritative snapshot happens in
+  // `projectWrites.createNative` (R-9.3) regardless of what the wizard sends. Re-
+  // prefills each time the client changes, but ONLY while the user hasn't touched
+  // the field themselves — once they type a value (including an explicit 0), their
+  // choice wins and further client changes leave it alone. Never fires on initial
+  // load of an existing project (editing doesn't retroactively re-apply the
+  // client's CURRENT default over whatever discount was actually saved).
+  const discountTouchedRef = useRef(false);
+  const prefilledDiscountForClientId = useRef(project?.clientId ?? "");
+  useEffect(() => {
+    const currentClientId = v.clientId || "";
+    if (!currentClientId) return;
+    if (discountTouchedRef.current) return;
+    if (prefilledDiscountForClientId.current === currentClientId) return;
+    if (selectedClient === undefined || selectedClient?.id !== currentClientId) return; // still loading / stale
+    prefilledDiscountForClientId.current = currentClientId;
+    form.setValue(
+      "discountPercent",
+      selectedClient?.defaultDiscount != null ? Number(selectedClient.defaultDiscount) : undefined,
+      { shouldDirty: false },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.clientId, selectedClient]);
+
+  // Per-project contact picker (WS9 #948) — the client's contacts, reactively.
+  // Changing clientId invalidates any previously-picked contact (it belonged to a
+  // DIFFERENT client), so reset the field the moment the client selection changes —
+  // the server also enforces this (projectWrites.ts), this is just UX so a stale
+  // pick never lingers in the form between the change and submit.
+  const clientContacts = useClientContacts(v.clientId || undefined, orgId);
+  const contactOptions = (clientContacts ?? []).map((c) => ({
+    value: c.id,
+    label: c.name || c.email || c.phone || "Unnamed contact",
+    description: c.isPrimary ? "Primary" : undefined,
+  }));
+  const prevClientIdRef = useRef(project?.clientId ?? "");
+  useEffect(() => {
+    const currentClientId = v.clientId || "";
+    if (currentClientId !== prevClientIdRef.current) {
+      prevClientIdRef.current = currentClientId;
+      form.setValue("clientContactId", "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.clientId]);
 
   // Pre-fill the project code from the org's next sequence so the (now required)
   // field is populated by default — the user accepts it or types their own.
@@ -354,7 +417,29 @@ export function ProjectWizard({
                     onCreateNew={() => setQuickClient(true)} createNewLabel="New client" emptyMessage="No clients found." />
                 )} />
               </Field>
-              <Field label="Project manager(s)">
+              {v.clientId && (
+                <Field label="Contact" hint="Who this job's documents address — defaults to the client's primary contact.">
+                  <Controller control={form.control} name="clientContactId" render={({ field }) => (
+                    <ComboboxPicker value={field.value || ""} onChange={field.onChange} options={contactOptions}
+                      loading={clientContacts === undefined} placeholder="Primary contact (default)" searchPlaceholder="Search contacts…"
+                      allowClear emptyMessage="This client has no contacts yet." />
+                  )} />
+                </Field>
+              )}
+              <Field
+                label="Discount (%)"
+                hint={
+                  selectedClient?.defaultDiscount != null
+                    ? "From client default — edit anytime. Won't retroactively change if you switch clients again after saving."
+                    : undefined
+                }
+              >
+                <Input
+                  type="number" step="0.01" min="0" max="100" placeholder="0"
+                  {...form.register("discountPercent", { onChange: () => { discountTouchedRef.current = true; } })}
+                />
+              </Field>
+              <Field label="Project manager(s)" error={membersError ? "Couldn't load org members — you may not have permission to view them." : undefined}>
                 <ComboboxPicker value="" onChange={(id) => { if (id && !managerIds.includes(id)) setManagerIds((p) => [...p, id]); }}
                   options={memberOptions.filter((m) => !managerIds.includes(m.value))} placeholder="Add manager…" searchPlaceholder="Search members…" emptyMessage="No members found." />
                 {managerIds.length > 0 && (
@@ -425,7 +510,12 @@ export function ProjectWizard({
                   <div className="space-y-3 border-t border-line pt-4 sm:col-span-2">
                     <p className="t-overline text-faint">Financial</p>
                   </div>
-                  <Field label="Discount (%)"><Input type="number" step="0.01" min="0" max="100" {...form.register("discountPercent")} placeholder="0" /></Field>
+                  {/* RESERVED for #940 (WS1 — deposit/invoicing workflow). These are
+                      hand-typed inputs with no server-side math behind them yet (see
+                      the schema.ts reservation comment on depositPercent/depositPaid/
+                      invoicedTotal) — #940 owns wiring them up. Discount (%) moved to
+                      the Basics step (QW-4 / #953) since it's now applied at project
+                      creation and needed visible + editable there, not edit-only. */}
                   <Field label="Deposit (%)"><Input type="number" step="0.01" min="0" max="100" {...form.register("depositPercent")} placeholder="0" /></Field>
                   <Field label="Deposit paid ($)"><Input type="number" step="0.01" min="0" {...form.register("depositPaid")} placeholder="0.00" /></Field>
                   <Field label="Invoiced total ($)"><Input type="number" step="0.01" min="0" {...form.register("invoicedTotal")} placeholder="0.00" /></Field>
@@ -439,11 +529,12 @@ export function ProjectWizard({
               <h2 className="font-display text-section-header font-bold text-ink">{v.name || "Untitled job"}</h2>
               <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                 <ReviewRow label="Client" value={clientName} />
+                <ReviewRow label="Contact" value={contactOptions.find((c) => c.value === v.clientContactId)?.label} />
                 <ReviewRow label="Type" value={typeName} />
                 <ReviewRow label="Managers" value={managerIds.length ? `${managerIds.length} assigned` : undefined} />
                 <ReviewRow label="Project code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />
                 <ReviewRow label="Rental" value={dateRange(v.rentalStartDate, v.rentalEndDate)} />
-                <ReviewRow label="Event" value={dateRange(v.eventStartDate, v.eventEndDate)} />
+                <ReviewRow label="Project window" value={dateRange(v.projectStartDate, v.projectEndDate) || "Same as rental"} />
                 <ReviewRow label="Location" value={locationName} />
                 <ReviewRow label="Site contact" value={v.siteContactName} />
                 <ReviewRow label="Tags" value={(v.tags && v.tags.length) ? v.tags.join(", ") : undefined} />
@@ -510,10 +601,14 @@ function normalizeDate(value?: unknown): string | undefined {
 }
 
 /**
- * One calendar to rule the schedule. The hire window (a date range) is the
- * spine — pick it with a preset or the range calendar, and load-in / show /
- * load-out dates derive from it. The granular per-moment times live in an
- * optional disclosure so the common case is "tap a preset, done".
+ * Two windows (WS2 #941, locked decision): RENTAL (chargeable — what's invoiced)
+ * and PROJECT (gear committed — when equipment leaves/returns the warehouse;
+ * availability/conflicts read this one). Rental is the spine — pick it with a
+ * preset or the range calendar. Project defaults to "same as rental" (ghost text,
+ * ungenerated — R-3.1: it stays genuinely blank in the form/DB, not a copy) until
+ * the user explicitly diverges it, e.g. an earlier load-in or later load-out than
+ * the charged dates. Soft (non-blocking) hints flag when the project window
+ * doesn't fully contain the rental window — that's unusual, not necessarily wrong.
  */
 function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   const v = form.watch();
@@ -521,19 +616,18 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
     start: fromDateStr(v.rentalStartDate),
     end: fromDateStr(v.rentalEndDate),
   };
+  const projectRange: DateRange = {
+    start: fromDateStr(v.projectStartDate),
+    end: fromDateStr(v.projectEndDate),
+  };
 
   const setRange = (r: DateRange) => {
     form.setValue("rentalStartDate", toDateStr(r.start), { shouldDirty: true });
     form.setValue("rentalEndDate", toDateStr(r.end), { shouldDirty: true });
-    // Derive the per-moment dates into any field the user hasn't filled yet —
-    // never clobber an explicit edit made in the fine-tune section.
-    const fill = (name: Path<ProjectFormValues>, d?: Date) => {
-      if (d && !form.getValues(name)) form.setValue(name, toDateStr(d), { shouldDirty: true });
-    };
-    fill("loadInDate", r.start);
-    fill("eventStartDate", r.start);
-    fill("eventEndDate", r.end ?? r.start);
-    fill("loadOutDate", r.end ?? r.start);
+  };
+  const setProjectRange = (r: DateRange) => {
+    form.setValue("projectStartDate", toDateStr(r.start), { shouldDirty: true });
+    form.setValue("projectEndDate", toDateStr(r.end), { shouldDirty: true });
   };
 
   const lenLabel = rangeLengthLabel(range);
@@ -543,11 +637,28 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
       : `${format(range.start, "EEE d MMM")} — pick an end date`
     : "No dates yet";
 
+  const projectLenLabel = rangeLengthLabel(projectRange);
+  const projectSummary = projectRange.start
+    ? projectRange.end
+      ? `${format(projectRange.start, "EEE d MMM")} → ${format(projectRange.end, "EEE d MMM")}`
+      : `${format(projectRange.start, "EEE d MMM")} — pick an end date`
+    : "Same as rental window";
+
+  // Soft (non-blocking) hint: a diverging project window is expected to CONTAIN
+  // the rental window (gear leaves before/at the charged start, returns after/at
+  // the charged end). Flag it, don't block — an unusual booking is still valid.
+  const softWarning =
+    projectRange.start && range.start && projectRange.start > range.start
+      ? "The project window starts after the rental window — usually load-in is on or before the rental start."
+      : projectRange.end && range.end && projectRange.end < range.end
+        ? "The project window ends before the rental window — usually load-out is on or after the rental end."
+        : undefined;
+
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label>Hire window</Label>
-        <p className="t-micro text-muted">When does the gear leave and come back? Everything else fills in from this.</p>
+        <Label>Rental window</Label>
+        <p className="t-micro text-muted">When does the gear leave and come back? This is what gets charged.</p>
       </div>
 
       {/* Duration presets */}
@@ -593,16 +704,48 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
         </div>
       </div>
 
-      {/* Fine-tune: per-moment dates + times, derived from the window */}
-      <Accordion type="single" collapsible>
-        <AccordionItem value="times" className="border-line">
-          <AccordionTrigger>Load-in, show & load-out times</AccordionTrigger>
+      {/* Project window — blank by default ("same as rental"), diverges only when set */}
+      <Accordion type="single" collapsible defaultValue={projectRange.start ? "project-window" : undefined}>
+        <AccordionItem value="project-window" className="border-line">
+          <AccordionTrigger>
+            Project window
+            {!projectRange.start && <span className="ml-2 t-micro font-normal text-faint">(same as rental)</span>}
+          </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-4 pt-1">
-              <MomentRow icon={Truck} label="Load in" dateName="loadInDate" timeName="loadInTime" form={form} />
-              <MomentRow icon={PartyPopper} label="Show starts" dateName="eventStartDate" timeName="eventStartTime" form={form} />
-              <MomentRow icon={PartyPopper} label="Show ends" dateName="eventEndDate" timeName="eventEndTime" form={form} />
-              <MomentRow icon={Truck} label="Load out" dateName="loadOutDate" timeName="loadOutTime" form={form} />
+            <div className="space-y-3 pt-1">
+              <p className="t-micro text-muted">
+                When the gear is actually committed — set this only if load-in/load-out fall outside the rental
+                window (e.g. an earlier bump-in or a later strike).
+              </p>
+              <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
+                <RangeCalendar value={projectRange} onChange={setProjectRange} />
+                <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
+                  <span className={cn("text-table-cell font-medium", projectRange.start ? "text-ink" : "text-faint")}>
+                    {projectSummary}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {projectLenLabel && (
+                      <span className="rounded-full bg-red-soft px-2.5 py-0.5 text-[12px] font-semibold text-ink">{projectLenLabel}</span>
+                    )}
+                    {projectRange.start && (
+                      <button
+                        type="button"
+                        onClick={() => setProjectRange({ start: undefined, end: undefined })}
+                        className={cn("rounded-full px-2.5 py-0.5 text-[12px] font-medium text-faint transition-colors hover:text-t-out", focusRing)}
+                      >
+                        Reset to rental
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {softWarning && (
+                <p className="t-micro text-red" role="status">{softWarning}</p>
+              )}
+              <div className="space-y-4 pt-1">
+                <MomentRow icon={Truck} label="Project starts" dateName="projectStartDate" timeName="projectStartTime" form={form} />
+                <MomentRow icon={Truck} label="Project ends" dateName="projectEndDate" timeName="projectEndTime" form={form} />
+              </div>
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -626,8 +769,8 @@ function MomentRow({
         <Icon className="h-4 w-4" />
       </span>
       <span className="w-24 shrink-0 text-table-cell font-medium text-ink-2">{label}</span>
-      <Input type="date" {...form.register(dateName)} className="flex-1" />
-      <Input type="time" {...form.register(timeName)} className="w-28" />
+      <Input type="date" aria-label={`${label} date`} {...form.register(dateName)} className="flex-1" />
+      <Input type="time" aria-label={`${label} time`} {...form.register(timeName)} className="w-28" />
     </div>
   );
 }

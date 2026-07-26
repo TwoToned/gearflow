@@ -4,6 +4,9 @@ export const projectSchema = z.object({
   projectNumber: z.string().max(50).optional().default(""),
   name: z.string().min(1, "Name is required").max(200),
   clientId: z.string().optional(),
+  // Per-project contact picker (WS9 #948) — defaults to the client's primary
+  // contact when unset; cleared server-side when clientId changes (projectWrites.ts).
+  clientContactId: z.string().optional(),
   status: z
     .enum([
       "ENQUIRY",
@@ -50,6 +53,14 @@ export const projectSchema = z.object({
   eventEndTime: z.union([z.literal(""), z.string()]).optional().transform((v) => (v === "" ? undefined : v)),
   loadOutDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
   loadOutTime: z.union([z.literal(""), z.string()]).optional().transform((v) => (v === "" ? undefined : v)),
+  // WS2 (#941) — the two-window date model. projectStartDate/projectEndDate are
+  // the gear-committed window (blank by default — falls back to the rental window
+  // at read time via getProjectWindow, R-3.1). loadInDate/loadOutDate/event* stay
+  // for one rollout cycle as deprecated aliases — see FEATUREDOCS/10.
+  projectStartDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
+  projectStartTime: z.union([z.literal(""), z.string()]).optional().transform((v) => (v === "" ? undefined : v)),
+  projectEndDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
+  projectEndTime: z.union([z.literal(""), z.string()]).optional().transform((v) => (v === "" ? undefined : v)),
   rentalStartDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
   rentalEndDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
   defaultRentalPeriod: z.enum(["DAILY", "WEEKLY"]).optional(),

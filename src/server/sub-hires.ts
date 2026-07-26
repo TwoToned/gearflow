@@ -175,7 +175,7 @@ export async function getSubHire(id: string) {
   if (!subHire || subHire.organizationId !== organizationId) throw new Error("Sub-hire not found");
 
   const client = await getConvexClient();
-  const [items, groups, createdBy, modelMap, supplier, convexProject, media, projectCategories, projectGroups] =
+  const [items, groups, createdBy, modelMap, supplier, convexProject, media, projectCategories, projectGroups, linkedOrder] =
     await Promise.all([
       getSubHireItems(id),
       getSubHireGroups(id),
@@ -194,7 +194,30 @@ export async function getSubHire(id: string) {
       subHire.projectId
         ? client.query(api.projectGroups.listByProject, { projectId: subHire.projectId, orgId: organizationId })
         : Promise.resolve([]),
+      // WS7 #946 — the linked purchase order (if any), for the manage view's
+      // "linked PO" panel + quoted-vs-invoiced reconciliation below.
+      subHire.supplierOrderId ? client.query(api.supplierOrders.getById, { id: subHire.supplierOrderId }) : Promise.resolve(null),
     ]);
+
+  // Reconciliation (quoted vs invoiced) — DERIVED ON READ, never denormalised
+  // (app-cleanup-unification.md:606 rule). Quoted = subHire.totalCost (from items);
+  // invoiced = the linked order's total once it has one (RECEIVED or otherwise
+  // invoiced); null while unlinked or before the order carries a total.
+  const linkedOrderOut = linkedOrder && linkedOrder.organizationId === organizationId
+    ? {
+        id: linkedOrder.id,
+        orderNumber: linkedOrder.orderNumber,
+        status: linkedOrder.status ?? "DRAFT",
+        total: linkedOrder.total ?? null,
+      }
+    : null;
+  const quoted = subHire.totalCost ?? 0;
+  const invoiced = linkedOrderOut?.total ?? null;
+  const reconciliation = {
+    quoted,
+    invoiced,
+    variance: invoiced != null ? Math.round((invoiced - quoted) * 100) / 100 : null,
+  };
 
   const catLabel = new Map(projectCategories.map((c) => [c.id, { id: c.id, name: c.name }]));
   const grpLabel = new Map(projectGroups.map((g) => [g.id, { id: g.id, title: g.title, categoryId: g.categoryId ?? null }]));
@@ -231,6 +254,9 @@ export async function getSubHire(id: string) {
     items: enrichedItems,
     supplier,
     project,
+    // WS7 #946 — linked purchase order + quoted-vs-invoiced reconciliation.
+    linkedOrder: linkedOrderOut,
+    reconciliation,
   });
 }
 

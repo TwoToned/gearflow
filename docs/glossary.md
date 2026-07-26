@@ -43,6 +43,17 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Optional accessory** | A model-level bulk accessory with `inclusion: "OPTIONAL"` — never auto-attaches; offered as an opt-in pick in the add-time Accessories section. |
 | **Accessory plan** | `ProjectLineItem.accessoryPlan` — the durable per-line override of the model's default/optional accessory template (`{ excluded, added }`). Resolved by `resolveLineAccessoryPlan`, the single function every accessory-expansion site (office add, warehouse prep, warehouse checkout) consults. |
 
+## Project lifecycle locks
+
+| Term | Meaning |
+|---|---|
+| **Lock tier** | One of `OPEN` / `FINANCE_LOCKED` / `JUSTIFY` / `HARD_LOCKED`, resolved from a project's status by `lockTierForStatus()` (`convex/lib/projectLocks.ts`) — the single boundary every gate site shares. See [62-project-lifecycle-locks.md](../FEATUREDOCS/62-project-lifecycle-locks.md). |
+| **Finance soft-lock** | The FINANCE_LOCKED+ restriction (CONFIRMED and later) rejecting locked money-field edits without an open unlock session; new adds default to $0 while locked. |
+| **Hard lock** | The HARD_LOCKED restriction (COMPLETED/INVOICED) blocking all structural + financial mutations outright, with no per-edit path — only a FULL unlock session. |
+| **Unlock session** | A project-level `{ scope: FINANCIAL \| FULL }` session (`projectUnlockSessions`) opened with a required justification; while open, gated writes pass and are audit-tagged with the session id. Closed via "Save & relock" (commit) or "Discard changes" (restore from the session's opening snapshot). |
+| **Project snapshot** | A versioned, whole-project capture (`projectSnapshots` + `projectSnapshotEntries`) taken on every crossing into CONFIRMED/COMPLETED and at every unlock-session open — the source for the Versions/diff UI and for an unlock session's discard restore. |
+| **Justification** | A required, bounded (10–1000 char) free-text reason persisted to the audit row's `metadata` for a structural mutation on a JUSTIFY-tier (ON_SITE+) project, or for opening an unlock session / reverting out of a hard lock. |
+
 ## Documented aliases
 
 Per R-3.10, an alias between layers is only acceptable if it's documented here

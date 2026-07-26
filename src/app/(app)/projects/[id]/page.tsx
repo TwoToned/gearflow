@@ -34,6 +34,7 @@ import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
+import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
@@ -59,25 +60,24 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useMediaWrites } from "@/hooks/use-media-writes";
-import { getPublishedTemplatesForDropdown } from "@/server/document-templates";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { useOptimisticProjectNotes, useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
-import { DateRangeBar } from "@/components/ui/sparkline";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
+import { UnlockSessionBanner } from "@/components/projects/unlock-session-banner";
+import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
+import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -145,6 +145,14 @@ export default function ProjectDetailPage({
   // plain ref) so EquipmentTab re-renders its portal once the node mounts.
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
+  // #957 lifecycle lock — reactive tier/session status, the unlock-session
+  // open action, and the Versions panel.
+  const lockStatus = useProjectLockStatus(id, orgId);
+  const unlockSession = useUnlockSession(id, orgId);
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
+  const [unlockPending, setUnlockPending] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
 
@@ -155,11 +163,6 @@ export default function ProjectDetailPage({
     field: "crewNotes" | "internalNotes" | "clientNotes",
     notes: string,
   ) => optimisticNotes.save(field, notes);
-
-  const { data: customTemplates } = useServerQuery({
-    queryKey: ["document-templates-dropdown", orgId],
-    queryFn: () => getPublishedTemplatesForDropdown(),
-  });
 
   // Phase 3 browser-direct: status write (always native). The detail view is reactive,
   // so it re-renders on its own once the native mutation commits.
@@ -227,18 +230,11 @@ export default function ProjectDetailPage({
     );
   }
 
-  // Compute date range bar reference window (1 week before start to 1 week after end)
   const rentalStart = project.rentalStartDate
     ? new Date(project.rentalStartDate as unknown as string)
     : null;
   const rentalEnd = project.rentalEndDate
     ? new Date(project.rentalEndDate as unknown as string)
-    : null;
-  const rangeStart = rentalStart
-    ? new Date(rentalStart.getTime() - 7 * 24 * 60 * 60 * 1000)
-    : null;
-  const rangeEnd = rentalEnd
-    ? new Date(rentalEnd.getTime() + 7 * 24 * 60 * 60 * 1000)
     : null;
 
   return (
@@ -278,6 +274,7 @@ export default function ProjectDetailPage({
                       label={projectStatusLabels[project.status] || formatLabel(project.status)}
                     />
                   )}
+                  {!project.isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
@@ -344,44 +341,19 @@ export default function ProjectDetailPage({
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       {([
-                        { label: "Quote / proposal", type: "quote", apiType: "quote" },
-                        { label: "Invoice", type: "invoice", apiType: "invoice" },
-                        { label: "Pull slip", type: "packing-list", apiType: "pull-slip" },
-                        { label: "Delivery docket", type: "delivery-docket", apiType: "delivery-docket" },
-                        { label: "Return sheet", type: "return-sheet", apiType: "return-sheet" },
-                      ] as const).map(({ label, type, apiType }) => {
-                        const templates = customTemplates?.filter((t: { type: string }) => t.type === type) || [];
-                        if (templates.length === 0) {
-                          return (
-                            <DropdownMenuItem
-                              key={type}
-                              onClick={() => window.open(`/api/documents/${id}?type=${apiType}`, "_blank")}
-                            >
-                              {label}
-                            </DropdownMenuItem>
-                          );
-                        }
-                        return (
-                          <DropdownMenuSub key={type}>
-                            <DropdownMenuSubTrigger>{label}</DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent>
-                              <DropdownMenuItem
-                                onClick={() => window.open(`/api/documents/${id}?type=${apiType}`, "_blank")}
-                              >
-                                Default
-                              </DropdownMenuItem>
-                              {templates.map((t: { id: string; name: string }) => (
-                                <DropdownMenuItem
-                                  key={t.id}
-                                  onClick={() => window.open(`/api/documents/${id}?type=${apiType}&templateId=${t.id}`, "_blank")}
-                                >
-                                  {t.name}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
-                        );
-                      })}
+                        { label: "Quote / proposal", apiType: "quote" },
+                        { label: "Invoice", apiType: "invoice" },
+                        { label: "Pull slip", apiType: "pull-slip" },
+                        { label: "Delivery docket", apiType: "delivery-docket" },
+                        { label: "Return sheet", apiType: "return-sheet" },
+                      ] as const).map(({ label, apiType }) => (
+                        <DropdownMenuItem
+                          key={apiType}
+                          onClick={() => window.open(`/api/documents/${id}?type=${apiType}`, "_blank")}
+                        >
+                          {label}
+                        </DropdownMenuItem>
+                      ))}
                       <DropdownMenuItem onClick={() => setCallSheetOpen(true)}>
                         Call sheet
                       </DropdownMenuItem>
@@ -421,6 +393,10 @@ export default function ProjectDetailPage({
                           <ClipboardList className="mr-2 h-4 w-4" />
                           Runsheet
                         </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setVersionsOpen(true)}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Versions
                       </DropdownMenuItem>
                       <CanDo resource="project" action="create">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
@@ -528,10 +504,31 @@ export default function ProjectDetailPage({
                       projectAddress={project.location?.address || ""}
                       projectLatitude={project.location?.latitude ?? null}
                       projectLongitude={project.location?.longitude ?? null}
-                      projectLoadInDate={project.loadInDate ? new Date(project.loadInDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectLoadOutDate={project.loadOutDate ? new Date(project.loadOutDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectEventStartDate={project.eventStartDate ? new Date(project.eventStartDate as unknown as string).toISOString().slice(0, 10) : ""}
-                      projectEventEndDate={project.eventEndDate ? new Date(project.eventEndDate as unknown as string).toISOString().slice(0, 10) : ""}
+                      // WS2 (#941): fed from the PROJECT window (falling back to the
+                      // deprecated loadIn/loadOut fields for a project the backfill
+                      // hasn't reached yet) — ServicesPanel's own loadIn/eventStart
+                      // fallback-of-a-fallback logic is unchanged, so both props
+                      // carrying the same window value is harmless.
+                      projectLoadInDate={
+                        (project.projectStartDate ?? project.loadInDate)
+                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectLoadOutDate={
+                        (project.projectEndDate ?? project.loadOutDate)
+                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectEventStartDate={
+                        (project.projectStartDate ?? project.loadInDate)
+                          ? new Date((project.projectStartDate ?? project.loadInDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
+                      projectEventEndDate={
+                        (project.projectEndDate ?? project.loadOutDate)
+                          ? new Date((project.projectEndDate ?? project.loadOutDate) as unknown as string).toISOString().slice(0, 10)
+                          : ""
+                      }
                     />
                   </div>
                 </TabsContent>
@@ -540,6 +537,36 @@ export default function ProjectDetailPage({
                 {!project.isTemplate && (
                   <TabsContent value="financials">
                     <div className="space-y-6 pt-4">
+                      {lockStatus.openSession && orgId && (
+                        <UnlockSessionBanner
+                          projectId={id}
+                          orgId={orgId}
+                          session={{
+                            scope: lockStatus.openSession.scope,
+                            justification: lockStatus.openSession.justification,
+                            openedByName: lockStatus.openSession.openedByName,
+                          }}
+                        />
+                      )}
+                      {!lockStatus.openSession && lockStatus.tier !== "OPEN" && (
+                        <div className="flex items-center justify-between rounded-[var(--radius)] border-2 border-line bg-paper-2 px-4 py-3">
+                          <p className="text-sm text-ink-2">
+                            {lockStatus.tier === "HARD_LOCKED"
+                              ? "This project is completed and hard-locked."
+                              : "This project's financials are locked."}
+                          </p>
+                          <CanDo resource="project" action="update">
+                            <Button
+                              variant="line"
+                              size="sm"
+                              onClick={() => setUnlockDialogOpen(true)}
+                              disabled={lockStatus.tier === "HARD_LOCKED" && !lockStatus.canOverrideHardLock}
+                            >
+                              {lockStatus.tier === "HARD_LOCKED" ? "Open full unlock session" : "Unlock financials"}
+                            </Button>
+                          </CanDo>
+                        </div>
+                      )}
                       {(() => {
                         // Compute group pricing stats from categories
                         const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
@@ -653,15 +680,6 @@ export default function ProjectDetailPage({
                 {/* Schedule */}
                 {!project.isTemplate && (
                   <SidebarSection title="Schedule">
-                    {rentalStart && rentalEnd && rangeStart && rangeEnd && (
-                      <DateRangeBar
-                        start={rentalStart}
-                        end={rentalEnd}
-                        rangeStart={rangeStart}
-                        rangeEnd={rangeEnd}
-                        className="mb-2"
-                      />
-                    )}
                     <div className="space-y-1 text-ui-text">
                       <div className="flex justify-between gap-2">
                         <span className="text-muted flex items-center gap-1">
@@ -673,18 +691,25 @@ export default function ProjectDetailPage({
                           {formatDate(project.rentalEndDate as string | null)}
                         </span>
                       </div>
-                      {/* Load in/out + event rows render only when set — no stack
-                          of "—" placeholders. If all four are unset, show one
-                          faint line instead. */}
+                      {/* WS2 (#941) — the PROJECT window rows render only when set (no
+                          stack of "—" placeholders); loadIn/loadOut are the deprecated
+                          fallback for a project the backfill hasn't reached yet. If
+                          nothing is set at all, show one faint line instead. */}
                       {(() => {
                         const scheduleRows = [
-                          { label: "Load in", date: project.loadInDate, time: project.loadInTime },
-                          { label: "Load out", date: project.loadOutDate, time: project.loadOutTime },
-                          { label: "Event start", date: project.eventStartDate, time: project.eventStartTime },
-                          { label: "Event end", date: project.eventEndDate, time: project.eventEndTime },
+                          {
+                            label: "Project starts",
+                            date: project.projectStartDate ?? project.loadInDate,
+                            time: project.projectStartTime ?? project.loadInTime,
+                          },
+                          {
+                            label: "Project ends",
+                            date: project.projectEndDate ?? project.loadOutDate,
+                            time: project.projectEndTime ?? project.loadOutTime,
+                          },
                         ].filter((r) => r.date != null);
                         if (scheduleRows.length === 0) {
-                          return <p className="text-caption text-faint">No load-in/out times set</p>;
+                          return <p className="text-caption text-faint">No project window set — same as rental</p>;
                         }
                         return scheduleRows.map((r) => (
                           <div key={r.label} className="flex justify-between gap-2">
@@ -835,6 +860,34 @@ export default function ProjectDetailPage({
         }}
         pending={archiveMutation.isPending}
       />
+      {orgId && (
+        <>
+          <UnlockSessionDialog
+            open={unlockDialogOpen}
+            onOpenChange={setUnlockDialogOpen}
+            scope={lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL"}
+            pending={unlockPending}
+            onConfirm={async (justification) => {
+              setUnlockPending(true);
+              try {
+                await unlockSession.open(lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL", justification);
+                setUnlockDialogOpen(false);
+                toast.success("Unlocked");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Failed to unlock");
+              } finally {
+                setUnlockPending(false);
+              }
+            }}
+          />
+          <ProjectVersionsPanel
+            open={versionsOpen}
+            onOpenChange={setVersionsOpen}
+            projectId={id}
+            orgId={orgId}
+          />
+        </>
+      )}
     </RequirePermission>
   );
 }

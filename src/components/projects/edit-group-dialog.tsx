@@ -28,6 +28,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { useEditLock } from "@/hooks/use-collaboration";
 import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
 import { COLLAB_TARGET_TYPES } from "@/lib/collaboration-targets";
+import { DiscountField, type DiscountMode } from "./line-item-form-fields";
 import type { GroupData } from "./equipment-rows";
 
 export interface EditGroupFormValues {
@@ -44,12 +45,13 @@ interface EditGroupDialogProps {
   orgId?: string;
   onClose: () => void;
   /** Called when the user clicks Save. The parent decides which
-   *  mutation(s) to fire and whether to apply the optional price
+   *  mutation(s) to fire and whether to apply the optional price/discount
    *  alongside the main update. */
   onSubmit: (
     groupId: string,
     values: EditGroupFormValues,
     price: number | undefined,
+    discount: number | undefined,
   ) => void;
 }
 
@@ -83,14 +85,26 @@ function EditGroupDialogBody({
   const formDisabled = isLocked;
 
   const priceVal = group.price != null ? Number(group.price) : null;
+  const discountVal = group.discount != null ? Number(group.discount) : null;
 
   const [title, setTitle] = useState(group.title);
   const [description, setDescription] = useState(group.description ?? "");
   const [quantity, setQuantity] = useState(String(group.quantity));
   const [price, setPrice] = useState(priceVal != null ? String(priceVal) : "");
+  const [discount, setDiscount] = useState(discountVal != null ? String(discountVal) : "");
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
 
   function handleSave() {
     if (!title.trim() || formDisabled) return;
+    const resolvedPrice = price !== "" ? parseFloat(price) || 0 : undefined;
+    // Resolve a `%` discount to a flat $ amount before it reaches the mutation —
+    // discount is always persisted as a flat dollar amount off price × quantity.
+    let resolvedDiscount: number | undefined;
+    if (discount !== "") {
+      const raw = parseFloat(discount) || 0;
+      const gross = (resolvedPrice ?? priceVal ?? 0) * (parseInt(quantity) || 1);
+      resolvedDiscount = discountMode === "%" ? Math.round(gross * raw) / 100 : raw;
+    }
     onSubmit(
       group.id,
       {
@@ -98,7 +112,8 @@ function EditGroupDialogBody({
         description: description.trim() || undefined,
         quantity: parseInt(quantity) || 1,
       },
-      price !== "" ? parseFloat(price) || 0 : undefined,
+      resolvedPrice,
+      resolvedDiscount,
     );
   }
 
@@ -162,12 +177,19 @@ function EditGroupDialogBody({
             </button>
           )}
         </div>
+        <DiscountField
+          value={discount}
+          onValueChange={setDiscount}
+          mode={discountMode}
+          onModeChange={setDiscountMode}
+          disabled={formDisabled}
+        />
       </div>
       <DialogFooter>
         <Button variant="line" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={!title.trim() || isPending || formDisabled}>
+        <Button onClick={handleSave} loading={isPending} disabled={!title.trim() || formDisabled}>
           Save
         </Button>
       </DialogFooter>

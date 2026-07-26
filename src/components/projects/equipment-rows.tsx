@@ -344,6 +344,8 @@ export function GroupRow({
   onSaveAsTemplate?: () => void;
 } & MoveControls) {
   const priceVal = group.price != null ? Number(group.price) : null;
+  const discountVal = group.discount != null ? Number(group.discount) : 0;
+  const groupTotal = priceVal != null ? Math.max(0, priceVal * group.quantity - discountVal) : null;
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete }, "equipment");
   const isMobile = useIsMobile();
 
@@ -412,7 +414,7 @@ export function GroupRow({
           ) : undefined
         }
         qty={group.quantity}
-        total={priceVal != null ? priceVal * group.quantity : null}
+        total={groupTotal}
         isExpanded={isExpanded}
         onToggle={onToggle}
         actions={
@@ -483,6 +485,9 @@ export function GroupRow({
       <TableCell className="text-center t-data">{group.quantity}</TableCell>
       <TableCell className="text-right whitespace-nowrap t-data">
         {priceVal != null ? formatCurrency(priceVal) : <span className="text-faint">—</span>}
+        {discountVal > 0 && (
+          <p className="text-micro text-ok">-{formatCurrency(discountVal)} disc.</p>
+        )}
       </TableCell>
       {showCostColumn && (
         <TableCell className="text-right whitespace-nowrap t-data text-faint">
@@ -490,7 +495,7 @@ export function GroupRow({
         </TableCell>
       )}
       <TableCell className="text-right font-medium whitespace-nowrap t-data">
-        {priceVal != null ? formatCurrency(priceVal * group.quantity) : <span className="text-faint">—</span>}
+        {groupTotal != null ? formatCurrency(groupTotal) : <span className="text-faint">—</span>}
       </TableCell>
       <TableCell>
         <div className="flex items-center justify-end gap-0.5 flex-nowrap">

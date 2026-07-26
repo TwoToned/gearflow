@@ -64,6 +64,7 @@ function makeGroup(
     description: null,
     quantity: 1,
     price: null,
+    discount: null,
     rentalPeriod: null,
     rentalQuantity: null,
     ...overrides,
@@ -132,6 +133,35 @@ describe("structureLineItems — Phase 0 baseline", () => {
     expect(result).toHaveLength(1);
     expect(result[0].isGroupRow).toBe(true);
     expect(result[0].lineTotal).toBe(1500); // 1 * 500 * 3
+  });
+
+  it("subtracts a Project Group's flat discount from the synthetic row's total (#883)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, {
+          quantity: 1, price: 500, rentalQuantity: 3, discount: 200,
+        }),
+      ]),
+    ];
+    const result = structureLineItems([], categories);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].lineTotal).toBe(1300); // (1 * 500 * 3) - 200
+    expect(result[0].discount).toBe(200);
+  });
+
+  it("clamps a Project Group's discount at 0 rather than going negative", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, {
+          quantity: 1, price: 100, rentalQuantity: 1, discount: 9999,
+        }),
+      ]),
+    ];
+    const result = structureLineItems([], categories);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].lineTotal).toBe(0);
   });
 
   it("renders ungrouped items in a category directly, after group rows", () => {

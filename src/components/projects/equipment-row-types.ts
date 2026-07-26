@@ -65,6 +65,7 @@ export interface GroupData {
   description: string | null;
   quantity: number;
   price: unknown;
+  discount: unknown;
   suggestedPrice: unknown;
   rentalPeriod: string | null;
   rentalQuantity: number | null;

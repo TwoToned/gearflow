@@ -305,6 +305,7 @@ function buildGroupData(
     description: g.description,
     quantity: g.quantity,
     price: g.price,
+    discount: g.discount,
     suggestedPrice: g.suggestedPrice,
     rentalPeriod: g.rentalPeriod,
     rentalQuantity: g.rentalQuantity,

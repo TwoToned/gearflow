@@ -231,6 +231,48 @@ describe("projectGroupsWrites.updateGroupPriceNative", () => {
     });
   });
 
+  test("member sets price + discount together → both patch, recalc reflects the discounted total (#883)", async () => {
+    const t = makeT();
+    await seedPricedGroup(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 150, discount: 50, now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.price).toBe(150);
+      expect(g?.discount).toBe(50);
+      // Bundle 150 × 2 - 50 discount = 250, + 10% tax = 275.
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(project?.total).toBe(275);
+    });
+  });
+
+  test("omitting discount leaves the existing discount untouched", async () => {
+    const t = makeT();
+    await seedPricedGroup(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 150, discount: 50, now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 200, now: NOW + 1, actor: ACTOR, auditId: "log2",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.price).toBe(200);
+      expect(g?.discount).toBe(50);
+    });
+  });
+
+  test("rejects a non-finite discount (NaN/Infinity would poison recalc)", async () => {
+    const t = makeT();
+    await seedPricedGroup(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+        id: "g1", orgId: ORG, price: 150, discount: Number.NaN, now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/finite/i);
+  });
+
   test("viewer denied", async () => {
     const t = makeT();
     await member(t, "viewer");

@@ -44,6 +44,7 @@ export interface CategoryForStructuring {
     description: string | null;
     quantity: number;
     price: number | null;
+    discount: number | null;
     rentalPeriod: string | null;
     rentalQuantity: number | null;
     sortOrder: number;
@@ -218,7 +219,11 @@ export function structureLineItems(
     for (const group of cat.groups) {
       const duration = group.rentalQuantity ?? 1;
       const price = group.price ?? 0;
-      const total = group.quantity * price * duration;
+      const discount = group.discount ?? 0;
+      // Discount is a flat $ amount off the bundle total (#883) — same clamp-at-0
+      // subtraction as convex/lib/recalc.ts groupRevenue, so the PDF total matches
+      // what the project is actually billed.
+      const total = Math.max(0, group.quantity * price * duration - discount);
 
       // Both modes bucket group rows under the category. In expand mode
       // the group renders as a bold parent row (kit-style) followed by
@@ -259,7 +264,7 @@ export function structureLineItems(
         unitPrice: price,
         pricingType: group.rentalPeriod === "WEEKLY" ? "PER_WEEK" : "PER_DAY",
         duration,
-        discount: null,
+        discount: discount > 0 ? discount : null,
         lineTotal: total,
         groupName: bucketLabel,
         categoryName: cat.name,

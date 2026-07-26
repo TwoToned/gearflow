@@ -18,7 +18,6 @@
 
 import { useState } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
@@ -33,13 +32,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DiscountField, type DiscountMode } from "./line-item-form-fields";
 
 export type PriceEditTarget =
   | {
       kind: "project";
       groupId: string;
       title: string;
+      quantity: number;
       price: number | null;
+      discount: number | null;
     }
   | {
       kind: "subHire";
@@ -87,6 +89,10 @@ function PriceEditDialogBody({
   const [priceInput, setPriceInput] = useState<string>(
     target.kind === "project" && target.price != null ? String(target.price) : "",
   );
+  const [discountInput, setDiscountInput] = useState<string>(
+    target.kind === "project" && target.discount != null ? String(target.discount) : "",
+  );
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
 
   // Sub-hire-mode state
   const [chargeInput, setChargeInput] = useState<string>(
@@ -100,8 +106,8 @@ function PriceEditDialogBody({
   const subHireWrites = useSubHireWrites();
 
   const projectMut = useServerMutation({
-    mutationFn: ({ groupId, price }: { groupId: string; price: number }) =>
-      groupWrites.updatePrice(groupId, price),
+    mutationFn: ({ groupId, price, discount }: { groupId: string; price: number; discount?: number }) =>
+      groupWrites.updatePrice(groupId, price, discount),
     onSuccess: () => {
       onInvalidate();
       toast.success("Group price updated");
@@ -133,7 +139,21 @@ function PriceEditDialogBody({
 
   function handleSubmit() {
     if (target.kind === "project") {
-      projectMut.mutate({ groupId: target.groupId, price: parseFloat(priceInput) || 0 });
+      const price = parseFloat(priceInput) || 0;
+      // Resolve a `%` discount to a flat $ amount before it reaches the mutation —
+      // discount is always persisted as a flat dollar amount off price × quantity
+      // (mirrors the line-item discount convention).
+      let discount: number | undefined;
+      if (discountInput) {
+        const raw = parseFloat(discountInput);
+        if (Number.isFinite(raw) && raw > 0) {
+          const gross = price * (target.quantity || 1);
+          discount = discountMode === "%" ? Math.round(gross * raw) / 100 : raw;
+        } else {
+          discount = 0;
+        }
+      }
+      projectMut.mutate({ groupId: target.groupId, price, discount });
     } else {
       subHireMut.mutate();
     }
@@ -155,21 +175,30 @@ function PriceEditDialogBody({
       </DialogHeader>
       <div className="space-y-4 py-2">
         {target.kind === "project" ? (
-          <div className="space-y-1.5">
-            <Label htmlFor="price-edit-input">Group price ($)</Label>
-            <Input
-              id="price-edit-input"
-              type="number"
-              step="0.01"
-              min="0"
-              value={priceInput}
-              onChange={(e) => setPriceInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmit();
-              }}
-              autoFocus
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="price-edit-input">Group price ($)</Label>
+              <Input
+                id="price-edit-input"
+                type="number"
+                step="0.01"
+                min="0"
+                value={priceInput}
+                onChange={(e) => setPriceInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSubmit();
+                }}
+                autoFocus
+              />
+            </div>
+            <DiscountField
+              id="price-edit-discount"
+              value={discountInput}
+              onValueChange={setDiscountInput}
+              mode={discountMode}
+              onModeChange={setDiscountMode}
             />
-          </div>
+          </>
         ) : (
           <>
             <div className="space-y-1.5">
@@ -213,8 +242,7 @@ function PriceEditDialogBody({
         <Button variant="line" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={isPending}>
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Button onClick={handleSubmit} loading={isPending}>
           Save
         </Button>
       </DialogFooter>

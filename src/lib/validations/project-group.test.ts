@@ -221,6 +221,28 @@ describe("updateGroupPriceSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.price).toBe(999.5);
   });
+
+  it("accepts an optional discount alongside price (#883)", () => {
+    const result = updateGroupPriceSchema.safeParse({ price: 1500, discount: 200 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.discount).toBe(200);
+  });
+
+  it("succeeds without a discount — price alone is enough", () => {
+    const result = updateGroupPriceSchema.safeParse({ price: 1500 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.discount).toBeUndefined();
+  });
+
+  it("rejects a discount above the 999999.99 bound", () => {
+    const result = updateGroupPriceSchema.safeParse({ price: 1500, discount: 1_000_000 });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a negative discount", () => {
+    const result = updateGroupPriceSchema.safeParse({ price: 1500, discount: -1 });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("moveLineItemSchema", () => {

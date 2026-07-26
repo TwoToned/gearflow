@@ -1,12 +1,12 @@
 "use client";
 // use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
-import { use, useEffect, useMemo, useRef, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { useSupplierOrders, fingerprintSupplierOrders } from "@/hooks/use-back-office";
+import { useSupplierOrdersBySupplier } from "@/hooks/use-supplier-orders";
 import { Pencil, Mail, Phone, Globe, Trash2, Plus, ChevronRight, MoreHorizontal } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AddressDisplay } from "@/components/ui/address-display";
@@ -80,25 +80,10 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
     queryFn: () => convex.query(api.suppliers.detail, { orgId: orgId!, id }),
   });
 
-  const { data: ordersData, refetch: refetchOrders } = useServerQuery({
-    queryKey: ["supplier-orders", orgId, id],
-    queryFn: () =>
-      convex.query(api.supplierOrders.listBySupplier, { orgId: orgId as string, supplierId: id }),
-    enabled: !!supplier && !!orgId && isAuthenticated,
-  });
-
-  // Cross-tab live sync: subscribe to the dual-written Convex supplierOrders
-  // table; a fingerprint change (order placed/edited/received in another tab)
-  // re-fetches this supplier's orders.
-  const supplierOrderDocs = useSupplierOrders(orgId);
-  const supplierOrderFp = fingerprintSupplierOrders(supplierOrderDocs);
-  const prevSupplierOrderFp = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (supplierOrderFp !== undefined && prevSupplierOrderFp.current !== undefined && supplierOrderFp !== prevSupplierOrderFp.current) {
-      refetchOrders();
-    }
-    if (supplierOrderFp !== undefined) prevSupplierOrderFp.current = supplierOrderFp;
-  }, [supplierOrderFp, refetchOrders]);
+  // Live Convex subscription scoped to (org, supplier) — replaces a one-shot
+  // fetch + a separate whole-org fingerprint subscription used only to detect
+  // changes; this query IS the reactive data (R-8.3.3).
+  const ordersData = useSupplierOrdersBySupplier(orgId, id);
 
   const { data: assetsData } = useServerQuery({
     queryKey: ["supplier-assets", orgId, id],

@@ -246,15 +246,29 @@ describe("reconstructOverbookedStatus", () => {
 });
 
 describe("resolveModelAssetType", () => {
-  it("returns a present value unchanged", () => {
-    expect(resolveModelAssetType("SERIALIZED", true)).toBe("SERIALIZED");
-    expect(resolveModelAssetType("BULK", false)).toBe("BULK");
+  it("returns a present value unchanged when the model actually has serialized assets", () => {
+    expect(resolveModelAssetType("SERIALIZED", true, true)).toBe("SERIALIZED");
+    expect(resolveModelAssetType("BULK", false, true)).toBe("BULK");
   });
   it("falls back to BULK when assetType is absent but bulk assets exist", () => {
-    expect(resolveModelAssetType(undefined, true)).toBe("BULK");
-    expect(resolveModelAssetType(null, true)).toBe("BULK");
+    expect(resolveModelAssetType(undefined, true, false)).toBe("BULK");
+    expect(resolveModelAssetType(null, true, false)).toBe("BULK");
   });
   it("falls back to SERIALIZED when assetType is absent and there are no bulk assets", () => {
-    expect(resolveModelAssetType(undefined, false)).toBe("SERIALIZED");
+    expect(resolveModelAssetType(undefined, false, false)).toBe("SERIALIZED");
+  });
+  // Regression: issue #801 — a bulk-only model created via model-form.tsx keeps
+  // its explicit "SERIALIZED" form default (not absent) unless someone
+  // deliberately switches it to Bulk, so the undefined-only fallback above never
+  // fires. `computeStockBreakdown` then took the SERIALIZED branch forever
+  // (totalStock = assets.length = 0) even though the model held real bulk stock.
+  it("overrides an explicit SERIALIZED label when the model has bulk stock and zero serialized assets", () => {
+    expect(resolveModelAssetType("SERIALIZED", true, false)).toBe("BULK");
+  });
+  it("keeps an explicit SERIALIZED label when the model genuinely has serialized assets, even alongside stray bulk rows", () => {
+    expect(resolveModelAssetType("SERIALIZED", true, true)).toBe("SERIALIZED");
+  });
+  it("keeps an explicit SERIALIZED label when there are no bulk assets either", () => {
+    expect(resolveModelAssetType("SERIALIZED", false, false)).toBe("SERIALIZED");
   });
 });

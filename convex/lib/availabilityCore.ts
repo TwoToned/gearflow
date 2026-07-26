@@ -3,7 +3,7 @@
  * (`convex/lineItemWrites.ts` addNative / patchNative).
  *
  * The two pure stock-math helpers (`resolveModelAssetType`, `computeStockBreakdown`)
- * are copied BYTE-FOR-BYTE from `src/lib/overbooking-core.ts:46-74` — the Convex
+ * are copied BYTE-FOR-BYTE from `src/lib/overbooking-core.ts:57-87` — the Convex
  * bundler can't resolve the `@/` alias, so they're duplicated here (same pattern as
  * `convex/lib/reservationConflicts.ts`) and PINNED against the originals by a
  * cross-import equality test in `convex/availabilityCore.test.ts`.
@@ -25,8 +25,10 @@ import type { Doc } from "../_generated/dataModel";
 export function resolveModelAssetType(
   assetType: string | null | undefined,
   hasBulkAssets: boolean,
+  hasAssets: boolean,
 ): "SERIALIZED" | "BULK" {
-  if (assetType === "BULK" || assetType === "SERIALIZED") return assetType;
+  if (assetType === "BULK") return "BULK";
+  if (assetType === "SERIALIZED") return hasBulkAssets && !hasAssets ? "BULK" : "SERIALIZED";
   return hasBulkAssets ? "BULK" : "SERIALIZED";
 }
 
@@ -139,7 +141,7 @@ export function computeModelAvailability(
   const { rentalStart, rentalEnd, excludeProjectId } = opts;
   const hasDates = rentalStart != null && rentalEnd != null;
 
-  const assetType = resolveModelAssetType(model?.assetType, activeBulkAssets.length > 0);
+  const assetType = resolveModelAssetType(model?.assetType, activeBulkAssets.length > 0, activeAssets.length > 0);
   const modelForBreakdown = {
     assetType,
     assets: activeAssets.map((a) => ({ status: a.status ?? "AVAILABLE" })),

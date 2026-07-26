@@ -51,13 +51,13 @@ performs the action that advances gear to the next stage:
 Every stage's primary button advances gear one step; each stage past Pick also has a
 **secondary "Move to …" button** that reverses one step, so an operator can correct a
 misclick without a workaround. The reverses mirror their forward mutation exactly —
-flipping unit + asset status (and kit bulk-availability, opposite sign) back:
+flipping unit + asset status (and kit/standalone bulk-availability, opposite sign) back:
 
 | Reverse | Server action → Convex mutation | Effect |
 | --- | --- | --- |
 | Prepped → Pick | `deprepItem` / `deprepKit` | remove packed units, `prepStatus` → PENDING |
-| Deployed → Prepped | `undeployItems` / `undeployKit` → `warehouseOps.undeployItems`/`.undeployKit` | units CHECKED_OUT → prepped, assets → AVAILABLE @ default location, kit bulk availability +1 |
-| Returned → Deployed | `unreturnItems` / `unreturnKit` → `.unreturnItems`/`.unreturnKit` | units RETURNED → CHECKED_OUT, assets → CHECKED_OUT @ project location, kit bulk availability −1 |
+| Deployed → Prepped | `undeployItems` / `undeployKit` → `warehouseOps.undeployItems`/`.undeployKit` | units CHECKED_OUT → prepped, assets → AVAILABLE @ default location, bulk availability +1 (kit AND standalone) |
+| Returned → Deployed | `unreturnItems` / `unreturnKit` → `.unreturnItems`/`.unreturnKit` | units RETURNED → CHECKED_OUT, assets → CHECKED_OUT @ project location, bulk availability −1 (kit AND standalone) |
 | De-prepped → Returned | `undeprepLine` → `.undeprepLine` | line `prepStatus` → PACKED (status stays RETURNED) |
 
 Selection is parsed by the shared `moveBackSelection` helper (same bulk `id:idx` / line-id /
@@ -147,6 +147,41 @@ a time (return had to be clicked 16×). Fixes:
 - `returnLineUnits`' bulk branch defaults `quantity` to the **full remaining**
   checked-out quantity (was `?? 1`), so one return action brings back all 16; an
   explicit `quantity` is still honoured for partial returns.
+
+#### ⚠️ Standalone bulk checkout/checkin now maintains `bulkAssets.availableQuantity` (gearflow#801)
+`bulkAssets.availableQuantity` — the registry's "Available" column
+(`asset-table.tsx`) — was only ever adjusted by kit checkout/checkin
+(`collectKitBulkAdjustments`) and DEDICATED-mode accessory attach/detach
+(`assetAccessoriesWrites.ts`). A bulk asset added **directly** to a project line
+(not inside a kit) went through `checkOutBulkItem` (`warehouseOps.ts`) and
+`returnLineUnits` (`convex/lib/fulfillment.ts`), neither of which touched
+`availableQuantity` — so for any bulk stock only ever deployed standalone, the
+registry's live "Available" number just sat wherever creation/kit activity last
+left it, permanently drifting from real usage.
+
+Fixed by having both the forward path and its move-back reverse call
+`adjustBulkAvailability` (`convex/lib/inventory.ts`) for **standalone** (top-level,
+non-kit-child) bulk lines:
+- **Checkout** (`checkOutBulkItem`) deducts the DELTA over what the line already
+  had checked out — so a repeat/idempotent checkout call for the same total
+  quantity doesn't double-consume stock.
+- **Checkin** (`returnLineUnits`' bulk branch) restores the actually-returned
+  quantity, unconditionally regardless of `returnCondition` — a bulk asset has no
+  per-unit condition bucket to route DAMAGED/MISSING into (unlike serialized
+  assets going to `IN_MAINTENANCE`/`LOST`), matching kit checkin's existing
+  unconditional restore.
+- **Move-back** (`undeployItems` / `unreturnItems`) mirrors the forward
+  adjustment in the opposite direction via `flipLineUnits`' new `bulkFlips`
+  report + the shared `applyBulkFlipAvailability` helper, so a misclick
+  correction doesn't leak or double-consume shelf stock.
+
+The gate is `!lineItem.isKitChild` — kit members are the kit's own responsibility
+(`collectKitBulkAdjustments` off `kitBulkItems`, a different table entirely, never
+touched by these code paths), and accessory children also set `isKitChild: true`
+so they're out of scope here too (see [FEATUREDOCS/48](./48-child-assets-accessories.md)'s
+SHIPS_WITH/DEDICATED split — SHIPS_WITH accessory bulk children still have this
+same gap, tracked as a follow-up, not fixed by this change). Regression:
+`convex/bulk-fulfillment-quantity.test.ts`.
 - Regression: `convex/bulk-fulfillment-quantity.test.ts` drives prep → return through
   the real `prepUnit`/`returnLineUnits` with a `convex-test` harness.
 

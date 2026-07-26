@@ -4,9 +4,23 @@
 **Inputs:** [`rentman-gap-analysis.md`](./rentman-gap-analysis.md) (gap #s below refer to
 its §1 table), [`rentman.md`](./rentman.md), `docs/ROADMAP.md`.
 
+> **⚠️ Superseded in part — decisions of 2026-07-26 (see tracking issue #934):**
+> the "Xero owns finance" premise below is **redacted**. RVLT Flow now owns the
+> quoting pipeline and invoice generation (deposit / partial / final invoices);
+> Xero and other finance apps own the ledger, payments, and reconciliation.
+> Outcomes per Tier-1 item: **1 (Xero push) accepted + expanded** into a full
+> finance-model workstream; **2 (two-clock) accepted, reshaped** as a two-window
+> simplification (rental + project dates, event dates deleted, load-in/out become
+> the project window); **3 (shortages) accepted, widened** into an
+> "Overbookings & Gaps" board covering gear + crew, with a two-layer
+> hard/pencilled availability model; **4 (tiered pricing) accepted** as a
+> unification/UX pass over the existing billing-weeks/days system with
+> best-price capping; **5 (quote acceptance) rejected** — email trails suffice;
+> **6 (scan return) accepted** as an org-wide returns screen.
+
 **Positioning premise (from ROADMAP + gap-analysis §0):** RVLT Flow is not trying to be
 Rentman. It wins the warehouse floor and the AU compliance wedge; Rentman wins the office.
-Finance stays in Xero. A gap is therefore only worth closing when it is (a) a workflow a
+A gap is therefore only worth closing when it is (a) a workflow a
 working AV/theatre rental business *cannot cleanly run without*, or (b) cheap relative to
 its payoff. "Rentman has it" is never, on its own, a reason.
 

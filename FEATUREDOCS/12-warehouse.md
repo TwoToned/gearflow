@@ -199,7 +199,7 @@ same gap, tracked as a follow-up, not fixed by this change). Regression:
 - Items grouped by `prepContainer` with section headers (Package icon + container name)
 - X button on container headers to clear container assignment
 - Container line items auto-deploy when all contents are deployed (`syncContainerStatus`)
-- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return silently whenever their parent does. **The effective accessory set is the line's stored `accessoryPlan`** (issue #794 — defaults minus what the PM deselected at add-time, plus any optionals opted into), resolved by one shared function (`resolveLineAccessoryPlan`) that prep, checkout, and the office add form all consult — a deselected default can no longer be silently re-expanded at checkout. `checkOutItems` additionally accepts a per-item `includeAccessoryIds` allow-list (the "Deploy Verified Only" narrowing kits already have) which `expandAccessoriesForAsset`/`checkoutAccessoryChildren` honour, but **no warehouse tab UI drives it yet** — accessory children still don't get their own grouping/verification-circle/partial-deploy treatment in the Deploy/Return/Prep/De-prep tabs (unlike kits); that's tracked as a follow-up. See [Child Assets / Accessories](./48-child-assets-accessories.md).
+- Permanent accessories (`childKind === "ACCESSORY"`) cascade with their parent automatically (they're permanently attached). `checkOutItems` is always called with `includeAccessories: true`, so accessories deploy/return by default whenever their parent does. **The effective accessory set is the line's stored `accessoryPlan`** (issue #794 — defaults minus what the PM deselected at add-time, plus any optionals opted into), resolved by one shared function (`resolveLineAccessoryPlan`) that prep, checkout, and the office add form all consult — a deselected default can no longer be silently re-expanded at checkout. Accessory children get the same grouping/verification-circle treatment kits do (`"accessory-group"` `GroupEntry`) and a Deploy-time gate blocks/asks-why on missing accessories — see [Child Assets / Accessories](./48-child-assets-accessories.md). `checkOutItems`'s per-item `includeAccessoryIds` allow-list is now driven from the warehouse UI too: a partially click-to-verified accessory parent gets a `kitConfirm`-style **"Deploy Verified Only" / "Deploy All"** choice (issue #794's remaining acceptance criterion) — picking "Verified Only" deploys the parent with just the verified accessories via `includeAccessoryIds`, leaving the rest sitting PACKED-but-not-deployed to be caught up on a later, separate deploy of the same line.
 
 ### Return Tab
 - Shows items with `status === "CHECKED_OUT"` only
@@ -291,17 +291,47 @@ top-level, no-`kitId` line with an `ACCESSORY` child, and `groupItems`/
 `groupCheckinItems` emit a fifth `GroupEntry` kind, `"accessory-group"` —
 checked in the same slot as `kit-group` (before `isBulkItem`), across all four
 tabs (Pick/Prep, Deploy, Return, De-prep — De-prep reuses `DeployTab` with
-`mode="deprep"`, same grouping). `isExpandableParent`/`expandableChildrenOf`
-generalise the five equipment-stage filters' kit-only children check to cover
-both kinds, so an accessory parent moves through Pick → Prep → Deploy →
-Return staged exactly like a kit, gated on child status/prepStatus. Rendering
-reuses `KitChildRows`/`MobileKitChildCards` unchanged (an "Accessories" badge
-instead of "Kit", the parent's own asset tag instead of a kit tag) — same
-expand/collapse, same `collectAllVerifiableIds`-driven "X/Y verified" badge,
-same clickable verify circles. **Not shipped:** a `kitConfirm`-style "Deploy
-Verified Only"/"Deploy All" partial-action dialog specifically for accessory
-groups (kits still have theirs; an accessory group's checkbox selects the
-whole parent, no partial-selection dialog yet) — tracked as a follow-up.
+`mode="deprep"`, same grouping). Rendering reuses `KitChildRows`/
+`MobileKitChildCards` unchanged (an "Accessories" badge instead of "Kit", the
+parent's own asset tag instead of a kit tag) — same expand/collapse, same
+`collectAllVerifiableIds`-driven "X/Y verified" badge, same clickable verify
+circles.
+
+**Stage membership: own state OR child state, NOT children-only.** A kit
+parent line is a synthetic rollup with no prep/deploy state of its own — the
+five equipment-stage filters (`isInPickPrepStage`/`isInPreppedStage`/
+`isInReturnedStage`/`isInDeprepedStage`/`isInCheckedOutStage` in
+`warehouse-types.ts`) gate a kit parent purely on its children, unchanged. An
+accessory parent is different: it's a real, independently-fulfilled asset that
+also happens to carry accessory children, so its membership is "the asset's
+own status/prepStatus OR any accessory child's" — treating it exactly like a
+kit (children-only) was a shipped **production bug** (fixed same follow-up):
+the parent vanished from Pick/Prep or Deploy whenever its own state and its
+accessory's state diverged, which is the common case once prep/deploy start
+moving independently. The accessory-parent branches also do NOT early-return
+on the parent's own `CHECKED_OUT`/`RETURNED` status the way every other branch
+does — see the next paragraph for why.
+
+**"Deploy Verified Only" / "Deploy All" — shipped (issue #794's remaining
+acceptance criterion).** A `kitConfirm`-style dialog now exists for the
+accessory parent's own `handleCheckOutSelected` path (not the kit-prep-only
+`kitConfirm` dialog, which is about PREP despite its `action: "deploy"` label
+— see the "Kit Verification" section above): if an accessory parent's PACKED
+accessories are only partially click-to-verified, deploying it opens a choice
+— "Deploy Verified Only (N)" calls `checkOutItems` with `includeAccessoryIds`
+narrowed to just the verified accessories' own asset/bulkAsset identities (NOT
+their line-item ids — `verifiedKitItems` tracks line-item ids, the mutation's
+allow-list wants asset identity, translated in
+`findPartiallyVerifiedAccessoryParent`), or "Deploy All (N)" cascades
+everything as before. Picking "Verified Only" deploys the parent asset while
+the un-verified accessory stays PACKED-but-not-`CHECKED_OUT` — exactly the
+"leave it behind, pick it up separately later" behaviour the issue asked for.
+That's also why the stage filters don't early-return on the parent's own
+terminal status: once the parent is `CHECKED_OUT` but a sibling accessory
+isn't, the line must keep showing in the Deploy tab so the operator can
+re-select the (already-deployed) parent and deploy again — `checkOutItems` is
+idempotent for an already-deployed asset (no-ops the asset move, cascades
+whatever accessories are still outstanding).
 See [FEATUREDOCS/48](./48-child-assets-accessories.md) for the checkout gate
 that pairs with this (blocks Deploy when a parent's DEFAULT accessories aren't
 packed, asks for a reason on missing OPTIONALs) and for the Online Pick List /

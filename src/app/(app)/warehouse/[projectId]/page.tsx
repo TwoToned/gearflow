@@ -96,12 +96,15 @@ import {
   isKitParent,
   isAccessoryParent,
   accessoryChildrenOf,
-  isExpandableParent,
-  expandableChildrenOf,
   collectAllVerifiableIds,
   bulkUnitKey,
   bulkUnpackedRemaining,
   bulkPackedWaiting,
+  isInPickPrepStage,
+  isInPreppedStage,
+  isInReturnedStage,
+  isInDeprepedStage,
+  isInCheckedOutStage,
 } from "@/components/warehouse/warehouse-types";
 import {
   pullItem,
@@ -411,6 +414,22 @@ function WarehouseProjectPage({
   const [defaultOverrideReason, setDefaultOverrideReason] = useState("");
   const [optionalSkipReasons, setOptionalSkipReasons] = useState<Record<string, { preset: string; note: string }>>({});
 
+  // Accessory partial-verification confirm (issue #794's remaining acceptance
+  // criterion) — mirrors the kit prep dialog's "Deploy Verified Only"/"Deploy
+  // All" UX, but for the actual Deploy action: an accessory parent whose
+  // PACKED accessories are only partially click-to-verified offers a choice
+  // instead of silently cascading everything.
+  const [accessoryVerifyConfirm, setAccessoryVerifyConfirm] = useState<{
+    parentLineItemId: string;
+    parentAssetId?: string;
+    parentName: string;
+    verifiedCount: number;
+    totalCount: number;
+    /** Verified accessories' own asset/bulkAsset identities — what
+     *  `checkOutItems`'s `includeAccessoryIds` actually narrows by. */
+    verifiedAccessoryIds: string[];
+  } | null>(null);
+
   // Check form state — opens when a scanned item's model has check items
   const [checkFormOpen, setCheckFormOpen] = useState(false);
   const [checkFormData, setCheckFormData] = useState<{
@@ -717,7 +736,7 @@ function WarehouseProjectPage({
   }, [projectId, warehouseWrites]);
 
   const checkOutMutation = useServerMutation({
-    mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>; includeAccessories?: boolean }) => {
+    mutationFn: async (params: { items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>; includeAccessories?: boolean }) => {
       const result = await warehouseWrites.checkOutItems(projectId, params.items, params.includeAccessories);
       // Sync container status for affected containers — ONE batch call (was one
       // round-trip per container).
@@ -1509,126 +1528,27 @@ function WarehouseProjectPage({
   const stageCounts = summarizeWarehouseStages(equipmentItems);
 
   // Pick/Prep: items that need to be picked and prepped (not yet PACKED)
-  const pickPrepItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    // Bulk lines are quantity-aware: show while any ordered unit is still
-    // unpacked, even once some units are prepped/deployed. This is what keeps
-    // "prep 1 of 10" from yanking the other 9 out of Pick. (Kit/accessory
-    // parents are handled by their child rollup below, never as a bulk line.)
-    if (isBulkItem(item) && !isExpandableParent(item)) return bulkUnpackedRemaining(item) > 0;
-    if (item.status === "CHECKED_OUT") return false;
-    // A returned piece of gear is DONE with the prep half of the flow — it lives
-    // in the Returned / De-prep stage, never back here. (Without this, a returned
-    // item whose prepStatus is no longer PACKED fell through below and reappeared
-    // in Pick/Prep, looking like it had never been sent out.)
-    if (item.status === "RETURNED") return false;
-    // Kit/accessory parents: show if any children still need prepping
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED") return false;
-        if (c.prepStatus === "PACKED") return false;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.prepStatus !== "PACKED"
-          );
-        }
-        return true;
-      });
-    }
-    // After prep-splitting, exhausted originals have qty=0 — hide them
-    if (item.quantity <= 0) return false;
-    if (item.prepStatus === "PACKED") return false;
-    return true;
-  });
-
+  // Pick/Prep, Deploy, De-prep-staging, De-prepped, and Return tab membership —
+  // see isInPickPrepStage/isInPreppedStage/isInReturnedStage/isInDeprepedStage/
+  // isInCheckedOutStage in warehouse-types.ts for the shared, tested logic.
+  const pickPrepItems = equipmentItems.filter(isInPickPrepStage);
   // Deploy: items that are prepped (PACKED) but not yet deployed (CHECKED_OUT).
   // Returned gear is excluded — it lives in the De-prep stage, NOT back here
   // (the "to return it goes back to deploy" confusion).
-  const preppedItems = equipmentItems.filter((item) => {
-    if (item.status === "CANCELLED") return false;
-    // Bulk lines are quantity-aware: show while any unit is packed and waiting to
-    // deploy, even if some of the line's units are already out or still to pick.
-    // (Kit/accessory parents fall through to the child rollup below, never treated as bulk.)
-    if (isBulkItem(item) && !isExpandableParent(item)) return bulkPackedWaiting(item) > 0;
-    if (item.status === "CHECKED_OUT") return false;
-    if (item.status === "RETURNED") return false;
-    // Kit/accessory parents: show if any children are prepped but not deployed
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT" || c.status === "CANCELLED" || c.status === "RETURNED") return false;
-        if (c.prepStatus === "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status !== "CHECKED_OUT" && gc.status !== "CANCELLED" && gc.status !== "RETURNED" && gc.prepStatus === "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    if (item.quantity <= 0) return false;
-    return item.prepStatus === "PACKED";
-  });
-
+  const preppedItems = equipmentItems.filter(isInPreppedStage);
   // De-prep: gear that's physically back (RETURNED) but still packed — it needs
   // return checks and putting back into inventory. Once de-prepped, prepStatus
   // resets off PACKED and it leaves this list. Mirrors the checkedOutItems shape
   // so it can flow through the same Deploy-tab rendering in "deprep" mode.
-  const returnedItems = equipmentItems.filter((item) => {
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "RETURNED" && c.prepStatus === "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status === "RETURNED" && gc.prepStatus === "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    return item.status === "RETURNED" && item.prepStatus === "PACKED";
-  });
-
+  const returnedItems = equipmentItems.filter(isInReturnedStage);
   // De-prepped: returned gear checked back into inventory (prepStatus reset off
   // PACKED). Terminal stage — a read-only confirmation list.
-  const deprepedItems = equipmentItems.filter((item) => {
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "RETURNED" && c.prepStatus !== "PACKED") return true;
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some(
-            (gc) => gc.status === "RETURNED" && gc.prepStatus !== "PACKED"
-          );
-        }
-        return false;
-      });
-    }
-    return item.status === "RETURNED" && item.prepStatus !== "PACKED";
-  });
+  const deprepedItems = equipmentItems.filter(isInDeprepedStage);
 
   // Keep old name for compatibility with deploy tab selection logic
   const checkOutItemsList = preppedItems;
 
-  const checkedOutItems = equipmentItems.filter((item) => {
-    // Kit/accessory parents: show in return tab if any children/grandchildren are deployed
-    if (isExpandableParent(item)) {
-      const children = expandableChildrenOf(item);
-      return children.some((c) => {
-        if (c.status === "CHECKED_OUT") return true;
-        // Nested kit: check grandchildren too
-        if (c.kitId && c.childLineItems?.length) {
-          return (c.childLineItems as LineItem[]).some((gc) => gc.status === "CHECKED_OUT");
-        }
-        return false;
-      });
-    }
-    if (isBulkItem(item)) return item.status === "CHECKED_OUT" && item.checkedOutQuantity > item.returnedQuantity;
-    return item.status === "CHECKED_OUT";
-  });
+  const checkedOutItems = equipmentItems.filter(isInCheckedOutStage);
 
   const groupedPrep = groupItems(pickPrepItems, "prep", "prep");
   const groupedOut = groupItems(checkOutItemsList, "deploy", "prepped");
@@ -2090,13 +2010,43 @@ function WarehouseProjectPage({
   }
 
   // Deploy selected prepped items (no checks needed — items are already prepped)
-  function runCheckOut(items: Array<{ lineItemId: string; assetId?: string; quantity?: number }>) {
+  function runCheckOut(items: Array<{ lineItemId: string; assetId?: string; quantity?: number; includeAccessoryIds?: string[] }>) {
     checkOutMutation
       // Accessories always cascade with their parent (they're permanently
-      // attached) — there's no longer a warehouse toggle for it.
+      // attached) — there's no longer a warehouse toggle for it, except for
+      // the per-item includeAccessoryIds narrowing an item may carry (the
+      // "Deploy Verified Only" partial-action escape hatch below).
       .mutateAsync({ items, includeAccessories: true })
       .then(() => toast.success(`Deployed ${items.length} item${items.length === 1 ? "" : "s"}`))
       .catch(() => {});
+  }
+
+  // Kit-style partial-verification check for the actual Deploy action (issue
+  // #794's remaining acceptance criterion): find the first accessory parent
+  // in the batch whose PACKED accessories are only partly click-to-verified.
+  // Fully-verified, fully-unverified, and accessory-free parents all pass
+  // through untouched — only a genuine partial split needs a choice.
+  // `verifiedKitItems` tracks accessory CHILD LINE ids (the same convention
+  // KitChildRows uses), but the checkout mutation's `includeAccessoryIds`
+  // narrows by accessory ASSET/BULK-ASSET identity — the two are translated
+  // here so the caller never has to know about the mismatch.
+  function findPartiallyVerifiedAccessoryParent(parentLineItemIds: string[]) {
+    for (const id of parentLineItemIds) {
+      const li = lineItems.find((l) => l.id === id);
+      if (!li || !isAccessoryParent(li)) continue;
+      const packed = accessoryChildrenOf(li).filter(
+        (c) => c.status !== "CANCELLED" && c.status !== "CHECKED_OUT" && c.prepStatus === "PACKED",
+      );
+      if (packed.length === 0) continue;
+      const verified = packed.filter((c) => verifiedKitItems.has(c.id));
+      if (verified.length > 0 && verified.length < packed.length) {
+        const verifiedAccessoryIds = verified
+          .map((c) => c.assetId ?? c.bulkAssetId ?? "")
+          .filter((v): v is string => v !== "");
+        return { li, verifiedCount: verified.length, totalCount: packed.length, verifiedAccessoryIds };
+      }
+    }
+    return null;
   }
 
   const handleCheckOutSelected = async () => {
@@ -2146,6 +2096,21 @@ function WarehouseProjectPage({
       setDefaultOverrideReason(isManagerTier ? "Manager override — deployed without full verification" : "");
       setOptionalSkipReasons({});
       setAccessoryGate({ pendingCheckOutItems: items, missingDefaults, missingOptionals });
+      return;
+    }
+
+    const partial = findPartiallyVerifiedAccessoryParent(serializedLineItemIds);
+    if (partial) {
+      const rest = items.filter((i) => i.lineItemId !== partial.li.id);
+      if (rest.length > 0) runCheckOut(rest);
+      setAccessoryVerifyConfirm({
+        parentLineItemId: partial.li.id,
+        parentAssetId: partial.li.assetId || undefined,
+        parentName: modelDisplayName(partial.li),
+        verifiedCount: partial.verifiedCount,
+        totalCount: partial.totalCount,
+        verifiedAccessoryIds: partial.verifiedAccessoryIds,
+      });
       return;
     }
 
@@ -3085,6 +3050,58 @@ function WarehouseProjectPage({
                 onClick={confirmAccessoryGate}
               >
                 Deploy anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Accessory partial-verification confirm — "Deploy Verified Only" vs
+          "Deploy All", the kit-prep-style dialog applied to the real Deploy
+          action (issue #794's remaining acceptance criterion). */}
+      {accessoryVerifyConfirm && (
+        <Dialog open={true} onOpenChange={() => setAccessoryVerifyConfirm(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Deploy without full verification?</DialogTitle>
+            </DialogHeader>
+            <p className="text-ui-text text-muted">
+              <span className="font-medium text-ink">{accessoryVerifyConfirm.parentName}</span> has{" "}
+              <span className="font-medium text-ink tabular-nums">
+                {accessoryVerifyConfirm.verifiedCount}/{accessoryVerifyConfirm.totalCount}
+              </span>{" "}
+              accessories verified. You can deploy the parent with only the verified accessories,
+              or deploy with everything.
+            </p>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+              <Button variant="line" size="sm" onClick={() => setAccessoryVerifyConfirm(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="line"
+                size="sm"
+                onClick={() => {
+                  runCheckOut([{
+                    lineItemId: accessoryVerifyConfirm.parentLineItemId,
+                    assetId: accessoryVerifyConfirm.parentAssetId,
+                    includeAccessoryIds: accessoryVerifyConfirm.verifiedAccessoryIds,
+                  }]);
+                  setAccessoryVerifyConfirm(null);
+                }}
+              >
+                Deploy Verified Only ({accessoryVerifyConfirm.verifiedCount})
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  runCheckOut([{
+                    lineItemId: accessoryVerifyConfirm.parentLineItemId,
+                    assetId: accessoryVerifyConfirm.parentAssetId,
+                  }]);
+                  setAccessoryVerifyConfirm(null);
+                }}
+              >
+                Deploy All ({accessoryVerifyConfirm.totalCount})
               </Button>
             </DialogFooter>
           </DialogContent>

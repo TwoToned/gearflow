@@ -19,19 +19,21 @@ export type ClientFieldsInput = Partial<ClientFormValues> & { name: string };
  * `clientContactWrites.addNative` call after the client itself is created — see
  * `useClientWrites().create()`.
  */
+const numOrUndefined = (v: unknown) => (v == null ? undefined : Number(v as number | string));
+
 export function toClientFields(parsed: ClientFieldsInput) {
   return {
     name: parsed.name,
     type: parsed.type,
     billingAddress: parsed.billingAddress || undefined,
-    billingLatitude: parsed.billingLatitude == null ? undefined : Number(parsed.billingLatitude),
-    billingLongitude: parsed.billingLongitude == null ? undefined : Number(parsed.billingLongitude),
+    billingLatitude: numOrUndefined(parsed.billingLatitude),
+    billingLongitude: numOrUndefined(parsed.billingLongitude),
     shippingAddress: parsed.shippingAddress || undefined,
-    shippingLatitude: parsed.shippingLatitude == null ? undefined : Number(parsed.shippingLatitude),
-    shippingLongitude: parsed.shippingLongitude == null ? undefined : Number(parsed.shippingLongitude),
+    shippingLatitude: numOrUndefined(parsed.shippingLatitude),
+    shippingLongitude: numOrUndefined(parsed.shippingLongitude),
     taxId: parsed.taxId || undefined,
     paymentTerms: parsed.paymentTerms || undefined,
-    defaultDiscount: parsed.defaultDiscount == null ? undefined : Number(parsed.defaultDiscount),
+    defaultDiscount: numOrUndefined(parsed.defaultDiscount),
     notes: parsed.notes || undefined,
     tags: parsed.tags,
     isActive: parsed.isActive,

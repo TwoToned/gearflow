@@ -24,9 +24,66 @@ const ACTIVE_SUBHIRE_STATUSES_EXCLUDED = new Set(["DRAFT", "CANCELLED"]);
  * function, no ctx) so the de-dup logic itself is unit-testable without a Convex
  * harness — see suppliers.test.ts's dedup fixture.
  */
+type SupplierOrderRow = Pick<Doc<"supplierOrders">, "id" | "status" | "total">;
+type SubHireRow = Pick<Doc<"subHires">, "id" | "status" | "totalCost" | "supplierOrderId">;
+
+/** A single sub-hire's contribution to the de-duplicated total: the linked order's id
+ *  is recorded in `pairedOrderIds` (so the order loop below skips it) when the link is
+ *  to a committed order; otherwise the sub-hire counts at its own quoted cost. */
+function subHireSpendContribution(
+  sh: SubHireRow,
+  orderById: Map<string, SupplierOrderRow>,
+  pairedOrderIds: Set<string>,
+): number {
+  const linkedOrder = sh.supplierOrderId ? orderById.get(sh.supplierOrderId) : undefined;
+  if (linkedOrder != null && COMMITTED_ORDER_STATUSES.has(linkedOrder.status ?? "DRAFT")) {
+    pairedOrderIds.add(linkedOrder.id);
+    return linkedOrder.status === "RECEIVED" ? Number(linkedOrder.total ?? 0) : Number(sh.totalCost ?? 0);
+  }
+  return Number(sh.totalCost ?? 0);
+}
+
+/** De-duplicated total: a linked sub-hire+order pair counts once (order.total once
+ *  RECEIVED, else the sub-hire's quoted totalCost); unlinked committed orders and
+ *  active sub-hires each count in full. */
+function dedupedTotalSpend(
+  activeSubHires: SubHireRow[],
+  committedOrders: SupplierOrderRow[],
+  orderById: Map<string, SupplierOrderRow>,
+): number {
+  const pairedOrderIds = new Set<string>();
+  const subHireTotal = activeSubHires.reduce(
+    (sum, sh) => sum + subHireSpendContribution(sh, orderById, pairedOrderIds),
+    0,
+  );
+  const unpairedOrderTotal = committedOrders
+    .filter((o) => !pairedOrderIds.has(o.id))
+    .reduce((sum, o) => sum + Number(o.total ?? 0), 0);
+  return subHireTotal + unpairedOrderTotal;
+}
+
+/** Variance summary: every LINKED pair (regardless of order status) contributes
+ *  order.total - subHire.totalCost once the order has a total. Informational only
+ *  — never denormalised, never feeds the P&L (spec decision). */
+function computeVariance(
+  subHires: SubHireRow[],
+  orderById: Map<string, SupplierOrderRow>,
+): { total: number; linkedCount: number } {
+  let varianceTotal = 0;
+  let linkedCount = 0;
+  for (const sh of subHires) {
+    if (!sh.supplierOrderId) continue;
+    const order = orderById.get(sh.supplierOrderId);
+    if (!order) continue;
+    linkedCount++;
+    if (order.total != null) varianceTotal += Number(order.total) - Number(sh.totalCost ?? 0);
+  }
+  return { total: round(varianceTotal), linkedCount };
+}
+
 export function computeSupplierSpend(
-  orders: Array<Pick<Doc<"supplierOrders">, "id" | "status" | "total">>,
-  subHires: Array<Pick<Doc<"subHires">, "id" | "status" | "totalCost" | "supplierOrderId">>,
+  orders: SupplierOrderRow[],
+  subHires: SubHireRow[],
 ): {
   committedOrderSpend: number;
   subHireSpend: number;
@@ -40,44 +97,16 @@ export function computeSupplierSpend(
 
   const committedOrderSpend = round(committedOrders.reduce((sum, o) => sum + Number(o.total ?? 0), 0));
   const subHireSpend = round(activeSubHires.reduce((sum, sh) => sum + Number(sh.totalCost ?? 0), 0));
-
-  let totalSpend = 0;
-  const pairedOrderIds = new Set<string>();
-  for (const sh of activeSubHires) {
-    const linkedOrder = sh.supplierOrderId ? orderById.get(sh.supplierOrderId) : undefined;
-    const isCommittedLink = linkedOrder != null && COMMITTED_ORDER_STATUSES.has(linkedOrder.status ?? "DRAFT");
-    if (isCommittedLink) {
-      pairedOrderIds.add(linkedOrder!.id);
-      totalSpend += linkedOrder!.status === "RECEIVED" ? Number(linkedOrder!.total ?? 0) : Number(sh.totalCost ?? 0);
-    } else {
-      totalSpend += Number(sh.totalCost ?? 0);
-    }
-  }
-  for (const o of committedOrders) {
-    if (!pairedOrderIds.has(o.id)) totalSpend += Number(o.total ?? 0);
-  }
-
+  const totalSpend = dedupedTotalSpend(activeSubHires, committedOrders, orderById);
   const openOrderCount = orders.filter((o) => OPEN_ORDER_STATUSES.has(o.status ?? "DRAFT")).length;
-
-  // Variance summary: every LINKED pair (regardless of order status) contributes
-  // order.total - subHire.totalCost once the order has a total. Informational only
-  // — never denormalised, never feeds the P&L (spec decision).
-  let varianceTotal = 0;
-  let linkedCount = 0;
-  for (const sh of subHires) {
-    if (!sh.supplierOrderId) continue;
-    const order = orderById.get(sh.supplierOrderId);
-    if (!order) continue;
-    linkedCount++;
-    if (order.total != null) varianceTotal += Number(order.total) - Number(sh.totalCost ?? 0);
-  }
+  const variance = computeVariance(subHires, orderById);
 
   return {
     committedOrderSpend,
     subHireSpend,
     totalSpend: round(totalSpend),
     openOrderCount,
-    variance: { total: round(varianceTotal), linkedCount },
+    variance,
   };
 }
 
@@ -209,6 +238,35 @@ export const assetsPage = query({
   },
 });
 
+function subHireRowProject(p: Doc<"projects"> | undefined) {
+  return p ? { id: p.id, name: p.name, projectNumber: p.projectNumber ?? null, status: p.status ?? "" } : null;
+}
+
+function subHireRowLinkedOrder(order: Doc<"supplierOrders"> | undefined) {
+  return order ? { id: order.id, orderNumber: order.orderNumber, status: order.status ?? "DRAFT" } : null;
+}
+
+/** One row of `subhiresPage`'s result — extracted so the query handler stays a plain
+ *  data-fetch pipeline (R-3.6). */
+function mapSubHireRow(
+  sh: Doc<"subHires">,
+  projById: Map<string, Doc<"projects">>,
+  orderById: Map<string, Doc<"supplierOrders">>,
+) {
+  const totalCost = sh.totalCost ?? 0;
+  const totalCharge = sh.totalCharge ?? 0;
+  return {
+    id: sh.id,
+    orderNumber: sh.orderNumber,
+    status: sh.status ?? "DRAFT",
+    totalCost,
+    totalCharge,
+    margin: round(totalCharge - totalCost),
+    project: subHireRowProject(sh.projectId ? projById.get(sh.projectId) : undefined),
+    linkedOrder: subHireRowLinkedOrder(sh.supplierOrderId ? orderById.get(sh.supplierOrderId) : undefined),
+  };
+}
+
 /**
  * A supplier's SUB-HIRE HEADS (createdAt desc), paginated, with project + linked-PO
  * reference (WS7 #946 — visible behaviour change from the prior
@@ -240,22 +298,7 @@ export const subhiresPage = query({
     );
 
     return {
-      subHires: rows.map((sh) => {
-        const p = sh.projectId ? projById.get(sh.projectId) : undefined;
-        const linkedOrder = sh.supplierOrderId ? orderById.get(sh.supplierOrderId) : undefined;
-        const totalCost = sh.totalCost ?? 0;
-        const totalCharge = sh.totalCharge ?? 0;
-        return {
-          id: sh.id,
-          orderNumber: sh.orderNumber,
-          status: sh.status ?? "DRAFT",
-          totalCost,
-          totalCharge,
-          margin: round(totalCharge - totalCost),
-          project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber ?? null, status: p.status ?? "" } : null,
-          linkedOrder: linkedOrder ? { id: linkedOrder.id, orderNumber: linkedOrder.orderNumber, status: linkedOrder.status ?? "DRAFT" } : null,
-        };
-      }),
+      subHires: rows.map((sh) => mapSubHireRow(sh, projById, orderById)),
       total,
     };
   },

@@ -2,6 +2,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { getCrewRoleMap, getCrewMemberMap } from "@/lib/crew-read";
+import { resolveRate } from "../../convex/lib/crewRate";
 
 /**
  * Server-side read helpers for the project-services domain (Phase A read-rewiring
@@ -45,6 +46,15 @@ export interface ServiceCrewAssignment {
   /** Present in getProjectServices, absent (always null) in getProjectServiceById. */
   estimatedCost: number | null;
   crewMember: ServiceCrewMember | null;
+  /** Rate-cascade inputs (issue #796 per-crew rate table) — the row's own override,
+   *  if set, plus the resolved rate/type the SAME cascade (convex/lib/crewRate.ts)
+   *  would produce, so the UI can show "$X/day (from role default)" without
+   *  re-implementing the cascade. */
+  rateOverride: number | null;
+  rateType: string | null;
+  estimatedHours: number | null;
+  resolvedRate: number;
+  resolvedRateType: string;
 }
 
 export interface ProjectServiceRow {
@@ -222,6 +232,13 @@ export function attachServiceCrew(
 
   const crewAssignments: ServiceCrewAssignment[] = assignments.map((a) => {
     const member = memberMap.get(a.crewMemberId);
+    const assignmentRole = (a.crewRoleId ? roleMap.get(a.crewRoleId) : undefined) ?? role;
+    const { rate, rateType } = resolveRate(
+      a.rateOverride,
+      a.rateType ?? null,
+      { defaultDayRate: member?.defaultDayRate, defaultHourlyRate: member?.defaultHourlyRate },
+      assignmentRole ? { defaultRate: assignmentRole.defaultRate, rateType: assignmentRole.rateType } : null,
+    );
     return {
       id: a.id,
       status: orNull(a.status),
@@ -234,6 +251,11 @@ export function attachServiceCrew(
             image: orNull(member.image),
           }
         : null,
+      rateOverride: orNull(a.rateOverride),
+      rateType: orNull(a.rateType),
+      estimatedHours: orNull(a.estimatedHours),
+      resolvedRate: rate,
+      resolvedRateType: rateType,
     };
   });
 

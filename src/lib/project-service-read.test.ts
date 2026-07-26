@@ -247,6 +247,13 @@ describe("attachServiceCrew", () => {
       status: "CONFIRMED",
       estimatedCost: 200,
       crewMember: { id: "m1", firstName: "Ada", lastName: "Lovelace", image: "img.png" },
+      rateOverride: null,
+      rateType: null,
+      estimatedHours: null,
+      // No rateOverride, no member day/hourly rate, no role default → cascade falls
+      // all the way through to the $0/DAILY fallback (convex/lib/crewRate.ts).
+      resolvedRate: 0,
+      resolvedRateType: "DAILY",
     });
   });
 
@@ -266,5 +273,45 @@ describe("attachServiceCrew", () => {
     const r = attachServiceCrew(base, assignments, roleMap, memberMap, true);
     expect(r.crewAssignments[0].crewMember).toBeNull();
     expect(r.crewAssignments[0].estimatedCost).toBeNull();
+  });
+
+  // Issue #796 — the per-crew rate table needs the resolved rate, not just the
+  // stored total cost, so the UI can show "$X/day" without re-implementing the
+  // cascade (convex/lib/crewRate.ts) client-side.
+  it("resolves rate from the crew member's default day rate when no override is set", () => {
+    const memberMapWithRate = new Map<string, Doc<"crewMembers">>([
+      ["m1", { id: "m1", firstName: "Ada", lastName: "Lovelace", image: null, defaultDayRate: 450 } as unknown as Doc<"crewMembers">],
+    ]);
+    const assignments = [
+      { id: "a1", serviceId: "svc1", status: "CONFIRMED", crewMemberId: "m1" },
+    ] as unknown as Doc<"crewAssignments">[];
+    const r = attachServiceCrew(base, assignments, roleMap, memberMapWithRate, true);
+    expect(r.crewAssignments[0].resolvedRate).toBe(450);
+    expect(r.crewAssignments[0].resolvedRateType).toBe("DAILY");
+  });
+
+  it("resolves rate from a per-row rateOverride, taking priority over the member's default", () => {
+    const memberMapWithRate = new Map<string, Doc<"crewMembers">>([
+      ["m1", { id: "m1", firstName: "Ada", lastName: "Lovelace", image: null, defaultDayRate: 450 } as unknown as Doc<"crewMembers">],
+    ]);
+    const assignments = [
+      { id: "a1", serviceId: "svc1", status: "CONFIRMED", crewMemberId: "m1", rateOverride: 90, rateType: "FLAT" },
+    ] as unknown as Doc<"crewAssignments">[];
+    const r = attachServiceCrew(base, assignments, roleMap, memberMapWithRate, true);
+    expect(r.crewAssignments[0].rateOverride).toBe(90);
+    expect(r.crewAssignments[0].resolvedRate).toBe(90);
+    expect(r.crewAssignments[0].resolvedRateType).toBe("FLAT");
+  });
+
+  it("falls back to the crew role's default rate when the member has none", () => {
+    const roleMapWithRate = new Map<string, Doc<"crewRoles">>([
+      ["role1", { id: "role1", name: "Driver", color: "#fff", defaultRate: 380, rateType: "DAILY" } as Doc<"crewRoles">],
+    ]);
+    const assignments = [
+      { id: "a1", serviceId: "svc1", status: "CONFIRMED", crewMemberId: "m1" },
+    ] as unknown as Doc<"crewAssignments">[];
+    const r = attachServiceCrew(base, assignments, roleMapWithRate, memberMap, true);
+    expect(r.crewAssignments[0].resolvedRate).toBe(380);
+    expect(r.crewAssignments[0].resolvedRateType).toBe("DAILY");
   });
 });

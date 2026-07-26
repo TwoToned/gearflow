@@ -58,6 +58,18 @@ rail + live preview, single clean page, "More details" accordion.
 - **KIT_PRICE**: Single price on parent row, children have `unitPrice: 0`
 - **ITEMIZED**: Individual prices on each child row, parent has `unitPrice: 0`
 
+### Discount (issue #883)
+`KIT_PRICE` kits support a flat `$` discount off the parent row's
+`unitPrice`, set at add time in `KitAddForm`. Reuses the existing
+`ProjectLineItem.discount` field (no schema change — kits never had their
+own pricing table) via `createKitLineItemCore` /
+`convex/lineItemWrites.ts` `addKitNative` /
+`useLineItemWrites().addKit()`. Not available in `ITEMIZED` mode — there's
+no parent-row price to discount against; discount each child individually
+via `EditLineItemDialog` instead. Validated by the existing
+`assertLineMoneyFields` bound (finite, 0–999999.99) shared with every
+other line-item discount.
+
 ## Warehouse Operations
 - Kit checkout: `checkOutKit()` — atomic transaction updating kit + all member assets + grandchildren (nested kits)
 - Kit checkin: `checkInKit()` — same pattern, handles grandchildren

@@ -132,7 +132,21 @@ marginPercent = margin / total × 100
 
 ## Groups (`ProjectGroup`) — The Billable Unit
 - Groups are the billable units on quotes/invoices
-- Fields: `title`, `description` (free-text for quote), `quantity`, `price`
+- Fields: `title`, `description` (free-text for quote), `quantity`, `price`,
+  `discount` (issue #883)
+- `discount` is a **flat $ amount off `price × quantity`**, not per-unit —
+  same subtraction shape as `ProjectLineItem.discount`, clamped at 0.
+  Editable from `EditGroupDialog` or `PriceEditDialog`'s project branch (both
+  share the `DiscountField` `$`/`%` toggle; `%` resolves to a flat dollar
+  amount client-side before it reaches `updateGroupPriceNative` — the
+  mutation never sees a percentage). Applied in
+  `convex/lib/recalc.ts` (`groupRevenue`), `convex/lib/allocation.ts`
+  (per-model revenue pool), and `src/lib/pdfme/structure-line-items.ts`
+  (the synthetic group row's PDF total) — see
+  [FEATUREDOCS/47](./47-cross-type-equipment-unification.md#structural--discount-unification-pass-issue-883)
+  for the full plumbing list. There is no discount UI at group *creation*
+  (`AddGroupToolbarDialog`) — same as `price`, which is also only set
+  after creation via one of the two edit surfaces above.
 - `categoryId` is **nullable since v0.10.0.0** — a group can live in
   the project's Uncategorized zone (mirrors `SubHireGroup.targetCategoryId`).
   The toolbar "Add Group" dialog and per-group Move dialog both offer

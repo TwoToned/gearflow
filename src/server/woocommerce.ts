@@ -4,6 +4,8 @@ import crypto from "crypto";
 import { createId } from "@paralleldrive/cuid2";
 import { getConvexClient } from "@/lib/convex-client";
 import { getClientsByOrg, getClientById, type ConvexClient } from "@/lib/clients-read";
+import { getClientContactsByOrg } from "@/lib/client-contacts-read";
+import { groupContactsByClient, clientKnowsEmail } from "@/lib/woocommerce-client-match";
 import { getLocationsByOrg } from "@/lib/locations-read";
 import { getModelsByOrg } from "@/lib/models-read";
 import { getProjectsByOrg, getProjectByIdMapped } from "@/lib/projects-read";
@@ -432,24 +434,64 @@ function generateSecret(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/**
+ * WS9 #948 — on a fuzzy-company match whose billing email is unknown to the
+ * matched client, auto-create an additional (non-primary) contact tagged from
+ * the order, instead of silently losing it. Split out of `findOrCreateClient` to
+ * keep that function's cyclomatic complexity under the R-3.6 ceiling.
+ */
+async function autoCreateContactIfEmailUnknown(
+  orgId: string,
+  client: ConvexClient,
+  billing: WooOrder["billing"],
+  contactsByClient: Map<string, { clientId: string; email?: string | null }[]>,
+): Promise<void> {
+  if (!billing.email || clientKnowsEmail(client, billing.email, contactsByClient)) return;
+  await (await getConvexClient()).mutation(api.clientContacts.create, {
+    id: createId(),
+    organizationId: orgId,
+    clientId: client.id,
+    name: `${billing.first_name} ${billing.last_name}`.trim() || undefined,
+    email: billing.email,
+    phone: billing.phone || undefined,
+    notes: "Auto-created from a WooCommerce order",
+    isPrimary: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+}
+
+// Complexity 15 (R-3.6 ceiling) — the 3-step match/create waterfall (exact email
+// → fuzzy company → create-new) is inherently branchy; `autoCreateContactIfEmailUnknown`
+// above already carries the WS9 #948 contact-creation branching out of this function.
 async function findOrCreateClient(orgId: string, billing: WooOrder["billing"]) {
   const hasCompany = !!billing.company?.trim();
 
-  // Clients live in Convex — fetch the org's clients once and match in memory.
-  const all = await getClientsByOrg(orgId);
+  // Clients live in Convex — fetch the org's clients + contacts once and match in
+  // memory. Contacts widen the email match (WS9 #948) beyond the legacy embedded
+  // clients.contactEmail field. `groupContactsByClient`/`clientKnowsEmail` are the
+  // shared pure helpers (src/lib/woocommerce-client-match.ts), unit-tested directly
+  // there — this function stays un-exported (it's a "use server" file; every
+  // exported async function becomes a client-invocable server action, and this one
+  // takes a raw `orgId` with no permission check, so exporting it would be a
+  // cross-tenant IDOR).
+  const [all, allContacts] = await Promise.all([getClientsByOrg(orgId), getClientContactsByOrg(orgId)]);
+  const contactsByClient = groupContactsByClient(allContacts);
 
-  // 1. Try exact email match first
+  // 1. Try exact email match first — ANY contact's email on an active client, not
+  //    just the legacy embedded one.
   //    But if the order has a company name and the email match is an INDIVIDUAL client,
   //    skip it — we want to create/match a COMPANY client instead.
   let client: ConvexClient | null =
-    all.find((c) => (c.isActive ?? true) && c.contactEmail === billing.email) ?? null;
+    all.find((c) => (c.isActive ?? true) && clientKnowsEmail(c, billing.email, contactsByClient)) ?? null;
   if (client && hasCompany && client.type === "INDIVIDUAL") {
     client = null; // skip personal match, fall through to company matching
   }
 
-  // 2. If company name provided, try fuzzy company matching
+  // 2. If company name provided, try fuzzy company matching.
   if (!client && hasCompany) {
     client = fuzzyMatchCompany(all, billing.company!.trim());
+    if (client) await autoCreateContactIfEmailUnknown(orgId, client, billing, contactsByClient);
   }
 
   // 3. If still no match, create a new client

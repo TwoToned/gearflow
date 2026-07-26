@@ -65,7 +65,6 @@ function getColumnsForDocType(config: TablePluginConfig, totalWidth: number): Co
         { key: "description", label: "Description", width: 0, flex: 3, align: "left" },
         { key: "qty", label: "Qty", width: 30, align: "center" },
         { key: "unitPrice", label: config.documentType === "invoice" ? "Rate" : "Unit Price", width: 60, align: "right" },
-        { key: "days", label: "Days", width: 30, align: "center" },
         { key: "total", label: config.documentType === "invoice" ? "Amount" : "Total", width: 60, align: "right" },
       ], totalWidth);
 
@@ -521,19 +520,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
             break;
           }
 
-          case "days": {
-            const dayStr = String(item.duration);
-            const dayWidth = fonts.regular.widthOfTextAtSize(dayStr, fontSize);
-            page.drawText(dayStr, {
-              x: cellX + (col.width - dayWidth) / 2 - cellPadding,
-              y: textY,
-              size: fontSize,
-              font: fonts.regular,
-              color: textColor,
-            });
-            break;
-          }
-
           case "total": {
             if (!config.showPricing) break;
             const totalStr = isItemized ? "-" : formatCurrency(item.lineTotal);
@@ -768,19 +754,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                 break;
               }
 
-              case "days": {
-                const dayStr = String(child.duration);
-                const dayWidth = fonts.regular.widthOfTextAtSize(dayStr, childFontSize);
-                page.drawText(dayStr, {
-                  x: childCellX + (col.width - dayWidth) / 2 - cellPadding,
-                  y: childTextY,
-                  size: childFontSize,
-                  font: fonts.regular,
-                  color: childTextColor,
-                });
-                break;
-              }
-
               case "total": {
                 if (!config.showPricing) break;
                 const totalStr = formatCurrency(child.lineTotal);
@@ -940,19 +913,6 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                     const pW = fonts.regular.widthOfTextAtSize(pStr, grandchildFontSize);
                     page.drawText(pStr, {
                       x: colEndX - pW - cellPadding,
-                      y: nestedTextY,
-                      size: grandchildFontSize,
-                      font: fonts.regular,
-                      color: grandchildTextColor,
-                    });
-                    break;
-                  }
-
-                  case "days": {
-                    const dStr = String(nested.duration);
-                    const dW = fonts.regular.widthOfTextAtSize(dStr, grandchildFontSize);
-                    page.drawText(dStr, {
-                      x: nestedCellX + (col.width - dW) / 2 - cellPadding,
                       y: nestedTextY,
                       size: grandchildFontSize,
                       font: fonts.regular,

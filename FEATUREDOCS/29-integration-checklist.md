@@ -1,6 +1,6 @@
 # Integration Checklist for New Features
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
 When implementing a new feature, ensure it integrates with ALL existing systems.
 
@@ -24,6 +24,6 @@ When implementing a new feature, ensure it integrates with ALL existing systems.
 | **Activity Log** | Browser-direct mutations write their own audit row in-mutation (`writeActivityLog` from `convex/lib/audit.ts`) and skip `logActivity()`; server-action carve-outs call `logActivity()` from `src/lib/activity-log.ts` (which itself writes to Convex — see FEATUREDOCS/24). |
 | **Media** | If entity has photos, add a `{entity}Media` table in `convex/schema.ts` + `MediaUploader`. |
 | **CSV** | Consider import/export if bulk data operations are useful. |
-| **Org export** | Add new table to `convex/orgExport.ts`. |
+| **Org export** | Classify the new table as DIRECT/FILTER/PARENT_JOIN/EXCLUDED in `scripts/org-export-tables.ts` and bump `EXPECTED_TABLE_COUNT` (check the CURRENT value first — don't assume a stale baseline; `convex/orgExport.ts`'s generic readers don't need per-table edits, only this classification file does). See WS6 #945's `serviceSchedules` addition (DIRECT, 100 → 101) for a worked example. |
 | **Documentation** | Update ARCHITECTURE.md overview and add/update relevant FEATUREDOCS file. |
 | **Role-gated fields** (WS10 #949) | If a field must be hidden from some roles (e.g. cost/margin data manager+ only), don't strip it in the shared list query other call sites depend on — add a SEPARATE query for the gated surface (see `crewRoles.ts` `listForSettings` vs `list`) and redact with `redactFields()` (`convex/lib/auth.ts`) based on `isCallerManagerPlus()`/`isManagerPlusRole()` (`convex/lib/permissionsCore.ts` — the one source of truth, shared with the client-side `useIsManagerPlus()` hook). Client-side hiding alone is not sufficient (R-9.3). |

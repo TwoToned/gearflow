@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireService, requireOrgRead } from "./lib/auth";
+import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 
 // ── Pure filter/sort helpers ported from src/lib/test-tag-read.ts (byte-for-byte;
@@ -188,17 +189,10 @@ export const listPage = query({
     const sortBy = TT_SORTABLE.has(a.sortBy ?? "") ? a.sortBy! : "testTagId";
     const order = a.sortOrder ?? "asc";
 
-    const [items, records, orgAssets, orgBulk, profiles] = await Promise.all([
-      ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
-      ctx.db.query("testTagRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
-      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff
+    const [{ rows: items }, profiles] = await Promise.all([
+      collectCapped(ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId))), // r9.8-ok: free-text search + arbitrary-field sort need the matching set materialized in JS; capped, not a bare collect — see docs/exceptions.md R-8.3.3
       ctx.db.query("testProfiles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).collect(), // r9.8-ok: small bounded per-org config set — see docs/exceptions.md R-8.3.3
     ]);
-    const recordCounts = new Map<string, number>();
-    for (const r of records) recordCounts.set(r.testTagAssetId, (recordCounts.get(r.testTagAssetId) ?? 0) + 1);
-    const assetById = new Map(orgAssets.map((x) => [x.id, x]));
-    const bulkById = new Map(orgBulk.map((x) => [x.id, x]));
     const profileById = new Map(profiles.map((p) => [p.id, p]));
 
     const filtered = items.filter((item) => {
@@ -224,6 +218,25 @@ export const listPage = query({
     });
     const total = filtered.length;
     const slice = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+
+    // Enrichment (asset/bulkAsset joins + record counts) only for the displayed page,
+    // not the whole org — assets/bulkAssets/testTagRecords are growable tables.
+    const assetIds = [...new Set(slice.map((i) => i.assetId).filter((id): id is string => id != null))];
+    const bulkAssetIds = [...new Set(slice.map((i) => i.bulkAssetId).filter((id): id is string => id != null))];
+    const [assetDocs, bulkDocs, recordCountEntries] = await Promise.all([
+      Promise.all(assetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+      Promise.all(bulkAssetIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+      Promise.all(
+        slice.map(async (item) => [
+          item.id,
+          await ctx.db.query("testTagRecords").withIndex("by_organizationId_testTagAssetId", (q) => q.eq("organizationId", a.orgId).eq("testTagAssetId", item.id)).collect().then((r) => r.length),
+        ] as const),
+      ),
+    ]);
+    const assetById = new Map(assetDocs.filter((d): d is NonNullable<typeof d> => d != null && d.organizationId === a.orgId).map((x) => [x.id, x]));
+    const bulkById = new Map(bulkDocs.filter((d): d is NonNullable<typeof d> => d != null && d.organizationId === a.orgId).map((x) => [x.id, x]));
+    const recordCounts = new Map(recordCountEntries);
+
     const mapped = slice.map((item) => {
       const la = item.assetId ? assetById.get(item.assetId) : null;
       const lb = item.bulkAssetId ? bulkById.get(item.bulkAssetId) : null;
@@ -328,13 +341,10 @@ export const dashboardStats = query({
   args: { orgId: v.string(), nowMs: v.number() },
   handler: async (ctx, { orgId }) => {
     await requireOrgRead(ctx, orgId);
-    // r9.8-ok: dashboard tallies aggregate over the full per-org set (counts/overdue
-    // lists need every row). Candidate to move onto sharded counters if it grows hot.
-    const [items, records, orgAssets, orgBulk] = await Promise.all([
-      ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
-      ctx.db.query("testTagRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
-      ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
-      ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: dashboard aggregation
+    const [{ rows: items }, recentRecordsRaw] = await Promise.all([
+      collectCapped(ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: status is optional (schema.ts) so a per-status indexed scan can't provably enumerate every row; capped, not a bare collect — see docs/exceptions.md R-8.3.3
+      // Top 20 by testDate desc via the existing by_organizationId_testDate index, instead of collecting every test record the org has ever logged.
+      ctx.db.query("testTagRecords").withIndex("by_organizationId_testDate", (q) => q.eq("organizationId", orgId)).order("desc").take(20),
     ]);
     const active = items.filter((a) => a.isActive === true);
     const countBy = (s: string) => active.filter((a) => a.status === s).length;
@@ -345,26 +355,37 @@ export const dashboardStats = query({
       retired: items.filter((a) => a.status === "RETIRED").length,
     };
     const assetByTT = new Map(items.map((a) => [a.id, a]));
-    const recentRecords = [...records].sort((a, b) => (b.testDate ?? 0) - (a.testDate ?? 0)).slice(0, 20);
+    const recentRecords = recentRecordsRaw;
     const userNames = await ttUserNames(ctx, recentRecords.map((r) => r.testedById));
     const recentTests = recentRecords.map((r) => {
       const tt = assetByTT.get(r.testTagAssetId);
       return { ...r, testDate: iso(r.testDate), testTagAsset: tt ? { testTagId: tt.testTagId, description: tt.description } : null, testedBy: { id: r.testedById, name: userNames.get(r.testedById) ?? r.testerName ?? null } };
     });
-    const assetById = new Map(orgAssets.map((a) => [a.id, a]));
-    const bulkById = new Map(orgBulk.map((b) => [b.id, b]));
     const byNextDueAsc = (a: { nextDueDate?: number }, b: { nextDueDate?: number }) => {
       const an = a.nextDueDate == null, bn = b.nextDueDate == null;
       if (an && bn) return 0; if (an) return 1; if (bn) return -1;
       return (a.nextDueDate as number) - (b.nextDueDate as number);
     };
+    const overdueCandidates = active.filter((a) => a.status === "OVERDUE").sort(byNextDueAsc).slice(0, 50);
+    const dueSoonCandidates = active.filter((a) => a.status === "DUE_SOON").sort(byNextDueAsc).slice(0, 50);
+
+    // Enrich only the ≤100 items actually displayed, not the whole org's assets/bulkAssets.
+    const shownItems = [...overdueCandidates, ...dueSoonCandidates];
+    const assetIds = [...new Set(shownItems.map((i) => i.assetId).filter((id): id is string => id != null))];
+    const bulkAssetIds = [...new Set(shownItems.map((i) => i.bulkAssetId).filter((id): id is string => id != null))];
+    const [assetDocs, bulkDocs] = await Promise.all([
+      Promise.all(assetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+      Promise.all(bulkAssetIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique())),
+    ]);
+    const assetById = new Map(assetDocs.filter((d): d is NonNullable<typeof d> => d != null && d.organizationId === orgId).map((x) => [x.id, x]));
+    const bulkById = new Map(bulkDocs.filter((d): d is NonNullable<typeof d> => d != null && d.organizationId === orgId).map((x) => [x.id, x]));
     const attach = (item: typeof active[number]) => {
       const a = item.assetId ? assetById.get(item.assetId) : null;
       const b = item.bulkAssetId ? bulkById.get(item.bulkAssetId) : null;
       return { ...ttItemDates(item), asset: a ? { id: a.id, assetTag: a.assetTag } : null, bulkAsset: b ? { id: b.id, assetTag: b.assetTag } : null };
     };
-    const overdueItems = active.filter((a) => a.status === "OVERDUE").sort(byNextDueAsc).slice(0, 50).map(attach);
-    const dueSoonItems = active.filter((a) => a.status === "DUE_SOON").sort(byNextDueAsc).slice(0, 50).map(attach);
+    const overdueItems = overdueCandidates.map(attach);
+    const dueSoonItems = dueSoonCandidates.map(attach);
     return { ...stats, recentTests, overdueItems, dueSoonItems };
   },
 });

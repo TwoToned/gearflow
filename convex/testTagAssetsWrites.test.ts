@@ -178,4 +178,54 @@ describe("testTagAssets reads", () => {
     expect(res.recentTests).toHaveLength(1);
     expect(res.recentTests[0].testedBy.name).toBe("Alice");
   });
+
+  test("listPage: page 2 slices correctly; per-page asset/bulkAsset/record-count joins hold across pages", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "asA", organizationId: ORG, assetTag: "A-TAG", modelId: "m1", isActive: true });
+      await ctx.db.insert("assets", { id: "asB", organizationId: ORG, assetTag: "B-TAG", modelId: "m1", isActive: true });
+      await ctx.db.insert("bulkAssets", { id: "bulkA", organizationId: ORG, assetTag: "BULK-A", modelId: "m1" });
+      // 5 rows, alphabetic testTagId — page size 2, checking page 2 = rows 3-4.
+      for (const [id, tag, assetId, bulkAssetId] of [
+        ["r1", "T1", "asA", undefined],
+        ["r2", "T2", undefined, "bulkA"],
+        ["r3", "T3", "asB", undefined],
+        ["r4", "T4", undefined, undefined],
+        ["r5", "T5", undefined, undefined],
+      ] as const) {
+        await ctx.db.insert("testTagAssets", { id, organizationId: ORG, testTagId: tag, description: tag, equipmentClass: "CLASS_I", applianceType: "APPLIANCE", status: "CURRENT", isActive: true, assetId, bulkAssetId });
+      }
+      // r3 has 2 test records; every other row has 0 — verifies per-page record counts aren't cross-contaminated.
+      await ctx.db.insert("testTagRecords", { id: "rec-a", organizationId: ORG, testTagAssetId: "r3", testDate: NOW, testedById: USER, testerName: "Al", result: "PASS", nextDueDate: NOW });
+      await ctx.db.insert("testTagRecords", { id: "rec-b", organizationId: ORG, testTagAssetId: "r3", testDate: NOW - 1000, testedById: USER, testerName: "Al", result: "PASS", nextDueDate: NOW });
+    });
+    const page1 = await t.withIdentity(asUser).query(api.testTagAssets.listPage, { orgId: ORG, pageSize: 2, page: 1 });
+    expect(page1.total).toBe(5);
+    expect(page1.totalPages).toBe(3);
+    expect(page1.items.map((i) => i.testTagId)).toEqual(["T1", "T2"]);
+    expect(page1.items[0].asset?.assetTag).toBe("A-TAG");
+    expect(page1.items[1].bulkAsset?.assetTag).toBe("BULK-A");
+
+    const page2 = await t.withIdentity(asUser).query(api.testTagAssets.listPage, { orgId: ORG, pageSize: 2, page: 2 });
+    expect(page2.items.map((i) => i.testTagId)).toEqual(["T3", "T4"]);
+    expect(page2.items[0].asset?.assetTag).toBe("B-TAG");
+    expect(page2.items[0]._count.testRecords).toBe(2); // r3's 2 records, scoped correctly
+    expect(page2.items[1]._count.testRecords).toBe(0); // r4 has none
+  });
+
+  test("dashboardStats: recentTests caps at 20 (most recent first) even with 25 records", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("users", { id: USER, name: "Alice", email: "a@x.com" });
+      await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, testTagId: "TT1", description: "d", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", status: "CURRENT", isActive: true });
+      for (let i = 0; i < 25; i++) {
+        await ctx.db.insert("testTagRecords", { id: `rec${i}`, organizationId: ORG, testTagAssetId: "tt1", testDate: NOW + i, testedById: USER, testerName: "Al", result: "PASS", nextDueDate: NOW });
+      }
+    });
+    const res = await t.withIdentity(asUser).query(api.testTagAssets.dashboardStats, { orgId: ORG, nowMs: NOW });
+    expect(res.recentTests).toHaveLength(20);
+    // Most-recent-first: rec24 (testDate NOW+24) leads, rec5 (testDate NOW+5) is the 20th/oldest included.
+    expect(res.recentTests[0].id).toBe("rec24");
+    expect(res.recentTests[19].id).toBe("rec5");
+  });
 });

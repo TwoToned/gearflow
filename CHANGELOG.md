@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **#790** — Project documents (quote, invoice, pull slip, delivery docket, return sheet)
+  longer than one page silently dropped their tail: since no stored `DocumentTemplate` could
+  be created anymore, every document fell through to the legacy single-page builders, which
+  had no pagination. Replaced with one fixed-layout pipeline (`document-layouts.ts` →
+  `document-composer.ts`, a net-new purpose-built pagination engine) that paginates every
+  doc type by default — atomic table rows, repeated headers, no tail-drop. See
+  `docs/designs/pdf-system-redesign.md` and FEATUREDOCS/13.
+
+### Removed
+
+- **#790** — Deleted the PDF customization engine (~8,300 LOC): dual render pipelines,
+  the 13-type section/block model, `{token}` resolution, visibility conditions, stored
+  per-org document/brand templates, and the dormant Convex `documentTemplates`/
+  `brandTemplates`/`sectionPresets` tables + CRUD. No template designer of any kind exists
+  or is planned. `/settings/documents` (read-only template list) and its nav entry are
+  gone; the project page's document dropdown no longer has a per-type custom-template
+  submenu. Org-level branding (`/settings/branding`) is unaffected.
+
+### Fixed
+
 - **R-8.1.7** (#894) — The "Create a project" wizard (`/projects/new`) silently lost keyboard
   focus on every step transition: clicking Continue/Back unmounts the just-clicked button, and
   with no explicit target the browser fell back to `document.body`, forcing keyboard/screen-reader

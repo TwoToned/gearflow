@@ -43,7 +43,7 @@ Prep, DocumentTemplate, AssetScanLog, CustomRole, SiteSettings — was dropped
 at the Convex cutover. Don't add a Prisma model for a new domain entity; add
 a Convex table + `*Writes.ts` mutations instead.
 
-## Convex domain schema (`convex/schema.ts`) — 100+ tables
+## Convex domain schema (`convex/schema.ts`) — ~99 tables
 
 Grouped by area (table names are the Convex identifiers, e.g. `assets`,
 `projectLineItems`):
@@ -82,7 +82,6 @@ Grouped by area (table names are the Convex identifiers, e.g. `assets`,
   Convex is the sole copy of uploaded files, no S3 fallback), plus one join
   table per entity: `modelMedia`, `assetMedia`, `kitMedia`, `projectMedia`,
   `clientMedia`, `locationMedia`, `subHireMedia`.
-- **Documents** — `documentTemplates`, `sectionPresets`, `brandTemplates`.
 - **Notifications** — `notificationDismissals`,
   `userNotificationPreferences`, `notificationEmailLogs`, `sentEmails`
   (idempotency ledger for Convex-scheduled emails).

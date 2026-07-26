@@ -113,8 +113,6 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/settings/assets` | Asset tags, links to suppliers & categories |
 | `/settings/test-and-tag` | T&T ID format, defaults |
 | `/settings/billing` | Currency & tax |
-| `/settings/documents` | Document template management — cards grouped by doc type |
-| `/template-designer/[id]` | Full-screen template editor (Zoho Books-style, `(designer)` route group with own layout — no sidebar) |
 | `/settings/branding` | Logo & colors |
 | `/settings/displays` | Warehouse display token management |
 | `/settings/team` | Members, invites, roles, permission matrix |

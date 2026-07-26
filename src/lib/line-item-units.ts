@@ -168,8 +168,8 @@ export function deriveOrderLinePrepStatus(
  * per-unit-tracked item — and downstream readers (close-out summary/tally)
  * that check `line.returnCondition` can never see it.
  *
- * "Worst condition wins" across units with a recorded condition: any
- * DAMAGED beats any MISSING beats GOOD, so a single damaged unit on a
+ * "Worst condition wins" across units that have a recorded condition —
+ * DAMAGED beats MISSING beats GOOD, so a single damaged unit on a
  * multi-unit line still surfaces as an exception. Units not yet returned
  * (no recorded condition) are ignored, not treated as missing data.
  */

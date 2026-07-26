@@ -23,9 +23,9 @@ import { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PlacementFields } from "./placement-fields";
+import { SectionTitle, Field } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useKitSearch, useKit } from "@/hooks/use-kits";
@@ -244,28 +244,6 @@ export function KitAddForm({
 }
 
 // ─── Local helpers ───────────────────────────────────────────────
-
-function SectionTitle({ title, hint }: { title: string; hint?: string }) {
-  return (
-    <div>
-      <h3 className="text-card-title font-bold text-ink">{title}</h3>
-      {hint && <p className="mt-0.5 t-micro text-muted">{hint}</p>}
-    </div>
-  );
-}
-
-function Field({
-  label, required, children,
-}: {
-  label: string; required?: boolean; children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red"> *</span>}</Label>
-      {children}
-    </div>
-  );
-}
 
 function PricingModeOption({
   label, hint, selected, onSelect,

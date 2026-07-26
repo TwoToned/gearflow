@@ -323,13 +323,19 @@ export default defineSchema({
     // DEPRECATED (WS6 #945): superseded by `serviceSchedules` (fixed interval +
     // anchor date, not "N days since last service"). The one-time migrate
     // backfill (backfillMaintenanceSchedules.ts) seeds one schedule per model
-    // that had this set (days -> nearest month); the app no longer writes this
-    // field (removed from modelSchema/model-form.tsx). Left readable/nulled-out
-    // on old rows rather than dropped from the schema in this same PR — mirrors
-    // the WS9 clientContacts widen/migrate-now, narrow/drop-later precedent — so
-    // a schema-strictness deploy doesn't race the backfill actually being run in
-    // prod. Remove this field (+ its convex/models.ts/modelWrites.ts plumbing)
-    // in a follow-up narrow PR once the backfill has been confirmed in prod.
+    // that had this set (days -> nearest month). Removed from modelSchema/
+    // model-form.tsx — the interactive create/edit form no longer reads or
+    // writes it. Deliberately left wired in convex/models.ts's generic CRUD
+    // (create/createIfMissing/update) and convex/modelWrites.ts, because CSV
+    // bulk import/export (src/server/csv.ts) still reads/writes this column
+    // directly via `api.models.createIfMissing`/`update` — migrating THAT
+    // surface to serviceSchedules is a separate follow-up, out of scope here.
+    // Left readable/nulled-out on old rows rather than dropped from the schema
+    // in this PR — mirrors the WS9 clientContacts widen/migrate-now,
+    // narrow/drop-later precedent — so a schema-strictness deploy doesn't race
+    // the backfill actually being run in prod. Remove this field once the
+    // backfill is confirmed in prod AND the CSV import/export surface is
+    // migrated too.
     maintenanceIntervalDays: v.optional(v.number()),
     assetType: v.optional(enums.AssetType),
     barcodeLabelTemplate: v.optional(v.string()),

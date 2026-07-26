@@ -13,6 +13,14 @@ import { assertStrLen } from "./lib/fieldGuards";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew } from "./lib/serviceCost";
 import * as enums from "./lib/validators";
+import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+
+/** Fetch a project by cuid, confirm it's the caller's org (needed for the tier check). */
+async function requireCrewProjectInOrg(ctx: MutationCtx, projectId: string, orgId: string) {
+  const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!p || p.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+  return p;
+}
 
 /**
  * Reject a non-finite OR negative money/hours input before it flows into resolveRate /
@@ -108,26 +116,38 @@ async function recalcAfterBulkDelete(ctx: MutationCtx, orgId: string, serviceIds
   for (const projectId of projectIds) await recalcProjectTotals(ctx, projectId, orgId, taxRate, now);
 }
 
-async function logAssignment(ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; id: string; name: string; summary: string; projectId?: string }) {
+async function logAssignment(ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; id: string; name: string; summary: string; projectId?: string; metadata?: Record<string, unknown> }) {
   await writeActivityLog(ctx, {
     id: a.auditId, organizationId: a.orgId, action: a.action, entityType: "crew_assignment", entityId: a.id,
-    entityName: a.name, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary, projectId: a.projectId, createdAt: a.now,
+    entityName: a.name, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary, metadata: a.metadata, projectId: a.projectId, createdAt: a.now,
   });
 }
 
 export const createNative = mutation({
   returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), projectId: v.string(), ...assignmentFields, generateShifts: v.optional(v.boolean()), now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    id: v.string(), orgId: v.string(), projectId: v.string(), ...assignmentFields,
+    generateShifts: v.optional(v.boolean()), now: v.number(), actor: actorValidator, auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "crew");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "crew", "create");
     const actor = await resolveActor(ctx, a.actor);
 
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).first();
-    if (!project || project.organizationId !== a.orgId) throw new ConvexError("Project not found");
+    const project = await requireCrewProjectInOrg(ctx, a.projectId, a.orgId);
     const dup = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (dup) throw new ConvexError("Assignment already exists");
+
+    // #791: adding a crew assignment while locked defaults its rate/hours to $0
+    // (server-enforced). #793: adding is a structural mutation at JUSTIFY+.
+    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
+    if (guard.defaultToZero) {
+      a.rateOverride = undefined;
+      a.estimatedHours = undefined;
+    }
 
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak) + bound
     // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin)
@@ -171,14 +191,18 @@ export const createNative = mutation({
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
     await recalcProjectTotals(ctx, a.projectId, a.orgId, taxRate, a.now);
 
-    await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: `${crewMember.firstName} ${crewMember.lastName}`, summary: `Assigned ${crewMember.firstName} ${crewMember.lastName} to ${project.projectNumber}`, projectId: a.projectId });
+    await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: `${crewMember.firstName} ${crewMember.lastName}`, summary: `Assigned ${crewMember.firstName} ${crewMember.lastName} to ${project.projectNumber}`, metadata: lifecycleAuditMetadata(guard, a.justification), projectId: a.projectId });
     return { id: a.id };
   },
 });
 
 export const updateNative = mutation({
   returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), ...assignmentFields, now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    id: v.string(), orgId: v.string(), ...assignmentFields, now: v.number(), actor: actorValidator, auditId: v.string(),
+    // #791/#793: required (one or the other, never both) once locked.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "crew");
     await enforceBrowserWriteLimit(ctx);
@@ -187,6 +211,19 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Assignment not found");
+
+    // #791/#793 lock gate: this mutation resends the whole assignment form, so
+    // "touches money" means the incoming rate/hours fields actually DIFFER from
+    // the stored row.
+    const moneyChanged =
+      (a.rateOverride ?? null) !== (doc.rateOverride ?? null) ||
+      (a.rateType ?? null) !== (doc.rateType ?? null) ||
+      (a.estimatedHours ?? null) !== (doc.estimatedHours ?? null);
+    const updProject = await requireCrewProjectInOrg(ctx, doc.projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, updProject, {
+      kind: moneyChanged ? "financial" : "structural",
+      justification: a.justification,
+    });
 
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak) + bound
     // the money inputs (a negative/Infinity rate poisons labourCostTotal → project margin)
@@ -231,7 +268,7 @@ export const updateNative = mutation({
     await recalcProjectTotals(ctx, doc.projectId, a.orgId, taxRate, a.now);
 
     const pn = await projectNumber(ctx, a.orgId, doc.projectId);
-    await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: `${crewMember.firstName} ${crewMember.lastName}`, summary: `Updated assignment for ${crewMember.firstName} ${crewMember.lastName} on ${pn}`, projectId: doc.projectId });
+    await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: `${crewMember.firstName} ${crewMember.lastName}`, summary: `Updated assignment for ${crewMember.firstName} ${crewMember.lastName} on ${pn}`, metadata: lifecycleAuditMetadata(guard, a.justification), projectId: doc.projectId });
     return { id: a.id };
   },
 });
@@ -263,7 +300,11 @@ export const updateStatusNative = mutation({
 
 export const deleteNative = mutation({
   returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "crew");
     await enforceBrowserWriteLimit(ctx);
@@ -272,6 +313,8 @@ export const deleteNative = mutation({
 
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Assignment not found");
+    const delProject = await requireCrewProjectInOrg(ctx, doc.projectId, a.orgId);
+    const guard = await assertLifecycleGuard(ctx, delProject, { kind: "structural", justification: a.justification });
     const m = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", doc.crewMemberId)).first();
     const name = m && m.organizationId === a.orgId ? `${m.firstName} ${m.lastName}` : "";
     const pn = await projectNumber(ctx, a.orgId, doc.projectId);
@@ -280,7 +323,7 @@ export const deleteNative = mutation({
     if (serviceId) await recalcServiceCostFromCrew(ctx, serviceId, a.orgId, a.now);
     const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
     await recalcProjectTotals(ctx, doc.projectId, a.orgId, taxRate, a.now);
-    await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name, summary: `Removed ${name} from ${pn}`, projectId: doc.projectId });
+    await logAssignment(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name, summary: `Removed ${name} from ${pn}`, metadata: lifecycleAuditMetadata(guard, a.justification), projectId: doc.projectId });
     return { id: a.id };
   },
 });

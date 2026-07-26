@@ -22,9 +22,9 @@ const SERVICE = { subject: "gearflow-service", svc: true };
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 const ACTOR = { userId: USER, userName: "Alice" };
 
-async function seedProject(t: ReturnType<typeof convexTest>, role?: string, isTemplate = false) {
+async function seedProject(t: ReturnType<typeof convexTest>, role?: string, isTemplate = false, status = "CONFIRMED") {
   await t.run(async (ctx) => {
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status, isTemplate, createdAt: NOW, updatedAt: NOW });
     if (role) await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
   });
 }
@@ -186,7 +186,9 @@ describe("projectWrites.updateNative", () => {
   const uargs = { id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
   test("member patches fields + UPDATE audit (label from doc)", async () => {
     const t = makeT();
-    await seedProject(t, "member");
+    // OPEN tier (#957) — this test is about the general patch + audit shape, not
+    // the finance lock, so taxRate stays editable without an unlock session.
+    await seedProject(t, "member", false, "QUOTED");
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { name: "Renamed Gig", taxRate: 10, updatedAt: NOW }, clear: [] });
     await t.run(async (ctx) => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
@@ -235,7 +237,10 @@ describe("projectWrites.updateNative", () => {
   });
   test("rejects an out-of-bounds money field a browser caller bypassing Zod could forge", async () => {
     const t = makeT();
-    await seedProject(t, "member");
+    // OPEN tier (#957) — this test is specifically about the money-field BOUNDS
+    // check (assertProjectMoneyFields), not the finance lock; a locked project
+    // would reject the write with FINANCIALS_LOCKED before ever reaching it.
+    await seedProject(t, "member", false, "QUOTED");
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { taxRate: 150, updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/tax rate/i);

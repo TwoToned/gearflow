@@ -6,6 +6,14 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertProjectInOrg } from "./projectLineItems";
+import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+
+/** Fetch a project by cuid, confirm it's the caller's org (needed for the tier check). */
+async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId: string) {
+  const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!p || p.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+  return p;
+}
 
 /**
  * Native PROJECT-CATEGORY write mutations (Phase 3 browser-direct — replaces the
@@ -74,6 +82,7 @@ async function logCategoryChange(
     action: string;
     entityName: string;
     summary: string;
+    metadata?: Record<string, unknown>;
   },
 ) {
   await writeActivityLog(ctx, {
@@ -87,6 +96,7 @@ async function logCategoryChange(
     userId: args.actor.userId,
     userName: args.actor.userName,
     summary: args.summary,
+    metadata: args.metadata,
     createdAt: args.now,
   });
 }
@@ -106,8 +116,10 @@ export const createCategoryNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, projectId, name, now, actor: suppliedActor, auditId }) => {
+  handler: async (ctx, { id, orgId, projectId, name, now, actor: suppliedActor, auditId, justification }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -117,6 +129,8 @@ export const createCategoryNative = mutation({
     // that references it (by_cuid/by_projectId are GLOBAL — else a member could attach a
     // category to another org's project).
     await assertProjectInOrg(ctx, projectId, orgId);
+    const catProject = await requireProjectForGuard(ctx, projectId, orgId);
+    const guard = await assertLifecycleGuard(ctx, catProject, { kind: "structural", justification });
 
     // Idempotent: a retried create with the same cuid short-circuits (no dup row,
     // no second audit — the by_cuid index is global so re-check org on a hit).
@@ -157,6 +171,7 @@ export const createCategoryNative = mutation({
       action: "created",
       entityName: name,
       summary: `Created category "${name}"`,
+      metadata: lifecycleAuditMetadata(guard, justification),
     });
 
     return { id, sortOrder };
@@ -178,14 +193,18 @@ export const updateCategoryNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, name, sortOrder, now, actor: suppliedActor, auditId }) => {
+  handler: async (ctx, { id, orgId, name, sortOrder, now, actor: suppliedActor, auditId, justification }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const category = await requireCategoryInOrg(ctx, id, orgId);
+    const updCatProject = await requireProjectForGuard(ctx, category.projectId, orgId);
+    const guard = await assertLifecycleGuard(ctx, updCatProject, { kind: "structural", justification });
     if (name !== undefined) assertValidName(name);
 
     const patch: { name?: string; sortOrder?: number; updatedAt: number } = { updatedAt: now };
@@ -204,6 +223,7 @@ export const updateCategoryNative = mutation({
       action: "updated",
       entityName: category.name,
       summary: `Updated category "${category.name}"`,
+      metadata: lifecycleAuditMetadata(guard, justification),
     });
 
     // Realtime collaboration feed event (only on a rename) — uses the NEW name,
@@ -248,14 +268,18 @@ export const deleteCategoryNative = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // #793: required once the project is ON_SITE+ and no unlock session is open.
+    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, now, actor: suppliedActor, auditId }) => {
+  handler: async (ctx, { id, orgId, now, actor: suppliedActor, auditId, justification }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
     const category = await requireCategoryInOrg(ctx, id, orgId);
+    const delCatProject = await requireProjectForGuard(ctx, category.projectId, orgId);
+    const guard = await assertLifecycleGuard(ctx, delCatProject, { kind: "structural", justification });
 
     // 1. Groups in this category (by_categoryId is global — org-filter).
     const groups = (
@@ -314,6 +338,7 @@ export const deleteCategoryNative = mutation({
       action: "deleted",
       entityName: category.name,
       summary: `Deleted category "${category.name}" — ${n} items moved to uncategorized`,
+      metadata: lifecycleAuditMetadata(guard, justification),
     });
 
     return { ok: true, movedLineItems: n };

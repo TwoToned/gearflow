@@ -23,6 +23,19 @@ ENQUIRY → QUOTING → QUOTED → CONFIRMED → PREPPING → CHECKED_OUT → ON
                                            Any status → CANCELLED ─────────────────────┘
 ```
 
+### Lock tiers (#957 — see FEATUREDOCS/62-project-lifecycle-locks.md)
+
+Each status maps to one of four lock tiers, resolved by `lockTierForStatus()`
+(`convex/lib/projectLocks.ts` — the single source of truth every gate site imports):
+
+| Statuses | Tier | Gated |
+|---|---|---|
+| `ENQUIRY` / `QUOTING` / `QUOTED` | **OPEN** | Nothing |
+| `CONFIRMED` / `PREPPING` / `CHECKED_OUT` | **FINANCE_LOCKED** | Money fields (`FINANCIALS_LOCKED` without an open unlock session) |
+| `ON_SITE` / `RETURNED` | **JUSTIFY** | Above, plus structural mutations need a confirm + written justification |
+| `COMPLETED` / `INVOICED` | **HARD_LOCKED** | Everything — no per-edit path, only a FULL unlock session |
+| `CANCELLED` | OPEN | Ungated (open question — see FEATUREDOCS/62) |
+
 ## Project Hierarchy
 ```
 Project
@@ -134,6 +147,18 @@ marginPercent = margin / total × 100
 - Per-group override: `ProjectGroup.rentalPeriod` + `rentalQuantity`
 - Used only when billingWeeks/billingDays are both null
 - Formula: `rate × quantity × rentalQuantity`
+
+### Finance soft-lock (#957 — see FEATUREDOCS/62-project-lifecycle-locks.md)
+Once a project is FINANCE_LOCKED+ (CONFIRMED and later), the fields that feed the
+formula above — `taxRate`/`discountPercent`/`depositPercent`/`depositPaid`/
+`invoicedTotal` on the project, `price`/`discount`/`rentalPeriod`/`rentalQuantity`
+on a group, `unitPrice`/`discount`/`duration` on a line item, a crew-less
+service's `costTotal`, and crew assignment rate/hours overrides — are rejected
+server-side (`FINANCIALS_LOCKED`) unless an unlock session is open. `recalcProjectTotals`
+itself is never gated — it only ever reads these fields, never sets them, so
+totals stay live on a locked project. New adds while locked default their price
+to $0 instead of the normal autofill (an "Unpriced" badge marks them) — this is
+server-enforced, not just a client suggestion.
 
 ## Categories (`ProjectCategory`)
 - Top-level organiser for equipment (e.g. "RF", "IEM", "PA")
@@ -481,7 +506,7 @@ dropped from Postgres in the Convex decommission):
 1. **Reset checked-out assets**: All `CHECKED_OUT`/`CONFIRMED` serialized assets linked to project line items → `AVAILABLE`, restore default location
 2. **Reset checked-out kits**: All `CHECKED_OUT`/`CONFIRMED` kits + their serialized assets → `AVAILABLE`, restore locations
 3. **Cascade line items**: every top-level line item (+ children + units) is deleted via `removeLineItemCascadeCore`
-4. **Cascade crew, PMs, tasks, services, grouping (categories/groups/slots), and the `projectModelRevenues` rollup**, then the project row itself + counters + audit log
+4. **Cascade crew, PMs, tasks, services, grouping (categories/groups/slots), the `projectModelRevenues` rollup, and (#957) `projectSnapshots`/`projectSnapshotEntries`/`projectUnlockSessions`**, then the project row itself + counters + audit log
 
 ## Server Action Files vs Convex
 Writes moved browser-direct during the Convex-native migration (see [54. Convex Data Layer](./54-convex-data-layer.md)); `src/server/*.ts` now holds reads-only carve-outs where a file remains at all.

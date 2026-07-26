@@ -456,6 +456,14 @@ export default defineSchema({
     notes: v.optional(v.string()),
     defaultTargetCategoryId: v.optional(v.string()),
     defaultTargetGroupId: v.optional(v.string()),
+    // WS7 #946 — 1:1 link to the purchase order raised with the supplier for this
+    // sub-hire (the FK the data-linkage workstream adds; see FEATUREDOCS/39). Org- +
+    // same-supplier-validated in convex/subHiresWrites.ts (assertRefInOrg + an
+    // explicit supplierId match — a link only makes sense when both sides name the
+    // same supplier). Cleared automatically when either side's supplier changes
+    // (asset-form `supplierOrderId` precedent, issue #789). NOT copied by
+    // duplicateSubHireNative — a duplicated sub-hire starts unlinked.
+    supplierOrderId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -469,7 +477,8 @@ export default defineSchema({
     .index("by_organizationId_orderNumber", ["organizationId", "orderNumber"])
     .index("by_organizationId_supplierId", ["organizationId", "supplierId"])
     .index("by_organizationId_status", ["organizationId", "status"])
-    .index("by_organizationId_projectId", ["organizationId", "projectId"]),
+    .index("by_organizationId_projectId", ["organizationId", "projectId"])
+    .index("by_supplierOrderId", ["supplierOrderId"]),
 
   // SubHireItem
   subHireItems: defineTable({

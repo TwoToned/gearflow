@@ -48,7 +48,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 09 | [Kits](./FEATUREDOCS/09-kits.md) | Kit system, pricing modes, nested kits, verification |
 | 10 | [Projects](./FEATUREDOCS/10-projects.md) | Project management, line items, groups, templates, subhire, custom items |
 | 11 | [Availability](./FEATUREDOCS/11-availability.md) | Overbooking engine, reduced stock |
-| 12 | [Warehouse](./FEATUREDOCS/12-warehouse.md) | Deploy/return flows, kit verification, conflict detection |
+| 12 | [Warehouse](./FEATUREDOCS/12-warehouse.md) | Deploy/return flows, kit verification, conflict detection, org-wide returns station |
 | 13 | [PDFs](./FEATUREDOCS/13-pdfs.md) | Document generation, nested kit rendering, T&T reports |
 | 14 | [Test & Tag](./FEATUREDOCS/14-test-and-tag.md) | AS/NZS 3760:2022 compliance module |
 | 15 | [Maintenance](./FEATUREDOCS/15-maintenance.md) | Maintenance records, multi-asset |
@@ -78,7 +78,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 48 | [Child Assets / Accessories](./FEATUREDOCS/48-child-assets-accessories.md) | Asset.parentAssetId + AssetBulkChild, SHIPS_WITH/DEDICATED allocation, childKind, project auto-expansion, warehouse cascade, PDF indented render |
 | 51 | [Project Numbering](./FEATUREDOCS/51-project-numbering.md) | Configurable auto project codes, %-token template engine, ProjectNumberSequence atomic counter, reset periods, settings UI + live preview |
 | 50 | [Project Tasks](./FEATUREDOCS/50-project-tasks.md) | ProjectTask model (status/priority/dueDate/checklist), user-or-crew assignee, Tasks tab panel, getMyOpenTasks cross-project query |
-| 52 | [Bulk Check-In Totals](./FEATUREDOCS/52-bulk-checkin.md) | **UI removed** — backend retained but dormant. Project-wide accessory totals check-in: aggregate deployed accessory children by identity, deterministic distribution back to child lines, over-return rejection, idempotent/empty-safe submit |
+| 52 | [Bulk Check-In Totals](./FEATUREDOCS/52-bulk-checkin.md) | Convex-native bulk check-in engine (aggregate deployed items by identity, deterministic distribution, over-return rejection) — live caller as of issue #944: the returns station's bulk-tag scan (`returnsWrites.returnBulkNative`) |
 | 53 | [Real-Time Sync](./FEATUREDOCS/53-realtime-sync.md) | ⚠️ SUPERSEDED & REMOVED (2026-06-11) — the SSE + Event Bus + RQ-invalidation system was a dead no-op; torn out in the Phase 6 Convex migration. Liveness is now Convex's reactive engine. See [54](./FEATUREDOCS/54-convex-data-layer.md). |
 | 54 | [Convex Data Layer](./FEATUREDOCS/54-convex-data-layer.md) | Convex data layer — all domain reads/writes are native/browser-direct on Convex Cloud; Postgres holds Better Auth + a dormant custom-API pair + a frozen audit log only. Write security bar, service-token read helpers, and the permanent server-action carve-outs. |
 | 55 | [Project Collaboration](./FEATUREDOCS/55-project-collaboration.md) | Convex-backed collaboration substrate: presence + edit locks (entity/section/group/line/record targets, stale takeover), comment threads (blocking, resolve/reopen, mentions), review markers, group-level blocking gates, live row pulse/changed-flash (reduced-motion aware), and a realtime activity feed (incl. grouped imports). Wired on projects + client/supplier/asset records. All state persists to Convex. |

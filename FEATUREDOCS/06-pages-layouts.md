@@ -92,6 +92,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/suppliers/[id]/edit` | Edit supplier |
 | `/suppliers/[id]/orders/new` | Create supplier order |
 | `/warehouse` | Warehouse project list |
+| `/warehouse/returns` | Returns station — org-wide, project-less scan-and-return (issue #944; static route, resolved before the `[projectId]` dynamic sibling — see FEATUREDOCS/12) |
 | `/warehouse/[projectId]` | Check out/in interface |
 | `/warehouse/[projectId]/pull-sheet` | Pull sheet preview + print |
 | `/locations` | Location hierarchy |

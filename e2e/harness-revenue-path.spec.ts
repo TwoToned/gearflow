@@ -173,14 +173,19 @@ test.describe("harness: primary revenue path", () => {
       await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByRole("menuitem", { name: "Add item" }).click();
       // WS3 (#942) added a persistent "Overbookings" sidebar nav item, which
-      // matches a page-wide /overbook/i locator — scope to the add-equipment
-      // dialog itself (title "Add equipment" for the "Own stock" tab/kind) so
-      // this only ever sees the in-dialog warning, not global nav chrome.
+      // matches a page-wide /overbook/i locator used below — but the model
+      // search ("Search models" button) opens a Radix Popover/Command portalled
+      // to document.body as a SIBLING of the dialog, not a DOM descendant, so
+      // it can't be reached through a dialog-scoped locator (that hung forever
+      // waiting for a placeholder that's structurally outside the dialog root —
+      // see CLAUDE.md's Radix-portal note). Keep the search flow unscoped on
+      // `page`, and only scope the two assertions that actually collide with
+      // the sidebar text (title "Add equipment" for the "Own stock" tab/kind).
       const addDialog = page.getByRole("dialog", { name: "Add equipment" });
-      await addDialog.getByRole("tab", { name: "Own stock" }).click();
-      await addDialog.getByRole("button", { name: "Search models" }).click();
-      await addDialog.getByPlaceholder(/Search by name/).fill(modelName);
-      await addDialog.getByRole("button", { name: modelName, exact: true }).click();
+      await page.getByRole("tab", { name: "Own stock" }).click();
+      await page.getByRole("button", { name: "Search models" }).click();
+      await page.getByPlaceholder(/Search by name/).fill(modelName);
+      await page.getByRole("button", { name: modelName, exact: true }).click();
 
       // Availability check (flow 7) is inline and automatic here: with exactly
       // one asset created above and quantity defaulted to 1, it renders

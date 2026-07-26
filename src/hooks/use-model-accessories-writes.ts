@@ -6,7 +6,9 @@ import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import {
   modelBulkAccessorySchema,
+  modelBulkAccessoryUpdateSchema,
   type ModelBulkAccessoryFormValues,
+  type ModelBulkAccessoryUpdateFormValues,
 } from "@/lib/validations/asset";
 
 /**
@@ -24,6 +26,7 @@ export function useModelAccessoryWrites() {
 
   const addM = useMutation(api.modelBulkAccessoriesWrites.addNative);
   const removeM = useMutation(api.modelBulkAccessoriesWrites.removeNative);
+  const updateM = useMutation(api.modelBulkAccessoriesWrites.updateNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -44,6 +47,26 @@ export function useModelAccessoryWrites() {
         orgId: org,
         bulkAssetId: parsed.bulkAssetId,
         quantity: parsed.quantity,
+        inclusion: parsed.inclusion,
+        notes: parsed.notes,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+    },
+    update: async (
+      modelId: string,
+      accessoryId: string,
+      data: ModelBulkAccessoryUpdateFormValues,
+    ): Promise<{ ok: boolean }> => {
+      const org = requireOrg();
+      const parsed = modelBulkAccessoryUpdateSchema.parse(data);
+      return await updateM({
+        modelId,
+        orgId: org,
+        accessoryId,
+        quantity: parsed.quantity,
+        inclusion: parsed.inclusion,
         notes: parsed.notes,
         now: Date.now(),
         actor: actor(),

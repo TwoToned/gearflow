@@ -827,11 +827,14 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                             <span className="font-medium text-ink">
                               {c.quantity}× {c.bulkAsset?.model?.name ?? c.bulkAsset?.assetTag}
                             </span>
+                            <span className="ml-auto text-badge text-muted">
+                              {c.inclusion === "OPTIONAL" ? "optional" : "default"}
+                            </span>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-table-cell text-muted">No default accessories.</p>
+                      <p className="text-table-cell text-muted">No accessories.</p>
                     )
                   }
                 >

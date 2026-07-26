@@ -9,6 +9,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 import { assertStrLen, assertNumRange, assertArrayMax } from "./lib/fieldGuards";
+import { assertProjectInOrg } from "./projectLineItems";
 import * as enums from "./lib/validators";
 
 /**
@@ -220,6 +221,11 @@ export const createNative = mutation({
     status: v.optional(enums.MaintenanceStatus),
     title: v.string(),
     description: v.optional(v.string()),
+    // Optional project link (issue #944 WS5 "Raise repair" shortcut — a damaged
+    // return row on the returns station raises a repair record scoped to the
+    // project it was deployed on). Org-checked before insert (assertProjectInOrg);
+    // absent for every other createNative caller, which never linked a project.
+    projectId: v.optional(v.string()),
     reportedById: v.optional(v.string()),
     assignedToId: v.optional(v.string()),
     scheduledDate: v.optional(v.number()), // epoch ms
@@ -242,6 +248,8 @@ export const createNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "maintenance", "create");
     const actor = await resolveActor(ctx, a.actor);
     assertMaintenanceFields(a);
+
+    if (a.projectId) await assertProjectInOrg(ctx, a.projectId, a.orgId);
 
     // Client-supplied reporter/assignee user FKs — validate org membership (the Better-Auth
     // user table has no org column; a foreign user id would leak that user's name on reads).
@@ -272,6 +280,7 @@ export const createNative = mutation({
       type: a.type,
       status,
       title: a.title,
+      ...(a.projectId ? { projectId: a.projectId } : {}),
       ...(a.description ? { description: a.description } : {}),
       reportedById: a.reportedById || actor.userId,
       ...(a.assignedToId ? { assignedToId: a.assignedToId } : {}),

@@ -17,6 +17,19 @@ its §1 table), [`rentman.md`](./rentman.md), `docs/ROADMAP.md`.
 > unification/UX pass over the existing billing-weeks/days system with
 > best-price capping; **5 (quote acceptance) rejected** — email trails suffice;
 > **6 (scan return) accepted** as an org-wide returns screen.
+>
+> **Tier-2 outcomes (same date, tracking issue #936):** recurring preventative
+> maintenance **accepted, explicitly non-blocking** (never subtracts from
+> availability; model-wide schedules, per-unit check-off for serialised,
+> quantity-sessions for bulk); canned reports **deferred**; supplier PO
+> **accepted as data-only** (no outbound docs/emails — RVLT as data-rich hub);
+> crew-conflict badges in pickers **accepted**; multiple client contacts
+> **accepted, optional**; labour charge rates **accepted** (per-role rate,
+> service-level override); sales items **accepted, widened** — every model
+> sellable (`Model.salePrice` + line override), default new-stock sale with no
+> rental-stock impact, explicit sell-from-fleet variant that retires/decrements.
+> The pencil rule is also now decided: pencilled = optional lines or unconfirmed
+> gigs; confirmed gigs hard-hold everything except optional lines.
 
 **Positioning premise (from ROADMAP + gap-analysis §0):** RVLT Flow is not trying to be
 Rentman. It wins the warehouse floor and the AU compliance wedge; Rentman wins the office.

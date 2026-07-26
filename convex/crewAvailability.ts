@@ -84,25 +84,35 @@ export const plannerData = query({
   args: { orgId: v.string(), startMs: v.number(), endMs: v.number() },
   handler: async (ctx, { orgId, startMs, endMs }) => {
     await requireOrgRead(ctx, orgId);
-    const [allMembers, allAssignments, roles, projects, allAvail] = await Promise.all([
+    const [allMembers, roles] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph — see docs/exceptions.md R-8.3.3
-      ctx.db.query("crewAssignments").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph — see docs/exceptions.md R-8.3.3
-      ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
-      ctx.db.query("crewAvailabilities").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph
     ]);
     const roleById = new Map(roles.map((r) => [r.id, r]));
-    const projById = new Map(projects.map((p) => [p.id, p]));
     const cmp = (a: string | null | undefined, b: string | null | undefined) => (a == null && b == null ? 0 : a == null ? 1 : b == null ? -1 : a.localeCompare(b));
 
     const members = allMembers
       .filter((m) => (m.isActive ?? true) && (m.status ?? "ACTIVE") === "ACTIVE")
       .sort((a, b) => cmp(a.lastName, b.lastName) || cmp(a.firstName, b.firstName));
 
-    const assignByMember = new Map<string, typeof allAssignments>();
-    for (const a of allAssignments) { const l = assignByMember.get(a.crewMemberId) ?? []; l.push(a); assignByMember.set(a.crewMemberId, l); }
-    const availByMember = new Map<string, typeof allAvail>();
-    for (const r of allAvail) { const l = availByMember.get(r.crewMemberId) ?? []; l.push(r); availByMember.set(r.crewMemberId, l); }
+    // Per-member indexed reads (bounded by roster size), not an org-wide collect of
+    // two growable tables (crewAssignments/crewAvailabilities accumulate per member
+    // over the org's whole history).
+    const memberIds = members.map((m) => m.id);
+    const [assignmentsByMemberArr, availByMemberArr] = await Promise.all([
+      Promise.all(memberIds.map((id) => ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", id)).collect())),
+      Promise.all(memberIds.map((id) => ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", id)).collect())),
+    ]);
+    const assignByMember = new Map(memberIds.map((id, i) => [id, assignmentsByMemberArr[i].filter((a) => a.organizationId === orgId)]));
+    const availByMember = new Map(memberIds.map((id, i) => [id, availByMemberArr[i].filter((r) => r.organizationId === orgId)]));
+
+    const referencedProjectIds = [...new Set(assignmentsByMemberArr.flat().map((a) => a.projectId))];
+    const projectDocs = await Promise.all(
+      referencedProjectIds.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+    );
+    const projById = new Map(
+      projectDocs.filter((p): p is NonNullable<typeof p> => p != null && p.organizationId === orgId).map((p) => [p.id, p]),
+    );
 
     return members.map((m) => {
       const role = m.crewRoleId ? roleById.get(m.crewRoleId) ?? null : null;

@@ -466,8 +466,8 @@ describe("cloneServicesNative", () => {
   test("copies services + crew from source→target (status PLANNED)", async () => {
     const t = makeT();
     await member(t, "member");
-    await seedProject(t, "p1", ORG, { loadInDate: NOW });
-    await seedProject(t, "p2", ORG, { loadInDate: NOW + DAY });
+    await seedProject(t, "p1", ORG, { projectStartDate: NOW });
+    await seedProject(t, "p2", ORG, { projectStartDate: NOW + DAY });
     await seedCrew(t);
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
       id: "s1", orgId: ORG, projectId: "p1", ...baseInput, unitPrice: 100, crew: [{ id: "a1", crewMemberId: "cm1" }], now: NOW, actor: ACTOR, auditId: "logc",
@@ -485,6 +485,24 @@ describe("cloneServicesNative", () => {
     expect(clonedCrew).toHaveLength(1);
     expect(clonedCrew[0].crewMemberId).toBe("cm1");
     expect((await logById(t, "logcl"))?.summary).toBe("Cloned 1 services from P-p1 to P-p2");
+  });
+
+  // WS2 (#941) — the day-shift between source/target reads the PROJECT window
+  // (getProjectWindow), not the deprecated loadInDate/eventStartDate fields.
+  test("shifts cloned service dates by the source/target PROJECT window day-offset", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { projectStartDate: NOW });
+    await seedProject(t, "p2", ORG, { projectStartDate: NOW + 3 * DAY });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, date: NOW, now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, {
+      targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 5, actor: ACTOR, auditId: "logcl",
+    });
+    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect());
+    expect(targetServices).toHaveLength(1);
+    expect(targetServices[0].date).toBe(NOW + 3 * DAY); // shifted by the 3-day window offset
   });
 
   test("cross-org source rejected", async () => {

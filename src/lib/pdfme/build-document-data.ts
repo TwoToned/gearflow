@@ -505,13 +505,15 @@ export async function buildDocumentData(
             shiftDateSet.add(new Date(s.date).toISOString().split("T")[0]);
           }
         }
-        // Fall back to project dates if no shifts exist
+        // Fall back to project dates if no shifts exist. WS2 (#941): the project
+        // WINDOW (falling back to the deprecated loadIn/loadOut fields for a
+        // project the backfill hasn't reached yet) + RENTAL dates.
         if (shiftDateSet.size === 0) {
           const projectDates = [
-            project.loadInDate,
-            project.eventStartDate,
-            project.eventEndDate,
-            project.loadOutDate,
+            project.projectStartDate ?? project.loadInDate,
+            project.projectEndDate ?? project.loadOutDate,
+            project.rentalStartDate,
+            project.rentalEndDate,
           ].filter(Boolean);
           for (const d of projectDates) {
             shiftDateSet.add(new Date(d as Date).toISOString().split("T")[0]);
@@ -622,7 +624,9 @@ export async function buildDocumentData(
       }
     } else {
       // ─── Single-date mode (backward compat) ─────────────────────────
-      const callDate = callSheetDate || project.loadInDate || project.eventStartDate || project.rentalStartDate || new Date();
+      // WS2 (#941): project window start, falling back to the deprecated
+      // loadInDate for a project the backfill hasn't reached yet, then rental.
+      const callDate = callSheetDate || project.projectStartDate || project.loadInDate || project.rentalStartDate || new Date();
       const dateStr = new Date(callDate).toISOString().split("T")[0];
 
       crew = crewAssignments.map((a) => {

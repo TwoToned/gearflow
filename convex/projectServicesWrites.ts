@@ -1093,8 +1093,10 @@ export const cloneServicesNative = mutation({
     const validRoles = new Set<string>();
     for (const rid of roleIds) if (await isCrewRoleInOrg(ctx, rid, a.orgId)) validRoles.add(rid);
 
-    const sourceFirst = source.loadInDate ?? source.eventStartDate ?? null;
-    const targetFirst = target.loadInDate ?? target.eventStartDate ?? null;
+    // WS2 (#941) — the day-shift between source/target project windows
+    // (getProjectWindow; falls back to rental) replaces loadInDate ?? eventStartDate.
+    const sourceFirst = getProjectWindow(source).start;
+    const targetFirst = getProjectWindow(target).start;
     const dayOffset = sourceFirst != null && targetFirst != null ? Math.round((targetFirst - sourceFirst) / DAY) : 0;
     const offsetDate = (ms: number | null | undefined): number | null => {
       if (ms == null || dayOffset === 0) return ms ?? null;

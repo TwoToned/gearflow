@@ -874,7 +874,10 @@ export function composeDocument(docType: ProjectDocumentType, data: DocumentData
       width: CONTENT_WIDTH,
       height: FOOTER_HEIGHT,
     });
-    mergedInputs[footerName] = JSON.stringify(footerConfig);
+    mergedInputs[footerName] = JSON.stringify({
+      ...footerConfig,
+      pageNumber: pages.length > 1 ? `Page ${pageIdx + 1} of ${pages.length}` : undefined,
+    } satisfies FooterConfig);
 
     allSchemas.push(pageSchemas);
   }

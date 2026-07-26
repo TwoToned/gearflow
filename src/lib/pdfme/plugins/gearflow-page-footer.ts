@@ -56,6 +56,18 @@ async function pdfRender(arg: PDFRenderProps<FooterSchema>) {
       color: textColor,
     });
   }
+
+  // Page number (right-aligned)
+  if (config.pageNumber) {
+    const pageNumWidth = fonts.regular.widthOfTextAtSize(config.pageNumber, fontSize);
+    page.drawText(config.pageNumber, {
+      x: x + width - pageNumWidth,
+      y: y + height - 12,
+      size: fontSize,
+      font: fonts.regular,
+      color: textColor,
+    });
+  }
 }
 
 const gearflowPageFooter: Plugin<FooterSchema> = {

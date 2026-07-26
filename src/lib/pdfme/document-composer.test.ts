@@ -316,6 +316,37 @@ describe("composeDocument — org document settings (footer, T&Cs, quote validit
   });
 });
 
+describe("composeDocument — footer page numbers", () => {
+  function footerConfigsFor(result: ComposeResult) {
+    return result.template.schemas.map((pageSchemas, pageIdx) => {
+      const footer = pageSchemas.find((s) => s.type === "gearflowPageFooter")!;
+      return JSON.parse(result.inputs[0][footer.name as string]) as { pageNumber?: string };
+    });
+  }
+
+  it("omits the page number on a single-page document", () => {
+    const data = makeData({ line_items: [makeLineItem({ id: "only-item", status: "CHECKED_OUT", checkedOutQuantity: 1, model: { name: "Solo Item" } })] });
+    const result = composeDocument("quote", data, "#0d4f4f");
+    expect(result.template.schemas.length).toBe(1);
+
+    const [footerConfig] = footerConfigsFor(result);
+    expect(footerConfig.pageNumber).toBeUndefined();
+  });
+
+  it("renders 'Page X of Y' on every page of a multi-page document", () => {
+    const lineItems = makeLongLineItemList(120);
+    const data = makeData({ line_items: lineItems, total_items: lineItems.length });
+    const result = composeDocument("quote", data, "#0d4f4f");
+    const total = result.template.schemas.length;
+    expect(total).toBeGreaterThan(1);
+
+    const footerConfigs = footerConfigsFor(result);
+    footerConfigs.forEach((config, pageIdx) => {
+      expect(config.pageNumber).toBe(`Page ${pageIdx + 1} of ${total}`);
+    });
+  });
+});
+
 describe("composeDocument — quote content audit (#790 Phase 4)", () => {
   function tableItemsAndConfig(result: ComposeResult): { items: DocumentLineItem[]; config: TablePluginConfig } {
     const tableSchema = result.template.schemas[0].find((s) => s.type === "gearflowTable")!;

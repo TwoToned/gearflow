@@ -322,11 +322,6 @@ enum PricingType {
   OPTIMIZED
 }
 
-enum RentalPeriod {
-  DAILY
-  WEEKLY
-}
-
 enum LineItemStatus {
   QUOTED
   CONFIRMED

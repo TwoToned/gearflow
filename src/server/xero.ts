@@ -59,6 +59,19 @@ function requireXeroAppCredentials(): { clientId: string; clientSecret: string }
 // instead of a server-action round trip, per FEATUREDOCS/54's "browser
 // components subscribe to native reactive queries" default.
 
+/**
+ * Whether this DEPLOYMENT has a Xero developer app configured
+ * (XERO_CLIENT_ID/XERO_CLIENT_SECRET) — distinct from whether any particular
+ * org has connected (that's `xeroIntegrations.isConnected`, read via
+ * `useXeroLinked()`). No permission gate: it reveals nothing but a boolean,
+ * and the settings nav needs it before a user's org context justifies
+ * `xero_manage`. Consumed via `useServerQuery` (never invalidated — a
+ * deployment's env config doesn't change mid-session, see use-server-query.ts).
+ */
+export async function isXeroConfigured() {
+  return serialize({ configured: Boolean(env.XERO_CLIENT_ID && env.XERO_CLIENT_SECRET) });
+}
+
 /** Build the Xero authorize URL for the "Connect Xero" button. Requires
  *  xero_manage (org admin+) — connecting/disconnecting the integration is a
  *  more sensitive action than everyday invoice pushing. */

@@ -12,9 +12,11 @@ import {
   disconnectXero,
   refreshXeroReferenceData,
   updateXeroCodingSettings,
+  isXeroConfigured,
   type XeroCodingSettingsInput,
 } from "@/server/xero";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import { useServerQuery } from "@/hooks/use-server-query";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +45,10 @@ const SERVICE_TYPES = [
 export default function XeroSettingsPage() {
   const integration = useXeroIntegration();
   const searchParams = useSearchParams();
+  const { data: xeroConfig, isLoading: xeroConfigLoading } = useServerQuery({
+    queryKey: ["xero-configured"],
+    queryFn: () => isXeroConfigured(),
+  });
 
   useEffect(() => {
     if (searchParams.get("xero_connected")) toast.success("Xero connected");
@@ -90,6 +96,25 @@ export default function XeroSettingsPage() {
     onSuccess: () => toast.success("Xero coding defaults saved"),
     onError: (e) => toast.error(e.message),
   });
+
+  // Deployment-level gate — settings nav already hides this page's link when
+  // unconfigured, but a direct URL visit should get a clear message instead
+  // of a "Connect Xero" button that would just throw at click-time.
+  if (!xeroConfigLoading && xeroConfig?.configured !== true) {
+    return (
+      <FormSection title="Xero" description="Connect Xero to push draft invoices and resolve account coding.">
+        <SettingsCard>
+          <p className="t-body text-fg-3">
+            Xero isn&apos;t configured on this deployment yet — an admin needs to set
+            <code className="mx-1 rounded bg-paper-2 px-1 py-0.5 t-micro">XERO_CLIENT_ID</code>
+            and
+            <code className="mx-1 rounded bg-paper-2 px-1 py-0.5 t-micro">XERO_CLIENT_SECRET</code>
+            before any organisation can connect.
+          </p>
+        </SettingsCard>
+      </FormSection>
+    );
+  }
 
   return (
     <div className="space-y-8">

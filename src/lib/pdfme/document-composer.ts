@@ -75,18 +75,33 @@ function isBulk(item: DocumentLineItem): boolean {
  * ANY attached child passes — otherwise the whole group (and every member)
  * would vanish from a warehouse doc because of one filtered-out sibling.
  */
+/**
+ * `isReturnSheet` (WS11 #950, default false): must mirror gearflow-table.ts's
+ * own filter block exactly — a SALE line always bypasses `filterByStatus`
+ * (goods handed over, so it "counts" for delivery-docket purposes regardless
+ * of status) EXCEPT on the return sheet, where it's excluded entirely (never
+ * expected back). Quote/invoice/packing-list pass no `filterByStatus` at all
+ * (document-layouts.ts), so a SALE line already flows through those
+ * unfiltered — `isReturnSheet` only matters for the two doc types that DO
+ * set `filterByStatus` (delivery-docket, return-sheet).
+ */
 export function getFilteredParentItems(
   data: DocumentData,
   filterByStatus: string[] | null,
+  isReturnSheet = false,
 ): DocumentLineItem[] {
   let items = data.line_items.filter((i) => !i.isKitChild && !i.isContainerLineItem);
 
   if (filterByStatus) {
     const statuses = filterByStatus;
     items = items.filter((i) => {
+      if (i.type === "SALE") return !isReturnSheet;
       if (isBulk(i)) return i.checkedOutQuantity > 0;
       if (i.isGroupRow && (i.childLineItems?.length ?? 0) > 0) {
-        return i.childLineItems!.some((c) => (isBulk(c) ? c.checkedOutQuantity > 0 : statuses.includes(c.status)));
+        return i.childLineItems!.some((c) => {
+          if (c.type === "SALE") return !isReturnSheet;
+          return isBulk(c) ? c.checkedOutQuantity > 0 : statuses.includes(c.status);
+        });
       }
       return statuses.includes(i.status);
     });
@@ -235,7 +250,7 @@ function calculateTableItemHeights(
     docketGroups.groupOrder.forEach((k) => groupOrder.push(k));
     docketGroups.groups.forEach((v, k) => groups.set(k, v));
   } else {
-    for (const item of getFilteredParentItems(data, filterByStatus)) {
+    for (const item of getFilteredParentItems(data, filterByStatus, docType === "return-sheet")) {
       const key = getItemGroupKey(item, ungrouped);
       if (!groups.has(key)) {
         groups.set(key, []);
@@ -385,7 +400,7 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
         parentItems.push(...items);
       }
     } else {
-      parentItems = getFilteredParentItems(data, ctx.filterByStatus);
+      parentItems = getFilteredParentItems(data, ctx.filterByStatus, docType === "return-sheet");
       for (const item of parentItems) {
         const key = getItemGroupKey(item, ungrouped);
         if (!groups.has(key)) {

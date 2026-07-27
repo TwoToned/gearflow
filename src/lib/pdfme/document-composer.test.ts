@@ -442,3 +442,167 @@ describe("composeDocument — quote content audit (#790 Phase 4)", () => {
     expect(text).toContain("Includes rigging and truss");
   });
 });
+
+// ─── WS11 (#950) — mixed rental + SALE fixture, full pipeline ─────────────────
+//
+// CLAUDE.md's PDF five-consumer-audit rule: any DocumentLineItem shape change
+// needs a full-pipeline test (structureLineItems -> calculateItemHeight ->
+// filter -> plugin render), not just plugin-only harness assertions. This
+// exercises composeDocument (which chains all of the above) across every doc
+// type with a fixture mixing ordinary rental EQUIPMENT lines and SALE lines
+// in a few different states (checked-out, still-quoted/CONFIRMED, and one
+// inside a Project Group), asserting the spec's per-doc-type inclusion rules:
+//   - quote/invoice: SALE included, "SALE" badge rendered
+//   - delivery-docket/packing-list: SALE included REGARDLESS of status
+//   - return-sheet: SALE excluded entirely, regardless of status
+function makeMixedRentalSaleLineItems(): DocumentLineItem[] {
+  return [
+    // Ordinary rental gear, checked out — passes every doc type's filter.
+    makeLineItem({
+      id: "rental-1",
+      description: "PA Speaker",
+      quantity: 2,
+      checkedOutQuantity: 2,
+      unitPrice: 100,
+      lineTotal: 200,
+      status: "CHECKED_OUT",
+      model: { name: "PA Speaker" },
+    }),
+    // A NEW_STOCK sale, still CONFIRMED (never checked out — a sale never
+    // goes through the warehouse checkout workflow at all).
+    makeLineItem({
+      id: "sale-new-stock",
+      description: "SM58 Mic",
+      type: "SALE",
+      quantity: 1,
+      checkedOutQuantity: 0,
+      unitPrice: 120,
+      lineTotal: 120,
+      pricingType: "FLAT",
+      duration: 1,
+      status: "CONFIRMED",
+      model: { name: "SM58" },
+    }),
+    // A FROM_RENTAL_STOCK sale of a specific (now SOLD) asset, also never
+    // checked out through the warehouse flow.
+    makeLineItem({
+      id: "sale-from-rental",
+      description: "Sold XLR Cable",
+      type: "SALE",
+      quantity: 1,
+      checkedOutQuantity: 0,
+      unitPrice: 15,
+      lineTotal: 15,
+      pricingType: "FLAT",
+      duration: 1,
+      status: "CONFIRMED",
+      model: { name: "XLR Cable" },
+      asset: { assetTag: "CABLE-42" },
+    }),
+    // A SALE line riding inside a Project Group (spec: "no separate Sales
+    // bucket — badge differentiates"), alongside an ordinary rental member.
+    makeLineItem({
+      id: "group-1",
+      description: "Package Deal",
+      isGroupRow: true,
+      groupName: "Package Deal",
+      quantity: 1,
+      checkedOutQuantity: 1,
+      status: "CHECKED_OUT",
+      model: { name: "Package Deal" },
+      childLineItems: [
+        makeLineItem({ id: "group-member-rental", quantity: 1, checkedOutQuantity: 1, status: "CHECKED_OUT", model: { name: "Mixer" } }),
+        makeLineItem({ id: "group-member-sale", type: "SALE", quantity: 1, checkedOutQuantity: 0, status: "CONFIRMED", model: { name: "Cable Bundle" } }),
+      ],
+    }),
+  ];
+}
+
+describe("composeDocument — mixed rental + SALE fixture (WS11 #950)", () => {
+  const STANDALONE_SALE_IDS = ["sale-new-stock", "sale-from-rental"];
+
+  for (const docType of PROJECT_DOC_TYPES) {
+    it(`${docType}: paginates the mixed fixture with no tail-drop`, () => {
+      const lineItems = makeMixedRentalSaleLineItems();
+      const data = makeData({ line_items: lineItems, total_items: lineItems.length });
+      const result = composeDocument(docType, data, "#0d4f4f");
+
+      const layout = DOCUMENT_LAYOUTS[docType];
+      const topLevel = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem);
+      const totalParents = layout.filterByStatus
+        ? topLevel.filter((i) => {
+            if (i.type === "SALE") return docType !== "return-sheet";
+            if (i.isGroupRow) {
+              return (i.childLineItems ?? []).some((c) => (c.type === "SALE" ? docType !== "return-sheet" : layout.filterByStatus!.includes(c.status)));
+            }
+            return layout.filterByStatus!.includes(i.status);
+          }).length
+        : topLevel.length;
+
+      assertFullCoverage(result, totalParents);
+    });
+  }
+
+  it("quote: standalone SALE lines are included and rendered with a SALE badge", async () => {
+    const result = await runTablePlugin(makeMixedRentalSaleLineItems(), {
+      documentType: "quote",
+      filterByStatus: null,
+      showBadges: true,
+    });
+    const texts = result.drawText.map((t) => t.text);
+    expect(texts.some((t) => t.includes("SM58"))).toBe(true);
+    expect(texts).toContain("SALE");
+  });
+
+  it("packing-list: SALE lines are included even though they were never checked out (status CONFIRMED)", async () => {
+    const result = await runTablePlugin(makeMixedRentalSaleLineItems(), {
+      documentType: "packing-list",
+      filterByStatus: null, // packing-list sets no filterByStatus (document-layouts.ts)
+    });
+    const texts = result.drawText.map((t) => t.text);
+    expect(texts.some((t) => t.includes("SM58"))).toBe(true);
+    expect(texts.some((t) => t.includes("XLR Cable"))).toBe(true);
+  });
+
+  it("delivery-docket: SALE lines are included despite failing the CHECKED_OUT status filter", async () => {
+    const result = await runTablePlugin(makeMixedRentalSaleLineItems(), {
+      documentType: "delivery-docket",
+      filterByStatus: ["CHECKED_OUT"],
+    });
+    const texts = result.drawText.map((t) => t.text);
+    expect(texts.some((t) => t.includes("SM58"))).toBe(true);
+    expect(texts.some((t) => t.includes("XLR Cable"))).toBe(true);
+    // The ordinary rental line (CHECKED_OUT) is included too, as always.
+    expect(texts.some((t) => t.includes("PA Speaker"))).toBe(true);
+  });
+
+  it("return-sheet: SALE lines are excluded entirely, regardless of status", async () => {
+    const result = await runTablePlugin(makeMixedRentalSaleLineItems(), {
+      documentType: "return-sheet",
+      filterByStatus: ["CHECKED_OUT", "RETURNED"],
+    });
+    const texts = result.drawText.map((t) => t.text);
+    expect(texts.some((t) => t.includes("SM58"))).toBe(false);
+    expect(texts.some((t) => t.includes("XLR Cable"))).toBe(false);
+    expect(texts).not.toContain("SALE");
+  });
+
+  it("getFilteredParentItems: a SALE line inside a group takes no separate bucket — the group stays one parent row", () => {
+    const lineItems = makeMixedRentalSaleLineItems();
+    const data = makeData({ line_items: lineItems, total_items: lineItems.length });
+    // Full pipeline via composeDocument for the quote doc type (no filterByStatus).
+    const result = composeDocument("quote", data, "#0d4f4f");
+    // Top-level parents: rental-1, sale-new-stock, sale-from-rental, group-1 = 4
+    // (group members are children, not separate top-level parents).
+    assertFullCoverage(result, 4);
+  });
+
+  it("STANDALONE_SALE_IDS fixture sanity: both standalone sale lines are ungrouped, non-kit-child", () => {
+    const lineItems = makeMixedRentalSaleLineItems();
+    for (const id of STANDALONE_SALE_IDS) {
+      const li = lineItems.find((l) => l.id === id)!;
+      expect(li.isKitChild).toBeFalsy();
+      expect(li.groupName).toBeFalsy();
+    }
+  });
+});

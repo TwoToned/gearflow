@@ -1,6 +1,6 @@
 # Asset Management System
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 ## Three Asset Types
 1. **Serialized** (`Asset`): Individually tracked, unique tag, has status lifecycle
@@ -202,7 +202,20 @@ CHECKED_OUT → IN_MAINTENANCE (check in with DAMAGED condition)
 CHECKED_OUT → LOST (check in with MISSING condition)
 IN_MAINTENANCE → AVAILABLE (maintenance completed)
 Any → RETIRED (manual)
+Any → SOLD (sell-from-rental-stock, FROM_RENTAL_STOCK sale mode only — WS11 #950)
+SOLD → AVAILABLE ("un-sell", explicit reversal)
 ```
+
+**`SOLD` (WS11 #950)** is a second terminal status alongside `RETIRED`: set when a
+serialized asset is sold out of the rental fleet via a `SALE` line item with
+`saleMode: "FROM_RENTAL_STOCK"` (`sellSerializedAssetForSale`,
+`convex/lib/saleStock.ts`), and it flips `isActive: false` the same way
+`archiveNative`'s RETIRED path does, so dashboard counters and fleet ROI's
+`isActive` filter drop the unit for free (see FEATUREDOCS/57). Unlike RETIRED,
+SOLD has a dedicated, explicit reversal — the "un-sell" action
+(`unsellSerializedAsset` / `unsellLineItemNative`) flips it back to
+`AVAILABLE` with `isActive: true`. See FEATUREDOCS/67 for the full sales
+line-item design.
 
 ## Categories
 - **Routes**: `/assets/categories` (list table), `/assets/categories/[id]` (detail page)

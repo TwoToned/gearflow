@@ -1,6 +1,6 @@
 # Revenue Allocation & Gear ROI
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 Splits what a client paid across the gear that earned it, so per-**model** ROI is
 answerable — including for gear that only ever ships inside a kit or a priced bundle.
@@ -34,6 +34,10 @@ On `projectLineItems`:
 - `EXCLUDED_SUBHIRE` — sub-hired gear. It **consumes pool weight** (so the owned gear
   beside it isn't over-credited) and the number is stored for audit, but it was never
   our capital, so it earns no ROI.
+- `EXCLUDED_SALE` (WS11 #950) — a `SALE` line. It takes **no** weight in any kit/group
+  split (unlike sub-hire, it doesn't even dilute the pool) and is never rolled into
+  `projectModelRevenues` — a sale is a one-off disposal of goods, not rental income, so
+  it never counts toward a model's rental ROI. See FEATUREDOCS/67.
 - `EXCLUDED_NON_GEAR` — custom / labour / container lines, and kit parents. No `modelId`, so
   never counted toward ROI. A **priced** custom item inside a group is a special case: it is part
   of the group's flat price, so it **consumes its own `lineTotal` off the pool** (owned gear splits
@@ -246,6 +250,18 @@ uniformly across the whole chain (`positiveCost` in `convex/roi.ts`).
 `bulkAssets` are explicitly out of scope: their fleet cost stays `replacementCost × totalQuantity`
 (`bulkAssets.purchasePricePerUnit` is a separate, already-per-unit field a future issue could wire
 up the same way).
+
+### Sold assets and fleet capital (WS11 #950)
+
+A serialized asset sold via `FROM_RENTAL_STOCK` flips to `AssetStatus: "SOLD"` and
+`isActive: false` (see FEATUREDOCS/08, FEATUREDOCS/67). `fleetCapitalFor`'s active-asset
+scan already filters on `isActive`, so a sold asset drops out of `unitsOwned`/`fleetCost`
+automatically, with no code change needed — the exact same mechanism that already drops a
+`RETIRED` asset. Historical hire revenue the unit earned before it was sold is untouched
+(allocation is a snapshot, never restated), so its payback number keeps whatever it earned
+against the capital while it was still fleet. Disposal-proceeds reporting — reconciling
+what a sold rental asset's sale price was against its book value/remaining fleet cost — is
+a noted gap, not built here; see FEATUREDOCS/67 "Out of scope."
 
 ## Files
 

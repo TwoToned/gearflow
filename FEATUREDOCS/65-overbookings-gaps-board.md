@@ -1,6 +1,6 @@
 # Overbookings & Gaps Board (WS3 #942)
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 ## What this is
 
@@ -17,10 +17,12 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
    every currently-pencilled booking for that model (an optional line, or any
    line on a not-yet-confirmed project) also went hard. A heads-up, not a
    violation of today's rule — "would collide if confirmed." Amber.
-3. **Sale stock to procure** — bulk-asset rows with a negative
-   `saleStockQuantity` (a minimal pre-WS11 stub field this workstream added;
-   WS11 owns the full sale-stock feature and may reshape or index it later).
-   Nothing writes this field yet, so the section is inert until it does.
+3. **Sale stock to procure** (WS11 #950) — models whose `Model.saleStockQuantity`
+   (a single per-model sale-stock pool, independent of rental assets/bulk) has
+   gone negative — sold below what was ever added as stock. Each row lists the
+   contributing NEW_STOCK sale lines (project + qty) that drew the pool down.
+   Supersedes the original pre-WS11 stub (a negative `bulkAssets.saleStockQuantity`
+   on any bulk row), which nothing ever wrote — see FEATUREDOCS/67.
 4. **Services missing crew** — a `projectService` in range whose FILLED crew
    count (excluding `DECLINED`/`CANCELLED` assignments) is below
    `crewCountRequired`. `crewCountRequired` of `null`/`0` is explicitly

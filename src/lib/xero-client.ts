@@ -23,14 +23,26 @@ const IDENTITY_BASE = "https://identity.xero.com";
 const API_BASE = "https://api.xero.com";
 const AUTHORIZE_BASE = "https://login.xero.com/identity/connect/authorize";
 
-/** Scopes requested at connect time — read-only reference data + invoice/contact
- *  write, plus offline_access for the refresh token. */
+/**
+ * Scopes requested at connect time — read-only reference data + invoice/contact
+ * write, plus offline_access for the refresh token.
+ *
+ * `accounting.invoices` (NOT the broad `accounting.transactions`): Xero split
+ * `accounting.transactions` into granular scopes on 4 March 2026, and any Xero
+ * app created after that date is issued ONLY the granular set — the broad
+ * scope isn't available to request at all, so asking for it throws
+ * `invalid_scope` at the /authorize step for every new app. `accounting.invoices`
+ * is the granular replacement covering invoices/credit notes/quotes, which is
+ * all this integration pushes (createXeroDraftInvoice). Pre-March-2026 apps can
+ * still use the broad scope through September 2027, but there's no reason to —
+ * the granular scope works for both old and new apps.
+ */
 export const XERO_OAUTH_SCOPES = [
   "openid",
   "profile",
   "email",
   "offline_access",
-  "accounting.transactions",
+  "accounting.invoices",
   "accounting.contacts",
   "accounting.settings.read",
 ] as const;

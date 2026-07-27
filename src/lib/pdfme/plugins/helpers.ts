@@ -135,8 +135,8 @@ export function drawWrappedText(
 
 // ─── Rich Text (simple markdown) ──────────────────────────────────────────
 
-type RichSpan = { text: string; style: "regular" | "bold" | "italic" };
-type RichLine = { spans: RichSpan[]; bullet: boolean };
+export type RichSpan = { text: string; style: "regular" | "bold" | "italic" };
+export type RichLine = { spans: RichSpan[]; bullet: boolean };
 
 /**
  * Parse simple markdown into lines of styled spans.
@@ -193,7 +193,12 @@ export function measureRichTextHeight(
 }
 
 /**
- * Draw parsed rich text onto a PDF page.
+ * Draw markdown-lite text without wrapping \u2014 one physical line per literal
+ * `\n` (table cell subtitles: item notes are short enough that this has
+ * never needed wrapping, and gearflowTable's height math assumes a fixed
+ * literal-newline line count \u2014 see measureRichTextHeight). For a free-width
+ * paragraph block that DOES need to wrap to its box width, use
+ * `wrapRichText` + `drawWrappedRichLines` instead (gearflowRichText).
  * Returns total height consumed.
  */
 export function drawRichText(
@@ -208,7 +213,28 @@ export function drawRichText(
     fonts: { regular: PDFFont; bold: PDFFont; oblique: PDFFont };
   },
 ): number {
-  const lines = parseRichText(text);
+  return drawWrappedRichLines(page, parseRichText(text), opts);
+}
+
+/**
+ * Draw already-parsed/wrapped rich-text lines (see parseRichText /
+ * wrapRichText). Shared by drawRichText (unwrapped \u2014 table cell subtitles,
+ * which have never wrapped) and gearflowRichText (wrapped \u2014 free-width
+ * paragraph blocks like client notes / terms & conditions).
+ * Returns total height consumed.
+ */
+export function drawWrappedRichLines(
+  page: PDFPage,
+  lines: RichLine[],
+  opts: {
+    x: number;
+    y: number;
+    fontSize: number;
+    lineHeight: number;
+    color: ReturnType<typeof import("@pdfme/pdf-lib").rgb>;
+    fonts: { regular: PDFFont; bold: PDFFont; oblique: PDFFont };
+  },
+): number {
   let yPos = opts.y;
 
   for (const line of lines) {
@@ -247,6 +273,69 @@ export function drawRichText(
   }
 
   return lines.length * opts.lineHeight;
+}
+
+/**
+ * Word-wrap parsed rich-text lines to fit within `maxWidth`, splitting on
+ * spaces and preserving bold/italic spans across the break (a bold run that
+ * spans a wrap point stays bold on both sides). A bulleted paragraph's
+ * continuation lines lose the bullet glyph but keep its width reserved, so
+ * wrapped bullet text doesn't creep back out to the left margin.
+ */
+export function wrapRichText(
+  raw: string,
+  opts: {
+    maxWidth: number;
+    fontSize: number;
+    fonts: { regular: PDFFont; bold: PDFFont; oblique: PDFFont };
+  },
+): RichLine[] {
+  const bulletWidth = opts.fonts.regular.widthOfTextAtSize("\u2022 ", opts.fontSize);
+  const fontFor = (style: RichSpan["style"]) =>
+    style === "bold" ? opts.fonts.bold : style === "italic" ? opts.fonts.oblique : opts.fonts.regular;
+
+  const out: RichLine[] = [];
+  for (const line of parseRichText(raw)) {
+    const avail = opts.maxWidth - (line.bullet ? bulletWidth : 0);
+
+    // Tokenize into words (+ explicit space tokens) while preserving style.
+    const words: RichSpan[] = [];
+    for (const span of line.spans) {
+      const parts = span.text.split(" ");
+      parts.forEach((part, i) => {
+        if (i > 0) words.push({ text: " ", style: span.style });
+        if (part) words.push({ text: part, style: span.style });
+      });
+    }
+
+    let current: RichSpan[] = [];
+    let width = 0;
+    let isFirstPhysicalLine = true;
+    const flush = () => {
+      out.push({
+        spans: current.length ? current : [{ text: "", style: "regular" }],
+        bullet: isFirstPhysicalLine && line.bullet,
+      });
+      current = [];
+      width = 0;
+      isFirstPhysicalLine = false;
+    };
+
+    for (const word of words) {
+      const w = fontFor(word.style).widthOfTextAtSize(word.text, opts.fontSize);
+      if (width + w > avail && current.length > 0) flush();
+      const last = current[current.length - 1];
+      if (last && last.style === word.style) {
+        last.text += word.text;
+      } else {
+        current.push({ text: word.text, style: word.style });
+      }
+      width += w;
+    }
+    flush();
+  }
+
+  return out;
 }
 
 /** Create a stub UI render function for server-only plugins */

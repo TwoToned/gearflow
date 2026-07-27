@@ -18,6 +18,7 @@ const PLUGIN_SUFFIXES = [
   "CrewTable",
   "CallSheetInfo",
   "DayHeader",
+  "RichText",
   "DataTable",
   "SummaryBox",
   "TextBlock",

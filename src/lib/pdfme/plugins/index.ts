@@ -12,6 +12,7 @@ import gearflowSignatureLine from "./gearflow-signature-line";
 import gearflowCrewTable from "./gearflow-crew-table";
 import gearflowCallSheetInfo from "./gearflow-call-sheet-info";
 import gearflowDayHeader from "./gearflow-day-header";
+import gearflowRichText from "./gearflow-rich-text";
 import { gearflowDataTable } from "./gearflow-data-table";
 import { gearflowSummaryBox } from "./gearflow-summary-box";
 import { gearflowTextBlock } from "./gearflow-text-block";
@@ -29,6 +30,7 @@ export const gearflowPlugins = {
   gearflowCrewTable,
   gearflowCallSheetInfo,
   gearflowDayHeader,
+  gearflowRichText,
   // Custom plugins — reports
   gearflowDataTable,
   gearflowSummaryBox,
@@ -49,6 +51,7 @@ export const gearflowPlugins = {
   rvltFlowCrewTable: gearflowCrewTable,
   rvltFlowCallSheetInfo: gearflowCallSheetInfo,
   rvltFlowDayHeader: gearflowDayHeader,
+  rvltFlowRichText: gearflowRichText,
   rvltFlowDataTable: gearflowDataTable,
   rvltFlowSummaryBox: gearflowSummaryBox,
   rvltFlowTextBlock: gearflowTextBlock,
@@ -67,6 +70,7 @@ export {
   gearflowCrewTable,
   gearflowCallSheetInfo,
   gearflowDayHeader,
+  gearflowRichText,
   gearflowDataTable,
   gearflowSummaryBox,
   gearflowTextBlock,

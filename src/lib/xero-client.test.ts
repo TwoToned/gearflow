@@ -177,6 +177,13 @@ describe("findXeroContactByEmail", () => {
     const result = await findXeroContactByEmail("nobody@acme.test", { ...authOpts, fetchImpl: impl });
     expect(result).toBeNull();
   });
+
+  it("escapes backslashes before quotes so a crafted email can't break out of the where clause", async () => {
+    const { impl, calls } = mockFetch({ Contacts: [] });
+    await findXeroContactByEmail('\\"; DROP', { ...authOpts, fetchImpl: impl });
+    const decoded = decodeURIComponent(calls[0]!.url);
+    expect(decoded).toContain('EmailAddress=="\\\\\\"; DROP"');
+  });
 });
 
 describe("searchXeroContactsByName", () => {
@@ -186,6 +193,13 @@ describe("searchXeroContactsByName", () => {
     const result = await searchXeroContactsByName("Acme", { ...authOpts, fetchImpl: impl });
     expect(result).toHaveLength(1);
     expect(result[0]!.Name).toBe("Acme Events");
+  });
+
+  it("escapes backslashes before quotes in the name clause", async () => {
+    const { impl, calls } = mockFetch({ Contacts: [] });
+    await searchXeroContactsByName('back\\slash', { ...authOpts, fetchImpl: impl });
+    const decoded = decodeURIComponent(calls[0]!.url);
+    expect(decoded).toContain('Name.Contains("back\\\\slash")');
   });
 });
 

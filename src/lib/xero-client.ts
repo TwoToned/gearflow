@@ -39,6 +39,14 @@ export interface XeroFetch {
   (input: string, init?: RequestInit): Promise<Response>;
 }
 
+/** Escape a value for embedding in a Xero `where` clause string literal.
+ *  Backslashes MUST be escaped before quotes — escaping quotes first would
+ *  leave a literal backslash in the input free to escape the closing quote
+ *  Xero's clause parser adds, breaking out of the string literal. */
+function escapeXeroWhereLiteral(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
 export class XeroApiError extends Error {
   constructor(
     message: string,
@@ -254,7 +262,7 @@ export async function findXeroContactByEmail(
   email: string,
   opts: AuthedRequestOpts,
 ): Promise<XeroContact | null> {
-  const clause = `EmailAddress=="${email.replace(/"/g, '\\"')}"`;
+  const clause = `EmailAddress=="${escapeXeroWhereLiteral(email)}"`;
   const json = await xeroGet(`/api.xro/2.0/Contacts?where=${encodeURIComponent(clause)}`, opts);
   const parsed = contactsResponseSchema.safeParse(json);
   if (!parsed.success) throw new XeroApiError("Xero Contacts response failed schema validation", undefined, json);
@@ -265,7 +273,7 @@ export async function searchXeroContactsByName(
   name: string,
   opts: AuthedRequestOpts,
 ): Promise<XeroContact[]> {
-  const clause = `Name.Contains("${name.replace(/"/g, '\\"')}")`;
+  const clause = `Name.Contains("${escapeXeroWhereLiteral(name)}")`;
   const json = await xeroGet(`/api.xro/2.0/Contacts?where=${encodeURIComponent(clause)}`, opts);
   const parsed = contactsResponseSchema.safeParse(json);
   if (!parsed.success) throw new XeroApiError("Xero Contacts response failed schema validation", undefined, json);

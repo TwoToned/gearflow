@@ -8,7 +8,6 @@ import { assertStrLen } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertLifecycleGuard } from "./lib/projectLocks";
 import { buildFinanceLines } from "./lib/financeSnapshot";
-import * as enums from "./lib/validators";
 
 /**
  * Quote write mutations (WS1 #940) — browser-direct, the standard 4-guard

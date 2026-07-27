@@ -207,7 +207,12 @@ export function calculateItemHeight(item: DocumentLineItem, config: TableLayoutC
     heightPt += item.quantity * PER_UNIT_ROW_PT;
   }
 
-  if ((isKit && config.showKitChildren) || isGroupParent || isAccessoryParent) {
+  // Mirrors gearflow-table.ts's rendering gate exactly — all three
+  // parent-with-children kinds (kit, group, accessory) are gated by the
+  // same `showKitChildren` flag, or this height reservation silently
+  // diverges from what actually gets drawn (tail-drop on quote/invoice,
+  // wasted whitespace on warehouse docs).
+  if ((isKit || isGroupParent || isAccessoryParent) && config.showKitChildren) {
     const children = item.childLineItems || [];
     for (const child of children) {
       heightPt += CHILD_ROW_PT;

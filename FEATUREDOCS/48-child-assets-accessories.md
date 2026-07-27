@@ -291,11 +291,17 @@ what every existing query keys off.
    wired through `prepItemDirect`/`prepItemsBatch`/the check-item queue for
    other callers, it's just never populated by the removed UI now (always
    `undefined` ⇒ "include all", the documented default).
-4. **PDFs** — accessories render indented under the parent on **all** docs
-   (internal and customer-facing). An accessory parent is detected by
-   "top-level line, no `kitId`, has `ACCESSORY` children"; both the render
-   (`gearflow-table.ts`) and the height calc (`section-renderer.ts`) handle it,
-   so children are reserved and never tail-dropped.
+4. **PDFs** — accessories render indented under the parent, gated by the same
+   `showKitChildren` flag as kit children (2026-07-27 — previously always-on
+   regardless of the flag). An accessory parent is detected by "top-level
+   line, no `kitId`, has `ACCESSORY` children"; both the render
+   (`gearflow-table.ts`) and the height calc (`document-composer.ts`'s
+   `calculateItemHeight`) handle it, so children are reserved and never
+   tail-dropped on the doc types that show them. Warehouse docs
+   (packing-list/return-sheet/delivery-docket) keep `showKitChildren: true`,
+   so packers still see every accessory; quote/invoice set it `false` to keep
+   the client-facing table to top-level line items — see `document-layouts.ts`'s
+   `clientFacingTable` and FEATUREDOCS/13-pdfs.md.
 
    **Grouped accessory parents (the two-level case).** When an accessory parent is
    a **project-group member**, `structureLineItems` nests it as the synthetic

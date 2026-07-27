@@ -179,8 +179,8 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 
 | Type | Blocks | `expandProjectGroups` | Status filter |
 |------|--------|------------------------|----------------|
-| `quote` | header, client+project details, table (no "/day" price suffix), totals, client notes, T&Cs (omitted if unset), quote-validity note (real computed date) | false (collapse groups) | none |
-| `invoice` | header, client+project details (+ tax ID, payment terms), table (no badges), totals (+ deposit/balance), client notes | false | none |
+| `quote` | header, client+project details, table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset), quote-validity note (real computed date) | false (collapse groups) | none |
+| `invoice` | header, client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no badges, no kit/accessory children), totals (+ deposit/balance), client notes | false | none |
 | `packing-list` | header, client+project details, table (checkboxes, per-unit, asset tags, categories), total-items note | true (expand groups) | none |
 | `return-sheet` | header, client+project details, table (checkboxes, condition columns, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT`, `RETURNED` |
 | `delivery-docket` | header, client+project details (+ site contact), table (checkboxes, row numbers, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT` |
@@ -206,6 +206,38 @@ card at `/settings/branding` ("Branding & documents").
 `build-document-data.ts` computes 4 `DocumentData` fields from these settings each
 time a document is built: `document_footer_text`, `document_footer_second_line`,
 `quote_terms_and_conditions`, `quote_valid_until`.
+
+### Quote/invoice layout refinements (2026-07-27)
+
+- **Header: doc title inline with the logo, not below it.** In `logo` mode,
+  `gearflowPageHeader` used to draw the "QUOTE"/"TAX INVOICE" title + doc
+  number/date at the same Y as the org name (i.e. below the logo image). It
+  now pins the title/meta to the top of the header block (level with the
+  logo), independent of the logo's height, and the gap between the logo and
+  the org address block below it grew from 8pt to 16pt (`gearflow-page-header.ts`).
+- **Details block: no more redundant "Date:" line.** `ProjectDetailsConfig.showDocumentDate`
+  now defaults to `false` — the document date already appears in the header
+  meta (next to the doc number) on every doc type, so repeating it in the
+  client+project details block was redundant. Applies to all 5 doc types.
+- **Totals block: more separation from the table, divider no longer overlaps
+  the Total text.** `gearflowFinancialSummary` adds 10pt of top padding
+  before its first row, and its "Total" divider line now clears both the row
+  above and the bold Total text below it (previously the line sat close
+  enough to the text baseline to visually strike through "Total"/the amount).
+  `document-composer.ts`'s `totals` block height estimate grew from 25mm to
+  34mm to match.
+- **Quote/invoice table: top-level line items only.** `clientFacingTable`
+  (`document-layouts.ts`) sets `showBadges: false` and `showKitChildren: false`
+  for both quote and invoice — the client sees line items, groups, and their
+  descriptions/notes, not internal warehouse badges (OVERBOOKED/REDUCED STOCK)
+  or exploded kit/accessory sub-rows (e.g. a battery accessory as its own
+  line under a wireless mic). `showKitChildren` now gates all three
+  parent-with-children kinds uniformly — kit children, Project Group members,
+  **and** accessories (previously accessories always rendered regardless of
+  the flag) — in both `gearflow-table.ts`'s render and `document-composer.ts`'s
+  `calculateItemHeight`. Warehouse docs (packing-list/return-sheet/delivery-docket)
+  are unaffected — they keep `showKitChildren: true` via `defaultTable`, so
+  packers still see every kit member and accessory.
 
 ### Quote-specific fixes (#790 Phase 4)
 

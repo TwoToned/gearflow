@@ -27,9 +27,12 @@ import { EquipmentAddForm } from "./equipment-add-form";
 import { KitAddForm } from "./kit-add-form";
 import { CustomItemAddForm } from "./custom-item-add-form";
 import { SubHireAddForm } from "./sub-hire-add-form";
+import { SaleAddForm } from "./sale-add-form";
 import type { CategoryData } from "./equipment-rows";
 
-export type UnifiedAddKind = "own-stock" | "kit" | "sub-hire" | "custom";
+// WS11 (#950) — "sale" is the 5th kind (spec: "fifth kind 'Sale' in
+// unified-add-dialog").
+export type UnifiedAddKind = "own-stock" | "kit" | "sub-hire" | "custom" | "sale";
 
 interface UnifiedAddDialogProps {
   open: boolean;
@@ -70,6 +73,7 @@ const KIND_OPTIONS: KindOption[] = [
   { value: "kit", label: "Kit" },
   { value: "sub-hire", label: "Sub-hire" },
   { value: "custom", label: "Custom" },
+  { value: "sale", label: "Sale" },
 ];
 
 const KIND_TITLES: Record<UnifiedAddKind, string> = {
@@ -77,6 +81,7 @@ const KIND_TITLES: Record<UnifiedAddKind, string> = {
   kit: "Add kit",
   "sub-hire": "Add sub-hire",
   custom: "Add custom item",
+  sale: "Add sale",
 };
 
 export function UnifiedAddDialog({
@@ -130,61 +135,127 @@ export function UnifiedAddDialog({
           })}
         </div>
 
-        {/* Body swap by kind. */}
-        {open && kind === "own-stock" && (
-          <EquipmentAddForm
+        {/* Body swap by kind — dispatched to its own component (not inlined
+            here) so a 5th/6th kind never grows THIS function's cyclomatic
+            complexity (R-3.6); AddFormBody owns its own budget for that. */}
+        {open && (
+          <AddFormBody
+            kind={kind}
+            onKindChange={onKindChange}
             projectId={projectId}
             rentalStartDate={rentalStartDate}
             rentalEndDate={rentalEndDate}
             categoryId={categoryId}
             groupId={groupId}
             targetLabel={targetLabel}
-            onInvalidate={onInvalidate}
-            onClose={handleClose}
-            onOpenSubHire={() => {
-              // EquipmentAddForm uses this for the overbooking-fallback
-              // CTA. Route it through the unified switcher so the user
-              // lands on the inline sub-hire form, not a separate dialog.
-              onKindChange("sub-hire");
-            }}
-          />
-        )}
-        {open && kind === "kit" && (
-          <KitAddForm
-            projectId={projectId}
-            rentalStartDate={rentalStartDate}
-            rentalEndDate={rentalEndDate}
-            categoryId={categoryId}
-            groupId={groupId}
             categories={categories}
-            targetLabel={targetLabel}
             onInvalidate={onInvalidate}
-            onClose={handleClose}
-          />
-        )}
-        {open && kind === "sub-hire" && (
-          <SubHireAddForm
-            projectId={projectId}
-            rentalStartDate={rentalStartDate}
-            rentalEndDate={rentalEndDate}
-            onCreated={(id) => {
-              onInvalidate();
-              onSubHireCreated(id);
-            }}
-            onClose={handleClose}
-          />
-        )}
-        {open && kind === "custom" && (
-          <CustomItemAddForm
-            projectId={projectId}
-            categories={categories}
-            defaultCategoryId={categoryId}
-            defaultGroupId={groupId}
-            onInvalidate={onInvalidate}
+            onSubHireCreated={onSubHireCreated}
             onClose={handleClose}
           />
         )}
       </DialogContent>
     </Dialog>
   );
+}
+
+type AddFormBodyProps = Pick<
+  UnifiedAddDialogProps,
+  | "kind"
+  | "onKindChange"
+  | "projectId"
+  | "rentalStartDate"
+  | "rentalEndDate"
+  | "categoryId"
+  | "groupId"
+  | "targetLabel"
+  | "categories"
+  | "onInvalidate"
+  | "onSubHireCreated"
+> & { onClose: () => void };
+
+function AddFormBody({
+  kind,
+  onKindChange,
+  projectId,
+  rentalStartDate,
+  rentalEndDate,
+  categoryId,
+  groupId,
+  targetLabel,
+  categories,
+  onInvalidate,
+  onSubHireCreated,
+  onClose,
+}: AddFormBodyProps) {
+  switch (kind) {
+    case "own-stock":
+      return (
+        <EquipmentAddForm
+          projectId={projectId}
+          rentalStartDate={rentalStartDate}
+          rentalEndDate={rentalEndDate}
+          categoryId={categoryId}
+          groupId={groupId}
+          targetLabel={targetLabel}
+          onInvalidate={onInvalidate}
+          onClose={onClose}
+          onOpenSubHire={() => {
+            // EquipmentAddForm uses this for the overbooking-fallback CTA.
+            // Route it through the unified switcher so the user lands on
+            // the inline sub-hire form, not a separate dialog.
+            onKindChange("sub-hire");
+          }}
+        />
+      );
+    case "kit":
+      return (
+        <KitAddForm
+          projectId={projectId}
+          rentalStartDate={rentalStartDate}
+          rentalEndDate={rentalEndDate}
+          categoryId={categoryId}
+          groupId={groupId}
+          categories={categories}
+          targetLabel={targetLabel}
+          onInvalidate={onInvalidate}
+          onClose={onClose}
+        />
+      );
+    case "sub-hire":
+      return (
+        <SubHireAddForm
+          projectId={projectId}
+          rentalStartDate={rentalStartDate}
+          rentalEndDate={rentalEndDate}
+          onCreated={(id) => {
+            onInvalidate();
+            onSubHireCreated(id);
+          }}
+          onClose={onClose}
+        />
+      );
+    case "custom":
+      return (
+        <CustomItemAddForm
+          projectId={projectId}
+          categories={categories}
+          defaultCategoryId={categoryId}
+          defaultGroupId={groupId}
+          onInvalidate={onInvalidate}
+          onClose={onClose}
+        />
+      );
+    case "sale":
+      return (
+        <SaleAddForm
+          projectId={projectId}
+          categoryId={categoryId}
+          groupId={groupId}
+          targetLabel={targetLabel}
+          onInvalidate={onInvalidate}
+          onClose={onClose}
+        />
+      );
+  }
 }

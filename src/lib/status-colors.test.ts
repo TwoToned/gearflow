@@ -3,6 +3,7 @@ import {
   getStatusIntent,
   getStatusColor,
   intentStyles,
+  intentBorderClass,
   type ColorIntent,
   type StatusCategory,
 } from "./status-colors";
@@ -121,6 +122,33 @@ describe("status-colors", () => {
         expect(styles.pill.length).toBeGreaterThan(0);
         expect(styles.bg.length).toBeGreaterThan(0);
       }
+    });
+  });
+
+  // ─── conflictSeverity (WS8 #947) ────────────────────────────────────
+
+  describe("conflictSeverity category", () => {
+    it("maps hard/soft/preferred to error/warning/success", () => {
+      expect(getStatusIntent("conflictSeverity", "hard")).toBe("error");
+      expect(getStatusIntent("conflictSeverity", "soft")).toBe("warning");
+      expect(getStatusIntent("conflictSeverity", "preferred")).toBe("success");
+    });
+
+    it("falls back to neutral for an unrecognised severity", () => {
+      expect(getStatusIntent("conflictSeverity", "unknown")).toBe("neutral");
+    });
+  });
+
+  // ─── intentBorderClass ───────────────────────────────────────────────
+
+  describe("intentBorderClass", () => {
+    it("derives the existing border-l-<token> convention from each intent's dot color", () => {
+      expect(intentBorderClass("error")).toBe("border-l-t-out");
+      expect(intentBorderClass("warning")).toBe("border-l-warn");
+      expect(intentBorderClass("success")).toBe("border-l-ok");
+      expect(intentBorderClass("info")).toBe("border-l-blue");
+      expect(intentBorderClass("neutral")).toBe("border-l-rep");
+      expect(intentBorderClass("primary")).toBe("border-l-red");
     });
   });
 });

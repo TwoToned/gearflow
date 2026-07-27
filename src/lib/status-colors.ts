@@ -275,6 +275,20 @@ const notificationSeverityIntent: Record<string, ColorIntent> = {
   info: "info",
 };
 
+// Crew conflict/availability severity (WS8 #947) — the picker badge, the
+// crew-table conflict column, and the assignment edit dialog's conflict
+// banners all key off this ONE map instead of each hand-picking a color.
+// "hard" = a real hold on the crew member's time (UNAVAILABLE block, or a
+// CONFIRMED/ACCEPTED/COMPLETED overlapping assignment — "Booked"). "soft" = a
+// speculative hold (TENTATIVE block, or a PENDING/OFFERED overlapping
+// assignment — "Pencilled"). "preferred" = a positive hint (the crew member
+// WANTS this work), never a conflict.
+const conflictSeverityIntent: Record<string, ColorIntent> = {
+  hard: "error",
+  soft: "warning",
+  preferred: "success",
+};
+
 // ─── Category Registry ──────────────────────────────────────────
 
 export type StatusCategory =
@@ -300,7 +314,8 @@ export type StatusCategory =
   | "notification"
   | "subHire"
   | "testTag"
-  | "testTagResult";
+  | "testTagResult"
+  | "conflictSeverity";
 
 const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   asset: assetStatusIntent,
@@ -326,6 +341,7 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   subHire: subHireStatusIntent,
   testTag: testTagStatusIntent,
   testTagResult: testTagResultIntent,
+  conflictSeverity: conflictSeverityIntent,
 };
 
 /**
@@ -351,4 +367,21 @@ export function getStatusIntent(category: StatusCategory, value: string): ColorI
 export function getStatusColor(category: StatusCategory, value: string) {
   const intent = getStatusIntent(category, value);
   return intentStyles[intent];
+}
+
+/**
+ * Left-accent border class for an intent's colored card/callout treatment
+ * (e.g. `border-l-[3px] border-l-t-out`) — derived from the same token as
+ * `dot` instead of a caller hand-picking a color name. Reuses the
+ * `border-l-<token>` convention already used verbatim across the app
+ * (csv-import-dialog, equipment-add-form, crew-panel, etc.) so a caller
+ * migrating a hardcoded `border-l-t-out`/`border-l-warn` string keeps the
+ * exact same visual result while going through the shared intent system.
+ *
+ * @example
+ * intentBorderClass("error")   // → "border-l-t-out"
+ * intentBorderClass("warning") // → "border-l-warn"
+ */
+export function intentBorderClass(intent: ColorIntent): string {
+  return intentStyles[intent].dot.replace(/^bg-/, "border-l-");
 }

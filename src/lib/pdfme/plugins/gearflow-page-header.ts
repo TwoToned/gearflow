@@ -36,8 +36,12 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
 
   // === Logo mode ===
   if (mode === "logo" && config.logoData) {
-    // Layout: Logo at top-left, then same org name + details layout as icon/none
-    // below, shifted down so nothing overlaps the logo.
+    // Layout: Logo at top-left; org name + details render below it. The doc
+    // title + meta (right side) stay pinned to `topY` — the top of the
+    // header, level with the logo itself — instead of following the text
+    // block down, so "QUOTE" / doc number / date sit inline with the logo
+    // rather than beneath it.
+    const topY = currentY;
     let logoImage;
     try {
       if (config.logoData.includes("image/png")) {
@@ -65,8 +69,9 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       });
     }
 
-    // Shift down past logo
-    currentY -= logoH + 8;
+    // Shift down past logo, with breathing room before the company details
+    // block underneath it.
+    currentY -= logoH + 16;
 
     // Now render the same layout as icon/none mode below the logo
     // Left side: org name + details
@@ -96,7 +101,8 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       }
     }
 
-    // Right side: doc title + meta (aligned to the same row as org name)
+    // Right side: doc title + meta — inline with the logo (pinned to
+    // `topY`), not the shifted org-details block below it.
     // Auto-scale title to fit within right half of header
     if (docTitle) {
       const maxTitleWidth = width * 0.55;
@@ -107,7 +113,7 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       const titleWidth = fonts.bold.widthOfTextAtSize(docTitle, titleSize);
       page.drawText(docTitle, {
         x: x + width - titleWidth,
-        y: currentY - titleSize,
+        y: topY - titleSize,
         size: titleSize,
         font: fonts.bold,
         color: docColor,
@@ -115,7 +121,7 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
 
       if (docMeta) {
         const metaLines = docMeta.split("\n");
-        let metaY = currentY - titleSize - 14;
+        let metaY = topY - titleSize - 14;
         for (const line of metaLines) {
           const lineWidth = fonts.regular.widthOfTextAtSize(line, 9);
           page.drawText(line, {

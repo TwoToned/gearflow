@@ -51,6 +51,17 @@ export async function updateOrganization(data: {
     if (err) throw new Error(`Project number format: ${err}`);
   }
 
+  // WS1 (#940) — same validator, same reason: reject a bad invoice-number
+  // template before persisting so the always-on issue-time numbering path can
+  // never fail. Unlike project numbers this format can't be left blank
+  // (invoices have no manual-entry fallback) — an unset/blank format falls back
+  // to the DEFAULT_INVOICE_NUMBER_FORMAT constant at issue time instead.
+  const invFormat = data.settings.invoiceNumberFormat?.trim();
+  if (invFormat) {
+    const err = validateProjectNumberFormat(invFormat);
+    if (err) throw new Error(`Invoice number format: ${err}`);
+  }
+
   if (data.settings.documents) {
     const parsed = orgDocumentSettingsSchema.safeParse(data.settings.documents);
     if (!parsed.success) {

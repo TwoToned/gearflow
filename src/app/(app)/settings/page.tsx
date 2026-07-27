@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
+import { InvoiceNumberingSettings } from "@/components/settings/invoice-numbering-settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -313,6 +314,21 @@ export default function GeneralSettingsPage() {
                     ...(patch.format !== undefined ? { projectNumberFormat: patch.format } : {}),
                     ...(patch.reset !== undefined ? { projectNumberIncrementReset: patch.reset } : {}),
                     ...(patch.padding !== undefined ? { projectNumberIncrementPadding: patch.padding } : {}),
+                  }))
+                }
+              />
+              {/* WS1 (#940) — same engine, disjoint "INV:" counter namespace. */}
+              <InvoiceNumberingSettings
+                format={settings.invoiceNumberFormat ?? ""}
+                reset={settings.invoiceNumberIncrementReset ?? "YEARLY"}
+                padding={settings.invoiceNumberIncrementPadding ?? 4}
+                disabled={!canEdit}
+                onChange={(patch) =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    ...(patch.format !== undefined ? { invoiceNumberFormat: patch.format } : {}),
+                    ...(patch.reset !== undefined ? { invoiceNumberIncrementReset: patch.reset } : {}),
+                    ...(patch.padding !== undefined ? { invoiceNumberIncrementPadding: patch.padding } : {}),
                   }))
                 }
               />

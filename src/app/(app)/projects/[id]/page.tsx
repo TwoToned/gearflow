@@ -32,6 +32,7 @@ import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { ServicesPanel } from "@/components/projects/services-panel";
 import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
+import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
 import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
@@ -633,6 +634,13 @@ export default function ProjectDetailPage({
                       })()}
                       <div className="h-px bg-line" />
                       <ProjectCostsPanel projectId={project.id} />
+                      <div className="h-px bg-line" />
+                      {/* WS1 (#940) — Quotes & Invoices */}
+                      <ProjectFinancePanel
+                        projectId={project.id}
+                        clientId={project.clientId as string | null | undefined}
+                        projectStatus={project.status as string | null | undefined}
+                      />
                     </div>
                   </TabsContent>
                 )}

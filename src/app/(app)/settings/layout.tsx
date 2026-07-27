@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   Bookmark,
   SlidersHorizontal,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,7 +39,8 @@ type SettingsPermission =
   | "orgSettings"
   | "orgMembers"
   | "checkItem"
-  | "project";
+  | "project"
+  | "invoice";
 
 interface SettingsNavItem {
   title: string;
@@ -87,6 +89,10 @@ const settingsNav: SettingsNavSection[] = [
     label: "Integrations",
     items: [
       { title: "WooCommerce", href: "/settings/woocommerce", icon: ShoppingCart, permission: "orgSettings" },
+      // WS1 (#940) — xero_manage (not orgSettings) gates this: connecting/
+      // disconnecting Xero and editing coding defaults is a more sensitive
+      // action than most org settings, restricted to owner/admin by default.
+      { title: "Xero", href: "/settings/xero", icon: Landmark, permission: "invoice" },
     ],
   },
 ];
@@ -101,6 +107,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const canReadMembers = useCanDo("orgMembers", "read");
   const canReadCheckItems = useCanDo("checkItem", "read");
   const canManageLineItems = useCanDo("project", "manage_line_items");
+  const canManageXero = useCanDo("invoice", "xero_manage");
   const { data: activeOrg } = useActiveOrganization();
 
   if (!canReadSettings && !canReadMembers) {
@@ -119,6 +126,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     if (permission === "orgMembers") return canReadMembers;
     if (permission === "checkItem") return canReadCheckItems;
     if (permission === "project") return canManageLineItems;
+    if (permission === "invoice") return canManageXero;
     return true;
   };
 

@@ -256,7 +256,19 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 - **Live Xero verification.** No Xero developer app credentials exist in
   this sandbox — the OAuth round trip and a real invoice push have only been
   exercised against fixture responses, never Xero's live servers.
-- **Xero coding UI on every dialog the spec named.** The collapsed "Xero
-  coding" section is wired into [list what you actually wired — filled in
-  once the UI commits land; see the PR description's "Deferred" section for
-  the authoritative, up-to-date list].
+- **Per-entity Xero coding override UI (category/model/kit/line/service).**
+  The schema fields, the cascade resolver (all 4 levels, unit-tested), and
+  the push-time resolution (`convex/xeroPush.ts`) are ALL built and fully
+  functional — what's NOT built is the collapsed "Xero coding" form section
+  the spec calls for on the category/model/kit forms and the project line/
+  kit/service dialogs. Until that UI lands, every equipment/service line
+  resolves straight through to whichever of the org default account
+  (Settings → Xero) applies — levels 1-3 of the cascade (per-line override,
+  model/kit, category) have no write path yet, so they're currently always
+  absent. This mirrors the `billableToClient` precedent already documented
+  in FEATUREDOCS/13 ("a field with no UI has no live behaviour") — tracked
+  as the immediate next follow-up, not silently dropped. What IS wired:
+  client Xero contact mapping (client detail page) and the org-level
+  defaults (Settings → Xero: default account, per-service-type defaults,
+  default tax type) — enough for Xero-linked orgs to push correctly-coded
+  invoices today, just without per-line overrides.

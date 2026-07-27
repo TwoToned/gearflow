@@ -34,6 +34,12 @@ export function toClientFields(parsed: ClientFieldsInput) {
     taxId: parsed.taxId || undefined,
     paymentTerms: parsed.paymentTerms || undefined,
     defaultDiscount: numOrUndefined(parsed.defaultDiscount),
+    // WS1 (#940) — invoice-generation payment profile. xeroContactId/Name are
+    // deliberately NOT mapped here — see the "no dual-write" note on
+    // convex/clientWrites.ts's clientFields for why that mapping only ever
+    // happens through the dedicated Xero contact-linking action.
+    paymentProfile: parsed.paymentProfile,
+    profileDepositPercent: numOrUndefined(parsed.profileDepositPercent),
     notes: parsed.notes || undefined,
     tags: parsed.tags,
     isActive: parsed.isActive,

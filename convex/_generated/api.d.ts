@@ -204,6 +204,7 @@ import type * as projectTasksWrites from "../projectTasksWrites.js";
 import type * as projectUnlockSessionsWrites from "../projectUnlockSessionsWrites.js";
 import type * as projectWrites from "../projectWrites.js";
 import type * as projects from "../projects.js";
+import type * as quotes from "../quotes.js";
 import type * as quotesWrites from "../quotesWrites.js";
 import type * as reservationConflicts from "../reservationConflicts.js";
 import type * as returnsLookup from "../returnsLookup.js";
@@ -463,6 +464,7 @@ declare const fullApi: ApiFromModules<{
   projectUnlockSessionsWrites: typeof projectUnlockSessionsWrites;
   projectWrites: typeof projectWrites;
   projects: typeof projects;
+  quotes: typeof quotes;
   quotesWrites: typeof quotesWrites;
   reservationConflicts: typeof reservationConflicts;
   returnsLookup: typeof returnsLookup;

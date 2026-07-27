@@ -16,7 +16,12 @@ import {
   reserveTestTagIdsConvex,
 } from "@/lib/org-settings-read";
 import { env } from "@/env";
-import { validateProjectNumberFormat } from "@/lib/project-number";
+import { validateProjectNumberFormat, hasIncrementToken, type IncrementReset } from "@/lib/project-number";
+import {
+  DEFAULT_INVOICE_NUMBER_FORMAT,
+  DEFAULT_INVOICE_NUMBER_INCREMENT_RESET,
+  DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
+} from "@/lib/invoice-number";
 import { orgDocumentSettingsSchema } from "@/lib/validations/org-settings";
 import type { OrgSettings, TestTagSettings } from "@/lib/org-settings-types";
 
@@ -96,6 +101,33 @@ export async function getOrgTestTagSettings(): Promise<TestTagSettings> {
   const { organizationId } = await getOrgContext();
   const settings = await readOrgSettingsBlob(organizationId);
   return settings.testTag || {};
+}
+
+/**
+ * WS1 (#940) — the invoice-number equivalent of `getProjectNumberConfig()`
+ * (src/server/projects.ts), but reads the CURRENT source of truth
+ * (`readOrgSettingsBlob`, Convex) rather than that function's legacy
+ * `organization.metadata` (Prisma) read — invoiceNumberFormat was only ever
+ * stored via `saveOrgSettings`/Convex, never metadata. Unlike project
+ * numbers, a missing/invalid format here falls back to the built-in default
+ * (`DEFAULT_INVOICE_NUMBER_FORMAT`) rather than "auto-numbering disabled" —
+ * invoices have no manual-entry fallback.
+ */
+export async function getInvoiceNumberConfig(): Promise<{
+  format: string;
+  reset: IncrementReset;
+  padding: number;
+  timezone?: string;
+}> {
+  const { organizationId } = await getOrgContext();
+  const settings = (await readOrgSettingsBlob(organizationId)) as OrgSettings;
+  const format = settings.invoiceNumberFormat?.trim();
+  return {
+    format: format && hasIncrementToken(format) ? format : DEFAULT_INVOICE_NUMBER_FORMAT,
+    reset: settings.invoiceNumberIncrementReset || DEFAULT_INVOICE_NUMBER_INCREMENT_RESET,
+    padding: settings.invoiceNumberIncrementPadding ?? DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
+    timezone: settings.timezone,
+  };
 }
 
 /** Read-only preview of the next N asset tags — does NOT increment the counter. */

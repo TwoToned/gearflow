@@ -23,12 +23,11 @@ interface StatePayload {
   iat: number;
 }
 
+// HMAC-SHA256 signature over a token payload, not a password hash — same
+// primitive JWT's HS256 uses; verified with timingSafeEqual + a 10-min TTL.
+// See file header + PR #973 review thread for the full analysis.
 function sign(payload: string): string {
-  // codeql[js/insufficient-password-hash] -- HMAC-SHA256 signature over a
-  // token payload (keyed by BETTER_AUTH_SECRET), not a password hash; the
-  // same primitive JWT's HS256 uses. Verified with timingSafeEqual + a
-  // 10-min TTL. See file header + PR #973 review thread for the analysis.
-  return crypto.createHmac("sha256", env.BETTER_AUTH_SECRET).update(payload).digest("base64url");
+  return crypto.createHmac("sha256", env.BETTER_AUTH_SECRET).update(payload).digest("base64url"); // codeql[js/insufficient-password-hash]
 }
 
 export function createXeroOAuthState(orgId: string, userId: string): string {

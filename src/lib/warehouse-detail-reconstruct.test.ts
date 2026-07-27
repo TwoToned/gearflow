@@ -51,6 +51,10 @@ describe("reconstructWarehouseProject", () => {
         lineItems: [
           d({ id: "li1", organizationId: ORG, projectId: PROJ, type: "EQUIPMENT", modelId: "m1", kitId: "k1", assetId: "a1", quantity: 1, status: "CHECKED_OUT" }),
           d({ id: "svc1", organizationId: ORG, projectId: PROJ, type: "SERVICE", quantity: 1, status: "QUOTED" }), // dropped (not EQUIPMENT)
+          // WS11 (#950) — a SALE line is invisible to the warehouse detail page for
+          // free (not EQUIPMENT); no new filter logic was added for this, this case
+          // pins that as a regression guard rather than an accident of the type check.
+          d({ id: "sale1", organizationId: ORG, projectId: PROJ, type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 2, status: "CONFIRMED" }),
         ],
         units: [
           d({ id: "u1", organizationId: ORG, lineItemId: "li1", ordinal: 0, assetId: "a2", status: "CHECKED_OUT" }),
@@ -66,7 +70,7 @@ describe("reconstructWarehouseProject", () => {
         kitCheckCounts: { k1: 2 },
       }),
     );
-    expect(res.lineItems).toHaveLength(1); // SERVICE dropped
+    expect(res.lineItems).toHaveLength(1); // SERVICE + SALE dropped
     const li = res.lineItems[0];
     expect(li.id).toBe("li1");
     expect(li.model?._count?.modelCheckItems).toBe(3);

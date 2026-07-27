@@ -76,7 +76,9 @@ export function computeStockBreakdown(model: {
       (a) =>
         a.status === "IN_MAINTENANCE" ||
         a.status === "LOST" ||
-        a.status === "RETIRED",
+        a.status === "RETIRED" ||
+        // WS11 (#950) — a sold unit is terminal/disposed, same as RETIRED/LOST.
+        a.status === "SOLD",
     ).length;
     return { totalStock, effectiveStock: totalStock - unavailable, unavailable };
   }

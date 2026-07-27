@@ -98,6 +98,20 @@ describe("countEquipmentLineItemsByProject", () => {
     expect(map.get("p2")).toBe(1);
     expect(map.has("p3")).toBe(false);
   });
+
+  it("WS11 (#950): SALE lines are invisible to warehouse for free — excluded by the same EQUIPMENT-only filter", () => {
+    // No new logic exists (or should exist) here: SALE lines simply aren't
+    // EQUIPMENT, so they never enter warehouse-side counts/prep/pull-sheet/
+    // close-out reconstruction. This test pins that as an explicit regression
+    // guard rather than an accident of the type check.
+    const items = [
+      li({ projectId: "p1", type: "EQUIPMENT" }),
+      li({ projectId: "p1", type: "SALE", saleMode: "NEW_STOCK" }),
+      li({ projectId: "p1", type: "SALE", saleMode: "FROM_RENTAL_STOCK", status: "CONFIRMED" }),
+    ];
+    const map = countEquipmentLineItemsByProject(items, ["p1"]);
+    expect(map.get("p1")).toBe(1);
+  });
 });
 
 describe("countAllLineItemsByProject", () => {

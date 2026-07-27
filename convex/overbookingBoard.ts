@@ -67,24 +67,39 @@ async function fetchGearData(ctx: QueryCtx, orgId: string, candidateProjectIds: 
 }
 
 /**
- * ALL org bulk assets for the sale-stock section — saleStockQuantity has no
- * index (it's a minimal pre-WS11 stub, WS3 #942), so this can't be a targeted
- * range-scan. Org-scoped (not global), same shape as several other "small,
- * org-bounded roster" reads in this codebase (e.g. crewAvailability.ts's
- * plannerData). See docs/exceptions.md R-8.3.3. Also resolves the models any
- * negative-saleStock rows point at that have NO project demand (so `gearModels`
- * — derived from line items — would otherwise miss them).
+ * WS11 (#950) — models with a negative `saleStockQuantity` (a single
+ * per-model sale-stock pool, independent of rental assets/bulk) for the
+ * "Sale stock to procure" section, plus the NEW_STOCK sale lines that drew
+ * each one down. Supersedes the WS3 (#942) `bulkAssets.saleStockQuantity`
+ * org-wide-scan stub — `models` already has an `by_organizationId` index, so
+ * this is a normal indexed org-scan + client-side `saleStockQuantity < 0`
+ * filter (Convex guidelines: an additional predicate a chosen index can't
+ * express is an ordinary `.filter()`, not an R-8.3.3 exception), and the
+ * follow-up sale-line reads are TARGETED per negative model (`by_modelId`),
+ * not another org-wide scan. Also merges in `gearModels` (models already
+ * fetched for the gear-shortage section) so a model with real demand AND a
+ * negative sale pool isn't queried twice.
  */
 async function fetchSaleStockData(ctx: QueryCtx, orgId: string, gearModels: Doc<"models">[], gearModelIds: string[]) {
-  const allOrgBulkAssets = await ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: org-scoped, saleStockQuantity is unindexed — see docs/exceptions.md R-8.3.3
-  const saleStockModelIds = [...new Set(allOrgBulkAssets.filter((b) => (b.saleStockQuantity ?? 0) < 0).map((b) => b.modelId))].filter(
-    (mid) => !gearModelIds.includes(mid),
+  // saleStockQuantity has no index, so finding every negative-pool model needs
+  // the org's whole catalog; models is catalog-scale (bounded by distinct
+  // model count), same accepted shape as the assets.ts/projects.ts `list()` rows.
+  // r9.8-ok: see docs/exceptions.md R-8.3.3 (overbookingBoard-sale-stock-models)
+  const allOrgModels = await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
+  const negativeModels = allOrgModels.filter((m) => (m.saleStockQuantity ?? 0) < 0);
+  const negativeModelIds = negativeModels.filter((m) => !gearModelIds.includes(m.id)).map((m) => m.id);
+  const gearModelsById = new Map(gearModels.map((m) => [m.id, m]));
+  const models = [...gearModels, ...negativeModels.filter((m) => !gearModelsById.has(m.id) && negativeModelIds.includes(m.id))];
+
+  // Targeted per-negative-model line-item reads (bounded to the small set of
+  // over-drawn models, not an org-wide scan) — the "contributing sale lines".
+  const allNegativeModelIds = negativeModels.map((m) => m.id);
+  const saleLineGroups = await Promise.all(
+    allNegativeModelIds.map((mid) => ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
   );
-  const saleStockModelDocs = await Promise.all(
-    saleStockModelIds.map((mid) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", mid)).unique()),
-  );
-  const models = [...gearModels, ...saleStockModelDocs.filter((m): m is NonNullable<typeof m> => !!m && m.organizationId === orgId)];
-  return { allOrgBulkAssets, models };
+  const saleLines = saleLineGroups.flat().filter((li) => li.organizationId === orgId);
+
+  return { models, saleLines };
 }
 
 /** Services in range (bounded both ends on by_organizationId_date, WS3 #942) +
@@ -158,20 +173,21 @@ async function computeBoardBundle(ctx: QueryCtx, orgId: string, rangeStart: numb
   const candidateProjectIds = candidateProjects.map((p) => p.id);
 
   const { lineItems, referencedModelIds, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds);
-  const { allOrgBulkAssets, models: modelsForSaleStock } = await fetchSaleStockData(ctx, orgId, models, referencedModelIds);
+  const { models: modelsForSaleStock, saleLines } = await fetchSaleStockData(ctx, orgId, models, referencedModelIds);
   const { services, assignmentsByServiceId } = await fetchServicesData(ctx, orgId, rangeStart, rangeEnd);
   const { rangedAssignments, availabilityBlocks } = await fetchCrewData(ctx, orgId, rangeStart, rangeEnd);
 
   await fetchExtraProjects(ctx, orgId, projectDocsById, [
     ...services.map((s) => s.projectId),
     ...rangedAssignments.map((a) => a.projectId),
+    ...saleLines.map((li) => li.projectId),
   ]);
   const projectRefById = new Map(
     [...projectDocsById.values()].map((p) => [p.id, { id: p.id, name: p.name, projectNumber: p.projectNumber }]),
   );
 
   const gear = computeGearShortageBoard(range, candidateProjects, lineItems, models, assets, bulkAssetsForModels);
-  const saleStockToProcure = computeSaleStockToProcure(allOrgBulkAssets, modelsForSaleStock);
+  const saleStockToProcure = computeSaleStockToProcure(modelsForSaleStock, saleLines, projectRefById);
   const servicesMissingCrew = computeServicesMissingCrew(range, services, assignmentsByServiceId, projectRefById);
   const unconfirmedCrew = computeUnconfirmedCrew(range, rangedAssignments, projectDocsById);
   const crewDoubleBookings = computeCrewDoubleBookings(range, rangedAssignments, availabilityBlocks, projectRefById);

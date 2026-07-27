@@ -10,7 +10,7 @@ import {
   type BoardLineItem,
   type BoardModel,
   type BoardAsset,
-  type BoardBulkAsset,
+  type BoardSaleLine,
   type BoardService,
   type BoardAssignment,
   type BoardAvailabilityBlock,
@@ -106,23 +106,37 @@ describe("computeGearShortageBoard", () => {
   });
 });
 
-describe("computeSaleStockToProcure", () => {
-  test("flags models with a negative saleStockQuantity bulk-asset row", () => {
-    const models: BoardModel[] = [{ id: "m1", name: "Gaffer Tape" }];
-    const bulkAssets: BoardBulkAsset[] = [
-      { id: "b1", modelId: "m1", assetTag: "TAPE-1", saleStockQuantity: -3 },
-      { id: "b2", modelId: "m1", assetTag: "TAPE-2", saleStockQuantity: 5 },
+describe("computeSaleStockToProcure (WS11 #950)", () => {
+  const projectById = new Map([["p1", { id: "p1", name: "Big Show", projectNumber: "PRJ-1" }]]);
+
+  test("flags a model whose Model.saleStockQuantity has gone negative, listing contributing NEW_STOCK sale lines", () => {
+    const models: BoardModel[] = [{ id: "m1", name: "Gaffer Tape", saleStockQuantity: -3 }];
+    const saleLines: BoardSaleLine[] = [
+      { id: "li1", projectId: "p1", modelId: "m1", type: "SALE", saleMode: "NEW_STOCK", quantity: 3, status: "CONFIRMED" },
     ];
-    const rows = computeSaleStockToProcure(bulkAssets, models);
+    const rows = computeSaleStockToProcure(models, saleLines, projectById);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ modelId: "m1", shortfallQty: 3 });
-    expect(rows[0].contributingBulkAssets).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ modelId: "m1", modelName: "Gaffer Tape", shortfallQty: 3 });
+    expect(rows[0].contributingSaleLines).toEqual([
+      { lineItemId: "li1", projectId: "p1", projectName: "Big Show", projectNumber: "PRJ-1", quantity: 3 },
+    ]);
   });
 
-  test("a model with no negative rows is inert (pre-WS11 default: field unset)", () => {
-    const models: BoardModel[] = [{ id: "m1", name: "Gaffer Tape" }];
-    const bulkAssets: BoardBulkAsset[] = [{ id: "b1", modelId: "m1", assetTag: "TAPE-1" }];
-    expect(computeSaleStockToProcure(bulkAssets, models)).toHaveLength(0);
+  test("a model with a non-negative (or unset) saleStockQuantity is inert", () => {
+    const models: BoardModel[] = [{ id: "m1", name: "Gaffer Tape" }, { id: "m2", name: "Cable", saleStockQuantity: 5 }];
+    expect(computeSaleStockToProcure(models, [], projectById)).toHaveLength(0);
+  });
+
+  test("excludes CANCELLED sale lines and FROM_RENTAL_STOCK lines from the contributing list", () => {
+    const models: BoardModel[] = [{ id: "m1", name: "Gaffer Tape", saleStockQuantity: -1 }];
+    const saleLines: BoardSaleLine[] = [
+      { id: "cancelled1", projectId: "p1", modelId: "m1", type: "SALE", saleMode: "NEW_STOCK", quantity: 5, status: "CANCELLED" },
+      { id: "fromrental1", projectId: "p1", modelId: "m1", type: "SALE", saleMode: "FROM_RENTAL_STOCK", quantity: 5, status: "CONFIRMED" },
+      { id: "rental1", projectId: "p1", modelId: "m1", type: "EQUIPMENT", quantity: 5, status: "CONFIRMED" },
+    ];
+    const rows = computeSaleStockToProcure(models, saleLines, projectById);
+    expect(rows[0].contributingSaleLines).toHaveLength(0); // shortfall still flagged, just no matching contributing line
+    expect(rows[0].shortfallQty).toBe(1);
   });
 });
 

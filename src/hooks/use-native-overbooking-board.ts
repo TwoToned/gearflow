@@ -26,11 +26,22 @@ export interface OverbookingGearRow {
   projects: OverbookingProjectRef[];
 }
 
+/** WS11 (#950) — `contributingSaleLines` supersedes the old per-bulk-asset-row
+ *  `contributingBulkAssets` shape now that Model.saleStockQuantity is the real
+ *  per-model sale-stock pool. */
+export interface OverbookingSaleStockContributingLine {
+  lineItemId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  quantity: number;
+}
+
 export interface OverbookingSaleStockRow {
   modelId: string;
   modelName: string;
   shortfallQty: number;
-  contributingBulkAssets: { id: string; assetTag: string; saleStockQuantity: number }[];
+  contributingSaleLines: OverbookingSaleStockContributingLine[];
 }
 
 export interface OverbookingMissingCrewRow {

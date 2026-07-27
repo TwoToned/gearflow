@@ -53,6 +53,10 @@ export interface BoardModel {
   id: string;
   name: string;
   assetType?: string | null;
+  /** WS11 (#950) — the single per-model sale-stock pool. Negative = sold
+   *  below what's in stock; feeds "Sale stock to procure" below. Supersedes
+   *  the old per-bulk-asset-row `BoardBulkAsset.saleStockQuantity` stub. */
+  saleStockQuantity?: number | null;
 }
 
 export interface BoardAsset {
@@ -245,39 +249,71 @@ export function computeGearShortageBoard(
 
 // ─── Section 3: sale stock to procure ─────────────────────────────────────────
 
+export interface BoardSaleLine {
+  id: string;
+  projectId: string;
+  modelId?: string | null;
+  quantity?: number | null;
+  status?: string | null;
+  type?: string | null;
+  saleMode?: string | null;
+}
+
+export interface SaleStockContributingLine {
+  lineItemId: string;
+  projectId: string;
+  projectName: string;
+  projectNumber: string;
+  quantity: number;
+}
+
 export interface SaleStockRow {
   modelId: string;
   modelName: string;
   shortfallQty: number;
-  contributingBulkAssets: { id: string; assetTag: string; saleStockQuantity: number }[];
+  contributingSaleLines: SaleStockContributingLine[];
 }
 
 /**
- * Models whose `bulkAssets.saleStockQuantity` (WS3's minimal pre-WS11 stub
- * field) is negative on ANY of their bulk-asset rows — pre-WS11, nothing writes
- * this field yet, so it's inert (empty result) until it's populated. Bulk-asset
- * rows, not project line items, are the "contributing" unit here: there's no
- * sale-specific line-item type in the schema yet (that's WS11's job).
+ * Models whose `Model.saleStockQuantity` (WS11 #950 — a single per-model
+ * sale-stock pool, independent of rental assets/bulk) has gone negative:
+ * sold below what was ever added as stock. Supersedes the WS3 (#942)
+ * `bulkAssets.saleStockQuantity` per-bulk-asset-row stub, which nothing ever
+ * wrote (see convex/schema.ts's field comment on that now-inert field).
+ * `contributingSaleLines` lists the NEW_STOCK sale lines (org already
+ * verified upstream) that drew the pool down, so the board can point at
+ * exactly which project(s) to reconcile against.
  */
-export function computeSaleStockToProcure(bulkAssets: BoardBulkAsset[], models: BoardModel[]): SaleStockRow[] {
-  const modelNameById = new Map(models.map((m) => [m.id, m.name]));
-  const byModel = new Map<string, BoardBulkAsset[]>();
-  for (const b of bulkAssets) {
-    if (!b.modelId) continue;
-    if (b.saleStockQuantity == null || b.saleStockQuantity >= 0) continue;
-    const arr = byModel.get(b.modelId);
-    if (arr) arr.push(b); else byModel.set(b.modelId, [b]);
+export function computeSaleStockToProcure(
+  models: BoardModel[],
+  saleLines: BoardSaleLine[],
+  projectById: Map<string, { id: string; name: string; projectNumber: string }>,
+): SaleStockRow[] {
+  const negativeModels = models.filter((m) => (m.saleStockQuantity ?? 0) < 0);
+  if (negativeModels.length === 0) return [];
+
+  const linesByModel = new Map<string, BoardSaleLine[]>();
+  for (const li of saleLines) {
+    if (!li.modelId || li.type !== "SALE" || li.saleMode !== "NEW_STOCK" || li.status === "CANCELLED") continue;
+    const arr = linesByModel.get(li.modelId);
+    if (arr) arr.push(li); else linesByModel.set(li.modelId, [li]);
   }
-  const rows: SaleStockRow[] = [];
-  for (const [modelId, bulkRows] of byModel) {
-    const shortfallQty = bulkRows.reduce((sum, b) => sum + Math.abs(b.saleStockQuantity ?? 0), 0);
-    rows.push({
-      modelId,
-      modelName: modelNameById.get(modelId) ?? "Unknown model",
-      shortfallQty,
-      contributingBulkAssets: bulkRows.map((b) => ({ id: b.id, assetTag: b.assetTag, saleStockQuantity: b.saleStockQuantity ?? 0 })),
-    });
-  }
+
+  const rows = negativeModels.map((m) => ({
+    modelId: m.id,
+    modelName: m.name,
+    shortfallQty: Math.abs(m.saleStockQuantity ?? 0),
+    contributingSaleLines: (linesByModel.get(m.id) ?? []).map((li) => {
+      const p = projectById.get(li.projectId);
+      return {
+        lineItemId: li.id,
+        projectId: li.projectId,
+        projectName: p?.name ?? "",
+        projectNumber: p?.projectNumber ?? "",
+        quantity: li.quantity ?? 0,
+      };
+    }),
+  }));
   return rows.sort((a, b) => b.shortfallQty - a.shortfallQty);
 }
 

@@ -38,7 +38,7 @@ const BOARD_DATA = {
     },
   ],
   gearPencilled: [],
-  saleStockToProcure: [{ modelId: "m2", modelName: "Gaffer Tape", shortfallQty: 3, contributingBulkAssets: [] }],
+  saleStockToProcure: [{ modelId: "m2", modelName: "Gaffer Tape", shortfallQty: 3, contributingSaleLines: [] }],
   servicesMissingCrew: [],
   unconfirmedCrew: [],
   crewDoubleBookings: [],

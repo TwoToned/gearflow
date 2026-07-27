@@ -271,15 +271,30 @@ function GearSection({
 function SaleStockSection({ rows }: { rows: OverbookingSaleStockRow[] }) {
   return (
     <div className={TILE}>
-      <SectionHeader icon={Boxes} title="Sale stock to procure" subtitle="Bulk items sold below restocked count" count={rows.length} pillClass={SOFT_PILL} />
+      <SectionHeader icon={Boxes} title="Sale stock to procure" subtitle="Models sold below their new-stock sale pool" count={rows.length} pillClass={SOFT_PILL} />
       {rows.length === 0 ? (
         <p className="t-micro text-faint">No sale stock to procure.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((row) => (
-            <div key={row.modelId} className="flex items-center justify-between rounded-[var(--r)] border border-line p-3">
-              <p className="truncate text-[14px] font-medium text-ink">{row.modelName}</p>
-              <span className={cn("rounded-full px-2 py-0.5 text-badge font-medium", SOFT_PILL)}>{row.shortfallQty} to procure</span>
+            <div key={row.modelId} className="flex flex-col gap-1.5 rounded-[var(--r)] border border-line p-3">
+              <div className="flex items-center justify-between">
+                <p className="truncate text-[14px] font-medium text-ink">{row.modelName}</p>
+                <span className={cn("rounded-full px-2 py-0.5 text-badge font-medium", SOFT_PILL)}>{row.shortfallQty} to procure</span>
+              </div>
+              {row.contributingSaleLines.length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {row.contributingSaleLines.map((li) => (
+                    <Link
+                      key={li.lineItemId}
+                      href={`/projects/${li.projectId}`}
+                      className={cn("t-micro text-muted hover:text-link hover:underline rounded-sm", focusRing)}
+                    >
+                      {li.quantity}&times; on {li.projectNumber}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

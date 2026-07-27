@@ -66,9 +66,17 @@ async function seed(t: T) {
     });
     await ctx.db.insert("projectLineItems", { id: "L_future", organizationId: ORG, projectId: "P_future", modelId: "mdl", status: "CONFIRMED", quantity: 50, type: "EQUIPMENT" });
 
-    // Sale stock: a model with negative saleStockQuantity and NO project demand.
-    await ctx.db.insert("models", { id: "mdl_sale", organizationId: ORG, name: "Gaffer Tape" });
-    await ctx.db.insert("bulkAssets", { id: "B1", organizationId: ORG, modelId: "mdl_sale", assetTag: "TAPE-1", saleStockQuantity: -4 });
+    // Sale stock (WS11 #950): a model with negative Model.saleStockQuantity
+    // and NO project demand, plus a NEW_STOCK sale line that drew it down.
+    await ctx.db.insert("models", { id: "mdl_sale", organizationId: ORG, name: "Gaffer Tape", saleStockQuantity: -4 });
+    await ctx.db.insert("projects", {
+      id: "P_sale", organizationId: ORG, projectNumber: "P-SALE", name: "Tape order", status: "CONFIRMED",
+      isTemplate: false, createdAt: NOW, updatedAt: NOW,
+    });
+    await ctx.db.insert("projectLineItems", {
+      id: "L_sale", organizationId: ORG, projectId: "P_sale", modelId: "mdl_sale", status: "CONFIRMED",
+      quantity: 4, type: "SALE", saleMode: "NEW_STOCK",
+    });
 
     // Services missing crew: crewCountRequired 2, only 1 CONFIRMED assignment (a
     // 2nd is DECLINED and must not count as filled).
@@ -130,6 +138,9 @@ describe("overbookingBoard.bundle", () => {
 
     expect(result.saleStockToProcure).toHaveLength(1);
     expect(result.saleStockToProcure[0]).toMatchObject({ modelId: "mdl_sale", shortfallQty: 4 });
+    expect(result.saleStockToProcure[0].contributingSaleLines).toEqual([
+      { lineItemId: "L_sale", projectId: "P_sale", projectName: "Tape order", projectNumber: "P-SALE", quantity: 4 },
+    ]);
 
     expect(result.servicesMissingCrew).toHaveLength(1);
     expect(result.servicesMissingCrew[0]).toMatchObject({ serviceId: "S1", assignedCount: 1, shortfall: 1 });

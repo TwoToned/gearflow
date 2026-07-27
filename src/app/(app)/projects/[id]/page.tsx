@@ -682,7 +682,7 @@ export default function ProjectDetailPage({
                         refreshProjectDetail(id)
                       }
                       onSave={(notes) => saveProjectNotes("clientNotes", notes)}
-                      placeholder="Notes visible to client on documents..."
+                      placeholder="Notes visible to client on documents... supports **bold**, *italic*, and '- ' bullets."
                       rows={4}
                     />
                   </div>

@@ -52,13 +52,12 @@ function requireXeroAppCredentials(): { clientId: string; clientSecret: string }
 }
 
 // ─── Connection status + settings ──────────────────────────────────────────
-
-export async function getXeroIntegrationStatus() {
-  const { organizationId } = await requirePermission("invoice", "read");
-  const convex = await getConvexClient();
-  const row = await convex.query(api.xeroIntegrations.getForOrg, { organizationId });
-  return serialize(row);
-}
+// NOTE: there is no getXeroIntegrationStatus() server action here — the
+// Settings -> Xero page and every other consumer read connection status via
+// the reactive `useXeroIntegration()`/`useXeroLinked()` hooks
+// (src/hooks/use-xero-linked.ts, backed by `xeroIntegrations.getForOrg`)
+// instead of a server-action round trip, per FEATUREDOCS/54's "browser
+// components subscribe to native reactive queries" default.
 
 /** Build the Xero authorize URL for the "Connect Xero" button. Requires
  *  xero_manage (org admin+) — connecting/disconnecting the integration is a

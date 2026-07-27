@@ -3,13 +3,14 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 
 /**
- * Service-token read helper for the `invoices` table (WS1 #940). Currently
- * has exactly one consumer — `build-document-data.ts`'s `invoice_number` PDF
- * token — but follows the same `*-read.ts` shape every other non-browser
- * server context uses (FEATUREDOCS/54) so a second consumer has somewhere to
- * land without duplicating the Convex round trip.
+ * Service-token read helper for the `invoices` table (WS1 #940). Not
+ * exported (knip-flagged as dead — this file's only consumer today is
+ * `getLatestInvoiceNumberForProject` below, in the same file); re-export it
+ * if/when a second non-browser server context needs a project's raw invoice
+ * list, following the same `*-read.ts` shape every other one uses
+ * (FEATUREDOCS/54).
  */
-export async function getInvoicesByProject(projectId: string, organizationId: string): Promise<Doc<"invoices">[]> {
+async function getInvoicesByProject(projectId: string, organizationId: string): Promise<Doc<"invoices">[]> {
   const convex = await getConvexClient();
   return withConvexReadRetry(() => convex.query(api.invoices.listForProject, { orgId: organizationId, projectId }));
 }

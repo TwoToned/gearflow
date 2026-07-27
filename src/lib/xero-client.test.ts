@@ -11,6 +11,7 @@ import {
   refreshXeroAccessToken,
   searchXeroContactsByName,
   XeroApiError,
+  XERO_OAUTH_SCOPES,
 } from "./xero-client";
 
 /** Build a mock `fetch` that returns a fixed JSON body + status, and records
@@ -44,8 +45,9 @@ describe("buildXeroAuthorizeUrl", () => {
       "https://flow.rvlt.app/api/integrations/xero/callback",
     );
     expect(parsed.searchParams.get("state")).toBe("signed-state-token");
-    expect(parsed.searchParams.get("scope")).toContain("offline_access");
-    expect(parsed.searchParams.get("scope")).toContain("accounting.transactions");
+    // Every declared OAuth2 scope reaches the URL — no silent scope drift
+    // between the documented XERO_OAUTH_SCOPES list and what's requested.
+    expect(parsed.searchParams.get("scope")).toBe(XERO_OAUTH_SCOPES.join(" "));
   });
 });
 

@@ -1,5 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
 import {
@@ -34,6 +35,84 @@ export interface ResolvedInvoiceLine {
   taxType: string | null;
 }
 
+type Ctx = QueryCtx;
+
+/** Resolve one EQUIPMENT invoice line's account/tax code — split out of
+ *  resolveCodingForInvoice's handler purely to keep that function's
+ *  complexity manageable (R-3.6); no behaviour change from having it inline. */
+async function resolveEquipmentLineCode(
+  ctx: Ctx,
+  sourceLineItemId: string,
+  orgId: string,
+  orgDefaultCode: string | null,
+  orgDefaultTaxType: string | null,
+): Promise<{ accountCode: string | null; taxType: string | null }> {
+  const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", sourceLineItemId)).first();
+  if (!li || li.organizationId !== orgId) return { accountCode: null, taxType: null };
+
+  const isKitParent = !!li.kitId && !li.isKitChild;
+  let modelOrKitCode: string | null = null;
+  if (isKitParent && li.kitId) {
+    const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", li.kitId!)).first();
+    modelOrKitCode = kit && kit.organizationId === orgId ? resolveModelOrKitAccountCode({ isKitParent: true, lineKind: "RENTAL", kitCode: kit.xeroAccountCode }) : null;
+  } else if (li.modelId) {
+    const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", li.modelId!)).first();
+    modelOrKitCode = model && model.organizationId === orgId
+      ? resolveModelOrKitAccountCode({ isKitParent: false, lineKind: "RENTAL", modelRentalCode: model.xeroRentalAccountCode, modelSaleCode: model.xeroSaleAccountCode })
+      : null;
+  }
+
+  let categoryCode: string | null = null;
+  if (li.categoryId) {
+    const category = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", li.categoryId!)).first();
+    categoryCode = category && category.organizationId === orgId ? (category.xeroAccountCode ?? null) : null;
+  }
+
+  return {
+    accountCode: resolveEquipmentAccountCode({ lineOverride: li.xeroAccountCode, modelOrKitCode, categoryCode, orgDefaultCode }),
+    taxType: resolveTaxType({ lineOverride: li.xeroTaxType, orgDefaultTaxType }),
+  };
+}
+
+/** Resolve one SERVICE invoice line's account/tax code — same split-out rationale. */
+async function resolveServiceLineCode(
+  ctx: Ctx,
+  sourceLineItemId: string,
+  orgId: string,
+  serviceDefaults: Partial<Record<ServiceAccountDefaultKey, string>>,
+  orgDefaultCode: string | null,
+  orgDefaultTaxType: string | null,
+): Promise<{ accountCode: string | null; taxType: string | null }> {
+  const svc = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", sourceLineItemId)).first();
+  if (!svc || svc.organizationId !== orgId) return { accountCode: null, taxType: null };
+  const key = serviceAccountDefaultKeyForType(svc.type);
+  return {
+    accountCode: resolveServiceAccountCode({ lineOverride: svc.xeroAccountCode, serviceTypeDefault: serviceDefaults[key], orgDefaultCode }),
+    taxType: resolveTaxType({ lineOverride: svc.xeroTaxType, orgDefaultTaxType }),
+  };
+}
+
+/** Dispatch one invoice line to its source-type resolver (or the org default
+ *  for GROUP/CUSTOM lines, which have no per-entity coding field). */
+async function resolveOneLine(
+  ctx: Ctx,
+  line: { sourceType: string; sourceLineItemId?: string },
+  orgId: string,
+  orgDefaultCode: string | null,
+  orgDefaultTaxType: string | null,
+  serviceDefaults: Partial<Record<ServiceAccountDefaultKey, string>>,
+): Promise<{ accountCode: string | null; taxType: string | null }> {
+  if (line.sourceType === "EQUIPMENT" && line.sourceLineItemId) {
+    return resolveEquipmentLineCode(ctx, line.sourceLineItemId, orgId, orgDefaultCode, orgDefaultTaxType);
+  }
+  if (line.sourceType === "SERVICE" && line.sourceLineItemId) {
+    return resolveServiceLineCode(ctx, line.sourceLineItemId, orgId, serviceDefaults, orgDefaultCode, orgDefaultTaxType);
+  }
+  // GROUP / CUSTOM (deposit/balance/credit summary lines, or a group with no
+  // per-entity coding field) — org default only.
+  return { accountCode: orgDefaultCode, taxType: orgDefaultTaxType };
+}
+
 export const resolveCodingForInvoice = query({
   args: { invoiceId: v.string(), orgId: v.string() },
   returns: v.object({
@@ -63,45 +142,7 @@ export const resolveCodingForInvoice = query({
 
     for (const line of lines) {
       flowTotal += line.lineTotal;
-      let accountCode: string | null = null;
-      let taxType: string | null = null;
-
-      if (line.sourceType === "EQUIPMENT" && line.sourceLineItemId) {
-        const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", line.sourceLineItemId!)).first();
-        if (li && li.organizationId === orgId) {
-          const isKitParent = !!li.kitId && !li.isKitChild;
-          let modelOrKitCode: string | null = null;
-          if (isKitParent && li.kitId) {
-            const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", li.kitId!)).first();
-            modelOrKitCode = kit && kit.organizationId === orgId ? resolveModelOrKitAccountCode({ isKitParent: true, lineKind: "RENTAL", kitCode: kit.xeroAccountCode }) : null;
-          } else if (li.modelId) {
-            const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", li.modelId!)).first();
-            modelOrKitCode = model && model.organizationId === orgId
-              ? resolveModelOrKitAccountCode({ isKitParent: false, lineKind: "RENTAL", modelRentalCode: model.xeroRentalAccountCode, modelSaleCode: model.xeroSaleAccountCode })
-              : null;
-          }
-          let categoryCode: string | null = null;
-          if (li.categoryId) {
-            const category = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", li.categoryId!)).first();
-            categoryCode = category && category.organizationId === orgId ? (category.xeroAccountCode ?? null) : null;
-          }
-          accountCode = resolveEquipmentAccountCode({ lineOverride: li.xeroAccountCode, modelOrKitCode, categoryCode, orgDefaultCode });
-          taxType = resolveTaxType({ lineOverride: li.xeroTaxType, orgDefaultTaxType });
-        }
-      } else if (line.sourceType === "SERVICE" && line.sourceLineItemId) {
-        const svc = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", line.sourceLineItemId!)).first();
-        if (svc && svc.organizationId === orgId) {
-          const key = serviceAccountDefaultKeyForType(svc.type);
-          accountCode = resolveServiceAccountCode({ lineOverride: svc.xeroAccountCode, serviceTypeDefault: serviceDefaults[key], orgDefaultCode });
-          taxType = resolveTaxType({ lineOverride: svc.xeroTaxType, orgDefaultTaxType });
-        }
-      } else {
-        // GROUP / CUSTOM (deposit/balance/credit summary lines, or a group
-        // with no per-entity coding field) — org default only.
-        accountCode = orgDefaultCode;
-        taxType = orgDefaultTaxType;
-      }
-
+      const { accountCode, taxType } = await resolveOneLine(ctx, line, orgId, orgDefaultCode, orgDefaultTaxType, serviceDefaults);
       resolved.push({ lineId: line.id, accountCode, taxType });
 
       // Rough variance signal: a line whose resolved TaxType differs from the

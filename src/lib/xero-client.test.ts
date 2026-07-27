@@ -73,7 +73,7 @@ describe("exchangeXeroAuthCode / refreshXeroAccessToken", () => {
     refresh_token: "refresh-xyz",
     token_type: "Bearer",
     expires_in: 1800,
-    scope: "openid profile email offline_access accounting.transactions",
+    scope: "openid profile email offline_access accounting.invoices",
   };
 
   it("exchanges an authorization code for a token pair with Basic auth", async () => {

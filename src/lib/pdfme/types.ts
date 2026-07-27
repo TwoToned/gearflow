@@ -202,6 +202,10 @@ export interface DocumentData {
 
   // Metadata
   document_date: string;
+  /** WS1 (#940) — the most recently ISSUED invoice's number for this project
+   *  (see src/lib/invoices-read.ts getLatestInvoiceNumberForProject), or ""
+   *  when nothing has been issued yet (a DRAFT invoice has no number). */
+  invoice_number: string;
   /** Org-level document settings (src/lib/org-settings-types.ts `documents`).
    *  footer_text/footer_second_line: empty string = composer auto-generates
    *  from org_name/org_email/org_phone. */

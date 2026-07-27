@@ -25,6 +25,9 @@ export interface ProjectDetailsConfig {
   showPaymentTerms: boolean;
   showSiteContact: boolean;
   showDocumentDate: boolean;
+  /** WS1 (#940) — the ISSUED invoice number (invoice doc type only; empty
+   *  string / not-yet-issued renders nothing, never "undefined"). */
+  showInvoiceNumber?: boolean;
 }
 
 export interface TableLayoutConfig {
@@ -144,7 +147,7 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
       {
         kind: "detailsRow",
         client: { ...defaultClientDetails, showClientTaxId: true },
-        project: { ...defaultProjectDetails, showPaymentTerms: true },
+        project: { ...defaultProjectDetails, showPaymentTerms: true, showInvoiceNumber: true },
       },
       { kind: "table", config: { ...defaultTable, showBadges: false } },
       { kind: "totals", config: { ...defaultTotals, showDeposit: true, showBalance: true } },

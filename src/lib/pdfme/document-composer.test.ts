@@ -59,6 +59,7 @@ function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
     crew_notes: "",
     internal_notes: "",
     document_date: "2026-07-26",
+    invoice_number: "",
     document_footer_text: "",
     document_footer_second_line: "",
     quote_terms_and_conditions: "",
@@ -273,6 +274,38 @@ describe("composeDocument — layout invariants", () => {
   it("only quote and invoice show a totals block", () => {
     const withTotals = PROJECT_DOC_TYPES.filter((t) => DOCUMENT_LAYOUTS[t].blocks.some((b) => b.kind === "totals"));
     expect(withTotals.sort()).toEqual(["invoice", "quote"]);
+  });
+});
+
+describe("composeDocument — invoice_number (WS1 #940)", () => {
+  const soloData = (overrides: Partial<DocumentData> = {}) =>
+    makeData({
+      line_items: [makeLineItem({ id: "only-item", status: "CHECKED_OUT", checkedOutQuantity: 1, model: { name: "Solo Item" } })],
+      ...overrides,
+    });
+
+  it("renders 'Invoice #: <number>' on the invoice doc type when an ISSUED invoice number is present", () => {
+    const result = composeDocument("invoice", soloData({ invoice_number: "INV-2026-0001" }), "#0d4f4f");
+    const projectDetailsValue = Object.values(result.inputs[0] ?? {}).find(
+      (v) => typeof v === "string" && v.includes("Invoice #:"),
+    );
+    expect(projectDetailsValue).toContain("Invoice #: INV-2026-0001");
+  });
+
+  it("renders nothing invoice-number-related when the invoice hasn't been issued yet (empty string)", () => {
+    const result = composeDocument("invoice", soloData({ invoice_number: "" }), "#0d4f4f");
+    const anyInvoiceNumberText = Object.values(result.inputs[0] ?? {}).some(
+      (v) => typeof v === "string" && v.includes("Invoice #:"),
+    );
+    expect(anyInvoiceNumberText).toBe(false);
+  });
+
+  it("other doc types never render an invoice number even if the field is populated", () => {
+    const result = composeDocument("quote", soloData({ invoice_number: "INV-2026-0001" }), "#0d4f4f");
+    const anyInvoiceNumberText = Object.values(result.inputs[0] ?? {}).some(
+      (v) => typeof v === "string" && v.includes("Invoice #:"),
+    );
+    expect(anyInvoiceNumberText).toBe(false);
   });
 });
 

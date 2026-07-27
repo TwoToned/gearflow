@@ -24,6 +24,7 @@ import {
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import { getSubHiresByProject, getSubHireGroups } from "@/lib/sub-hire-read";
+import { getLatestInvoiceNumberForProject } from "@/lib/invoices-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { getProjectWindow } from "@/lib/project-window";
@@ -671,6 +672,10 @@ export async function buildDocumentData(
   const quoteValidityDays = documentSettings?.quoteValidityDays ?? 30;
   const quoteValidUntil = new Date(now.getTime() + quoteValidityDays * 24 * 60 * 60 * 1000);
 
+  // WS1 (#940) — only the invoice doc type renders this; skip the extra
+  // Convex round trip for the other 4 doc types.
+  const invoiceNumber = docType === "invoice" ? await getLatestInvoiceNumberForProject(projectId, organizationId) : null;
+
   return {
     // Org
     org_name: org?.name || "",
@@ -736,6 +741,7 @@ export async function buildDocumentData(
 
     // Metadata
     document_date: formatDate(now),
+    invoice_number: invoiceNumber || "",
     document_footer_text: documentSettings?.footerText || "",
     document_footer_second_line: documentSettings?.footerSecondLine || "",
     quote_terms_and_conditions: documentSettings?.termsAndConditions || "",

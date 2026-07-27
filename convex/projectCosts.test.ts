@@ -52,6 +52,24 @@ describe("projectCosts.operationalCosts", () => {
     expect(r.marginPercent).toBeCloseTo(78.5, 5);
   });
 
+  test("WS11 (#950): saleRevenue/saleCostTotal read straight off the project row, and saleCostTotal counts toward netMargin", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Job",
+        total: 1000, equipmentRevenue: 700, saleRevenue: 300, saleCostTotal: 120,
+        serviceCostTotal: 0, labourCostTotal: 0, subHireCostTotal: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    const r = await t.withIdentity(asUser).query(api.projectCosts.operationalCosts, { projectId: "p1", orgId: ORG });
+    expect(r.saleRevenue).toBe(300);
+    expect(r.saleCostTotal).toBe(120);
+    // allCosts = 120 (only saleCostTotal is non-zero); netMargin = 1000-120 = 880
+    expect(r.netMargin).toBe(880);
+  });
+
   test("returns empty for a project in another org (no cross-tenant leak)", async () => {
     const t = makeT();
     await seedMember(t);

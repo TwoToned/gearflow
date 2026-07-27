@@ -227,3 +227,67 @@ describe("recalcProjectTotals — totals parity", () => {
     });
   });
 });
+
+describe("recalcProjectTotals — WS11 (#950) sale revenue + COGS", () => {
+  async function seedProject(t: ReturnType<typeof convexTest>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+    });
+  }
+
+  test("standalone SALE lines bill into saleRevenue, excluded from equipmentRevenue", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await ctx.db.insert("projectLineItems", { id: "sale1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", isKitChild: false, isOptional: false, lineTotal: 300 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.equipmentRevenue).toBe(100); // sale excluded
+    expect(p?.saleRevenue).toBe(300);
+    // subtotal = equipment 100 + service 0 + sale 300 = 400
+    expect(p?.subtotal).toBe(400);
+  });
+
+  test("saleCostTotal resolves the unit-cost chain (asset -> model -> bulkAsset -> replacementCost) and reduces margin", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", defaultPurchasePrice: 50, replacementCost: 200 });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "TAG-1", purchasePrice: 80, status: "SOLD", isActive: false });
+      // Line 1: assetId set -> uses asset.purchasePrice (80), not model.defaultPurchasePrice.
+      await ctx.db.insert("projectLineItems", { id: "sale1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "FROM_RENTAL_STOCK", assetId: "a1", modelId: "m1", quantity: 1, isKitChild: false, isOptional: false, lineTotal: 300 });
+      // Line 2: no assetId, modelId only -> falls to model.defaultPurchasePrice (50), qty 2.
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Cable", defaultPurchasePrice: 5 });
+      await ctx.db.insert("projectLineItems", { id: "sale2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m2", quantity: 2, isKitChild: false, isOptional: false, lineTotal: 40 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    // saleCostTotal = (80 * 1) + (5 * 2) = 90
+    expect(p?.saleCostTotal).toBe(90);
+    // saleRevenue = 300 + 40 = 340; subtotal = 340; tax 10% = 34; total = 374
+    expect(p?.saleRevenue).toBe(340);
+    expect(p?.total).toBe(374);
+    // margin = total 374 - saleCostTotal 90 (no other costs) = 284
+    expect(p?.margin).toBe(284);
+  });
+
+  test("cancelled/optional SALE lines are excluded from both saleRevenue and saleCostTotal", async () => {
+    const t = convexTest(schema, modules);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "SM58", defaultPurchasePrice: 50 });
+      await ctx.db.insert("projectLineItems", { id: "cancelled1", organizationId: ORG, projectId: "p1", status: "CANCELLED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 1, isKitChild: false, isOptional: false, lineTotal: 999 });
+      await ctx.db.insert("projectLineItems", { id: "optional1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 1, isKitChild: false, isOptional: true, lineTotal: 999 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.saleRevenue).toBe(0);
+    expect(p?.saleCostTotal).toBe(0);
+  });
+});

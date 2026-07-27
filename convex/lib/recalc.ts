@@ -19,6 +19,77 @@ import { deriveBillingSummary } from "./billingDerivation";
 const round = (v: number): number => Math.round(v * 100) / 100;
 const num = (v: unknown): number => (v != null ? Number(v) : 0);
 
+/** First value > 0 in priority order — the "resolved unit cost" chain (WS11
+ *  #950): a null/0 value is skipped, never treated as a real $0 cost. */
+function firstPositive(...vals: (number | null | undefined)[]): number {
+  for (const v of vals) {
+    const n = num(v);
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+/**
+ * WS11 (#950) — sum of `unitCost × quantity` across this project's non-cancelled,
+ * non-optional SALE lines, where `unitCost` is the first positive value in
+ * `asset.purchasePrice -> model.defaultPurchasePrice -> bulkAsset.purchasePricePerUnit
+ * -> model.replacementCost` (spec-mandated chain order). Reads are batched:
+ * one lookup per distinct referenced model/asset/bulkAsset, not per line.
+ */
+type SaleCostLine = {
+  type?: string | null;
+  status?: string | null;
+  isOptional?: boolean | null;
+  modelId?: string | null;
+  assetId?: string | null;
+  bulkAssetId?: string | null;
+  quantity?: number | null;
+};
+
+/** Batch-fetch + dedupe the models/assets/bulkAssets a set of SALE lines
+ *  reference — one lookup per distinct id, not per line. Split out of
+ *  `computeSaleCostTotal` to keep its own cyclomatic complexity down. */
+async function loadSaleCostRefs(ctx: MutationCtx, saleLines: SaleCostLine[]) {
+  const modelIds = [...new Set(saleLines.map((li) => li.modelId).filter((v): v is string => !!v))];
+  const assetIds = [...new Set(saleLines.map((li) => li.assetId).filter((v): v is string => !!v))];
+  const bulkAssetIds = [...new Set(saleLines.map((li) => li.bulkAssetId).filter((v): v is string => !!v))];
+
+  const [modelDocs, assetDocs, bulkAssetDocs] = await Promise.all([
+    Promise.all(modelIds.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).first())),
+    Promise.all(assetIds.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first())),
+    Promise.all(bulkAssetIds.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first())),
+  ]);
+  return {
+    modelById: new Map(modelDocs.filter((m): m is NonNullable<typeof m> => !!m).map((m) => [m.id, m])),
+    assetById: new Map(assetDocs.filter((a): a is NonNullable<typeof a> => !!a).map((a) => [a.id, a])),
+    bulkAssetById: new Map(bulkAssetDocs.filter((b): b is NonNullable<typeof b> => !!b).map((b) => [b.id, b])),
+  };
+}
+
+const isCostedSaleLine = (li: SaleCostLine): boolean =>
+  li.type === "SALE" && li.status !== "CANCELLED" && !li.isOptional;
+
+/** One line's `unitCost × quantity` — split out of `computeSaleCostTotal` to
+ *  keep its own cyclomatic complexity down. */
+function saleLineCost(
+  li: SaleCostLine,
+  refs: Awaited<ReturnType<typeof loadSaleCostRefs>>,
+): number {
+  const asset = li.assetId ? refs.assetById.get(li.assetId) : undefined;
+  const model = li.modelId ? refs.modelById.get(li.modelId) : undefined;
+  const bulkAsset = li.bulkAssetId ? refs.bulkAssetById.get(li.bulkAssetId) : undefined;
+  const unitCost = firstPositive(asset?.purchasePrice, model?.defaultPurchasePrice, bulkAsset?.purchasePricePerUnit, model?.replacementCost);
+  return unitCost * Math.max(1, li.quantity ?? 1);
+}
+
+async function computeSaleCostTotal(ctx: MutationCtx, projectLines: SaleCostLine[]): Promise<number> {
+  const saleLines = projectLines.filter(isCostedSaleLine);
+  if (saleLines.length === 0) return 0;
+
+  const refs = await loadSaleCostRefs(ctx, saleLines);
+  return saleLines.reduce((total, li) => total + saleLineCost(li, refs), 0);
+}
+
 /** Org default tax rate from the orgSettings mirror (Postgres-authoritative). Shared by
  *  every native write mutation that needs it for recalcProjectTotals (project-services,
  *  crew-assignments, line-items) — one lookup, not a copy per write file. */
@@ -76,10 +147,15 @@ export async function recalcProjectTotals(
   }, 0);
 
   // 2. Standalone (ungrouped) line items — includes ungrouped custom items.
+  // WS11 (#950) — SALE lines are excluded here: they roll into their own
+  // `saleRevenue` bucket (2c below) so the P&L can report rental vs sale
+  // revenue separately. A SALE line INSIDE a priced group still rides the
+  // group's bundle price (1 above, unaffected) — the "no separate Sales
+  // bucket" spec decision is a PDF/badge-only distinction, not a revenue one.
   const standaloneRevenue = projectLines
     .filter(
       (li) =>
-        li.groupId == null && !li.isOptional && !li.isKitChild && li.status !== "CANCELLED",
+        li.groupId == null && !li.isOptional && !li.isKitChild && li.status !== "CANCELLED" && li.type !== "SALE",
     )
     .reduce((sum, li) => sum + num(li.lineTotal), 0);
 
@@ -105,6 +181,27 @@ export async function recalcProjectTotals(
 
   const equipmentRevenue = round(groupRevenue + standaloneRevenue + subHireGroupedRevenue);
 
+  // 2c. WS11 (#950) — sale revenue: standalone (ungrouped) SALE lines bill
+  // individually into their own bucket, mirroring standaloneRevenue's shape
+  // exactly (same filter, just `type === "SALE"` instead of excluded).
+  const saleRevenue = round(
+    projectLines
+      .filter(
+        (li) =>
+          li.groupId == null && !li.isOptional && !li.isKitChild && li.status !== "CANCELLED" && li.type === "SALE",
+      )
+      .reduce((sum, li) => sum + num(li.lineTotal), 0),
+  );
+
+  // 2d. WS11 (#950) — sale COGS: the resolved unit-cost chain (asset.purchasePrice
+  // -> model.defaultPurchasePrice -> bulkAsset.purchasePricePerUnit ->
+  // model.replacementCost) times quantity, summed across this project's
+  // non-cancelled, non-optional SALE lines — the cost row that makes sale
+  // margin visible in the P&L panel (projectCosts.ts). Reads are batched +
+  // deduplicated (one per referenced model/asset/bulkAsset), mirroring
+  // applyProjectAllocation's model-read pattern below.
+  const saleCostTotal = round(await computeSaleCostTotal(ctx, projectLines));
+
   // 3. Service financials (this project's non-CANCELLED rows).
   const services = allServices.filter(
     (s) => s.organizationId === orgId && s.status !== "CANCELLED",
@@ -128,8 +225,8 @@ export async function recalcProjectTotals(
   const subHires = allSubHires.filter((sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT");
   const subHireCostTotal = round(subHires.reduce((sum, sh) => sum + num(sh.totalCost), 0));
 
-  // 6. Totals (equipment + billable services).
-  const subtotal = round(equipmentRevenue + serviceRevenue);
+  // 6. Totals (equipment + billable services + WS11 #950 sale revenue).
+  const subtotal = round(equipmentRevenue + serviceRevenue + saleRevenue);
   const discountPercent = num(project.discountPercent);
   const discountAmount = round(subtotal * (discountPercent / 100));
   const taxableAmount = round(subtotal - discountAmount);
@@ -141,7 +238,9 @@ export async function recalcProjectTotals(
 
   const taxAmount = round(taxableAmount * (taxRate / 100));
   const total = round(taxableAmount + taxAmount);
-  const margin = round(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
+  // WS11 (#950) — saleCostTotal joins the cost side so a sale's margin (sale
+  // price minus its COGS) is visible, same as every other cost bucket here.
+  const margin = round(total - (serviceCostTotal + labourCostTotal + subHireCostTotal + saleCostTotal));
 
   // 6b. WS1 (#940) — depositPaid/invoicedTotal are DERIVED from this project's
   // own invoices (never hand-typed — see the schema.ts field comment).
@@ -161,6 +260,8 @@ export async function recalcProjectTotals(
 
   await ctx.db.patch(project._id, {
     equipmentRevenue,
+    saleRevenue,
+    saleCostTotal,
     serviceCostTotal,
     labourCostTotal,
     subHireCostTotal,

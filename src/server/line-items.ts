@@ -333,10 +333,23 @@ export async function checkKitAvailability(
 // --- Internal helpers ---
 
 /**
- * Recalculate all project financial totals from source data.
+ * Recalculate all project financial totals from source data. STALE-COMMENT FIX
+ * (found while touching WS11 #950): this pseudocode had drifted from the real
+ * formula in convex/lib/recalc.ts (`subtotal = equipmentRevenue` predates
+ * serviceRevenue being folded in) — corrected here to match that file, the
+ * actual source of truth this function delegates to.
  *
  *   equipmentRevenue = SUM(group.price × group.quantity)  [groups]
- *                    + SUM(standalone.lineTotal)           [ungrouped items]
+ *                    + SUM(standalone.lineTotal)           [ungrouped items, type != SALE]
+ *                    + SUM(grouped sub-hire.lineTotal)
+ *   saleRevenue      = SUM(standalone SALE line.lineTotal) (WS11 #950 — a SALE
+ *                      line inside a priced GROUP still rides the group's
+ *                      bundle price above; only ungrouped SALE lines land here)
+ *   saleCostTotal    = SUM(unitCost × quantity) over the same SALE lines, where
+ *                      unitCost is the first positive value in asset.purchasePrice
+ *                      -> model.defaultPurchasePrice -> bulkAsset.purchasePricePerUnit
+ *                      -> model.replacementCost (WS11 #950 — sale COGS)
+ *   serviceRevenue   = SUM(service.lineTotal) WHERE status != CANCELLED AND showOnDocuments
  *   serviceCostTotal = SUM(service.costTotal) WHERE status != CANCELLED
  *                      (a service's costTotal is itself auto-rolled up from its own
  *                      crewAssignments' estimatedCost once it has crew — see
@@ -344,14 +357,14 @@ export async function checkKitAvailability(
  *   labourCostTotal  = SUM(assignment.estimatedCost) WHERE assignment.serviceId IS NULL
  *                      (service-linked assignments are already counted via
  *                      serviceCostTotal above — see convex/lib/recalc.ts)
- *   subtotal         = equipmentRevenue
+ *   subtotal         = equipmentRevenue + serviceRevenue + saleRevenue
  *   discountAmount   = subtotal × discountPercent / 100
  *   taxableAmount    = subtotal - discountAmount
  *   taxRate          = project.taxRate ?? org.defaultTaxRate ?? 10
  *   taxAmount        = taxableAmount × taxRate / 100
  *   total            = taxableAmount + taxAmount
  *   subHireCostTotal = SUM(subHire.totalCost) WHERE status NOT IN (CANCELLED, DRAFT)
- *   margin           = total - (serviceCostTotal + labourCostTotal + subHireCostTotal)
+ *   margin           = total - (serviceCostTotal + labourCostTotal + subHireCostTotal + saleCostTotal)
  */
 export async function recalculateProjectTotals(projectId: string) {
   // Project header lives in Convex — read discountPercent/taxRate/organizationId

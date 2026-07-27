@@ -25,7 +25,6 @@ import {
   overlapsRange,
   assignmentOverlapsRange,
   selectMemberAvailability,
-  computeAvailabilityStatus,
   selectPlannerAssignments,
   selectPlannerAvailability,
   selectMemberConflicts,
@@ -408,19 +407,6 @@ describe("overlap + availability", () => {
     expect(selectMemberAvailability(rows, "m1", range).map((r) => r.id)).toEqual(["av1"]);
   });
 
-  it("computeAvailabilityStatus: UNAVAILABLE > TENTATIVE > busy > available", () => {
-    const blocks = [
-      mapAvailability({ id: "b1", crewMemberId: "m1", type: "UNAVAILABLE", startDate: ms("2026-06-11"), endDate: ms("2026-06-11") } as ConvexCrewAvailability),
-      mapAvailability({ id: "b2", crewMemberId: "m2", type: "TENTATIVE", startDate: ms("2026-06-11"), endDate: ms("2026-06-11") } as ConvexCrewAvailability),
-    ];
-    const assignments = [
-      mAssign({ crewMemberId: "m3", status: "CONFIRMED", startDate: new Date("2026-06-11"), endDate: new Date("2026-06-11") }),
-      mAssign({ crewMemberId: "m1", status: "CONFIRMED", startDate: new Date("2026-06-11"), endDate: new Date("2026-06-11") }), // should NOT override unavailable
-      mAssign({ crewMemberId: "m4", status: "CANCELLED", startDate: new Date("2026-06-11"), endDate: new Date("2026-06-11") }),
-    ];
-    const out = computeAvailabilityStatus(["m1", "m2", "m3", "m4"], blocks, assignments, range);
-    expect(out).toEqual({ m1: "unavailable", m2: "tentative", m3: "busy", m4: "available" });
-  });
 });
 
 // ─── Planner + form helper ───────────────────────────────────────────────────

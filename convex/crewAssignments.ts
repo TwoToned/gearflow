@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
+import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -24,10 +25,6 @@ function ascNullsLast<T>(a: T | null | undefined, b: T | null | undefined): numb
   if (a == null && b == null) return 0;
   if (a == null) return 1; if (b == null) return -1;
   return a < b ? -1 : a > b ? 1 : 0;
-}
-function rangeOverlaps(rowStart: number | null | undefined, rowEnd: number | null | undefined, rs: number, re: number): boolean {
-  if (rowStart == null || rowEnd == null) return false;
-  return rowStart <= re && rowEnd >= rs;
 }
 
 /**
@@ -111,11 +108,24 @@ export const projectLabourCost = query({
 /**
  * Active crew members for the assignment picker — browser-native replacement for
  * getCrewMembersForAssignment. Active+ACTIVE members (search, lastName asc, top 50) +
- * their assignments on THIS project + (optional) cross-project conflicts + unavailability.
+ * their assignments on THIS project + (optional) cross-project/cross-service
+ * conflicts + unavailability + full availability status (WS8 #947).
  */
 export const membersForAssignment = query({
-  args: { projectId: v.string(), orgId: v.string(), search: v.optional(v.string()), rangeStartMs: v.optional(v.number()), rangeEndMs: v.optional(v.number()) },
-  handler: async (ctx, { projectId, orgId, search, rangeStartMs, rangeEndMs }) => {
+  args: {
+    projectId: v.string(),
+    orgId: v.string(),
+    search: v.optional(v.string()),
+    rangeStartMs: v.optional(v.number()),
+    rangeEndMs: v.optional(v.number()),
+    /** The service being created/edited (services-panel.tsx's ServiceDialog) —
+     *  its OWN crew assignments are excluded from `conflicts` (WS8 #947 #796
+     *  follow-up), so cross-SERVICE same-project double-books surface while an
+     *  assignment isn't reported as conflicting with itself. Cross-project
+     *  assignments always stay included (never excluded by project). */
+    excludeServiceId: v.optional(v.string()),
+  },
+  handler: async (ctx, { projectId, orgId, search, rangeStartMs, rangeEndMs, excludeServiceId }) => {
     await requireOrgRead(ctx, orgId);
     const [allMembers, roles, projectAssignments] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) — see docs/exceptions.md R-8.3.3
@@ -148,30 +158,104 @@ export const membersForAssignment = query({
 
     if (rangeStartMs != null && rangeEndMs != null) {
       const memberIds = members.map((m) => m.id);
-      const [avails, crossProjectAssignmentsByMember] = await Promise.all([
-        Promise.all(memberIds.map((mid) => ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", mid)).collect())),
-        Promise.all(memberIds.map((mid) => ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", mid)).collect())),
+      // Index-bounded (WS8 #947): `.lte("startDate", rangeEndMs)` on
+      // by_crewMemberId_startDate_endDate drops every assignment/availability
+      // block starting after the window (can never overlap it) instead of
+      // collecting a member's ENTIRE history. Deliberately ONE-sided — a
+      // matching `.gte("startDate", rangeStartMs)` would also drop a
+      // multi-day block that STARTED before the window but still overlaps it
+      // (real conflicts silently missed), so the lower bound is left to the
+      // in-memory `overlaps()` check below instead.
+      const [availsByMember, assignmentsByMember] = await Promise.all([
+        Promise.all(memberIds.map((mid) => ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId_startDate_endDate", (q) => q.eq("crewMemberId", mid).lte("startDate", rangeEndMs)).collect())),
+        Promise.all(memberIds.map((mid) => ctx.db.query("crewAssignments").withIndex("by_crewMemberId_startDate_endDate", (q) => q.eq("crewMemberId", mid).lte("startDate", rangeEndMs)).collect())),
       ]);
-      const unavailable = new Set<string>();
-      for (const b of avails.flat().filter((b) => b.organizationId == null || b.organizationId === orgId)) {
-        if (b.type === "UNAVAILABLE" && rangeOverlaps(b.startDate, b.endDate, rangeStartMs, rangeEndMs)) unavailable.add(b.crewMemberId);
-      }
-      const conflictingAssignments = crossProjectAssignmentsByMember
-        .flat()
-        .filter((a) => a.organizationId === orgId && a.projectId !== projectId && !EXCLUDED_STATUSES.has(a.status ?? "") && rangeOverlaps(a.startDate, a.endDate, rangeStartMs, rangeEndMs));
-      const conflictProjectIds = [...new Set(conflictingAssignments.map((a) => a.projectId))];
+      const blocksByMemberId = new Map(memberIds.map((id, i) => [id, availsByMember[i].filter((b) => b.organizationId == null || b.organizationId === orgId)]));
+      const otherAssignmentsByMemberId = new Map(memberIds.map((id, i) => [id, assignmentsByMember[i].filter((a) => a.organizationId === orgId)]));
+
+      const allOtherAssignments = [...otherAssignmentsByMemberId.values()].flat();
+      const conflictProjectIds = [...new Set(allOtherAssignments.map((a) => a.projectId))];
       const conflictProjects = (
         await Promise.all(conflictProjectIds.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first()))
       ).filter((p): p is NonNullable<typeof p> => p != null && p.organizationId === orgId);
-      const projectsById = new Map(conflictProjects.map((p) => [p.id, p]));
+      const projectsById = new Map(conflictProjects.map((p) => [p.id, { projectNumber: p.projectNumber, name: p.name }]));
+
       return members.map((m) => {
-        const conflicts = conflictingAssignments
-          .filter((a) => a.crewMemberId === m.id)
-          .map((c) => { const p = projectsById.get(c.projectId) ?? null; return { crewMemberId: c.crewMemberId, projectId: c.projectId, project: p ? { projectNumber: p.projectNumber, name: p.name } : null, startDate: isoMs(c.startDate), endDate: isoMs(c.endDate) }; });
-        return { ...baseShape(m), conflicts, isUnavailable: unavailable.has(m.id) };
+        const signal = computeMemberConflictSignal({
+          crewMemberId: m.id,
+          blocks: blocksByMemberId.get(m.id) ?? [],
+          otherAssignments: otherAssignmentsByMemberId.get(m.id) ?? [],
+          excludeServiceId: excludeServiceId ?? null,
+          rangeStart: rangeStartMs,
+          rangeEnd: rangeEndMs,
+          projectsById,
+        });
+        return { ...baseShape(m), ...signal };
       });
     }
-    return members.map((m) => ({ ...baseShape(m), conflicts: [] as never[], isUnavailable: false }));
+    return members.map((m) => ({ ...baseShape(m), conflicts: [] as never[], isUnavailable: false, availability: "available" as const, hasPreferredBlock: false }));
+  },
+});
+
+/**
+ * Batched per-ASSIGNMENT conflict flags for a project's crew table (WS8 #947,
+ * sibling to `projectCrew` — deliberately NOT fattening that composite, which
+ * already collects shifts per row). One call covers every assignment on the
+ * project: for each, does ITS crew member have another overlapping,
+ * non-excluded assignment (any other project OR another service on this same
+ * project) or an overlapping availability block, using THAT assignment's own
+ * `[startDate, endDate]` (rows on the same project can have different phase
+ * dates) against candidates bounded by the caller-supplied `[rangeStartMs,
+ * rangeEndMs]` (typically the project's full assignment span). Returns a map
+ * keyed by assignment id — dateless assignments are omitted (nothing to
+ * check). Reuses the exact severity/availability rules `membersForAssignment`
+ * uses (`computeMemberConflictSignal`) — one implementation, not a third copy.
+ */
+export const conflictsForProject = query({
+  args: { projectId: v.string(), orgId: v.string(), rangeStartMs: v.number(), rangeEndMs: v.number() },
+  handler: async (ctx, { projectId, orgId, rangeStartMs, rangeEndMs }) => {
+    await requireOrgRead(ctx, orgId);
+    const projectAssignments = (
+      await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+    ).filter((a) => a.organizationId === orgId);
+
+    const memberIds = [...new Set(projectAssignments.map((a) => a.crewMemberId))];
+    // Same one-sided index bound as membersForAssignment (see its comment) —
+    // correctness over a tighter bound: never silently drops a real overlap.
+    const [availsByMember, assignmentsByMember] = await Promise.all([
+      Promise.all(memberIds.map((mid) => ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId_startDate_endDate", (q) => q.eq("crewMemberId", mid).lte("startDate", rangeEndMs)).collect())),
+      Promise.all(memberIds.map((mid) => ctx.db.query("crewAssignments").withIndex("by_crewMemberId_startDate_endDate", (q) => q.eq("crewMemberId", mid).lte("startDate", rangeEndMs)).collect())),
+    ]);
+    const blocksByMemberId = new Map(memberIds.map((id, i) => [id, availsByMember[i].filter((b) => b.organizationId == null || b.organizationId === orgId)]));
+    const otherAssignmentsByMemberId = new Map(memberIds.map((id, i) => [id, assignmentsByMember[i].filter((a) => a.organizationId === orgId)]));
+
+    const allOtherAssignments = [...otherAssignmentsByMemberId.values()].flat();
+    const conflictProjectIds = [...new Set(allOtherAssignments.map((a) => a.projectId))];
+    const conflictProjects = (
+      await Promise.all(conflictProjectIds.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first()))
+    ).filter((p): p is NonNullable<typeof p> => p != null && p.organizationId === orgId);
+    const projectsById = new Map(conflictProjects.map((p) => [p.id, { projectNumber: p.projectNumber, name: p.name }]));
+
+    const out: Record<string, { severity: "hard" | "soft"; label: string }> = {};
+    for (const a of projectAssignments) {
+      if (a.startDate == null || a.endDate == null) continue;
+      // Skip rows entirely outside the caller's requested window — nothing to
+      // compute (also the only use of rangeStartMs: the candidate reads above
+      // are already rangeEndMs-bounded; this bounds the OUTPUT side too).
+      if (a.endDate < rangeStartMs || a.startDate > rangeEndMs) continue;
+      const others = (otherAssignmentsByMemberId.get(a.crewMemberId) ?? []).filter((o) => o.id !== a.id);
+      const signal = computeMemberConflictSignal({
+        blocks: blocksByMemberId.get(a.crewMemberId) ?? [],
+        otherAssignments: others,
+        excludeServiceId: a.serviceId ?? null,
+        rangeStart: a.startDate,
+        rangeEnd: a.endDate,
+        projectsById,
+      });
+      const picked = pickConflictSeverity(signal);
+      if (picked) out[a.id] = picked;
+    }
+    return out;
   },
 });
 

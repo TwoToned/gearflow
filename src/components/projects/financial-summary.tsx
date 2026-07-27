@@ -24,8 +24,13 @@ interface FinancialSummaryProps {
   taxAmount: number | null;
   total: number | null;
   margin: number | null;
-  depositPercent: number | null;
+  /** WS1 (#940) — both DERIVED from the project's real Invoice rows
+   *  (convex/lib/recalc.ts), never a hand-typed deposit-percent-of-total
+   *  guess. `invoicedTotal` is the sum of every ISSUED invoice; `depositPaid`
+   *  is the ISSUED-DEPOSIT-kind subset of that. See the project's Finance tab
+   *  (Quotes & Invoices) for the underlying rows. */
   depositPaid: number | null;
+  invoicedTotal: number | null;
   pricedGroupCount?: number;
   totalGroupCount?: number;
   groupBreakdown?: GroupBreakdownItem[];
@@ -95,8 +100,8 @@ export function FinancialSummary({
   taxAmount,
   total,
   margin,
-  depositPercent,
   depositPaid,
+  invoicedTotal,
   pricedGroupCount,
   totalGroupCount,
   groupBreakdown = [],
@@ -197,18 +202,19 @@ export function FinancialSummary({
         )}
       </div>
 
-      {/* Deposit */}
-      {depositPercent != null && Number(depositPercent) > 0 && (
+      {/* Invoicing — derived from real Invoice rows (WS1 #940), not a
+          hand-typed percent-of-total guess. Only renders once something has
+          actually been issued; see the project's Finance tab for the rows. */}
+      {invoicedTotal != null && Number(invoicedTotal) > 0 && (
         <>
           <div className="h-px bg-border" />
           <div className="space-y-1.5">
-            <Row
-              label={`Deposit (${Number(depositPercent)}%)`}
-              value={formatCurrency(totalVal * Number(depositPercent) / 100)}
-            />
+            <div className="t-overline text-fg-4">Invoicing</div>
             {depositPaid != null && Number(depositPaid) > 0 && (
-              <Row label="Paid" value={formatCurrency(depositPaid)} />
+              <Row label="Deposit invoiced" value={formatCurrency(depositPaid)} />
             )}
+            <Row label="Invoiced to date" value={formatCurrency(invoicedTotal)} />
+            <Row label="Outstanding" value={formatCurrency(Math.max(0, totalVal - Number(invoicedTotal)))} bold />
           </div>
         </>
       )}

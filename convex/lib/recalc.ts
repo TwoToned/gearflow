@@ -143,6 +143,22 @@ export async function recalcProjectTotals(
   const total = round(taxableAmount + taxAmount);
   const margin = round(total - (serviceCostTotal + labourCostTotal + subHireCostTotal));
 
+  // 6b. WS1 (#940) — depositPaid/invoicedTotal are DERIVED from this project's
+  // own invoices (never hand-typed — see the schema.ts field comment).
+  // Only ISSUED invoices count (a DRAFT hasn't been sent to the client yet;
+  // VOID never happened) — invoicedTotal sums every ISSUED invoice's `total`
+  // (DEPOSIT + BALANCE + FULL + CREDIT, so an issued credit correctly nets
+  // the figure down); depositPaid is the DEPOSIT-kind subset. "Paid" here
+  // means "invoiced" (Flow has no payment-collection signal in phase 1 — Xero
+  // owns that; the phase-2 payment-status poll, once built, would separately
+  // gate this on paymentStatus === "PAID" rather than presence).
+  const invoices = await ctx.db.query("invoices").withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId)).collect();
+  const issuedInvoices = invoices.filter((inv) => inv.status === "ISSUED");
+  const invoicedTotal = round(issuedInvoices.reduce((sum, inv) => sum + num(inv.total), 0));
+  const depositPaid = round(
+    issuedInvoices.filter((inv) => inv.kind === "DEPOSIT").reduce((sum, inv) => sum + num(inv.total), 0),
+  );
+
   await ctx.db.patch(project._id, {
     equipmentRevenue,
     serviceCostTotal,
@@ -153,6 +169,8 @@ export async function recalcProjectTotals(
     taxAmount,
     total,
     margin,
+    depositPaid,
+    invoicedTotal,
     updatedAt: now,
   });
 

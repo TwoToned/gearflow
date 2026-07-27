@@ -16,6 +16,13 @@ export const clientSchema = z.object({
   paymentTerms: z.string().max(100).optional(),
   defaultDiscount: z.coerce.number().min(0).max(100).optional(),
   notes: z.string().max(2000).optional(),
+  // WS1 (#940) — the invoice-generation payment profile. Absent = FULL_UPFRONT
+  // (one FULL invoice); profileDepositPercent is % of the tax-INCLUSIVE
+  // project total, defaulting to 25 when DEPOSIT_BALANCE is chosen but the
+  // field is left blank (src/components/clients/... reads this default, the
+  // Convex write layer does too — see convex/clientWrites.ts).
+  paymentProfile: z.enum(["FULL_UPFRONT", "DEPOSIT_BALANCE"]).optional(),
+  profileDepositPercent: z.coerce.number().min(0).max(100).optional(),
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
 }).refine(

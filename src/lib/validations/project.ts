@@ -74,9 +74,10 @@ export const projectSchema = z.object({
   internalNotes: z.string().max(5000).optional(),
   clientNotes: z.string().max(5000).optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional(),
-  depositPercent: z.coerce.number().min(0).max(100).optional(),
-  depositPaid: z.coerce.number().min(0).optional(),
-  invoicedTotal: z.coerce.number().min(0).optional(),
+  // WS1 (#940) — depositPercent moved to the CLIENT payment profile
+  // (src/lib/validations/client.ts); depositPaid/invoicedTotal are now
+  // recalc-derived from the project's invoices, never hand-typed. All three
+  // removed from this form schema — see FEATUREDOCS/66-finance-quotes-invoices.md.
   tags: z.array(z.string()).default([]),
 });
 

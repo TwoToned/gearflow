@@ -203,6 +203,20 @@ export const PERMISSION_REGISTRY: Record<
       { key: "delete", label: "Delete" },
     ],
   },
+  invoice: {
+    label: "Quotes & Invoices",
+    actions: [
+      { key: "read", label: "View" },
+      { key: "create", label: "Create" },
+      { key: "update", label: "Edit" },
+      { key: "delete", label: "Delete" },
+      { key: "publish", label: "Publish Quote" },
+      { key: "issue", label: "Issue Invoice" },
+      { key: "void", label: "Void Invoice" },
+      { key: "xero_push", label: "Push to Xero" },
+      { key: "xero_manage", label: "Manage Xero Connection" },
+    ],
+  },
 };
 
 /** Role display labels */

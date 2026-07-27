@@ -1,0 +1,457 @@
+import { createId } from "@paralleldrive/cuid2";
+import { v, ConvexError } from "convex/values";
+import { mutation } from "./_generated/server";
+import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertWritesEnabled } from "./lib/writeGuard";
+import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { writeActivityLog } from "./lib/audit";
+import { assertStrLen } from "./lib/fieldGuards";
+import { assertRefInOrg } from "./lib/orgRef";
+import { assertLifecycleGuard } from "./lib/projectLocks";
+import { buildFinanceLines } from "./lib/financeSnapshot";
+import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
+import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
+import { renderProjectNumber, scopeKeyFor, type IncrementReset, type ProjectNumberDateParts } from "./lib/projectNumber";
+import * as enums from "./lib/validators";
+
+/**
+ * Invoice write mutations (WS1 #940) — browser-direct, standard 4-guard shape.
+ *
+ * `createNative` builds a DRAFT invoice + its `invoiceLines` from the
+ * project's CURRENT pricing (server-computed via `buildFinanceLines`, never
+ * client-supplied money — R-9.3). `issueNative` assigns the invoice number
+ * (the ONLY numbering moment — drafts stay unnumbered) using the SAME
+ * project-number engine (convex/lib/projectNumber.ts, zero engine change),
+ * namespaced under an "INV:<period>" scopeKey so the invoice counter never
+ * collides with the project-number counter in the shared
+ * `projectNumberSequences` table. `voidNative` marks an ISSUED invoice VOID
+ * (immutable once issued — a correction is VOID + reissue, or a CREDIT
+ * invoice via `createCreditNative`).
+ *
+ * Coding (xeroAccountCode/xeroTaxType) is intentionally NOT resolved here —
+ * it's resolved server-side at PUSH time (src/server/xero.ts
+ * pushInvoiceToXero, using convex/lib/xeroAccountCascade.ts) and snapshotted
+ * onto invoiceLines then, so an issued invoice's coding never silently
+ * changes when a model/kit/category mapping is edited later.
+ */
+
+const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+function assertInvoiceFields(f: { notes?: string; voidReason?: string }): void {
+  assertStrLen(f.notes, "notes", { max: 2000 });
+  assertStrLen(f.voidReason, "voidReason", { max: 1000 });
+}
+
+/** The client-input subset of createNative's args (mirrors invoiceSchema in
+ *  src/lib/validations/invoice.ts — registered in validationDrift.test.ts).
+ *  id/organizationId/projectId/clientId are createNative's own top-level
+ *  create-time args (like project/name/projectNumber on projectWriteFields),
+ *  not part of this pair. */
+export const invoiceFields = {
+  kind: enums.InvoiceKind,
+  notes: v.optional(v.string()),
+  dueDate: v.optional(v.number()),
+  depositPercent: v.optional(v.number()),
+};
+
+export const createNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    clientId: v.string(),
+    kind: enums.InvoiceKind,
+    notes: v.optional(v.string()),
+    dueDate: v.optional(v.number()),
+    /** % of the tax-inclusive total this DEPOSIT invoice represents — the
+     *  client caller reads this off the client's paymentProfile
+     *  (profileDepositPercent, default 25) and passes it through; re-validated
+     *  as a plain 0-100 bound here (not re-derived — the profile can change
+     *  between projects, so the invoice snapshots whatever % applied when it
+     *  was created, same "snapshot, don't re-derive" rule as the money below). */
+    depositPercent: v.optional(v.number()),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { actor: suppliedActor, auditId, now, ...fields } = args;
+    await assertWritesEnabled(ctx, "invoice");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, fields.organizationId, "invoice", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
+    assertInvoiceFields(fields);
+    if (fields.depositPercent != null && (fields.depositPercent < 0 || fields.depositPercent > 100)) {
+      throw new ConvexError({ code: "INVALID_FIELD", message: "depositPercent must be between 0 and 100." });
+    }
+
+    await assertRefInOrg(ctx, "projects", fields.projectId, fields.organizationId);
+    await assertRefInOrg(ctx, "clients", fields.clientId, fields.organizationId);
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", fields.projectId)).first();
+    if (!project) throw new ConvexError("Project not found: " + fields.projectId);
+    await assertLifecycleGuard(ctx, project, { kind: "financial" });
+
+    const dup = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
+    if (dup) throw new ConvexError("Invoice already exists");
+
+    const projectTotal = Number(project.total) || 0;
+    const projectSubtotal = Number(project.subtotal) || 0;
+    const projectTax = Number(project.taxAmount) || 0;
+
+    let subtotal = projectSubtotal;
+    let taxAmount = projectTax;
+    let total = projectTotal;
+    if (fields.kind === "DEPOSIT") {
+      const pct = fields.depositPercent ?? 25;
+      // Deposit basis: % of the tax-INCLUSIVE total (matches the pre-#940
+      // display math in financial-summary.tsx). taxAmount is the GST fraction
+      // of that deposit — shown on the deposit tax invoice as its own GST line.
+      total = round(projectTotal * (pct / 100));
+      taxAmount = projectTotal > 0 ? round(total * (projectTax / projectTotal)) : 0;
+      subtotal = round(total - taxAmount);
+    } else if (fields.kind === "BALANCE") {
+      // Balance = total less every non-VOID DEPOSIT invoice already raised on
+      // this project (server-computed — never trust a client-supplied balance).
+      const priorDeposits = await ctx.db
+        .query("invoices")
+        .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", fields.organizationId).eq("projectId", fields.projectId))
+        .collect();
+      const depositTotal = priorDeposits
+        .filter((inv) => inv.kind === "DEPOSIT" && inv.status !== "VOID")
+        .reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+      total = round(Math.max(0, projectTotal - depositTotal));
+      taxAmount = projectTotal > 0 ? round(total * (projectTax / projectTotal)) : 0;
+      subtotal = round(total - taxAmount);
+    }
+    // FULL and CREDIT keep the project's full totals as-is (CREDIT amounts are
+    // negated by createCreditNative, not here).
+
+    await ctx.db.insert("invoices", {
+      id: fields.id,
+      organizationId: fields.organizationId,
+      projectId: fields.projectId,
+      clientId: fields.clientId,
+      kind: fields.kind,
+      status: "DRAFT",
+      invoiceNumber: undefined,
+      dueDate: fields.dueDate,
+      subtotal,
+      taxAmount,
+      total,
+      depositPercent: fields.kind === "DEPOSIT" ? (fields.depositPercent ?? 25) : undefined,
+      notes: fields.notes,
+      xeroSyncStatus: "NOT_SYNCED",
+      createdById: actor.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const lines = await buildFinanceLines(ctx, fields.projectId);
+    // A DEPOSIT/BALANCE invoice doesn't carry the full equipment/service line
+    // breakdown (the % is against the total, not itemised) — snapshot a
+    // single summary line instead of the full FULL-invoice breakdown.
+    const linesToWrite =
+      fields.kind === "DEPOSIT" || fields.kind === "BALANCE"
+        ? [
+            {
+              sourceType: "CUSTOM" as const,
+              description:
+                fields.kind === "DEPOSIT"
+                  ? `Deposit (${fields.depositPercent ?? 25}% of project total)`
+                  : "Balance due",
+              quantity: 1,
+              unitPrice: total,
+              lineTotal: total,
+            },
+          ]
+        : lines;
+
+    for (let i = 0; i < linesToWrite.length; i++) {
+      const line = linesToWrite[i]!;
+      await ctx.db.insert("invoiceLines", {
+        id: createId(),
+        invoiceId: fields.id,
+        sourceType: line.sourceType,
+        sourceLineItemId: line.sourceLineItemId,
+        description: line.description,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal: line.lineTotal,
+        sortOrder: i,
+      });
+    }
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: fields.organizationId,
+      action: "CREATE",
+      entityType: "invoice",
+      entityId: fields.id,
+      entityName: `${fields.kind} invoice — ${project.name}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Created ${fields.kind.toLowerCase()} invoice draft for ${project.name}`,
+      projectId: fields.projectId,
+      createdAt: now,
+    });
+
+    return { id: fields.id };
+  },
+});
+
+export const issueNative = mutation({
+  returns: v.object({ id: v.string(), invoiceNumber: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    autoNumber: v.object({
+      format: v.string(),
+      reset: v.union(v.literal("NONE"), v.literal("YEARLY"), v.literal("MONTHLY"), v.literal("DAILY")),
+      padding: v.number(),
+      parts: v.object({ year: v.number(), month: v.number(), day: v.number() }),
+    }),
+    dueDate: v.optional(v.number()),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, autoNumber, dueDate, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "invoice");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "invoice", "issue");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const doc = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc) throw new ConvexError("Invoice not found: " + id);
+    if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (doc.status !== "DRAFT") {
+      throw new ConvexError({ code: "INVALID_STATE", message: `Invoice is ${doc.status}, only a DRAFT invoice can be issued.` });
+    }
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", doc.projectId)).first();
+    if (project) await assertLifecycleGuard(ctx, project, { kind: "financial" });
+
+    const invoiceNumber = await allocateInvoiceNumber(ctx, orgId, autoNumber, now);
+
+    await ctx.db.patch(doc._id, {
+      status: "ISSUED",
+      invoiceNumber,
+      issuedAt: now,
+      issuedById: actor.userId,
+      dueDate: dueDate ?? doc.dueDate,
+      updatedAt: now,
+    });
+
+    // Derived depositPaid/invoicedTotal only change on an ISSUED/VOID
+    // transition — recompute now rather than waiting for an unrelated
+    // line-item write to happen to touch this project next.
+    const taxRate = await orgDefaultTaxRate(ctx, orgId);
+    await recalcProjectTotals(ctx, doc.projectId, orgId, taxRate, now);
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "invoice",
+      entityId: id,
+      entityName: invoiceNumber,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Issued invoice ${invoiceNumber}`,
+      projectId: doc.projectId,
+      createdAt: now,
+    });
+
+    return { id, invoiceNumber };
+  },
+});
+
+/** Reserve + render the next invoice number, retrying past any rendered-code
+ *  clash (identical shape to projectWrites.ts createNative's auto-number
+ *  loop) — the counter is serializable so concurrent issues never double-
+ *  allocate, and the org-scoped clash-guard is belt-and-braces on top. */
+async function allocateInvoiceNumber(
+  ctx: Parameters<typeof reserveProjectNumberCounter>[0],
+  orgId: string,
+  autoNumber: { format: string; reset: IncrementReset; padding: number; parts: ProjectNumberDateParts },
+  now: number,
+): Promise<string> {
+  const scopeKey = "INV:" + scopeKeyFor(autoNumber.reset, autoNumber.parts);
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const sequence = await reserveProjectNumberCounter(ctx, orgId, scopeKey, createId(), now);
+    const candidate = renderProjectNumber(autoNumber.format, { parts: autoNumber.parts, sequence, padding: autoNumber.padding });
+    const clash = await ctx.db
+      .query("invoices")
+      .withIndex("by_organizationId_invoiceNumber", (q) => q.eq("organizationId", orgId).eq("invoiceNumber", candidate))
+      .unique();
+    if (!clash) return candidate;
+  }
+  throw new ConvexError("Could not generate a unique invoice number");
+}
+
+export const voidNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    reason: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, reason, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "invoice");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "invoice", "void");
+    const actor = await resolveActor(ctx, suppliedActor);
+    assertStrLen(reason, "reason", { min: 1, max: 1000 });
+
+    const doc = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc) throw new ConvexError("Invoice not found: " + id);
+    if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (doc.status !== "ISSUED") {
+      throw new ConvexError({ code: "INVALID_STATE", message: "Only an ISSUED invoice can be voided." });
+    }
+
+    await ctx.db.patch(doc._id, { status: "VOID", voidedAt: now, voidedById: actor.userId, voidReason: reason, updatedAt: now });
+
+    const taxRate = await orgDefaultTaxRate(ctx, orgId);
+    await recalcProjectTotals(ctx, doc.projectId, orgId, taxRate, now);
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "invoice",
+      entityId: id,
+      entityName: doc.invoiceNumber ?? id,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Voided invoice ${doc.invoiceNumber ?? id}: ${reason}`,
+      projectId: doc.projectId,
+      createdAt: now,
+    });
+
+    return { id };
+  },
+});
+
+export const deleteDraftNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "invoice");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "invoice", "delete");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const doc = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc) throw new ConvexError("Invoice not found: " + id);
+    if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (doc.status !== "DRAFT") {
+      throw new ConvexError({ code: "INVALID_STATE", message: "Only a DRAFT invoice can be deleted — void an issued one instead." });
+    }
+
+    const lines = await ctx.db.query("invoiceLines").withIndex("by_invoiceId", (q) => q.eq("invoiceId", id)).collect();
+    for (const line of lines) await ctx.db.delete(line._id);
+    await ctx.db.delete(doc._id);
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "DELETE",
+      entityType: "invoice",
+      entityId: id,
+      entityName: `${doc.kind} invoice draft`,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Deleted ${doc.kind.toLowerCase()} invoice draft`,
+      projectId: doc.projectId,
+      createdAt: now,
+    });
+
+    return { id };
+  },
+});
+
+/** A CREDIT invoice negates an already-ISSUED invoice's total — its own
+ *  document type in Xero terms (ACCRECCREDIT), created DRAFT like any other
+ *  invoice (the same issueNative numbering path applies to it later). */
+export const createCreditNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    creditForInvoiceId: v.string(),
+    notes: v.optional(v.string()),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, creditForInvoiceId, notes, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "invoice");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "invoice", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
+    assertInvoiceFields({ notes });
+
+    await assertRefInOrg(ctx, "invoices", creditForInvoiceId, orgId);
+    const original = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", creditForInvoiceId)).first();
+    if (!original) throw new ConvexError("Invoice not found: " + creditForInvoiceId);
+    if (original.status !== "ISSUED") {
+      throw new ConvexError({ code: "INVALID_STATE", message: "Can only credit an ISSUED invoice." });
+    }
+
+    const dup = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (dup) throw new ConvexError("Invoice already exists");
+
+    await ctx.db.insert("invoices", {
+      id,
+      organizationId: orgId,
+      projectId: original.projectId,
+      clientId: original.clientId,
+      kind: "CREDIT",
+      status: "DRAFT",
+      subtotal: -original.subtotal,
+      taxAmount: -original.taxAmount,
+      total: -original.total,
+      notes,
+      creditForInvoiceId,
+      xeroSyncStatus: "NOT_SYNCED",
+      createdById: actor.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("invoiceLines", {
+      id: createId(),
+      invoiceId: id,
+      sourceType: "CUSTOM",
+      description: `Credit for invoice ${original.invoiceNumber ?? creditForInvoiceId}`,
+      quantity: 1,
+      unitPrice: -original.total,
+      lineTotal: -original.total,
+      sortOrder: 0,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "CREATE",
+      entityType: "invoice",
+      entityId: id,
+      entityName: `Credit for ${original.invoiceNumber ?? creditForInvoiceId}`,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Created credit invoice for ${original.invoiceNumber ?? creditForInvoiceId}`,
+      projectId: original.projectId,
+      createdAt: now,
+    });
+
+    return { id };
+  },
+});
+
+function round(v: number): number {
+  return Math.round(v * 100) / 100;
+}

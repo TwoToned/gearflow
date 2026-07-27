@@ -285,6 +285,10 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     suggestedCrewRoles: v.optional(v.array(v.string())),
+    // WS1 (#940) — Xero account-coding cascade, level 3 (category default). Only
+    // rendered/editable when the org has Xero linked (isXeroLinked); stored value
+    // is retained but inert while unlinked. See convex/lib/xeroAccountCascade.ts.
+    xeroAccountCode: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -341,6 +345,13 @@ export default defineSchema({
     barcodeLabelTemplate: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
+    // WS1 (#940) — Xero account-coding cascade, level 2 (model default), split
+    // rental vs sale sides. `xeroSaleAccountCode` pairs with the future WS11/#950
+    // sales-stock flow — the field exists now, no sale workflow is built here.
+    // Xero-gated in the UI (categories/models/kits form's collapsed "Xero coding"
+    // section); see convex/lib/xeroAccountCascade.ts.
+    xeroRentalAccountCode: v.optional(v.string()),
+    xeroSaleAccountCode: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -571,6 +582,9 @@ export default defineSchema({
     checkMode: v.optional(enums.KitCheckMode),
     isPrep: v.optional(v.boolean()),
     isActive: v.optional(v.boolean()),
+    // WS1 (#940) — Xero account-coding cascade, level 2 (kit default, kit parent
+    // lines only — see xeroAccountCascade.ts). Xero-gated in the UI.
+    xeroAccountCode: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -907,6 +921,19 @@ export default defineSchema({
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
+    // WS1 (#940) — client payment profile drives invoice generation ("deposit not
+    // yet invoiced" nudge chips): FULL_UPFRONT (one FULL invoice) or DEPOSIT_BALANCE
+    // (a DEPOSIT invoice up front, a BALANCE invoice later). `profileDepositPercent`
+    // is % of the tax-INCLUSIVE project total; absent = the org-wide 25% default
+    // (see src/lib/validations/client.ts). Absent `paymentProfile` = FULL_UPFRONT.
+    paymentProfile: v.optional(enums.ClientPaymentProfile),
+    profileDepositPercent: v.optional(v.number()),
+    // Xero contact mapping (Xero-linked orgs only) — set by the client-detail
+    // "Xero contact" card, or auto-created + stored back on first invoice push if
+    // unmapped (see src/server/xero.ts pushInvoiceToXero). `xeroContactName` is a
+    // display snapshot (avoids a live Xero call just to show the linked name).
+    xeroContactId: v.optional(v.string()),
+    xeroContactName: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1003,11 +1030,13 @@ export default defineSchema({
     discountAmount: v.optional(v.number()),
     taxAmount: v.optional(v.number()),
     total: v.optional(v.number()),
-    // RESERVED for #940 (WS1 — deposit/invoicing workflow). Hand-typed wizard inputs
-    // today (project-wizard.tsx), applied nowhere server-side — do NOT wire deposit
-    // math or delete these as dead fields in a hygiene pass; #940 owns them. See
-    // issue #953 (QW-4) re-review, which scoped `defaultDiscount` wiring separately.
-    depositPercent: v.optional(v.number()),
+    // #940 (WS1 — finance model) landed: deposit % now lives on the CLIENT payment
+    // profile (clients.paymentProfile/profileDepositPercent), not the project — a
+    // project has no independent deposit rate, it inherits its client's. depositPaid/
+    // invoicedTotal are DERIVED, recalc-owned money anchors (see convex/lib/recalc.ts
+    // deriveInvoiceTotals) — summed from this project's non-VOID invoices, same as
+    // equipmentRevenue/subtotal/total above. Never client-writable (stripped in
+    // projectWrites.ts's PROJECT_MONEY_ANCHORS the same way the others are).
     depositPaid: v.optional(v.number()),
     invoicedTotal: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
@@ -1108,6 +1137,14 @@ export default defineSchema({
     subHireId: v.optional(v.string()),
     subHireItemId: v.optional(v.string()),
     subHireGroupId: v.optional(v.string()),
+    // WS1 (#940) — Xero account-coding cascade, level 1 (per-line override — wins
+    // over model/kit/category/org-default) + per-line tax-type override. Both
+    // Xero-gated in the UI (line edit dialog's collapsed "Xero coding" section) and
+    // resolved server-side at invoice-push time, snapshotted onto invoiceLines (an
+    // issued invoice's coding never changes retroactively). See
+    // convex/lib/xeroAccountCascade.ts.
+    xeroAccountCode: v.optional(v.string()),
+    xeroTaxType: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1979,6 +2016,12 @@ export default defineSchema({
     crewCountRequired: v.optional(v.number()),
     crewRoleId: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
+    // WS1 (#940) — Xero account-coding for services. `xeroAccountCode` overrides the
+    // per-service-type org default (labour / delivery-transport / misc — integration
+    // settings mapping); `xeroTaxType` mirrors the line-level tax override. Both
+    // Xero-gated. See convex/lib/xeroAccountCascade.ts resolveServiceAccountCode.
+    xeroAccountCode: v.optional(v.string()),
+    xeroTaxType: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1994,6 +2037,106 @@ export default defineSchema({
     // scan, the dashboardStats.ts MIN_TS idiom). `by_projectId_date` only serves a
     // single-project scan; this is the org-wide equivalent R-9.8 needs.
     .index("by_organizationId_date", ["organizationId", "date"]),
+
+  // Quote (WS1 #940) — snapshot-on-publish, versioned. `snapshot` is a JSON blob
+  // (lines + totals) frozen at publish time; republishing bumps `version` and
+  // supersedes the previous PUBLISHED row (never overwritten in place — an audit
+  // trail of every quote a client was actually sent). `pdfFileId` links the
+  // generated PDF (Convex file storage) for re-download without regenerating.
+  quotes: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    version: v.number(),
+    status: enums.QuoteStatus,
+    snapshot: v.any(),
+    pdfFileId: v.optional(v.string()),
+    publishedAt: v.optional(v.number()),
+    publishedById: v.optional(v.string()),
+    createdById: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_projectId", ["projectId"])
+    .index("by_projectId_version", ["projectId", "version"])
+    .index("by_organizationId_status", ["organizationId", "status"]),
+
+  // Invoice (WS1 #940) — Flow owns generation + numbering, Xero owns the ledger.
+  // `invoiceNumber` is null until ISSUED (numbered at issue time via the shared
+  // projectNumberSequences engine, namespaced scopeKey "INV:<period>" — see
+  // convex/invoicesWrites.ts issueNative). Immutable once ISSUED: edits are a VOID
+  // + reissue, or a CREDIT invoice — never an in-place patch of issued amounts.
+  // `paymentStatus` mirrors SubHirePaymentStatus's vocabulary and is written ONLY
+  // by the Xero payment-status poll (phase 2), never by the client.
+  invoices: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    clientId: v.string(),
+    kind: enums.InvoiceKind,
+    status: enums.InvoiceStatus,
+    paymentStatus: v.optional(enums.InvoicePaymentStatus),
+    invoiceNumber: v.optional(v.string()),
+    issuedAt: v.optional(v.number()),
+    issuedById: v.optional(v.string()),
+    dueDate: v.optional(v.number()),
+    // Money snapshot, frozen at create/issue time (never recomputed from live
+    // project pricing after issue — R-9.3 "server is the authority", but the
+    // authoritative moment is issue, not "whenever read").
+    subtotal: v.number(),
+    taxAmount: v.number(),
+    total: v.number(),
+    // % of the tax-inclusive project total this DEPOSIT invoice represents
+    // (informational snapshot of the client profile % used at creation time).
+    depositPercent: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    // A CREDIT invoice's back-reference to the invoice it credits.
+    creditForInvoiceId: v.optional(v.string()),
+    voidedAt: v.optional(v.number()),
+    voidedById: v.optional(v.string()),
+    voidReason: v.optional(v.string()),
+    // Xero push state (src/server/xero.ts pushInvoiceToXero).
+    xeroInvoiceId: v.optional(v.string()),
+    xeroSyncStatus: v.optional(enums.XeroSyncStatus),
+    lastSyncError: v.optional(v.string()),
+    createdById: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_projectId", ["projectId"])
+    .index("by_clientId", ["clientId"])
+    .index("by_organizationId_status", ["organizationId", "status"])
+    .index("by_organizationId_projectId", ["organizationId", "projectId"])
+    // Collision guard for the issue-time numbering allocation (belt-and-braces
+    // alongside the serializable counter — mirrors projects.by_organizationId_projectNumber).
+    .index("by_organizationId_invoiceNumber", ["organizationId", "invoiceNumber"]),
+
+  // InvoiceLine (WS1 #940) — snapshot rows under an invoice. PARENT_JOIN for
+  // org-export purposes (no organizationId column — joined via invoiceId into an
+  // already org-scoped `invoices` row, the supplierOrderItems/subHireItems
+  // pattern). Carries the RESOLVED xeroAccountCode/xeroTaxType per line (resolved
+  // server-side at push time via the cascade in convex/lib/xeroAccountCascade.ts
+  // and frozen here — an issued invoice's coding never changes retroactively when
+  // a model/kit/category mapping changes later).
+  invoiceLines: defineTable({
+    id: v.string(),
+    invoiceId: v.string(),
+    sourceType: enums.InvoiceLineSourceType,
+    sourceLineItemId: v.optional(v.string()),
+    description: v.string(),
+    quantity: v.number(),
+    unitPrice: v.number(),
+    lineTotal: v.number(),
+    xeroAccountCode: v.optional(v.string()),
+    xeroTaxType: v.optional(v.string()),
+    sortOrder: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_invoiceId", ["invoiceId"]),
 
   // ServiceTemplate
   serviceTemplates: defineTable({
@@ -2102,6 +2245,58 @@ export default defineSchema({
     .index("by_projectId", ["projectId"])
     .index("by_wooOrderId", ["wooOrderId"]),
 
+  // XeroIntegration (WS1 #940) — per-org Xero connection + coding config, one row
+  // per org (modeled on wooCommerceIntegrations). `refreshTokenEncrypted` is
+  // AES-256-GCM via src/lib/crypto/secret-vault.ts (never stored plain); no access
+  // token is persisted — it's minted from the refresh token on demand
+  // (src/lib/xero-client.ts). `defaultAccountCode` is cascade level 4 (org
+  // default); `serviceAccountDefaults` maps ServiceType -> Xero account code
+  // (labour/delivery-transport/misc); `defaultTaxType` maps the org's default GST
+  // rate to a Xero TaxType code. `cachedAccounts`/`cachedTaxRates` are the chart of
+  // accounts + tax rates fetched on connect and via the settings-page "Refresh"
+  // action — pickers read this cache, never Xero directly per keystroke.
+  xeroIntegrations: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    isConnected: v.optional(v.boolean()),
+    tenantId: v.optional(v.string()),
+    tenantName: v.optional(v.string()),
+    refreshTokenEncrypted: v.optional(v.string()),
+    connectedAt: v.optional(v.number()),
+    connectedById: v.optional(v.string()),
+    defaultAccountCode: v.optional(v.string()),
+    serviceAccountDefaults: v.optional(v.any()),
+    defaultTaxType: v.optional(v.string()),
+    cachedAccounts: v.optional(v.any()),
+    cachedTaxRates: v.optional(v.any()),
+    cacheRefreshedAt: v.optional(v.number()),
+    cacheError: v.optional(v.string()),
+    lastSyncError: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"]),
+
+  // XeroSyncLog (WS1 #940) — audit log of every Xero API interaction (modeled on
+  // wooCommerceOrderLogs). One row per push/contact-sync/token-refresh/reference
+  // fetch attempt, success or failure — the operator-visible trail behind a "why
+  // didn't this invoice sync" question.
+  xeroSyncLogs: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    direction: enums.XeroSyncDirection,
+    status: enums.XeroSyncLogStatus,
+    invoiceId: v.optional(v.string()),
+    xeroInvoiceId: v.optional(v.string()),
+    clientId: v.optional(v.string()),
+    payload: v.optional(v.any()),
+    errorMessage: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_invoiceId", ["invoiceId"]),
 
   // CheckItem
   checkItems: defineTable({

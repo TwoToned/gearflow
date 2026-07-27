@@ -425,3 +425,56 @@ export const ProjectTaskPriority = v.union(
   v.literal("NORMAL"),
   v.literal("HIGH"),
 );
+
+// ─── WS1 Finance (#940) — Quote/Invoice entities, client payment profiles, Xero ───
+
+export const QuoteStatus = v.union(
+  v.literal("DRAFT"),
+  v.literal("PUBLISHED"),
+  v.literal("SUPERSEDED"),
+);
+export const InvoiceKind = v.union(
+  v.literal("FULL"),
+  v.literal("DEPOSIT"),
+  v.literal("BALANCE"),
+  v.literal("CREDIT"),
+);
+export const InvoiceStatus = v.union(
+  v.literal("DRAFT"),
+  v.literal("ISSUED"),
+  v.literal("VOID"),
+);
+/** Vocabulary matches SubHirePaymentStatus (same shape, separate enum — a different
+ *  entity) — written only by Xero payment sync (phase 2), never by the client. */
+export const InvoicePaymentStatus = v.union(
+  v.literal("UNPAID"),
+  v.literal("PARTIALLY_PAID"),
+  v.literal("PAID"),
+);
+export const ClientPaymentProfile = v.union(
+  v.literal("FULL_UPFRONT"),
+  v.literal("DEPOSIT_BALANCE"),
+);
+export const InvoiceLineSourceType = v.union(
+  v.literal("EQUIPMENT"),
+  v.literal("SERVICE"),
+  v.literal("GROUP"),
+  v.literal("CUSTOM"),
+);
+export const XeroSyncStatus = v.union(
+  v.literal("NOT_SYNCED"),
+  v.literal("PENDING"),
+  v.literal("SYNCED"),
+  v.literal("ERROR"),
+);
+export const XeroSyncLogStatus = v.union(
+  v.literal("PENDING"),
+  v.literal("SUCCESS"),
+  v.literal("FAILED"),
+);
+export const XeroSyncDirection = v.union(
+  v.literal("PUSH_INVOICE"),
+  v.literal("SYNC_CONTACT"),
+  v.literal("REFRESH_TOKEN"),
+  v.literal("FETCH_REFERENCE_DATA"),
+);

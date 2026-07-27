@@ -35,6 +35,7 @@ export const RESOURCES = [
   "crew",
   "reports",
   "checkItem",
+  "invoice",
 ] as const;
 
 export type Resource = (typeof RESOURCES)[number];
@@ -49,6 +50,12 @@ export type PermissionMap = Partial<Record<Resource, readonly string[]>>;
 const ALL_ASSET = ["create", "read", "update", "delete", "import", "export"] as const;
 const ALL_CRUD = ["create", "read", "update", "delete"] as const;
 const ALL_PROJECT = ["create", "read", "update", "delete", "manage_line_items", "generate_documents"] as const;
+// WS1 (#940) — quote publish + invoice create/issue/void, and the Xero push +
+// connection-management actions gated alongside them (one resource for the
+// whole finance surface, not a separate "xero" resource — the actions ARE the
+// granularity: xero_manage is the connect/disconnect/settings action, distinct
+// from xero_push which just sends an already-issued invoice).
+const ALL_INVOICE = ["create", "read", "update", "delete", "publish", "issue", "void", "xero_push", "xero_manage"] as const;
 
 export const rolePermissions: Record<string, PermissionMap> = {
   owner: {
@@ -70,6 +77,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     crew: ALL_CRUD,
     reports: ["view", "export", "create", "delete"],
     checkItem: ALL_CRUD,
+    invoice: ALL_INVOICE,
   },
   admin: {
     asset: ALL_ASSET,
@@ -90,6 +98,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     crew: ALL_CRUD,
     reports: ["view", "export", "create", "delete"],
     checkItem: ALL_CRUD,
+    invoice: ALL_INVOICE,
   },
   manager: {
     asset: ["create", "read", "update", "import", "export"],
@@ -110,6 +119,9 @@ export const rolePermissions: Record<string, PermissionMap> = {
     crew: ["create", "read", "update"],
     reports: ["view", "export", "create", "delete"],
     checkItem: ALL_CRUD,
+    // No delete/void/xero_manage for manager — voiding an issued invoice and
+    // connecting/disconnecting Xero stay owner/admin-only.
+    invoice: ["create", "read", "update", "publish", "issue", "xero_push"],
   },
   member: {
     asset: ["create", "read", "update"],
@@ -130,6 +142,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     crew: ["read"],
     reports: ["view"],
     checkItem: ["read"],
+    invoice: ["create", "read"],
   },
   // `staff` role removed (Wave 2) — was a duplicate of `member` with identical
   // permissions. Existing `staff` members are migrated to `member` via the
@@ -162,6 +175,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     crew: ["read"],
     reports: ["view"],
     checkItem: ["read"],
+    invoice: ["read"],
   },
   viewer: {
     asset: ["read"],
@@ -182,6 +196,7 @@ export const rolePermissions: Record<string, PermissionMap> = {
     crew: ["read"],
     reports: ["view"],
     checkItem: ["read"],
+    invoice: ["read"],
   },
 };
 

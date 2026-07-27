@@ -64,6 +64,18 @@ export interface OrgSettings {
   projectNumberIncrementReset?: IncrementReset;
   /** Zero-pad width for the project-number increment. Default 2. */
   projectNumberIncrementPadding?: number;
+  /** WS1 (#940) — invoice-number template, SAME engine as project numbers (zero
+   *  engine change — src/lib/project-number.ts), namespaced under a separate
+   *  "INV:<period>" scopeKey in the shared projectNumberSequences counter table
+   *  so invoice and project numbering never collide or share a counter. Default
+   *  "INV-%YYYY-%SEQ". Unlike project numbers, invoices are ALWAYS auto-numbered
+   *  (no manual override) — numbered only at issue time (drafts stay unnumbered).
+   */
+  invoiceNumberFormat?: string;
+  /** Default YEARLY (pairs with the "%YYYY" in the default format). */
+  invoiceNumberIncrementReset?: IncrementReset;
+  /** Default 4 (pairs with "INV-2026-0001"). */
+  invoiceNumberIncrementPadding?: number;
   branding?: OrgBranding;
   documents?: OrgDocumentSettings;
   testTag?: TestTagSettings;

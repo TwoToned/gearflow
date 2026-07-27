@@ -22,6 +22,8 @@ import { toast } from "sonner";
 import { api } from "../../../../../convex/_generated/api";
 import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { ClientContactsManager, ReadOnlyContactsList } from "@/components/clients/client-contacts-manager";
+import { XeroContactCard } from "@/components/clients/xero-contact-card";
+import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { getPrimaryContact } from "@/lib/client-contact-helpers";
 import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
 import { formatCurrency } from "@/lib/formatters";
@@ -80,6 +82,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
   // subscription auto-updates — no manual refetch needed.
   const client = useAuthedQuery(api.clients.detail, orgId ? { orgId, id } : "skip");
   const isLoading = client === undefined;
+  const xeroLinked = useXeroLinked();
 
   const clientWrites = useClientWrites();
   const media = useMediaWrites("client");
@@ -419,6 +422,23 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <ClientContactsManager clientId={id} contacts={contacts} />
                   </CanDo>
                 </SidebarSection>
+
+                {/* WS1 (#940) — Xero contact mapping. Gated at the SECTION
+                    level (not just inside the card) so an unlinked org or a
+                    caller without xero_manage never even sees the "Xero"
+                    heading — an empty section with no content reads as
+                    broken, not as "nothing to see here". */}
+                {xeroLinked && (
+                  <SidebarSection title="Xero">
+                    <CanDo resource="invoice" action="xero_manage">
+                      <XeroContactCard
+                        clientId={id}
+                        xeroContactId={client.xeroContactId as string | null | undefined}
+                        xeroContactName={client.xeroContactName as string | null | undefined}
+                      />
+                    </CanDo>
+                  </SidebarSection>
+                )}
 
                 {/* Address & billing — merged: addresses + payment terms */}
                 <SidebarSection title="Address & billing">

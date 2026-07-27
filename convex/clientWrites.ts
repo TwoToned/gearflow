@@ -42,6 +42,7 @@ function assertClientFields(f: {
   paymentTerms?: string;
   defaultDiscount?: number;
   notes?: string;
+  profileDepositPercent?: number;
 }): void {
   assertStrLen(f.name, "name", { min: 1, max: 200 });
   assertStrLen(f.contactName, "contactName", { max: 200 });
@@ -53,6 +54,8 @@ function assertClientFields(f: {
   assertStrLen(f.paymentTerms, "paymentTerms", { max: 100 });
   assertNumRange(f.defaultDiscount, "defaultDiscount", { min: 0, max: 100 });
   assertStrLen(f.notes, "notes", { max: 2000 });
+  // WS1 (#940) — same 0-100 bound as defaultDiscount.
+  assertNumRange(f.profileDepositPercent, "profileDepositPercent", { min: 0, max: 100 });
 }
 
 export const clientFields = {
@@ -71,6 +74,14 @@ export const clientFields = {
   paymentTerms: v.optional(v.string()),
   defaultDiscount: v.optional(v.number()),
   notes: v.optional(v.string()),
+  // WS1 (#940) — invoice-generation payment profile (drives the "deposit not
+  // yet invoiced" nudge). xeroContactId/xeroContactName are DELIBERATELY not
+  // here — they're set only via the dedicated Xero contact-mapping action
+  // (src/server/xero.ts linkXeroContact/unlinkXeroContact), never through the
+  // general client edit form, so a client-form save can never silently
+  // clobber or drop the mapping.
+  paymentProfile: v.optional(enums.ClientPaymentProfile),
+  profileDepositPercent: v.optional(v.number()),
   tags: v.optional(v.array(v.string())),
   isActive: v.optional(v.boolean()),
 };

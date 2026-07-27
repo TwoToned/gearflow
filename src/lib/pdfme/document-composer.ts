@@ -282,6 +282,7 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       if (block.project.showPaymentTerms && data.client_payment_terms) projectLines++;
       if (block.project.showSiteContact && data.site_contact_name) projectLines++;
       if (block.project.showDocumentDate) projectLines++;
+      if (block.project.showInvoiceNumber && data.invoice_number) projectLines++;
 
       return Math.max(clientLines, projectLines, 3) * 4;
     }
@@ -665,6 +666,12 @@ function buildEntryFields(
         projectLines.push(contactLine);
       }
       if (block.project.showDocumentDate) projectLines.push(`Date: ${data.document_date}`);
+      // WS1 (#940) — only renders once the invoice has actually been ISSUED
+      // (build-document-data.ts resolves this to "" for a DRAFT-only project,
+      // and the guard here matches every other conditional line above).
+      if (block.project.showInvoiceNumber && data.invoice_number) {
+        projectLines.push(`Invoice #: ${data.invoice_number}`);
+      }
 
       const colWidth = CONTENT_WIDTH / 2 - 4;
       return [

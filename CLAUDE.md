@@ -186,6 +186,13 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
 - `NEXT_PUBLIC_CONVEX_URL` — Convex deployment URL the app connects to
 - `CONVEX_AUTH_ISSUER` / `CONVEX_AUTH_JWKS_URL` — Better Auth issuer Convex trusts for JWTs
 
+**Xero integration (WS1 #940, optional):**
+- `XERO_CLIENT_ID` / `XERO_CLIENT_SECRET` — Xero developer app OAuth2 credentials.
+  Unset = the "Connect Xero" action throws a clear error at click-time rather than
+  gating app boot (no org may ever connect Xero — a valid steady state).
+- `XERO_REDIRECT_URI` — OAuth2 callback URL registered with the Xero app. Defaults
+  to `${NEXT_PUBLIC_APP_URL}/api/integrations/xero/callback` when unset.
+
 **DB connection hardening (optional, safe defaults):** layered onto the runtime
 `DATABASE_URL` in `src/lib/db-url.ts` (NOT onto `prisma migrate`, so backfills
 aren't killed). Anything you put in the URL itself wins.

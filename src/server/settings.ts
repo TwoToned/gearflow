@@ -16,7 +16,12 @@ import {
   reserveTestTagIdsConvex,
 } from "@/lib/org-settings-read";
 import { env } from "@/env";
-import { validateProjectNumberFormat } from "@/lib/project-number";
+import { validateProjectNumberFormat, hasIncrementToken, type IncrementReset } from "@/lib/project-number";
+import {
+  DEFAULT_INVOICE_NUMBER_FORMAT,
+  DEFAULT_INVOICE_NUMBER_INCREMENT_RESET,
+  DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
+} from "@/lib/invoice-number";
 import { orgDocumentSettingsSchema } from "@/lib/validations/org-settings";
 import type { OrgSettings, TestTagSettings } from "@/lib/org-settings-types";
 
@@ -49,6 +54,17 @@ export async function updateOrganization(data: {
   if (pnFormat) {
     const err = validateProjectNumberFormat(pnFormat);
     if (err) throw new Error(`Project number format: ${err}`);
+  }
+
+  // WS1 (#940) — same validator, same reason: reject a bad invoice-number
+  // template before persisting so the always-on issue-time numbering path can
+  // never fail. Unlike project numbers this format can't be left blank
+  // (invoices have no manual-entry fallback) — an unset/blank format falls back
+  // to the DEFAULT_INVOICE_NUMBER_FORMAT constant at issue time instead.
+  const invFormat = data.settings.invoiceNumberFormat?.trim();
+  if (invFormat) {
+    const err = validateProjectNumberFormat(invFormat);
+    if (err) throw new Error(`Invoice number format: ${err}`);
   }
 
   if (data.settings.documents) {
@@ -85,6 +101,33 @@ export async function getOrgTestTagSettings(): Promise<TestTagSettings> {
   const { organizationId } = await getOrgContext();
   const settings = await readOrgSettingsBlob(organizationId);
   return settings.testTag || {};
+}
+
+/**
+ * WS1 (#940) — the invoice-number equivalent of `getProjectNumberConfig()`
+ * (src/server/projects.ts), but reads the CURRENT source of truth
+ * (`readOrgSettingsBlob`, Convex) rather than that function's legacy
+ * `organization.metadata` (Prisma) read — invoiceNumberFormat was only ever
+ * stored via `saveOrgSettings`/Convex, never metadata. Unlike project
+ * numbers, a missing/invalid format here falls back to the built-in default
+ * (`DEFAULT_INVOICE_NUMBER_FORMAT`) rather than "auto-numbering disabled" —
+ * invoices have no manual-entry fallback.
+ */
+export async function getInvoiceNumberConfig(): Promise<{
+  format: string;
+  reset: IncrementReset;
+  padding: number;
+  timezone?: string;
+}> {
+  const { organizationId } = await getOrgContext();
+  const settings = (await readOrgSettingsBlob(organizationId)) as OrgSettings;
+  const format = settings.invoiceNumberFormat?.trim();
+  return {
+    format: format && hasIncrementToken(format) ? format : DEFAULT_INVOICE_NUMBER_FORMAT,
+    reset: settings.invoiceNumberIncrementReset || DEFAULT_INVOICE_NUMBER_INCREMENT_RESET,
+    padding: settings.invoiceNumberIncrementPadding ?? DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
+    timezone: settings.timezone,
+  };
 }
 
 /** Read-only preview of the next N asset tags — does NOT increment the counter. */

@@ -61,6 +61,8 @@ export function ClientForm({ initialData }: ClientFormProps) {
       taxId: "",
       paymentTerms: "",
       defaultDiscount: undefined,
+      paymentProfile: "FULL_UPFRONT",
+      profileDepositPercent: undefined,
       notes: "",
       tags: [],
       isActive: true,
@@ -262,6 +264,40 @@ export function ClientForm({ initialData }: ClientFormProps) {
                         placeholder="0"
                       />
                     </SmartFormField>
+                  </div>
+                  {/* WS1 (#940) — payment profile drives invoice generation
+                      ("deposit not yet invoiced" nudge on the project's
+                      Finance tab). DEPOSIT_BALANCE reveals the % input;
+                      leaving it blank falls back to the org-wide 25% default
+                      at invoice-create time (convex/invoicesWrites.ts). */}
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <SmartFormField label="Payment profile" hint="How this client is invoiced.">
+                      <Controller control={form.control} name="paymentProfile" render={({ field }) => (
+                        <Select value={field.value ?? "FULL_UPFRONT"} onValueChange={field.onChange}>
+                          <SelectTrigger>
+                            <SelectValue>
+                              {field.value === "DEPOSIT_BALANCE" ? "Deposit + balance" : "Full amount upfront"}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="FULL_UPFRONT">Full amount upfront</SelectItem>
+                            <SelectItem value="DEPOSIT_BALANCE">Deposit + balance</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )} />
+                    </SmartFormField>
+                    {v.paymentProfile === "DEPOSIT_BALANCE" && (
+                      <SmartFormField label="Deposit (%)" hint="Of the tax-inclusive total. Default 25%.">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          {...form.register("profileDepositPercent")}
+                          placeholder="25"
+                        />
+                      </SmartFormField>
+                    )}
                   </div>
                   <SmartFormField label="Notes">
                     <Textarea {...form.register("notes")} placeholder="Any additional notes" rows={3} />

@@ -332,6 +332,10 @@ export const archiveNative = mutation({
 const PROJECT_MONEY_ANCHORS = [
   "equipmentRevenue", "serviceCostTotal", "labourCostTotal", "subHireCostTotal",
   "subtotal", "discountAmount", "taxAmount", "total", "margin",
+  // WS1 (#940) — depositPaid/invoicedTotal are now DERIVED from this
+  // project's invoices (convex/lib/recalc.ts), same anchor treatment as the
+  // rest of this list — never client-writable, regardless of lock tier.
+  "depositPaid", "invoicedTotal",
 ] as const;
 
 /** Immutable on a general `updateNative` patch: the money anchors + `isTemplate` (a project
@@ -438,9 +442,6 @@ export const updateNative = mutation({
     assertProjectMoneyFields({
       taxRate: typeof setObj.taxRate === "number" ? setObj.taxRate : undefined,
       discountPercent: typeof setObj.discountPercent === "number" ? setObj.discountPercent : undefined,
-      depositPercent: typeof setObj.depositPercent === "number" ? setObj.depositPercent : undefined,
-      depositPaid: typeof setObj.depositPaid === "number" ? setObj.depositPaid : undefined,
-      invoicedTotal: typeof setObj.invoicedTotal === "number" ? setObj.invoicedTotal : undefined,
       billingWeeksOverride: typeof setObj.billingWeeksOverride === "number" ? setObj.billingWeeksOverride : undefined,
       billingDaysOverride: typeof setObj.billingDaysOverride === "number" ? setObj.billingDaysOverride : undefined,
     });
@@ -579,8 +580,7 @@ export const createNative = mutation({
     // browser-direct caller bypasses the client Zod schema.
     assertProjectMoneyFields({
       taxRate: fields.taxRate, discountPercent: fields.discountPercent,
-      depositPercent: fields.depositPercent, depositPaid: fields.depositPaid,
-      invoicedTotal: fields.invoicedTotal, billingWeeksOverride: fields.billingWeeksOverride,
+      billingWeeksOverride: fields.billingWeeksOverride,
       billingDaysOverride: fields.billingDaysOverride,
     });
 
@@ -998,7 +998,7 @@ function duplicateProjectScalars(source: {
   type?: string; clientId?: string; description?: string; locationId?: string;
   siteContactName?: string; siteContactPhone?: string; siteContactEmail?: string;
   crewNotes?: string; internalNotes?: string; clientNotes?: string;
-  discountPercent?: number; depositPercent?: number;
+  discountPercent?: number;
   taxRate?: number;
   tags?: string[];
 }): Record<string, unknown> {
@@ -1014,7 +1014,6 @@ function duplicateProjectScalars(source: {
     ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
     ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
     ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
-    ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
     ...(source.taxRate != null ? { taxRate: source.taxRate } : {}),
     tags: source.tags ?? [],
     // billingWeeksOverride/billingDaysOverride deliberately NOT copied — a
@@ -1350,7 +1349,6 @@ export const saveAsTemplateNative = mutation({
       ...(source.internalNotes ? { internalNotes: source.internalNotes } : {}),
       ...(source.clientNotes ? { clientNotes: source.clientNotes } : {}),
       ...(source.discountPercent != null ? { discountPercent: source.discountPercent } : {}),
-      ...(source.depositPercent != null ? { depositPercent: source.depositPercent } : {}),
       tags: source.tags ?? [],
       createdAt: now,
       updatedAt: now,

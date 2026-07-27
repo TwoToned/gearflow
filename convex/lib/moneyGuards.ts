@@ -69,20 +69,23 @@ export function assertLineMoneyFields(f: {
 
 /**
  * Validate the project-level money-adjacent fields to the same bounds
- * `src/lib/validations/project.ts` `projectSchema` enforces (taxRate/discountPercent/
- * depositPercent: 0-100; depositPaid/invoicedTotal: >=0). These are recalc INPUTS
- * (unlike PROJECT_MONEY_ANCHORS in convex/projectWrites.ts, which are recalc OUTPUTS
- * and stripped entirely), so they stay settable but must be bounded — a browser-direct
- * caller bypasses the Zod schema, and an unbounded `taxRate: -1e9` or
- * `discountPercent: NaN` would poison `recalcProjectTotals`'s output the same way an
- * unbounded line-item field would.
+ * `src/lib/validations/project.ts` `projectSchema` enforces (taxRate/discountPercent:
+ * 0-100). These are recalc INPUTS (unlike PROJECT_MONEY_ANCHORS in
+ * convex/projectWrites.ts, which are recalc OUTPUTS and stripped entirely), so
+ * they stay settable but must be bounded — a browser-direct caller bypasses
+ * the Zod schema, and an unbounded `taxRate: -1e9` or `discountPercent: NaN`
+ * would poison `recalcProjectTotals`'s output the same way an unbounded
+ * line-item field would.
+ *
+ * WS1 (#940): `depositPercent` moved to the CLIENT payment profile (no longer
+ * a project field at all); `depositPaid`/`invoicedTotal` moved from "recalc
+ * input, hand-typed" to "recalc OUTPUT, derived from invoices" — both are now
+ * PROJECT_MONEY_ANCHORS (projectWrites.ts), stripped like equipmentRevenue
+ * rather than bound-checked here.
  */
 export function assertProjectMoneyFields(f: {
   taxRate?: number | null;
   discountPercent?: number | null;
-  depositPercent?: number | null;
-  depositPaid?: number | null;
-  invoicedTotal?: number | null;
   billingWeeksOverride?: number | null;
   billingDaysOverride?: number | null;
 }): void {
@@ -94,21 +97,6 @@ export function assertProjectMoneyFields(f: {
   if (f.discountPercent != null) {
     if (!Number.isFinite(f.discountPercent) || f.discountPercent < 0 || f.discountPercent > 100) {
       throw new ConvexError({ code: "INVALID_DISCOUNT_PERCENT", message: "Discount percent must be between 0 and 100." });
-    }
-  }
-  if (f.depositPercent != null) {
-    if (!Number.isFinite(f.depositPercent) || f.depositPercent < 0 || f.depositPercent > 100) {
-      throw new ConvexError({ code: "INVALID_DEPOSIT_PERCENT", message: "Deposit percent must be between 0 and 100." });
-    }
-  }
-  if (f.depositPaid != null) {
-    if (!Number.isFinite(f.depositPaid) || f.depositPaid < 0) {
-      throw new ConvexError({ code: "INVALID_DEPOSIT_PAID", message: "Deposit paid must be a non-negative finite number." });
-    }
-  }
-  if (f.invoicedTotal != null) {
-    if (!Number.isFinite(f.invoicedTotal) || f.invoicedTotal < 0) {
-      throw new ConvexError({ code: "INVALID_INVOICED_TOTAL", message: "Invoiced total must be a non-negative finite number." });
     }
   }
   if (f.billingWeeksOverride != null) {

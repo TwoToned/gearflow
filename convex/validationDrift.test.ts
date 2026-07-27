@@ -31,6 +31,8 @@ import { subTestFields } from "./subTestRecords";
 import { projectWriteFields } from "./projects";
 import { updateFields as supplierOrderUpdateFields } from "./supplierOrdersWrites";
 import { itemFields as supplierOrderItemFields } from "./supplierOrderItemsWrites";
+import { quoteFields } from "./quotesWrites";
+import { invoiceFields } from "./invoicesWrites";
 
 import { clientSchema } from "@/lib/validations/client";
 import { clientContactSchema } from "@/lib/validations/client-contact";
@@ -44,6 +46,8 @@ import { modelSchema } from "@/lib/validations/model";
 import { supplierSchema } from "@/lib/validations/supplier";
 import { subTestRecordSchema } from "@/lib/validations/test-tag";
 import { supplierOrderUpdateSchema, supplierOrderItemSchema } from "@/lib/validations/supplier-order";
+import { quoteSchema } from "@/lib/validations/quote";
+import { invoiceSchema } from "@/lib/validations/invoice";
 
 /** Unwrap a Zod schema (through .refine/.default/.optional wrappers) to its object shape keys. */
 function zodKeys(schema: unknown): string[] {
@@ -133,6 +137,10 @@ const PAIRS: Pair[] = [
     allowConvexOnly: [
       "equipmentRevenue", "serviceCostTotal", "labourCostTotal", "subHireCostTotal",
       "margin", "subtotal", "discountAmount", "taxAmount", "total",
+      // WS1 (#940) — depositPaid/invoicedTotal moved from "hand-typed input" to
+      // recalc-owned PROJECT_MONEY_ANCHORS (derived from the project's Invoice
+      // rows), same treatment as the anchors just above — never a form field.
+      "depositPaid", "invoicedTotal",
       "isTemplate", "createdAt", "updatedAt", "projectManagerId",
     ],
   },
@@ -141,6 +149,16 @@ const PAIRS: Pair[] = [
   { name: "supplierOrderUpdate", zod: supplierOrderUpdateSchema, convex: supplierOrderUpdateFields },
   // WS7 #946 — supplierOrderItem CRUD (new browser path; previously had none).
   { name: "supplierOrderItem", zod: supplierOrderItemSchema, convex: supplierOrderItemFields },
+  // WS1 #940 — quote publish / invoice create (finance model).
+  { name: "quote", zod: quoteSchema, convex: quoteFields },
+  {
+    name: "invoice",
+    zod: invoiceSchema,
+    convex: invoiceFields,
+    // dueDate is a Date client-side, a ms-timestamp number over the wire — the
+    // hook converts it, same pattern as every other date field in this codebase
+    // (see "Date Handling" in FEATUREDOCS/28-patterns.md); field NAME matches.
+  },
 ];
 
 describe("validation field-set parity (Zod client ↔ Convex server) — R-8.6.1", () => {

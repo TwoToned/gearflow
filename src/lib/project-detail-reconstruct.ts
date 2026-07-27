@@ -96,7 +96,8 @@ export function mapProject(d: ProjectDoc): ProjectRow {
     discountAmount: orNull(d.discountAmount),
     taxAmount: orNull(d.taxAmount),
     total: orNull(d.total),
-    depositPercent: orNull(d.depositPercent),
+    // WS1 (#940) — depositPercent moved off the project (client payment profile
+    // now owns it); depositPaid/invoicedTotal stay here as recalc-derived reads.
     depositPaid: orNull(d.depositPaid),
     invoicedTotal: orNull(d.invoicedTotal),
     tags: d.tags ?? [],

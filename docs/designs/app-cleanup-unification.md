@@ -992,9 +992,26 @@ This is the load-bearing pivot. RVLT Flow is **NOT** a finance system. It does n
 | P5 | Fix 4 CRITICAL bugs first | ACCEPT |
 | P6 | Tests alongside new code | ACCEPT |
 | P7 | Wedge + cheap wins | ACCEPT |
-| **P8 (new)** | **RVLT Flow stays an operations platform. Period.** No invoicing, no payments, no accounting integration. | **ACCEPT (user's explicit direction)** |
-| **P9 (new)** | **RVLT Flow is fully back-of-house / internal-only.** The operations team is the user. Clients see only ONE artifact: the **delivery docket**. No client portal, no quote-to-client email flow, no client-facing acceptance UI, no invoice emails. Quote/Invoice PDFs (if any) are *internal* documents — Xero produces the real client-facing finance documents. | **ACCEPT (user's explicit direction)** |
+| **P8 (new)** | ~~RVLT Flow stays an operations platform. Period. No invoicing, no payments, no accounting integration.~~ | **REVERSED 2026-07-26 (#934/#940) — see note below the table** |
+| **P9 (new)** | ~~RVLT Flow is fully back-of-house / internal-only. The operations team is the user. Clients see only ONE artifact: the delivery docket. No client portal, no quote-to-client email flow, no client-facing acceptance UI, no invoice emails. Quote/Invoice PDFs (if any) are internal documents — Xero produces the real client-facing finance documents.~~ | **PARTIALLY REVERSED 2026-07-26 (#934/#940) — see note below the table** |
 | **P10 (new)** | **Single-tenant operational reality.** The multi-tenancy harness exists in code (`organizationId` columns, `getOrgContext`, `requirePermission`, Better Auth Organization plugin) but only one tenant will ever exist at a time. Cross-tenant leaks are theoretical, not real — no second tenant to leak to. The harness stays (ripping it out is enormous; defense-in-depth is harmless), but multi-tenant-specific investment stops. Org-export/import remains valid as a **backup/DR mechanism**, not as a tenant-migration feature. | **ACCEPT (2026-05-14, user-directed)** |
+
+> **P8/P9 reversal (2026-07-26, #934/#940 WS1 — Finance model).** The
+> "no Flow-side finance" premise these two rows encoded is **no longer
+> current policy** — retained above only as a historical record of what this
+> design doc originally concluded, not as guidance. `docs/ROADMAP.md`
+> ("Finance repositioned") is the up-to-date decision record: **RVLT Flow now
+> owns quote + invoice generation** (Quote/Invoice/InvoiceLine entities,
+> client payment profiles, Flow-assigned invoice numbers); **Xero owns the
+> ledger, payment collection, and reconciliation**, fed via a first-class
+> integration (OAuth2 connect, account-coding cascade, draft-invoice push —
+> see [FEATUREDOCS/66-finance-quotes-invoices-xero.md](../../FEATUREDOCS/66-finance-quotes-invoices-xero.md)).
+> P9's narrower claim — RVLT Flow stays internal-only with the delivery
+> docket as the sole client-facing PDF, no client portal, no client-facing
+> email flow — is UNCHANGED and still holds: quote/invoice PDFs remain
+> operator-generated documents sent manually (or via Xero once pushed), never
+> auto-emailed by Flow itself. P10 (single-tenant reality) is unaffected by
+> either reversal.
 
 ## Final execution plan — THREE WAVES (revised: no finance rebuild)
 
@@ -1060,19 +1077,33 @@ WAVE 3 — DREAM BIG INSIDE THE WEDGE (ongoing — formerly Wave 4)
   ▸ Reservation conflict resolution UI (swap proposals)
 
 EXPLICITLY DEFERRED / EXCLUDED — NOT IN ANY WAVE (per P8: operations-only, P9: internal-only)
-  Finance (Xero owns these — RVLT Flow never builds them):
+  Finance — REVERSED 2026-07-26 (#934/#940), see the P8/P9 note above:
   ▸ Invoice, InvoiceLine, Payment, CreditNote, Refund models in RVLT Flow
+    → BUILT (#940 WS1): Quote/Invoice/InvoiceLine entities now exist. Payment
+      collection itself still stays Xero-side (no Stripe, no PaymentIntent
+      model in Flow) — "Payment"/"Refund" as first-class Flow entities remain
+      out of scope; `invoices.paymentStatus` is a thin READ mirror of Xero's
+      payment state (phase 2, poll-based), not a payment ledger.
   ▸ Stripe integration of any kind (Xero invoices include Stripe Pay buttons natively)
+    → still correct, unaffected by the reversal.
   ▸ Quote model / acceptance state machine (existing PDF + status flag is sufficient; client gets the real quote via Xero)
+    → PARTIALLY REVERSED: a real Quote entity now exists (snapshot-on-publish,
+      versioned) so a superseded quote stays retrievable — but there is still
+      NO client-facing acceptance state machine (no "client accepted" flag,
+      no e-signature); the quote PDF is still sent manually.
   ▸ AU GST/BAS reporting (Xero handles)
   ▸ Multi-currency (Xero handles)
   ▸ E-signature service (Xero handles client signatures if needed)
   ▸ Tax line items, discount codes, late fees, deposits-as-state-machine
-  Client-facing surfaces (out of scope per P9 — except delivery docket):
+    → PARTIALLY REVERSED: a deposit/balance invoice workflow now exists
+      (client payment profile -> DEPOSIT + BALANCE invoices), but it's a
+      simple 2-invoice sequence, not a generalised state machine; late fees
+      and discount codes remain out of scope.
+  Client-facing surfaces (out of scope per P9 — except delivery docket, UNCHANGED by the reversal):
   ▸ Client portal of any kind
   ▸ Public booking widget / embeddable
-  ▸ Quote-email-to-client flow (the client gets a quote from Xero, not RVLT Flow)
-  ▸ Invoice-email-to-client flow (Xero)
+  ▸ Quote-email-to-client flow (still true — Flow never auto-emails a quote; PDFs are sent manually or via Xero once pushed)
+  ▸ Invoice-email-to-client flow (still true — Xero sends the client-facing invoice email once an invoice is pushed as a Xero draft)
   ▸ Client-facing accept link
   ▸ Customer-facing dashboards or status pages
   ▸ Public API for client use

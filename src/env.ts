@@ -60,6 +60,15 @@ const serverEnvSchema = z.object({
   // Cron / scheduled jobs
   CRON_SECRET: z.string().optional(),
 
+  // Xero integration (WS1 #940) — optional; the OAuth connect flow throws a
+  // clear error at click-time if unset rather than gating the whole app boot
+  // (no org may have connected Xero yet, and never connecting is a valid
+  // steady state — see FEATUREDOCS/66-finance-quotes-invoices-xero.md).
+  XERO_CLIENT_ID: z.string().optional(),
+  XERO_CLIENT_SECRET: z.string().optional(),
+  // Defaults to `${NEXT_PUBLIC_APP_URL}/api/integrations/xero/callback` when unset.
+  XERO_REDIRECT_URI: z.string().url().optional(),
+
   // Convex data layer (see FEATUREDOCS/54-convex-data-layer.md).
   // Optional during the migration so the app boots without Convex configured;
   // a domain only depends on Convex once its phase lands. Server actions read

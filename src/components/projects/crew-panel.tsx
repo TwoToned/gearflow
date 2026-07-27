@@ -32,6 +32,7 @@ import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api as crewApi } from "../../../convex/_generated/api";
 import type { CrewConflict } from "@/lib/crew-availability-types";
+import { getStatusIntent, intentBorderClass, intentStyles } from "@/lib/status-colors";
 import {
   sendCrewOffer,
   sendCrewOfferAll,
@@ -140,6 +141,29 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 
   const { data: labourCost } = useProjectLabourCost(projectId, orgId);
 
+  // ─── Conflict flags — sibling batched query (WS8 #947, don't fatten
+  // projectCrew, which already collects shifts per row). One call covers
+  // every dated assignment on the project; keyed by assignment id. Bounded to
+  // the full span of the project's OWN dated assignments (each row's conflict
+  // is still classified against its OWN [startDate,endDate] server-side).
+  const cpTopConvex = useConvex();
+  const { isAuthenticated: cpTopAuthed } = useConvexAuth();
+  const datedAssignments = (assignments ?? []).filter((a: Assignment) => a.startDate && a.endDate);
+  const conflictRangeStartMs = datedAssignments.length > 0
+    ? Math.min(...datedAssignments.map((a: Assignment) => new Date(a.startDate as string).getTime()))
+    : null;
+  const conflictRangeEndMs = datedAssignments.length > 0
+    ? Math.max(...datedAssignments.map((a: Assignment) => new Date(a.endDate as string).getTime()))
+    : null;
+  const { data: conflictsByAssignmentId } = useServerQuery({
+    queryKey: ["crew-table-conflicts", projectId, orgId, conflictRangeStartMs, conflictRangeEndMs, cpTopAuthed],
+    queryFn: () =>
+      cpTopConvex.query(crewApi.crewAssignments.conflictsForProject, {
+        projectId, orgId: orgId as string, rangeStartMs: conflictRangeStartMs as number, rangeEndMs: conflictRangeEndMs as number,
+      }),
+    enabled: !!orgId && cpTopAuthed && conflictRangeStartMs != null && conflictRangeEndMs != null,
+  });
+
   const deleteMutation = useServerMutation({
     mutationFn: (id: string) => asgWrites.remove(id),
     onSuccess: () => {
@@ -212,6 +236,12 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   const pendingCount = assignments?.filter(
     (a: Assignment) => a.status === "PENDING"
   ).length || 0;
+
+  // Pre-flight conflict count for the "Offer all" confirm dialog — advisory
+  // only, never gates the send (FEATUREDOCS/31, WS8 #947).
+  const pendingConflictCount = (assignments ?? []).filter(
+    (a: Assignment) => a.status === "PENDING" && conflictsByAssignmentId?.[a.id as string],
+  ).length;
 
   // Group assignments by phase
   const grouped = new Map<string, Assignment[]>();
@@ -381,6 +411,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                   <AssignmentRow
                     key={a.id as string}
                     assignment={a}
+                    conflict={conflictsByAssignmentId?.[a.id as string]}
                     selected={selection.isSelected(a.id as string)}
                     selectionActive={selectedAssignmentIds.length > 0}
                     onSelectChange={() => selection.toggle(a.id as string, true)}
@@ -400,6 +431,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                   assignments={items!.filter(
                     (a: Assignment) => !a.isProjectManager
                   )}
+                  conflictsByAssignmentId={conflictsByAssignmentId}
                   isSelected={(id) => selection.isSelected(id)}
                   selectionActive={selectedAssignmentIds.length > 0}
                   onSelectChange={(id) => selection.toggle(id, true)}
@@ -418,6 +450,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                   <AssignmentRow
                     key={a.id as string}
                     assignment={a}
+                    conflict={conflictsByAssignmentId?.[a.id as string]}
                     selected={selection.isSelected(a.id as string)}
                     selectionActive={selectedAssignmentIds.length > 0}
                     onSelectChange={() => selection.toggle(a.id as string, true)}
@@ -458,6 +491,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
                     <TableHead>Role</TableHead>
                     <TableHead>Phase</TableHead>
                     <TableHead>Dates</TableHead>
+                    <TableHead>Conflicts</TableHead>
                     <TableHead>Rate</TableHead>
                     <TableHead className="text-right">Est. cost</TableHead>
                     <TableHead>Status</TableHead>
@@ -493,7 +527,17 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         open={offerAllOpen}
         onOpenChange={setOfferAllOpen}
         title={`Send offers to ${pendingCount} crew member${pendingCount === 1 ? "" : "s"}?`}
-        description="Each pending crew member receives their offer email or SMS now. They'll be able to accept or decline through their self-service link."
+        description={
+          <>
+            Each pending crew member receives their offer email or SMS now. They&apos;ll be able
+            to accept or decline through their self-service link.
+            {pendingConflictCount > 0 && (
+              <span className="mt-1.5 block font-medium text-warn">
+                {pendingConflictCount} of {pendingCount} have scheduling clashes — this doesn&apos;t block sending.
+              </span>
+            )}
+          </>
+        }
         confirmLabel="Send offers"
         cancelLabel="Not yet"
         onConfirm={() => {
@@ -525,6 +569,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
 function PhaseGroup({
   phase,
   assignments,
+  conflictsByAssignmentId,
   isSelected,
   selectionActive,
   onSelectChange,
@@ -535,6 +580,8 @@ function PhaseGroup({
 }: {
   phase: string;
   assignments: Assignment[];
+  /** WS8 #947 — batched crew-table conflict flags, keyed by assignment id. */
+  conflictsByAssignmentId?: Record<string, { severity: "hard" | "soft"; label: string }>;
   isSelected?: (id: string) => boolean;
   selectionActive?: boolean;
   onSelectChange?: (id: string) => void;
@@ -551,7 +598,8 @@ function PhaseGroup({
         <CategoryCardHeading name={phaseLabels[phase] || phase} />
       ) : (
         <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
-          <TableCell colSpan={9} className="py-1.5">
+          {/* Bumped from 9 → 10 (WS8 #947 — new "Conflicts" column). */}
+          <TableCell colSpan={10} className="py-1.5">
             <span className="t-overline text-muted">
               {phaseLabels[phase] || phase}
             </span>
@@ -562,6 +610,7 @@ function PhaseGroup({
         <AssignmentRow
           key={a.id as string}
           assignment={a}
+          conflict={conflictsByAssignmentId?.[a.id as string]}
           selected={isSelected?.(a.id as string)}
           selectionActive={selectionActive}
           onSelectChange={
@@ -583,6 +632,7 @@ function PhaseGroup({
 
 function AssignmentRow({
   assignment: a,
+  conflict,
   selected,
   selectionActive,
   onSelectChange,
@@ -592,6 +642,9 @@ function AssignmentRow({
   onSendOffer,
 }: {
   assignment: Assignment;
+  /** WS8 #947 — this row's conflict flag from the batched `conflictsForProject`
+   *  sibling query (undefined = no conflict data / no clash). Advisory only. */
+  conflict?: { severity: "hard" | "soft"; label: string };
   selected?: boolean;
   selectionActive?: boolean;
   onSelectChange?: () => void;
@@ -626,6 +679,11 @@ function AssignmentRow({
     >
       {role.name}
     </span>
+  ) : null;
+
+  // Conflict badge (WS8 #947) — shared by desktop cell + mobile card.
+  const conflictBadge = conflict ? (
+    <StatusIndicator category="conflictSeverity" value={conflict.severity} label={conflict.label} variant="pill" />
   ) : null;
 
   // Inline status control (dropdown pill) — shared by both layouts.
@@ -778,6 +836,7 @@ function AssignmentRow({
               Est. {formatCurrency(a.estimatedCost as number | null)}
             </span>
           </div>
+          {conflictBadge && <div className="mt-1">{conflictBadge}</div>}
         </button>
         <div className="flex shrink-0 items-center gap-1">
           {statusControl}
@@ -843,6 +902,9 @@ function AssignmentRow({
             {a.endTime ? ` – ${a.endTime as string}` : ""}
           </div>
         )}
+      </TableCell>
+      <TableCell className="text-table-cell">
+        {conflictBadge ?? <span className="text-muted">—</span>}
       </TableCell>
       <TableCell className="text-table-cell tabular-nums">
         {a.rateOverride != null && Number(a.rateOverride) > 0 ? (
@@ -1276,35 +1338,44 @@ function AssignmentDialog({
             />
           </div>
 
-          {/* Conflict Warnings */}
+          {/* Conflict Warnings — colors sourced from the shared "conflictSeverity"
+              intent (status-colors.ts, WS8 #947) instead of hardcoded
+              border-l-t-out/border-l-warn strings, so this stays visually
+              consistent with the picker badges + crew-table conflict column. */}
           {(hardConflicts.length > 0 || softConflicts.length > 0) && (
             <div className="space-y-2">
-              {hardConflicts.length > 0 && (
-                <div className="rounded-[var(--r)] border border-line border-l-[3px] border-l-t-out bg-card p-3">
-                  <div className="flex items-center gap-2 text-ui-text font-semibold text-t-out mb-1">
-                    <AlertTriangle className="h-4 w-4" />
-                    Conflicts
+              {hardConflicts.length > 0 && (() => {
+                const hardIntent = getStatusIntent("conflictSeverity", "hard");
+                return (
+                  <div className={cn("rounded-[var(--r)] border border-line border-l-[3px] bg-card p-3", intentBorderClass(hardIntent))}>
+                    <div className={cn("flex items-center gap-2 text-ui-text font-semibold mb-1", intentStyles[hardIntent].text)}>
+                      <AlertTriangle className="h-4 w-4" />
+                      Conflicts
+                    </div>
+                    {hardConflicts.map((c: CrewConflict, i: number) => (
+                      <p key={i} className={cn("text-caption", intentStyles[hardIntent].text)}>
+                        {c.label}
+                      </p>
+                    ))}
                   </div>
-                  {hardConflicts.map((c: CrewConflict, i: number) => (
-                    <p key={i} className="text-caption text-t-out">
-                      {c.label}
-                    </p>
-                  ))}
-                </div>
-              )}
-              {softConflicts.length > 0 && (
-                <div className="rounded-[var(--r)] border border-line border-l-[3px] border-l-warn bg-card p-3">
-                  <div className="flex items-center gap-2 text-ui-text font-semibold text-warn mb-1">
-                    <AlertTriangle className="h-4 w-4" />
-                    Warnings
+                );
+              })()}
+              {softConflicts.length > 0 && (() => {
+                const softIntent = getStatusIntent("conflictSeverity", "soft");
+                return (
+                  <div className={cn("rounded-[var(--r)] border border-line border-l-[3px] bg-card p-3", intentBorderClass(softIntent))}>
+                    <div className={cn("flex items-center gap-2 text-ui-text font-semibold mb-1", intentStyles[softIntent].text)}>
+                      <AlertTriangle className="h-4 w-4" />
+                      Warnings
+                    </div>
+                    {softConflicts.map((c: CrewConflict, i: number) => (
+                      <p key={i} className={cn("text-caption", intentStyles[softIntent].text)}>
+                        {c.label}
+                      </p>
+                    ))}
                   </div>
-                  {softConflicts.map((c: CrewConflict, i: number) => (
-                    <p key={i} className="text-caption text-warn">
-                      {c.label}
-                    </p>
-                  ))}
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
 

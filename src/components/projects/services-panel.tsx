@@ -34,6 +34,7 @@ import {
   ArrowRightLeft,
   Sparkles,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,6 +46,7 @@ import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
 import { useSelection } from "./use-selection";
 import { BulkActionBar } from "@/components/ui/bulk-action-bar";
 import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
+import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api as crewAsgApi } from "../../../convex/_generated/api";
@@ -1138,6 +1140,41 @@ function CrewMessageDialog({
 
 // ─── Crew Helpers ─────────────────────────────────────────────────────────────
 
+/** A single crew-conflict entry (WS8 #947) — matches the shape
+ *  `crewAssignments.membersForAssignment`'s range branch returns per member. */
+export interface CrewConflictEntry {
+  severity: "hard" | "soft";
+  label: string;
+}
+
+/** The conflict/availability summary `membersForAssignment` attaches to every
+ *  member row — shared by the picker badge, the rate-table sub-line, and the
+ *  section-level "N of M selected have clashes" summary (WS8 #947). */
+export interface CrewConflictSummary {
+  conflicts: CrewConflictEntry[];
+  isUnavailable: boolean;
+  availability: "available" | "tentative" | "unavailable" | "busy";
+  hasPreferredBlock: boolean;
+}
+
+/**
+ * ONE badge per member, precedence: unavailable/hard-conflict (red, "Booked:"/
+ * "Unavailable") > tentative/soft-conflict (amber, "Tentative"/"Pencilled:")
+ * > a positive PREFERRED hint (green) > nothing. Advisory only — never gates
+ * the picker, the rate table, or submit (FEATUREDOCS/31).
+ */
+export function pickConflictBadge(m: CrewConflictSummary | undefined): { severity: "hard" | "soft" | "preferred"; label: string } | null {
+  if (!m) return null;
+  if (m.isUnavailable) return { severity: "hard", label: "Unavailable" };
+  const hardConflict = m.conflicts.find((c) => c.severity === "hard");
+  if (hardConflict) return { severity: "hard", label: hardConflict.label };
+  if (m.availability === "tentative") return { severity: "soft", label: "Tentative" };
+  const softConflict = m.conflicts.find((c) => c.severity === "soft");
+  if (softConflict) return { severity: "soft", label: softConflict.label };
+  if (m.hasPreferredBlock) return { severity: "preferred", label: "Preferred" };
+  return null;
+}
+
 function CrewMemberSelect({
   needed,
   values,
@@ -1194,7 +1231,7 @@ function CrewCountBadge({ needed, assigned }: { needed: number; assigned: number
 // originates from the client).
 
 type ServiceCrewTableRow = { crewMemberId: string; rateOverride?: number; rateType?: "" | "HOURLY" | "DAILY" | "FLAT"; estimatedHours?: number };
-type CrewRateTableMember = { id: string; firstName: string; lastName: string; image: string | null };
+type CrewRateTableMember = { id: string; firstName: string; lastName: string; image: string | null } & CrewConflictSummary;
 
 const memberDisplayName = (member: CrewRateTableMember | undefined, fallback: string): string =>
   member ? `${member.firstName} ${member.lastName}` : fallback;
@@ -1286,13 +1323,21 @@ function CrewRateTableRow({
 }) {
   const { rate, rateType, cost } = previewCost(row);
   const effectiveRateType = row.rateType || rateType;
+  // Conflict sub-line (WS8 #947) — the existing sub-line slot under the name,
+  // same badge the picker row shows (pickConflictBadge, one source of truth).
+  const conflictBadge = pickConflictBadge(member);
 
   return (
     <TableRow>
       <TableCell>
         <div className="flex min-w-0 items-center gap-2">
           <PersonAvatar name={memberDisplayName(member, "?")} src={member?.image ?? undefined} className="size-6 shrink-0" />
-          <span className="truncate font-medium text-ink-2">{memberDisplayName(member, "Unknown")}</span>
+          <div className="min-w-0">
+            <span className="block truncate font-medium text-ink-2">{memberDisplayName(member, "Unknown")}</span>
+            {conflictBadge && (
+              <StatusIndicator category="conflictSeverity" value={conflictBadge.severity} label={conflictBadge.label} variant="pill" />
+            )}
+          </div>
         </div>
       </TableCell>
       <TableCell>
@@ -1500,6 +1545,14 @@ function ServiceDialog({
   const watchEndDate = form.watch("endDate") as string;
   const isCurrentlyMultiDay = canBeMultiDay && watchDate && watchEndDate && watchDate !== watchEndDate;
 
+  // Service date range as epoch-ms (WS8 #947 — the whole #796 conflict-badge
+  // gap: this was already computed further down for the cost preview but
+  // never passed to the crew query). Computed here, ABOVE the query, so both
+  // the query args and the cost preview below share the one calculation.
+  const serviceRangeStartMs = watchDate ? new Date(watchDate).getTime() : null;
+  const serviceRangeEndMs = (watchEndDate || watchDate) ? new Date(watchEndDate || watchDate).getTime() : null;
+  const excludeServiceId = (editingService?.id as string | undefined) ?? undefined;
+
   // Reactive crew roles (Convex), skipped while closed (mirrors enabled:open).
   // Re-apply getCrewRoleOptions's active filter + sortOrder/name sort.
   const roleDocs = useCrewRoles(open ? orgId : undefined);
@@ -1518,8 +1571,15 @@ function ServiceDialog({
   const spConvex = useConvex();
   const { isAuthenticated: spAuthed } = useConvexAuth();
   const { data: crewMembers = [] } = useServerQuery({
-    queryKey: ["crew-members-for-assignment", orgId, projectId, spAuthed],
-    queryFn: () => spConvex.query(crewAsgApi.crewAssignments.membersForAssignment, { projectId, orgId: orgId as string }),
+    queryKey: ["crew-members-for-assignment", orgId, projectId, serviceRangeStartMs, serviceRangeEndMs, excludeServiceId, spAuthed],
+    queryFn: () =>
+      spConvex.query(crewAsgApi.crewAssignments.membersForAssignment, {
+        projectId,
+        orgId: orgId as string,
+        rangeStartMs: serviceRangeStartMs ?? undefined,
+        rangeEndMs: serviceRangeEndMs ?? undefined,
+        excludeServiceId,
+      }),
     enabled: open && !!orgId && spAuthed,
   });
 
@@ -1530,27 +1590,42 @@ function ServiceDialog({
     image: string | null;
     defaultDayRate: number | null;
     defaultHourlyRate: number | null;
-  };
+  } & CrewConflictSummary;
   const crewMemberDocs = crewMembers as CrewMemberOption[];
   const crewMemberById = new Map(crewMemberDocs.map((m) => [m.id, m]));
+  const hasServiceDates = serviceRangeStartMs != null && serviceRangeEndMs != null;
 
-  const crewMemberOptions: { value: string; label: string; icon: React.ReactNode }[] =
-    crewMemberDocs.map((m) => ({
-      value: m.id,
-      label: `${m.firstName} ${m.lastName}`,
-      icon: (
-        <PersonAvatar
-          name={`${m.firstName} ${m.lastName}`}
-          src={m.image ?? undefined}
-          className="size-6"
-        />
-      ),
-    }));
+  const crewMemberOptions: { value: string; label: string; icon: React.ReactNode; badge?: React.ReactNode }[] =
+    crewMemberDocs.map((m) => {
+      const badge = pickConflictBadge(m);
+      return {
+        value: m.id,
+        label: `${m.firstName} ${m.lastName}`,
+        icon: (
+          <PersonAvatar
+            name={`${m.firstName} ${m.lastName}`}
+            src={m.image ?? undefined}
+            className="size-6"
+          />
+        ),
+        // Non-searchable slot (combobox-picker.tsx) — a StatusIndicator dot+label,
+        // never plain text in `description` (WS8 #947).
+        badge: badge ? (
+          <StatusIndicator category="conflictSeverity" value={badge.severity} label={badge.label} variant="pill" />
+        ) : undefined,
+      };
+    });
 
   type ServiceCrewRow = { crewMemberId: string; rateOverride?: number; rateType?: "" | "HOURLY" | "DAILY" | "FLAT"; estimatedHours?: number };
   const watchCrew = (form.watch("crew") || []) as ServiceCrewRow[];
   const watchCrewMemberIds = watchCrew.map((c) => c.crewMemberId);
   const watchCrewNeeded = Number(form.watch("crewCountRequired") || 0);
+  // Section-level + bulk pre-flight count (WS8 #947) — selected members with a
+  // hard OR soft clash (a "preferred" hint doesn't count as a clash).
+  const selectedConflictCount = watchCrewMemberIds.filter((id) => {
+    const badge = pickConflictBadge(crewMemberById.get(id));
+    return badge != null && badge.severity !== "preferred";
+  }).length;
   const setCrewMemberIds = (ids: string[]) => {
     const existing = new Map(watchCrew.map((c) => [c.crewMemberId, c]));
     form.setValue("crew", ids.map((id) => existing.get(id) ?? { crewMemberId: id }));
@@ -1568,10 +1643,9 @@ function ServiceDialog({
   const watchCrewRoleId = form.watch("crewRoleId") as string;
   const selectedCrewRole = (roleDocs ?? []).find((r) => r.id === watchCrewRoleId) ?? null;
   const rateOverrideUnitSuffix = selectedCrewRole?.rateType ? ` / ${crewRateTypeLabels[selectedCrewRole.rateType].toLowerCase()}` : "";
-  const watchServiceDate = form.watch("date") as string;
-  const watchServiceEndDate = (form.watch("endDate") as string) || watchServiceDate;
-  const serviceStartMs = watchServiceDate ? new Date(watchServiceDate).getTime() : null;
-  const serviceEndMs = watchServiceEndDate ? new Date(watchServiceEndDate).getTime() : null;
+  // serviceRangeStartMs/serviceRangeEndMs computed once, above the crew query.
+  const serviceStartMs = serviceRangeStartMs;
+  const serviceEndMs = serviceRangeEndMs;
 
   /** Live client-side preview of the SAME cascade the server runs (convex/lib/crewRate.ts) —
    *  UX only, never authoritative; the server always recomputes on save (issue #796). */
@@ -1653,9 +1727,16 @@ function ServiceDialog({
       };
       toast.success(`${labels[status]} (${(result as { updated: number }).updated} updated)`);
       invalidateAll();
+      setCrewBulkAction(null);
     },
     onError: (e) => toast.error(e.message),
   });
+
+  // "Send offers"/"Confirm all" pre-flight confirm dialog (WS8 #947) — a
+  // non-gating pre-flight conflict-count line, per CLAUDE.md's "no AlertDialog,
+  // use Dialog with confirm/cancel" convention (reuses DeleteDialog's generic
+  // confirm shell — it isn't destructive, but the shape fits).
+  const [crewBulkAction, setCrewBulkAction] = useState<"OFFERED" | "CONFIRMED" | null>(null);
 
   function onSubmit(data: ProjectServiceFormValues) {
     if (isEditing) {
@@ -1866,6 +1947,20 @@ function ServiceDialog({
               options={crewMemberOptions}
             />
 
+            {/* No-dates neutral hint (equipment-add-form.tsx precedent) vs. a
+                section-level "N of M have clashes" summary once dates ARE set
+                and 1+ selected member has one (WS8 #947). Both advisory only. */}
+            {!hasServiceDates ? (
+              <p className="text-caption text-muted">Set service dates to check availability</p>
+            ) : (
+              selectedConflictCount > 0 && (
+                <p className="flex items-center gap-1.5 text-caption font-medium text-warn">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  {selectedConflictCount} of {watchCrewMemberIds.length} selected have clashes
+                </p>
+              )
+            )}
+
             {watchCrew.length > 0 && (
               <CrewRateTable
                 rows={watchCrew}
@@ -1885,7 +1980,7 @@ function ServiceDialog({
                   size="sm"
                   disabled={!isEditing || crewStatusMutation.isPending}
                   title={!isEditing ? "Save the service first" : undefined}
-                  onClick={() => crewStatusMutation.mutate({ status: "OFFERED" })}
+                  onClick={() => setCrewBulkAction("OFFERED")}
                 >
                   <Send className="mr-1.5 h-3.5 w-3.5" />
                   Send offers
@@ -1896,7 +1991,7 @@ function ServiceDialog({
                   size="sm"
                   disabled={!isEditing || crewStatusMutation.isPending}
                   title={!isEditing ? "Save the service first" : undefined}
-                  onClick={() => crewStatusMutation.mutate({ status: "CONFIRMED" })}
+                  onClick={() => setCrewBulkAction("CONFIRMED")}
                 >
                   <UserCheck className="mr-1.5 h-3.5 w-3.5" />
                   Confirm all
@@ -1909,6 +2004,30 @@ function ServiceDialog({
                 )}
               </div>
             )}
+
+            {/* Pre-flight confirm — non-gating conflict-count line (WS8 #947). */}
+            <DeleteDialog
+              open={crewBulkAction != null}
+              onOpenChange={(o) => !o && setCrewBulkAction(null)}
+              title={crewBulkAction === "OFFERED" ? "Send offers to all assigned crew?" : "Confirm all assigned crew?"}
+              description={
+                <>
+                  {crewBulkAction === "OFFERED"
+                    ? "Every pending crew member on this service receives their offer email or SMS now."
+                    : "Every assigned crew member on this service is marked confirmed."}
+                  {selectedConflictCount > 0 && (
+                    <span className="mt-1.5 block font-medium text-warn">
+                      {selectedConflictCount} of {watchCrewMemberIds.length} have scheduling clashes — this doesn&apos;t block the action.
+                    </span>
+                  )}
+                </>
+              }
+              confirmLabel={crewBulkAction === "OFFERED" ? "Send offers" : "Confirm all"}
+              onConfirm={() => {
+                if (crewBulkAction) crewStatusMutation.mutate({ status: crewBulkAction });
+              }}
+              pending={crewStatusMutation.isPending}
+            />
           </div>
 
           {/* Financial Section */}

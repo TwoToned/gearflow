@@ -52,6 +52,29 @@ describe("parseRateRow", () => {
     expect(parsed.errors).toHaveLength(0);
   });
 
+  // WS11 (#950) — salePrice rides the same narrow rate-import lane, with the
+  // spec's alias list (saleprice|sale|sellprice|rrp|retail). Round-trip via
+  // each alias so a hand-made "rate sheet" using any of them is accepted.
+  it.each(["saleprice", "sale", "sellprice", "rrp", "retail"])(
+    "extracts salePrice via the %s header alias",
+    (header) => {
+      const parsed = parseRateRow(cellsFrom({ name: "SM58", [header]: "120.50" }));
+      expect(parsed.rates.salePrice).toBe(120.5);
+      expect(parsed.hasRate).toBe(true);
+      expect(parsed.errors).toHaveLength(0);
+    },
+  );
+
+  it("salePrice coexists with the rental rates on the same row", () => {
+    const parsed = parseRateRow(cellsFrom({ name: "SM58", daily: "20", weekly: "80", saleprice: "99.99" }));
+    expect(parsed.rates).toEqual({ dailyRate: 20, weeklyRate: 80, salePrice: 99.99 });
+  });
+
+  it("rejects a negative salePrice like every other rate field", () => {
+    const parsed = parseRateRow(cellsFrom({ name: "SM58", saleprice: "-10" }));
+    expect(parsed.errors[0]).toContain("salePrice");
+  });
+
   it("flags hasRate=false when no rate columns have values", () => {
     const parsed = parseRateRow(cellsFrom({ name: "SM58", dailyRate: "" }));
     expect(parsed.hasRate).toBe(false);
@@ -111,6 +134,9 @@ describe("header guards", () => {
     expect(hasRateColumn(["name", "dailyrate"])).toBe(true);
     expect(hasRateColumn(["name", "weekly"])).toBe(true);
     expect(hasRateColumn(["name", "category"])).toBe(false);
+  });
+  it("hasRateColumn detects the salePrice alias too (WS11 #950)", () => {
+    expect(hasRateColumn(["name", "rrp"])).toBe(true);
   });
   it("hasIdentifierColumn detects any identifier alias", () => {
     expect(hasIdentifierColumn(["sku", "dailyrate"])).toBe(true);

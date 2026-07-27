@@ -188,6 +188,18 @@ unlinked, every coding field (category/model/kit/line/service forms, the
 client's Xero contact card, the Settings → Xero page) is hidden but the
 stored value is retained, inert.
 
+### Deployment gate
+
+A second, deployment-level gate sits above the org-level linked gate:
+`src/server/xero.ts` `isXeroConfigured()` reports whether `XERO_CLIENT_ID`/
+`XERO_CLIENT_SECRET` are set at all (unauthenticated — it reveals nothing but
+a boolean). When unset, the "Xero" item never renders in the Settings nav
+(`src/app/(app)/settings/layout.tsx`, `useServerQuery` — one-shot, never
+invalidated, a deployment's env config doesn't change mid-session) and a
+direct visit to `/settings/xero` shows a "not configured" message instead of
+a "Connect Xero" button that would otherwise throw at click-time
+(`requireXeroAppCredentials()` in `src/server/xero.ts`).
+
 ### Client contact mapping
 
 Client detail page (Xero-linked only) — search Xero contacts by name, or

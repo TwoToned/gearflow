@@ -49,6 +49,22 @@ describe("buildXeroAuthorizeUrl", () => {
     // between the documented XERO_OAUTH_SCOPES list and what's requested.
     expect(parsed.searchParams.get("scope")).toBe(XERO_OAUTH_SCOPES.join(" "));
   });
+
+  it("percent-encodes the scope's spaces as %20, not +", () => {
+    // Regression test: `new URLSearchParams(...).toString()` encodes spaces
+    // as `+` (application/x-www-form-urlencoded), which round-trips fine
+    // through URLSearchParams.get() in a test (masking the bug) but Xero's
+    // /authorize endpoint parses the query string strictly and never decodes
+    // `+` back to a space — it saw one unrecognized scope blob and rejected
+    // the whole authorize request with `invalid_scope`.
+    const url = buildXeroAuthorizeUrl({
+      clientId: "client-123",
+      redirectUri: "https://flow.rvlt.app/api/integrations/xero/callback",
+      state: "signed-state-token",
+    });
+    expect(url).toContain("scope=openid%20profile%20email");
+    expect(url).not.toContain("+");
+  });
 });
 
 describe("exchangeXeroAuthCode / refreshXeroAccessToken", () => {

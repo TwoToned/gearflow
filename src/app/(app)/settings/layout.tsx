@@ -25,6 +25,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useServerQuery } from "@/hooks/use-server-query";
+import { isXeroConfigured } from "@/server/xero";
 import {
   Select,
   SelectContent,
@@ -109,6 +111,15 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const canManageLineItems = useCanDo("project", "manage_line_items");
   const canManageXero = useCanDo("invoice", "xero_manage");
   const { data: activeOrg } = useActiveOrganization();
+  // Deployment-level gate (XERO_CLIENT_ID/SECRET) on top of the org-level
+  // xero_manage permission — no Xero developer app means the page is dead
+  // weight, not just permission-gated. Defaults to hidden while loading so
+  // the nav never flashes a link that's about to disappear.
+  const { data: xeroConfig } = useServerQuery({
+    queryKey: ["xero-configured"],
+    queryFn: () => isXeroConfigured(),
+  });
+  const xeroConfigured = xeroConfig?.configured === true;
 
   if (!canReadSettings && !canReadMembers) {
     return (
@@ -126,7 +137,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     if (permission === "orgMembers") return canReadMembers;
     if (permission === "checkItem") return canReadCheckItems;
     if (permission === "project") return canManageLineItems;
-    if (permission === "invoice") return canManageXero;
+    if (permission === "invoice") return canManageXero && xeroConfigured;
     return true;
   };
 

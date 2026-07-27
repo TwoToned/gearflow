@@ -107,6 +107,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 | `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |
 | `gearflowCallSheetInfo` | 2-column info block: PM/client/equipment (left), venue/schedule (right) |
 | `gearflowDayHeader` | Day separator with accent bar, date label, phase badges, crew count |
+| `gearflowRichText` | Markdown-lite text block (`**bold**`, `*italic*`, `- `/`* ` bullets, word-wrapped to the box width) — replaces the pdfme built-in `text` type for every free-text/paragraph block in the 5 project document layouts: client+project details columns, client notes, total-items note, quote-validity note, terms & conditions. |
 
 **Report Plugins:**
 | Plugin | Purpose |
@@ -117,7 +118,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 
 ### Plugin Architecture
 - Plugins receive `value` as JSON string, parse it, draw directly via pdf-lib
-- `helpers.ts`: coordinate conversion (mm→pt, Y-flip), font caching (Helvetica/Bold/Courier), color parsing, text wrapping, formatCurrency/formatDate
+- `helpers.ts`: coordinate conversion (mm→pt, Y-flip), font caching (Helvetica/Bold/Courier), color parsing, plain text wrapping (`drawWrappedText`), markdown-lite rich text (`parseRichText`/`drawRichText`/`measureRichTextHeight`/`wrapRichText`/`drawWrappedRichLines`), formatCurrency/formatDate
 - `ui` and `propPanel` are stubs (no template designer of any kind — see below)
 
 ### Derived Billing Breakdown on Line Items (#943)
@@ -238,6 +239,41 @@ time a document is built: `document_footer_text`, `document_footer_second_line`,
   `calculateItemHeight`. Warehouse docs (packing-list/return-sheet/delivery-docket)
   are unaffected — they keep `showKitChildren: true` via `defaultTable`, so
   packers still see every kit member and accessory.
+
+### Markdown-lite text blocks + bold event name (2026-07-27)
+
+Every free-text/paragraph block in the 5 project document layouts — client
+notes, terms & conditions, total-items note, quote-validity note, and the
+client+project details columns — now renders through the new
+`gearflowRichText` plugin instead of pdfme's built-in `text` type
+(`document-composer.ts`'s `buildEntryFields`). It reuses the same
+markdown-lite convention `gearflowTable` already applies to line-item notes
+(`**bold**`, `*italic*`, `- `/`* ` bullets — `parseRichText`/`drawRichText`,
+`helpers.ts`), so org-authored terms & conditions and client notes can now
+use that formatting, and word-wraps to the box width (`wrapRichText`/
+`drawWrappedRichLines`, new exports) so a long paragraph or address wraps
+instead of running off the page edge — the built-in `text` type wrapped
+automatically; a naive markdown-lite swap would have silently dropped that.
+
+- **Event name is bold.** The details block's project column leads with the
+  project/event name; `document-composer.ts` wraps it in `**...**` before
+  handing it to `gearflowRichText` — no separate bold-only rendering path,
+  just the same markdown convention every other field can now use.
+- **`drawRichText` (gearflowTable's existing call, unwrapped) is unchanged
+  behaviourally** — it's now a thin wrapper around the shared
+  `drawWrappedRichLines(page, parseRichText(text), opts)`, so the table's
+  notes-column height math (`measureRichTextHeight`, literal-newline-count
+  based) and its existing tests are unaffected. Only the new
+  `gearflowRichText` plugin calls the wrapping variant.
+- **Pagination height estimates for these blocks remain the pre-existing
+  literal-newline-count heuristics** (`estimateBlockHeight` in
+  `document-composer.ts`) — they were never wrap-aware even when the
+  built-in `text` type did the wrapping, so this isn't a new gap. A very
+  long single-line T&Cs paragraph could still under-reserve height; tracked
+  as a pre-existing limitation, not introduced here.
+- Registered as both `gearflowRichText` and `rvltFlowRichText` in
+  `plugins/index.ts` per the rebrand-alias convention
+  (`rebrand-plugin-aliases.test.ts`).
 
 ### Quote-specific fixes (#790 Phase 4)
 
@@ -393,6 +429,7 @@ Three additional behaviours layer onto expand mode:
 - **Helvetica only** — no Unicode symbols (use ASCII: `-` not `—`, `|` not `•`)
 - Checkboxes rendered as `View` boxes with borders; checked state uses rotated lines
 - Line item notes shown as subtitles
+- Markdown-lite formatting (`**bold**`, `*italic*`, `- `/`* ` bullets — `parseRichText`/`drawRichText` in `helpers.ts`) works anywhere text flows through `gearflowTable` (item/group notes) or `gearflowRichText` (client notes, terms & conditions, details columns, system notes). No other markdown syntax (links, headings, tables) is supported.
 - Badges: red "OVERBOOKED", purple "REDUCED STOCK"
 - Pull slip: per-unit checkboxes for qty > 1 items, ticked for already-deployed units
 - Per-unit rows (`showPerUnitCheckboxes`): a qty > 1 line expands to one row per assigned unit ("Unit 1 — TTP00042", …) instead of collapsing tags to "tag, tag +N". On for `packing-list`, `return-sheet`, and `delivery-docket` — a single literal in each doc type's `DOCUMENT_LAYOUTS` entry (there is exactly one default source now, not two that have to be kept in sync).

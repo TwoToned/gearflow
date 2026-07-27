@@ -93,7 +93,10 @@ const defaultProjectDetails: ProjectDetailsConfig = {
   showEventDates: true,
   showPaymentTerms: false,
   showSiteContact: false,
-  showDocumentDate: true,
+  // The document date already appears in the header meta (next to the doc
+  // number) on every doc type — repeating it in the details block was
+  // redundant.
+  showDocumentDate: false,
 };
 
 const defaultTable: TableLayoutConfig = {

@@ -321,7 +321,7 @@ export const createGroupNative = mutation({
 //
 // #943: group-level rentalPeriod/rentalQuantity retired — suggestedPrice is now
 // derived purely from the PROJECT's rentalStartDate/rentalEndDate (best-price
-// capped, convex/lib/billing-derivation.ts), so nothing on this mutation can
+// capped, convex/lib/billingDerivation.ts), so nothing on this mutation can
 // make it stale anymore. It's recomputed when a line is added/merged into the
 // group (recomputeGroupSuggestedNative in lineItemWrites.ts) and when the
 // project's rental dates change (recalcAutoPricedLinesNative — the "stale

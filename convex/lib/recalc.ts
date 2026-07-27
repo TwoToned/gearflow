@@ -1,6 +1,6 @@
 import type { MutationCtx } from "../_generated/server";
 import { applyProjectAllocation } from "./allocation";
-import { deriveBillingSummary } from "./billing-derivation";
+import { deriveBillingSummary } from "./billingDerivation";
 
 /**
  * In-mutation project-totals recalculation (Phase 5, Option A — write-latency fix).

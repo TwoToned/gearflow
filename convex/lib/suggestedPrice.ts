@@ -1,6 +1,6 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
-import { inclusiveCalendarDays, computeBlendedCharge } from "./billing-derivation";
+import { inclusiveCalendarDays, computeBlendedCharge } from "./billingDerivation";
 
 /**
  * Shared native port of the project-group suggested-price calculation (#943 —

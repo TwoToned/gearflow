@@ -13,7 +13,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { assertRefInOrg } from "./lib/orgRef";
 import { getKitByCuid } from "./lib/kits";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
-import { inclusiveCalendarDays, computeBlendedCharge, serializePriceBreakdown } from "./lib/billing-derivation";
+import { inclusiveCalendarDays, computeBlendedCharge, serializePriceBreakdown } from "./lib/billingDerivation";
 
 /**
  * Native GROUP-TEMPLATE write mutations (Phase 3 browser-direct — replaces the

@@ -982,7 +982,7 @@ export default defineSchema({
     projectManagerId: v.optional(v.string()),
     // Derived billing weeks/days (#943) — the project-level "billed as N wk M d"
     // summary is DERIVED from rentalStartDate/rentalEndDate via
-    // convex/lib/billing-derivation.ts `deriveBillingSummary`, never persisted.
+    // convex/lib/billingDerivation.ts `deriveBillingSummary`, never persisted.
     // These are ONLY the manual override + "edited" marker: absent = derived,
     // present = user-entered override. Replaces the retired
     // defaultRentalPeriod/defaultRentalQuantity + RentalPeriod enum (dead since

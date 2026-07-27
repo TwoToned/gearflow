@@ -2,7 +2,7 @@
  * Byte-parity Convex-side port of `src/lib/billing-derivation.ts` (issue #943 /
  * WS4). Convex functions can only import from within `convex/` (the deploy
  * bundler doesn't reach outside it), so the pure math is duplicated here rather
- * than imported — `convex/lib/billing-derivation.test.ts` pins the two copies to
+ * than imported — `convex/lib/billingDerivation.test.ts` pins the two copies to
  * identical output across the full derivation matrix so they can't silently
  * diverge. Only the math that actually runs inside a mutation is ported:
  * `formatPriceBreakdown`/Zod parsing are UI/PDF-only and stay src-side.

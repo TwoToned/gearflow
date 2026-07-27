@@ -33,7 +33,7 @@ import {
   parsePriceBreakdown,
   isBreakdownStale,
   type PriceBreakdown,
-} from "./lib/billing-derivation";
+} from "./lib/billingDerivation";
 import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS } from "./lib/projectLocks";
 
 /** Fetch the line's parent project, org-checked — every gate site needs the
@@ -1894,7 +1894,7 @@ export const addLineItemSmartNative = mutation({
     // ── Auto-pricing (derived billing weeks/days + best-price capping, #943) ───
     // Any model-backed line with no manual price gets the blended per-unit charge
     // for the project's rental window — weeklyRate/dailyRate best-price-capped via
-    // computeBlendedCharge (convex/lib/billing-derivation.ts). Manual prices are
+    // computeBlendedCharge (convex/lib/billingDerivation.ts). Manual prices are
     // kept. Previously gated on `pricingType === "PER_DAY"` only, so a PER_WEEK
     // line silently never auto-priced — that gate is obsolete under blended
     // pricing (the derivation itself picks weekly vs daily tiers from the rates

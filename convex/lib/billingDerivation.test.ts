@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
-import * as convexSide from "./billing-derivation";
+import * as convexSide from "./billingDerivation";
 import * as srcSide from "@/lib/billing-derivation";
 
 /**
- * Parity pin (issue #943 / WS4): `convex/lib/billing-derivation.ts` is a
+ * Parity pin (issue #943 / WS4): `convex/lib/billingDerivation.ts` is a
  * byte-parity port of `src/lib/billing-derivation.ts` (Convex mutations can't
  * import outside `convex/`, so the pure math is duplicated). This test proves
  * both copies produce IDENTICAL output across the full derivation matrix —
@@ -16,7 +16,7 @@ import * as srcSide from "@/lib/billing-derivation";
 const DAY = 86_400_000;
 const d = (n: number) => n * DAY;
 
-describe("billing-derivation parity — src/lib vs convex/lib", () => {
+describe("billingDerivation parity — src/lib vs convex/lib", () => {
   test.each([
     ["null/null dates", null, null],
     ["same day", d(0), d(0)],

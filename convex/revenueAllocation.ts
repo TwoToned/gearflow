@@ -4,7 +4,7 @@ import { requireOrgPermission, requireService } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { applyProjectAllocation } from "./lib/allocation";
-import { deriveBillingSummary } from "./lib/billing-derivation";
+import { deriveBillingSummary } from "./lib/billingDerivation";
 
 /**
  * Recompute a project's revenue allocation on its own.

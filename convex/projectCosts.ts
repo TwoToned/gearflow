@@ -13,6 +13,9 @@ import { requireOrgPermission } from "./lib/auth";
 
 const costsShape = {
   equipmentRevenue: v.number(),
+  // WS11 (#950) — sale revenue/COGS bucket, additive alongside the existing ones.
+  saleRevenue: v.number(),
+  saleCostTotal: v.number(),
   serviceRevenue: v.number(),
   // Additive (WS10 #949 labour charge rates & margin): the slice of serviceRevenue
   // billed for LABOUR-type services specifically — non-zero only once a crew role
@@ -32,6 +35,8 @@ const costsShape = {
 
 const EMPTY = {
   equipmentRevenue: 0,
+  saleRevenue: 0,
+  saleCostTotal: 0,
   serviceRevenue: 0,
   labourServiceRevenue: 0,
   total: 0,
@@ -86,17 +91,23 @@ export const operationalCosts = query({
     }
 
     const equipmentRevenue = Number(project.equipmentRevenue ?? 0);
+    // WS11 (#950) — persisted by recalcProjectTotals (convex/lib/recalc.ts),
+    // same pattern as every other bucket read straight off the project row.
+    const saleRevenue = Number(project.saleRevenue ?? 0);
+    const saleCostTotal = Number(project.saleCostTotal ?? 0);
     const total = Number(project.total ?? 0);
     const serviceCostTotal = Number(project.serviceCostTotal ?? 0);
     const labourCostTotal = Number(project.labourCostTotal ?? 0);
     const subHireCostTotal = Number(project.subHireCostTotal ?? 0);
 
-    const allCosts = serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal;
+    const allCosts = serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal + saleCostTotal;
     const netMargin = total - allCosts;
     const marginPercent = total > 0 ? Math.max(0, Math.min(100, (netMargin / total) * 100)) : 0;
 
     return {
       equipmentRevenue,
+      saleRevenue,
+      saleCostTotal,
       serviceRevenue,
       labourServiceRevenue,
       total,

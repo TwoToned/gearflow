@@ -18,6 +18,10 @@ export const modelSchema = z.object({
   monthlyRate: z.coerce.number().min(0).optional(),
   defaultPurchasePrice: z.coerce.number().min(0).optional(),
   replacementCost: z.coerce.number().min(0).optional(),
+  // WS11 (#950) — sales items. `saleStockQuantity` has no `.min()`: a negative
+  // pool is valid (oversell is warn-allow, spec decision), not an input error.
+  salePrice: z.coerce.number().min(0).optional(),
+  saleStockQuantity: z.coerce.number().int().optional(),
   weight: z.coerce.number().min(0).optional(),
   powerDraw: z.coerce.number().int().min(0).optional(),
   requiresTestAndTag: z.boolean().default(false),

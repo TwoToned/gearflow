@@ -63,7 +63,7 @@ async function checkOutSerializedItem(
     if (ownUnit && ownUnit.status === "CHECKED_OUT") return "continue";
     throw new ConvexError(`Asset ${asset.assetTag} is already deployed`);
   }
-  if (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST") {
+  if (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST" || asset.status === "SOLD") {
     throw new ConvexError(`Asset ${asset.assetTag} is ${(asset.status as string).replace("_", " ").toLowerCase()} and cannot be deployed`);
   }
   const { id: unitId } = await ensureSerialisedUnit(ctx, { organizationId: p.organizationId, lineItemId: p.lineItemId, assetId: p.targetAssetId });

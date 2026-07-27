@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgRead } from "./lib/auth";
-import { EXCLUDED_ASSIGNMENT_STATUSES as EXCLUDED, overlaps, iso, classifyAvailabilityBlock } from "./lib/crewConflicts";
+import { EXCLUDED_ASSIGNMENT_STATUSES as EXCLUDED, overlaps, iso, classifyAvailabilityBlock, classifyAssignmentConflict } from "./lib/crewConflicts";
 
 /**
  * Browser-direct crew-availability + planner reads (Phase 3 — replace getCrewAvailability
@@ -73,8 +73,12 @@ export const conflicts = query({
         .map((p) => [p.id, p]),
     );
     for (const a of assignments) {
-      const p = projById.get(a.projectId);
-      out.push({ type: "assignment", severity: "soft", label: `Already on ${p?.projectNumber ?? ""} - ${p?.name ?? ""}`, startDate: iso(a.startDate) ?? new Date(startMs).toISOString(), endDate: iso(a.endDate) ?? new Date(endMs).toISOString() });
+      const p = projById.get(a.projectId) ?? null;
+      // WS8 (#947) — status-keyed severity (CONFIRMED/ACCEPTED/COMPLETED = hard
+      // "Booked", PENDING/OFFERED = soft "Pencilled"), not the blanket "soft"
+      // `crewConflicts.ts`'s org-wide board still uses for its own rollup.
+      const { severity, label } = classifyAssignmentConflict(a.status, p ? { projectNumber: p.projectNumber, name: p.name } : null);
+      out.push({ type: "assignment", severity, label, startDate: iso(a.startDate) ?? new Date(startMs).toISOString(), endDate: iso(a.endDate) ?? new Date(endMs).toISOString() });
     }
     return out;
   },

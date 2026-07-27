@@ -274,6 +274,17 @@ export function ModelForm({ initialData }: ModelFormProps) {
                 <Input type="number" step="0.01" {...form.register("replacementCost")} placeholder="0.00" />
               </SmartFormField>
             </div>
+            {/* WS11 (#950) — sales items: every model is sellable (bulk + serialised).
+                No fallback chain on sale price (spec decision) — unset requires
+                manual entry when adding a Sale line. */}
+            <div className="grid gap-5 sm:grid-cols-2">
+              <SmartFormField label="Sale price ($)" hint="Auto-fills a Sale line's unit price. Leave blank to require manual entry.">
+                <Input type="number" step="0.01" {...form.register("salePrice")} placeholder="0.00" />
+              </SmartFormField>
+              <SmartFormField label="Sale stock" hint="New-stock sale pool — independent of rental assets/bulk.">
+                <Input type="number" step="1" {...form.register("saleStockQuantity")} placeholder="0" />
+              </SmartFormField>
+            </div>
           </div>
         </SmartFormSection>
 

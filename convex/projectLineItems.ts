@@ -813,7 +813,7 @@ export const swapLineItemAsset = mutation({
     if (!newAsset || newAsset.organizationId !== a.organizationId) throw new ConvexError("Target asset not found");
     if (line.modelId && newAsset.modelId !== line.modelId) throw new ConvexError("Target asset is a different model");
     if (newAsset.kitId) throw new ConvexError(`Asset ${newAsset.assetTag} is part of a kit and can't be assigned directly`);
-    if (newAsset.status === "RETIRED" || newAsset.status === "LOST") throw new ConvexError(`Asset ${newAsset.assetTag} is ${(newAsset.status as string).toLowerCase()}`);
+    if (newAsset.status === "RETIRED" || newAsset.status === "LOST" || newAsset.status === "SOLD") throw new ConvexError(`Asset ${newAsset.assetTag} is ${(newAsset.status as string).toLowerCase()}`);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", line.projectId)).unique();
     const startMs = project?.rentalStartDate ?? null;

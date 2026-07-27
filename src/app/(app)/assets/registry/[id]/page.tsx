@@ -228,6 +228,19 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
       ? asset.lineItems.find((li) => li.status === "CHECKED_OUT" && !li.returnedAt) ??
         asset.lineItems.find((li) => li.status === "CHECKED_OUT")
       : null;
+  // WS11 (#950) — SOLD → the SALE line that sold this unit (sell-from-rental-stock).
+  // Non-cancelled preferred, but fall back to any match so a stale/edge-case row
+  // still shows *something* rather than silently falling through to the generic
+  // status label below.
+  const soldLineItem =
+    asset.status === "SOLD"
+      ? asset.lineItems.find((li) => li.type === "SALE" && li.status !== "CANCELLED") ??
+        asset.lineItems.find((li) => li.type === "SALE")
+      : null;
+  // Precomputed here (not inline in the `whereIsIt` IIFE below) so the `&&`
+  // decision point lands on this component's existing complexity rather than
+  // adding a fresh one to the already-tight `whereIsIt` IIFE (R-3.6 budget).
+  const showSoldOnProject = asset.status === "SOLD" && !!soldLineItem;
   const homeLocationName = asset.location?.name ?? null;
   const whereIsIt: { icon: typeof Briefcase; node: React.ReactNode } = (() => {
     if (asset.status === "CHECKED_OUT" && activeLineItem) {
@@ -267,7 +280,25 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         ),
       };
     }
-    // RESERVED / RETIRED / LOST and any other state — surface status + home location.
+    if (showSoldOnProject) {
+      return {
+        icon: PackageCheck,
+        node: (
+          <span>
+            Sold on{" "}
+            <Link
+              href={`/projects/${soldLineItem!.projectId}`}
+              className={cn("font-semibold text-ink hover:text-link hover:underline rounded-sm", focusRing)}
+            >
+              {soldLineItem!.project.name}
+            </Link>
+            <span className="t-mono text-muted"> · {soldLineItem!.project.projectNumber}</span>
+          </span>
+        ),
+      };
+    }
+    // RESERVED / RETIRED / LOST / SOLD (no resolvable line) and any other state —
+    // surface status + home location.
     return {
       icon: MapPin,
       node: (

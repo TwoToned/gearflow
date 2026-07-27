@@ -225,6 +225,9 @@ enum AssetStatus {
   RETIRED
   LOST
   RESERVED
+  /// WS11 (#950) — terminal (like RETIRED): a serialised unit sold via
+  /// sell-from-rental-stock. Reversible ("un-sell" restores AVAILABLE).
+  SOLD
 }
 
 enum AssetCondition {
@@ -312,6 +315,14 @@ enum LineItemType {
   LABOUR
   TRANSPORT
   MISC
+  /// WS11 (#950) — a sale line (new-stock or sell-from-rental-stock).
+  SALE
+}
+
+/// WS11 (#950) — how a SALE line's stock was sourced. Never inferred.
+enum SaleMode {
+  NEW_STOCK
+  FROM_RENTAL_STOCK
 }
 
 enum PricingType {
@@ -420,6 +431,9 @@ enum AllocationBasis {
   EXCLUDED_SUBHIRE
   /// Custom / labour / container line. No modelId; nothing to attribute.
   EXCLUDED_NON_GEAR
+  /// WS11 (#950) — a SALE line. Consumes no rental-ROI weight and never enters
+  /// projectModelRevenues (sale revenue lives in its own P&L bucket).
+  EXCLUDED_SALE
   /// Pool was $0 (unpriced group, $0 kit), or the line is cancelled / optional.
   NO_REVENUE
 }

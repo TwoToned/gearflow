@@ -1,6 +1,6 @@
 # PDF Document Generation
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 ## Architecture
 
@@ -260,6 +260,27 @@ All document templates use a unified line item hierarchy with up to 3 levels:
 - **Return Sheet**: Filtered to `CHECKED_OUT` or `RETURNED` at all levels
 - **Pull Slip**: All non-cancelled items. Already-deployed items show ticked checkbox
 - **Quote / Invoice**: All items shown regardless of deployment status
+
+### SALE Line Handling (WS11 #950)
+`DocumentLineItem` gained a `type` field (`src/lib/pdfme/types.ts`) so the table
+plugin and composer can special-case `SALE` lines without inferring it from
+other fields:
+- **Quote / invoice**: SALE lines included, with a green "SALE" badge
+  (`BADGE_STYLES.sale`, `gearflow-table.ts`). No `/day` (or other period)
+  price suffix — a SALE line is always `pricingType: FLAT`, whose label is
+  already "flat", so it's unaffected by the quote's `hidePricingPeriodSuffix`.
+- **Delivery docket / packing list**: SALE lines are **always** included,
+  regardless of status — goods are handed over at the docket, never checked
+  out through the warehouse flow. Packing-list has no `filterByStatus` at
+  all, so this was already true there; the docket's `["CHECKED_OUT"]` filter
+  special-cases `type === "SALE"` to bypass it, in both
+  `document-composer.ts`'s `getFilteredParentItems` and `gearflow-table.ts`'s
+  mirrored top-level filter (see the audit checklist below — both had to move
+  together).
+- **Return sheet**: SALE lines excluded entirely, regardless of status — a
+  sold item is never expected back.
+- Sale lines ride in their existing category/group bucket — there is no
+  separate "Sales" section; the badge is the only differentiator.
 
 ## T&T Reports
 

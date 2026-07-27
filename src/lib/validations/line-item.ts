@@ -17,8 +17,14 @@ const isOptionalField = z.boolean().default(false);
 
 export const lineItemSchema = z.object({
   type: z
-    .enum(["EQUIPMENT", "SERVICE", "LABOUR", "TRANSPORT", "MISC"])
+    .enum(["EQUIPMENT", "SERVICE", "LABOUR", "TRANSPORT", "MISC", "SALE"])
     .default("EQUIPMENT"),
+  // WS11 (#950) — set only on `type: "SALE"` lines, never inferred. NEW_STOCK
+  // = sell from new stock (no rental-asset impact, decrements
+  // Model.saleStockQuantity). FROM_RENTAL_STOCK = sell an owned unit/bulk
+  // qty out of rental stock (serialised -> AssetStatus "SOLD"; bulk ->
+  // adjustBulkTotal). See FEATUREDOCS/67-sales-line-items.md.
+  saleMode: z.enum(["NEW_STOCK", "FROM_RENTAL_STOCK"]).optional(),
   modelId: z.string().optional(),
   assetId: z.string().optional(),
   bulkAssetId: z.string().optional(),

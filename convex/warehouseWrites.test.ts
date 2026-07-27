@@ -67,7 +67,7 @@ const kitById = (t: T, id: string) =>
 const logById = (t: T, id: string) =>
   t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first());
 
-async function seedModelAsset(t: T, orgId = ORG, status: "CHECKED_OUT" | "AVAILABLE" | "IN_MAINTENANCE" | "RETIRED" | "LOST" | "RESERVED" = "CHECKED_OUT") {
+async function seedModelAsset(t: T, orgId = ORG, status: "CHECKED_OUT" | "AVAILABLE" | "IN_MAINTENANCE" | "RETIRED" | "LOST" | "RESERVED" | "SOLD" = "CHECKED_OUT") {
   await t.run(async (ctx) => {
     await ctx.db.insert("models", { id: "m1", organizationId: orgId, name: "PAR", createdAt: NOW, updatedAt: NOW });
     await ctx.db.insert("assets", { id: "a1", organizationId: orgId, modelId: "m1", assetTag: "A-1", status, condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });

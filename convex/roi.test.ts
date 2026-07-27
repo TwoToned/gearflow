@@ -93,6 +93,22 @@ describe("getModelRoi — status + date filtering", () => {
     expect(roi.unitsOwned).toBe(7); // 2 serialized + 5 bulk
     expect(roi.replacementCost).toBe(2000);
   });
+
+  test("WS11 (#950): a SOLD asset drops from unitsOwned/fleetCost, same as RETIRED (both patch isActive:false)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "rx", organizationId: ORG, name: "Receiver", replacementCost: 2000 });
+      await ctx.db.insert("assets", { id: "s1", organizationId: ORG, modelId: "rx", assetTag: "S1", isActive: true, purchasePrice: 500 });
+      // Sold via sellSerializedAssetForSale — status SOLD + isActive:false, the
+      // same shape assetWrites.ts's archiveNative already writes for RETIRED.
+      // fleetCapitalFor never reads `status` directly (only `isActive`), so
+      // this needs no new code — the existing filter picks it up for free.
+      await ctx.db.insert("assets", { id: "s2", organizationId: ORG, modelId: "rx", assetTag: "S2", status: "SOLD", isActive: false, purchasePrice: 900 });
+    });
+    const roi = await asService(t).query(api.roi.getModelRoi, { orgId: ORG, modelId: "rx", statuses: COUNTED });
+    expect(roi.unitsOwned).toBe(1); // only s1 — s2 (SOLD) excluded
+    expect(roi.fleetCost).toBe(500); // only s1's purchase price
+  });
 });
 
 /**

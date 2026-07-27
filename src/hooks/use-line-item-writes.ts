@@ -69,6 +69,8 @@ export interface AccessoryPlanInput {
 function buildAddFields(parsed: ParsedLineItem) {
   return {
     type: parsed.type,
+    // WS11 (#950) — set only on `type: "SALE"` lines, never inferred.
+    saleMode: parsed.saleMode,
     modelId: parsed.modelId || undefined,
     assetId: parsed.assetId || undefined,
     bulkAssetId: parsed.bulkAssetId || undefined,
@@ -156,6 +158,7 @@ export function useLineItemWrites() {
   const removeManyM = useMutation(api.lineItemWrites.removeManyNative);
   const patchManyM = useMutation(api.lineItemWrites.patchManyNative);
   const reorderM = useMutation(api.lineItemWrites.reorderNative);
+  const unsellM = useMutation(api.lineItemWrites.unsellLineItemNative);
 
   const actor = () => ({
     userId: session?.user.id ?? "",
@@ -182,7 +185,7 @@ export function useLineItemWrites() {
         includeAccessories: boolean;
         accessoryPlan?: AccessoryPlanInput;
       },
-    ): Promise<{ id: string; merged: boolean }> => {
+    ): Promise<{ id: string; merged: boolean; saleWarning?: string }> => {
       try {
         return await addM({
           id: createId(),
@@ -339,6 +342,24 @@ export function useLineItemWrites() {
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** WS11 (#950) — reverse a FROM_RENTAL_STOCK sale: the sold asset returns to
+     *  AVAILABLE (or a bulk decrement is restored). The line item itself is
+     *  untouched — pair with `remove(id)` to also delete it if the sale is being
+     *  undone entirely. */
+    unsell: async (id: string): Promise<{ projectId: string }> => {
+      try {
+        return await unsellM({
+          id,
+          orgId: requireOrg(),
+          actor: actor(),
+          auditId: createId(),
           now: Date.now(),
         });
       } catch (e) {

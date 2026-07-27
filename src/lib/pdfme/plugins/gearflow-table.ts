@@ -66,6 +66,9 @@ const BADGE_STYLES = {
   overbookedInherited: { bg: "#fef3c7", text: "#d97706", label: "OVERBOOKED" },
   reducedStock: { bg: "#ede9fe", text: "#7c3aed", label: "REDUCED STOCK" },
   subhire: { bg: "#cffafe", text: "#0891b2", label: "SUBHIRE" },
+  // WS11 (#950) — sale lines ride in their existing category/group (no
+  // separate Sales bucket, spec decision) — the badge is what differentiates.
+  sale: { bg: "#dcfce7", text: "#15803d", label: "SALE" },
 };
 
 function getColumnsForDocType(config: TablePluginConfig, totalWidth: number): ColumnDef[] {
@@ -232,7 +235,16 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
   if (config.filterByStatus) {
     const statuses = config.filterByStatus;
+    // WS11 (#950) — SALE lines are goods handed over, never expected back:
+    // excluded entirely from the return sheet (regardless of status), and
+    // bypass the status filter everywhere else `filterByStatus` applies
+    // today (delivery docket) since a sale always "counts" for hand-over
+    // purposes. Quote/invoice/packing-list have no `filterByStatus` at all
+    // (document-layouts.ts), so a SALE line already flows through those
+    // unfiltered — nothing to special-case there.
+    const isReturnSheet = config.documentType === "return-sheet";
     filteredItems = filteredItems.filter(i => {
+      if (i.type === "SALE") return !isReturnSheet;
       if (isBulk(i)) return i.checkedOutQuantity > 0;
       // Synthetic Project Group row: its own status field is meaningless
       // (it's a label, not a real line item). Pass through if ANY attached
@@ -240,6 +252,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       // would silently drop from delivery dockets / return sheets.
       if (i.isGroupRow && (i.childLineItems?.length ?? 0) > 0) {
         return i.childLineItems!.some(c => {
+          if (c.type === "SALE") return !isReturnSheet;
           if (isBulk(c)) return c.checkedOutQuantity > 0;
           return statuses.includes(c.status);
         });
@@ -1162,6 +1175,12 @@ function drawCheckbox(
 
 function getBadges(item: DocumentLineItem, documentType?: string): typeof BADGE_STYLES[keyof typeof BADGE_STYLES][] {
   const badges: typeof BADGE_STYLES[keyof typeof BADGE_STYLES][] = [];
+
+  // WS11 (#950) — SALE badge, quote/invoice included (no "/day" suffix — SALE
+  // lines are always pricingType FLAT, whose label is already "flat").
+  if (item.type === "SALE") {
+    badges.push(BADGE_STYLES.sale);
+  }
 
   if (item.isOptional) {
     badges.push(BADGE_STYLES.optional);

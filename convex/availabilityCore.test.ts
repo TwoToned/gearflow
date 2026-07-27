@@ -44,10 +44,12 @@ describe("availabilityCore stock math == overbooking-core (byte-for-byte pin)", 
       { assetType: "SERIALIZED", assets: [], bulkAssets: [] },
       // SERIALIZED — all available
       { assetType: "SERIALIZED", assets: [{ status: "AVAILABLE" }, { status: "CHECKED_OUT" }, { status: "RESERVED" }], bulkAssets: [] },
-      // SERIALIZED — all unavailable (maintenance / lost / retired)
-      { assetType: "SERIALIZED", assets: [{ status: "IN_MAINTENANCE" }, { status: "LOST" }, { status: "RETIRED" }], bulkAssets: [] },
+      // SERIALIZED — all unavailable (maintenance / lost / retired / sold)
+      { assetType: "SERIALIZED", assets: [{ status: "IN_MAINTENANCE" }, { status: "LOST" }, { status: "RETIRED" }, { status: "SOLD" }], bulkAssets: [] },
       // SERIALIZED — mixed
       { assetType: "SERIALIZED", assets: [{ status: "AVAILABLE" }, { status: "IN_MAINTENANCE" }, { status: "AVAILABLE" }, { status: "RETIRED" }], bulkAssets: [] },
+      // SERIALIZED — WS11 (#950): SOLD specifically, mixed with available
+      { assetType: "SERIALIZED", assets: [{ status: "AVAILABLE" }, { status: "SOLD" }, { status: "AVAILABLE" }], bulkAssets: [] },
       // BULK — several quantities
       { assetType: "BULK", assets: [], bulkAssets: [{ totalQuantity: 10 }, { totalQuantity: 5 }] },
       // BULK — empty
@@ -189,6 +191,17 @@ describe("computeModelAvailability", () => {
     });
     const r = computeModelAvailability(b, { rentalStart: null, rentalEnd: null, excludeProjectId: "thisP" });
     expect(r).toMatchObject({ totalStock: 5, effectiveStock: 2, unavailable: 3, booked: 0, available: 2 });
+  });
+
+  test("WS11 (#950): SERIALIZED effectiveStock also reduced by SOLD", () => {
+    const b = mkBundle({
+      assets: [
+        { status: "AVAILABLE" }, { status: "AVAILABLE" },
+        { status: "SOLD" }, { status: "SOLD" },
+      ],
+    });
+    const r = computeModelAvailability(b, { rentalStart: null, rentalEnd: null, excludeProjectId: "thisP" });
+    expect(r).toMatchObject({ totalStock: 4, effectiveStock: 2, unavailable: 2, booked: 0, available: 2 });
   });
 
   test("BULK: availability from summed totalQuantity", () => {

@@ -58,6 +58,17 @@ export interface DocumentLineItem {
   locationName?: string | null;
   /** True for synthetic rows representing a ProjectGroup (hides individual equipment) */
   isGroupRow?: boolean;
+  /**
+   * WS11 (#950) — the line-item type (EQUIPMENT/SALE/etc, mirrors
+   * `projectLineItems.type`). Was implicit (every row was effectively
+   * EQUIPMENT) until SALE lines needed doc-type-specific handling: always
+   * included regardless of status on delivery-docket/packing-list, always
+   * excluded from the return-sheet (goods handed over, never expected back).
+   * See gearflow-table.ts's filter block and document-composer.ts's
+   * `getFilteredParentItems` — both must special-case `type === "SALE"`
+   * identically (CLAUDE.md's PDF five-consumer-audit rule).
+   */
+  type?: string | null;
   isOptional: boolean;
   isKitChild?: boolean;
   /** KIT | ACCESSORY — distinguishes a kit member from an accessory child. */

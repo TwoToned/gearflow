@@ -69,6 +69,18 @@ function Row({
   );
 }
 
+/** WS11 (#950) — the two sale-specific rows, extracted into their own
+ *  component (not inlined in `ProjectCostsPanel`) so its two `> 0` guards
+ *  don't push the panel's own cyclomatic complexity over budget (R-3.6). */
+function SaleCostRow({ saleCostTotal }: { saleCostTotal: number }) {
+  if (saleCostTotal <= 0) return null;
+  return <Row label="Sale cost of goods" value={formatCurrency(saleCostTotal)} negative />;
+}
+function SaleRevenueRow({ saleRevenue }: { saleRevenue: number }) {
+  if (saleRevenue <= 0) return null;
+  return <Row label="Sale revenue" value={formatCurrency(saleRevenue)} muted />;
+}
+
 interface ProjectCostsPanelProps {
   projectId: string;
 }
@@ -94,7 +106,8 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
     data.serviceCostTotal +
     data.labourCostTotal +
     data.subHireCostTotal +
-    data.maintenanceCostTotal;
+    data.maintenanceCostTotal +
+    data.saleCostTotal;
 
   return (
     <div className="space-y-3">
@@ -131,6 +144,10 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
         {data.maintenanceCostTotal > 0 && (
           <Row label={`Maintenance (${data.counts.maintenanceRecords})`} value={formatCurrency(data.maintenanceCostTotal)} negative />
         )}
+        {/* WS11 (#950) — sale COGS (asset/model/bulk purchase-price chain), shown
+            only once the project actually has a sale line, same pattern as
+            maintenance above. Makes sale margin visible without a separate panel. */}
+        <SaleCostRow saleCostTotal={data.saleCostTotal} />
         <div className="h-px bg-line my-1" />
         <Row label="Total costs" value={formatCurrency(totalCosts)} bold negative />
       </div>
@@ -148,6 +165,7 @@ export function ProjectCostsPanel({ projectId }: ProjectCostsPanelProps) {
       {showDetail && (
         <div className="space-y-1.5">
           <Row label="Equipment revenue" value={formatCurrency(data.equipmentRevenue)} muted />
+          <SaleRevenueRow saleRevenue={data.saleRevenue} />
           <Row label="Service revenue" value={formatCurrency(data.serviceRevenue)} muted />
           <div className="h-px bg-line my-1" />
           <Row label="Revenue total" value={formatCurrency(data.total)} bold />

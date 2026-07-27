@@ -25,6 +25,13 @@ interface ComboboxPickerOption {
   label: string
   description?: string
   icon?: React.ReactNode
+  /**
+   * Right-aligned, NON-searchable badge (e.g. a `StatusIndicator` conflict
+   * dot+label) — unlike `description`, this never participates in the
+   * label/value/description text filter above. Use this slot for advisory
+   * status hints; `description` stays the searchable metadata slot (WS8 #947).
+   */
+  badge?: React.ReactNode
 }
 
 interface ComboboxPickerProps {
@@ -237,6 +244,7 @@ function ComboboxPicker({
                       </span>
                     )}
                   </div>
+                  {option.badge && <span className="shrink-0">{option.badge}</span>}
                   {option.value === value && (
                     <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
                       <CheckIcon className="size-4" />
@@ -425,6 +433,7 @@ function MultiComboboxPicker({
                           </span>
                         )}
                       </div>
+                      {option.badge && <span className="shrink-0">{option.badge}</span>}
                       {isSelected && (
                         <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
                           <CheckIcon className="size-4" />

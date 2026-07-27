@@ -32,6 +32,10 @@ export type AllocationBasisValue =
   | "EQUAL_SPLIT"
   | "EXCLUDED_SUBHIRE"
   | "EXCLUDED_NON_GEAR"
+  // WS11 (#950) — a SALE line: consumes no rental-ROI weight and never enters
+  // projectModelRevenues. Sale revenue lives in its own `project.saleRevenue`
+  // bucket (convex/lib/recalc.ts), not per-model rental ROI.
+  | "EXCLUDED_SALE"
   | "NO_REVENUE";
 
 /** The `allocationBasis` values that represent revenue OUR capital earned. */
@@ -52,6 +56,8 @@ export interface AllocLine {
   id: string;
   parentLineItemId?: string | null;
   groupId?: string | null;
+  /** WS11 (#950) — `"SALE"` routes the line to EXCLUDED_SALE (see isNonGear). */
+  type?: string | null;
   modelId?: string | null;
   kitId?: string | null;
   subHireId?: string | null;
@@ -164,9 +170,21 @@ export function largestRemainder(
 const isInactive = (l: AllocLine): boolean =>
   l.status === "CANCELLED" || l.isOptional === true;
 
-/** Not gear: takes no share of any pool, and nothing to attribute it to. */
+/** WS11 (#950) — a SALE line: sale revenue never enters rental ROI. */
+const isSaleLine = (l: AllocLine): boolean => l.type === "SALE";
+
+/** Not gear: takes no share of any pool, and nothing to attribute it to.
+ *  Includes SALE lines (WS11 #950) — same "excluded from every split" shape
+ *  as a custom/container line, just a different reported basis (see
+ *  `nonGearBasis`) so a report can tell "sale" from "custom/container" apart. */
 const isNonGear = (l: AllocLine): boolean =>
-  l.isCustomItem === true || l.isContainerLineItem === true;
+  l.isCustomItem === true || l.isContainerLineItem === true || isSaleLine(l);
+
+/** The basis to stamp on an `isNonGear` line — SALE gets its own EXCLUDED_SALE
+ *  label (WS11 #950) instead of the generic EXCLUDED_NON_GEAR, so ROI reports
+ *  can distinguish "sold, not rented" from "custom item/container, no model". */
+const nonGearBasis = (l: AllocLine): AllocationBasisValue =>
+  isSaleLine(l) ? "EXCLUDED_SALE" : "EXCLUDED_NON_GEAR";
 
 const qtyOf = (l: AllocLine): number => Math.max(1, l.quantity ?? 1);
 const durOf = (l: AllocLine): number => Math.max(1, l.duration ?? 1);
@@ -366,7 +384,7 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
         // A pure container: kit parent, container line, custom item. Its pool has
         // nowhere to go — record null rather than inventing revenue for a row that
         // has no model to attribute it to.
-        out.set(l.id, { allocatedRevenue: null, allocationBasis: "EXCLUDED_NON_GEAR" });
+        out.set(l.id, { allocatedRevenue: null, allocationBasis: nonGearBasis(l) });
         return;
       }
       out.set(l.id, {
@@ -394,7 +412,7 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
       });
       i = 1;
     } else {
-      out.set(l.id, { allocatedRevenue: null, allocationBasis: "EXCLUDED_NON_GEAR" });
+      out.set(l.id, { allocatedRevenue: null, allocationBasis: nonGearBasis(l) });
     }
     for (const c of parts) assign(c, shares[i++], splitBasis);
 
@@ -402,7 +420,7 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
     for (const c of childrenOf.get(l.id) ?? []) {
       if (out.has(c.id)) continue;
       if (isInactive(c)) stamp(c, { allocatedRevenue: 0, allocationBasis: "NO_REVENUE" });
-      else stamp(c, { allocatedRevenue: null, allocationBasis: "EXCLUDED_NON_GEAR" });
+      else stamp(c, { allocatedRevenue: null, allocationBasis: nonGearBasis(c) });
     }
   }
 
@@ -513,9 +531,11 @@ export function allocateProject(input: AllocationInput): Map<string, LineAllocat
       continue;
     }
     if (isNonGear(l)) {
-      // Includes custom items sitting INSIDE a group: recalcProjectTotals bills
-      // them on top of the bundle price, so they never took a share of it.
-      stamp(l, { allocatedRevenue: null, allocationBasis: "EXCLUDED_NON_GEAR" });
+      // Includes custom items sitting INSIDE a group (recalcProjectTotals bills
+      // them on top of the bundle price, so they never took a share of it) AND
+      // standalone SALE lines (WS11 #950 — nonGearBasis reports EXCLUDED_SALE
+      // for those instead of the generic EXCLUDED_NON_GEAR).
+      stamp(l, { allocatedRevenue: null, allocationBasis: nonGearBasis(l) });
       continue;
     }
     if (l.groupId) {

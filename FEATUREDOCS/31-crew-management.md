@@ -314,11 +314,11 @@ on the page (issue #796 — "put all crew management on the services"):
   Offered → Accepted → Confirmed → Completed); bulk status/delete; offer-all;
   bulk/individual messaging; call sheet button — all unchanged from before, just
   reached through `ServicesPanel` instead of a page-level sibling.
-- **Known gap (follow-up, not done in #796)**: the crew-picker inside the service
-  dialog does not show live availability-conflict badges the way `CrewPanel`'s old
-  "Add crew" flow did (`crewAvailability.conflicts`) — conflict detection still
-  exists and runs in `CrewPanel`'s edit dialog, just not at the point of adding
-  someone to a service.
+- **Conflict/availability indicators (WS8 #947, closes the #796 follow-up above)**:
+  the crew-picker inside the service dialog now shows the same live
+  conflict/availability signal the edit dialog always had — see
+  "Crew Conflict & Availability Indicators" below for the single-owner query and
+  severity model.
 - **Labour cost** shown in project financial summary (via `labourCostTotal` +
   `serviceCostTotal`, see "Service ↔ Crew Cost Linkage" above)
 - **Call Sheet** button lives with the crew section (moved along with `CrewPanel`)
@@ -339,6 +339,79 @@ on the page (issue #796 — "put all crew management on the services"):
 - Conflict detection integrated in assignment dialog — shows warnings when assigning crew with conflicts
 - Hard conflicts (UNAVAILABLE) shown in red, soft conflicts (TENTATIVE, double-booked) in amber
 - Allows override — admin can still assign despite warnings
+
+## Crew Conflict & Availability Indicators (WS8 #947)
+
+**Single-owner query, no new primitive.** `convex/crewAssignments.ts`'s
+`membersForAssignment` is the one query behind the service dialog's crew picker;
+it now takes `rangeStartMs`/`rangeEndMs` (the service's own dates — the service
+dialog computes and passes them; previously it didn't, which was the whole
+#796 follow-up gap) and an `excludeServiceId` (the service being created/edited,
+so its OWN crew rows don't get reported as conflicting with themselves — a
+DIFFERENT service on the SAME project now correctly surfaces as a same-day
+double-book, and cross-project assignments always stay included regardless of
+service). A new sibling query, `conflictsForProject`, feeds the same signal to
+`CrewPanel`'s crew table in one batched call keyed by assignment id (kept
+separate from `projectCrew` deliberately — that composite already collects
+shifts per row and shouldn't get fatter). Both call ONE shared pure function,
+`convex/lib/crewConflicts.ts`'s `computeMemberConflictSignal`, so the
+severity/availability rules live in exactly one place. Reads are index-bounded
+on `by_crewMemberId_startDate_endDate` (`.lte("startDate", rangeEndMs)`
+— deliberately one-sided: a matching `.gte` would silently drop a real conflict
+from a multi-day block that started before the window but still overlaps it).
+
+**Severity alignment (the pencil rule, extended to assignment status).**
+`crewConflicts.ts`'s existing model (WS3 #942, still what the org-wide
+Overbookings board's `computeCrewDoubleBookings` uses) treats every
+assignment-vs-assignment conflict as `soft` — a crew member CAN legitimately be
+pencilled onto two quoted jobs. WS8 deliberately upgrades that rule for the
+picker and the assignment edit dialog ONLY: an overlapping assignment's own
+status now decides how real the hold is — `CONFIRMED`/`ACCEPTED`/`COMPLETED` →
+**hard** ("Booked: {project}"), `PENDING`/`OFFERED` → **soft** ("Pencilled:
+{project}"). An `UNAVAILABLE` availability block is still hard, `TENTATIVE`
+still soft, and a `PREFERRED` block is a **positive hint** (green), never a
+conflict — new for the picker/rate-table/crew-table surfaces (the org-wide
+board still only cares about hard/soft). `convex/crewAvailability.ts`'s
+`conflicts` query (the edit dialog's data source) adopts the same status-keyed
+severity for its assignment-type entries — both surfaces (picker + edit dialog)
+share the upgrade together, per the spec.
+
+**Rendering — one color system, not a parallel one.** `src/lib/status-colors.ts`
+gained a `"conflictSeverity"` category (`hard`→error, `soft`→warning,
+`preferred`→success) plus an `intentBorderClass(intent)` helper that derives the
+existing `border-l-<token>` card-accent convention (already used verbatim
+elsewhere — `csv-import-dialog.tsx`, `equipment-add-form.tsx`, etc.) from the
+same intent `StatusIndicator` already uses. `CrewPanel`'s `AssignmentDialog`
+conflict banners (previously hardcoded `border-l-t-out`/`border-l-warn`
+strings) now go through `getStatusIntent("conflictSeverity", …)` +
+`intentBorderClass` — same visual result, one source of truth.
+`ComboboxPickerOption` gained a non-searchable `badge` slot (`combobox-picker.tsx`
+— `description` stays the searchable metadata slot) rendering a `StatusIndicator`
+dot+label. The service dialog's crew picker rows, the `CrewRateTableRow` sub-line,
+and a section-level "N of M selected have clashes" summary all derive their
+badge from the ONE `pickConflictBadge` precedence helper in `services-panel.tsx`
+(unavailable/hard-conflict > tentative/soft-conflict > a preferred hint >
+nothing). A "Set service dates to check availability" neutral hint (the
+equipment-picker's dateless-availability precedent) shows instead when the
+service has no dates yet — there's nothing to check.
+
+**Bulk paths (non-gating).** "Send offers"/"Confirm all" in the service dialog
+now go through a confirm `Dialog` (previously fired immediately — no AlertDialog
+per CLAUDE.md) whose description includes a pre-flight "N of M have scheduling
+clashes" line when applicable; `CrewPanel`'s existing "Offer all" confirm dialog
+gained the same line. Neither ever blocks the action — every indicator on this
+page (picker badge, rate-table sub-line, section summary, bulk pre-flight line,
+crew-table column) is advisory only and never gates submit.
+
+**Crew table.** `CrewPanel`'s desktop table gained a "Conflicts" column (the
+hardcoded `PhaseGroup` group-header `colSpan` moved 9→10 to match) and its
+mobile card variant shows the same badge inline — fed by `conflictsForProject`,
+keyed `(projectId, range)` and bounded to the project's own dated assignments.
+
+**Dead code removed.** `src/lib/crew-scheduling-read.ts`'s `computeAvailabilityStatus`
+(zero production callers, Prisma-era leftover) and its test are deleted — its
+UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
+`computeMemberConflictSignal`'s `availability` field.
 
 ## Crew Planner
 - 14-day Gantt-style timeline at `/crew/planner`

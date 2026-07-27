@@ -197,7 +197,8 @@ export const modelBookings = query({
       if (assetType === "SERIALIZED") {
         totalStock = activeAssets.length;
         const unavailable = activeAssets.filter(
-          (a) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED",
+          // WS11 (#950) — a sold unit is terminal/disposed, same as RETIRED/LOST.
+          (a) => a.status === "IN_MAINTENANCE" || a.status === "LOST" || a.status === "RETIRED" || a.status === "SOLD",
         ).length;
         effectiveStock = totalStock - unavailable;
       } else {

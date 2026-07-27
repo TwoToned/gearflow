@@ -72,6 +72,9 @@ export async function exportModelsCSV() {
     "monthlyRate",
     "defaultPurchasePrice",
     "replacementCost",
+    // WS11 (#950) — sales items.
+    "salePrice",
+    "saleStockQuantity",
     "weight",
     "powerDraw",
     "requiresTestAndTag",
@@ -94,6 +97,8 @@ export async function exportModelsCSV() {
     m.monthlyRate?.toString() || "",
     m.defaultPurchasePrice?.toString() || "",
     m.replacementCost?.toString() || "",
+    m.salePrice?.toString() || "",
+    m.saleStockQuantity?.toString() || "",
     m.weight?.toString() || "",
     m.powerDraw?.toString() || "",
     m.requiresTestAndTag ? "true" : "false",
@@ -316,6 +321,9 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
         monthlyRate,
         defaultPurchasePrice: parseDecimal(get("defaultpurchaseprice") || get("purchase_price") || get("purchaseprice")),
         replacementCost: parseDecimal(get("replacementcost") || get("replacement_cost")),
+        // WS11 (#950) — sales items.
+        salePrice: parseDecimal(get("saleprice") || get("sale_price") || get("sale") || get("sellprice") || get("rrp") || get("retail")),
+        saleStockQuantity: parseInt(get("salestockquantity") || get("sale_stock_quantity")) || null,
         weight: parseDecimal(get("weight")),
         powerDraw: parseInt(get("powerdraw") || get("power_draw")) || null,
         requiresTestAndTag: get("requirestestandtag") === "true",
@@ -344,6 +352,8 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
           monthlyRate: data.monthlyRate ?? existing.monthlyRate,
           defaultPurchasePrice: data.defaultPurchasePrice ?? existing.defaultPurchasePrice,
           replacementCost: data.replacementCost ?? existing.replacementCost,
+          salePrice: data.salePrice ?? existing.salePrice,
+          saleStockQuantity: data.saleStockQuantity ?? existing.saleStockQuantity,
           weight: data.weight ?? existing.weight,
           powerDraw: data.powerDraw ?? existing.powerDraw,
           requiresTestAndTag: data.requiresTestAndTag,
@@ -598,6 +608,8 @@ export async function importModelRatesCSV(csvContent: string): Promise<ImportRes
         weeklyRate?: number;
         monthlyRate?: number;
         defaultRentalPrice?: number;
+        // WS11 (#950) — sales items.
+        salePrice?: number;
       } = { ...parsed.rates };
       // Keep the quoting fallback in sync with the daily rate.
       if (parsed.rates.dailyRate !== undefined) {

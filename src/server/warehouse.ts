@@ -127,7 +127,7 @@ export async function lookupAssetForScan(
     : bulkAsset!.model?.name ?? "";
 
   // Block checkout of retired/in-maintenance/lost assets
-  if (mode === "checkout" && asset && (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST")) {
+  if (mode === "checkout" && asset && (asset.status === "RETIRED" || asset.status === "IN_MAINTENANCE" || asset.status === "LOST" || asset.status === "SOLD")) {
     return serialize({
       found: true as const, type: null, lineItemId: null, assetId: asset.id,
       assetName, reason: "asset_unavailable" as const,

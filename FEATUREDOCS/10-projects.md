@@ -1,6 +1,6 @@
 # Project & Rental Management
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 ## Projects List Views (`ProjectTable`, `ProjectBoard`)
 `ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
@@ -169,14 +169,17 @@ equipmentRevenue = SUM(group.price × group.quantity) + SUM(standalone.lineTotal
 serviceCostTotal = SUM(service.costTotal) where status != CANCELLED
 labourCostTotal = SUM(assignment.estimatedCost) where assignment.serviceId IS NULL
 
-subtotal = equipmentRevenue
+saleRevenue = SUM(standalone SALE line.lineTotal)          -- WS11 #950
+saleCostTotal = SUM(SALE line COGS) where status != CANCELLED and not optional  -- WS11 #950
+
+subtotal = equipmentRevenue + serviceRevenue + saleRevenue
 discountAmount = subtotal × discountPercent / 100
 taxRate = project.taxRate ?? org.defaultTaxRate ?? 10
 taxableAmount = subtotal - discountAmount
 taxAmount = taxableAmount × taxRate / 100
 total = taxableAmount + taxAmount
 
-margin = total - (serviceCostTotal + labourCostTotal)
+margin = total - (serviceCostTotal + labourCostTotal + saleCostTotal)   -- saleCostTotal added WS11 #950
 marginPercent = margin / total × 100
 ```
 

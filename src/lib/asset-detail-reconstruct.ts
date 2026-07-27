@@ -123,6 +123,9 @@ export function reconstructAsset(bundle: AssetBundleData) {
     return {
       id: li.id,
       projectId: li.projectId ?? null,
+      // WS11 (#950) — lets the detail page find the SALE line that sold this
+      // unit ("Sold on {project}") without a second field/query.
+      type: li.type ?? null,
       status: li.status ?? "CONFIRMED",
       checkedOutAt: toDate(li.checkedOutAt),
       returnedAt: toDate(li.returnedAt),

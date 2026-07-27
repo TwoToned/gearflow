@@ -11,6 +11,7 @@ export const assetStatusLabels: Record<string, string> = {
   RETIRED: "Retired",
   LOST: "Lost",
   RESERVED: "Reserved",
+  SOLD: "Sold",
 };
 
 // --- Bulk Asset Status ---

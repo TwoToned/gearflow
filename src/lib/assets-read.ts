@@ -261,7 +261,7 @@ function msToDate(ms: number | null | undefined): Date | null {
 // Postgres enum columns sort by DECLARED order, not alphabetical. Rank maps
 // replicate prisma/schema.prisma declaration order for orderBy on enum fields.
 const ASSET_STATUS_RANK: Record<string, number> = {
-  AVAILABLE: 0, CHECKED_OUT: 1, IN_MAINTENANCE: 2, RETIRED: 3, LOST: 4, RESERVED: 5,
+  AVAILABLE: 0, CHECKED_OUT: 1, IN_MAINTENANCE: 2, RETIRED: 3, LOST: 4, RESERVED: 5, SOLD: 6,
 };
 const ASSET_CONDITION_RANK: Record<string, number> = {
   NEW: 0, GOOD: 1, FAIR: 2, POOR: 3, DAMAGED: 4,

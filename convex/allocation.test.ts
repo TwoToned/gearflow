@@ -145,6 +145,51 @@ describe("standalone lines", () => {
   });
 });
 
+// ── WS11 (#950) — SALE lines ─────────────────────────────────────────────────
+
+describe("SALE lines (WS11 #950) — excluded from rental ROI", () => {
+  test("a standalone SALE line (even model-backed, even priced) carries null, EXCLUDED_SALE — not DIRECT", () => {
+    const r = run([L("sale", { type: "SALE", modelId: "m1", lineTotal: 300 })]);
+    expect(rev(r, "sale")).toBeNull();
+    expect(basis(r, "sale")).toBe("EXCLUDED_SALE");
+  });
+
+  test("EXCLUDED_SALE is not ROI-counted", () => {
+    expect(isRoiCounted("EXCLUDED_SALE")).toBe(false);
+  });
+
+  test("rollupByModel never credits a model from a SALE line's price, even though it has a modelId", () => {
+    const lines = [
+      L("rent", { modelId: "m1", lineTotal: 100 }),
+      L("sale", { type: "SALE", modelId: "m1", lineTotal: 300 }),
+    ];
+    const r = run(lines);
+    const rolled = rollupByModel(lines, r);
+    // Only the rental line's $100 counts — the $300 sale never touches m1's ROI.
+    expect(rolled.get("m1")).toBe(100);
+  });
+
+  test("a SALE line beside gear in a group takes no weight — the gear splits the whole bundle pool", () => {
+    const r = run(
+      [
+        // No own lineTotal (not a $0 freebie) — it's the group's bundle price
+        // being split, same shape the "groups" describe block above uses.
+        L("gear", { modelId: "m1", groupId: "g1" }),
+        L("sale", { type: "SALE", modelId: "m2", groupId: "g1" }),
+      ],
+      { groups: [{ id: "g1", price: 200, quantity: 1 }], models: models(M("m1", { dailyRate: 10 })) },
+    );
+    expect(rev(r, "gear")).toBe(200); // the SALE sibling took none of the pool
+    expect(basis(r, "sale")).toBe("EXCLUDED_SALE");
+  });
+
+  test("cancelled/optional SALE lines still resolve to NO_REVENUE (isInactive wins over isNonGear)", () => {
+    const r = run([L("sale", { type: "SALE", modelId: "m1", lineTotal: 300, status: "CANCELLED" })]);
+    expect(rev(r, "sale")).toBe(0);
+    expect(basis(r, "sale")).toBe("NO_REVENUE");
+  });
+});
+
 // ── kits ─────────────────────────────────────────────────────────────────────
 
 describe("kits — Approach A", () => {

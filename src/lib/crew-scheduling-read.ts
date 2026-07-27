@@ -649,43 +649,6 @@ export function selectMemberAvailability(
 }
 
 /**
- * getCrewAvailabilityStatus: per-member status from availability blocks + active
- * assignments overlapping [start, end]. UNAVAILABLE wins, then TENTATIVE, then
- * busy (an overlapping non-cancelled/declined assignment), default available.
- */
-export function computeAvailabilityStatus(
-  crewMemberIds: string[],
-  blocks: MappedCrewAvailability[],
-  assignments: MappedCrewAssignment[],
-  range: { start: Date; end: Date },
-): Record<string, "available" | "tentative" | "unavailable" | "busy"> {
-  const statusMap: Record<string, "available" | "tentative" | "unavailable" | "busy"> = {};
-  const memberSet = new Set(crewMemberIds);
-  for (const id of crewMemberIds) statusMap[id] = "available";
-
-  for (const b of blocks) {
-    if (!memberSet.has(b.crewMemberId)) continue;
-    if (!overlapsRange(b.startDate, b.endDate, range.start, range.end)) continue;
-    if (b.type === "UNAVAILABLE") {
-      statusMap[b.crewMemberId] = "unavailable";
-    } else if (b.type === "TENTATIVE" && statusMap[b.crewMemberId] === "available") {
-      statusMap[b.crewMemberId] = "tentative";
-    }
-  }
-
-  for (const a of assignments) {
-    if (!memberSet.has(a.crewMemberId)) continue;
-    if (EXCLUDED_ASSIGNMENT_STATUSES.has(a.status)) continue;
-    if (!assignmentOverlapsRange(a, range.start, range.end)) continue;
-    if (statusMap[a.crewMemberId] === "available") {
-      statusMap[a.crewMemberId] = "busy";
-    }
-  }
-
-  return statusMap;
-}
-
-/**
  * getCrewPlannerData: a member's planner assignments — exclude CANCELLED|DECLINED,
  * and (overlap [start,end]) OR (startDate == null). Replicates the nested
  * `assignments.where` (no orderBy in the Prisma include → preserve input order).

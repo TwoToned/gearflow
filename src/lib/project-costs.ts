@@ -9,8 +9,15 @@ import { getProjectById } from "@/lib/projects-read";
 import { getProjectServicesByOrg, sumProjectServiceRevenue, sumProjectLabourServiceRevenue } from "@/lib/project-services-read";
 import { getMaintenanceRecordsByOrg, aggregateMaintenanceForProject } from "@/lib/maintenance-read";
 
+/** `Number(v ?? 0)`, factored into its own function so `computeProjectOperationalCosts`'s
+ *  cyclomatic complexity isn't paying for every field's null-coalesce (R-3.6). */
+const num = (v: unknown): number => (v != null ? Number(v) : 0);
+
 export interface ProjectOperationalCosts {
   equipmentRevenue: number;
+  /** WS11 (#950) — see convex/projectCosts.ts's costsShape comment. */
+  saleRevenue: number;
+  saleCostTotal: number;
   serviceRevenue: number;
   /** WS10 #949 — see convex/projectCosts.ts's costsShape comment. */
   labourServiceRevenue: number;
@@ -42,22 +49,28 @@ export async function computeProjectOperationalCosts(
   const labourServiceRevenue = sumProjectLabourServiceRevenue(orgServices, projectId);
   const maintenanceAgg = aggregateMaintenanceForProject(orgMaintenance, projectId);
 
-  const equipmentRevenue = Number(project.equipmentRevenue ?? 0);
+  const equipmentRevenue = num(project.equipmentRevenue);
+  // WS11 (#950) — persisted by recalcProjectTotals (convex/lib/recalc.ts),
+  // same pattern as equipmentRevenue/total/etc. above.
+  const saleRevenue = num(project.saleRevenue);
+  const saleCostTotal = num(project.saleCostTotal);
   const serviceRevenue = serviceRevenueTotal;
-  const total = Number(project.total ?? 0);
-  const serviceCostTotal = Number(project.serviceCostTotal ?? 0);
-  const labourCostTotal = Number(project.labourCostTotal ?? 0);
-  const subHireCostTotal = Number(project.subHireCostTotal ?? 0);
+  const total = num(project.total);
+  const serviceCostTotal = num(project.serviceCostTotal);
+  const labourCostTotal = num(project.labourCostTotal);
+  const subHireCostTotal = num(project.subHireCostTotal);
   const maintenanceCostTotal = maintenanceAgg.costTotal;
 
   const allCosts =
-    serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal;
+    serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal + saleCostTotal;
 
   const netMargin = total - allCosts;
   const marginPercent = total > 0 ? Math.max(0, Math.min(100, (netMargin / total) * 100)) : 0;
 
   return {
     equipmentRevenue,
+    saleRevenue,
+    saleCostTotal,
     serviceRevenue,
     labourServiceRevenue,
     total,
@@ -76,6 +89,8 @@ export async function computeProjectOperationalCosts(
 function emptyResult(): ProjectOperationalCosts {
   return {
     equipmentRevenue: 0,
+    saleRevenue: 0,
+    saleCostTotal: 0,
     serviceRevenue: 0,
     labourServiceRevenue: 0,
     total: 0,

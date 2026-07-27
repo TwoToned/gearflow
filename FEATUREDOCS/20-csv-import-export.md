@@ -1,11 +1,13 @@
 # CSV Import/Export
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 ## Export
 - `exportModelsCSV()` — all active models with specs. Now includes `sku` and the
   rental-rate columns (`dailyRate`, `weeklyRate`, `monthlyRate`) so the export
-  doubles as a ready-to-edit rate sheet.
+  doubles as a ready-to-edit rate sheet. Also includes `salePrice`/
+  `saleStockQuantity` (WS11 #950), following the same `defaultPurchasePrice`/
+  `replacementCost` pattern.
 - `exportAssetsCSV()` — all active serialized assets
 - `exportBulkAssetsCSV()` — all active bulk assets
 
@@ -13,6 +15,7 @@
 - `importModelsCSV(csvContent)` — upsert by name + manufacturer + modelNumber.
   Round-trips `sku` and `dailyRate`/`weeklyRate`/`monthlyRate`; `defaultRentalPrice`
   (the quoting fallback) is synced from `dailyRate` when no explicit value is given.
+  Also round-trips `salePrice`/`saleStockQuantity` (WS11 #950).
 - `importModelRatesCSV(csvContent)` — **rates-only** bulk update. Matches existing
   models by identifier in priority order **id → sku → modelNumber → name** and
   updates only the rate columns present. **Never creates models** — unmatched,
@@ -24,7 +27,9 @@
   `src/lib/rate-import.ts` (unit-tested); the DB-backed action is in
   `src/server/csv.ts` (integration-tested in `csv-rate-import.int.test.ts`).
   Solves the cold-start problem: operators with hundreds of models can populate
-  rates from a spreadsheet instead of clicking through forms.
+  rates from a spreadsheet instead of clicking through forms. Recognizes
+  `salePrice` (aliases `saleprice|sale|sellprice|rrp|retail`, WS11 #950), same
+  blank-cell-unchanged treatment as every other rate column.
 - `importAssetsCSV(csvContent)` — upsert by assetTag, auto-generate tags if missing
 - Custom CSV parser (no external deps) with flexible column matching (camelCase, snake_case, Title Case)
 - Tags exported as semicolons; import parses them back with lowercase normalization

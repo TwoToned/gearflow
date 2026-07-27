@@ -1,6 +1,6 @@
 # Availability & Overbooking Engine
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
 ## The Two-Window Date Model (WS2 #941)
 
@@ -63,7 +63,9 @@ math runs on them, and had to be re-keyed too (see the dedicated subsection).
 1. For each line item's model, query all other projects with an overlapping PROJECT window (`getProjectWindow`)
 2. Exclude finished statuses: `CANCELLED, RETURNED, COMPLETED, INVOICED`
 3. Exclude templates: `isTemplate: false`
-4. Calculate `effectiveStock = totalStock - unavailableAssets` (IN_MAINTENANCE, LOST, RETIRED)
+4. Calculate `effectiveStock = totalStock - unavailableAssets` (IN_MAINTENANCE, LOST, RETIRED,
+   and — WS11 #950 — SOLD: a unit disposed of via a `FROM_RENTAL_STOCK` sale is terminal
+   stock, same treatment as RETIRED/LOST, in `computeStockBreakdown`)
 5. Calculate `totalBooked` across all overlapping projects
 6. `isOverbooked = totalBooked > effectiveStock`
 7. `isReducedStock = unavailableAssets > 0 && totalBooked > effectiveStock - unavailableAssets`

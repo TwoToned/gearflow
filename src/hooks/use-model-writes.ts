@@ -52,7 +52,7 @@ export function useModelWrites() {
     },
     bulkUpdateRates: async (
       modelIds: string[],
-      rateType: "dailyRate" | "weeklyRate" | "monthlyRate",
+      rateType: "dailyRate" | "weeklyRate" | "monthlyRate" | "salePrice",
       operation: "set" | "multiply" | "increase_percent",
       value: number,
     ): Promise<{ count: number }> => {

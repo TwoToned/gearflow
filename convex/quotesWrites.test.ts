@@ -9,6 +9,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import type { Doc } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
 const ORG = "org_1";
@@ -30,7 +31,7 @@ async function seedMember(t: ReturnType<typeof makeT>, role = "owner") {
   });
 }
 
-async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG, status = "QUOTING") {
+async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG, status: Doc<"projects">["status"] = "QUOTING") {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: orgId, projectNumber: "P1", name: "Gig",

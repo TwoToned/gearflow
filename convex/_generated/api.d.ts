@@ -77,6 +77,8 @@ import type * as groupTemplates from "../groupTemplates.js";
 import type * as groupTemplatesWrites from "../groupTemplatesWrites.js";
 import type * as http from "../http.js";
 import type * as incidentWrites from "../incidentWrites.js";
+import type * as invoiceLines from "../invoiceLines.js";
+import type * as invoices from "../invoices.js";
 import type * as invoicesWrites from "../invoicesWrites.js";
 import type * as kitAllocations from "../kitAllocations.js";
 import type * as kitAllocationsWrites from "../kitAllocationsWrites.js";
@@ -255,6 +257,7 @@ import type * as wooCommerceIntegrations from "../wooCommerceIntegrations.js";
 import type * as wooCommerceInternal from "../wooCommerceInternal.js";
 import type * as wooCommerceOrderLogs from "../wooCommerceOrderLogs.js";
 import type * as xeroIntegrations from "../xeroIntegrations.js";
+import type * as xeroPush from "../xeroPush.js";
 import type * as xeroSyncLogs from "../xeroSyncLogs.js";
 
 import type {
@@ -333,6 +336,8 @@ declare const fullApi: ApiFromModules<{
   groupTemplatesWrites: typeof groupTemplatesWrites;
   http: typeof http;
   incidentWrites: typeof incidentWrites;
+  invoiceLines: typeof invoiceLines;
+  invoices: typeof invoices;
   invoicesWrites: typeof invoicesWrites;
   kitAllocations: typeof kitAllocations;
   kitAllocationsWrites: typeof kitAllocationsWrites;
@@ -511,6 +516,7 @@ declare const fullApi: ApiFromModules<{
   wooCommerceInternal: typeof wooCommerceInternal;
   wooCommerceOrderLogs: typeof wooCommerceOrderLogs;
   xeroIntegrations: typeof xeroIntegrations;
+  xeroPush: typeof xeroPush;
   xeroSyncLogs: typeof xeroSyncLogs;
 }>;
 

@@ -35,6 +35,13 @@ import {
   type PriceBreakdown,
 } from "./lib/billingDerivation";
 import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS } from "./lib/projectLocks";
+import {
+  adjustModelSaleStock,
+  sellSerializedAssetForSale,
+  adjustBulkTotal,
+  unsellSerializedAsset,
+  type SaleActor,
+} from "./lib/saleStock";
 
 /** Fetch the line's parent project, org-checked — every gate site needs the
  *  project's `status` to resolve its lock tier. */
@@ -46,6 +53,171 @@ async function requireLineProjectInOrg(ctx: MutationCtx, projectId: string, orgI
   // generic not-found, so the two read differently in logs/audits.
   if (project.organizationId !== orgId) throw new ConvexError("Forbidden: project belongs to another organization.");
   return project;
+}
+
+/**
+ * WS11 (#950) — apply a newly-inserted SALE line's stock effects (new-stock
+ * decrement, or sell-from-rental-stock disposal: serialised -> AssetStatus
+ * "SOLD", bulk -> adjustBulkTotal) and return a non-blocking warning to
+ * surface to the caller, if any. Shared by `addNative` and
+ * `addLineItemSmartNative` so the two add paths can't drift on this
+ * behaviour. Runs AFTER the line insert (the audit trail wants the line's
+ * own id). A no-op for every non-SALE line (the overwhelming majority).
+ */
+async function applySaleStockOnAdd(
+  ctx: MutationCtx,
+  args: {
+    fields: { type?: string; saleMode?: string; modelId?: string; assetId?: string; bulkAssetId?: string; quantity: number };
+    orgId: string;
+    projectId: string;
+    lineItemId: string;
+    rentalStart: number | null;
+    rentalEnd: number | null;
+    actor: SaleActor;
+    now: number;
+  },
+): Promise<string | undefined> {
+  const { fields } = args;
+  if (fields.type !== "SALE") return undefined;
+
+  if (fields.saleMode === "NEW_STOCK") {
+    if (fields.modelId) {
+      await adjustModelSaleStock(ctx, {
+        modelId: fields.modelId,
+        orgId: args.orgId,
+        delta: -fields.quantity,
+        projectId: args.projectId,
+        lineItemId: args.lineItemId,
+        actor: args.actor,
+        now: args.now,
+      });
+    }
+    return undefined;
+  }
+
+  if (fields.saleMode === "FROM_RENTAL_STOCK") return applyFromRentalStockSale(ctx, args);
+  return undefined;
+}
+
+/** The FROM_RENTAL_STOCK half of `applySaleStockOnAdd` — split out to stay
+ *  under the file's per-function line budget. */
+async function applyFromRentalStockSale(
+  ctx: MutationCtx,
+  args: Parameters<typeof applySaleStockOnAdd>[1],
+): Promise<string | undefined> {
+  const { fields } = args;
+  // Disposal is an ASSET action on top of the line-item permission the caller
+  // already checked (spec decision: "Extra permission: asset:update on top of
+  // project:manage_line_items").
+  await requireOrgPermission(ctx, args.orgId, "asset", "update");
+  if (fields.assetId) {
+    return await sellSerializedAssetForSale(ctx, {
+      assetId: fields.assetId,
+      orgId: args.orgId,
+      projectId: args.projectId,
+      lineItemId: args.lineItemId,
+      rentalStart: args.rentalStart,
+      rentalEnd: args.rentalEnd,
+      actor: args.actor,
+      now: args.now,
+    });
+  }
+  if (fields.bulkAssetId) {
+    const { actualQty } = await adjustBulkTotal(ctx, {
+      bulkAssetId: fields.bulkAssetId,
+      orgId: args.orgId,
+      qty: fields.quantity,
+      projectId: args.projectId,
+      lineItemId: args.lineItemId,
+      reason: "SALE",
+      actor: args.actor,
+      now: args.now,
+    });
+    if (actualQty < fields.quantity) {
+      return `Only ${actualQty} of ${fields.quantity} could be sold from rental stock — the rest are currently deployed on other jobs.`;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * WS11 (#950) — restore a NEW_STOCK SALE line's reserved sale stock on delete
+ * (spec: "restore on cancel/delete/qty-change delta"). No-op for every other
+ * line (the overwhelming majority) — split out of removeNative/removeManyNative
+ * to keep their cyclomatic complexity down, not just for reuse.
+ */
+async function restoreSaleStockOnDelete(
+  ctx: MutationCtx,
+  line: { type?: string; saleMode?: string; modelId?: string; quantity?: number; projectId: string },
+  orgId: string,
+  lineItemId: string,
+  actor: SaleActor,
+  now: number,
+): Promise<void> {
+  if (line.type !== "SALE" || line.saleMode !== "NEW_STOCK" || !line.modelId) return;
+  await adjustModelSaleStock(ctx, {
+    modelId: line.modelId,
+    orgId,
+    delta: line.quantity ?? 0,
+    projectId: line.projectId,
+    lineItemId,
+    actor,
+    now,
+  });
+}
+
+/**
+ * WS11 (#950) — keep Model.saleStockQuantity in sync with a quantity change (or
+ * a modelId swap) on an existing NEW_STOCK SALE line, from patchNative.
+ * `saleMode`/`type` are immutable-on-patch (LINE_IMMUTABLE_ON_PATCH), so
+ * `doc.type`/`doc.saleMode` are authoritative; `modelId` is NOT immutable, so
+ * both the old and new model are reconciled on a swap. Split out of patchNative
+ * to keep its cyclomatic complexity down, not just for reuse. No-op for every
+ * non-NEW_STOCK-SALE line (the overwhelming majority).
+ */
+async function applySaleStockOnPatch(
+  ctx: MutationCtx,
+  args: {
+    doc: { type?: string; saleMode?: string; modelId?: string; projectId: string };
+    orgId: string;
+    id: string;
+    actor: SaleActor;
+    now: number;
+    newModelId: string | null;
+    currentQty: number;
+    newQty: number;
+  },
+): Promise<void> {
+  const { doc, orgId, id, actor, now, newModelId, currentQty, newQty } = args;
+  if (doc.type !== "SALE" || doc.saleMode !== "NEW_STOCK") return;
+
+  const oldModelId = doc.modelId ?? null;
+  if (oldModelId && newModelId && oldModelId === newModelId) {
+    const delta = currentQty - newQty; // qty grew -> consume more (negative); shrank -> restore
+    if (delta !== 0) {
+      await adjustModelSaleStock(ctx, { modelId: oldModelId, orgId, delta, projectId: doc.projectId, lineItemId: id, actor, now });
+    }
+    return;
+  }
+  if (oldModelId) {
+    await adjustModelSaleStock(ctx, { modelId: oldModelId, orgId, delta: currentQty, projectId: doc.projectId, lineItemId: id, actor, now });
+  }
+  if (newModelId) {
+    await adjustModelSaleStock(ctx, { modelId: newModelId, orgId, delta: -newQty, projectId: doc.projectId, lineItemId: id, actor, now });
+  }
+}
+
+/**
+ * WS11 (#950) — force a SALE line to `pricingType: FLAT, duration: 1`
+ * (spec decision — the UI hides the Days field for a Sale kind, and this is
+ * the mutation-level backstop so a browser-direct caller can't bypass it).
+ * Mutates `fields` in place; called before `calcLineTotalNative` on every
+ * add/patch path that accepts a `type`.
+ */
+function forceSaleFlatPricing(fields: { type?: string; pricingType?: string; duration?: number }): void {
+  if (fields.type !== "SALE") return;
+  fields.pricingType = "FLAT";
+  fields.duration = 1;
 }
 
 /**
@@ -207,6 +379,11 @@ export const removeNative = mutation({
     for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id, orgId);
     await deleteLineWithUnits(ctx, line._id, line.id, orgId);
 
+    // WS11 (#950) — restore reserved NEW_STOCK sale stock (see helper doc —
+    // scoped to NEW_STOCK; a FROM_RENTAL_STOCK line's physical disposition is
+    // reversed only by the explicit "un-sell" action, never implicitly here).
+    await restoreSaleStockOnDelete(ctx, line, orgId, id, actor, now);
+
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
@@ -305,6 +482,8 @@ export const removeManyNative = mutation({
         .collect()).filter((c) => c.organizationId === orgId);
       for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id, orgId);
       await deleteLineWithUnits(ctx, line._id, line.id, orgId);
+      // WS11 (#950) — restore reserved sale stock (NEW_STOCK only — see removeNative).
+      await restoreSaleStockOnDelete(ctx, line, orgId, id, actor, now);
       if (!affectedSet.has(line.projectId)) {
         affectedSet.add(line.projectId);
         affected.push(line.projectId);
@@ -349,6 +528,11 @@ export const removeManyNative = mutation({
 const LINE_IMMUTABLE_ON_PATCH = [
   "projectId",
   // NOTE: `type` is intentionally NOT here — updateLineItem legitimately patches it.
+  // `saleMode` (WS11 #950) IS here, unlike `type` — it's stamped once at add time
+  // (never inferred) and never legitimately changes after: flipping NEW_STOCK <->
+  // FROM_RENTAL_STOCK post-creation would leave a dangling asset/bulk stock state
+  // with nothing to reconcile it.
+  "saleMode",
   "kitId", "isKitChild", "childKind", "parentLineItemId", "pricingMode", "isCustomItem", "isContainerLineItem",
   "status", "returnStatus", "prepStatus", "prepContainer", "returnCondition", "returnNotes",
   "checkedOutQuantity", "returnedQuantity", "assignedQuantity", "packedQuantity", "damagedQuantity", "lostQuantity",
@@ -514,6 +698,15 @@ export const patchNative = mutation({
         }
       }
     }
+
+    // WS11 (#950) — new-stock sale-stock delta (see helper doc). Independent of
+    // the EQUIPMENT-only availability gate above — sale stock is never
+    // date/booking-checked.
+    await applySaleStockOnPatch(ctx, {
+      doc, orgId, id, actor, now,
+      newModelId: (effModelId as string | undefined) ?? null,
+      currentQty, newQty,
+    });
 
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setObj);
@@ -1097,7 +1290,10 @@ export const addCustomNative = mutation({
  * recalc stays server-side (recalcNative, called by the caller after this returns).
  */
 export const addNative = mutation({
-  returns: v.object({ id: v.string(), sortOrder: v.number() }),
+  // `saleWarning` (WS11 #950) — a non-blocking sale-stock message (oversell,
+  // sold-a-double-booked-asset, bulk floor clamp) for the caller to toast.
+  // Absent for every non-SALE line and every clean SALE add.
+  returns: v.object({ id: v.string(), sortOrder: v.number(), saleWarning: v.optional(v.string()) }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -1106,6 +1302,8 @@ export const addNative = mutation({
       categoryId: v.optional(v.string()),
       groupId: v.optional(v.string()),
       type: v.optional(enums.LineItemType),
+      // WS11 (#950) — set only on `type: "SALE"` lines, never inferred.
+      saleMode: v.optional(enums.SaleMode),
       modelId: v.optional(v.string()),
       assetId: v.optional(v.string()),
       bulkAssetId: v.optional(v.string()),
@@ -1163,6 +1361,7 @@ export const addNative = mutation({
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
     assertAccessoryPlanFields(accessoryPlan);
+    forceSaleFlatPricing(fields); // WS11 (#950) — SALE always FLAT/duration:1
 
     // Org-validate every referenced FK (by_cuid is global — the row could be another
     // org's; the service-token read path resolves these with no org re-check). Same
@@ -1290,6 +1489,19 @@ export const addNative = mutation({
       });
     }
 
+    // WS11 (#950) — sale-stock effects (new-stock decrement, or sell-from-
+    // rental-stock disposal). No-op for every non-SALE line.
+    const saleWarning = await applySaleStockOnAdd(ctx, {
+      fields,
+      orgId: organizationId,
+      projectId,
+      lineItemId: id,
+      rentalStart: addProject.rentalStartDate ?? null,
+      rentalEnd: addProject.rentalEndDate ?? null,
+      actor,
+      now,
+    });
+
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
@@ -1311,7 +1523,7 @@ export const addNative = mutation({
 
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
     await recalcProjectTotals(ctx, projectId, organizationId, orgDefaultTaxRate, now);
-    return { id, sortOrder };
+    return { id, sortOrder, saleWarning };
   },
 });
 
@@ -1649,7 +1861,8 @@ export const recalcNative = mutation({
  * the client. `fields.lineTotal` is intentionally absent from the args.
  */
 export const addLineItemSmartNative = mutation({
-  returns: v.object({ id: v.string(), merged: v.boolean() }),
+  // `saleWarning` (WS11 #950) — see addNative's returns comment.
+  returns: v.object({ id: v.string(), merged: v.boolean(), saleWarning: v.optional(v.string()) }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -1658,6 +1871,8 @@ export const addLineItemSmartNative = mutation({
       categoryId: v.optional(v.string()),
       groupId: v.optional(v.string()),
       type: v.optional(enums.LineItemType),
+      // WS11 (#950) — set only on `type: "SALE"` lines, never inferred.
+      saleMode: v.optional(enums.SaleMode),
       modelId: v.optional(v.string()),
       assetId: v.optional(v.string()),
       bulkAssetId: v.optional(v.string()),
@@ -1722,6 +1937,7 @@ export const addLineItemSmartNative = mutation({
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
     assertAccessoryPlanFields(accessoryPlan);
+    forceSaleFlatPricing(fields); // WS11 (#950) — SALE always FLAT/duration:1
 
     // Org default tax rate resolved in-mutation from orgSettings (source of truth) so a
     // browser caller can't spoof it. Used by recalc on both the merge and insert paths.
@@ -1802,7 +2018,10 @@ export const addLineItemSmartNative = mutation({
     // ── Merge-dedup (src/server/line-items.ts:266-358) ─────────────────────────
     // A model-backed, asset-less, same-group/category, non-sub-hire, non-child add merges
     // into the existing matching line (quantity summed, lineTotal recomputed) instead of
-    // inserting a duplicate row. Never when forceSeparate.
+    // inserting a duplicate row. Never when forceSeparate. WS11 (#950) spec: "never across
+    // type or saleMode" — satisfied by construction, since this gate only ever fires for
+    // `type === "EQUIPMENT"`; a SALE line (any saleMode) always falls through to a fresh
+    // insert below, never merging into an EQUIPMENT line or another SALE line.
     if (fields.type === "EQUIPMENT" && fields.modelId && !fields.assetId && !forceSeparate) {
       const projectLines = (
         await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
@@ -1907,7 +2126,21 @@ export const addLineItemSmartNative = mutation({
     const insertDiscount = guard.defaultToZero ? undefined : fields.discount;
     // `== null` (not `!unitPrice`) — an EXPLICIT $0 manual price (a free item) is a real
     // choice and must be kept, not overwritten by the model rate.
-    if (!guard.defaultToZero && fields.modelId && fields.unitPrice == null) {
+    if (fields.type === "SALE") {
+      // WS11 (#950) — a SALE line auto-prices from Model.salePrice, a flat unit
+      // price with NO date/duration math — a completely different, much simpler
+      // mechanism than the rental blended-charge system below, and NOT part of
+      // it (deliberately its own branch, not folded into computeBlendedCharge).
+      // No fallback chain (spec decision): an unset salePrice requires manual
+      // entry, same as today's unset dailyRate/weeklyRate falls through to $0.
+      if (!guard.defaultToZero && fields.modelId && fields.unitPrice == null) {
+        const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", fields.modelId!)).first();
+        if (model && model.organizationId === organizationId && model.salePrice != null) {
+          autoUnitPrice = model.salePrice;
+        }
+      }
+      autoDuration = 1;
+    } else if (!guard.defaultToZero && fields.modelId && fields.unitPrice == null) {
       const [model, proj] = await Promise.all([
         ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", fields.modelId!)).first(),
         ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
@@ -1940,6 +2173,7 @@ export const addLineItemSmartNative = mutation({
       organizationId,
       projectId,
       type: fields.type,
+      saleMode: fields.type === "SALE" ? fields.saleMode : undefined,
       modelId: fields.modelId || undefined,
       assetId: fields.assetId || undefined,
       bulkAssetId: fields.bulkAssetId || undefined,
@@ -1982,6 +2216,19 @@ export const addLineItemSmartNative = mutation({
       });
     }
 
+    // WS11 (#950) — sale-stock effects (new-stock decrement, or sell-from-
+    // rental-stock disposal). No-op for every non-SALE line.
+    const saleWarning = await applySaleStockOnAdd(ctx, {
+      fields,
+      orgId: organizationId,
+      projectId,
+      lineItemId: id,
+      rentalStart: smartProject.rentalStartDate ?? null,
+      rentalEnd: smartProject.rentalEndDate ?? null,
+      actor,
+      now,
+    });
+
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
@@ -2023,6 +2270,79 @@ export const addLineItemSmartNative = mutation({
       });
     }
 
-    return { id, merged: false };
+    return { id, merged: false, saleWarning };
+  },
+});
+
+/**
+ * unsellLineItemNative — reverse a FROM_RENTAL_STOCK sale (WS11 #950): a
+ * serialised unit's "SOLD" status returns to AVAILABLE, or a bulk decrement is
+ * restored via `adjustBulkTotal`'s negative-qty branch. RBAC(project,
+ * manage_line_items) + asset:update — disposal reversal is an asset action,
+ * the same extra permission the sale itself requires.
+ *
+ * Reverses ONLY the physical stock effect (asset status / bulk quantities) —
+ * the SALE line item itself is untouched (still on the project, still priced).
+ * If the sale is being undone entirely, pair this with removeNative to also
+ * delete the line; un-sell alone is the narrower "the physical unit wasn't
+ * actually handed over, put it back in the fleet" correction.
+ */
+export const unsellLineItemNative = mutation({
+  returns: v.object({ projectId: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!line) throw new ConvexError({ code: "NOT_FOUND", message: "Line item not found." });
+    if (line.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (line.type !== "SALE" || line.saleMode !== "FROM_RENTAL_STOCK") {
+      throw new ConvexError({ code: "NOT_SELLABLE", message: "This line is not a sell-from-rental-stock sale." });
+    }
+
+    if (line.assetId) {
+      await unsellSerializedAsset(ctx, {
+        assetId: line.assetId, orgId, projectId: line.projectId, lineItemId: id, actor, now,
+      });
+    } else if (line.bulkAssetId) {
+      await adjustBulkTotal(ctx, {
+        bulkAssetId: line.bulkAssetId,
+        orgId,
+        qty: -(line.quantity ?? 0),
+        projectId: line.projectId,
+        lineItemId: id,
+        reason: "UNSELL",
+        actor,
+        now,
+      });
+    } else {
+      throw new ConvexError({ code: "NOT_FOUND", message: "This sale has no linked asset or bulk stock to un-sell." });
+    }
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "UPDATE",
+      entityType: "lineItem",
+      entityId: id,
+      entityName: line.description || "Sale line",
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: "Un-sold line item — rental stock restored",
+      projectId: line.projectId,
+      createdAt: now,
+    });
+
+    return { projectId: line.projectId };
   },
 });

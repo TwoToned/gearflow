@@ -237,6 +237,10 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
       ? asset.lineItems.find((li) => li.type === "SALE" && li.status !== "CANCELLED") ??
         asset.lineItems.find((li) => li.type === "SALE")
       : null;
+  // Precomputed here (not inline in the `whereIsIt` IIFE below) so the `&&`
+  // decision point lands on this component's existing complexity rather than
+  // adding a fresh one to the already-tight `whereIsIt` IIFE (R-3.6 budget).
+  const showSoldOnProject = asset.status === "SOLD" && !!soldLineItem;
   const homeLocationName = asset.location?.name ?? null;
   const whereIsIt: { icon: typeof Briefcase; node: React.ReactNode } = (() => {
     if (asset.status === "CHECKED_OUT" && activeLineItem) {
@@ -276,19 +280,19 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
         ),
       };
     }
-    if (asset.status === "SOLD" && soldLineItem) {
+    if (showSoldOnProject) {
       return {
         icon: PackageCheck,
         node: (
           <span>
             Sold on{" "}
             <Link
-              href={`/projects/${soldLineItem.projectId}`}
+              href={`/projects/${soldLineItem!.projectId}`}
               className={cn("font-semibold text-ink hover:text-link hover:underline rounded-sm", focusRing)}
             >
-              {soldLineItem.project.name}
+              {soldLineItem!.project.name}
             </Link>
-            <span className="t-mono text-muted"> · {soldLineItem.project.projectNumber}</span>
+            <span className="t-mono text-muted"> · {soldLineItem!.project.projectNumber}</span>
           </span>
         ),
       };

@@ -11,7 +11,9 @@
  * empty models.
  */
 
-export const RATE_FIELDS = ["dailyRate", "weeklyRate", "monthlyRate"] as const;
+// WS11 (#950) — `salePrice` rides the same narrow rate-import lane as the
+// rental rates (match by identifier, update one field, never create models).
+export const RATE_FIELDS = ["dailyRate", "weeklyRate", "monthlyRate", "salePrice"] as const;
 export type RateField = (typeof RATE_FIELDS)[number];
 
 /** Normalize a header/identifier for tolerant matching (case + spacing + punctuation). */
@@ -24,6 +26,7 @@ const RATE_ALIASES: Record<RateField, string[]> = {
   dailyRate: ["dailyrate", "daily", "dayrate", "perday"],
   weeklyRate: ["weeklyrate", "weekly", "weekrate", "perweek"],
   monthlyRate: ["monthlyrate", "monthly", "monthrate", "permonth"],
+  salePrice: ["saleprice", "sale", "sellprice", "rrp", "retail"],
 };
 
 /** Accepted header aliases per identifier column (normalized). Order = match priority. */

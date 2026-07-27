@@ -661,7 +661,7 @@ function BulkRateUpdateDialog({
   selectedModelIds: Set<string>;
   onSuccess: () => void;
 }) {
-  const [rateType, setRateType] = useState<"dailyRate" | "weeklyRate" | "monthlyRate">("dailyRate");
+  const [rateType, setRateType] = useState<"dailyRate" | "weeklyRate" | "monthlyRate" | "salePrice">("dailyRate");
   const [operation, setOperation] = useState<"set" | "multiply" | "increase_percent">("set");
   const [value, setValue] = useState("");
   const modelWrites = useModelWrites();
@@ -670,6 +670,8 @@ function BulkRateUpdateDialog({
     dailyRate: "Daily rate",
     weeklyRate: "Weekly rate",
     monthlyRate: "Monthly rate",
+    // WS11 (#950) — sales items.
+    salePrice: "Sale price",
   };
 
   const operationLabels: Record<string, string> = {
@@ -711,6 +713,7 @@ function BulkRateUpdateDialog({
                 <SelectItem value="dailyRate">Daily rate</SelectItem>
                 <SelectItem value="weeklyRate">Weekly rate</SelectItem>
                 <SelectItem value="monthlyRate">Monthly rate</SelectItem>
+                <SelectItem value="salePrice">Sale price</SelectItem>
               </SelectContent>
             </Select>
           </div>

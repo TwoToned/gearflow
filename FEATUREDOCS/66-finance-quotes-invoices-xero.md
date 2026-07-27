@@ -86,7 +86,14 @@ through this engine.
 - `clients.paymentProfile` (`FULL_UPFRONT | DEPOSIT_BALANCE`, absent =
   `FULL_UPFRONT`) + `clients.profileDepositPercent` (default 25) — the
   client payment profile now owns "how much deposit". `projects.depositPercent`
-  no longer exists (removed from the schema entirely).
+  is retired at the application layer (no reader/writer anywhere), but is
+  **still declared `v.optional` in the schema** — the original hard removal
+  broke the prod Convex deploy, because real pre-#940 wizard values were still
+  stored on live project documents and strict schema validation rejects a push
+  where an existing document has a field the validator no longer declares.
+  `backfillStripProjectDepositPercent.ts` strips it from every project; once a
+  run confirms zero remaining, the field can be fully deleted from the
+  validator in a follow-up PR.
 - `projects.depositPaid`/`invoicedTotal` — moved from "hand-typed wizard
   input, applied nowhere server-side" to recalc-OWNED
   `PROJECT_MONEY_ANCHORS` (same treatment as `equipmentRevenue`/`total`/

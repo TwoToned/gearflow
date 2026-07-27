@@ -25,6 +25,7 @@ import type * as backfillClientContacts from "../backfillClientContacts.js";
 import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as backfillMaintenanceSchedules from "../backfillMaintenanceSchedules.js";
 import type * as backfillProjectWindow from "../backfillProjectWindow.js";
+import type * as backfillStripProjectDepositPercent from "../backfillStripProjectDepositPercent.js";
 import type * as bulkAssets from "../bulkAssets.js";
 import type * as bulkAssetsWrites from "../bulkAssetsWrites.js";
 import type * as categories from "../categories.js";
@@ -285,6 +286,7 @@ declare const fullApi: ApiFromModules<{
   backfillKitUnits: typeof backfillKitUnits;
   backfillMaintenanceSchedules: typeof backfillMaintenanceSchedules;
   backfillProjectWindow: typeof backfillProjectWindow;
+  backfillStripProjectDepositPercent: typeof backfillStripProjectDepositPercent;
   bulkAssets: typeof bulkAssets;
   bulkAssetsWrites: typeof bulkAssetsWrites;
   categories: typeof categories;

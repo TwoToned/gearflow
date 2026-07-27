@@ -441,6 +441,25 @@ describe("composeDocument — quote content audit (#790 Phase 4)", () => {
     const text = calls.drawText.map((c) => c.text).join("\n");
     expect(text).toContain("Includes rigging and truss");
   });
+
+  it("the event name in the details block is bolded via markdown, and details/notes/T&Cs render through gearflowRichText", () => {
+    const result = composeDocument(
+      "quote",
+      makeData({ project_name: "Karaoke Party", client_notes: "Handle with care.", quote_terms_and_conditions: "Standard terms." }),
+      "#0d4f4f",
+    );
+    const pageSchemas = result.template.schemas[0];
+
+    const projectSchema = pageSchemas.find((s) => (s.name as string).startsWith("detailsRow_") && (s.name as string).endsWith("_project"))!;
+    expect(projectSchema.type).toBe("gearflowRichText");
+    expect(result.inputs[0][projectSchema.name as string]).toContain("**Karaoke Party**");
+
+    const clientNotesSchema = pageSchemas.find((s) => (s.name as string).startsWith("clientNotes_"))!;
+    expect(clientNotesSchema.type).toBe("gearflowRichText");
+
+    const tcSchema = pageSchemas.find((s) => (s.name as string).startsWith("termsAndConditions_"))!;
+    expect(tcSchema.type).toBe("gearflowRichText");
+  });
 });
 
 // ─── WS11 (#950) — mixed rental + SALE fixture, full pipeline ─────────────────

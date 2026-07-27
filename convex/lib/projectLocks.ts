@@ -84,13 +84,14 @@ export function isRevertOutOfHardLock(from: string | null | undefined, to: strin
 
 /** Project-level fields soft-locked at FINANCE_LOCKED+ (recalc INPUTS — the recalc
  *  OUTPUTS in PROJECT_MONEY_ANCHORS (projectWrites.ts) are already unconditionally
- *  stripped and never reach here). */
+ *  stripped and never reach here). WS1 (#940): `depositPercent` moved off the
+ *  project entirely (now the CLIENT payment profile); `depositPaid`/
+ *  `invoicedTotal` moved from "locked project input" to recalc-owned
+ *  PROJECT_MONEY_ANCHORS (derived from invoices) — neither needs a lock-tier
+ *  entry here anymore, same as equipmentRevenue/total/etc. never did. */
 export const LOCKED_PROJECT_FIELDS = [
   "taxRate",
   "discountPercent",
-  "depositPercent",
-  "depositPaid",
-  "invoicedTotal",
 ] as const;
 
 export const LOCKED_GROUP_FIELDS = ["price", "discount", "rentalPeriod", "rentalQuantity"] as const;

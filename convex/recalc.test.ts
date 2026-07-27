@@ -156,4 +156,74 @@ describe("recalcProjectTotals — totals parity", () => {
     expect(p?.taxAmount).toBe(20); // 20% of 100
     expect(p?.total).toBe(120);
   });
+
+  // WS1 (#940) — depositPaid/invoicedTotal are DERIVED from this project's
+  // Invoice rows, never hand-typed. See the schema.ts field comment + the
+  // "6b." block in recalc.ts.
+  describe("derived depositPaid / invoicedTotal (WS1 #940)", () => {
+    async function seedProject(t: ReturnType<typeof convexTest>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", {
+          id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+          status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
+          createdAt: NOW, updatedAt: NOW,
+        });
+      });
+    }
+
+    test("both are 0 when the project has no invoices", async () => {
+      const t = convexTest(schema, modules);
+      await seedProject(t);
+      await t.run(async (ctx) => recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1));
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.depositPaid).toBe(0);
+      expect(p?.invoicedTotal).toBe(0);
+    });
+
+    test("sums only ISSUED invoices — DRAFT and VOID are excluded", async () => {
+      const t = convexTest(schema, modules);
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("invoices", { id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT", status: "ISSUED", subtotal: 227.27, taxAmount: 22.73, total: 250, invoiceNumber: "INV-1" });
+        await ctx.db.insert("invoices", { id: "i2", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "BALANCE", status: "DRAFT", subtotal: 682, taxAmount: 68, total: 750 });
+        await ctx.db.insert("invoices", { id: "i3", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", status: "VOID", subtotal: 909, taxAmount: 91, total: 1000 });
+      });
+      await t.run(async (ctx) => recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1));
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      // Only i1 (ISSUED) counts.
+      expect(p?.invoicedTotal).toBe(250);
+      expect(p?.depositPaid).toBe(250); // i1 is also the DEPOSIT-kind subset
+    });
+
+    test("invoicedTotal sums DEPOSIT + BALANCE + FULL + CREDIT (an issued credit nets it down); depositPaid is the DEPOSIT-only subset", async () => {
+      const t = convexTest(schema, modules);
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("invoices", { id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT", status: "ISSUED", subtotal: 227.27, taxAmount: 22.73, total: 250, invoiceNumber: "INV-1" });
+        await ctx.db.insert("invoices", { id: "i2", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "BALANCE", status: "ISSUED", subtotal: 682, taxAmount: 68, total: 750, invoiceNumber: "INV-2" });
+        await ctx.db.insert("invoices", { id: "i3", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "CREDIT", status: "ISSUED", subtotal: -45.45, taxAmount: -4.55, total: -50, invoiceNumber: "INV-3", creditForInvoiceId: "i2" });
+      });
+      await t.run(async (ctx) => recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1));
+      const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+      expect(p?.invoicedTotal).toBe(950); // 250 + 750 - 50
+      expect(p?.depositPaid).toBe(250); // only the DEPOSIT-kind invoice
+    });
+
+    test("a second org's invoices on a same-numbered project never leak in (org-scoped by_organizationId_projectId)", async () => {
+      const t = convexTest(schema, modules);
+      const OTHER = "org_2";
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { id: "p1", organizationId: OTHER, projectNumber: "P1", name: "Other org's gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("invoices", { id: "i-other", organizationId: OTHER, projectId: "p1", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 900, taxAmount: 100, total: 1000, invoiceNumber: "INV-OTHER-1" });
+      });
+      await t.run(async (ctx) => recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1));
+      // ORG's p1 must not pick up OTHER org's identically-numbered ("p1") project's invoice.
+      const orgP1 = await t.run(async (ctx) =>
+        (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).collect()).find((row) => row.organizationId === ORG),
+      );
+      expect(orgP1?.invoicedTotal).toBe(0);
+      expect(orgP1?.depositPaid).toBe(0);
+    });
+  });
 });

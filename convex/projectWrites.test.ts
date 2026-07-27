@@ -223,7 +223,13 @@ describe("projectWrites.updateNative", () => {
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
       ...uargs,
-      set: { name: "Edited", total: 0, margin: 999999999, equipmentRevenue: 1e9, isTemplate: true, updatedAt: NOW },
+      set: {
+        name: "Edited", total: 0, margin: 999999999, equipmentRevenue: 1e9, isTemplate: true,
+        // WS1 (#940) — depositPaid/invoicedTotal are recalc-owned anchors now
+        // too; a forged value here must be stripped the same as the others.
+        depositPaid: 999999, invoicedTotal: 999999,
+        updatedAt: NOW,
+      },
       clear: [],
     });
     await t.run(async (ctx) => {
@@ -232,6 +238,8 @@ describe("projectWrites.updateNative", () => {
       expect(p?.total).toBe(500); // recalc-owned totals untouched
       expect(p?.margin).toBe(100);
       expect(p?.equipmentRevenue).toBeUndefined();
+      expect(p?.depositPaid).toBeUndefined();
+      expect(p?.invoicedTotal).toBeUndefined();
       expect(p?.isTemplate).toBe(false); // no in-place template flip
     });
   });
@@ -247,9 +255,6 @@ describe("projectWrites.updateNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { discountPercent: Number.NaN, updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/discount percent/i);
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { depositPaid: -50, updatedAt: NOW }, clear: [] }),
-    ).rejects.toThrow(/deposit paid/i);
   });
   test("rejects a cross-org clientId (IDOR guard — a forged clientId must not leak another org's client record)", async () => {
     const t = makeT();
@@ -499,8 +504,17 @@ describe("projectWrites.createNative", () => {
     const t = makeT();
     await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
     await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, invoicedTotal: -1 } as typeof cargs),
-    ).rejects.toThrow(/invoiced total/i);
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, discountPercent: Number.NaN } as typeof cargs),
+    ).rejects.toThrow(/discount percent/i);
+  });
+  test("strips a forged invoicedTotal on create (WS1 #940 — now a recalc-owned anchor, not a bounded input)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" }); });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, { ...cargs, invoicedTotal: -1 } as typeof cargs);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "np1")).first();
+      expect(p?.invoicedTotal).toBeUndefined();
+    });
   });
   // R-8.6.2 — same string bounds as updateNative, enforced on create too.
   test("rejects a name over the 200-char bound on create", async () => {

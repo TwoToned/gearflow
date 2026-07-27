@@ -223,7 +223,7 @@ export async function lookupAssetByTag(
   }
 
   // Only block truly unavailable assets — checked out/reserved assets can be added to future projects
-  if (asset.status === "RETIRED" || asset.status === "LOST") {
+  if (asset.status === "RETIRED" || asset.status === "LOST" || asset.status === "SOLD") {
     available = false;
     if (!conflictsWith) {
       conflictsWith = `Asset status: ${asset.status.replace("_", " ")}`;

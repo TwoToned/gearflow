@@ -192,7 +192,7 @@ export function toConflictProject(p: CProject): {
 
 /**
  * Bookable same-model swap candidates:
- * `{ modelId === target, isActive !== false, !kitId, status not in (RETIRED, LOST) }`.
+ * `{ modelId === target, isActive !== false, !kitId, status not in (RETIRED, LOST, SOLD) }`.
  */
 export function filterSwapCandidateAssets(assets: CAsset[], modelId: string): CAsset[] {
   return assets.filter(
@@ -201,7 +201,9 @@ export function filterSwapCandidateAssets(assets: CAsset[], modelId: string): CA
       a.isActive !== false &&
       !a.kitId &&
       a.status !== "RETIRED" &&
-      a.status !== "LOST",
+      a.status !== "LOST" &&
+      // WS11 (#950) — a sold unit is terminal/disposed, not a swap candidate.
+      a.status !== "SOLD",
   );
 }
 

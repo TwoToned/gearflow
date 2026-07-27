@@ -24,6 +24,10 @@ export const AssetStatus = v.union(
   v.literal("RETIRED"),
   v.literal("LOST"),
   v.literal("RESERVED"),
+  // WS11 (#950) — terminal, like RETIRED: a serialised unit sold via the
+  // sell-from-rental-stock flow. Reversible ("un-sell" restores AVAILABLE) —
+  // see convex/lib/saleStock.ts.
+  v.literal("SOLD"),
 );
 export const AssetCondition = v.union(
   v.literal("NEW"),
@@ -117,6 +121,16 @@ export const LineItemType = v.union(
   v.literal("LABOUR"),
   v.literal("TRANSPORT"),
   v.literal("MISC"),
+  // WS11 (#950) — a sale line (new-stock or sell-from-rental-stock, see
+  // `saleMode` on projectLineItems). Forces pricingType FLAT / duration 1.
+  v.literal("SALE"),
+);
+
+/** WS11 (#950) — how a SALE line's stock was sourced. Never inferred: stamped
+ *  explicitly at add time, and never changes for the life of the line. */
+export const SaleMode = v.union(
+  v.literal("NEW_STOCK"),
+  v.literal("FROM_RENTAL_STOCK"),
 );
 export const PricingType = v.union(
   v.literal("PER_DAY"),
@@ -223,6 +237,10 @@ export const AllocationBasis = v.union(
   v.literal("EQUAL_SPLIT"),
   v.literal("EXCLUDED_SUBHIRE"),
   v.literal("EXCLUDED_NON_GEAR"),
+  // WS11 (#950) — a SALE line: consumes no rental-ROI weight and never enters
+  // projectModelRevenues (sale revenue lives in its own project.saleRevenue
+  // bucket, not per-model rental ROI). Excluded from ROI_COUNTED_BASES.
+  v.literal("EXCLUDED_SALE"),
   v.literal("NO_REVENUE"),
 );
 export const KitCheckMode = v.union(

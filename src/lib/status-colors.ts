@@ -79,6 +79,8 @@ const assetStatusIntent: Record<string, ColorIntent> = {
   RESERVED: "info",
   RETIRED: "neutral",
   LOST: "error",
+  // WS11 (#950) — terminal like RETIRED, neutral (not an error/problem state).
+  SOLD: "neutral",
 };
 
 const bulkAssetStatusIntent: Record<string, ColorIntent> = {

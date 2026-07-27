@@ -52,6 +52,10 @@ export const modelFields = {
   monthlyRate: v.optional(v.number()),
   defaultPurchasePrice: v.optional(v.number()),
   replacementCost: v.optional(v.number()),
+  // WS11 (#950) — sales items. See convex/schema.ts's field comment for the
+  // full spec (single per-model pool, no fallback chain on salePrice).
+  salePrice: v.optional(v.number()),
+  saleStockQuantity: v.optional(v.number()),
   weight: v.optional(v.number()),
   powerDraw: v.optional(v.number()),
   requiresTestAndTag: v.optional(v.boolean()),
@@ -72,7 +76,8 @@ type ModelArgs = {
   description?: string; image?: string; images?: string[]; manuals?: string[];
   specifications?: unknown; customFields?: unknown;
   defaultRentalPrice?: number; dailyRate?: number; weeklyRate?: number; monthlyRate?: number;
-  defaultPurchasePrice?: number; replacementCost?: number; weight?: number; powerDraw?: number;
+  defaultPurchasePrice?: number; replacementCost?: number; salePrice?: number; saleStockQuantity?: number;
+  weight?: number; powerDraw?: number;
   requiresTestAndTag?: boolean; testAndTagIntervalDays?: number;
   defaultEquipmentClass?: string; defaultApplianceType?: string; defaultTestProfileId?: string;
   maintenanceIntervalDays?: number; assetType?: string; barcodeLabelTemplate?: string;
@@ -104,6 +109,10 @@ function assertModelFields(a: ModelArgs) {
   assertNumRange(a.monthlyRate, "monthlyRate", { min: 0 });
   assertNumRange(a.defaultPurchasePrice, "defaultPurchasePrice", { min: 0 });
   assertNumRange(a.replacementCost, "replacementCost", { min: 0 });
+  assertNumRange(a.salePrice, "salePrice", { min: 0 });
+  // No `min` — oversell is allowed (spec decision: warn, never block), so a
+  // negative pool is valid data, not an input error. Integer-only (a stock count).
+  assertNumRange(a.saleStockQuantity, "saleStockQuantity", { integer: true });
   assertNumRange(a.weight, "weight", { min: 0 });
   // Schema also requires these to be whole numbers (z.coerce.number().int()) — the
   // pre-existing hand-rolled checks missed the integer requirement; fixed here.
@@ -133,6 +142,8 @@ function toDoc(a: ModelArgs) {
     monthlyRate: a.monthlyRate ?? undefined,
     defaultPurchasePrice: a.defaultPurchasePrice ?? undefined,
     replacementCost: a.replacementCost ?? undefined,
+    salePrice: a.salePrice ?? undefined,
+    saleStockQuantity: a.saleStockQuantity ?? undefined,
     weight: a.weight ?? undefined,
     powerDraw: a.powerDraw ?? undefined,
     requiresTestAndTag: tt,
@@ -264,7 +275,8 @@ export const bulkUpdateRatesNative = mutation({
   args: {
     orgId: v.string(),
     modelIds: v.array(v.string()),
-    rateType: v.union(v.literal("dailyRate"), v.literal("weeklyRate"), v.literal("monthlyRate")),
+    // WS11 (#950) — salePrice rides the same bulk-rate-update lane.
+    rateType: v.union(v.literal("dailyRate"), v.literal("weeklyRate"), v.literal("monthlyRate"), v.literal("salePrice")),
     operation: v.union(v.literal("set"), v.literal("multiply"), v.literal("increase_percent")),
     value: v.number(),
     now: v.number(),

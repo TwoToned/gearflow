@@ -123,7 +123,7 @@ describe("assetSchema", () => {
   });
 
   it("accepts all valid status values", () => {
-    const statuses = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "LOST", "RESERVED"];
+    const statuses = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "LOST", "RESERVED", "SOLD"];
     for (const status of statuses) {
       const result = assetSchema.safeParse({ ...validMinimal, status });
       expect(result.success).toBe(true);

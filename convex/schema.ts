@@ -317,6 +317,18 @@ export default defineSchema({
     monthlyRate: v.optional(v.number()),
     defaultPurchasePrice: v.optional(v.number()),
     replacementCost: v.optional(v.number()),
+    // WS11 (#950) — sales items. `salePrice` auto-prices a `type: "SALE"` line
+    // (no fallback chain — unset requires manual entry, spec decision).
+    // `saleStockQuantity` is a SINGLE per-model sale-stock pool, independent of
+    // rental assets/bulk (decision: "we sell *a* SM58, not *our* SM58" —
+    // new-stock sales decrement/restore THIS field, never a bulkAssets row).
+    // Oversell is allowed (warn, never block); negative feeds the Overbookings
+    // & Gaps board's "Sale stock to procure" section (convex/lib/overbookingBoard.ts).
+    // Supersedes the WS3 (#942) `bulkAssets.saleStockQuantity` stub below, which
+    // this workstream leaves in place (unused by the board from here on) rather
+    // than migrating/dropping, to avoid a churny schema edit for an inert field.
+    salePrice: v.optional(v.number()),
+    saleStockQuantity: v.optional(v.number()),
     weight: v.optional(v.number()),
     powerDraw: v.optional(v.number()),
     requiresTestAndTag: v.optional(v.boolean()),
@@ -704,13 +716,14 @@ export default defineSchema({
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isActive: v.optional(v.boolean()),
-    // WS3 (#942) — minimal pre-WS11 stub: a negative value means this bulk-asset
-    // row has been sold below its restocked count and needs procuring. No UI
-    // writes this field yet (WS11 owns the full sale-stock feature); it exists
-    // solely so the Overbookings & Gaps board's "Sale stock to procure" section
-    // has a real field to read instead of a not-yet-built one. `undefined` (the
-    // overwhelming majority today) is never negative, so it's inert until WS11
-    // (or a manual admin/backfill write) starts populating it.
+    // WS3 (#942) — minimal pre-WS11 stub, SUPERSEDED by `models.saleStockQuantity`
+    // (WS11 #950): the sale-stock spec decision is a single PER-MODEL pool
+    // ("we sell *a* SM58, not *our* SM58"), independent of any one bulk-asset
+    // row, so the Overbookings & Gaps board's "Sale stock to procure" section
+    // now reads `models.saleStockQuantity` instead (see
+    // `convex/lib/overbookingBoard.ts` computeSaleStockToProcure). Left in the
+    // schema (unused, always undefined in practice) rather than dropped — no
+    // writer ever populated it, so there is nothing to migrate.
     saleStockQuantity: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -1018,6 +1031,14 @@ export default defineSchema({
     billingDaysOverride: v.optional(v.number()),
     taxRate: v.optional(v.number()),
     equipmentRevenue: v.optional(v.number()),
+    // WS11 (#950) — additive revenue/COGS buckets for SALE lines. `subtotal` =
+    // equipmentRevenue + serviceRevenue + saleRevenue (convex/lib/recalc.ts).
+    // `saleCostTotal` is the resolved COGS chain (asset.purchasePrice ->
+    // model.defaultPurchasePrice -> bulkAsset.purchasePricePerUnit ->
+    // model.replacementCost) so sale margin is visible in the P&L panel
+    // (convex/projectCosts.ts) the same way service/labour/sub-hire costs are.
+    saleRevenue: v.optional(v.number()),
+    saleCostTotal: v.optional(v.number()),
     serviceCostTotal: v.optional(v.number()),
     labourCostTotal: v.optional(v.number()),
     subHireCostTotal: v.optional(v.number()),
@@ -1076,6 +1097,11 @@ export default defineSchema({
     organizationId: v.string(),
     projectId: v.string(),
     type: v.optional(enums.LineItemType),
+    // WS11 (#950) — set only on `type: "SALE"` lines, never inferred/derived.
+    // NEW_STOCK = no rental-asset impact (decrements models.saleStockQuantity).
+    // FROM_RENTAL_STOCK = sold out of owned stock (assetId -> AssetStatus
+    // "SOLD"; bulkAssetId -> adjustBulkTotal). See convex/lib/saleStock.ts.
+    saleMode: v.optional(enums.SaleMode),
     modelId: v.optional(v.string()),
     assetId: v.optional(v.string()),
     bulkAssetId: v.optional(v.string()),

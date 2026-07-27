@@ -45,6 +45,9 @@ interface AssetFormProps {
   preselectedModelId?: string;
 }
 
+// SOLD (WS11 #950) is a terminal, reversible-only-via-"un-sell" status set by the
+// sale write path — deliberately NOT offered in this manual status dropdown
+// (mirrors how the sale flow, not this form, is the only writer of SOLD).
 const STATUS_ORDER = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RESERVED", "RETIRED", "LOST"] as const;
 const CONDITION_ORDER = ["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"] as const;
 

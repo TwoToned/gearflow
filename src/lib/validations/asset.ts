@@ -5,7 +5,7 @@ export const assetSchema = z.object({
   assetTag: z.string().min(1, "Asset tag is required").max(50),
   serialNumber: z.string().max(100).optional(),
   customName: z.string().max(200).optional(),
-  status: z.enum(["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "LOST", "RESERVED"]).default("AVAILABLE"),
+  status: z.enum(["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "LOST", "RESERVED", "SOLD"]).default("AVAILABLE"),
   condition: z.enum(["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"]).default("NEW"),
   purchaseDate: z.union([z.literal(""), z.coerce.date()]).optional().transform(v => v === "" ? undefined : v),
   purchasePrice: z.union([z.literal(""), z.coerce.number().min(0)]).optional().transform(v => v === "" ? undefined : v),

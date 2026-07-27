@@ -30,7 +30,7 @@ export const list = query({
   },
 });
 
-const A_STATUS_RANK: Record<string, number> = { AVAILABLE: 0, CHECKED_OUT: 1, IN_MAINTENANCE: 2, RETIRED: 3, LOST: 4, RESERVED: 5 };
+const A_STATUS_RANK: Record<string, number> = { AVAILABLE: 0, CHECKED_OUT: 1, IN_MAINTENANCE: 2, RETIRED: 3, LOST: 4, RESERVED: 5, SOLD: 6 };
 const A_CONDITION_RANK: Record<string, number> = { NEW: 0, GOOD: 1, FAIR: 2, POOR: 3, DAMAGED: 4 };
 
 /**

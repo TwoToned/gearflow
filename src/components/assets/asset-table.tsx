@@ -147,6 +147,9 @@ function useAssetColumns(
         if (row.status === "IN_MAINTENANCE") {
           return <span className={cn("text-caption font-medium", getStatusColor("asset", "IN_MAINTENANCE").text)}>Maintenance</span>;
         }
+        if (row.status === "SOLD") {
+          return <span className={cn("text-caption font-medium", getStatusColor("asset", "SOLD").text)}>Sold</span>;
+        }
         if (row.status === "RETIRED" || row.status === "LOST") {
           return <span className="text-caption text-faint">&mdash;</span>;
         }

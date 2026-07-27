@@ -1227,7 +1227,7 @@ export const addNative = mutation({
           }
         }
         // (c) Permanently unavailable (retired / lost).
-        if (asset && asset.organizationId === organizationId && (asset.status === "RETIRED" || asset.status === "LOST")) {
+        if (asset && asset.organizationId === organizationId && (asset.status === "RETIRED" || asset.status === "LOST" || asset.status === "SOLD")) {
           throw new ConvexError({
             code: "ASSET_UNAVAILABLE",
             message: `This asset is marked ${asset.status.replace("_", " ").toLowerCase()}.`,
@@ -1768,7 +1768,7 @@ export const addLineItemSmartNative = mutation({
             });
           }
         }
-        if (asset && asset.organizationId === organizationId && (asset.status === "RETIRED" || asset.status === "LOST")) {
+        if (asset && asset.organizationId === organizationId && (asset.status === "RETIRED" || asset.status === "LOST" || asset.status === "SOLD")) {
           throw new ConvexError({
             code: "ASSET_UNAVAILABLE",
             message: `This asset is marked ${asset.status.replace("_", " ").toLowerCase()}.`,

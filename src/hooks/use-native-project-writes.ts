@@ -320,9 +320,6 @@ export function useProjectWrites(orgId: string | undefined) {
       billingDaysOverride: parsed.billingDaysOverride ?? undefined,
       taxRate: parsed.taxRate ?? undefined,
       discountPercent: parsed.discountPercent ?? undefined,
-      depositPercent: parsed.depositPercent ?? undefined,
-      depositPaid: parsed.depositPaid ?? undefined,
-      invoicedTotal: parsed.invoicedTotal ?? undefined,
       tags: parsed.tags,
       createdAt: now.getTime(),
       updatedAt: now.getTime(),
@@ -434,9 +431,6 @@ export function useProjectWrites(orgId: string | undefined) {
     setOrClear("internalNotes", parsed.internalNotes || null);
     setOrClear("clientNotes", parsed.clientNotes || null);
     setOrClear("discountPercent", parsed.discountPercent ?? null);
-    setOrClear("depositPercent", parsed.depositPercent ?? null);
-    setOrClear("depositPaid", parsed.depositPaid ?? null);
-    setOrClear("invoicedTotal", parsed.invoicedTotal ?? null);
 
     try {
       await updateM({

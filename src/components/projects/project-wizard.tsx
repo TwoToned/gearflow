@@ -93,9 +93,6 @@ export interface EditableProject {
   internalNotes?: string | null;
   clientNotes?: string | null;
   discountPercent?: number | string | null;
-  depositPercent?: number | string | null;
-  depositPaid?: number | string | null;
-  invoicedTotal?: number | string | null;
   tags?: string[] | null;
   isTemplate?: boolean;
   projectManagers?: { user: { id: string } }[];
@@ -204,9 +201,6 @@ export function ProjectWizard({
           internalNotes: project.internalNotes ?? "",
           clientNotes: project.clientNotes ?? "",
           discountPercent: project.discountPercent != null ? Number(project.discountPercent) : undefined,
-          depositPercent: project.depositPercent != null ? Number(project.depositPercent) : undefined,
-          depositPaid: project.depositPaid != null ? Number(project.depositPaid) : undefined,
-          invoicedTotal: project.invoicedTotal != null ? Number(project.invoicedTotal) : undefined,
           tags: project.tags ?? [],
         }
       : {
@@ -505,22 +499,13 @@ export function ProjectWizard({
                   <Input type="email" {...form.register("siteContactEmail")} placeholder="contact@example.com" />
                 </Field>
               </div>
-              {isEditing && (
-                <>
-                  <div className="space-y-3 border-t border-line pt-4 sm:col-span-2">
-                    <p className="t-overline text-faint">Financial</p>
-                  </div>
-                  {/* RESERVED for #940 (WS1 — deposit/invoicing workflow). These are
-                      hand-typed inputs with no server-side math behind them yet (see
-                      the schema.ts reservation comment on depositPercent/depositPaid/
-                      invoicedTotal) — #940 owns wiring them up. Discount (%) moved to
-                      the Basics step (QW-4 / #953) since it's now applied at project
-                      creation and needed visible + editable there, not edit-only. */}
-                  <Field label="Deposit (%)"><Input type="number" step="0.01" min="0" max="100" {...form.register("depositPercent")} placeholder="0" /></Field>
-                  <Field label="Deposit paid ($)"><Input type="number" step="0.01" min="0" {...form.register("depositPaid")} placeholder="0.00" /></Field>
-                  <Field label="Invoiced total ($)"><Input type="number" step="0.01" min="0" {...form.register("invoicedTotal")} placeholder="0.00" /></Field>
-                </>
-              )}
+              {/* #940 (WS1 — finance model) landed: the old "Financial" block here
+                  (hand-typed Deposit %/Deposit paid/Invoiced total inputs with no
+                  server-side math) is REMOVED, not just relocated. Deposit % now
+                  lives on the CLIENT payment profile (client detail page);
+                  deposit-paid/invoiced-total are derived from the project's real
+                  Quote/Invoice rows (Project page -> Finance tab), never hand-typed
+                  here again. See FEATUREDOCS/66-finance-quotes-invoices-xero.md. */}
             </div>
           )}
 

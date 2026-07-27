@@ -623,8 +623,8 @@ export default function ProjectDetailPage({
                             taxAmount={project.taxAmount as number | null}
                             total={project.total as number | null}
                             margin={project.margin as number | null}
-                            depositPercent={project.depositPercent as number | null}
                             depositPaid={project.depositPaid as number | null}
+                            invoicedTotal={project.invoicedTotal as number | null}
                             pricedGroupCount={pricedGroupCount}
                             totalGroupCount={totalGroupCount}
                             groupBreakdown={groupBreakdown}

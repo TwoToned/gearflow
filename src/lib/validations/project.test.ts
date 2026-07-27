@@ -28,9 +28,6 @@ const validComplete = {
   internalNotes: "Client budget is flexible",
   clientNotes: "Parking available at rear",
   discountPercent: 10,
-  depositPercent: 50,
-  depositPaid: 5000,
-  invoicedTotal: 10000,
   tags: ["corporate", "AV", "install"],
 };
 
@@ -312,66 +309,21 @@ describe("projectSchema", () => {
       expect(result.success).toBe(false);
     });
 
-    it("accepts depositPercent at boundaries (0 and 100)", () => {
-      let result = projectSchema.safeParse({ ...validMinimal, depositPercent: 0 });
-      expect(result.success).toBe(true);
-      result = projectSchema.safeParse({ ...validMinimal, depositPercent: 100 });
-      expect(result.success).toBe(true);
-    });
-
-    it("rejects depositPercent over 100", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, depositPercent: 101 });
-      expect(result.success).toBe(false);
-    });
-
-    it("rejects negative depositPercent", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, depositPercent: -1 });
-      expect(result.success).toBe(false);
-    });
-
-    it("rejects negative depositPaid", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, depositPaid: -1 });
-      expect(result.success).toBe(false);
-    });
-
-    it("accepts zero depositPaid", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, depositPaid: 0 });
-      expect(result.success).toBe(true);
-    });
-
-    it("rejects negative invoicedTotal", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, invoicedTotal: -1 });
-      expect(result.success).toBe(false);
-    });
-
-    it("accepts zero invoicedTotal", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, invoicedTotal: 0 });
-      expect(result.success).toBe(true);
-    });
+    // WS1 (#940) — depositPercent/depositPaid/invoicedTotal removed from this
+    // schema entirely (depositPercent moved to the client payment profile,
+    // src/lib/validations/client.ts; depositPaid/invoicedTotal are now
+    // recalc-derived, never a form input). A caller still passing these keys
+    // gets them silently stripped by Zod's default non-strict object mode —
+    // no dedicated boundary tests needed for a field that no longer exists.
 
     it("coerces string percent values to numbers", () => {
       const result = projectSchema.safeParse({
         ...validMinimal,
         discountPercent: "15",
-        depositPercent: "50",
       });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.discountPercent).toBe(15);
-        expect(result.data.depositPercent).toBe(50);
-      }
-    });
-
-    it("coerces string money values to numbers", () => {
-      const result = projectSchema.safeParse({
-        ...validMinimal,
-        depositPaid: "2500.50",
-        invoicedTotal: "10000",
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.depositPaid).toBe(2500.5);
-        expect(result.data.invoicedTotal).toBe(10000);
       }
     });
   });
@@ -390,9 +342,6 @@ describe("projectSchema", () => {
         expect(result.data.internalNotes).toBeUndefined();
         expect(result.data.clientNotes).toBeUndefined();
         expect(result.data.discountPercent).toBeUndefined();
-        expect(result.data.depositPercent).toBeUndefined();
-        expect(result.data.depositPaid).toBeUndefined();
-        expect(result.data.invoicedTotal).toBeUndefined();
       }
     });
 
@@ -400,12 +349,10 @@ describe("projectSchema", () => {
       const result = projectSchema.safeParse({
         ...validMinimal,
         discountPercent: 7.5,
-        depositPercent: 33.33,
       });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.discountPercent).toBe(7.5);
-        expect(result.data.depositPercent).toBe(33.33);
       }
     });
 

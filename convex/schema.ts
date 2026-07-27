@@ -1037,6 +1037,16 @@ export default defineSchema({
     // deriveInvoiceTotals) — summed from this project's non-VOID invoices, same as
     // equipmentRevenue/subtotal/total above. Never client-writable (stripped in
     // projectWrites.ts's PROJECT_MONEY_ANCHORS the same way the others are).
+    //
+    // DEPRECATED, kept for one rollout cycle (same pattern as loadInDate/eventStartDate
+    // above): #940's original removal of this field from the validator broke the prod
+    // deploy — real hand-typed wizard values (project-wizard.tsx, pre-#940) are still
+    // stored on live project documents, and Convex schema validation rejects a push
+    // where an existing document has a field the validator no longer declares. Re-added
+    // as optional so it round-trips harmlessly; nothing reads or writes it anymore.
+    // `backfillStripProjectDepositPercent.ts` strips it from every project so this can
+    // be fully deleted from the validator in a follow-up once that's run and confirmed.
+    depositPercent: v.optional(v.number()),
     depositPaid: v.optional(v.number()),
     invoicedTotal: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),

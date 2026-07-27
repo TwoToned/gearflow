@@ -29,7 +29,7 @@ export interface OverbookingGearRow {
 /** WS11 (#950) — `contributingSaleLines` supersedes the old per-bulk-asset-row
  *  `contributingBulkAssets` shape now that Model.saleStockQuantity is the real
  *  per-model sale-stock pool. */
-export interface OverbookingSaleStockContributingLine {
+interface OverbookingSaleStockContributingLine {
   lineItemId: string;
   projectId: string;
   projectName: string;

@@ -1142,7 +1142,7 @@ function CrewMessageDialog({
 
 /** A single crew-conflict entry (WS8 #947) — matches the shape
  *  `crewAssignments.membersForAssignment`'s range branch returns per member. */
-export interface CrewConflictEntry {
+interface CrewConflictEntry {
   severity: "hard" | "soft";
   label: string;
 }

@@ -128,7 +128,7 @@ describe("keystone reconstruction → full PDF pipeline", () => {
     }) as unknown as DocumentLineItem[];
     const categories: CategoryForStructuring[] = [
       { id: "cat-light", name: "Lighting", sortOrder: 0, groups: [] },
-      { id: "cat-audio", name: "Audio", sortOrder: 1, groups: [{ id: "g1", title: "Mic Kit", description: null, quantity: 1, price: null, discount: null, rentalPeriod: null, rentalQuantity: null, sortOrder: 0 }] },
+      { id: "cat-audio", name: "Audio", sortOrder: 1, groups: [{ id: "g1", title: "Mic Kit", description: null, quantity: 1, price: null, discount: null, sortOrder: 0 }] },
     ];
     const structured = structureLineItems(enriched, categories, { expandProjectGroups: true, packerSort: true }, []);
 
@@ -155,6 +155,41 @@ describe("keystone reconstruction → full PDF pipeline", () => {
       expect(text).toContain("Source Four LED");
       expect(text).toContain("Audio");
       expect(text).toContain("Lighting");
+    });
+
+    // #943 — derived billing weeks/days: an auto-priced line's priceBreakdown
+    // must survive the FULL pipeline (structure → height reservation → render),
+    // not just a plugin-only unit test (CLAUDE.md's PDF data-shape rule).
+    it("an auto-priced line's priceBreakdown reserves height AND renders on the page", async () => {
+      // "quote" (client-facing, showPricing: true) — packing-list/return-sheet/
+      // delivery-docket never show pricing at all, so their layouts wouldn't
+      // reserve height for it regardless of priceBreakdown (correctly).
+      const tableBlock = DOCUMENT_LAYOUTS.quote.blocks.find((b) => b.kind === "table");
+      if (tableBlock?.kind !== "table") throw new Error("quote layout has no table block");
+
+      const plain = structured.find((i) => i.id === "plainLine");
+      if (!plain) throw new Error("plainLine missing from structured output");
+      const priced: DocumentLineItem = {
+        ...plain,
+        priceBreakdown: JSON.stringify({ weeks: 1, days: 2, weeklyRate: 80, dailyRate: 15, capped: false }),
+      };
+
+      // Height reservation: the priced clone must reserve MORE than the
+      // unpriced original — otherwise the breakdown text silently overflows
+      // the pagination budget calculateItemHeight computed for it.
+      const hUnpriced = calculateItemHeight(plain, tableBlock.config);
+      const hPriced = calculateItemHeight(priced, tableBlock.config);
+      expect(hPriced).toBeGreaterThan(hUnpriced);
+
+      // Render: the formatted breakdown text actually appears on the page.
+      const pricedStructured = structured.map((i) => (i.id === "plainLine" ? priced : i));
+      const calls = await runTablePlugin(pricedStructured, {
+        documentType: "quote",
+        showCategories: true,
+        showPricing: true,
+      });
+      const text = calls.drawText.map((c) => c.text).join("\n");
+      expect(text).toContain("1 wk @ $80.00 + 2 d @ $15.00");
     });
   });
 });

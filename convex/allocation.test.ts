@@ -45,7 +45,10 @@ const run = (
     groups?: AllocGroup[];
     models?: Map<string, AllocModel>;
     kitAllocations?: Map<string, Map<string, number>>;
-    rentalPeriod?: string;
+    /** #943: replaces the retired `rentalPeriod: "DAILY" | "WEEKLY"` string —
+     *  any value > 0 selects the weekly rate/rateFactor scale (same "> 0 means
+     *  weekly" behaviour recalc.ts derives from the project's billing summary). */
+    billingWeeks?: number;
     rateFactor?: number;
   } = {},
 ) =>
@@ -54,7 +57,7 @@ const run = (
     groups: opts.groups ?? [],
     models: opts.models ?? new Map(),
     kitAllocations: opts.kitAllocations ?? noKits,
-    rentalPeriod: opts.rentalPeriod,
+    billingWeeks: opts.billingWeeks,
     rateFactor: opts.rateFactor,
   });
 
@@ -584,7 +587,7 @@ describe("groups — Approach B", () => {
     expect(rev(r, "b")).toBe(100);
   });
 
-  test("weekly rental periods weight on weeklyRate", () => {
+  test("a project with derived billing weeks > 0 weights on weeklyRate (#943)", () => {
     const r = run(
       [
         L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
@@ -596,7 +599,26 @@ describe("groups — Approach B", () => {
           M("m1", { dailyRate: 50, weeklyRate: 30 }),
           M("m2", { dailyRate: 50, weeklyRate: 70 }),
         ),
-        rentalPeriod: "WEEKLY",
+        billingWeeks: 1,
+      },
+    );
+    expect(rev(r, "a")).toBe(30);
+    expect(rev(r, "b")).toBe(70);
+  });
+
+  test("billingWeeks: 0 (or absent) weights on dailyRate — same as before #943", () => {
+    const r = run(
+      [
+        L("a", { groupId: "g1", modelId: "m1", sortOrder: 1 }),
+        L("b", { groupId: "g1", modelId: "m2", sortOrder: 2 }),
+      ],
+      {
+        groups: [{ id: "g1", price: 100, quantity: 1 }],
+        models: models(
+          M("m1", { dailyRate: 30, weeklyRate: 50 }),
+          M("m2", { dailyRate: 70, weeklyRate: 50 }),
+        ),
+        billingWeeks: 0,
       },
     );
     expect(rev(r, "a")).toBe(30);

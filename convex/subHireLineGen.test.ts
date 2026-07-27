@@ -23,7 +23,7 @@ type Ctx = MutationCtx;
 async function seedProject(ctx: Ctx, id = "p1") {
   await ctx.db.insert("projects", {
     id, organizationId: ORG, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-    defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, isTemplate: false, createdAt: NOW, updatedAt: NOW,
+    isTemplate: false, createdAt: NOW, updatedAt: NOW,
   });
 }
 

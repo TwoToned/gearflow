@@ -4,6 +4,7 @@ import { requireOrgPermission, requireService } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { applyProjectAllocation } from "./lib/allocation";
+import { deriveBillingSummary } from "./lib/billingDerivation";
 
 /**
  * Recompute a project's revenue allocation on its own.
@@ -42,10 +43,16 @@ export const recomputeForProject = mutation({
       ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ]);
 
+    const billingSummary = deriveBillingSummary({
+      rentalStartMs: project.rentalStartDate,
+      rentalEndMs: project.rentalEndDate,
+      weeksOverride: project.billingWeeksOverride,
+      daysOverride: project.billingDaysOverride,
+    });
     await applyProjectAllocation(ctx, {
       projectId,
       orgId,
-      rentalPeriod: project.defaultRentalPeriod,
+      billingWeeks: billingSummary.weeks,
       discountPercent: project.discountPercent,
       groups,
       lines,

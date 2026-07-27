@@ -32,7 +32,7 @@ async function seedProject(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) 
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-      defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 999,
+      total: 999,
     });
   });
 }

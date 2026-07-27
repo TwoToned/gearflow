@@ -63,8 +63,12 @@ export const projectSchema = z.object({
   projectEndTime: z.union([z.literal(""), z.string()]).optional().transform((v) => (v === "" ? undefined : v)),
   rentalStartDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
   rentalEndDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
-  defaultRentalPeriod: z.enum(["DAILY", "WEEKLY"]).optional(),
-  defaultRentalQuantity: z.coerce.number().int().min(1).optional(),
+  // Manual override + "edited" marker for the derived billing-weeks/days summary
+  // (#943) — absent = derived from rentalStartDate/rentalEndDate via
+  // src/lib/billing-derivation.ts `deriveBillingSummary`. Replaces the retired
+  // defaultRentalPeriod/defaultRentalQuantity fields.
+  billingWeeksOverride: z.coerce.number().int().min(0).max(522).optional(),
+  billingDaysOverride: z.coerce.number().int().min(0).max(6).optional(),
   taxRate: z.coerce.number().min(0).max(100).optional(),
   crewNotes: z.string().max(5000).optional(),
   internalNotes: z.string().max(5000).optional(),

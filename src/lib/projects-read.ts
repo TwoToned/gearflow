@@ -1,7 +1,7 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
-import type { ProjectStatus, ProjectType, RentalPeriod } from "@/generated/prisma/client";
+import type { ProjectStatus, ProjectType } from "@/generated/prisma/client";
 import { getProjectWindow } from "@/lib/project-window";
 
 export type ConvexProject = Doc<"projects">;
@@ -62,8 +62,11 @@ export interface ProjectRow {
   rentalStartDate: Date | null;
   rentalEndDate: Date | null;
   projectManagerId: string | null;
-  defaultRentalPeriod: RentalPeriod | null;
-  defaultRentalQuantity: number | null;
+  /** Manual override for the derived billing-weeks/days summary (#943) —
+   *  absent = derived from rentalStartDate/rentalEndDate via
+   *  src/lib/billing-derivation.ts `deriveBillingSummary`. */
+  billingWeeksOverride: number | null;
+  billingDaysOverride: number | null;
   taxRate: number | null;
   equipmentRevenue: number | null;
   serviceCostTotal: number | null;
@@ -117,8 +120,8 @@ export function mapProject(d: ConvexProject): ProjectRow {
     rentalStartDate: toDate(d.rentalStartDate),
     rentalEndDate: toDate(d.rentalEndDate),
     projectManagerId: orNull(d.projectManagerId),
-    defaultRentalPeriod: orNull(d.defaultRentalPeriod) as RentalPeriod | null,
-    defaultRentalQuantity: orNull(d.defaultRentalQuantity),
+    billingWeeksOverride: orNull(d.billingWeeksOverride),
+    billingDaysOverride: orNull(d.billingDaysOverride),
     taxRate: orNull(d.taxRate),
     equipmentRevenue: orNull(d.equipmentRevenue),
     serviceCostTotal: orNull(d.serviceCostTotal),

@@ -227,7 +227,7 @@ describe("groupTemplatesWrites.applyNative", () => {
       await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "p1", name: "Cat", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED",
-        defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 999,
+        total: 999,
         ...(opts.projectDates ? { rentalStartDate: NOW, rentalEndDate: NOW + 86_400_000 } : {}),
       });
       // Pre-existing standalone (ungrouped) line — bills into equipmentRevenue so
@@ -310,7 +310,11 @@ describe("groupTemplatesWrites.applyNative", () => {
     expect(res.kitWarnings[0]).toMatch(/already booked on P-2/i);
     await t.run(async (ctx) => {
       const mLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "mLine1")).first();
-      expect(mLine?.lineTotal).toBe(200);
+      // #943: this fixture's project has a 2-day rental window (projectDates: true) —
+      // the derived blended charge now correctly bills across BOTH days ($100/day ×
+      // 2 days = $200/unit × qty 2 = $400), where the old rate×quantity formula
+      // silently ignored the date range entirely (always billed as 1 day).
+      expect(mLine?.lineTotal).toBe(400);
       const kLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kLine1")).first();
       expect(kLine).toBeNull();
     });

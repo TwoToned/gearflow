@@ -87,7 +87,14 @@ export interface AllocationInput {
   models: ReadonlyMap<string, AllocModel>;
   /** kitId → (modelId → percent). Applied only if it exactly covers the kit. */
   kitAllocations: ReadonlyMap<string, ReadonlyMap<string, number>>;
-  rentalPeriod?: string | null;
+  /**
+   * The project's derived (or overridden) billing weeks (#943 — replaces the
+   * retired `rentalPeriod: "DAILY" | "WEEKLY"` project field). `> 0` selects the
+   * weekly-scale rate/rateFactor throughout allocation, same role the old
+   * `rentalPeriod === "WEEKLY"` check played. See convex/lib/recalc.ts for how
+   * this is derived from rentalStartDate/rentalEndDate + billingWeeksOverride.
+   */
+  billingWeeks?: number | null;
   /**
    * What fraction of the listed prices the client is actually billed, after the
    * project-level discount. `recalcProjectTotals` applies `discountPercent` to the
@@ -199,7 +206,7 @@ export function deriveRateFactor(
 
 export function allocateProject(input: AllocationInput): Map<string, LineAllocation> {
   const { lines, groups, models, kitAllocations } = input;
-  const weekly = input.rentalPeriod === "WEEKLY";
+  const weekly = (input.billingWeeks ?? 0) > 0;
   // Clamped: a discountPercent outside 0–100 is bad data, and neither negative
   // revenue nor revenue above the listed price is a thing we want to invent.
   const factor = Math.min(1, Math.max(0, input.revenueFactor ?? 1));
@@ -610,7 +617,8 @@ export async function applyProjectAllocation(
   args: {
     projectId: string;
     orgId: string;
-    rentalPeriod?: string | null;
+    /** See AllocationInput.billingWeeks — the project's derived/overridden billing weeks. */
+    billingWeeks?: number | null;
     /** Project-level discount, 0–100. Scales every pool to what was actually billed. */
     discountPercent?: number | null;
     groups: readonly AllocGroup[];
@@ -639,13 +647,13 @@ export async function applyProjectAllocation(
     kitAllocations.set(kitId, new Map(rows.map((r) => [r.modelId, r.allocationPercent])));
   }
 
-  const weekly = args.rentalPeriod === "WEEKLY";
+  const weekly = (args.billingWeeks ?? 0) > 0;
   const result = allocateProject({
     lines,
     groups,
     models,
     kitAllocations,
-    rentalPeriod: args.rentalPeriod,
+    billingWeeks: args.billingWeeks,
     revenueFactor: 1 - Number(args.discountPercent ?? 0) / 100,
     // Prefer the fleet's own rate/cost relationship; fall back to the engine default.
     rateFactor: deriveRateFactor(models.values(), weekly) ?? undefined,

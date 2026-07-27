@@ -1,15 +1,26 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { inclusiveCalendarDays, computeBlendedCharge } from "./billingDerivation";
 
 /**
- * Shared native port of the project-group suggested-price calculation.
+ * Shared native port of the project-group suggested-price calculation (#943 —
+ * derived billing weeks/days + best-price capping).
  *
- * Byte-parity with src/lib/project-groups-pricing.ts `calculateSuggestedPrice`
- * (the relocated server helper) AND the inline recompute in
- * groupTemplatesWrites.applyNative (L546-566): equipment-only bundle price using
- * the simple `rate × quantity × rentalQuantity` model. Custom items are excluded
- * (the suggested price covers the equipment bundle only). Kit-child lines are
- * excluded (their parent line carries the price).
+ * SINGLE canonical Convex-side implementation of "suggested group price" —
+ * collapses what were THREE independently-maintained copies of this formula
+ * (src/lib/project-groups-pricing.ts `calculateSuggestedPrice` used the OLD
+ * `rate × quantity × rentalQuantity` model; convex/groupTemplatesWrites.ts
+ * `applyNative` hand-duplicated its own inline loop instead of calling this
+ * function). All three now derive the chargeable window from the PROJECT's
+ * rentalStartDate/rentalEndDate (not a per-group rentalPeriod/rentalQuantity
+ * override — those fields are retired) and price each line via the shared
+ * best-price-capped `computeBlendedCharge`. `src/lib/project-groups-pricing.ts`
+ * is the src-side twin (uses `src/lib/billing-derivation.ts` directly since it
+ * runs outside a Convex mutation, not this file).
+ *
+ * Equipment-only bundle price: custom items are excluded (the suggested price
+ * covers the equipment bundle only). Kit-child lines are excluded (their
+ * parent line carries the price).
  *
  * `by_projectId` is a GLOBAL index — every line fetched here is org-filtered.
  * Models are resolved by_cuid (also global) with a per-row org re-check.
@@ -23,14 +34,11 @@ export async function computeGroupSuggestedPrice(
     projectId: string;
     groupId: string;
     orgId: string;
-    defaultRentalPeriod?: string;
-    defaultRentalQuantity?: number;
-    groupRentalPeriod?: string;
-    groupRentalQuantity?: number;
+    rentalStartDate?: number | null;
+    rentalEndDate?: number | null;
   },
 ): Promise<number> {
-  const rentalPeriod = args.groupRentalPeriod ?? args.defaultRentalPeriod ?? "DAILY";
-  const rentalQuantity = args.groupRentalQuantity ?? args.defaultRentalQuantity ?? 1;
+  const chargeableDays = inclusiveCalendarDays(args.rentalStartDate, args.rentalEndDate);
 
   const lines = (
     await ctx.db
@@ -56,11 +64,13 @@ export async function computeGroupSuggestedPrice(
   for (const li of lines) {
     if (li.isCustomItem) continue;
     const model = li.modelId ? await getModel(li.modelId) : null;
-    const rate =
-      rentalPeriod === "WEEKLY"
-        ? Number(model?.weeklyRate ?? model?.dailyRate ?? li.unitPrice ?? 0)
-        : Number(model?.dailyRate ?? li.unitPrice ?? 0);
-    total += rate * (li.quantity ?? 0) * rentalQuantity;
+    // A custom-priced (no model) line has no weekly/daily rate to derive from —
+    // fall back to its own manual unitPrice as a flat daily-equivalent rate,
+    // same fallback the old formula used.
+    const dailyRate = model?.dailyRate ?? (li.modelId ? null : (li.unitPrice ?? null));
+    const weeklyRate = model?.weeklyRate ?? null;
+    const { perUnitCharge } = computeBlendedCharge({ chargeableDays, dailyRate, weeklyRate });
+    total += perUnitCharge * (li.quantity ?? 0);
   }
 
   return round(total);

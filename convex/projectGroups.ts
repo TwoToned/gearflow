@@ -1,7 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
-import * as enums from "./lib/validators";
 
 /**
  * Thin CRUD for ProjectGroup (Convex table "projectGroups"). GENERATED — Phase 2/5.
@@ -58,8 +57,6 @@ export const create = mutation({
     quantity: v.optional(v.number()),
     price: v.optional(v.number()),
     suggestedPrice: v.optional(v.number()),
-    rentalPeriod: v.optional(enums.RentalPeriod),
-    rentalQuantity: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -81,8 +78,6 @@ export const createIfMissing = mutation({
     quantity: v.optional(v.number()),
     price: v.optional(v.number()),
     suggestedPrice: v.optional(v.number()),
-    rentalPeriod: v.optional(enums.RentalPeriod),
-    rentalQuantity: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -109,8 +104,6 @@ export const update = mutation({
       quantity: v.optional(v.number()),
       price: v.optional(v.number()),
       suggestedPrice: v.optional(v.number()),
-      rentalPeriod: v.optional(enums.RentalPeriod),
-      rentalQuantity: v.optional(v.number()),
       sortOrder: v.optional(v.number()),
       createdAt: v.optional(v.number()),
       updatedAt: v.optional(v.number()),
@@ -162,8 +155,6 @@ export const createAtEnd = mutation({
     quantity: v.optional(v.number()),
     price: v.optional(v.number()),
     suggestedPrice: v.optional(v.number()),
-    rentalPeriod: v.optional(enums.RentalPeriod),
-    rentalQuantity: v.optional(v.number()),
     now: v.number(),
   },
   handler: async (ctx, args) => {

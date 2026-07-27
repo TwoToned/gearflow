@@ -38,7 +38,7 @@ async function seedProject(t: T, id: string, orgId = ORG, status: string = "CHEC
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: status as never,
-      defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 0,
+      total: 0,
     });
   });
 }

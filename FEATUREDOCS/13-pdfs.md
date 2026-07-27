@@ -98,7 +98,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 **Project Document Plugins:**
 | Plugin | Purpose |
 |--------|---------|
-| `gearflowTable` | Equipment table — grouping (by `groupName` or `prepContainer`), kit children (3 levels), badges, checkboxes, conditions, per-unit expansion. Container line items (`isContainerLineItem`) are excluded. |
+| `gearflowTable` | Equipment table — grouping (by `groupName` or `prepContainer`), kit children (3 levels), badges, checkboxes, conditions, per-unit expansion. Container line items (`isContainerLineItem`) are excluded. Draws the derived billing-weeks/days breakdown under an auto-priced line's description when `showPricing` is on (#943 — see below). |
 | `gearflowFinancialSummary` | Subtotal/discount/tax/total block with optional deposit/balance |
 | `gearflowPageHeader` | Three modes: logo, icon, none — org info + doc title |
 | `gearflowPageFooter` | Centered footer with top border; right-aligned "Page X of Y" when the document has more than one page (`FooterConfig.pageNumber`, computed per-page in `composeDocument`) |
@@ -119,6 +119,27 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 - Plugins receive `value` as JSON string, parse it, draw directly via pdf-lib
 - `helpers.ts`: coordinate conversion (mm→pt, Y-flip), font caching (Helvetica/Bold/Courier), color parsing, text wrapping, formatCurrency/formatDate
 - `ui` and `propPanel` are stubs (no template designer of any kind — see below)
+
+### Derived Billing Breakdown on Line Items (#943)
+`projectLineItems.priceBreakdown` (previously a dead, always-empty field — see
+FEATUREDOCS/10 "Derived Billing Weeks/Days") is now populated for every
+auto-priced line and rendered directly by `gearflowTable`: a formatted string
+like `"2 wk @ $150.00 + 3 d @ $30.00"` or `"charged as 1 wk (capped)"`
+(`formatPriceBreakdown`, `src/lib/billing-derivation.ts`) drawn under the
+line's description, gated on `TablePluginConfig.showPricing` (a manually
+priced line has no stored breakdown, so nothing renders for it). Since #790
+removed the entire `{token}` resolution system with no replacement planned
+(see "No Template Customization" below), this wires directly into the plugin
+— NOT a token — matching how every other derived value already reaches a PDF
+in this pipeline.
+
+`document-composer.ts`'s `calculateItemHeight` reserves the matching extra
+text-row height using the exact same "does this line have a renderable
+breakdown" check the plugin itself uses, so an auto-priced line's breakdown
+text can never silently overflow the page's pagination budget — the same
+class of tail-drop bug `document-composer.test.ts` guards the rest of the
+table against. `getFilteredParentItems` is unaffected — `priceBreakdown`
+never gates the top-level status filter.
 
 ## No Template Customization
 

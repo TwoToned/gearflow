@@ -260,10 +260,8 @@ export async function regenerateSubHireLines(
         projectId: group.projectId,
         groupId: pgId,
         orgId,
-        defaultRentalPeriod: project?.defaultRentalPeriod ?? undefined,
-        defaultRentalQuantity: project?.defaultRentalQuantity ?? undefined,
-        groupRentalPeriod: group.rentalPeriod ?? undefined,
-        groupRentalQuantity: group.rentalQuantity ?? undefined,
+        rentalStartDate: project?.rentalStartDate ?? undefined,
+        rentalEndDate: project?.rentalEndDate ?? undefined,
       });
       await ctx.db.patch(group._id, { suggestedPrice: suggested, updatedAt: now });
     }

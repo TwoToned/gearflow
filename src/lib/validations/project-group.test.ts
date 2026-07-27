@@ -16,8 +16,6 @@ const validComplete = {
   description: "Includes 8x EW-DX handheld, 8x belt pack, cabling and accessories",
   quantity: 1,
   price: 2500,
-  rentalPeriod: "DAILY" as const,
-  rentalQuantity: 3,
   sortOrder: 1,
 };
 
@@ -140,56 +138,8 @@ describe("projectGroupSchema", () => {
     });
   });
 
-  describe("rentalPeriod (optional enum)", () => {
-    it("accepts DAILY", () => {
-      const result = projectGroupSchema.safeParse({
-        ...validMinimal,
-        rentalPeriod: "DAILY",
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it("accepts WEEKLY", () => {
-      const result = projectGroupSchema.safeParse({
-        ...validMinimal,
-        rentalPeriod: "WEEKLY",
-      });
-      expect(result.success).toBe(true);
-    });
-
-    it("rejects invalid value", () => {
-      const result = projectGroupSchema.safeParse({
-        ...validMinimal,
-        rentalPeriod: "MONTHLY",
-      });
-      expect(result.success).toBe(false);
-    });
-
-    it("accepts undefined", () => {
-      const result = projectGroupSchema.safeParse(validMinimal);
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.rentalPeriod).toBeUndefined();
-    });
-  });
-
-  describe("rentalQuantity (optional, int, min 1)", () => {
-    it("accepts positive integer", () => {
-      const result = projectGroupSchema.safeParse({
-        ...validMinimal,
-        rentalQuantity: 5,
-      });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.rentalQuantity).toBe(5);
-    });
-
-    it("rejects zero", () => {
-      const result = projectGroupSchema.safeParse({
-        ...validMinimal,
-        rentalQuantity: 0,
-      });
-      expect(result.success).toBe(false);
-    });
-  });
+  // #943: rentalPeriod/rentalQuantity retired — a group's billing window is now
+  // derived purely from the PROJECT's rentalStartDate/rentalEndDate.
 
   describe("sortOrder (optional, default 0)", () => {
     it("defaults to 0", () => {

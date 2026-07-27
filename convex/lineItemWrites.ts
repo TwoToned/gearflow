@@ -1,7 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
-import { mutation } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
@@ -26,6 +26,14 @@ import {
 } from "./lib/availabilityCore";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
+import {
+  inclusiveCalendarDays,
+  computeBlendedCharge,
+  serializePriceBreakdown,
+  parsePriceBreakdown,
+  isBreakdownStale,
+  type PriceBreakdown,
+} from "./lib/billingDerivation";
 import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS } from "./lib/projectLocks";
 
 /** Fetch the line's parent project, org-checked — every gate site needs the
@@ -762,13 +770,137 @@ async function recomputeGroupSuggestedNative(
     projectId: group.projectId,
     groupId,
     orgId,
-    defaultRentalPeriod: project?.defaultRentalPeriod ?? undefined,
-    defaultRentalQuantity: project?.defaultRentalQuantity ?? undefined,
-    groupRentalPeriod: group.rentalPeriod ?? undefined,
-    groupRentalQuantity: group.rentalQuantity ?? undefined,
+    rentalStartDate: project?.rentalStartDate ?? undefined,
+    rentalEndDate: project?.rentalEndDate ?? undefined,
   });
   await ctx.db.patch(group._id, { suggestedPrice: suggested, updatedAt: now });
 }
+
+/**
+ * One auto-priced line's fresh-vs-stored comparison (#943 stale-price flow).
+ * A line is ELIGIBLE when it's model-backed, carries a stored priceBreakdown
+ * (i.e. it WAS auto-priced at some point), and hasn't been manually
+ * `priceOverridden` — an overridden line's price is a deliberate human choice
+ * and must never be silently recomputed out from under it.
+ */
+async function computeAutoPricedLineUpdate(
+  ctx: MutationCtx | QueryCtx,
+  li: { modelId?: string; organizationId: string; priceBreakdown?: string; priceOverridden?: boolean; unitPrice?: number; quantity?: number; discount?: number },
+  chargeableDays: number,
+): Promise<{ stale: boolean; unitPrice: number; breakdown: PriceBreakdown } | null> {
+  if (!li.modelId || !li.priceBreakdown || li.priceOverridden === true) return null;
+  const stored = parsePriceBreakdown(li.priceBreakdown);
+  if (!stored) return null;
+  const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", li.modelId!)).first();
+  if (!model || model.organizationId !== li.organizationId) return null;
+  if (model.dailyRate == null && model.weeklyRate == null) return null;
+  const { perUnitCharge, breakdown } = computeBlendedCharge({
+    chargeableDays,
+    dailyRate: model.dailyRate ?? null,
+    weeklyRate: model.weeklyRate ?? null,
+  });
+  return { stale: isBreakdownStale(stored, breakdown), unitPrice: perUnitCharge, breakdown };
+}
+
+/**
+ * "Are any of this project's auto-priced lines stale?" — the read side of the
+ * #943 stale-price flow. Drives the amber "Rates derived from old dates —
+ * recalculate" banner: a rental-date edit doesn't silently reprice anything
+ * (POLICY.md — nothing silent), it just makes THIS query start returning a
+ * non-zero count until the user explicitly recalculates.
+ */
+export const projectPricingStaleness = query({
+  returns: v.object({ staleLineCount: v.number() }),
+  args: { projectId: v.string(), orgId: v.string() },
+  handler: async (ctx, { projectId, orgId }) => {
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) return { staleLineCount: 0 };
+    const chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate);
+    const lines = (
+      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+    ).filter((li) => li.organizationId === orgId);
+    let staleLineCount = 0;
+    for (const li of lines) {
+      const update = await computeAutoPricedLineUpdate(ctx, li, chargeableDays);
+      if (update?.stale) staleLineCount++;
+    }
+    return { staleLineCount };
+  },
+});
+
+/**
+ * The write side of the #943 stale-price flow — "Recalculate" button. Recomputes
+ * every eligible auto-priced line's unitPrice/priceBreakdown from the project's
+ * CURRENT rental dates (respecting `priceOverridden` — an overridden line is
+ * never touched), then recomputes every group's suggestedPrice and the
+ * project's totals. Always safe to call even when nothing is stale (idempotent).
+ */
+export const recalcAutoPricedLinesNative = mutation({
+  returns: v.object({ linesUpdated: v.number(), groupsUpdated: v.number() }),
+  args: {
+    projectId: v.string(),
+    orgId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { projectId, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "lineItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) throw new ConvexError("Project not found");
+    const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
+
+    const chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate);
+    const lines = (
+      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+    ).filter((li) => li.organizationId === orgId);
+
+    let linesUpdated = 0;
+    const touchedGroupIds = new Set<string>();
+    for (const li of lines) {
+      const update = await computeAutoPricedLineUpdate(ctx, li, chargeableDays);
+      if (!update) continue;
+      const newLineTotal = calcLineTotalNative(update.unitPrice, li.quantity ?? 0, 1, li.discount);
+      await ctx.db.patch(li._id, {
+        unitPrice: update.unitPrice,
+        duration: 1,
+        priceBreakdown: serializePriceBreakdown(update.breakdown),
+        lineTotal: newLineTotal ?? undefined,
+        updatedAt: now,
+      });
+      linesUpdated++;
+      if (li.groupId) touchedGroupIds.add(li.groupId);
+    }
+
+    for (const groupId of touchedGroupIds) {
+      await recomputeGroupSuggestedNative(ctx, groupId, orgId, now);
+    }
+
+    await recalcProjectTotals(ctx, projectId, orgId, orgDefaultTaxRate, now);
+
+    if (linesUpdated > 0) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: orgId,
+        action: "UPDATE",
+        entityType: "project",
+        entityId: projectId,
+        entityName: project.projectNumber,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Recalculated pricing for ${linesUpdated} line item${linesUpdated === 1 ? "" : "s"} after a rental-date change`,
+        projectId,
+        createdAt: now,
+      });
+    }
+
+    return { linesUpdated, groupsUpdated: touchedGroupIds.size };
+  },
+});
 
 /** Drop keys whose value is undefined (parity with the Convex client stripping undefined
  *  args over the wire — the server merge/insert relied on that to mean "leave unset"). */
@@ -1759,33 +1891,40 @@ export const addLineItemSmartNative = mutation({
       }
     }
 
-    // ── Auto-pricing (src/server/line-items.ts:361-401) ────────────────────────
-    // PER_DAY model-backed line, no manual price → fill from the model's rate using the
-    // project's default rental period/quantity. Manual prices are kept.
+    // ── Auto-pricing (derived billing weeks/days + best-price capping, #943) ───
+    // Any model-backed line with no manual price gets the blended per-unit charge
+    // for the project's rental window — weeklyRate/dailyRate best-price-capped via
+    // computeBlendedCharge (convex/lib/billingDerivation.ts). Manual prices are
+    // kept. Previously gated on `pricingType === "PER_DAY"` only, so a PER_WEEK
+    // line silently never auto-priced — that gate is obsolete under blended
+    // pricing (the derivation itself picks weekly vs daily tiers from the rates
+    // available), so ANY pricingType with no manual price now auto-prices.
     // #791: while locked (no open session) a fresh insert forces $0 instead — skip the
     // rate autofill entirely and drop any client-supplied discount too.
     let autoUnitPrice = guard.defaultToZero ? 0 : fields.unitPrice;
     let autoDuration = fields.duration;
+    let autoPriceBreakdown: string | undefined;
     const insertDiscount = guard.defaultToZero ? undefined : fields.discount;
     // `== null` (not `!unitPrice`) — an EXPLICIT $0 manual price (a free item) is a real
-    // choice and must be kept, not overwritten by the model rate. (The server addLineItem
-    // has the `!parsed.unitPrice` truthiness bug; this fixes it in the native port.)
-    if (!guard.defaultToZero && fields.modelId && fields.pricingType === "PER_DAY" && fields.unitPrice == null) {
+    // choice and must be kept, not overwritten by the model rate.
+    if (!guard.defaultToZero && fields.modelId && fields.unitPrice == null) {
       const [model, proj] = await Promise.all([
         ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", fields.modelId!)).first(),
         ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
       ]);
-      if (model && model.organizationId === organizationId) {
-        const rentalPeriod = proj?.defaultRentalPeriod ?? "DAILY";
-        const rentalQuantity = proj?.defaultRentalQuantity ?? 1;
-        const rate =
-          rentalPeriod === "WEEKLY"
-            ? (model.weeklyRate ?? model.dailyRate ?? null)
-            : (model.dailyRate ?? null);
-        if (rate != null) {
-          autoUnitPrice = Number(rate);
-          autoDuration = rentalQuantity;
-        }
+      if (model && model.organizationId === organizationId && (model.dailyRate != null || model.weeklyRate != null)) {
+        const chargeableDays = inclusiveCalendarDays(proj?.rentalStartDate, proj?.rentalEndDate);
+        const { perUnitCharge, breakdown } = computeBlendedCharge({
+          chargeableDays,
+          dailyRate: model.dailyRate ?? null,
+          weeklyRate: model.weeklyRate ?? null,
+        });
+        autoUnitPrice = perUnitCharge;
+        // Auto-priced lines always bill at duration=1 — the blended per-unit charge
+        // already bakes in the whole chargeable window (#943 de-risked line pricing
+        // model: lineTotal = unitPrice × qty × duration stays untouched elsewhere).
+        autoDuration = 1;
+        autoPriceBreakdown = serializePriceBreakdown(breakdown);
       }
     }
 
@@ -1811,6 +1950,7 @@ export const addLineItemSmartNative = mutation({
       duration: autoDuration ?? undefined,
       discount: insertDiscount ?? undefined,
       lineTotal: lineTotal ?? undefined,
+      priceBreakdown: autoPriceBreakdown,
       groupName: fields.groupName || undefined,
       notes: fields.notes || undefined,
       isOptional: fields.isOptional,

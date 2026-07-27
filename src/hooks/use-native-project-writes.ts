@@ -316,8 +316,8 @@ export function useProjectWrites(orgId: string | undefined) {
       crewNotes: parsed.crewNotes || undefined,
       internalNotes: parsed.internalNotes || undefined,
       clientNotes: parsed.clientNotes || undefined,
-      defaultRentalPeriod: parsed.defaultRentalPeriod || undefined,
-      defaultRentalQuantity: parsed.defaultRentalQuantity || undefined,
+      billingWeeksOverride: parsed.billingWeeksOverride ?? undefined,
+      billingDaysOverride: parsed.billingDaysOverride ?? undefined,
       taxRate: parsed.taxRate ?? undefined,
       discountPercent: parsed.discountPercent ?? undefined,
       depositPercent: parsed.depositPercent ?? undefined,
@@ -424,8 +424,11 @@ export function useProjectWrites(orgId: string | undefined) {
     setOrClear("projectEndTime", parsed.projectEndTime || null);
     setOrClear("rentalStartDate", parsed.rentalStartDate?.getTime() ?? null);
     setOrClear("rentalEndDate", parsed.rentalEndDate?.getTime() ?? null);
-    setOrClear("defaultRentalPeriod", parsed.defaultRentalPeriod || null);
-    setOrClear("defaultRentalQuantity", parsed.defaultRentalQuantity || null);
+    // #943: absent = derived billing summary; a set value is the manual override
+    // (0 is a legitimate override — e.g. "0 weeks" — so use `!= null`, not `||`,
+    // unlike the retired defaultRentalPeriod/Quantity fields this replaces).
+    setOrClear("billingWeeksOverride", parsed.billingWeeksOverride ?? null);
+    setOrClear("billingDaysOverride", parsed.billingDaysOverride ?? null);
     setOrClear("taxRate", parsed.taxRate ?? null);
     setOrClear("crewNotes", parsed.crewNotes || null);
     setOrClear("internalNotes", parsed.internalNotes || null);

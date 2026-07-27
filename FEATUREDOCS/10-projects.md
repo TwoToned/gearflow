@@ -182,18 +182,93 @@ marginPercent = margin / total × 100
 - Falls back to `Organization.defaultTaxRate` (configurable in Settings)
 - Falls back to 10% (GST default)
 
-### Billing Weeks/Days Pricing (Primary Model)
-- `Project.billingWeeks` (Int, nullable) + `Project.billingDays` (Int, nullable) — set on project form
-- Per-group override: `ProjectGroup.billingWeeks` + `billingDays`
-- Uses `Model.weeklyRate` and `Model.dailyRate` fields
-- Formula: `(weeklyRate × weeks + dailyRate × days) × quantity`
-- "Match" button on project form auto-calculates weeks/days from rental date range
+### Derived Billing Weeks/Days + Best-Price Capping (#943)
+> **Correction to earlier drafts of this doc:** a "Billing Weeks/Days Pricing"
+> feature (`Project.billingWeeks`/`billingDays` + a `ProjectGroup` override,
+> formula `(weeklyRate × weeks + dailyRate × days) × quantity`) was documented
+> here as the shipped "Primary Model". It never actually shipped in the
+> running system — Prisma migration `20260326000000` added the columns,
+> migration `20260617000000` dropped them again five days later ("removed in
+> favour of simple auto-pricing"), and the fields never reached Convex,
+> Zod, or any TS in between. The doc was simply never updated to match. A
+> separate `Project.defaultRentalPeriod`/`defaultRentalQuantity` +
+> `ProjectGroup.rentalPeriod`/`rentalQuantity` "legacy fallback" pair *did*
+> ship and *was* the live pricing path — but nothing in the UI ever wrote
+> `rentalPeriod`/`rentalQuantity` on a group either, so in practice every
+> line priced at `dailyRate × qty × 1`. #943 replaces both retired
+> mechanisms with the derived system below — deliberately restoring the
+> *spirit* of the original weeks/days design doc, in a derived (not
+> hand-entered) form, plus best-price capping.
 
-### Legacy Rental Period Pricing (Fallback)
-- `Project.defaultRentalPeriod` (DAILY | WEEKLY) + `defaultRentalQuantity` (Int)
-- Per-group override: `ProjectGroup.rentalPeriod` + `rentalQuantity`
-- Used only when billingWeeks/billingDays are both null
-- Formula: `rate × quantity × rentalQuantity`
+Pure module: `src/lib/billing-derivation.ts`, byte-parity-ported to
+`convex/lib/billing-derivation.ts` for code that runs inside a Convex
+mutation (pinned equal by `convex/lib/billing-derivation.test.ts`). This is
+the SINGLE canonical implementation — it replaced three independently
+hand-duplicated copies of the "suggested group price" formula.
+
+**Chargeable days.** `inclusiveCalendarDays(rentalStartDate, rentalEndDate)`
+— calendar days, inclusive (Fri→Mon = 4 days). Either date missing → 1 day
+(matches the pre-existing `duration` field's default).
+
+**Best-price capping.** For a model with both `dailyRate` and `weeklyRate`:
+```
+weeks = floor(chargeableDays / 7)
+remainderDays = chargeableDays % 7
+uncapped = weeks × weeklyRate + remainderDays × dailyRate
+capped   = (weeks + 1) × weeklyRate
+perUnitCharge = min(uncapped, capped)   // capped only ever wins when remainderDays > 0
+```
+E.g. 6 days at $20/day vs $100/week: 6×$20=$120 > 1×$100, so it's billed as
+"1 wk (capped)" for $100. A daily-only model (no `weeklyRate`) just bills
+`chargeableDays × dailyRate`, never capped.
+
+**Auto-priced line storage (the de-risked shape).** `lineTotal = unitPrice ×
+quantity × duration` is UNCHANGED — every consumer of that formula (three
+byte-parity copies: `convex/lib/lineTotal.ts`, the inline copy in
+`convex/lineItemWrites.ts`, `src/hooks/use-native-line-item-writes.ts`) is
+untouched. An auto-priced line instead stores:
+- `unitPrice = perUnitCharge` (the capped blended charge, above)
+- `duration = 1` (always — the blended charge already bakes in the whole
+  chargeable window)
+- `priceBreakdown = JSON.stringify({ weeks, days, weeklyRate, dailyRate, capped })`
+  — the previously-dead `projectLineItems.priceBreakdown` field, now
+  populated. Rendered in the UI/PDFs as e.g. `"2 wk @ $150.00 + 3 d @ $30.00"`
+  or `"charged as 1 wk (capped)"` (`formatPriceBreakdown`).
+
+Auto-pricing triggers in `addLineItemSmartNative` on ANY model-backed line
+with no manual `unitPrice` set — the old auto-pricing only fired for
+`pricingType === "PER_DAY"`, so a `PER_WEEK` line silently never auto-priced;
+that gate is gone (the derivation itself picks the tier from the rates
+available, so `pricingType` no longer matters to auto-pricing).
+
+**Project-level billing summary.** A read-only "billed as N wk M d" label in
+the Financials tab (`BillingSummaryRow`), computed by `deriveBillingSummary`
+— plain `floor`/`%` split of `inclusiveCalendarDays`, no capping (capping is
+a per-line PRICING concept, not a project-wide date-range label). Overridable
+via `Project.billingWeeksOverride`/`billingDaysOverride` (absent = derived;
+present = the manual override, shown with an "edited" badge). Edited from a
+small dialog that calls `projectWrites.updateNative`'s generic set/clear
+directly (no full project-form round-trip needed for a two-field patch).
+Per-group overrides are explicitly out of scope.
+
+**Stale-price flow.** A rental-date edit NEVER silently reprices anything.
+`lineItemWrites.projectPricingStaleness` (query) compares every auto-priced
+line's STORED `priceBreakdown` against what the CURRENT project dates would
+derive (`isBreakdownStale`); a non-zero count surfaces an amber "Rates
+derived from old dates — recalculate" banner (`StalePricingBanner`).
+`lineItemWrites.recalcAutoPricedLinesNative` (mutation) — the only thing that
+ever recomputes — runs exclusively from that banner's "Recalculate" click,
+recomputing every eligible line (model-backed, has a stored `priceBreakdown`,
+NOT `priceOverridden`) and every affected group's `suggestedPrice`, then
+`recalcProjectTotals`. A manually overridden line's price (`priceOverridden:
+true`) is never touched by the recalc, mirroring how the derived billing
+summary itself is never touched once overridden.
+
+**Allocation.** `convex/lib/allocation.ts`'s weekly-vs-daily rate-scale
+choice (`AllocationInput.billingWeeks`) now reads the project's derived (or
+overridden) `billingWeeks` via `deriveBillingSummary`, replacing the retired
+`rentalPeriod: "DAILY" | "WEEKLY"` string field — `billingWeeks > 0` selects
+the same weekly-scale behaviour `rentalPeriod === "WEEKLY"` used to.
 
 ### Finance soft-lock (#957 — see FEATUREDOCS/62-project-lifecycle-locks.md)
 Once a project is FINANCE_LOCKED+ (CONFIRMED and later), the fields that feed the
@@ -280,19 +355,29 @@ server-enforced, not just a client suggestion.
   number; bulk CSV import/export would add complexity without a real
   use case`.
 
-### Suggested Price Calculation (`calculateSuggestedPrice()`)
-Simple rate × period × qty model (the min-cost optimizer + billing-period
-config were removed — see git history for `38-pricing-optimization.md`).
+### Suggested Price Calculation (`computeGroupSuggestedPrice()`)
+Derived billing weeks/days + best-price capping (#943 — see above). Single
+canonical implementation: `convex/lib/suggestedPrice.ts` (used from every
+Convex call site — `lineItemWrites.ts`, `projectGroupsWrites.ts`,
+`subHireLineGen.ts`) plus its src-side twin `src/lib/project-groups-pricing.ts`
+(used from the Next.js server, outside a Convex mutation). This collapsed
+what were THREE independently hand-duplicated copies of the formula pre-#943
+(the two above, plus an inline loop in `groupTemplatesWrites.applyNative`).
 ```
-rentalPeriod = group.rentalPeriod ?? project.defaultRentalPeriod ?? "DAILY"
-rentalQuantity = group.rentalQuantity ?? project.defaultRentalQuantity ?? 1
-For each line item in group (excluding kit children):
-  rate = (rentalPeriod === "WEEKLY") ? model.weeklyRate : model.dailyRate
-  total += rate × item.quantity × rentalQuantity
+chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate)
+For each line item in group (excluding kit children, custom items):
+  { perUnitCharge } = computeBlendedCharge({ chargeableDays, dailyRate: model.dailyRate, weeklyRate: model.weeklyRate })
+  total += perUnitCharge × item.quantity
 ```
-The same `rate × period × qty` model auto-fills `unitPrice` on a single line
-when it's added (`addLineItem`) — `unitPrice = rate`, `duration = rentalQuantity`.
-- Recalculated when: items added/removed, group rental period/quantity changed, item moved between groups
+The same `computeBlendedCharge` derivation auto-fills `unitPrice` on a single
+line when it's added (`addLineItemSmartNative`) — `unitPrice = perUnitCharge`,
+`duration = 1` (pinned — see "Derived Billing Weeks/Days" above),
+`priceBreakdown` stores the weeks/days/capped detail.
+- Recalculated when: items added/removed/merged into the group, or the
+  project's rental dates change and the operator clicks "Recalculate" on the
+  stale-price banner (never silently — see above). Group-level
+  rentalPeriod/rentalQuantity overrides are retired; there is nothing left on
+  the group ITSELF that can make its suggestedPrice stale.
 
 ## Line Items (`ProjectLineItem`)
 - `categoryId` (nullable FK → ProjectCategory)
@@ -606,9 +691,13 @@ Writes moved browser-direct during the Convex-native migration (see [54. Convex 
 - Crew assignment management: `convex/crewAssignmentsWrites.ts` (`src/server/crew-assignments.ts` is gone)
 
 ## Validation Schemas
-- `src/lib/validations/project.ts` — Project form (includes billingWeeks, billingDays, defaultRentalPeriod, defaultRentalQuantity, taxRate)
+- `src/lib/validations/project.ts` — Project form (includes
+  billingWeeksOverride/billingDaysOverride — the derived billing-summary
+  override, #943 — and taxRate)
 - `src/lib/validations/project-category.ts` — Category (name, sortOrder)
-- `src/lib/validations/project-group.ts` — Group (categoryId, title, description, quantity, price, billingWeeks, billingDays, rentalPeriod, rentalQuantity)
+- `src/lib/validations/project-group.ts` — Group (categoryId, title,
+  description, quantity, price). No rentalPeriod/rentalQuantity — retired
+  #943; a group's billing window is derived purely from the project's dates.
 - `src/lib/validations/group-template.ts` — Template (name, description, items[])
 - `src/lib/validations/line-item.ts` — Line item (includes categoryId, groupId)
 - `src/lib/validations/project-service.ts` — Service (includes billableToClient, costTotal)

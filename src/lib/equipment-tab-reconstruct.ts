@@ -307,8 +307,6 @@ function buildGroupData(
     price: g.price,
     discount: g.discount,
     suggestedPrice: g.suggestedPrice,
-    rentalPeriod: g.rentalPeriod,
-    rentalQuantity: g.rentalQuantity,
     sortOrder: g.sortOrder,
     lineItems: attachScope(lineItemsByGroupId.get(g.id) ?? [], ctx),
   };

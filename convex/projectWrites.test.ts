@@ -273,12 +273,15 @@ describe("projectWrites.updateNative", () => {
       expect(p?.clientId).toBe("own-client");
     });
   });
-  test("rejects an out-of-bounds defaultRentalQuantity / non-finite rental dates (poisons auto-pricing / defeats double-booking)", async () => {
+  test("rejects an out-of-bounds billingWeeksOverride/billingDaysOverride / non-finite rental dates (#943 — poisons allocation / the billing summary / defeats double-booking)", async () => {
     const t = makeT();
     await seedProject(t, "member");
     await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { defaultRentalQuantity: Number.NaN, updatedAt: NOW }, clear: [] }),
-    ).rejects.toThrow(/default rental quantity/i);
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { billingWeeksOverride: Number.NaN, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/billing weeks override/i);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { billingDaysOverride: 7, updatedAt: NOW }, clear: [] }),
+    ).rejects.toThrow(/billing days override/i);
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { rentalStartDate: Number.NaN, updatedAt: NOW }, clear: [] }),
     ).rejects.toThrow(/rentalStartDate/);

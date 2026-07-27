@@ -796,10 +796,10 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     });
   };
 
-  test("auto-pricing: PER_DAY, no manual price → dailyRate × rentalQuantity → lineTotal", async () => {
+  test("auto-pricing: model-backed line, no manual price → blended per-unit charge, duration pinned to 1, priceBreakdown stored (#943)", async () => {
     const t = makeT();
-    // dailyRate 20, project default rental quantity 3.
-    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 3 });
+    // 7-day rental window, dailyRate 20 / weeklyRate 100 -> exactly 1 week, no cap.
+    await seedProjectModel(t, { dailyRate: 20, weeklyRate: 100 }, { rentalStartDate: NOW, rentalEndDate: NOW + 6 * 86_400_000 });
     const res = await t.withIdentity(asUser(ORG)).mutation(
       api.lineItemWrites.addLineItemSmartNative,
       smartArgs({ modelId: "m1", quantity: 2 }, { over: true }),
@@ -807,9 +807,10 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     expect(res.merged).toBe(false);
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).first();
-      expect(li?.unitPrice).toBe(20);
-      expect(li?.duration).toBe(3); // rentalQuantity
-      expect(li?.lineTotal).toBe(120); // 20 × 2 × 3
+      expect(li?.unitPrice).toBe(100); // blended: 1 wk @ $100
+      expect(li?.duration).toBe(1); // pinned — the blended charge bakes in the whole window
+      expect(li?.lineTotal).toBe(200); // 100 × 2 × 1
+      expect(JSON.parse(li!.priceBreakdown!)).toEqual({ weeks: 1, days: 0, weeklyRate: 100, dailyRate: 20, capped: false });
       // Collab feed folded into the mutation (insert path).
       const events = await ctx.db.query("activityEvents").withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", ORG).eq("entityId", "p1")).collect();
       const added = events.find((e) => e.action === "line_item_added");
@@ -818,38 +819,56 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     });
   });
 
-  test("auto-pricing: WEEKLY period uses weeklyRate", async () => {
+  test("auto-pricing: best-price capping engages when the remainder days cost more than a whole week", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 20, weeklyRate: 50 }, { defaultRentalPeriod: "WEEKLY", defaultRentalQuantity: 1 });
+    // 6-day window: 6 × $20 daily (120) > 1 × $100 weekly -> capped to 1 wk.
+    await seedProjectModel(t, { dailyRate: 20, weeklyRate: 100 }, { rentalStartDate: NOW, rentalEndDate: NOW + 5 * 86_400_000 });
     await t.withIdentity(asUser(ORG)).mutation(
       api.lineItemWrites.addLineItemSmartNative,
-      smartArgs({ modelId: "m1", quantity: 2 }, { over: true }),
+      smartArgs({ modelId: "m1", quantity: 1 }, { over: true }),
     );
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).first();
-      expect(li?.unitPrice).toBe(50);
-      expect(li?.lineTotal).toBe(100); // 50 × 2 × 1
+      expect(li?.unitPrice).toBe(100);
+      expect(li?.duration).toBe(1);
+      expect(JSON.parse(li!.priceBreakdown!)).toEqual({ weeks: 1, days: 0, weeklyRate: 100, dailyRate: 20, capped: true });
+    });
+  });
+
+  test("auto-pricing: PER_WEEK pricingType now auto-prices too (previously a silent hole — #943 removes the PER_DAY gate)", async () => {
+    const t = makeT();
+    // No dates -> defaults to 1 chargeable day. No weeklyRate -> plain daily charge.
+    await seedProjectModel(t, { dailyRate: 20 });
+    await t.withIdentity(asUser(ORG)).mutation(
+      api.lineItemWrites.addLineItemSmartNative,
+      smartArgs({ modelId: "m1", quantity: 2, pricingType: "PER_WEEK" }, { over: true }),
+    );
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).first();
+      expect(li?.unitPrice).toBe(20); // previously would have stayed unpriced (null)
+      expect(li?.lineTotal).toBe(40); // 20 × 2 × 1
     });
   });
 
   test("manual price is kept (no auto-pricing)", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 3 });
+    await seedProjectModel(t, { dailyRate: 20 }, { rentalStartDate: NOW, rentalEndDate: NOW + 2 * 86_400_000 });
     await t.withIdentity(asUser(ORG)).mutation(
       api.lineItemWrites.addLineItemSmartNative,
       smartArgs({ modelId: "m1", quantity: 2, unitPrice: 15, duration: 1 }, { over: true }),
     );
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).first();
-      expect(li?.unitPrice).toBe(15); // manual kept, not auto 20
+      expect(li?.unitPrice).toBe(15); // manual kept, not auto-derived
       expect(li?.duration).toBe(1);
       expect(li?.lineTotal).toBe(30); // 15 × 2 × 1
+      expect(li?.priceBreakdown).toBeUndefined(); // never auto-priced -> no breakdown
     });
   });
 
   test("merge-dedup: same model/group/category merges quantity + recomputes lineTotal + joins notes", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 20 });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Stage", suggestedPrice: 0, sortOrder: 0 });
       await ctx.db.insert("projectLineItems", { id: "ex", organizationId: ORG, projectId: "p1", modelId: "m1", type: "EQUIPMENT", quantity: 2, unitPrice: 10, duration: 1, groupId: "g1", status: "CONFIRMED", isKitChild: false, notes: "first" });
@@ -880,7 +899,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   test("webhook: line_item.added is enqueued to an active subscription (insert path)", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 20 });
     await t.run(async (ctx) => {
       // An active endpoint subscribed to line_item.added.
       await ctx.db.insert("webhooks", { id: "wh1", organizationId: ORG, description: "Zapier", url: "https://example.test/hook", events: JSON.stringify(["line_item.added"]), secret: "s", isActive: true, createdById: USER, createdAt: NOW, updatedAt: NOW });
@@ -901,7 +920,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   test("webhook: nothing enqueued when no active subscription matches", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 20 });
     await t.withIdentity(asUser(ORG)).mutation(
       api.lineItemWrites.addLineItemSmartNative,
       smartArgs({ modelId: "m1", quantity: 1 }, { over: true }),
@@ -914,7 +933,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   test("forceSeparate: inserts a new row instead of merging", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 20 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 20 });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "ex", organizationId: ORG, projectId: "p1", modelId: "m1", type: "EQUIPMENT", quantity: 2, unitPrice: 10, duration: 1, status: "CONFIRMED", isKitChild: false });
     });
@@ -931,7 +950,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   test("group-suggested-price is recomputed + persisted onto the group", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 10 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 10 });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Stage", suggestedPrice: 0, sortOrder: 0 });
     });
@@ -941,7 +960,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     );
     await t.run(async (ctx) => {
       const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
-      expect(g?.suggestedPrice).toBe(20); // dailyRate 10 × qty 2 × rentalQuantity 1
+      expect(g?.suggestedPrice).toBe(20); // dailyRate 10 × 1 chargeable day (no project dates) × qty 2
     });
   });
 
@@ -975,7 +994,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   test("accessory expansion: model bulk accessory becomes a child line (qty × parent)", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 10 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 10 });
     await t.run(async (ctx) => {
       await ctx.db.insert("bulkAssets", { id: "ba1", organizationId: ORG, modelId: "m2", assetTag: "BA-1", isActive: true });
       await ctx.db.insert("modelBulkAccessories", { id: "mba1", organizationId: ORG, modelId: "m1", bulkAssetId: "ba1", quantity: 2, addedById: USER });
@@ -995,7 +1014,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   describe("accessoryPlan (issue #794)", () => {
     async function seedModelWithAccessories(t: ReturnType<typeof makeT>) {
-      await seedProjectModel(t, { dailyRate: 10 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+      await seedProjectModel(t, { dailyRate: 10 });
       await t.run(async (ctx) => {
         await ctx.db.insert("bulkAssets", { id: "ba-def", organizationId: ORG, modelId: "m1", assetTag: "BA-DEF", isActive: true });
         await ctx.db.insert("bulkAssets", { id: "ba-opt", organizationId: ORG, modelId: "m1", assetTag: "BA-OPT", isActive: true });
@@ -1113,7 +1132,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   test("cross-org groupId is rejected", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 10 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 10 });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectGroups", { id: "g1", organizationId: "org_other", projectId: "px", title: "X", suggestedPrice: 0, sortOrder: 0 });
     });
@@ -1124,7 +1143,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
 
   test("dup-guard: a reused client id is rejected", async () => {
     const t = makeT();
-    await seedProjectModel(t, { dailyRate: 10 }, { defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1 });
+    await seedProjectModel(t, { dailyRate: 10 });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "sm1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", isKitChild: false, description: "existing" });
     });

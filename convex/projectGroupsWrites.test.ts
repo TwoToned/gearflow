@@ -32,7 +32,7 @@ async function seedProject(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) 
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "QUOTED",
-      defaultRentalPeriod: "DAILY", defaultRentalQuantity: 1, total: 999,
+      total: 999,
     });
   });
 }
@@ -156,17 +156,21 @@ describe("projectGroupsWrites.updateGroupNative", () => {
     });
   });
 
-  test("recomputes suggested price only when rental settings change", async () => {
+  // #943: group-level rentalPeriod/rentalQuantity retired — suggestedPrice is now
+  // derived purely from the PROJECT's rentalStartDate/rentalEndDate (best-price
+  // capped), so nothing on updateGroupNative itself can make it stale anymore.
+  // It's recomputed when a line is added/merged into the group and when the
+  // project's rental dates change (recalcAutoPricedLinesNative).
+  test("a quantity update does not touch suggestedPrice (nothing on this mutation derives it anymore)", async () => {
     const t = makeT();
     await seedGroupWithLine(t);
-    // rentalQuantity 3 → 100 × 2 × 3 = 600.
     await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupNative, {
-      id: "g1", orgId: ORG, rentalQuantity: 3, now: NOW, actor: ACTOR, auditId: "log1",
+      id: "g1", orgId: ORG, quantity: 3, now: NOW, actor: ACTOR, auditId: "log1",
     });
     await t.run(async (ctx) => {
       const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
-      expect(g?.rentalQuantity).toBe(3);
-      expect(g?.suggestedPrice).toBe(600);
+      expect(g?.quantity).toBe(3);
+      expect(g?.suggestedPrice).toBe(0); // unchanged — only line adds / date recalcs touch it
     });
   });
 

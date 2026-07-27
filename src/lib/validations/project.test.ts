@@ -419,58 +419,70 @@ describe("projectSchema", () => {
     });
   });
 
-  describe("defaultRentalPeriod (optional enum)", () => {
-    it("accepts DAILY", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalPeriod: "DAILY" });
+  // #943: replaces the retired defaultRentalPeriod/defaultRentalQuantity fields
+  // — the derived billing-weeks/days summary's manual override + "edited" marker.
+  describe("billingWeeksOverride (optional, int, 0-522)", () => {
+    it("accepts a non-negative integer", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, billingWeeksOverride: 5 });
       expect(result.success).toBe(true);
-      if (result.success) expect(result.data.defaultRentalPeriod).toBe("DAILY");
+      if (result.success) expect(result.data.billingWeeksOverride).toBe(5);
     });
 
-    it("accepts WEEKLY", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalPeriod: "WEEKLY" });
+    it("accepts zero", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, billingWeeksOverride: 0 });
       expect(result.success).toBe(true);
-      if (result.success) expect(result.data.defaultRentalPeriod).toBe("WEEKLY");
-    });
-
-    it("rejects invalid value", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalPeriod: "MONTHLY" });
-      expect(result.success).toBe(false);
-    });
-
-    it("accepts undefined", () => {
-      const result = projectSchema.safeParse(validMinimal);
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.defaultRentalPeriod).toBeUndefined();
-    });
-  });
-
-  describe("defaultRentalQuantity (optional, int, min 1)", () => {
-    it("accepts positive integer", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: 5 });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.defaultRentalQuantity).toBe(5);
-    });
-
-    it("rejects zero", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: 0 });
-      expect(result.success).toBe(false);
+      if (result.success) expect(result.data.billingWeeksOverride).toBe(0);
     });
 
     it("rejects negative", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: -1 });
+      const result = projectSchema.safeParse({ ...validMinimal, billingWeeksOverride: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects over the 522-week bound", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, billingWeeksOverride: 523 });
       expect(result.success).toBe(false);
     });
 
     it("coerces string to number", () => {
-      const result = projectSchema.safeParse({ ...validMinimal, defaultRentalQuantity: "3" });
+      const result = projectSchema.safeParse({ ...validMinimal, billingWeeksOverride: "3" });
       expect(result.success).toBe(true);
-      if (result.success) expect(result.data.defaultRentalQuantity).toBe(3);
+      if (result.success) expect(result.data.billingWeeksOverride).toBe(3);
     });
 
-    it("accepts undefined", () => {
+    it("accepts undefined (absent = derived)", () => {
       const result = projectSchema.safeParse(validMinimal);
       expect(result.success).toBe(true);
-      if (result.success) expect(result.data.defaultRentalQuantity).toBeUndefined();
+      if (result.success) expect(result.data.billingWeeksOverride).toBeUndefined();
+    });
+  });
+
+  describe("billingDaysOverride (optional, int, 0-6)", () => {
+    it("accepts a value in range", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, billingDaysOverride: 3 });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.billingDaysOverride).toBe(3);
+    });
+
+    it("accepts zero", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, billingDaysOverride: 0 });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects negative", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, billingDaysOverride: -1 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects 7 or above (a remainder day is always < 7)", () => {
+      const result = projectSchema.safeParse({ ...validMinimal, billingDaysOverride: 7 });
+      expect(result.success).toBe(false);
+    });
+
+    it("accepts undefined (absent = derived)", () => {
+      const result = projectSchema.safeParse(validMinimal);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.billingDaysOverride).toBeUndefined();
     });
   });
 

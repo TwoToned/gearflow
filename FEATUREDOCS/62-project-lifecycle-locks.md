@@ -62,7 +62,7 @@ fields server-side (never trusting the client to skip its own autofill).
 
 | Entity | Fields |
 |---|---|
-| Project | `taxRate`, `discountPercent`, `depositPercent`, `depositPaid`, `invoicedTotal` |
+| Project | `taxRate`, `discountPercent` (#940 WS1: `depositPercent` moved to the client payment profile; `depositPaid`/`invoicedTotal` moved to recalc-owned/derived — none of the three are on this locked-input list anymore, see FEATUREDOCS/10 and FEATUREDOCS/66) |
 | Group | `price`, `discount`, `rentalPeriod`, `rentalQuantity` |
 | Line item | `unitPrice`, `discount`, `duration` |
 | Service | `costTotal` (manual, crew-less only — a crew-attached service's cost keeps auto-deriving from the crew rate table, issue #796), `billableToClient` |

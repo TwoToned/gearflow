@@ -64,13 +64,16 @@ retired). Routes:
   are normalised to the form's `yyyy-MM-dd` shape via `normalizeDate`, times stay
   `HH:mm`. Existing project managers seed `managerIds`.
 - One edit-only field appears that create mode hides: **Status** (basics step).
-  The **Financial** block (site step, `isEditing`-gated) still holds deposit %,
-  deposit paid, invoiced total — these carry the parity that the old flat edit
-  form had, and are currently hand-typed inputs applied nowhere server-side
-  (RESERVED for #940 / WS1, see the schema.ts + wizard reservation comments; do
-  not wire deposit math without that issue). **Discount (%)** moved out of that
-  block (QW-4 / #953) to the basics step, always visible in both create and edit
-  mode, right after the Client picker — see "Discount default cascade" below.
+  The wizard's old "Financial" block (site step, hand-typed Deposit %/Deposit
+  paid/Invoiced total inputs with no server-side math) is **REMOVED** as of
+  #940 (WS1 — finance model): deposit % now lives on the **client payment
+  profile** (client detail page — `paymentProfile`/`profileDepositPercent`,
+  see [FEATUREDOCS/66-finance-quotes-invoices-xero.md](./66-finance-quotes-invoices-xero.md)),
+  and deposit-paid/invoiced-total are derived from the project's real
+  Quote/Invoice rows (Project page → Finance tab), never hand-typed here.
+  **Discount (%)** moved out of that block (QW-4 / #953) to the basics step,
+  always visible in both create and edit mode, right after the Client
+  picker — see "Discount default cascade" below.
 - Submit calls `updateProject(id, data)` and **reconciles managers** by diffing
   the initial set vs the selected set (`addProjectManager`/`removeProjectManager`
   on the delta only — no dupes, no accidental removals), then routes to
@@ -272,15 +275,23 @@ the same weekly-scale behaviour `rentalPeriod === "WEEKLY"` used to.
 
 ### Finance soft-lock (#957 — see FEATUREDOCS/62-project-lifecycle-locks.md)
 Once a project is FINANCE_LOCKED+ (CONFIRMED and later), the fields that feed the
-formula above — `taxRate`/`discountPercent`/`depositPercent`/`depositPaid`/
-`invoicedTotal` on the project, `price`/`discount`/`rentalPeriod`/`rentalQuantity`
-on a group, `unitPrice`/`discount`/`duration` on a line item, a crew-less
+formula above — `taxRate`/`discountPercent` on the project,
+`price`/`discount`/`rentalPeriod`/`rentalQuantity` on a group,
+`unitPrice`/`discount`/`duration` on a line item, a crew-less
 service's `costTotal`, and crew assignment rate/hours overrides — are rejected
 server-side (`FINANCIALS_LOCKED`) unless an unlock session is open. `recalcProjectTotals`
 itself is never gated — it only ever reads these fields, never sets them, so
 totals stay live on a locked project. New adds while locked default their price
 to $0 instead of the normal autofill (an "Unpriced" badge marks them) — this is
 server-enforced, not just a client suggestion.
+
+**#940 (WS1 — finance model) update:** `depositPercent`/`depositPaid`/
+`invoicedTotal` are OFF this list as of #940 — `depositPercent` moved to the
+client payment profile (not a project field anymore); `depositPaid`/
+`invoicedTotal` moved from "locked input" to recalc-OWNED (derived from the
+project's ISSUED invoices, same treatment as `equipmentRevenue`/`total`/
+`margin` — never client-writable at any lock tier, not just gated by one).
+See [FEATUREDOCS/66-finance-quotes-invoices-xero.md](./66-finance-quotes-invoices-xero.md).
 
 ## Categories (`ProjectCategory`)
 - Top-level organiser for equipment (e.g. "RF", "IEM", "PA")

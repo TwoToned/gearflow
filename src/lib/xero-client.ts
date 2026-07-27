@@ -65,14 +65,24 @@ export function buildXeroAuthorizeUrl(opts: {
   redirectUri: string;
   state: string;
 }): string {
-  const params = new URLSearchParams({
+  // NOT URLSearchParams: its application/x-www-form-urlencoded encoding turns
+  // the space-separated `scope` list into `+`-joined tokens
+  // (openid+profile+email+...). Xero's /authorize endpoint parses the query
+  // string strictly and never decodes `+` back to a space, so it sees one
+  // unrecognized scope blob and rejects the whole request with
+  // `invalid_scope`. encodeURIComponent percent-encodes a space as `%20`,
+  // which Xero decodes correctly.
+  const params: Record<string, string> = {
     response_type: "code",
     client_id: opts.clientId,
     redirect_uri: opts.redirectUri,
     scope: XERO_OAUTH_SCOPES.join(" "),
     state: opts.state,
-  });
-  return `${AUTHORIZE_BASE}?${params.toString()}`;
+  };
+  const query = Object.entries(params)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join("&");
+  return `${AUTHORIZE_BASE}?${query}`;
 }
 
 const tokenResponseSchema = z.object({

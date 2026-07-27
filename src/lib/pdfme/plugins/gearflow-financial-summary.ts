@@ -27,21 +27,26 @@ async function pdfRender(arg: PDFRenderProps<FinancialSummarySchema>) {
   const blockWidth = 200;
   const blockX = x + width - blockWidth;
 
-  let currentY = y + height;
+  // Top padding — extra separation between the table above and the first
+  // totals row (the two blocks otherwise sit right on top of each other).
+  let currentY = y + height - 10;
   const rowHeight = 14;
 
   function drawRow(label: string, value: string, opts?: { bold?: boolean; divider?: boolean; fontSize?: number }) {
     const fontSize = opts?.fontSize || 9;
 
     if (opts?.divider) {
-      // Draw divider line
+      // Draw the divider line clear of both the row above (spacing before)
+      // and this row's own text (spacing after, sized for the bold total's
+      // ascent) so it never strikes through either.
+      currentY -= 6;
       page.drawLine({
-        start: { x: blockX, y: currentY + 2 },
-        end: { x: blockX + blockWidth, y: currentY + 2 },
+        start: { x: blockX, y: currentY },
+        end: { x: blockX + blockWidth, y: currentY },
         thickness: 1,
         color: docColor,
       });
-      currentY -= 4;
+      currentY -= 10;
     }
 
     // Label

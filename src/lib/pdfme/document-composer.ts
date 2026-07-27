@@ -309,7 +309,11 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
     }
 
     case "totals":
-      return 25;
+      // 25 (base) + ~9mm for the top padding + wider divider clearance
+      // added in gearflow-financial-summary.ts (issue: totals block sat
+      // right on top of the table, and the Total divider overlapped its
+      // own text).
+      return 34;
 
     case "clientNotes":
       return data.client_notes ? 12 : 4;

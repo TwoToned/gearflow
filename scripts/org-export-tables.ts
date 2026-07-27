@@ -54,6 +54,7 @@ export const DIRECT_TABLES = [
   "groupTemplateItems",
   "groupTemplates",
   "invitations",
+  "invoices",
   "kitBulkItems",
   "kitCheckItems",
   "kitMedia",
@@ -87,6 +88,7 @@ export const DIRECT_TABLES = [
   "projectSnapshots",
   "projectTasks",
   "projectUnlockSessions",
+  "quotes",
   "savedTableViews",
   "serviceSchedules",
   "serviceTemplates",
@@ -106,6 +108,9 @@ export const DIRECT_TABLES = [
   "webhooks",
   "wooCommerceIntegrations",
   "wooCommerceOrderLogs",
+  // WS1 (#940) — Xero integration config + audit log.
+  "xeroIntegrations",
+  "xeroSyncLogs",
 ] as const;
 
 /** Tables with an org column but no `by_organizationId` index → filtered scan. */
@@ -129,6 +134,9 @@ export const PARENT_JOIN = [
   { table: "maintenanceRecordAssets", parentTable: "maintenanceRecords", index: "by_maintenanceRecordId", field: "maintenanceRecordId" },
   { table: "subTestRecords", parentTable: "testTagRecords", index: "by_testTagRecordId", field: "testTagRecordId" },
   { table: "categorySlots", parentTable: "projectCategories", index: "by_projectCategoryId", field: "projectCategoryId" },
+  // WS1 (#940) — invoiceLines has no organizationId column by design (joined
+  // via invoiceId into an already org-scoped `invoices` row).
+  { table: "invoiceLines", parentTable: "invoices", index: "by_invoiceId", field: "invoiceId" },
 ] as const;
 
 /** Excluded with reason. `organizations` handled separately as `orgRow`. */
@@ -174,7 +182,8 @@ export const EXCLUDED_TABLES: string[] = [
 /** Full classified set — the coverage guard asserts this equals the schema. */
 export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABLES];
 
-export const EXPECTED_TABLE_COUNT = 104;
+// WS1 (#940): +5 — quotes, invoices, invoiceLines, xeroIntegrations, xeroSyncLogs.
+export const EXPECTED_TABLE_COUNT = 109;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

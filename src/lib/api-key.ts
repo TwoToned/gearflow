@@ -2,7 +2,16 @@ import { createHash, randomBytes } from "crypto";
 import { prisma } from "./prisma";
 import { getConvexClient } from "./convex-client";
 import { api } from "../../convex/_generated/api";
+import { hasScope, isScopeGranted, parseScopes } from "../../convex/lib/scopes";
 import type { ActorContext } from "./actor-types";
+
+// The scope grant algebra lives in `convex/lib/scopes.ts` — ONE implementation
+// shared with the Convex-side `requireAgentScope` guard, which is the load-bearing
+// check (it runs inside the mutation transaction, so it can't be bypassed by
+// calling Convex directly). Re-exported here so existing `@/lib/api-key` importers
+// don't move; do NOT re-declare these (R-3.1, same cross-boundary pattern as
+// `permissionsCore`).
+export { hasScope, isScopeGranted, parseScopes };
 
 /**
  * API-key auth for the agent-accessible API + MCP layer.
@@ -72,32 +81,6 @@ export function generateApiKey(): {
   return { raw, prefix, tokenHash: hashApiKey(raw) };
 }
 
-/** Parse the stored `scopes` JSON string into a string[] (never throws). */
-export function parseScopes(scopesJson: string): string[] {
-  try {
-    const parsed = JSON.parse(scopesJson);
-    return Array.isArray(parsed) ? parsed.filter((s) => typeof s === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Does this scope set grant `resource:action`? Supports `*` (all), `resource:*`
- * (all actions on a resource), and exact `resource:action`.
- */
-export function hasScope(
-  scopes: readonly string[],
-  resource: string,
-  action: string,
-): boolean {
-  return (
-    scopes.includes("*") ||
-    scopes.includes(`${resource}:*`) ||
-    scopes.includes(`${resource}:${action}`)
-  );
-}
-
 /**
  * Enforce the KEY-SCOPE half of the intersection. Throws `ApiKeyAuthError` with
  * `MISSING_SCOPE` if the key's scopes don't cover `resource:action`. The RBAC half
@@ -118,20 +101,6 @@ export function requireApiScope(
       `${resource}:${action}`,
     );
   }
-}
-
-/**
- * Does `granting` cover the whole of `scope`? Unlike {@link hasScope} (which asks
- * about one concrete `resource:action`), this compares a scope STRING that may
- * itself be a wildcard — so `"*"` is only granted by `"*"`, and `"asset:*"` needs
- * `"*"` or `"asset:*"`. A malformed scope is never granted.
- */
-export function isScopeGranted(granting: readonly string[], scope: string): boolean {
-  if (granting.includes("*")) return true;
-  if (scope === "*") return false; // only a `*` holder can grant `*`
-  const [resource, action, ...rest] = scope.split(":");
-  if (!resource || !action || rest.length) return false;
-  return hasScope(granting, resource, action);
 }
 
 /**

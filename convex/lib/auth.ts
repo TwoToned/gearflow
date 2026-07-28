@@ -444,6 +444,11 @@ export async function requireOrgPermission(
  * own authorization. A user token re-queries the member row (NOT the JWT's `role`
  * claim, which can be stale after a demotion) — same lookup `requireOrgPermission`
  * uses, so the two can never disagree.
+ *
+ * Deliberately does NOT consider the `noFinancials` key flag — that's an
+ * orthogonal, AGENT-ONLY override (see {@link isNoFinancialsAgent}): "the key
+ * acts as a human" still holds for RBAC standing, `noFinancials` just forces a
+ * redaction on top regardless of what standing comes back.
  */
 export async function isCallerManagerPlus(
   ctx: QueryCtx | MutationCtx,
@@ -451,14 +456,35 @@ export async function isCallerManagerPlus(
 ): Promise<boolean> {
   const auth = await getAuthContext(ctx);
   if (auth?.kind === "service") return true;
-  // An agent inherits the acting user's standing — "the key acts as a human".
-  // (Field-level suppression for keys flagged `noFinancials` is Phase 4.)
   if (!isMemberAuth(auth) || auth.orgId !== orgId) return false;
   const row = await ctx.db
     .query("members")
     .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", auth.userId))
     .first();
   return isManagerPlusRole(row?.role ?? null);
+}
+
+/**
+ * Phase 4 (#1000, decision 6): does the CURRENT caller's API key have
+ * `noFinancials` set? Always `false` for non-agent callers (service/user tokens
+ * have no key to check). Re-reads the key row every call — same "the key doc is
+ * in the transaction's read set" freshness `requireAgentScope` relies on, so
+ * toggling the flag off takes effect on the very next call.
+ *
+ * Callers combine this with their own manager+/role check: cost-and-margin
+ * visibility stays gated on role as it is today, and `noFinancials` additionally
+ * forces the redaction closed for THIS caller regardless of what the role check
+ * returns — "the key acts as a human" for RBAC standing, but never for financial
+ * field visibility once this flag is set.
+ */
+export async function isNoFinancialsAgent(ctx: DbCtx): Promise<boolean> {
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind !== "agent") return false;
+  const key = await ctx.db
+    .query("apiKeys")
+    .withIndex("by_cuid", (q) => q.eq("id", auth.apiKeyId))
+    .first();
+  return key?.noFinancials === true;
 }
 
 // ─── Actor identity (Phase 3 — browser-direct security baseline) ────────────

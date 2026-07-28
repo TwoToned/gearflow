@@ -1,6 +1,6 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, isNoFinancialsAgent } from "./lib/auth";
 
 /**
  * Operational P&L for a project (Phase 3 browser-direct — replaces the
@@ -54,6 +54,16 @@ export const operationalCosts = query({
   returns: v.object(costsShape),
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgPermission(ctx, orgId, "project", "read");
+    // Phase 4 (#1000, decision 6): this query IS a cost/margin breakdown end to
+    // end — there's no non-financial subset of its `costsShape` returns
+    // validator to redact fields out of, so a `noFinancials` key gets a clear
+    // rejection rather than a payload of zeros that could be misread as "no cost".
+    if (await isNoFinancialsAgent(ctx)) {
+      throw new ConvexError({
+        code: "FINANCIALS_REDACTED",
+        message: "This API key has `no_financials` set; cost/margin data is not available to it.",
+      });
+    }
 
     const project = await ctx.db
       .query("projects")

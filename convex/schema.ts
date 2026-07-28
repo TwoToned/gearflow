@@ -209,6 +209,11 @@ export default defineSchema({
     lastRotatedAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
+    // Phase 4 (#1000, decision 6): force-redacts cost/margin field families on
+    // every read this key makes, regardless of the acting user's role — see
+    // `convex/lib/auth.ts` `isNoFinancialsAgent`. Absent/false = unchanged
+    // behaviour (visibility still follows the acting user's role).
+    noFinancials: v.optional(v.boolean()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])

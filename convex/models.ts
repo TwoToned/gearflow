@@ -1,7 +1,13 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService, isNoFinancialsAgent, redactFields } from "./lib/auth";
 import * as enums from "./lib/validators";
+
+/** Phase 4 (#1000, decision 6): what the org paid for / would pay to replace a
+ *  unit — cost data, distinct from the model's own RENTAL rates (`dailyRate`
+ *  etc.), which are the sell price an agent needs to operate (quoting/booking)
+ *  and stay visible regardless of the `noFinancials` flag. */
+const MODEL_COST_FIELDS = ["replacementCost", "defaultPurchasePrice"] as const;
 
 /**
  * Thin CRUD for Model (Convex table "models"). GENERATED — Phase 2/5.
@@ -17,10 +23,12 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const rows = await ctx.db
       .query("models")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large — see docs/exceptions.md R-8.3.3
       .collect();
+    if (!(await isNoFinancialsAgent(ctx))) return rows;
+    return rows.map((r) => redactFields(r, MODEL_COST_FIELDS));
   },
 });
 
@@ -29,7 +37,8 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "model"); // Phase 2 read bootstrap (#998)
-    return doc;
+    if (!doc || !(await isNoFinancialsAgent(ctx))) return doc;
+    return redactFields(doc, MODEL_COST_FIELDS);
   },
 });
 
@@ -202,7 +211,7 @@ export const detail = query({
       });
     }
 
-    return {
+    const composite = {
       ...model,
       images: model.images ?? [],
       manuals: model.manuals ?? [],
@@ -216,6 +225,7 @@ export const detail = query({
       media,
       bulkAccessories,
     };
+    return (await isNoFinancialsAgent(ctx)) ? redactFields(composite, MODEL_COST_FIELDS) : composite;
   },
 });
 

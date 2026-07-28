@@ -220,6 +220,19 @@ const CODE_SPECS: Record<string, CodeSpec> = {
       hint: "Show the summary to a human, then re-send the identical call with `confirm: true`.",
     },
   },
+  // Phase 4 (#1000, decision 6) — a `noFinancials` key asked for a query whose
+  // ENTIRE payload is cost/margin data (no non-financial subset to redact
+  // fields out of), so the read is rejected outright rather than returned
+  // half-populated.
+  FINANCIALS_REDACTED: {
+    category: "permission",
+    retryable: false,
+    status: 403,
+    recovery: {
+      action: "use_different_key",
+      hint: "This API key has `no_financials` set. Use a key without that flag to read cost/margin data.",
+    },
+  },
 
   // ── validation ────────────────────────────────────────────────────────────
   INVALID_NUMBER: {

@@ -2,10 +2,29 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService, isNoFinancialsAgent, redactFields } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
+
+/** Phase 4 (#1000, decision 6): what the org pays this assignment/its crew
+ *  member — cost data, distinct from client-facing service pricing. */
+const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
+const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
+const ROLE_RATE_FIELDS = ["defaultRate"] as const;
+
+/** `projectCrew`'s enriched row nests cost fields inside `crewMember`/`crewRole`
+ *  too, so a top-level-only `redactFields` would miss them. */
+function redactAssignmentCost<
+  T extends { crewMember?: Record<string, unknown> | null; crewRole?: Record<string, unknown> | null },
+>(row: T): T {
+  const stripped = redactFields(row as unknown as Record<string, unknown>, ASSIGNMENT_COST_FIELDS);
+  return {
+    ...stripped,
+    crewMember: row.crewMember ? redactFields(row.crewMember, MEMBER_RATE_FIELDS) : row.crewMember,
+    crewRole: row.crewRole ? redactFields(row.crewRole, ROLE_RATE_FIELDS) : row.crewRole,
+  } as T;
+}
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -90,7 +109,7 @@ export const projectCrew = query({
         confirmedBy,
       });
     }
-    return out;
+    return (await isNoFinancialsAgent(ctx)) ? out.map(redactAssignmentCost) : out;
   },
 });
 
@@ -263,10 +282,12 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const rows = await ctx.db
       .query("crewAssignments")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
+    if (!(await isNoFinancialsAgent(ctx))) return rows;
+    return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
   },
 });
 
@@ -275,7 +296,8 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
-    return doc;
+    if (!doc || !(await isNoFinancialsAgent(ctx))) return doc;
+    return redactFields(doc, ASSIGNMENT_COST_FIELDS);
   },
 });
 
@@ -284,10 +306,12 @@ export const listByProject = query({
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
-    return (await ctx.db
+    const rows = (await ctx.db
       .query("crewAssignments")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect()).filter((r) => r.organizationId === orgId);
+    if (!(await isNoFinancialsAgent(ctx))) return rows;
+    return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
   },
 });
 

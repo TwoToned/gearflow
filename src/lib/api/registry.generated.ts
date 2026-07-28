@@ -30114,7 +30114,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f3456c860a78207",
-    "returnsSha": "d8256f5e1e3ca1ff"
+    "returnsSha": "9deebb65ff588551"
   },
   {
     "operation": "projectManagers.applyDiff",

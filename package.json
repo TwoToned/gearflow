@@ -28,6 +28,8 @@
     "api:registry": "tsx scripts/generate-api-registry.mts",
     "api:registry:check": "tsx scripts/generate-api-registry.mts --check",
     "api:registry:spec": "tsx scripts/check-api-registry-spec.mts",
+    "api:docs": "tsx scripts/generate-api-docs.mts",
+    "api:docs:check": "tsx scripts/generate-api-docs.mts --check",
     "seed": "tsx --env-file=.env prisma/seed.ts",
     "convex:schema": "node scripts/generate-convex-schema.cjs .",
     "convex:crud": "node scripts/generate-convex-crud.cjs .",

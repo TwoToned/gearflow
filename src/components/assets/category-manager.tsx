@@ -14,6 +14,7 @@ import { useCategories } from "@/hooks/use-categories";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { TagInput } from "@/components/ui/tag-input";
+import { XeroAccountCodeField } from "@/components/settings/xero-coding-fields";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { Input } from "@/components/ui/input";
@@ -124,6 +125,7 @@ export function CategoryManager() {
       icon: cat.icon || "",
       sortOrder: cat.sortOrder ?? 0,
       tags: cat.tags ?? [],
+      xeroAccountCode: cat.xeroAccountCode || "",
     });
     setDialogOpen(true);
   }
@@ -201,6 +203,19 @@ export function CategoryManager() {
                 <Label htmlFor="cat-sort">Sort order</Label>
                 <Input id="cat-sort" type="number" {...form.register("sortOrder")} className="w-24" />
               </div>
+              <Controller
+                name="xeroAccountCode"
+                control={form.control}
+                render={({ field }) => (
+                  <XeroAccountCodeField
+                    value={field.value}
+                    onChange={field.onChange}
+                    label="Xero account"
+                    placeholder="Inherit org default"
+                    helpText="Applied to every model/kit under this category unless overridden."
+                  />
+                )}
+              />
               {parentId && (
                 <p className="text-caption text-muted">
                   Subcategory of: {categories.find((c) => c.id === parentId)?.name}

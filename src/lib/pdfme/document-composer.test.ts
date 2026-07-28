@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { PDFDocument } from "@pdfme/pdf-lib";
 import * as pdfLib from "@pdfme/pdf-lib";
 import { mm2pt } from "@pdfme/common";
-import { composeDocument, type ComposeResult } from "./document-composer";
+import { composeDocument, calculateItemHeight, type ComposeResult } from "./document-composer";
 import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
 import { CONTENT_WIDTH } from "./template-constants";
 import { makeLineItem, runTablePlugin } from "./plugins/test-utils";
@@ -345,9 +345,15 @@ describe("composeDocument — org document settings (footer, T&Cs, quote validit
     expect(hasTermsSchema).toBe(false);
   });
 
-  it("renders the T&Cs block when the org has set terms", () => {
+  it("renders the T&Cs block when the org has set terms (on its own forced-new page)", () => {
     const result = composeDocument("quote", soloData({ quote_terms_and_conditions: "All sales final." }), "#0d4f4f");
-    const termsSchema = result.template.schemas[0].find((s) => String(s.name).startsWith("termsAndConditions"))!;
+    // termsAndConditions.forceNewPage means it never shares page 0 with the
+    // table/totals/notes above it — it's on a later page.
+    const termsPageIdx = result.template.schemas.findIndex((pageSchemas) =>
+      pageSchemas.some((s) => String(s.name).startsWith("termsAndConditions")),
+    );
+    expect(termsPageIdx).toBeGreaterThan(0);
+    const termsSchema = result.template.schemas[termsPageIdx].find((s) => String(s.name).startsWith("termsAndConditions"))!;
     expect(termsSchema).toBeDefined();
     expect(result.inputs[0][termsSchema.name as string]).toBe("All sales final.");
   });
@@ -481,7 +487,9 @@ describe("composeDocument — quote content audit (#790 Phase 4)", () => {
     const clientNotesSchema = pageSchemas.find((s) => (s.name as string).startsWith("clientNotes_"))!;
     expect(clientNotesSchema.type).toBe("gearflowRichText");
 
-    const tcSchema = pageSchemas.find((s) => (s.name as string).startsWith("termsAndConditions_"))!;
+    // termsAndConditions.forceNewPage means it's on a later page, not page 0.
+    const allSchemas = result.template.schemas.flat();
+    const tcSchema = allSchemas.find((s) => (s.name as string).startsWith("termsAndConditions_"))!;
     expect(tcSchema.type).toBe("gearflowRichText");
   });
 
@@ -772,5 +780,117 @@ describe("composeDocument — accurate rich-text pagination (fonts provided)", (
     );
     // Exactly one schema — never split when fonts weren't provided.
     expect(tcEntries).toHaveLength(1);
+  });
+});
+
+describe("composeDocument — termsAndConditions.forceNewPage", () => {
+  it("T&Cs never shares a page with the table/totals/notes above it, even when there's room left", () => {
+    // A short document — table + totals + a short T&Cs block would easily
+    // all fit on one page without forceNewPage.
+    const result = composeDocument(
+      "quote",
+      makeData({
+        line_items: [makeLineItem({ id: "a", status: "CONFIRMED", model: { name: "USB Pro DI" }, unitPrice: 20, lineTotal: 20 })],
+        quote_terms_and_conditions: "Standard terms apply.",
+      }),
+      "#0d4f4f",
+    );
+
+    const tableSchema = result.template.schemas[0].find((s) => s.type === "gearflowTable");
+    expect(tableSchema).toBeDefined(); // table is on page 0, as expected
+
+    const tcPageIdx = result.template.schemas.findIndex((pageSchemas) =>
+      pageSchemas.some((s) => String(s.name).startsWith("termsAndConditions")),
+    );
+    expect(tcPageIdx).toBeGreaterThan(0);
+    // Nothing else shares that page with T&Cs (it's the whole page's content).
+    const tcPageKinds = result.template.schemas[tcPageIdx].map((s) => s.type);
+    expect(tcPageKinds.filter((t) => t !== "gearflowPageHeader" && t !== "gearflowPageFooter")).toEqual(["gearflowRichText"]);
+  });
+
+  it("doesn't waste a blank leading page when T&Cs is already first on a fresh page", () => {
+    // A table so long it already forces its own continuation page; T&Cs
+    // then naturally starts fresh right after — forceNewPage shouldn't add
+    // an EXTRA blank page on top of that.
+    const items = makeLongLineItemList(60);
+    const result = composeDocument(
+      "quote",
+      makeData({ line_items: items, quote_terms_and_conditions: "Standard terms apply." }),
+      "#0d4f4f",
+    );
+    const tcPageIdx = result.template.schemas.findIndex((pageSchemas) =>
+      pageSchemas.some((s) => String(s.name).startsWith("termsAndConditions")),
+    );
+    const tcPageKinds = result.template.schemas[tcPageIdx].map((s) => s.type);
+    // The T&Cs page has no OTHER content block (table/totals) sharing it —
+    // proof forceNewPage fired — without an extra blank page before it.
+    expect(tcPageKinds).not.toContain("gearflowTable");
+    expect(tcPageKinds).not.toContain("gearflowFinancialSummary");
+  });
+});
+
+// ─── Sub-hire "via <Supplier>" line height (tail-drop regression) ────────────
+//
+// Real bug: calculateItemHeight (the pagination estimate) had no case for
+// the "via <Supplier>" line gearflow-table.ts always draws under a sub-hire
+// item's description — every sub-hire row's real rendered height silently
+// exceeded what was reserved. On a quote with many sub-hire lines (a normal
+// shape — most of a production's gear is commonly hired in from suppliers)
+// this compounds: document-composer.ts believes more items fit on page 1
+// than actually do, the table's own render-time overflow guard then quietly
+// stops mid-page, and since no continuation page was ever scheduled for the
+// table, everything after that point — potentially entire trailing
+// categories — is silently dropped from the PDF while still counted in the
+// (independently-computed) subtotal.
+describe("calculateItemHeight — sub-hire 'via Supplier' line (tail-drop regression)", () => {
+  function quoteTableConfig() {
+    const block = DOCUMENT_LAYOUTS.quote.blocks.find((b) => b.kind === "table");
+    if (block?.kind !== "table") throw new Error("quote layout has no table block");
+    return block.config;
+  }
+
+  it("reserves extra height for a sub-hire item with a supplier name", () => {
+    const config = quoteTableConfig();
+    const plain = makeLineItem({ id: "a", model: { name: "GrandMA 3 Console" } });
+    const subHire = makeLineItem({
+      id: "b",
+      model: { name: "GrandMA 3 Console" },
+      subHireId: "sh-1",
+      supplierName: "Resolution X",
+    });
+    expect(calculateItemHeight(subHire, config)).toBeGreaterThan(calculateItemHeight(plain, config));
+  });
+
+  it("full pipeline: a quote with many sub-hire lines across several categories paginates with no tail-drop", () => {
+    // Mirrors the real reported shape: several categories, most rows are
+    // sub-hire ("via <Supplier>"), long enough to force the table across
+    // multiple pages.
+    const suppliers = ["Resolution X", "Madzin Productions"];
+    const categoryNames = ["Power Distribution", "Site", "Audio", "Lighting", "Staging"];
+    const items: DocumentLineItem[] = [];
+    let i = 0;
+    for (const cat of categoryNames) {
+      for (let n = 0; n < 6; n++) {
+        items.push(
+          makeLineItem({
+            id: `li-${i}`,
+            status: "CONFIRMED",
+            categoryName: cat,
+            groupName: cat,
+            model: { name: `${cat} Item ${n}` },
+            unitPrice: 100 + i,
+            lineTotal: 100 + i,
+            subHireId: n % 2 === 0 ? `sh-${i}` : null,
+            supplierName: n % 2 === 0 ? suppliers[i % suppliers.length] : null,
+          }),
+        );
+        i++;
+      }
+    }
+
+    const data = makeData({ line_items: items, subtotal: items.reduce((s, li) => s + (li.lineTotal ?? 0), 0) });
+    const result = composeDocument("quote", data, "#0d4f4f");
+
+    assertFullCoverage(result, items.length);
   });
 });

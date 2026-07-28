@@ -159,6 +159,14 @@ function buildOpenApiDocument(ops: RegistryOperation[]): JsonSchema {
     paths[`/api/v1/ops/${op.operation}`] = operationPath(op);
   }
 
+  // Sort keys before serializing — belt-and-braces determinism. `ops` is
+  // already registry-order (itself fixed by the committed registry file), so
+  // this shouldn't change anything in practice; it just makes "the same
+  // operation set always serializes identically" a property of the object
+  // itself rather than of insertion order alone.
+  const sortedPaths: Record<string, JsonSchema> = {};
+  for (const key of Object.keys(paths).sort()) sortedPaths[key] = paths[key];
+
   return {
     openapi: "3.1.0",
     info: {
@@ -203,7 +211,7 @@ function buildOpenApiDocument(ops: RegistryOperation[]): JsonSchema {
         },
       },
     },
-    paths,
+    paths: sortedPaths,
   };
 }
 

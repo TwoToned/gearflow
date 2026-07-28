@@ -82,59 +82,85 @@ function splitSetClear(rawSet: unknown, existingClear: unknown): { set: Record<s
   return { set, clear: [...new Set(clear)] };
 }
 
+function requireIdempotencyKey(ctx: NormalizeContext, reason: string): string {
+  if (!ctx.idempotencyKey) {
+    throw new Error(`${ctx.operation}: idempotencyKey is required (${reason}).`);
+  }
+  return ctx.idempotencyKey;
+}
+
+function applyActor(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (!ctx.argNames.has("actor")) return;
+  args.actor = { userId: ctx.actor.userId, userName: ctx.actor.userName };
+}
+
+function applyAuditId(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (!ctx.argNames.has("auditId")) return;
+  const key = requireIdempotencyKey(ctx, "this write is audited");
+  args.auditId = deriveWriteIds(key, ctx.operation).auditId;
+}
+
+function applyCreateId(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (!ctx.argNames.has("id") || !isCreateShapedFn(ctx.fn)) return;
+  const key = requireIdempotencyKey(ctx, "this operation creates a row");
+  args.id = deriveWriteIds(key, ctx.operation).id;
+}
+
+function applyNow(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (!ctx.argNames.has("now")) return;
+  args.now = ctx.nowMs;
+}
+
+function applyEmitSideEffects(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (!ctx.argNames.has("emitSideEffects")) return;
+  args.emitSideEffects = true;
+}
+
+function applyAllowOverbook(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (!ctx.argNames.has("allowOverbook")) return;
+  const requested = args.allowOverbook === true;
+  args.allowOverbook = requested && ctx.hasScope("project", "allow_overbook");
+}
+
+function applySetClear(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (!ctx.argNames.has("set") || !ctx.argNames.has("clear")) return;
+  const { set, clear } = splitSetClear(args.set, args.clear);
+  args.set = set;
+  args.clear = clear;
+}
+
+/**
+ * orgId/organizationId: injected from the key's org, NEVER read from the
+ * caller's body (R-9.3) — overwritten unconditionally, not merely defaulted,
+ * so a caller naming another org's id gets its OWN org's data, not a leak.
+ */
+function applyOrg(args: Record<string, unknown>, ctx: NormalizeContext): void {
+  if (ctx.argNames.has("orgId")) args.orgId = ctx.organizationId;
+  if (ctx.argNames.has("organizationId")) args.organizationId = ctx.organizationId;
+}
+
+const NORMALIZE_STEPS = [
+  applyActor,
+  applyAuditId,
+  applyCreateId,
+  applyNow,
+  applyEmitSideEffects,
+  applyAllowOverbook,
+  applySetClear,
+  applyOrg,
+];
+
 /**
  * Apply the arg normalizer to one operation call. `rawArgs` is exactly what the
  * agent sent (already Zod-validated against the business schema, where one
  * exists); the return value is what gets passed to the Convex function —
  * server-owned fields injected/overwritten, `set`/`clear` split, `allowOverbook`
- * forced closed absent the scope.
+ * forced closed absent the scope. Each rule from the design's §8 table is its
+ * own `apply*` step above, run in sequence — keeps this function itself a flat
+ * pipeline rather than one long conditional chain (R-3.6).
  */
 export function normalizeArgs(rawArgs: Record<string, unknown>, ctx: NormalizeContext): Record<string, unknown> {
   const args: Record<string, unknown> = { ...rawArgs };
-  const { argNames } = ctx;
-
-  if (argNames.has("actor")) {
-    args.actor = { userId: ctx.actor.userId, userName: ctx.actor.userName };
-  }
-
-  if (argNames.has("auditId")) {
-    if (!ctx.idempotencyKey) {
-      throw new Error(`${ctx.operation}: idempotencyKey is required (this write is audited).`);
-    }
-    args.auditId = deriveWriteIds(ctx.idempotencyKey, ctx.operation).auditId;
-  }
-
-  if (argNames.has("id") && isCreateShapedFn(ctx.fn)) {
-    if (!ctx.idempotencyKey) {
-      throw new Error(`${ctx.operation}: idempotencyKey is required (this operation creates a row).`);
-    }
-    args.id = deriveWriteIds(ctx.idempotencyKey, ctx.operation).id;
-  }
-
-  if (argNames.has("now")) {
-    args.now = ctx.nowMs;
-  }
-
-  if (argNames.has("emitSideEffects")) {
-    args.emitSideEffects = true;
-  }
-
-  if (argNames.has("allowOverbook")) {
-    const requested = args.allowOverbook === true;
-    args.allowOverbook = requested && ctx.hasScope("project", "allow_overbook");
-  }
-
-  if (argNames.has("set") && argNames.has("clear")) {
-    const { set, clear } = splitSetClear(args.set, args.clear);
-    args.set = set;
-    args.clear = clear;
-  }
-
-  // orgId/organizationId: injected from the key's org, NEVER read from the
-  // caller's body (R-9.3) — overwritten unconditionally, not merely defaulted,
-  // so a caller naming another org's id gets its OWN org's data, not a leak.
-  if (argNames.has("orgId")) args.orgId = ctx.organizationId;
-  if (argNames.has("organizationId")) args.organizationId = ctx.organizationId;
-
+  for (const step of NORMALIZE_STEPS) step(args, ctx);
   return args;
 }

@@ -12,7 +12,9 @@ import { LOCKED_GROUP_FIELDS, LOCKED_LINE_ITEM_FIELDS, LOCKED_PROJECT_FIELDS, LO
  * queryable join instead of a client-side JSON walk.
  */
 
-export type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK";
+/** #986 added QUOTE_SENT — the frozen entity state for a quote revision, taken by
+ *  `quotesWrites.sendNative`. It is the only reason that carries a `revision`. */
+export type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT";
 export type SnapshotEntityType = "project" | "category" | "group" | "lineItem" | "service" | "crewAssignment";
 export type UnlockScope = "FINANCIAL" | "FULL";
 
@@ -71,6 +73,10 @@ export interface CaptureSnapshotArgs {
   orgId: string;
   project: Doc<"projects">;
   reason: SnapshotReason;
+  /** The `projects.revision` this snapshot freezes. Set for QUOTE_SENT so the
+   *  quote row and its snapshot share one number; omitted for the status-driven
+   *  reasons, which aren't revision-scoped. */
+  revision?: number;
   statusFrom?: string;
   statusTo?: string;
   actor: { userId: string; userName: string };
@@ -81,7 +87,7 @@ export interface CaptureSnapshotArgs {
  *  assignments as one versioned snapshot. Returns the new snapshotId. Never
  *  overwrites a prior snapshot — every capture is a new row (versioned list). */
 export async function captureProjectSnapshot(ctx: MutationCtx, args: CaptureSnapshotArgs): Promise<string> {
-  const { orgId, project, reason, statusFrom, statusTo, actor, now } = args;
+  const { orgId, project, reason, revision, statusFrom, statusTo, actor, now } = args;
   const snapshotId = createId();
 
   await ctx.db.insert("projectSnapshots", {
@@ -89,6 +95,7 @@ export async function captureProjectSnapshot(ctx: MutationCtx, args: CaptureSnap
     organizationId: orgId,
     projectId: project.id,
     reason,
+    revision,
     takenAt: now,
     takenBy: actor.userId,
     takenByName: actor.userName,

@@ -70,6 +70,15 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeMyOpenTasks: () => [TASK],
   // WS3 #942 — nonzero so the overbooking-chip test below has something to render.
   useNativeOverbookingCounts: () => ({ hardCount: 2, pencilledCount: 1, saleStockCount: 3 }),
+  // #992 (Phase F) — zeroed so it doesn't add unexpected chips to this test's assertions.
+  useNativeOrgFinanceCounts: () => ({
+    quotesOutCount: 0,
+    expiringCount: 0,
+    neverSentCount: 0,
+    confirmedUninvoicedCount: 0,
+    depositDueCount: 0,
+    outstandingCount: 0,
+  }),
 }));
 
 import DashboardPage from "../page";

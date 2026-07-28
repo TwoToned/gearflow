@@ -165,6 +165,29 @@ export function useNativeOverbookingCounts(orgId: string | undefined): NativeOve
   ) as NativeOverbookingCounts | undefined;
 }
 
+export interface NativeOrgFinanceCounts {
+  quotesOutCount: number;
+  expiringCount: number;
+  neverSentCount: number;
+  confirmedUninvoicedCount: number;
+  depositDueCount: number;
+  outstandingCount: number;
+}
+
+/**
+ * financeOrg.counts: the org-level Finance section's dashboard-chip counts
+ * (#992, Phase F) — same bounded reads `financeOrg.bundle` uses, small return
+ * shape, mirroring `useNativeOverbookingCounts` above.
+ */
+export function useNativeOrgFinanceCounts(orgId: string | undefined): NativeOrgFinanceCounts | undefined {
+  const enabled = !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  return useAuthedQuery(
+    api.financeOrg.counts,
+    enabled ? { orgId: orgId!, now: nowBucket } : "skip",
+  ) as NativeOrgFinanceCounts | undefined;
+}
+
 export interface NativeSubHireStats {
   activeSubHires: number;
   monthlySubHireCost: number;

@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native TEST-TAG-RECORD write state machine (Phase 3 browser-direct — replaces
@@ -369,3 +370,14 @@ async function recalculateStatus(
   const dueSoonMs = (await orgDueSoonDays(ctx, orgId)) * 24 * 60 * 60 * 1000;
   await ctx.db.patch(asset._id, { status: nextDue <= now + dueSoonMs ? "DUE_SOON" : "CURRENT" });
 }
+
+// See docs/designs/api-mcp-reimplementation.md §9 for the classification rubric.
+// createNative isn't a plain "create a record" op: on a FAIL result its
+// failureAction branch can flip the linked equipment to FAILED, or DISPOSED
+// (status: RETIRED, isActive: false — an archive), or open a maintenance
+// referral — real, physical-compliance-affecting side effects on top of the
+// insert. `high`, matching the delete/archive rule rather than the ordinary
+// `medium` a bare create would get.
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "high" },
+};

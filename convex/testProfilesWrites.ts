@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native TEST-PROFILE write mutations (Phase 3 browser-direct — replaces the
@@ -233,3 +234,16 @@ export const deleteNative = mutation({
     return { id: a.id, deactivated: false };
   },
 });
+
+// See docs/designs/api-mcp-reimplementation.md §9 for the classification rubric.
+// deleteNative is `high` by rule — it's a permanent delete when the profile is
+// unused (only falls back to a soft deactivate when in use), so the worst case
+// is a real delete. seedDefaultsNative is bulk but purely additive/idempotent
+// (skips existing names), so it stays `medium` like an ordinary create.
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+  duplicateNative: { danger: "medium" },
+  seedDefaultsNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+};

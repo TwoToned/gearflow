@@ -14,6 +14,7 @@ import { checkinItemsCore } from "./warehouseOps";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { assertStrLen } from "./lib/fieldGuards";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — the densest warehouse-check state
@@ -660,3 +661,18 @@ async function runFailIncidentReportForChecks(
     checks, plan: entries, now,
   });
 }
+
+// See docs/designs/api-mcp-reimplementation.md §9 for the classification rubric.
+// deprep/pack/flag/store all drive a real warehouse state transition on physical
+// stock (return-to-inventory, staging for dispatch, quarantine-as-faulty, or
+// check-in) on top of recording the check — `high`, not the `medium` an ordinary
+// "complete a check" op would be. saveAdHocCheck records a check with no line/kit
+// state transition (just possible predictive-maintenance/incident side effects) —
+// `medium`.
+export const agentOps: AgentOpsAnnotations = {
+  completeCheckAndDeprep: { danger: "high" }, // resets prepStatus, returns item to inventory
+  completeCheckAndPack: { danger: "high" }, // preps/stages the physical unit for dispatch
+  completeCheckAndFlag: { danger: "high" }, // quarantines the asset (faulty / T&T overdue)
+  completeCheckAndStore: { danger: "high" }, // check-in: physical stock re-enters the warehouse
+  saveAdHocCheck: { danger: "medium" },
+};

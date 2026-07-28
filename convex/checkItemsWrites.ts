@@ -8,6 +8,7 @@ import { writeActivityLog } from "./lib/audit";
 import { CheckItemType } from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { assertStrLen } from "./lib/fieldGuards";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native CHECK-ITEM write mutations (Phase 3 browser-direct — replaces the
@@ -345,3 +346,21 @@ export const reorderKitCheckItemsNative = mutation({
     return { success: true };
   },
 });
+
+// See docs/designs/api-mcp-reimplementation.md §9 for the classification rubric.
+// These mutations manage check-item DEFINITIONS + their kit/model assignments —
+// catalog config, not physical warehouse movement. delete is `high` by rule
+// (delete/archive); reorders are pure sort order (`low`); everything else is an
+// ordinary, recoverable create/update/assign/unassign (`medium`).
+export const agentOps: AgentOpsAnnotations = {
+  createCheckItemNative: { danger: "medium" },
+  updateCheckItemNative: { danger: "medium" },
+  deleteCheckItemNative: { danger: "high" }, // permanent delete (usage-guarded, but delete is high by rule)
+  addCheckItemToModelNative: { danger: "medium" },
+  removeCheckItemFromModelNative: { danger: "medium" },
+  reorderModelCheckItemsNative: { danger: "low" },
+  bulkAddCheckItemsToModelsNative: { danger: "medium" }, // bulk, but additive/idempotent, not destructive
+  addCheckItemToKitNative: { danger: "medium" },
+  removeCheckItemFromKitNative: { danger: "medium" },
+  reorderKitCheckItemsNative: { danger: "low" },
+};

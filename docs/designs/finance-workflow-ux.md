@@ -500,7 +500,7 @@ Full overlay `Dialog`, `--r-lg`, `--sh-card`, 90vw × 85vh. Content left, revisi
 │ │  Total   16,900 → 18,120  │ │ [vs previous]    │  │
 │ └───────────────────────────┘ │ [vs the job now] │  │
 │  ‹  Change 1 of 3  ›          └──────────────────┘  │
-│  [ Download PDF ]      [ Start v4 from this version ]│
+│  [ Download PDF ]        [ Use v2's pricing for v4 ]│
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -514,8 +514,39 @@ Changed rows are marked with `--select` (`rgba(224,54,61,.20)`) held while stepp
 faded — an in-system token, not an invented "pulse". No second activity timeline here:
 `ProjectActivityFeed` already reads the same `activityLog` from the sticky sidebar.
 
-Primary action is **`Start v4 from this version`**, never `Restore` (§1.2), and only when no
+### 8.1 Reprice-from-revision — the forward-only undo (decided, Phase D)
+
+Primary action is **`Use v2's pricing for v4`**, never `Restore` (§1.2). Shown only when no
 draft exists, preserving the one-draft invariant.
+
+**What it does:** creates the next draft revision and resets the project's **money fields** to
+that revision's values. Structure is untouched — same gear, same quantities, same dates. It is
+the forward-only equivalent of the Restore every reference pattern offers, and it exists
+because a user who can compare two versions will reach for the undo; that is what comparing is
+for.
+
+**The label is deliberately narrow.** An earlier draft read "Start v4 from this version", which
+reads as restoring the whole job, gear included. It doesn't, and an undo people misread is an
+undo people stop trusting.
+
+**Mechanically it is small:** `restoreProjectSnapshot` with `scope: "FINANCIAL"`
+(`convex/lib/projectSnapshots.ts:198`) already patches only `LOCKED_PROJECT_FIELDS` /
+`LOCKED_GROUP_FIELDS` / `LOCKED_LINE_ITEM_FIELDS` from a snapshot, and clears prices to unset
+(rather than deleting rows) for anything added since (`:233`). That is exactly this behaviour.
+The mutation composes `newVersionNative` + that call in one transaction, through
+`assertLifecycleGuard`, writing **one** audit entry for the whole operation — not one per line.
+
+**Confirm dialog — it must disclose both surprises before it runs:**
+
+> **Use v2's pricing for v4?**
+> v4 will be created with the prices from quote v2. Gear, quantities and dates are unchanged.
+> · **3 items added since v2 have no price in it** — they'll be unpriced and need one.
+> · The rental window has changed since v2, so these prices were worked out over a different
+>   duration. *(shown only when the window actually moved)*
+> `[ Cancel ]` `[ Create v4 with v2's pricing ]`
+
+Silent `$0` lines on a quote are exactly the failure this program exists to prevent, so the
+unpriced count is stated up front, not discovered afterwards via badges.
 
 **The artifact never changes.** A superseded revision's PDF downloads byte-identical to the day
 it was sent — no retroactive "SUPERSEDED" stamp, because the client's copy doesn't have one.
@@ -584,8 +615,8 @@ app-wide in 2026-07 for exactly this reason.
 **New:** `ProjectAlertRail` (+ row primitive), `FinanceSidebarRail`, `LockedField`,
 `GatedAction`, `QuoteRevisionRow`, `SendQuoteDialog`, `IssueInvoiceDialog`,
 `RecallQuoteDialog`, `AcceptQuoteDialog`, `DeclineQuoteDialog`, `ConfirmWithoutAcceptedQuoteDialog`,
-`RevisionViewerDialog`, `ChangeStepper`, `lock-copy.ts`, `quoteStatusIntent()` in
-`status-colors.ts`.
+`RevisionViewerDialog`, `ChangeStepper`, `RepriceFromRevisionDialog` (§8.1), `lock-copy.ts`,
+`quoteStatusIntent()` in `status-colors.ts`.
 
 **Reused unchanged:** `Dialog`, `Tooltip` (+ own provider), `Badge`, `Skeleton`,
 `SectionHeader`, `FadeIn`, `combobox-picker`, `PersonAvatar`, `UnpricedBadge`,
@@ -614,15 +645,20 @@ pagination; the three-button invoice-kind row; the `2 more notices` collapse; mo
 - Every revision state renders a distinct, labelled treatment (incl. Superseded's no-pill)
 - Send dialog: terminal success state exposes `Download PDF`; error preserves all four fields
 - Lifecycle reorder: pre- and post-acceptance section order
+- Reprice-from-revision (§8.1): the confirm dialog states the unpriced-item count before
+  running; the warning about a moved rental window appears only when the window actually
+  moved; structure is provably unchanged after the operation; one audit entry, not N
 
-## 14. Open scope question
+## 14. Resolved scope question
 
-**`Start v(N+1) from this version`** — seeding a new draft from an older revision's pricing.
-Not in any phase's scope. It emerged from the version-control framing: users who can compare
-revisions will want to walk one back, and every reference pattern trains them to expect it.
-Mechanically close to `restoreProjectSnapshot`'s FINANCIAL scope, which exists.
+**Reprice-from-revision — decided 2026-07-28: build it in Phase D.** Full spec at §8.1.
 
-Recommended: **build it in Phase D**, since §8 already draws it as the viewer's primary footer
-action and without it the viewer is a read-only cul-de-sac that shows you a problem and offers
-no way to act. **Needs a decision before Phase D starts** — if it goes the other way, the
-viewer ships with an empty primary slot.
+It was surfaced by this review as out-of-scope work that the design implied but no issue
+covered. Resolved in favour of building because the mechanic already exists and is tested
+(`restoreProjectSnapshot` FINANCIAL scope), the expectation is universal across every version
+-history pattern studied, and without it the revision viewer is a read-only cul-de-sac that
+shows you a problem and offers no way to act on it.
+
+Scope added to Phase D (#989): one mutation, one confirm dialog, the viewer footer action,
+tests. Renamed from "Start v(N+1) from this version" to **"Use vN's pricing for v(N+1)"** so
+the label can't be read as restoring structure.

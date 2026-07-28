@@ -6986,6 +6986,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "ids": {
                         "type": "array"
+                      },
+                      "justification": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -7062,6 +7065,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "ids": {
                         "type": "array"
+                      },
+                      "justification": {
+                        "type": "string"
                       },
                       "status": {}
                     },
@@ -7340,6 +7346,9 @@ export const OPENAPI_DOCUMENT = {
                     "type": "object",
                     "properties": {
                       "assignmentId": {
+                        "type": "string"
+                      },
+                      "justification": {
                         "type": "string"
                       }
                     },
@@ -12557,6 +12566,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "items": {
                         "type": "array"
+                      },
+                      "justification": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -17343,6 +17355,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "ids": {
                         "type": "array"
+                      },
+                      "justification": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -17420,6 +17435,9 @@ export const OPENAPI_DOCUMENT = {
                       "ids": {
                         "type": "array"
                       },
+                      "justification": {
+                        "type": "string"
+                      },
                       "status": {}
                     },
                     "required": [
@@ -17495,6 +17513,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "justification": {
+                        "type": "string"
+                      },
                       "sourceProjectId": {
                         "type": "string"
                       },
@@ -17575,6 +17596,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "justification": {
+                        "type": "string"
+                      },
                       "lineItemId": {
                         "type": "string"
                       },
@@ -18080,6 +18104,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "justification": {
+                        "type": "string"
+                      },
                       "projectId": {
                         "type": "string"
                       }

@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 393 | 22 | 154 | 215 | 2 |
-| Mutations | 720 | 265 | 448 | 1 | 6 |
-| **Total** | **1113** | **287** | **602** | **216** | **8** |
+| Queries | 395 | 22 | 155 | 216 | 2 |
+| Mutations | 725 | 269 | 449 | 1 | 6 |
+| **Total** | **1120** | **291** | **604** | **217** | **8** |
 
-<!-- reachability-floor: 287 -->
+<!-- reachability-floor: 291 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -56,6 +56,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
 | `backfillProjectWindow` | 1 |
+| `backfillQuoteRevisions` | 2 |
 | `backfillStripProjectDepositPercent` | 1 |
 | `bulkAssets` | 14 |
 | `categories` | 9 |
@@ -124,7 +125,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `projectServices` | 8 |
 | `projectTasks` | 12 |
 | `projects` | 12 |
-| `quotes` | 1 |
+| `quotes` | 2 |
 | `reservationConflicts` | 2 |
 | `returnsLookup` | 1 |
 | `roi` | 4 |

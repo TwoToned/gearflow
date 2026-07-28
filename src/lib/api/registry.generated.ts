@@ -3442,6 +3442,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f"
   },
   {
+    "operation": "backfillQuoteRevisions.backfillQuoteRevisionsPage",
+    "module": "backfillQuoteRevisions",
+    "fn": "backfillQuoteRevisionsPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "c5b2117bf0bef91e"
+  },
+  {
+    "operation": "backfillQuoteRevisions.verifyQuoteRevisions",
+    "module": "backfillQuoteRevisions",
+    "fn": "verifyQuoteRevisions",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e9753884d189782",
+    "returnsSha": "a0eb1bfe148fbe51"
+  },
+  {
     "operation": "backfillStripProjectDepositPercent.backfillStripProjectDepositPercentPage",
     "module": "backfillStripProjectDepositPercent",
     "fn": "backfillStripProjectDepositPercentPage",
@@ -28159,12 +28216,22 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "title",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "xeroAccountCode",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "xeroTaxType",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "7a37e422163a45b6",
+    "argsSha": "199436120346f869",
     "returnsSha": "efde83ecf2efd768"
   },
   {
@@ -29929,7 +29996,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "1cb9070e2011cbff"
+    "returnsSha": "10dcd4479672ec61"
   },
   {
     "operation": "projectLocksRead.snapshotEntries",
@@ -35086,6 +35153,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
@@ -35097,13 +35169,253 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f75cf9c7cfef7f2e",
+    "argsSha": "ac20f94bd020f7de",
     "returnsSha": "74234e98afe7498f"
   },
   {
-    "operation": "quotesWrites.publishNative",
+    "operation": "quotes.revisionStateForProject",
+    "module": "quotes",
+    "fn": "revisionStateForProject",
+    "kind": "query",
+    "guard": "orgRead",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ac20f94bd020f7de",
+    "returnsSha": "74234e98afe7498f"
+  },
+  {
+    "operation": "quotesWrites.markAcceptedNative",
     "module": "quotesWrites",
-    "fn": "publishNative",
+    "fn": "markAcceptedNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "acceptanceRef",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "acceptedAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "79e4edbea424c1be",
+    "returnsSha": "370ba6c1bf9c6be0"
+  },
+  {
+    "operation": "quotesWrites.markDeclinedNative",
+    "module": "quotesWrites",
+    "fn": "markDeclinedNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reason",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "10b8501f029b9f71",
+    "returnsSha": "370ba6c1bf9c6be0"
+  },
+  {
+    "operation": "quotesWrites.newVersionNative",
+    "module": "quotesWrites",
+    "fn": "newVersionNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4713d346359b0765",
+    "returnsSha": "a9efc1b31e93fd3f"
+  },
+  {
+    "operation": "quotesWrites.recallNative",
+    "module": "quotesWrites",
+    "fn": "recallNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reason",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "10b8501f029b9f71",
+    "returnsSha": "c76d0325e401c8da"
+  },
+  {
+    "operation": "quotesWrites.sendNative",
+    "module": "quotesWrites",
+    "fn": "sendNative",
     "kind": "mutation",
     "guard": "orgPermission",
     "resource": "invoice",
@@ -35150,11 +35462,26 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "quoteDate",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "recipientContactId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "validityDays",
+        "optional": true,
+        "type": "number"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "53dc65e71ff2a20b",
-    "returnsSha": "a9efc1b31e93fd3f"
+    "argsSha": "b39c2c5b21415429",
+    "returnsSha": "ca599837ab6ba347"
   },
   {
     "operation": "reservationConflicts.projectConflicts",
@@ -50010,10 +50337,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1113,
-  agentReachable: 287,
-  queries: 393,
-  mutations: 720,
+  total: 1120,
+  agentReachable: 291,
+  queries: 395,
+  mutations: 725,
   agentReachableQueries: 22,
-  agentReachableMutations: 265,
+  agentReachableMutations: 269,
 } as const;

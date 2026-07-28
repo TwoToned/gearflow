@@ -33,7 +33,7 @@ interface SpecFunction {
 /** `convex function-spec` names functions `module.js:fn`; the registry uses `module.fn`. */
 function toOperation(identifier: string): string {
   const [modulePath, fnName] = identifier.split(":");
-  return `${modulePath.replace(/\.js$/, "").replace(/\//g, "/")}.${fnName}`;
+  return `${modulePath.replace(/\.js$/, "")}.${fnName}`;
 }
 
 function loadSpec(): SpecFunction[] {

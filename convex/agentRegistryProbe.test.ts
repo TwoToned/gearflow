@@ -33,7 +33,6 @@ import { RESOURCES } from "./lib/permissionsCore";
 import { API_REGISTRY } from "../src/lib/api/registry.generated";
 import {
   callConvexDynamic,
-  isArgumentValidationError,
   loadConvexFunctions,
   synthesiseArgs,
   type RegisteredFn,

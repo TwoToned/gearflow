@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgPermission, getAuthContext } from "./lib/auth";
+import { requireOrgReadFor, requireOrgPermission, getAuthContext, isMemberAuth } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Browser-native CREW reads (Phase 3 — replaces getCrewMemberById / getCrewMemberExtras
@@ -12,6 +13,13 @@ import { requireOrgRead, requireOrgPermission, getAuthContext } from "./lib/auth
  */
 
 const iso = (ms: number | null | undefined): string | null => (ms != null ? new Date(ms).toISOString() : null);
+
+export const agentOps: AgentOpsAnnotations = {
+  memberDetail: { summary: "A single crew member's full detail (role, skills, linked user, assignments).", danger: "low", mcpTier: 1 },
+  memberExtras: { summary: "Per-member linked-user name/image + skills, for enriching the reactive roster.", danger: "low", mcpTier: 3 },
+  myCrewMemberId: { summary: "The caller's own linked crew-member id, if any.", danger: "low", mcpTier: 2 },
+  orgUsersForCrewLink: { summary: "Org users linkable to a crew member, with alreadyLinked flag.", danger: "low", mcpTier: 3 },
+};
 
 async function orgSkillMap(ctx: QueryCtx, orgId: string) {
   const skills = await ctx.db.query("crewSkills").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: crewSkills is a small bounded per-org config set — see docs/exceptions.md R-8.3.3
@@ -104,7 +112,7 @@ export const memberDetail = query({
       };
     });
 
-    return { ...member, crewRole: role, skills, user, assignments, isOwnProfile: auth?.kind === "user" && member.userId === auth.userId };
+    return { ...member, crewRole: role, skills, user, assignments, isOwnProfile: isMemberAuth(auth) && member.userId === auth.userId };
   },
 });
 
@@ -134,9 +142,9 @@ export const memberExtras = query({
 export const myCrewMemberId = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") return null;
+    if (!isMemberAuth(auth)) return null;
     // Bounded lookup by the caller's userId (by_userId is global, so org-check the row)
     // instead of scanning the whole org roster to find one member (R-9.8).
     const member = await ctx.db

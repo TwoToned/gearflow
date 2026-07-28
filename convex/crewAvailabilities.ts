@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for CrewAvailability (Convex table "crewAvailabilities"). GENERATED — Phase 2/5.
@@ -13,10 +14,15 @@ import * as enums from "./lib/validators";
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List crew availability rows for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single crew availability row by id.", danger: "low", mcpTier: 2 },
+};
+
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("crewAvailabilities")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
@@ -28,7 +34,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewAvailabilities").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });

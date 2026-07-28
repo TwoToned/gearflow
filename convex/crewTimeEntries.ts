@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import * as enums from "./lib/validators";
 
 // ── Time-entry read helpers ported from src/lib/crew-scheduling-read.ts (epoch-ms). ──
@@ -15,6 +16,13 @@ function descNF<T>(a: T | null | undefined, b: T | null | undefined): number {
   if (a == null && b == null) return 0; if (a == null) return -1; if (b == null) return 1;
   return a < b ? 1 : a > b ? -1 : 0;
 }
+
+export const agentOps: AgentOpsAnnotations = {
+  allEntries: { summary: "Paginated/searchable/sortable timesheet (crew time entry) list.", danger: "low", mcpTier: 1 },
+  forMember: { summary: "A crew member's time entries, newest first.", danger: "low", mcpTier: 2 },
+  list: { summary: "List crew time entries for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single crew time entry by id.", danger: "low", mcpTier: 2 },
+};
 type TE = { id: string; assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; totalHours?: number; status?: string; approvedById?: string; approvedAt?: number; notes?: string; createdAt?: number; updatedAt?: number };
 function teWire(e: TE) {
   return {
@@ -48,7 +56,7 @@ export const allEntries = query({
     page: v.optional(v.number()), pageSize: v.optional(v.number()), sortBy: v.optional(v.string()), sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "crew"); // Phase 2 read bootstrap (#998)
     const page = a.page && a.page > 0 ? a.page : 1; // clamp (parity with `params?.page || 1`)
     const pageSize = a.pageSize && a.pageSize > 0 ? a.pageSize : 25;
     const sortBy = TE_SORT_KEYS.has(a.sortBy ?? "") ? a.sortBy! : "date";
@@ -101,7 +109,7 @@ export const allEntries = query({
 export const forMember = query({
   args: { crewMemberId: v.string(), orgId: v.string() },
   handler: async (ctx, { crewMemberId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const member = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", crewMemberId)).unique();
     if (!member || member.organizationId !== orgId) throw new ConvexError("Crew member not found");
 
@@ -142,7 +150,7 @@ export const forMember = query({
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("crewTimeEntries")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
@@ -154,7 +162,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });

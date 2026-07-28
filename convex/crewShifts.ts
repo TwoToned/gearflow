@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for CrewShift (Convex table "crewShifts"). GENERATED — Phase 2/5.
@@ -11,7 +12,23 @@ import * as enums from "./lib/validators";
  * validation + audit enforced inside Convex lives in the *Writes.ts mutations — see FEATUREDOCS/54). Reads are
  * service-only (not on the browser-readable allowlist). Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
+ *
+ * Part B triage (#1001 Phase 5): `crewShifts` has NO `organizationId` column (see
+ * crewDashboard.ts's `upcomingShifts` comment) and none of these three queries take an
+ * `orgId` argument to check a caller's org against — `list`/`listByAssignmentIds` key
+ * off `assignmentId` and `getById` off the row's own cuid, both via GLOBAL indexes with
+ * no per-row org re-check. Opening any of them to `requireOrgPermission` as-is would let
+ * an agent in one org read another org's shift rows just by guessing/enumerating an
+ * assignment or shift id (R-8.4.3 IDOR). Widening safely needs the caller's assignment
+ * (already org-checked upstream, e.g. crewAssignments.getById) re-verified here first —
+ * out of scope for a plain guard swap, so all three stay denied.
  */
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: "crewShifts has no organizationId column; this query has no orgId to check the assignmentId argument against, so opening it risks a cross-tenant read (R-8.4.3)." },
+  getById: { agentAccess: "denied", reason: "crewShifts has no organizationId column; fetches by global cuid with no org check, so opening it risks a cross-tenant read (R-8.4.3)." },
+  listByAssignmentIds: { agentAccess: "denied", reason: "crewShifts has no organizationId column; this query has no orgId to check the assignmentIds argument against, so opening it risks a cross-tenant read (R-8.4.3)." },
+};
 
 export const list = query({
   args: { assignmentId: v.string() },

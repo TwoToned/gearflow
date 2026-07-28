@@ -2,7 +2,8 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
@@ -26,6 +27,17 @@ function ascNullsLast<T>(a: T | null | undefined, b: T | null | undefined): numb
   if (a == null) return 1; if (b == null) return -1;
   return a < b ? -1 : a > b ? 1 : 0;
 }
+
+export const agentOps: AgentOpsAnnotations = {
+  projectCrew: { summary: "A project's crew composite (assignments + members + roles + shifts).", danger: "low", mcpTier: 1 },
+  projectLabourCost: { summary: "Aggregate estimated labour cost for a project's crew assignments.", danger: "low", mcpTier: 2 },
+  membersForAssignment: { summary: "Active crew members eligible for assignment, with conflict/availability signals.", danger: "low", mcpTier: 2 },
+  conflictsForProject: { summary: "Per-assignment conflict flags for a project's crew.", danger: "low", mcpTier: 3 },
+  list: { summary: "List crew assignments for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single crew assignment by id.", danger: "low", mcpTier: 2 },
+  listByProject: { summary: "List crew assignments for a project.", danger: "low", mcpTier: 1 },
+  listByServiceIds: { summary: "Crew assignments for a set of project service ids.", danger: "low", mcpTier: 3 },
+};
 
 /**
  * A project's crew — browser-native replacement for getProjectCrew. Assignments
@@ -98,7 +110,7 @@ export const projectCrew = query({
 export const projectLabourCost = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
       .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? ""));
     return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };
@@ -126,7 +138,7 @@ export const membersForAssignment = query({
     excludeServiceId: v.optional(v.string()),
   },
   handler: async (ctx, { projectId, orgId, search, rangeStartMs, rangeEndMs, excludeServiceId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [allMembers, roles, projectAssignments] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) — see docs/exceptions.md R-8.3.3
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) — see docs/exceptions.md R-8.3.3
@@ -214,7 +226,7 @@ export const membersForAssignment = query({
 export const conflictsForProject = query({
   args: { projectId: v.string(), orgId: v.string(), rangeStartMs: v.number(), rangeEndMs: v.number() },
   handler: async (ctx, { projectId, orgId, rangeStartMs, rangeEndMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const projectAssignments = (
       await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
     ).filter((a) => a.organizationId === orgId);
@@ -313,7 +325,7 @@ export const getByResponseToken = query({
 export const listByServiceIds = query({
   args: { serviceIds: v.array(v.string()), orgId: v.string() },
   handler: async (ctx, { serviceIds, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const results = [];
     for (const serviceId of serviceIds) {
       const rows = await ctx.db

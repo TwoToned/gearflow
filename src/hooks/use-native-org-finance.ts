@@ -7,7 +7,7 @@ import { api } from "../../convex/_generated/api";
 
 const MINUTE = 60_000;
 
-export interface OrgFinanceProjectRef {
+interface OrgFinanceProjectRef {
   id: string;
   projectNumber: string;
   name: string;

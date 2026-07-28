@@ -1,6 +1,6 @@
 # Project & Rental Management
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
 ## Projects List Views (`ProjectTable`, `ProjectBoard`)
 `ProjectTable` (`src/components/projects/project-table.tsx`) is server-side
@@ -35,6 +35,53 @@ Each status maps to one of four lock tiers, resolved by `lockTierForStatus()`
 | `ON_SITE` / `RETURNED` | **JUSTIFY** | Above, plus structural mutations need a confirm + written justification |
 | `COMPLETED` / `INVOICED` | **HARD_LOCKED** | Everything — no per-edit path, only a FULL unlock session |
 | `CANCELLED` | OPEN | Ungated (open question — see FEATUREDOCS/62) |
+
+Phase C (#988) makes the resolver take the project's quote state as a second
+input (`resolveLockTier({ status, quoteState })`), so a sent quote raises the
+tier without any gate site changing. Not built yet.
+
+### Acceptance gate on CONFIRMED (#986 — see FEATUREDOCS/66)
+
+A project may not advance to `CONFIRMED` until one of its quote revisions is
+`ACCEPTED`. Confirming a job whose price the client never agreed to is the
+failure the revision model exists to prevent.
+
+Org admins/owners and the project's assigned PMs override with a bounded
+justification (≥10 chars, ≤1000 — `requireJustification` in
+`convex/lib/projectLocks.ts`, the same audience and bounds as #792's hard-lock
+revert). The justification lands on the `STATUS_CHANGE` audit row's `metadata`.
+
+Only an actual transition INTO `CONFIRMED` is gated — re-saving an
+already-confirmed project never re-prompts. A **re-crossing** (revert to
+`PREPPING`, then back) IS gated again, matching `crossesIntoSnapshotStatus`'s
+own re-crossing rule: pricing may have moved while the project was reverted.
+
+## Project revisions (`projects.revision`)
+
+The single version counter shared by the project, its quote and its snapshot
+(#986 — full model in [FEATUREDOCS/66](./66-finance-quotes-invoices-xero.md)):
+
+```
+projects.revision : number         ← the authority (starts at 1 on create)
+  quotes.version  = the revision it was cut from   (one quote row per revision)
+  projectSnapshots.revision                        (frozen entity state for that revision)
+```
+
+Project v2 == Quote v2 == the snapshot taken at v2. There is deliberately no
+second counter (R-3.1).
+
+**Server-owned.** Written ONLY by `createNative` (seeded to 1 — and by both
+service-token create paths, including the WooCommerce order → project flow) and
+`quotesWrites.newVersionNative`. It is stripped from every generic client patch
+alongside `PROJECT_MONEY_ANCHORS` (`PROJECT_SERVER_OWNED` in
+`convex/projectWrites.ts`) and can't be cleared: a client-settable revision
+would let a browser caller renumber, skip or rewind versions, orphaning the
+quote rows keyed to those numbers.
+
+**Templates carry no revision** — they are never quoted, and a project created
+from one starts its own count at 1 rather than inheriting a number. Absent reads
+as 1 via `projectRevision()` (`convex/lib/quoteState.ts`), so pre-#986 documents
+and any row the backfill hasn't reached behave as v1.
 
 ## Project Hierarchy
 ```
@@ -484,8 +531,14 @@ HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
 ### Financials Tab
 Moved out of the sidebar into its own non-template main-content tab (after
 "Labour & logistics") to declutter the right rail. Contains `FinancialSummary`
-+ `ProjectCostsPanel`. The allGroups/pricing computation that feeds
-`FinancialSummary` lives in the tab now (same logic as before).
++ `ProjectCostsPanel` + `ProjectFinancePanel`. The allGroups/pricing computation
+that feeds `FinancialSummary` lives in the tab now (same logic as before).
+
+`ProjectFinancePanel`'s quote half is the `<ProjectQuoteRail>` revision rail
+(#986): one row per revision with send / recall / new-version / accept / decline.
+Phase D (#989) promotes finance to its own top-level tab and retires this one —
+until then the rail is the minimum surface for exercising the model, not the
+designed layout.
 - Total with margin bar (green > 40%, amber 20-40%, red < 20%)
 - Equipment revenue, discount, tax breakdown
 - Services + Labour costs section

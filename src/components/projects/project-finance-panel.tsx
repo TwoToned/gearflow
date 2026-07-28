@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { FileText, Send, Ban, Trash2, UploadCloud, AlertCircle } from "lucide-react";
+import { Send, Ban, Trash2, UploadCloud, AlertCircle } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
-import { useQuoteWrites } from "@/hooks/use-quote-writes";
+import { ProjectQuoteRail } from "@/components/projects/project-quote-rail";
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
@@ -35,43 +35,43 @@ const INVOICE_STATUS_BADGE: Record<string, "ok" | "warn" | "neutral" | "overbook
 };
 
 /**
- * WS1 (#940) — the project's Quotes & Invoices workflow. Publish a quote
- * (snapshot the current pricing), create/issue/void invoices per the
- * client's payment profile, and (Xero-linked orgs) push an issued invoice
- * as a Xero draft. "Deposit not yet invoiced" nudge chips are DERIVED
- * (kind/status of existing invoices), not a stored flag — there is no new
- * READY_TO_INVOICE project status.
+ * WS1 (#940), reworked by #986 — the project's Quotes & Invoices workflow.
+ *
+ * The quote half is now a REVISION RAIL over `projects.revision`
+ * (`<ProjectQuoteRail>`): send the current revision (freezing its pricing and
+ * capturing a snapshot), recall it, cut the next version, or record the client's
+ * accept/decline. Sending does NOT email anyone — it records the send and
+ * freezes the numbers.
+ *
+ * Invoices are unchanged: create/issue/void per the client's payment profile,
+ * and (Xero-linked orgs) push an issued invoice as a Xero draft. "Deposit not
+ * yet invoiced" nudge chips are DERIVED (kind/status of existing invoices), not
+ * a stored flag — there is no READY_TO_INVOICE project status.
+ *
+ * The full Finance tab — send dialog, version history + diffs, invoice issue
+ * dialog with due dates, drift indicator — is Phase D (#989).
  */
 export function ProjectFinancePanel({ projectId, clientId, projectStatus }: ProjectFinancePanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const xeroLinked = useXeroLinked();
 
-  const quotes = useAuthedQuery(api.quotes.listForProject, orgId ? { orgId, projectId } : "skip");
   const invoices = useAuthedQuery(api.invoices.listForProject, orgId ? { orgId, projectId } : "skip");
   const client = useAuthedQuery(api.clients.getById, clientId ? { id: clientId } : "skip");
 
-  const quoteWrites = useQuoteWrites();
   const invoiceWrites = useInvoiceWrites();
   const { updateStatus } = useNativeProjectStatus(orgId);
 
   const [voidTarget, setVoidTarget] = useState<{ id: string; number: string } | null>(null);
   const [voidReason, setVoidReason] = useState("");
 
-  const publishQuoteMutation = useServerMutation({
-    mutationFn: () => quoteWrites.publish(projectId, {}),
-    onSuccess: (r) => toast.success(`Published quote v${r.version}`),
-    onError: (e) => toast.error(e.message),
-  });
-
   if (!clientId) {
     return <p className="t-micro text-fg-4">Assign a client to this project to generate quotes and invoices.</p>;
   }
-  if (quotes === undefined || invoices === undefined || client === undefined) {
+  if (invoices === undefined || client === undefined) {
     return <p className="t-micro text-fg-4">Loading…</p>;
   }
 
-  const publishedQuote = quotes.find((q) => q.status === "PUBLISHED");
   const paymentProfile = (client?.paymentProfile as string | undefined) ?? "FULL_UPFRONT";
   const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
 
@@ -129,22 +129,8 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
 
   return (
     <div className="space-y-6">
-      {/* Quote */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="t-overline text-fg-3">Quote</h3>
-          <CanDo resource="invoice" action="publish">
-            <Button type="button" variant="line" size="sm" loading={publishQuoteMutation.isPending} onClick={() => publishQuoteMutation.mutate(undefined)}>
-              <FileText className="h-3.5 w-3.5" /> {publishedQuote ? "Republish quote" : "Publish quote"}
-            </Button>
-          </CanDo>
-        </div>
-        {publishedQuote ? (
-          <p className="t-micro text-fg-4">v{publishedQuote.version} published {formatDate(new Date(publishedQuote.publishedAt ?? 0))}</p>
-        ) : (
-          <p className="t-micro text-fg-4">No quote published yet.</p>
-        )}
-      </div>
+      {/* Quote revisions (#986) */}
+      <ProjectQuoteRail projectId={projectId} orgId={orgId} />
 
       {/* Nudge chips */}
       {paymentProfile === "DEPOSIT_BALANCE" ? (

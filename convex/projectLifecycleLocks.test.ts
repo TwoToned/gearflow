@@ -39,8 +39,22 @@ async function project(t: ReturnType<typeof convexTest>, status: string, extra: 
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Test Gig",
-      status, isTemplate: false, taxRate: 10, discountPercent: 0,
+      status, isTemplate: false, taxRate: 10, discountPercent: 0, revision: 1,
       createdAt: NOW, updatedAt: NOW, ...extra,
+    });
+  });
+}
+
+/** #986 — advancing to CONFIRMED now requires an ACCEPTED quote revision (or an
+ *  admin override with a justification). Tests below whose subject is snapshot
+ *  capture, not the acceptance gate, satisfy it directly rather than routing
+ *  through the whole send/accept flow. The gate itself is covered in
+ *  convex/projectWrites.test.ts. */
+async function acceptedQuote(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("quotes", {
+      id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "ACCEPTED",
+      snapshot: null, sentAt: NOW, acceptedAt: NOW,
     });
   });
 }
@@ -318,6 +332,7 @@ describe("#792 snapshot capture at CONFIRMED/COMPLETED", () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "QUOTED");
+    await acceptedQuote(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1 });
     });
@@ -339,6 +354,7 @@ describe("#792 snapshot capture at CONFIRMED/COMPLETED", () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "QUOTED");
+    await acceptedQuote(t);
     await t.withIdentity(asUser()).mutation(api.projectWrites.updateStatusNative, {
       id: "p1", orgId: ORG, status: "CONFIRMED", actor: ACTOR, auditId: "log1", now: NOW,
     });

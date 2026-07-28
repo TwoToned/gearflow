@@ -149,6 +149,21 @@ no access token is persisted — it's minted from the refresh token on demand
 and the ROTATED refresh token Xero returns is persisted immediately
 (Xero invalidates the old one on every refresh).
 
+**Scopes are granular, not the broad legacy set** — Xero split `accounting.transactions`
+into granular scopes on 4 March 2026, and any Xero app created after that date is issued
+ONLY the granular set, so `XERO_OAUTH_SCOPES` (`src/lib/xero-client.ts`) requests
+`accounting.invoices` (covers invoices/credit notes/quotes — everything this integration
+pushes), not the deprecated broad scope.
+
+**The callback route's post-exchange redirect is built from `env.NEXT_PUBLIC_APP_URL`,
+never `request.url`** — behind the prod reverse proxy, `new URL(path, request.url)`
+resolves off whatever `Host` header Next's Node process sees internally, which isn't
+guaranteed to be the public hostname (this shipped once, sending users to
+`http://localhost:3000/settings/xero?xero_connected=1` after an otherwise-successful
+token exchange). `xeroRedirectUri()` (same file, used to build the Xero-side
+`redirect_uri`) already used the trusted env var; the callback's own redirect now
+matches it.
+
 ### Account-coding cascade
 
 `convex/lib/xeroAccountCascade.ts` — pure resolver functions, unit-tested at

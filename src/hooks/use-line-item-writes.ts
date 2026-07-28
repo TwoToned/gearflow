@@ -6,6 +6,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { mapNativeWriteError } from "@/lib/native-writes";
 import { computeLineTotal } from "@/hooks/use-native-line-item-writes";
+import type { DiscountMode } from "@/lib/discount-mode";
 import {
   lineItemSchema,
   customLineItemSchema,
@@ -25,8 +26,10 @@ type ParsedCustomLineItem = z.output<typeof customLineItemSchema>;
  */
 export interface BulkLineItemPatch {
   pricingType?: "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR" | "OPTIMIZED";
-  /** `null` or a non-positive value clears the discount. `%` is resolved per-item. */
-  discount?: { mode: "$" | "%"; value: number } | null;
+  /** `null` or a non-positive value clears the discount. `%` is resolved per-item.
+   *  The `mode` is ALSO persisted (as `discountMode`) so documents can print the
+   *  discount the way it was entered (#1012). */
+  discount?: { mode: DiscountMode; value: number } | null;
   /** `null`/empty clears the note. */
   notes?: string | null;
   isOptional?: boolean;
@@ -80,6 +83,9 @@ function buildAddFields(parsed: ParsedLineItem) {
     pricingType: parsed.pricingType,
     duration: parsed.duration ?? undefined,
     discount: parsed.discount ?? undefined,
+    // #1012 — the entry shape rides with the resolved amount. The mutations
+    // enforce "no amount, no mode" server-side, so no client-side guard here.
+    discountMode: parsed.discountMode,
     groupName: parsed.groupName || undefined,
     notes: parsed.notes || undefined,
     isOptional: parsed.isOptional,
@@ -131,6 +137,11 @@ export function buildLineItemSetClear(parsed: ParsedLineItem): {
   setStr("description", parsed.description);
   setNum("unitPrice", parsed.unitPrice ?? null);
   setNum("discount", parsed.discount ?? null);
+  // #1012 — `discountMode` is set/cleared in lockstep with `discount` (it
+  // describes that exact number, so it must never outlive it). patchNative
+  // re-asserts the same invariant server-side.
+  if (parsed.discount != null) set.discountMode = parsed.discountMode ?? "$";
+  else clear.push("discountMode");
   setNum("lineTotal", lineTotal);
   setStr("groupName", parsed.groupName);
   setStr("notes", parsed.notes);
@@ -234,6 +245,7 @@ export function useLineItemWrites() {
             pricingType: parsed.pricingType,
             duration: parsed.duration,
             discount: parsed.discount ?? undefined,
+            discountMode: parsed.discountMode,
             notes: parsed.notes ?? undefined,
             isOptional: parsed.isOptional,
             categoryId: parsed.categoryId ?? undefined,
@@ -260,6 +272,8 @@ export function useLineItemWrites() {
         pricingMode: "KIT_PRICE" | "ITEMIZED";
         unitPrice?: number;
         discount?: number;
+        /** #1012 — how `discount` was entered; stored for document display. */
+        discountMode?: DiscountMode;
         groupName?: string;
         categoryId?: string;
         groupId?: string;
@@ -274,6 +288,7 @@ export function useLineItemWrites() {
           kitId,
           unitPrice: opts.unitPrice ?? undefined,
           discount: opts.discount ?? undefined,
+          discountMode: opts.discount != null ? opts.discountMode : undefined,
           pricingMode: opts.pricingMode,
           groupName: opts.groupName || undefined,
           categoryId: opts.categoryId || undefined,

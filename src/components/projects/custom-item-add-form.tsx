@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { DialogFooter } from "@/components/ui/dialog";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
+import { SectionTitle, Field, DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 
 type CustomItemPricingType = "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR";
@@ -94,17 +94,16 @@ export function CustomItemAddForm({
 
   const addMut = useServerMutation({
     mutationFn: (data: CustomLineItemFormValues) => {
-      let disc = data.discount;
-      if (discountMode === "%" && disc && data.unitPrice) {
-        const gross = Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
-        disc = Math.round((gross * Number(disc)) / 100 * 100) / 100;
-      }
+      // #1012: shared conversion + the mode is submitted, not discarded.
+      const gross = Number(data.unitPrice ?? 0) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
+      const disc = resolveDiscountAmount(discountMode, data.discount as number | string | undefined, gross);
       // Browser-direct native path. addCustomNative folds recalc + audit + collab into one
       // transaction; reactive useQuery renders the new row. groupName is resolved locally
       // from the categories the form already holds (no round-trip).
       const parsed = customLineItemSchema.parse({
         ...data,
         discount: disc,
+        discountMode,
         categoryId: categoryId || undefined,
         groupId: groupId || undefined,
       });

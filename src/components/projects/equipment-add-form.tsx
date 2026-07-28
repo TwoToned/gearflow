@@ -42,7 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
+import { SectionTitle, Field, DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -209,11 +209,11 @@ export function EquipmentAddForm({
 
   const mutation = useServerMutation({
     mutationFn: async (data: LineItemFormValues) => {
-      let disc = data.discount;
-      if (discountMode === "%" && disc && data.unitPrice) {
-        const gross = Number(data.unitPrice) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
-        disc = Math.round((gross * Number(disc)) / 100 * 100) / 100;
-      }
+      // #1012: one shared conversion (resolveDiscountAmount) instead of a
+      // hand-rolled copy, and the MODE is submitted alongside the resolved
+      // dollar amount so documents can print it back as entered.
+      const gross = Number(data.unitPrice ?? 0) * Number(data.quantity ?? 1) * Number(data.duration ?? 1);
+      const disc = resolveDiscountAmount(discountMode, data.discount as number | string | undefined, gross);
       const effectiveCategoryId = categoryId || selectedCategoryId || undefined;
       const effectiveGroupId = groupId || selectedGroupId || undefined;
       // Browser-direct native path. addLineItemSmartNative folds availability +
@@ -223,6 +223,7 @@ export function EquipmentAddForm({
       const parsed = lineItemSchema.parse({
         ...data,
         discount: disc,
+        discountMode,
         categoryId: effectiveCategoryId,
         groupId: effectiveGroupId,
       });

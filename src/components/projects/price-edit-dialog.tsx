@@ -32,7 +32,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DiscountField, type DiscountMode } from "./line-item-form-fields";
+import {
+  DiscountField,
+  discountEntryValue,
+  resolveDiscountAmount,
+  toDiscountMode,
+  type DiscountMode,
+} from "./line-item-form-fields";
 
 export type PriceEditTarget =
   | {
@@ -42,6 +48,8 @@ export type PriceEditTarget =
       quantity: number;
       price: number | null;
       discount: number | null;
+      /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
+      discountMode?: string | null;
     }
   | {
       kind: "subHire";
@@ -51,6 +59,16 @@ export type PriceEditTarget =
       cost: number | null;
       charge: number | null;
     };
+
+/** #1012 — the stored discount re-expressed as the operator entered it, for
+ *  seeding the amount input + `$`/`%` toggle. Sub-hire groups have no discount
+ *  field at all (they price by cost/charge), so they seed blank. */
+function initialDiscountEntry(target: PriceEditTarget): { value: string; mode: DiscountMode } {
+  if (target.kind !== "project") return { value: "", mode: "$" };
+  const mode = toDiscountMode(target.discountMode);
+  const gross = Number(target.price ?? 0) * (target.quantity || 1);
+  return { value: discountEntryValue(target.discount, mode, gross), mode };
+}
 
 interface PriceEditDialogProps {
   target: PriceEditTarget | null;
@@ -89,10 +107,12 @@ function PriceEditDialogBody({
   const [priceInput, setPriceInput] = useState<string>(
     target.kind === "project" && target.price != null ? String(target.price) : "",
   );
-  const [discountInput, setDiscountInput] = useState<string>(
-    target.kind === "project" && target.discount != null ? String(target.discount) : "",
-  );
-  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
+  // #1012 — seed both the value and the toggle from the stored entry shape, so a
+  // group priced at 10% reopens as "10 %" instead of the resolved dollar amount
+  // with the toggle silently reset to "$".
+  const initialDiscount = initialDiscountEntry(target);
+  const [discountInput, setDiscountInput] = useState<string>(initialDiscount.value);
+  const [discountMode, setDiscountMode] = useState<DiscountMode>(initialDiscount.mode);
 
   // Sub-hire-mode state
   const [chargeInput, setChargeInput] = useState<string>(
@@ -106,8 +126,9 @@ function PriceEditDialogBody({
   const subHireWrites = useSubHireWrites();
 
   const projectMut = useServerMutation({
-    mutationFn: ({ groupId, price, discount }: { groupId: string; price: number; discount?: number }) =>
-      groupWrites.updatePrice(groupId, price, discount),
+    mutationFn: ({ groupId, price, discount, discountMode: mode }: {
+      groupId: string; price: number; discount?: number; discountMode?: DiscountMode;
+    }) => groupWrites.updatePrice(groupId, price, discount, mode),
     onSuccess: () => {
       onInvalidate();
       toast.success("Group price updated");
@@ -140,20 +161,15 @@ function PriceEditDialogBody({
   function handleSubmit() {
     if (target.kind === "project") {
       const price = parseFloat(priceInput) || 0;
-      // Resolve a `%` discount to a flat $ amount before it reaches the mutation —
-      // discount is always persisted as a flat dollar amount off price × quantity
-      // (mirrors the line-item discount convention).
-      let discount: number | undefined;
-      if (discountInput) {
-        const raw = parseFloat(discountInput);
-        if (Number.isFinite(raw) && raw > 0) {
-          const gross = price * (target.quantity || 1);
-          discount = discountMode === "%" ? Math.round(gross * raw) / 100 : raw;
-        } else {
-          discount = 0;
-        }
-      }
-      projectMut.mutate({ groupId: target.groupId, price, discount });
+      // #1012: the shared conversion (resolveDiscountAmount) resolves a `%` entry
+      // to the flat dollar amount the mutation stores — and the MODE now travels
+      // with it so documents can print the discount the way it was entered.
+      // `?? 0` keeps the pre-#1012 behaviour of a non-blank-but-invalid entry
+      // ("abc", "-5") clearing the discount rather than leaving it untouched.
+      const discount = discountInput
+        ? resolveDiscountAmount(discountMode, discountInput, price * (target.quantity || 1)) ?? 0
+        : undefined;
+      projectMut.mutate({ groupId: target.groupId, price, discount, discountMode });
     } else {
       subHireMut.mutate();
     }

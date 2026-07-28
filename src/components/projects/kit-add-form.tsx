@@ -133,6 +133,8 @@ export function KitAddForm({
         pricingMode: kitPricingMode,
         unitPrice: kitUnitPriceResolved,
         discount: kitDiscountResolved,
+        // #1012 — persist the entry shape alongside the resolved amount.
+        discountMode: kitDiscountMode,
         groupName: undefined,
         categoryId: effectiveCategoryId,
         groupId: effectiveGroupId,

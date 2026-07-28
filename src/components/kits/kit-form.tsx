@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import { AssetTagInput } from "@/components/ui/asset-tag-input";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { XeroAccountCodeField } from "@/components/settings/xero-coding-fields";
+import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -66,6 +68,7 @@ export function KitForm({ initialData }: KitFormProps) {
   }));
 
   const orgTags = useOrgTags(orgId);
+  const xeroLinked = useXeroLinked();
 
   const form = useForm<KitFormValues>({
     resolver: zodResolver(kitSchema),
@@ -311,6 +314,23 @@ export function KitForm({ initialData }: KitFormProps) {
             </SmartFormField>
           </div>
         </SmartFormSection>
+
+        {xeroLinked && (
+          <SmartFormSection title="Xero coding" hint="Overrides the category default for lines using this kit — leave blank to inherit.">
+            <Controller
+              name="xeroAccountCode"
+              control={form.control}
+              render={({ field }) => (
+                <XeroAccountCodeField
+                  value={field.value}
+                  onChange={field.onChange}
+                  label="Kit account"
+                  placeholder="Inherit category default"
+                />
+              )}
+            />
+          </SmartFormSection>
+        )}
 
         {/* More details — progressive disclosure */}
         <section className="border-t border-line pt-6">

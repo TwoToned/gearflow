@@ -25,6 +25,7 @@ export const categoryFields = {
   icon: v.optional(v.string()),
   sortOrder: v.optional(v.number()),
   tags: v.optional(v.array(v.string())),
+  xeroAccountCode: v.optional(v.string()),
 };
 
 /**
@@ -35,11 +36,12 @@ export const categoryFields = {
  * (src/hooks/use-category-writes.ts) runs `categorySchema.parse()` client-side and
  * calls createNative/updateNative directly.
  */
-function assertCategoryFields(f: { name: string; description?: string; icon?: string; sortOrder?: number }): void {
+function assertCategoryFields(f: { name: string; description?: string; icon?: string; sortOrder?: number; xeroAccountCode?: string }): void {
   assertStrLen(f.name, "name", { min: 1, max: 100 });
   assertStrLen(f.description, "description", { max: 500 });
   assertStrLen(f.icon, "icon", { max: 10 });
   assertNumRange(f.sortOrder, "sortOrder", { min: 0, integer: true });
+  assertStrLen(f.xeroAccountCode, "xeroAccountCode", { max: 50 });
 }
 
 async function logCategory(
@@ -93,6 +95,7 @@ export const createNative = mutation({
       icon: a.icon || undefined,
       sortOrder: a.sortOrder ?? 0,
       tags: a.tags ?? [],
+      xeroAccountCode: a.xeroAccountCode || undefined,
       suggestedCrewRoles: [],
       createdAt: a.now,
       updatedAt: a.now,
@@ -133,6 +136,7 @@ export const updateNative = mutation({
       icon: a.icon || undefined,
       sortOrder: a.sortOrder ?? 0,
       tags: a.tags ?? [],
+      xeroAccountCode: a.xeroAccountCode || undefined,
       updatedAt: a.now,
     });
     await logCategory(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: a.name, summary: `Updated category ${a.name}` });

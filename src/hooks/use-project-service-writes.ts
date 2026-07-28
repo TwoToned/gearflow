@@ -76,6 +76,8 @@ export function useProjectServiceWrites() {
         numberOfTrips: p.numberOfTrips,
         crewCountRequired: p.crewCountRequired,
         crewRoleId: p.crewRoleId,
+        xeroAccountCode: p.xeroAccountCode || undefined,
+        xeroTaxType: p.xeroTaxType || undefined,
       },
       crew: (p.crew ?? []).map((c) => ({
         id: createId(),

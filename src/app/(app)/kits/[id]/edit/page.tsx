@@ -67,6 +67,7 @@ function EditKitContent({ params }: { params: Promise<{ id: string }> }) {
             images: kit.images || [],
             isActive: kit.isActive,
             tags: kit.tags ?? [],
+            xeroAccountCode: kit.xeroAccountCode || undefined,
           }}
         />
       </div>

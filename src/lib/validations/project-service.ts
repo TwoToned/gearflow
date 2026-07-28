@@ -55,6 +55,9 @@ export const projectServiceSchema = z.object({
   crewCountRequired: z.coerce.number().optional(),
   crewRoleId: z.string().optional(),
   crew: z.array(serviceCrewMemberSchema).optional(),
+
+  xeroAccountCode: z.string().max(50).optional(),
+  xeroTaxType: z.string().max(50).optional(),
 });
 
 export type ProjectServiceFormValues = z.input<typeof projectServiceSchema>;

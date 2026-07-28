@@ -54,6 +54,10 @@ export interface LineItemData {
   }>;
   kit?: { name?: string } | null;
   childLineItems?: LineItemData[];
+  /** Per-line Xero coding override (WS1 #940 cascade) — first non-null level
+   *  wins over model/kit/category/org defaults. See convex/lib/xeroAccountCascade.ts. */
+  xeroAccountCode?: string | null;
+  xeroTaxType?: string | null;
   /** Optimistic-concurrency baseline — Prisma `updatedAt` (serialised). Sent
    *  back on save so the server can reject stale writes (collaboration). */
   updatedAt?: string | Date | number | null;

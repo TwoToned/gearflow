@@ -41,6 +41,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { checkAvailability } from "@/server/line-items";
 import { lineItemSchema, type LineItemFormValues } from "@/lib/validations/line-item";
+import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xero-coding-fields";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { PlacementFields } from "./placement-fields";
 import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
 import type { LineItemData, CategoryData } from "./equipment-rows";
@@ -55,6 +58,8 @@ export interface EditLineItemPayload {
   discount?: number;
   notes?: string;
   isOptional: boolean;
+  xeroAccountCode?: string;
+  xeroTaxType?: string;
 }
 
 export interface EditLineItemPlacement {
@@ -131,6 +136,7 @@ function EditLineItemDialogBody({
 
   // Disable the whole form when another user holds an active lock
   const formDisabled = isLocked;
+  const xeroLinked = useXeroLinked();
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
@@ -144,6 +150,8 @@ function EditLineItemDialogBody({
       discount: item.discount != null && Number(item.discount) > 0 ? Number(item.discount) : undefined,
       notes: item.notes ?? "",
       isOptional: item.isOptional ?? false,
+      xeroAccountCode: item.xeroAccountCode ?? "",
+      xeroTaxType: item.xeroTaxType ?? "",
     },
   });
   const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
@@ -215,6 +223,8 @@ function EditLineItemDialogBody({
         discount: disc,
         notes: data.notes || undefined,
         isOptional: data.isOptional ?? false,
+        xeroAccountCode: data.xeroAccountCode || undefined,
+        xeroTaxType: data.xeroTaxType || undefined,
       },
       overbookConfirmed,
       baseUpdatedAt,
@@ -332,6 +342,35 @@ function EditLineItemDialogBody({
             )}
           />
         </section>
+
+        {xeroLinked && (
+          <section className="border-t border-line pt-5">
+            <Accordion type="single" collapsible>
+              <AccordionItem value="xero-coding" className="border-line">
+                <AccordionTrigger>Advanced: Xero coding</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4 pt-1">
+                    <p className="text-caption text-muted">Overrides the model/kit/category default for this line only.</p>
+                    <Controller
+                      control={form.control}
+                      name="xeroAccountCode"
+                      render={({ field }) => (
+                        <XeroAccountCodeField value={field.value} onChange={field.onChange} label="Account" placeholder="Inherit default" />
+                      )}
+                    />
+                    <Controller
+                      control={form.control}
+                      name="xeroTaxType"
+                      render={({ field }) => (
+                        <XeroTaxTypeField value={field.value} onChange={field.onChange} label="Tax type" placeholder="Use org default" />
+                      )}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </section>
+        )}
 
         {/* Placement & options */}
         <section className="space-y-4 border-t border-line pt-5">

@@ -15,17 +15,28 @@
 
 ## Reinstatement blueprint
 
-Rebuild the surface over native Convex queries/mutations (a
-`CONVEX_READS`/`CONVEX_WRITES` bridge), not over `src/server/*.ts` — that
-coupling is exactly what got this removed. The full original design —
-ambient-actor auth, the generated operations registry, scope ∩ RBAC
-enforcement, confirmation/idempotency rails, the two-tier MCP tool surface,
-`llms.txt`, OpenAPI generation, and every hard-won review finding (org-scoping
-holes in bridged reads, idempotency-before-effect ordering, no-privilege-
-escalation-through-minting, MCP tool-list staleness) — is preserved in full
-detail in the design of record:
+**Plan of record (2026-07-28):**
+[`docs/designs/api-mcp-reimplementation.md`](../docs/designs/api-mcp-reimplementation.md).
+Read that first — it supersedes the archived design's *architecture* while keeping its
+safety findings.
+
+The headline change: rebuild over the **native Convex surface** (the 223 `*Native`
+mutations + the org-guarded queries), driven by a short-lived **AGENT token** —
+`sub = actingUserId`, `orgId`, a new `akid` claim, no `svc` — rather than the SERVICE
+token. Because the Convex-native migration moved every gate *inside* the mutation
+(`requireOrgPermission`, `resolveActor`, `assertWritesEnabled`,
+`enforceBrowserWriteLimit`, `assertLifecycleGuard`, the in-mutation availability check,
+`assertNoBlockingCommentsInMutation`, `fieldGuards`/`moneyGuards`, in-transaction
+`writeActivityLog`), an agent token inherits all of them with zero per-operation
+security code — and `requireService()`-gated generated CRUD becomes **unreachable by
+construction** (597 of 1,109 public functions), which is the invariant the old design
+could only ask developers to remember.
+
+The archived design remains the reference for the hard-won review findings — org-scoping
+holes in bridged reads, no-privilege-escalation-through-minting, MCP tool-list staleness,
+preview→confirm token binding:
 [`docs/designs/archive/api-mcp-agent-access.md`](../docs/designs/archive/api-mcp-agent-access.md).
-Read that before rebuilding; don't rediscover those findings the hard way twice.
+Don't rediscover those the hard way twice.
 
 ## What shipped before removal (for scale/scope reference)
 

@@ -22,17 +22,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { XeroClientMapping } from "@/components/settings/xero-client-mapping";
+import { useXeroCodingOptions } from "@/components/settings/xero-coding-fields";
 import { RequirePermission } from "@/components/auth/require-permission";
-
-interface XeroAccount {
-  AccountID: string;
-  Code?: string;
-  Name: string;
-}
-interface XeroTaxRate {
-  Name: string;
-  TaxType: string;
-}
 
 const SERVICE_TYPES = [
   { key: "LABOUR", label: "Labour" },
@@ -73,18 +65,7 @@ export default function XeroSettingsPage() {
   });
 
   const isConnected = integration?.isConnected === true;
-  const accounts = (integration?.cachedAccounts as XeroAccount[] | undefined) ?? [];
-  const taxRates = (integration?.cachedTaxRates as XeroTaxRate[] | undefined) ?? [];
-  const accountOptions = accounts.map((a) => ({
-    value: a.Code ?? a.AccountID,
-    label: a.Name,
-    description: a.Code || undefined,
-  }));
-  const taxRateOptions = taxRates.map((t) => ({
-    value: t.TaxType,
-    label: t.Name,
-    description: t.TaxType,
-  }));
+  const { accountOptions, taxRateOptions } = useXeroCodingOptions();
 
   const [defaultAccountCode, setDefaultAccountCode] = useState(integration?.defaultAccountCode ?? "");
   const [defaultTaxType, setDefaultTaxType] = useState(integration?.defaultTaxType ?? "");
@@ -163,7 +144,7 @@ export default function XeroSettingsPage() {
             <SettingsCard>
               <div className="flex items-center justify-between gap-4">
                 <div className="t-micro text-fg-3">
-                  {accounts.length} accounts, {taxRates.length} tax rates
+                  {accountOptions.length} accounts, {taxRateOptions.length} tax rates
                   {integration?.cacheRefreshedAt ? ` — refreshed ${new Date(integration.cacheRefreshedAt).toLocaleString()}` : " — never refreshed"}
                   {integration?.cacheError && <span className="block text-destructive">Last refresh failed: {integration.cacheError}</span>}
                 </div>
@@ -247,6 +228,14 @@ export default function XeroSettingsPage() {
               </RequirePermission>
             </SettingsCard>
           </FormSection>
+
+          <RequirePermission resource="invoice" action="xero_manage">
+            <FormSection title="Client mapping" description="Map each client to a Xero contact. Search for a client, then search/link/unlink its Xero contact.">
+              <SettingsCard>
+                <XeroClientMapping />
+              </SettingsCard>
+            </FormSection>
+          </RequirePermission>
 
           <FormSection title="Invoice numbering" description="Configured on Settings -> General (same format engine as project numbers, namespaced separately). Default: INV-%YYYY-%SEQ, yearly reset, 4 digits.">
             <SettingsCard>

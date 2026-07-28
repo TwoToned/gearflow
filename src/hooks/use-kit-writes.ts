@@ -49,6 +49,7 @@ export function useKitWrites() {
         notes: p.notes || undefined, purchaseDate: p.purchaseDate ? new Date(p.purchaseDate).getTime() : undefined,
         purchasePrice: p.purchasePrice ?? undefined, image: p.image || undefined, images: p.images ?? undefined,
         barcode: p.assetTag, qrCode: p.assetTag, isActive: p.isActive, tags: p.tags ?? undefined, checkMode: p.checkMode,
+        xeroAccountCode: p.xeroAccountCode || undefined,
         createdAt: now, updatedAt: now, actor: actor(), auditId: createId(),
       });
       return { id };
@@ -63,7 +64,7 @@ export function useKitWrites() {
           caseType: p.caseType || undefined, caseDimensions: p.caseDimensions || undefined, notes: p.notes || undefined,
           purchaseDate: p.purchaseDate ? new Date(p.purchaseDate).getTime() : undefined, purchasePrice: p.purchasePrice ?? undefined,
           image: p.image || undefined, images: p.images ?? undefined, isActive: p.isActive, tags: p.tags ?? undefined,
-          checkMode: p.checkMode, updatedAt: Date.now(),
+          checkMode: p.checkMode, xeroAccountCode: p.xeroAccountCode || undefined, updatedAt: Date.now(),
         },
         actor: actor(), auditId: createId(), now: Date.now(),
       });

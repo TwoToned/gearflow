@@ -135,6 +135,8 @@ export function buildLineItemSetClear(parsed: ParsedLineItem): {
   setStr("groupName", parsed.groupName);
   setStr("notes", parsed.notes);
   setStr("subhireOrderNumber", parsed.subhireOrderNumber);
+  setStr("xeroAccountCode", parsed.xeroAccountCode);
+  setStr("xeroTaxType", parsed.xeroTaxType);
 
   if (parsed.modelId !== undefined) setStr("modelId", parsed.modelId);
   if (parsed.assetId !== undefined) setStr("assetId", parsed.assetId);

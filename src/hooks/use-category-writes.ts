@@ -34,6 +34,7 @@ export function useCategoryWrites() {
     icon: parsed.icon || undefined,
     sortOrder: parsed.sortOrder ?? 0,
     tags: parsed.tags ?? [],
+    xeroAccountCode: parsed.xeroAccountCode || undefined,
   });
 
   return {

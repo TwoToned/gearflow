@@ -19,6 +19,7 @@ export const kitSchema = z.object({
   checkMode: z.enum(["KIT_LEVEL", "PER_ITEM"]).default("KIT_LEVEL"),
   isActive: z.boolean().default(true),
   tags: z.array(z.string()).default([]),
+  xeroAccountCode: z.string().max(50).optional(),
 });
 
 export type KitFormValues = z.input<typeof kitSchema>;

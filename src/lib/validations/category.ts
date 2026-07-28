@@ -7,6 +7,7 @@ export const categorySchema = z.object({
   icon: z.string().max(10).optional(),
   sortOrder: z.coerce.number().int().min(0).default(0),
   tags: z.array(z.string()).default([]),
+  xeroAccountCode: z.string().max(50).optional(),
 });
 
 export type CategoryFormValues = z.input<typeof categorySchema>;

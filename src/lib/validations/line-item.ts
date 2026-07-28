@@ -46,6 +46,8 @@ export const lineItemSchema = z.object({
   showSubhireOnDocs: z.boolean().default(false),
   supplierId: z.string().optional(),
   subhireOrderNumber: z.string().max(100).optional(),
+  xeroAccountCode: z.string().max(50).optional(),
+  xeroTaxType: z.string().max(50).optional(),
 });
 
 export type LineItemFormValues = z.input<typeof lineItemSchema>;

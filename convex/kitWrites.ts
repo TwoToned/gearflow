@@ -44,6 +44,7 @@ function assertKitFields(f: {
   notes?: string;
   weight?: number;
   purchasePrice?: number;
+  xeroAccountCode?: string;
 }): void {
   if (f.name != null) assertStrLen(f.name, "name", { min: 1, max: 200 });
   if (f.assetTag != null) assertStrLen(f.assetTag, "assetTag", { min: 1, max: 50 });
@@ -53,6 +54,7 @@ function assertKitFields(f: {
   assertStrLen(f.notes, "notes", { max: 2000 });
   assertNumRange(f.weight, "weight", { min: 0 });
   assertNumRange(f.purchasePrice, "purchasePrice", { min: 0 });
+  assertStrLen(f.xeroAccountCode, "xeroAccountCode", { max: 50 });
 }
 
 const kitPatch = v.object({
@@ -79,6 +81,7 @@ const kitPatch = v.object({
   checkMode: v.optional(enums.KitCheckMode),
   isPrep: v.optional(v.boolean()),
   isActive: v.optional(v.boolean()),
+  xeroAccountCode: v.optional(v.string()),
   createdAt: v.optional(v.number()),
   updatedAt: v.optional(v.number()),
 });
@@ -109,6 +112,7 @@ export const createNative = mutation({
     tags: v.optional(v.array(v.string())),
     checkMode: v.optional(enums.KitCheckMode),
     isActive: v.optional(v.boolean()),
+    xeroAccountCode: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     actor: actorValidator,

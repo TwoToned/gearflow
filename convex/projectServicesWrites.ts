@@ -7,7 +7,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
-import { assertNumRange } from "./lib/fieldGuards";
+import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
@@ -132,6 +132,8 @@ const serviceInputArgs = {
   numberOfTrips: v.optional(v.number()),
   crewCountRequired: v.optional(v.number()),
   crewRoleId: v.optional(v.string()),
+  xeroAccountCode: v.optional(v.string()),
+  xeroTaxType: v.optional(v.string()),
 };
 
 type ServiceInput = {
@@ -161,6 +163,8 @@ type ServiceInput = {
   numberOfTrips?: number;
   crewCountRequired?: number;
   crewRoleId?: string;
+  xeroAccountCode?: string;
+  xeroTaxType?: string;
 };
 
 /**
@@ -171,8 +175,10 @@ type ServiceInput = {
  * bounds (`unitPrice`/`discount`/`costTotal` non-negative + finite) are already
  * enforced just below. `quantity` was the one bound neither path re-checked.
  */
-function assertServiceFields(f: { quantity?: number }): void {
+function assertServiceFields(f: { quantity?: number; xeroAccountCode?: string; xeroTaxType?: string }): void {
   assertNumRange(f.quantity, "quantity", { min: 1 });
+  assertStrLen(f.xeroAccountCode, "xeroAccountCode", { max: 50 });
+  assertStrLen(f.xeroTaxType, "xeroTaxType", { max: 50 });
 }
 
 /** Port of buildServiceData — clamps endDate by type, computes lineTotal, and returns
@@ -185,7 +191,7 @@ function buildServiceFields(a: ServiceInput) {
   assertFinite(a.discount, "discount");
   assertFinite(a.costTotal, "costTotal");
   assertFinite(a.chargeRateOverride, "chargeRateOverride");
-  assertServiceFields({ quantity: a.quantity });
+  assertServiceFields({ quantity: a.quantity, xeroAccountCode: a.xeroAccountCode, xeroTaxType: a.xeroTaxType });
   // Bound money NON-NEGATIVE (browser-direct bypasses the server Zod min(0)). A negative
   // discount would INFLATE the customer-facing service line total (max(0, unitPrice - disc)
   // → serviceRevenue → project total); a negative costTotal would INFLATE project margin
@@ -233,6 +239,8 @@ function buildServiceFields(a: ServiceInput) {
     numberOfTrips: a.numberOfTrips || null,
     crewCountRequired: a.crewCountRequired || null,
     crewRoleId: a.crewRoleId || null,
+    xeroAccountCode: a.xeroAccountCode || null,
+    xeroTaxType: a.xeroTaxType || null,
   };
   return { fields, serviceDate, serviceEndDate, lineTotal };
 }
@@ -505,6 +513,8 @@ export const createServiceNative = mutation({
       ...(fields.numberOfTrips != null ? { numberOfTrips: fields.numberOfTrips } : {}),
       ...(fields.crewCountRequired != null ? { crewCountRequired: fields.crewCountRequired } : {}),
       ...(fields.crewRoleId != null ? { crewRoleId: fields.crewRoleId } : {}),
+      ...(fields.xeroAccountCode != null ? { xeroAccountCode: fields.xeroAccountCode } : {}),
+      ...(fields.xeroTaxType != null ? { xeroTaxType: fields.xeroTaxType } : {}),
       sortOrder,
       createdAt: a.now,
       updatedAt: a.now,
@@ -642,6 +652,8 @@ export const updateServiceNative = mutation({
     setOrClear("numberOfTrips", fields.numberOfTrips);
     setOrClear("crewCountRequired", fields.crewCountRequired);
     setOrClear("crewRoleId", fields.crewRoleId);
+    setOrClear("xeroAccountCode", fields.xeroAccountCode);
+    setOrClear("xeroTaxType", fields.xeroTaxType);
 
     // Validate the default crew role even when no crew reconcile happens (it's patched
     // onto the service above regardless of the crew block below).

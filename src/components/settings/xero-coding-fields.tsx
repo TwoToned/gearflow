@@ -29,21 +29,36 @@ interface XeroTaxRateOption {
 }
 
 /** Exported so Settings -> Xero's org-default pickers share this exact
- *  mapping instead of a second hand-maintained copy (R-3.1). */
+ *  mapping instead of a second hand-maintained copy (R-3.1).
+ *
+ *  Filters out accounts with no `Code`: Xero's Invoices API `AccountCode`
+ *  field takes the short account CODE, never the internal `AccountID` GUID,
+ *  so a codeless account is never a valid selection here regardless. This
+ *  also fixes a real bug — `a.Code ?? a.AccountID` (the old fallback) only
+ *  triggers on null/undefined, not on `Code: ""` (which Xero returns for
+ *  accounts with no code assigned), so that account's `value` silently
+ *  collapsed to `""` — the exact sentinel `ComboboxPicker` treats as
+ *  "nothing selected." Every UNSET field then matched that account by
+ *  coincidence and rendered it as if selected ("defaults to the first
+ *  account" — whichever codeless account happened to be in the list). */
 export function useXeroCodingOptions() {
   const integration = useXeroIntegration();
   const accounts = (integration?.cachedAccounts as XeroAccountOption[] | undefined) ?? [];
   const taxRates = (integration?.cachedTaxRates as XeroTaxRateOption[] | undefined) ?? [];
-  const accountOptions = accounts.map((a) => ({
-    value: a.Code ?? a.AccountID,
-    label: a.Name,
-    description: a.Code || undefined,
-  }));
-  const taxRateOptions = taxRates.map((t) => ({
-    value: t.TaxType,
-    label: t.Name,
-    description: t.TaxType,
-  }));
+  const accountOptions = accounts
+    .filter((a) => !!a.Code)
+    .map((a) => ({
+      value: a.Code as string,
+      label: a.Name,
+      description: a.Code,
+    }));
+  const taxRateOptions = taxRates
+    .filter((t) => !!t.TaxType)
+    .map((t) => ({
+      value: t.TaxType,
+      label: t.Name,
+      description: t.TaxType,
+    }));
   return { accountOptions, taxRateOptions };
 }
 

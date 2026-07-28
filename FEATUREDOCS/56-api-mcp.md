@@ -15,9 +15,16 @@
 > templates, plus a local stdio↔HTTP proxy for clients that don't speak
 > remote MCP yet. The Phase-0 throwaway prover (`POST
 > /api/v1/probe/line-items`) is gone — Phase 2 replaced it wholesale.
-> Next up: Phase 4 (#1000), safety rails — agent write scopes stay
-> unrestricted by any preset (there are no presets yet; Phase 6) until the
-> `danger`/`confirm` pass lands.**
+> **Phase 6 (#1002) has also landed** — `/settings/api-keys` (key
+> management, scope presets, rotation, the org kill switch, the per-key
+> request log, and a "Connect an AI Agent" one-screen MCP flow) — ahead of
+> Phases 4/5 in numeric order, at the tracking issue's request. This does
+> NOT mean writes are safe-by-default yet: presets only set a key's
+> *starting* scope list (an operator can still hand-pick anything via the
+> explicit picker, bounded only by `assertScopesWithinActor`) — the
+> `danger`/`confirm` enforcement pass that makes a `high`-danger write
+> require `confirm: true` is still Phase 4 (#1000), not built. Next up:
+> Phase 4, safety rails.**
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:

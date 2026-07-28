@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ModelCheckItem (Convex table "modelCheckItems"). GENERATED — Phase 2/5.
@@ -15,7 +16,7 @@ import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("modelCheckItems")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -27,7 +28,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("modelCheckItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "model"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });
@@ -41,7 +42,7 @@ export const getById = query({
 export const listByModel = query({
   args: { orgId: v.string(), modelId: v.string() },
   handler: async (ctx, { orgId, modelId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("modelCheckItems")
       .withIndex("by_organizationId_modelId", (q) =>
@@ -60,7 +61,7 @@ export const listByModel = query({
 export const assignmentsForModel = query({
   args: { orgId: v.string(), modelId: v.string() },
   handler: async (ctx, { orgId, modelId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const rows = (await ctx.db.query("modelCheckItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect())
       .filter((r) => r.organizationId === orgId)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
@@ -78,7 +79,7 @@ export const assignmentsForModel = query({
 export const listByModelId = query({
   args: { orgId: v.string(), modelId: v.string() },
   handler: async (ctx, { orgId, modelId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const rows = await ctx.db
       .query("modelCheckItems")
       .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
@@ -92,7 +93,7 @@ export const listByModelId = query({
 export const listByCheckItemId = query({
   args: { orgId: v.string(), checkItemId: v.string() },
   handler: async (ctx, { orgId, checkItemId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const rows = await ctx.db
       .query("modelCheckItems")
       .withIndex("by_checkItemId", (q) => q.eq("checkItemId", checkItemId))
@@ -104,7 +105,7 @@ export const listByCheckItemId = query({
 export const getByModelAndCheckItem = query({
   args: { orgId: v.string(), modelId: v.string(), checkItemId: v.string() },
   handler: async (ctx, { orgId, modelId, checkItemId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const rows = await ctx.db
       .query("modelCheckItems")
       .withIndex("by_modelId_checkItemId", (q) => q.eq("modelId", modelId).eq("checkItemId", checkItemId))
@@ -231,3 +232,14 @@ export const reorderMany = mutation({
     }
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all model-to-check-item assignments in the caller's org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single model-check-item assignment by id.", danger: "low", mcpTier: 3 },
+  listByModel: { summary: "List check-item assignments for one model (composite org+model index).", danger: "low", mcpTier: 2 },
+  assignmentsForModel: { summary: "Enriched check-item assignments for one model, with the joined check-item doc, sorted by sortOrder.", danger: "low", mcpTier: 2 },
+  listByModelId: { summary: "List check-item assignments for one model (by_modelId index).", danger: "low", mcpTier: 3 },
+  listByCheckItemId: { summary: "List model assignments for one check item.", danger: "low", mcpTier: 3 },
+  getByModelAndCheckItem: { summary: "Get one model-check-item assignment for a specific model + check item pair.", danger: "low", mcpTier: 3 },
+};

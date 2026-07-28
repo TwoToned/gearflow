@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgPermission } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ModelMedia (Convex table "modelMedia"). GENERATED — Phase 2/5.
@@ -16,7 +17,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "model", "read"); // Phase 5 SERVICE-only triage widen (#1001)
     return await ctx.db
       .query("modelMedia")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — org-wide primary-media map — see docs/exceptions.md R-8.3.3
@@ -152,3 +153,15 @@ export const reorder = mutation({
     }
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+// Triage: `list` takes `orgId` directly, so it widens cleanly. `getById` and
+// `listByParent` do NOT take an orgId — they fetch by a GLOBAL index (by_cuid /
+// by_modelId) with no org argument to check against. Widening those would need
+// a new org-derivation step (fetch the parent model to learn its org) rather
+// than the plain guard swap this triage covers — left service-only, revisit.
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all media (photos/manuals) for models in the caller's org.", danger: "low", mcpTier: 3 },
+  getById: { agentAccess: "denied", reason: "No orgId arg; fetched by a global by_cuid index with no org check to swap in without a parent-derivation step — revisit." },
+  listByParent: { agentAccess: "denied", reason: "No orgId arg; modelId is a global foreign key with no org check to swap in without fetching the parent model first — revisit." },
+};

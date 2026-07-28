@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgPermission } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ModelBulkAccessory (Convex table "modelBulkAccessories"). GENERATED — Phase 2/5.
@@ -101,7 +102,7 @@ export const remove = mutation({
 export const listByModelId = query({
   args: { modelId: v.string(), organizationId: v.string() },
   handler: async (ctx, { modelId, organizationId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, organizationId, "model", "read"); // Phase 5 SERVICE-only triage widen (#1001)
     const rows = await ctx.db
       .query("modelBulkAccessories")
       .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
@@ -124,7 +125,7 @@ export const listByModelId = query({
 export const getByModelAndBulkAsset = query({
   args: { modelId: v.string(), bulkAssetId: v.string(), organizationId: v.string() },
   handler: async (ctx, { modelId, bulkAssetId, organizationId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, organizationId, "model", "read"); // Phase 5 SERVICE-only triage widen (#1001)
     return await ctx.db
       .query("modelBulkAccessories")
       .withIndex("by_modelId_bulkAssetId", (q) => q.eq("modelId", modelId).eq("bulkAssetId", bulkAssetId))
@@ -132,3 +133,14 @@ export const getByModelAndBulkAsset = query({
       .first();
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+// Triage: `listByModelId` and `getByModelAndBulkAsset` both take `organizationId`
+// directly, so they widen cleanly. `getById` does NOT — it fetches by a global
+// by_cuid index with no org argument to check against; widening it would need a
+// parent-derivation step rather than the plain guard swap this triage covers.
+export const agentOps: AgentOpsAnnotations = {
+  getById: { agentAccess: "denied", reason: "No orgId/organizationId arg; fetched by a global by_cuid index with no org check to swap in without a parent-derivation step — revisit." },
+  listByModelId: { summary: "List a model's bulk accessories (with bulk-asset assetTag/modelId attached), sorted by sortOrder.", danger: "low", mcpTier: 2 },
+  getByModelAndBulkAsset: { summary: "Look up one model-accessory join row by (model, bulk asset) pair.", danger: "low", mcpTier: 3 },
+};

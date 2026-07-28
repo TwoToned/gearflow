@@ -53,6 +53,10 @@ import {
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
+import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
+import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
+import { JustificationDialog } from "./justification-dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CategoryCardHeading } from "./equipment-cards";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -63,6 +67,7 @@ import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
@@ -130,6 +135,14 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   // a crew booking on this project.
   useProjectCrewLiveSync(projectId, orgId);
 
+  // #990 — rate/rateType/estimatedHours are LOCKED_CREW_ASSIGNMENT_FIELDS
+  // (convex/lib/projectLocks.ts); locked whenever the tier is anything but
+  // OPEN and no unlock session is open (the same `defaultToZero` condition).
+  const [lockNow] = useState(() => Date.now());
+  const lockStatus = useProjectLockStatus(projectId, orgId, lockNow);
+  const rateLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
+  const rateLockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
+
   const [editId, setEditId] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
@@ -164,8 +177,18 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     enabled: !!orgId && cpTopAuthed && conflictRangeStartMs != null && conflictRangeEndMs != null,
   });
 
+  // #990 — prompts for a reason at ON_SITE+ with no open unlock session.
+  const justifiedRemoveAssignment = useJustifiedMutation(
+    (args: { id: string; justification?: string }) => asgWrites.remove(args.id, args.justification),
+    lockStatus,
+  );
+  const justifiedBulkRemoveAssignments = useJustifiedMutation(
+    (args: { ids: string[]; justification?: string }) => asgWrites.bulkDelete(args.ids, args.justification),
+    lockStatus,
+  );
+
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => asgWrites.remove(id),
+    mutationFn: (id: string) => justifiedRemoveAssignment.run({ id }),
     onSuccess: () => {
       toast.success("Crew member removed");
       refreshProjectCrew(projectId);
@@ -211,7 +234,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     allAssignmentIds.length > 0 && selectedAssignmentIds.length === allAssignmentIds.length;
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => asgWrites.bulkDelete(ids),
+    mutationFn: (ids: string[]) => justifiedBulkRemoveAssignments.run({ ids }),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       toast.success(`Removed ${r.deleted} assignment${r.deleted === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -383,6 +406,10 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         onConfirm={() => bulkDeleteMut.mutate(selectedAssignmentIds)}
       />
 
+      {/* #990 — justification prompts backing deleteMutation/bulkDeleteMut above. */}
+      <JustificationDialog {...justifiedRemoveAssignment.dialogProps} />
+      <JustificationDialog {...justifiedBulkRemoveAssignments.dialogProps} />
+
       {/* Assignments table */}
       {(!assignments || assignments.length === 0) ? (
         <div className="rounded-[var(--r-lg)] border-2 border-dashed border-line-2 p-7">
@@ -513,6 +540,8 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
           open={!!editId}
           onOpenChange={(open) => !open && setEditId(null)}
           assignment={editingAssignment}
+          locked={rateLocked}
+          lockReason={rateLockReason}
         />
       )}
 
@@ -934,6 +963,9 @@ interface AssignmentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   assignment: Assignment;
+  /** #990 — rate/rateType/estimatedHours render read-only via `<LockedField>`. */
+  locked?: boolean;
+  lockReason?: string;
 }
 
 /** Edits an EXISTING crew assignment (rate, dates, role, phase, status, notes). Crew
@@ -944,6 +976,8 @@ function AssignmentDialog({
   open,
   onOpenChange,
   assignment,
+  locked,
+  lockReason,
 }: AssignmentDialogProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -1233,52 +1267,60 @@ function AssignmentDialog({
             </div>
           </div>
 
-          {/* Rate override */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Rate override</Label>
+          {/* Rate override + rate type + estimated hours — the full
+              LOCKED_CREW_ASSIGNMENT_FIELDS set, wrapped together (#990). */}
+          <LockedField
+            locked={!!locked}
+            reason={lockReason ?? "Pricing is locked."}
+            exitLabel="Unlock financials"
+            onExit={scrollToLockStrip}
+          >
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Rate override</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Use default"
+                  {...form.register("rateOverride")}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Rate type</Label>
+                <Select
+                  value={form.watch("rateType") || ""}
+                  onValueChange={(v) =>
+                    form.setValue(
+                      "rateType",
+                      v as CrewAssignmentFormValues["rateType"]
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Default">{form.watch("rateType") === "DAILY" ? "Daily" : form.watch("rateType") === "HOURLY" ? "Hourly" : form.watch("rateType") === "FLAT" ? "Flat" : form.watch("rateType")}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DAILY">Daily</SelectItem>
+                    <SelectItem value="HOURLY">Hourly</SelectItem>
+                    <SelectItem value="FLAT">Flat</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Estimated hours (for hourly) */}
+            <div className="space-y-1.5 pt-3">
+              <Label>Estimated hours</Label>
               <Input
                 type="number"
-                step="0.01"
+                step="0.5"
                 min="0"
-                placeholder="Use default"
-                {...form.register("rateOverride")}
+                placeholder="For hourly rate calculation"
+                {...form.register("estimatedHours")}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Rate type</Label>
-              <Select
-                value={form.watch("rateType") || ""}
-                onValueChange={(v) =>
-                  form.setValue(
-                    "rateType",
-                    v as CrewAssignmentFormValues["rateType"]
-                  )
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Default">{form.watch("rateType") === "DAILY" ? "Daily" : form.watch("rateType") === "HOURLY" ? "Hourly" : form.watch("rateType") === "FLAT" ? "Flat" : form.watch("rateType")}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DAILY">Daily</SelectItem>
-                  <SelectItem value="HOURLY">Hourly</SelectItem>
-                  <SelectItem value="FLAT">Flat</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Estimated hours (for hourly) */}
-          <div className="space-y-1.5">
-            <Label>Estimated hours</Label>
-            <Input
-              type="number"
-              step="0.5"
-              min="0"
-              placeholder="For hourly rate calculation"
-              {...form.register("estimatedHours")}
-            />
-          </div>
+          </LockedField>
 
           {/* Status */}
           <div className="space-y-1.5">

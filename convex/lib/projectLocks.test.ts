@@ -8,6 +8,8 @@ import {
   isRevertOutOfHardLock,
   shouldDefaultToZero,
   lifecycleAuditMetadata,
+  resolveLockTier,
+  type LockTier,
 } from "./projectLocks";
 
 describe("lockTierForStatus", () => {
@@ -37,6 +39,80 @@ describe("lockTierForStatus", () => {
     expect(isConfirmedOrLater("CONFIRMED")).toBe(true);
     expect(isConfirmedOrLater("COMPLETED")).toBe(true);
     expect(isConfirmedOrLater("CANCELLED")).toBe(false);
+  });
+});
+
+// #988 (Phase C) — the quote-send lock folds into the SAME tier resolver.
+// Full truth table across every status × every quote state, since this is the
+// safety-critical function every gate site relies on.
+describe("resolveLockTier", () => {
+  const ALL_STATUSES = [
+    "ENQUIRY", "QUOTING", "QUOTED",
+    "CONFIRMED", "PREPPING", "CHECKED_OUT",
+    "ON_SITE", "RETURNED",
+    "COMPLETED", "INVOICED",
+    "CANCELLED",
+  ] as const;
+  const STATUSLESS = [null, undefined] as const;
+  const OPEN_KEEPING_QUOTE_STATES = [undefined, null, "DRAFT"] as const;
+  const ESCALATING_QUOTE_STATES = ["SENT", "ACCEPTED", "DECLINED", "SUPERSEDED", "EXPIRED"] as const;
+  const ALL_QUOTE_STATES = [...OPEN_KEEPING_QUOTE_STATES, ...ESCALATING_QUOTE_STATES] as const;
+
+  describe("status alone already resolves a non-OPEN tier — quote state never overrides it", () => {
+    const NON_OPEN_STATUSES = ALL_STATUSES.filter((s) => lockTierForStatus(s) !== "OPEN");
+
+    test.each(NON_OPEN_STATUSES)("%s", (status) => {
+      const expectedTier = lockTierForStatus(status);
+      for (const quoteState of ALL_QUOTE_STATES) {
+        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: expectedTier, reason: "STATUS" });
+      }
+      // Omitting quoteState entirely resolves identically.
+      expect(resolveLockTier({ status })).toEqual({ tier: expectedTier, reason: "STATUS" });
+    });
+  });
+
+  describe("status alone resolves OPEN (ENQUIRY/QUOTING/QUOTED/CANCELLED) — quote state decides", () => {
+    const OPEN_STATUSES = ALL_STATUSES.filter((s) => lockTierForStatus(s) === "OPEN");
+
+    test.each(OPEN_STATUSES)("%s + no quote / DRAFT quote stays OPEN", (status) => {
+      for (const quoteState of OPEN_KEEPING_QUOTE_STATES) {
+        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "OPEN", reason: "STATUS" });
+      }
+    });
+
+    test.each(OPEN_STATUSES)("%s + a quote that's gone out (SENT/ACCEPTED/DECLINED/SUPERSEDED/EXPIRED) escalates to FINANCE_LOCKED", (status) => {
+      for (const quoteState of ESCALATING_QUOTE_STATES) {
+        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "FINANCE_LOCKED", reason: "QUOTE_SENT" });
+      }
+    });
+
+    test.each(STATUSLESS)("null/undefined status behaves exactly like an OPEN status", (status) => {
+      for (const quoteState of OPEN_KEEPING_QUOTE_STATES) {
+        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "OPEN", reason: "STATUS" });
+      }
+      for (const quoteState of ESCALATING_QUOTE_STATES) {
+        expect(resolveLockTier({ status, quoteState })).toEqual({ tier: "FINANCE_LOCKED", reason: "QUOTE_SENT" });
+      }
+    });
+  });
+
+  test("monotonicity property: no (status, quoteState) pair EVER resolves to a lower tier than status alone", () => {
+    // A simple total order sufficient for this property: OPEN is the floor,
+    // everything else is at or above it, and HARD_LOCKED is the ceiling.
+    // Quote state, per the rule above, can only move OPEN -> FINANCE_LOCKED —
+    // it never touches (let alone lowers) any already-locked status tier.
+    const rank: Record<LockTier, number> = { OPEN: 0, FINANCE_LOCKED: 1, JUSTIFY: 1, HARD_LOCKED: 2 };
+    for (const status of [...ALL_STATUSES, ...STATUSLESS]) {
+      const floor = rank[lockTierForStatus(status)];
+      for (const quoteState of ALL_QUOTE_STATES) {
+        const { tier } = resolveLockTier({ status, quoteState });
+        expect(rank[tier]).toBeGreaterThanOrEqual(floor);
+      }
+    }
+  });
+
+  test("a SENT quote on an already-HARD_LOCKED project softens nothing (still HARD_LOCKED, reason STATUS)", () => {
+    expect(resolveLockTier({ status: "COMPLETED", quoteState: "SENT" })).toEqual({ tier: "HARD_LOCKED", reason: "STATUS" });
   });
 });
 

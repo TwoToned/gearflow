@@ -291,6 +291,27 @@ classified deliberately. `assertBulkSizeOk(ctx, count)` is async and ctx-taking 
 the same reason: the cap (50 agent / 500 human) has to come from the verified
 identity, not a caller-supplied hint.
 
+### Discount: the AMOUNT is stored, the PERCENTAGE is derived
+`projectLineItems.discount` / `projectGroups.discount` are always the **resolved
+flat dollar amount** — recalc, allocation, invoicing and `lineTotal` read that
+number and nothing else. `discountMode` (`"$" | "%"`, #1012) sits next to it and
+records only how the operator *entered* it, so documents can print `-15%`
+instead of `-$150.00`. Absent = `"$"` (every pre-#1012 row; no backfill).
+
+The percentage itself is **never stored** — `discountCellText`
+(`gearflow-table.ts`) / `discountEntryValue` recompute it from the stored dollar
+amount against the row's own gross. Storing the typed `15` would let a document
+contradict itself once the unit price changed (the dollar amount is frozen at
+save). Don't "fix" that by adding a `discountValue` column.
+
+`discountMode` must never outlive the amount it describes: every write path that
+clears/zeroes `discount` clears the mode too (patchNative, patchManyNative,
+updateGroupPriceNative, and each lifecycle-lock `defaultToZero` branch). The
+mode union + both conversions live in `src/lib/discount-mode.ts` — a plain
+module, so Convex mutations, Zod schemas, the seven add/edit forms and the PDF
+renderer share one definition. `line-item-form-fields.tsx` re-exports them for
+the forms; don't re-declare `"$" | "%"` anywhere else.
+
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
 (`validUntil < now && status === "SENT"`) and never stored, and the deprecated

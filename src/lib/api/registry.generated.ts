@@ -53,11 +53,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "activityLog",
     "fn": "exportRows",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "action",
@@ -113,9 +118,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ff720184a010feab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Raw activity log rows for CSV export, org-scoped and filtered.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -124,11 +129,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "activityLog",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "action",
@@ -204,9 +214,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a65e64bf7c108c99",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Filtered, sorted, paginated org activity log.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -215,11 +225,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "activityLog",
     "fn": "listByEntity",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "entityId",
@@ -245,9 +260,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8a5b72d1a9bf2b72",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Activity log entries for one entity (e.g. a project or asset).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -732,8 +747,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "The API key management surface itself must not be self-servable by an API key (privilege escalation risk)."
   },
   {
     "operation": "apiKeys.list",
@@ -758,8 +773,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "The API key management surface itself must not be self-servable by an API key (privilege escalation risk)."
   },
   {
     "operation": "apiKeys.revoke",
@@ -956,11 +971,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetAccessories",
     "fn": "availableSerialized",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -976,9 +996,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ac9318cfe0bd009f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Serialized assets eligible to become an accessory of a given parent asset.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -1404,11 +1424,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetBulkChildren",
     "fn": "listByParentAssetId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -1424,9 +1449,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "94f2dd640458852b",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List bulk-asset accessory children attached to a parent asset.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -1660,11 +1685,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetMedia",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -1675,9 +1705,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one asset media row by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -1686,11 +1716,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetMedia",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -1701,9 +1736,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all asset media rows visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -1712,11 +1747,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetMedia",
     "fn": "listByParent",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "parentId",
@@ -1727,9 +1767,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List media rows attached to one asset.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2261,11 +2301,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "getByAssetTag",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetTag",
@@ -2281,9 +2326,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "4ecff986ff661046",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up an asset by its human-readable asset tag.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2312,9 +2357,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one asset by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2343,9 +2388,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all assets visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2354,11 +2399,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "listByIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "ids",
@@ -2374,9 +2424,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch point-read assets by id, scoped to one org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2410,9 +2460,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ec9e5654f5228328",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List an org's assets belonging to one model.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2421,11 +2471,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "listByModelIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelIds",
@@ -2441,9 +2496,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0a315903684b83e9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch asset lookup across many models in one call.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2452,11 +2507,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "listByParentAssetId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -2472,9 +2532,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "94f2dd640458852b",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List child assets attached to a parent asset.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2483,11 +2543,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "listGallery",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -2503,9 +2568,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3ffb2bbf35f7c1b9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Browse an org's whole active asset catalogue (unpaginated, joined + searchable).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2514,11 +2579,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "categoryId",
@@ -2609,9 +2679,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "9eb9fbed11f72f53",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Filtered, sorted, paginated asset list with model/category/location joins.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2656,11 +2726,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "registryPhotos",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -2671,9 +2746,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Primary-photo URL maps for assets and models in an org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2891,11 +2966,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetScanLogs",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -2906,9 +2986,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one scan-log entry by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2917,11 +2997,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetScanLogs",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -2932,9 +3017,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List an org's asset scan-log history.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2943,11 +3028,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetScanLogs",
     "fn": "listByKitId",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "kitId",
@@ -2963,9 +3053,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List scan-log entries for one kit.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -2974,11 +3064,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetScanLogs",
     "fn": "listByOrgAndAsset",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetId",
@@ -2994,9 +3089,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b726f9a3bca87faf",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List scan-log entries for one asset.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -3005,11 +3100,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assetScanLogs",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -3025,9 +3125,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List scan-log entries for one project.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -3054,8 +3154,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Cross-org GDPR-cascade lookup by scannedById with no org filter at all (not org-scoped even in JS) — an internal user-delete helper, not a real read surface."
   },
   {
     "operation": "assetScanLogs.remove",
@@ -4337,11 +4437,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "detail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -4357,9 +4462,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single bulk asset's mapped scalar fields.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -4368,11 +4473,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "getByAssetTag",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetTag",
@@ -4388,9 +4498,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "4ecff986ff661046",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up a bulk asset by its asset tag.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -4419,9 +4529,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one bulk asset by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -4450,9 +4560,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all bulk assets visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -4461,11 +4571,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "listByIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "ids",
@@ -4481,9 +4596,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch point-read bulk assets by id, scoped to one org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -4492,11 +4607,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "listByModel",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -4512,9 +4632,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ec9e5654f5228328",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List an org's bulk assets belonging to one model.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -4523,11 +4643,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "listByModelIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelIds",
@@ -4543,9 +4668,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0a315903684b83e9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch bulk-asset lookup across many models in one call.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -4554,11 +4679,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "categoryId",
@@ -4619,9 +4749,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "958f04675202f3e0",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Filtered, sorted, paginated bulk-asset list with model/category/location joins.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -5007,11 +5137,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "categories",
     "fn": "containerAssetSearch",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -5027,9 +5162,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "db5e7ea1b467f3dc",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Search assets in the org's configured prep-kit container category for a picker.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -5038,11 +5173,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "categories",
     "fn": "counts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -5053,9 +5193,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "16ff2663750c0c68",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Per-category model and kit counts for the caller's org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -5216,11 +5356,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "categories",
     "fn": "detail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -5236,9 +5381,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Category detail composite: parent/children (with counts), kits (with member counts), active models (with asset counts + primary photo).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -5267,9 +5412,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single category by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -5298,9 +5443,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List categories in the caller's org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -5719,8 +5864,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "No organizationId column and no orgId arg; a single slot has no org to check against without an extra parent lookup — revisit under a projects-domain slice."
   },
   {
     "operation": "categorySlots.list",
@@ -5745,8 +5890,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "No organizationId column and no orgId arg; org-scoping needs a parent projectCategory lookup not done here — revisit under a projects-domain slice."
   },
   {
     "operation": "categorySlots.listByProjectGroupId",
@@ -5771,8 +5916,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "No organizationId column and no orgId arg; org-scoping needs a parent projectGroup lookup not done here — revisit under a projects-domain slice."
   },
   {
     "operation": "categorySlots.listBySubHireGroupId",
@@ -5797,8 +5942,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "No organizationId column and no orgId arg; org-scoping needs a parent subHireGroup lookup not done here — revisit under a projects-domain slice."
   },
   {
     "operation": "categorySlots.remove",
@@ -6409,11 +6554,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "checkItems",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "checkItem",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -6424,9 +6574,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single check item by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -6435,11 +6585,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "checkItems",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "checkItem",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -6450,9 +6605,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List check items (checklist templates) configured for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -7765,11 +7920,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "checkRecords",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "checkItem",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -7780,9 +7940,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single check record by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -7791,11 +7951,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "checkRecords",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "checkItem",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -7806,9 +7971,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List check records (asset condition/inspection check history) for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -7817,11 +7982,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "checkRecords",
     "fn": "listByOrgAndAsset",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "checkItem",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetId",
@@ -7837,9 +8007,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b726f9a3bca87faf",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all check records for one asset within the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -8614,11 +8784,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "clientContacts",
     "fn": "forClient",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "clientId",
@@ -8634,9 +8809,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "29d783ab75aa46af",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List a client's contacts for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -9230,19 +9405,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Fetches by global cuid index with no orgId argument to check against; opening it risks a cross-tenant read (R-8.4.3)."
   },
   {
     "operation": "clientMedia.list",
     "module": "clientMedia",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -9253,9 +9433,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List a client's media metadata for the org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -9282,8 +9462,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Fetches by global by_clientId index with no orgId argument to check against; opening it risks a cross-tenant read (R-8.4.3)."
   },
   {
     "operation": "clientMedia.remove",
@@ -9624,9 +9804,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Client detail composite: client + recent projects + media + contacts.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -9655,9 +9835,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single client by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -9686,9 +9866,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List clients for the org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -9697,11 +9877,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "clients",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -9742,9 +9927,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8f6d2aad4321c5d2",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated/searchable/sortable client list.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -9753,11 +9938,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "clients",
     "fn": "projectCounts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -9768,9 +9958,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "ed784e8a8fdb5fe9",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Project count per client id for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10459,11 +10649,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "getProjectBlockingSummary",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -10479,9 +10674,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Summarise open blocking comment threads on one project.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10490,11 +10685,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "getReviewMarker",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "entityId",
@@ -10515,9 +10715,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "2fbb77229b52469e",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get the review marker for one target on an entity.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10526,11 +10726,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "listActivityEvents",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "entityId",
@@ -10556,9 +10761,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8a5b72d1a9bf2b72",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List recent collaboration activity events for an entity.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10567,11 +10772,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "listBlockingForProjects",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -10587,9 +10797,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "5752f034278d25dc",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Open blocking comment counts across many projects.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10598,11 +10808,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "listComments",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -10618,9 +10833,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "d65053ba9165f2ec",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List comments in a thread.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10629,11 +10844,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "listOpenBlockingThreads",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -10644,9 +10864,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all open blocking comment threads in the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10655,11 +10875,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "listReviewMarkersForEntity",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "entityId",
@@ -10680,9 +10905,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0adaa27fab584be5",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List review markers across an entity's targets.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10691,11 +10916,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "listThreadCommentCounts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "entityId",
@@ -10716,9 +10946,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0adaa27fab584be5",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Open/total/blocking comment counts per target on an entity.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -10727,11 +10957,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "collaboration",
     "fn": "listThreads",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "entityId",
@@ -10762,9 +10997,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ac240d36dd29e0a4",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List comment threads on a project entity or line item/group target.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11113,9 +11348,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "A single crew member's full detail (role, skills, linked user, assignments).",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11144,9 +11379,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Per-member linked-user name/image + skills, for enriching the reactive roster.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11155,11 +11390,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crew",
     "fn": "myCrewMemberId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -11170,9 +11410,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "The caller's own linked crew-member id, if any.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11201,9 +11441,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Org users linkable to a crew member, with alreadyLinked flag.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11212,11 +11452,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "conflictsForProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -11242,9 +11487,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "975a8168946736c5",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Per-assignment conflict flags for a project's crew.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11789,9 +12034,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single crew assignment by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11846,9 +12091,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List crew assignments for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11882,9 +12127,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List crew assignments for a project.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11893,11 +12138,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "listByServiceIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -11913,9 +12163,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b23bf1c387a683d5",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Crew assignments for a set of project service ids.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -11924,11 +12174,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "membersForAssignment",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "excludeServiceId",
@@ -11964,9 +12219,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "e802303e93424482",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Active crew members eligible for assignment, with conflict/availability signals.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -12082,9 +12337,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "A project's crew composite (assignments + members + roles + shifts).",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -12093,11 +12348,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "projectLabourCost",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -12113,9 +12373,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Aggregate estimated labour cost for a project's crew assignments.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -12897,11 +13157,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAvailabilities",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -12912,9 +13177,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single crew availability row by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -12923,11 +13188,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAvailabilities",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -12938,9 +13208,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List crew availability rows for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13338,11 +13608,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewDashboard",
     "fn": "activeAssignmentsSummary",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "nowMs",
@@ -13358,9 +13633,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Currently active/confirmed crew assignments.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13369,11 +13644,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewDashboard",
     "fn": "pendingOffers",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -13384,9 +13664,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Pending/offered crew assignments awaiting response.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13395,11 +13675,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewDashboard",
     "fn": "pendingTimeEntries",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -13410,9 +13695,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Most recent SUBMITTED time entries awaiting approval.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13421,11 +13706,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewDashboard",
     "fn": "pickerList",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -13436,9 +13726,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Active crew members with their full assignment history, for a picker.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13447,11 +13737,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewDashboard",
     "fn": "stats",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "nowMs",
@@ -13467,9 +13762,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Crew dashboard summary stats (active count, assignments, pending offers, hours this week).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13478,11 +13773,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewDashboard",
     "fn": "upcomingShifts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "nowMs",
@@ -13498,9 +13798,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Upcoming scheduled crew shifts.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13933,9 +14233,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single crew member by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13964,9 +14264,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List crew members for the org (icalToken redacted for non-service callers).",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -13975,11 +14275,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewMembers",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "department",
@@ -14030,9 +14335,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ac988481d3f8323c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated/searchable/sortable crew member list.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -14302,11 +14607,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewRoles",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -14317,9 +14627,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single crew role by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -14328,11 +14638,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewRoles",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -14343,9 +14658,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List crew roles for the org (includes rate fields).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -14354,11 +14669,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewRoles",
     "fn": "listForSettings",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -14369,9 +14689,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Crew roles for the settings admin table, rate fields redacted below manager+.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -14437,11 +14757,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewRoles",
     "fn": "usage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -14457,9 +14782,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Usage counts (crew/assignments/services) for a crew role, for the archive-with-usage-guard pre-check.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -14861,8 +15186,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "crewShifts has no organizationId column; fetches by global cuid with no org check, so opening it risks a cross-tenant read (R-8.4.3)."
   },
   {
     "operation": "crewShifts.list",
@@ -14887,8 +15212,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "crewShifts has no organizationId column; this query has no orgId to check the assignmentId argument against, so opening it risks a cross-tenant read (R-8.4.3)."
   },
   {
     "operation": "crewShifts.listByAssignmentIds",
@@ -14913,8 +15238,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "crewShifts has no organizationId column; this query has no orgId to check the assignmentIds argument against, so opening it risks a cross-tenant read (R-8.4.3)."
   },
   {
     "operation": "crewShifts.patchShift",
@@ -15122,11 +15447,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewSkills",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -15137,9 +15467,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single crew skill by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -15148,11 +15478,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewSkills",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -15163,9 +15498,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List crew skills for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -15231,11 +15566,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewTimeEntries",
     "fn": "allEntries",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "filters",
@@ -15276,9 +15616,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8916a3ab1362a387",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated/searchable/sortable timesheet (crew time entry) list.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -15515,11 +15855,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewTimeEntries",
     "fn": "forMember",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "crewMemberId",
@@ -15535,9 +15880,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0cc87f0053396699",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "A crew member's time entries, newest first.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -15546,11 +15891,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewTimeEntries",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -15561,9 +15911,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single crew time entry by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -15572,11 +15922,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewTimeEntries",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -15587,9 +15942,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List crew time entries for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -16680,11 +17035,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "customFieldDefinitions",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "orgSettings",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -16695,9 +17055,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one custom field definition by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -16706,11 +17066,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "customFieldDefinitions",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "orgSettings",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -16721,9 +17086,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List custom field definitions for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17058,11 +17423,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardActivity",
     "fn": "bundle",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -17073,9 +17443,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Recent org activity feed: scan logs, test/tag records, maintenance records.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17125,11 +17495,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardCounters",
     "fn": "getByOrg",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -17140,9 +17515,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Read an org's live dashboard counters (assets, projects, crew).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17182,11 +17557,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardCounters",
     "fn": "reconcileIfStale",
     "kind": "mutation",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "maxAgeMs",
@@ -17207,9 +17587,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3cc3fe076356e1a7",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Refresh an org's dashboard counters if the cached values are stale.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17218,11 +17598,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardLists",
     "fn": "blocking",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -17233,9 +17618,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Blocking comment threads relevant to the caller (as PM or mentioned).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17244,11 +17629,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardLists",
     "fn": "home",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -17259,9 +17649,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "The caller's personal dashboard project list (managed or PM-assigned).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17270,11 +17660,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardLists",
     "fn": "upcoming",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "now",
@@ -17290,9 +17685,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the org's upcoming projects (next 8 by rental start date).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17301,11 +17696,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardStats",
     "fn": "bundle",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "now",
@@ -17321,9 +17721,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17332,11 +17732,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "dashboardSubHire",
     "fn": "bundle",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "subHire",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "monthStart",
@@ -17357,9 +17762,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "4994fe34eaec3517",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Sub-hire dashboard stats: active count, monthly cost, overdue returns.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17491,11 +17896,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "files",
     "fn": "getServeInfo",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "document",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "document",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "storageId",
@@ -17506,9 +17916,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8c7a079e770de215",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a short-lived download URL + metadata for one of the org's stored files.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17735,11 +18145,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "fileUploads",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "document",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "document",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -17750,9 +18165,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one uploaded-file record by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -17779,8 +18194,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment)."
   },
   {
     "operation": "fileUploads.isReferencedByMedia",
@@ -17805,19 +18220,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment)."
   },
   {
     "operation": "fileUploads.list",
     "module": "fileUploads",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "document",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "document",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -17828,9 +18248,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the org's uploaded-file records (metadata, not bytes).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -18001,8 +18421,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Same as quoteArtifactContext: SERVICE-gated by design (module docstring), exposes pdfFileId into the deliberately-closed finance-document subsystem; non-sensitive fields are already agent-reachable via invoices.ts."
   },
   {
     "operation": "financeArtifacts.quoteArtifactContext",
@@ -18037,8 +18457,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain."
   },
   {
     "operation": "globalSearch.search",
@@ -18068,8 +18488,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Cross-resource search spans multiple RBAC domains; needs per-result-type scope design, not a single blanket resource."
   },
   {
     "operation": "groupTemplateItems.create",
@@ -18214,11 +18634,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "groupTemplateItems",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -18229,9 +18654,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all group template items for an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -18425,11 +18850,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "groupTemplates",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -18440,9 +18870,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all group templates for an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -18863,11 +19293,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "invoiceLines",
     "fn": "listForInvoice",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "invoiceId",
@@ -18883,9 +19318,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "83c8d5cb09b4b3f8",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List line items for an invoice.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -18894,11 +19329,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "invoices",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -18909,9 +19349,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get an invoice by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -18920,11 +19360,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "invoices",
     "fn": "listForProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -18940,9 +19385,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List invoices for a project.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -18951,11 +19396,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "invoices",
     "fn": "listRecentForOrg",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "limit",
@@ -18971,9 +19421,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "5b680ee1045e20ea",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the org's most recent invoices.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19302,11 +19752,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitAllocations",
     "fn": "getKitAllocation",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "kitId",
@@ -19322,9 +19777,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "5c16b6928f6b011a",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a kit's per-model revenue allocation (saved percentages, suggestion, staleness).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19582,11 +20037,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitBulkItems",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -19597,9 +20057,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one kit bulk-item membership row by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19608,11 +20068,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitBulkItems",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -19623,9 +20088,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all kit bulk-item memberships visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19652,19 +20117,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Cross-org GDPR-cascade lookup by addedById with no org filter at all — an internal user-delete helper, not a real read surface."
   },
   {
     "operation": "kitBulkItems.listByKitId",
     "module": "kitBulkItems",
     "fn": "listByKitId",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "kitId",
@@ -19680,9 +20150,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List bulk-item members of one kit.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19748,11 +20218,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitCheckItems",
     "fn": "assignmentsForKit",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "kitId",
@@ -19768,9 +20243,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Enriched, ordered check-item assignments for one kit (with the nested check-item doc).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19881,11 +20356,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitCheckItems",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -19896,9 +20376,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one kit check-item assignment by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19907,11 +20387,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitCheckItems",
     "fn": "getByKitAndCheckItem",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "checkItemId",
@@ -19932,9 +20417,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "52f8077f12eec30d",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one kit's assignment for a specific check item.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19943,11 +20428,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitCheckItems",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -19958,9 +20448,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all kit check-item assignments visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -19969,11 +20459,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitCheckItems",
     "fn": "listByCheckItemId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "checkItemId",
@@ -19989,9 +20484,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "33c02c2387a0f356",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List which kits a check item is assigned to.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -20000,11 +20495,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitCheckItems",
     "fn": "listByKitId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "kitId",
@@ -20020,9 +20520,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List check-item assignments for one kit.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -20287,11 +20787,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitMedia",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -20302,9 +20807,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one kit media row by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -20313,11 +20818,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitMedia",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -20328,9 +20838,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all kit media rows visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -20339,11 +20849,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitMedia",
     "fn": "listByParent",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "parentId",
@@ -20354,9 +20869,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List media rows attached to one kit.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -20652,11 +21167,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "availableAssets",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -20672,9 +21192,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "14c1f0e47c825678",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Serialized assets eligible to add to a kit (available, unkitted).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -20683,11 +21203,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "availableBulkAssets",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -20698,9 +21223,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Bulk assets with available quantity, eligible to add to a kit.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -20709,11 +21234,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "counts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -20724,9 +21254,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Per-kit member counts (serialized + bulk items) and primary photo.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -21037,11 +21567,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "deletability",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -21057,9 +21592,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
     "returnsSha": "b35f7b7941d5eced",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Whether a kit can be archived or hard-deleted, and why not.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -21104,11 +21639,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "getByAssetTag",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetTag",
@@ -21124,9 +21664,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "4ecff986ff661046",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up a kit by its asset tag.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -21155,9 +21695,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one kit by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -21186,9 +21726,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all kits visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -21197,11 +21737,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "listByIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "ids",
@@ -21217,9 +21762,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch point-read kits by id, scoped to one org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -21228,11 +21773,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "categoryId",
@@ -21293,9 +21843,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3085370ce0798e03",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Filtered, sorted, paginated kit list with category/location joins.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -21575,11 +22125,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kitSerializedItems",
     "fn": "getByAssetId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetId",
@@ -21595,9 +22150,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8bf357eea605d847",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up which kit (if any) an asset is currently a serialized member of.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -22523,11 +23078,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "lineItemMergeMaps",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -22538,9 +23098,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one line-item merge history record by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -22549,11 +23109,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "lineItemMergeMaps",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -22564,9 +23129,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List an org's line-item merge history records.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -23712,11 +24277,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locationMedia",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -23727,9 +24297,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one location media row by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -23738,11 +24308,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locationMedia",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -23753,9 +24328,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all location media rows visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -23764,11 +24339,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locationMedia",
     "fn": "listByParent",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "parentId",
@@ -23779,9 +24359,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List media rows attached to one location.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -23847,11 +24427,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locations",
     "fn": "counts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -23862,9 +24447,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "dd4df906505c9dba",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Asset/bulk-asset/kit counts per location.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -24045,11 +24630,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locations",
     "fn": "detail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -24065,9 +24655,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Location detail composite: parent, children, contained assets/bulk/kits/projects, media.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -24076,11 +24666,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locations",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -24091,9 +24686,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one location by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -24102,11 +24697,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locations",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -24117,9 +24717,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all locations visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -24128,11 +24728,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "locations",
     "fn": "listSimple",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -24143,9 +24748,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Minimal location list (id/name/type) for pickers.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -24740,11 +25345,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceRecordAssets",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -24755,9 +25365,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single maintenance-record/asset link row by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -24766,11 +25376,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceRecordAssets",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "maintenanceRecordId",
@@ -24781,9 +25396,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "37f1eef3978eee9e",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the asset links for one maintenance record.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -24810,8 +25425,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Batch join across caller-supplied assetIds with no per-id org check — would need a verify-and-filter redesign to scope safely."
   },
   {
     "operation": "maintenanceRecordAssets.listByMaintenanceRecordIds",
@@ -24836,8 +25451,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Batch join across caller-supplied maintenanceRecordIds with no per-id org check — would need a verify-and-filter redesign to scope safely."
   },
   {
     "operation": "maintenanceRecordAssets.remove",
@@ -24901,11 +25516,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceRecords",
     "fn": "assetsForSelect",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -24916,9 +25536,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Active-asset picker list for the maintenance form.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -25199,9 +25819,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single maintenance record by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -25230,9 +25850,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List maintenance records for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -25241,11 +25861,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceRecords",
     "fn": "recordDetail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -25261,9 +25886,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Single maintenance record with linked assets and reported/assigned user names.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -25272,11 +25897,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceRecords",
     "fn": "recordsPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetId",
@@ -25327,9 +25957,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "321ab0537190d30d",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated, filtered, sorted maintenance record list with linked-asset enrichment.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -25949,11 +26579,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "members",
     "fn": "getByOrgAndUser",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "orgMembers",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "orgMembers",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "organizationId",
@@ -25969,9 +26604,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "f497a2e3eac85a90",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one member's role within the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -25992,8 +26627,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Full cross-tenant dump of every org's membership rows (no orgId argument to scope by); an auth-mirror reconcile utility, not an org-scoped read — would leak other orgs' membership/roles (R-8.4.3)."
   },
   {
     "operation": "members.remove",
@@ -26253,19 +26888,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "No orgId/organizationId arg; fetched by a global by_cuid index with no org check to swap in without a parent-derivation step — revisit."
   },
   {
     "operation": "modelBulkAccessories.getByModelAndBulkAsset",
     "module": "modelBulkAccessories",
     "fn": "getByModelAndBulkAsset",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "bulkAssetId",
@@ -26286,9 +26926,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "c7b07851e79e9d86",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up one model-accessory join row by (model, bulk asset) pair.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26297,11 +26937,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelBulkAccessories",
     "fn": "listByModelId",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -26317,9 +26962,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "aed5bc8d82a01cda",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List a model's bulk accessories (with bulk-asset assetTag/modelId attached), sorted by sortOrder.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26588,11 +27233,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelCheckItems",
     "fn": "assignmentsForModel",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -26608,9 +27258,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0f841e086e880d8c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Enriched check-item assignments for one model, with the joined check-item doc, sorted by sortOrder.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26752,11 +27402,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelCheckItems",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -26767,9 +27422,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single model-check-item assignment by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26778,11 +27433,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelCheckItems",
     "fn": "getByModelAndCheckItem",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "checkItemId",
@@ -26803,9 +27463,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "7f6eb0171be81e6f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one model-check-item assignment for a specific model + check item pair.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26814,11 +27474,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelCheckItems",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -26829,9 +27494,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all model-to-check-item assignments in the caller's org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26840,11 +27505,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelCheckItems",
     "fn": "listByCheckItemId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "checkItemId",
@@ -26860,9 +27530,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "33c02c2387a0f356",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List model assignments for one check item.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26871,11 +27541,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelCheckItems",
     "fn": "listByModel",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -26891,9 +27566,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0f841e086e880d8c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List check-item assignments for one model (composite org+model index).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -26902,11 +27577,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "modelCheckItems",
     "fn": "listByModelId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -26922,9 +27602,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0f841e086e880d8c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List check-item assignments for one model (by_modelId index).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -27171,19 +27851,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "No orgId arg; fetched by a global by_cuid index with no org check to swap in without a parent-derivation step — revisit."
   },
   {
     "operation": "modelMedia.list",
     "module": "modelMedia",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -27194,9 +27879,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all media (photos/manuals) for models in the caller's org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -27223,8 +27908,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "No orgId arg; modelId is a global foreign key with no org check to swap in without fetching the parent model first — revisit."
   },
   {
     "operation": "modelMedia.remove",
@@ -27386,11 +28071,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "models",
     "fn": "counts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -27401,9 +28091,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Per-model active asset/bulk-asset counts and primary photo for the caller's org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -27804,9 +28494,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Model detail composite: model + category + active assets/bulk assets + media gallery + bulk accessories.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -27835,9 +28525,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single model by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -27866,9 +28556,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List models visible to the caller's org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -28904,11 +29594,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "notificationEmailLogs",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "orgSettings",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -28919,9 +29614,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one sent-notification-email log entry by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -28930,11 +29625,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "notificationEmailLogs",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "orgSettings",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -28945,9 +29645,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the org's sent-notification-email audit trail.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -29046,8 +29746,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4)."
   },
   {
     "operation": "orgExport.countTable",
@@ -29092,8 +29792,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4)."
   },
   {
     "operation": "orgExport.exportTablePage",
@@ -29133,8 +29833,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4)."
   },
   {
     "operation": "orgExport.getOrgRow",
@@ -29159,8 +29859,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4)."
   },
   {
     "operation": "orgExport.listOrgIds",
@@ -29179,8 +29879,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4)."
   },
   {
     "operation": "orgExport.scanTableFiltered",
@@ -29225,8 +29925,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4)."
   },
   {
     "operation": "orgSettings.createIfMissing",
@@ -29307,8 +30007,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Global secret-token lookup (no orgId argument to scope against) — structurally not an org-scoped read."
   },
   {
     "operation": "orgSettings.getByOrg",
@@ -29333,8 +30033,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Row/lookup exposes apiKillSwitchAt (the org's own write-kill-switch state) and/or icalToken (a bearer credential for the public iCal feed); no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
   },
   {
     "operation": "orgSettings.reserveAssetTags",
@@ -29723,8 +30423,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Internal migration-parity diagnostic tool, not an application read surface."
   },
   {
     "operation": "pendingSSOApprovals.createForProvisioning",
@@ -29820,8 +30520,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Site-admin SSO approval queue; platform-operator surface, not an org-scoped agent concern."
   },
   {
     "operation": "pendingSSOApprovals.list",
@@ -29846,8 +30546,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Site-admin SSO approval queue; platform-operator surface, not an org-scoped agent concern."
   },
   {
     "operation": "pendingSSOApprovals.revertToPending",
@@ -30146,11 +30846,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectCategories",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -30161,9 +30866,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one project category by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -30172,11 +30877,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectCategories",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -30187,9 +30897,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all project categories for an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -30198,11 +30908,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectCategories",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -30218,9 +30933,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List categories belonging to one project.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32458,9 +33173,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one project line item by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32489,9 +33204,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all project line items for an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32500,11 +33215,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listByAssetId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetId",
@@ -32520,9 +33240,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8bf357eea605d847",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List line items referencing one asset (delete-guard lookup).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32531,11 +33251,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listByIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "ids",
@@ -32551,9 +33276,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "d37e5fc9f7f8dd0e",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch point-read line items by id, scoped to one org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32562,11 +33287,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listByKitId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "kitId",
@@ -32582,9 +33312,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "5c16b6928f6b011a",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List line items referencing one kit (delete-guard lookup).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32593,11 +33323,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listByModelId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -32613,9 +33348,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ec9e5654f5228328",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List line items referencing one model.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32624,11 +33359,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listByModelIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelIds",
@@ -32644,9 +33384,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ac27e3662e447ed5",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch line-item lookup across many models in one call.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32680,9 +33420,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List line items belonging to one project.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32691,11 +33431,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listByProjectIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -32711,9 +33456,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "5752f034278d25dc",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch line-item lookup across a fixed set of projects in one call.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -32722,11 +33467,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listFlagged",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "limit",
@@ -32742,9 +33492,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "24ca7148c342d948",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List flagged (faulty/overdue tag) line items for an org, oldest first.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -33285,19 +34035,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Point-read by global by_cuid with no orgId arg to verify the result against — would let an agent read another org's unit by guessing its cuid."
   },
   {
     "operation": "projectLineItemUnits.list",
     "module": "projectLineItemUnits",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -33308,9 +34063,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all project line item units (fulfillment/serial rows) for an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -33337,8 +34092,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "by_lineItemId is a global index and the query takes no orgId arg, so a caller-supplied lineItemId can't be checked against the caller's org."
   },
   {
     "operation": "projectLineItemUnits.listByLineItemIds",
@@ -33363,19 +34118,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Same gap as listByLineItem: no orgId arg to check the (global, cross-org) lineItemIds against."
   },
   {
     "operation": "projectLineItemUnits.listByOrgAndAsset",
     "module": "projectLineItemUnits",
     "fn": "listByOrgAndAsset",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetId",
@@ -33391,9 +34151,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b726f9a3bca87faf",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List an asset's line-item units within an org, for double-booking checks.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -33741,11 +34501,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectManagers",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -33756,9 +34521,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one project-manager assignment by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -33767,11 +34532,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectManagers",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -33787,9 +34557,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the managers assigned to one project.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -33798,11 +34568,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectManagers",
     "fn": "listByUserId",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -33818,9 +34593,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "94b14e287afbce7c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the projects one user is assigned as manager on.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -34199,19 +34974,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Point-read by global by_cuid with no orgId arg to verify the result against — would let an agent read another org's media row by guessing its cuid."
   },
   {
     "operation": "projectMedia.list",
     "module": "projectMedia",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -34222,9 +35002,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all project media metadata rows for an org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -34251,8 +35031,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "by_projectId is a global index and the query takes no orgId arg, so a caller-supplied parentId can't be checked against the caller's org."
   },
   {
     "operation": "projectMedia.remove",
@@ -34426,8 +35206,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Internal sequence-counter bookkeeping, not a meaningful read for an agent."
   },
   {
     "operation": "projectNumberSequences.getByOrgAndScopeKey",
@@ -34457,8 +35237,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Internal sequence-counter bookkeeping, not a meaningful read for an agent."
   },
   {
     "operation": "projectNumberSequences.remove",
@@ -35396,9 +36176,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one project by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -35407,11 +36187,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projects",
     "fn": "getByOrgAndNumber",
     "kind": "query",
-    "guard": "none",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "organizationId",
@@ -35427,9 +36212,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "c6ddbddd4f0717c5",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up a project by its human-facing project number.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -35458,9 +36243,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all projects for an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -35469,11 +36254,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projects",
     "fn": "listBoard",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -35489,9 +36279,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3ffb2bbf35f7c1b9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Browse an org's non-template, non-cancelled projects grouped for the kanban board.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -35500,11 +36290,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projects",
     "fn": "listByIds",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "ids",
@@ -35520,9 +36315,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Batch point-read projects by id, scoped to one org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -35586,9 +36381,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3c853939a9bde1ee",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Filtered, sorted, paginated project list with client join.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -36082,11 +36877,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectServices",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -36097,9 +36897,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one project service by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -36108,11 +36908,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectServices",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -36123,9 +36928,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all services (crew calls, deliveries, etc.) for an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -36134,11 +36939,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectServices",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -36154,9 +36964,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List services belonging to one project.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -37341,11 +38151,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectTasks",
     "fn": "assignees",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -37356,9 +38171,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List people (org members + crew) a task can be assigned to.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -37569,11 +38384,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectTasks",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -37584,9 +38404,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one project task by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -37595,11 +38415,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectTasks",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -37615,9 +38440,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List tasks belonging to one project.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -37626,11 +38451,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectTasks",
     "fn": "listByProjectWithRelations",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -37646,9 +38476,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List a project's tasks with assignee joins, sorted for the task board.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -37657,11 +38487,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectTasks",
     "fn": "myOpenTasks",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "now",
@@ -37677,9 +38512,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the caller's own open (TODO/IN_PROGRESS) tasks across all projects in an org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -39169,11 +40004,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "quotes",
     "fn": "listForProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "now",
@@ -39194,9 +40034,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ac20f94bd020f7de",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List a project's quotes with derived effective status.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -39205,11 +40045,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "quotes",
     "fn": "revisionStateForProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "now",
@@ -39230,9 +40075,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ac20f94bd020f7de",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Project revision state: current draft + live quote.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -39669,11 +40514,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "returnsLookup",
     "fn": "resolve",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -39689,9 +40539,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b98fde57c61e7126",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Resolve a scanned tag to the CHECKED_OUT unit(s)/line(s)/project(s) it needs to flip for a return.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -39992,8 +40842,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Backfill-only pagination helper for scripts/convex-backfill-revenue-allocation.ts, not a runtime read; a raw project-id enumeration doesn't fit the normal resource/scope model and financial allocation detail is out of scope pending Phase 4's no_financials flag."
   },
   {
     "operation": "revenueAllocation.recomputeForProject",
@@ -40041,11 +40891,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "roi",
     "fn": "fleetInventory",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "reports",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "reports",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -40056,9 +40911,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Per-model unit counts and fleet capital cost.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40067,11 +40922,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "roi",
     "fn": "fleetRevenue",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "reports",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "reports",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "from",
@@ -40102,9 +40962,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "9fb03c9904a33cd9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Fleet revenue by model over a window.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40113,11 +40973,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "roi",
     "fn": "getModelRoi",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "reports",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "reports",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "from",
@@ -40148,9 +41013,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "0eebade63cbcda83",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "ROI (revenue vs fleet capital) for one model.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40159,11 +41024,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "roi",
     "fn": "zeroPricedGroups",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "reports",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "reports",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -40179,9 +41049,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "cf183cf9692790b5",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Project groups carrying gear with no flat price (data-quality signal).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40383,11 +41253,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "savedTableViews",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -40398,9 +41273,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get one saved table view by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40409,11 +41284,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "savedTableViews",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -40424,9 +41304,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List every saved table view in the org (all users) for one table config surface.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40757,11 +41637,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "scanLookup",
     "fn": "resolve",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -40777,9 +41662,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b98fde57c61e7126",
     "returnsSha": "22c0df0d1cba3d55",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Resolve a scanned barcode/tag to its asset/kit/bulk-asset/test-tag navigation target.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40788,11 +41673,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "search",
     "fn": "clients",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "limit",
@@ -40813,9 +41703,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "4483af387e9b921c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Bounded name search over the org's clients (picker autocomplete).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40824,11 +41714,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "search",
     "fn": "kits",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "includePrep",
@@ -40854,9 +41749,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "7c8d329d63b0fd40",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Bounded name/tag search over the org's kits (picker autocomplete).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40865,11 +41760,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "search",
     "fn": "models",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "limit",
@@ -40890,9 +41790,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "4483af387e9b921c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Bounded name/manufacturer search over the org's models (picker autocomplete).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40901,11 +41801,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "search",
     "fn": "suppliers",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "limit",
@@ -40926,9 +41831,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "4483af387e9b921c",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Bounded name search over the org's suppliers (picker autocomplete).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -40937,11 +41842,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "serviceSchedules",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -40952,9 +41862,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List service schedules (model + cadence maintenance templates) for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -41363,11 +42273,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "serviceTemplates",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -41378,9 +42293,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single service template by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -41389,11 +42304,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "serviceTemplates",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -41404,9 +42324,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List service templates (maintenance job templates) for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -41737,8 +42657,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this."
   },
   {
     "operation": "siteSettings.getSingleton",
@@ -41757,8 +42677,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this."
   },
   {
     "operation": "siteSettings.list",
@@ -41777,8 +42697,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this."
   },
   {
     "operation": "siteSettings.remove",
@@ -42084,8 +43004,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Doc has no organizationId field (parent-join table), so requireOrgReadDocFor can't check it against the caller's org; would need to resolve the parent sub-hire's org first."
   },
   {
     "operation": "subHireGroups.list",
@@ -42110,8 +43030,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "subHireGroups has no organizationId column and this query takes only a subHireId (no orgId to verify) — can't be safely org-scoped without a signature change."
   },
   {
     "operation": "subHireGroups.patchGroup",
@@ -42431,8 +43351,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Doc has no organizationId field (parent-join table), so requireOrgReadDocFor can't check it against the caller's org; would need to resolve the parent sub-hire's org first."
   },
   {
     "operation": "subHireItems.list",
@@ -42457,8 +43377,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "subHireItems has no organizationId column and this query takes only a subHireId (no orgId to verify) — can't be safely org-scoped without a signature change."
   },
   {
     "operation": "subHireItems.patchItem",
@@ -42680,11 +43600,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "subHireMedia",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "subHire",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -42695,9 +43620,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a sub-hire media row by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -42706,11 +43631,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "subHireMedia",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "subHire",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -42721,9 +43651,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all sub-hire media for the org.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -42750,8 +43680,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Takes only a subHireId (parentId), no orgId argument to verify against even though the row carries organizationId — widening would let an agent enumerate another org's sub-hire media by guessing/enumerating a subHireId; needs a signature change (add orgId) to check safely."
   },
   {
     "operation": "subHireMedia.remove",
@@ -43103,11 +44033,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "subHires",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "subHire",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -43118,9 +44053,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a sub-hire by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -43129,11 +44064,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "subHires",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "subHire",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -43144,9 +44084,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all sub-hires for the org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -43155,11 +44095,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "subHires",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "subHire",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -43175,9 +44120,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List sub-hires linked to a project.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -44841,11 +45786,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "subTestRecords",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -44856,9 +45806,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single sub-test record by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -44867,11 +45817,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "subTestRecords",
     "fn": "list",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "testTagRecordId",
@@ -44882,9 +45837,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b63e4eb7b1a95db3",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the sub-test rows for one test & tag record.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -44911,8 +45866,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Batch join across caller-supplied recordIds with no per-id org check — would need a verify-and-filter redesign to scope safely."
   },
   {
     "operation": "subTestRecords.remove",
@@ -45098,11 +46053,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "supplierModelRates",
     "fn": "getByComposite",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -45123,9 +46083,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "e9b7ad3d3b73d1db",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up a supplier's last-used rate for a specific model.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -45134,11 +46094,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "supplierModelRates",
     "fn": "getById",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -45149,9 +46114,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a supplier's last-used rate for a model by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -45160,11 +46125,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "supplierModelRates",
     "fn": "listByModel",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -45180,9 +46150,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a1cb053da0924748",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List every supplier's last-used rate for a model.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -45408,8 +46378,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Doc has no organizationId field (parent-join table), so requireOrgReadDocFor can't check it against the caller's org; would need to resolve the parent order's org first."
   },
   {
     "operation": "supplierOrderItems.list",
@@ -45434,8 +46404,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "supplierOrderItems has no organizationId column and this query takes only an orderId (no orgId to verify) — a PARENT_JOIN table read that can't be safely org-scoped without a signature change; revisit alongside a supplierOrders-joined variant."
   },
   {
     "operation": "supplierOrderItems.listByOrderIds",
@@ -45460,8 +46430,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Same parent-join shape as list/getById — no organizationId column and no orgId argument to verify against."
   },
   {
     "operation": "supplierOrderItems.remove",
@@ -46016,11 +46986,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "supplierOrders",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -46031,9 +47006,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a supplier order by id.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46042,11 +47017,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "supplierOrders",
     "fn": "getDetail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -46062,9 +47042,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Supplier order detail: header, items, linked assets, invoice pointer.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46073,11 +47053,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "supplierOrders",
     "fn": "listBySupplier",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -46093,9 +47078,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "d3470e2b0b6b7cf6",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List a supplier's orders with item counts.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46486,11 +47471,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "suppliers",
     "fn": "assetsPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -46516,9 +47506,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "24342f3930c2270d",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated assets belonging to a supplier.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46527,11 +47517,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "suppliers",
     "fn": "counts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -46542,9 +47537,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "805a2a7464936505",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Asset + order counts per supplier for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46775,11 +47770,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "suppliers",
     "fn": "detail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -46795,9 +47795,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
     "returnsSha": "ca99ce2e2f7d8731",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Supplier detail with counts and spend rollups.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46806,11 +47806,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "suppliers",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -46821,9 +47826,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a supplier by id.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46832,11 +47837,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "suppliers",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -46847,9 +47857,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List all suppliers for the org.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46858,11 +47868,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "suppliers",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "isActive",
@@ -46903,9 +47918,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "d919706925230849",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated, filtered/sorted supplier list.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -46940,11 +47955,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "suppliers",
     "fn": "subhiresPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -46970,9 +47990,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "24342f3930c2270d",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated sub-hires against a supplier.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -47317,8 +48337,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "This IS the platform-global browser-mutation write-kill-switch; an agent must never be able to inspect (let alone influence timing around) its own kill switch. Also platform-global, not org-scoped, so no Resource fits."
   },
   {
     "operation": "systemFlags.setWrites",
@@ -47366,11 +48386,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "tags",
     "fn": "getOrgTags",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "orgSettings",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -47381,9 +48406,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "58b0824194bb057c",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the distinct set of tags used anywhere in the org (autocomplete).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -47584,11 +48609,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testProfiles",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -47599,9 +48629,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get a single test profile by id.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -47610,11 +48640,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testProfiles",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -47625,9 +48660,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List test profiles (visual/electrical test templates) for the org.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -47662,11 +48697,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testProfiles",
     "fn": "resolveForAsset",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -47682,9 +48722,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ba4f18055d643814",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Resolve the best-match test profile for a test & tag asset via the asset/model/org-default cascade.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -48372,11 +49412,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testTagAssets",
     "fn": "dashboardStats",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "nowMs",
@@ -48392,9 +49437,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Test & tag dashboard tallies, recent tests, and overdue/due-soon item lists.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -48403,11 +49448,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testTagAssets",
     "fn": "detail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -48423,9 +49473,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Single test & tag asset with recent test records and linked asset/bulk info.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -48610,11 +49660,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testTagAssets",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "applianceType",
@@ -48675,9 +49730,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "efaddd474b905212",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated, filtered, sorted test & tag asset list with asset/bulk/profile joins.",
+    "danger": "low",
+    "mcpTier": 1,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -48686,11 +49741,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testTagAssets",
     "fn": "lookup",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -48706,9 +49766,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "3b8efcad4a757955",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Look up a test & tag asset by its human-facing testTagId, with latest test record.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -49402,8 +50462,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Returns the plaintext auditor-portal `token` field, not just metadata — sensitive token material."
   },
   {
     "operation": "testTagAuditorTokens.getByTokenHash",
@@ -49428,8 +50488,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Returns the plaintext auditor-portal `token` field, not just metadata — sensitive token material."
   },
   {
     "operation": "testTagAuditorTokens.list",
@@ -49454,8 +50514,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Returns the plaintext auditor-portal `token` field, not just metadata — sensitive token material."
   },
   {
     "operation": "testTagAuditorTokens.remove",
@@ -49967,11 +51027,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testTagRecords",
     "fn": "latestForAsset",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -49987,9 +51052,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "ba4f18055d643814",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Latest test record for one test & tag asset (Quick Pass pre-fill).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -50107,11 +51172,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "testTagRecords",
     "fn": "recordsPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -50137,9 +51207,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "2e5cbaca081099c2",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Paginated test history for one test & tag asset, newest first, with tester/profile/sub-test relations.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -50821,8 +51891,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Global (non-org-scoped) user mirror — no per-row organizationId and no join against `members` to check the target user shares the caller's org; widening would let an agent read another org's members' name/email/image (cross-tenant PII, R-8.4.3)."
   },
   {
     "operation": "users.listAll",
@@ -50841,8 +51911,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Unfiltered platform-wide dump of every user's name/email (auth-mirror reconcile utility), not an org-scoped read."
   },
   {
     "operation": "users.listByIds",
@@ -50867,8 +51937,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Global (non-org-scoped) user mirror — no per-row organizationId and no join against `members` to check the target user shares the caller's org; widening would let an agent read another org's members' name/email/image (cross-tenant PII, R-8.4.3)."
   },
   {
     "operation": "users.remove",
@@ -51582,8 +52652,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material."
   },
   {
     "operation": "warehouseDashboardTokens.getByTokenHash",
@@ -51608,8 +52678,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material."
   },
   {
     "operation": "warehouseDashboardTokens.list",
@@ -51634,8 +52704,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material."
   },
   {
     "operation": "warehouseDashboardTokens.remove",
@@ -55177,8 +56247,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
   },
   {
     "operation": "wooCommerceIntegrations.list",
@@ -55203,8 +56273,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
   },
   {
     "operation": "wooCommerceIntegrations.patchWooCommerceIntegration",
@@ -55489,8 +56559,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "The raw `payload` field stores the full WooCommerce webhook order body, which includes customer billing PII (name/email/phone/address) per src/lib/validations/woocommerce.ts — not a credential, but real customer PII with no redacted projection available (R-8.12)."
   },
   {
     "operation": "wooCommerceOrderLogs.getById",
@@ -55515,8 +56585,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "The raw `payload` field stores the full WooCommerce webhook order body, which includes customer billing PII (name/email/phone/address) per src/lib/validations/woocommerce.ts — not a credential, but real customer PII with no redacted projection available (R-8.12)."
   },
   {
     "operation": "wooCommerceOrderLogs.list",
@@ -55541,8 +56611,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "The raw `payload` field stores the full WooCommerce webhook order body, which includes customer billing PII (name/email/phone/address) per src/lib/validations/woocommerce.ts — not a credential, but real customer PII with no redacted projection available (R-8.12)."
   },
   {
     "operation": "wooCommerceOrderLogs.remove",
@@ -55735,19 +56805,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
+    "agentAccess": "denied",
+    "deniedReason": "Raw row includes refreshTokenEncrypted; only the redacted getForOrg projection is agent-safe. Still requireService-only — untouched, not agent-reachable."
   },
   {
     "operation": "xeroIntegrations.getForOrg",
     "module": "xeroIntegrations",
     "fn": "getForOrg",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "orgSettings",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "organizationId",
@@ -55758,9 +56833,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "b21345538722cfa9",
     "returnsSha": "368bbc0701ab1802",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Get the org's Xero connection status/config (never the encrypted refresh token).",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -55958,11 +57033,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "xeroPush",
     "fn": "resolveCodingForInvoice",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "invoiceId",
@@ -55978,9 +57058,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "84248e6f6265683d",
     "returnsSha": "18348a60ffd58fd4",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Resolve Xero account/tax coding for one invoice's lines (push preview).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -56060,11 +57140,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "xeroSyncLogs",
     "fn": "listForInvoice",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "invoiceId",
@@ -56080,9 +57165,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "84248e6f6265683d",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List Xero sync attempts for one invoice.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -56091,11 +57176,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "xeroSyncLogs",
     "fn": "listRecentForOrg",
     "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "limit",
@@ -56111,9 +57201,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "5b680ee1045e20ea",
     "returnsSha": "74234e98afe7498f",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "List the org's recent Xero sync attempts (push/refresh/fetch), newest first.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   }
@@ -56127,9 +57217,9 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
   total: 1119,
-  agentReachable: 331,
+  agentReachable: 549,
   queries: 395,
   mutations: 724,
-  agentReachableQueries: 67,
-  agentReachableMutations: 264,
+  agentReachableQueries: 284,
+  agentReachableMutations: 265,
 } as const;

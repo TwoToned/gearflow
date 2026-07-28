@@ -455,3 +455,172 @@ describe("#791 unlock-session lifecycle", () => {
     });
   });
 });
+
+/**
+ * #988 (Phase C) — the quote-send lock folds into `assertLifecycleGuard` as a
+ * SECOND input, not a second mechanism: an OPEN-status project (ENQUIRY/
+ * QUOTING/QUOTED) whose current revision has already been SENT resolves to
+ * FINANCE_LOCKED too, with `reason: "QUOTE_SENT"`. Exercises the real quote
+ * mutations rather than hand-inserted rows wherever the flow matters (the
+ * sanctioned-exit tests) — see convex/lib/projectLocks.test.ts for the pure
+ * `resolveLockTier` truth table.
+ */
+describe("#988 quote-derived lock tier", () => {
+  async function sentQuote(t: ReturnType<typeof makeT>, version = 1, extra: Record<string, unknown> = {}) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: `q${version}`, organizationId: ORG, projectId: "p1", version, status: "SENT",
+        snapshot: null, sentAt: NOW, ...extra,
+      });
+    });
+  }
+
+  test("a SENT quote locks money fields on an otherwise-OPEN (QUOTED) project", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED");
+    await sentQuote(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false });
+    });
+    await expect(
+      t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+        id: "li1", orgId: ORG, set: { unitPrice: 200 }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
+      }),
+    ).rejects.toThrow(/FINANCIALS_LOCKED|locked/i);
+  });
+
+  test("structural fields stay editable under a quote-derived lock (FINANCE_LOCKED's structural gate starts at ON_SITE, not here)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED");
+    await sentQuote(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false });
+    });
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+      id: "li1", orgId: ORG, set: { description: "Speaker (updated)" }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.description).toBe("Speaker (updated)");
+    });
+  });
+
+  test("a new add $0-defaults under a quote-derived lock, exactly like a CONFIRMED project", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED");
+    await sentQuote(t);
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.unitPrice).toBe(0);
+    });
+  });
+
+  test("an unlock session is still a valid exit while the quote is sent", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED");
+    await sentQuote(t);
+    await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
+      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW,
+    });
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
+      actor: ACTOR, auditId: "log1", now: NOW + 1,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(Number(li?.unitPrice)).toBe(500); // auto-pricing resumes inside an open session
+    });
+  });
+
+  test("a sent quote on an ALREADY status-locked (COMPLETED) project softens nothing", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "COMPLETED");
+    await sentQuote(t);
+    await expect(
+      t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+        id: "li1", organizationId: ORG, projectId: "p1", fields: { description: "x", quantity: 1 }, actor: ACTOR, auditId: "log1", now: NOW,
+      }),
+    ).rejects.toThrow(/PROJECT_LOCKED/i);
+  });
+
+  test("sanctioned exit: newVersionNative is NOT blocked by the very lock it's cutting past", async () => {
+    const t = makeT();
+    await member(t, "manager"); // invoice:publish
+    await project(t, "QUOTED");
+    await sentQuote(t); // v1 SENT — would otherwise raise the tier to FINANCE_LOCKED
+    const res = await t.withIdentity(asUser()).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: "logv2", now: NOW + 1,
+    });
+    expect(res.version).toBe(2);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.revision).toBe(2);
+      const q2 = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q2")).first();
+      expect(q2?.status).toBe("DRAFT");
+    });
+  });
+
+  test("after cutting v2, pricing is open again — the current revision's quote is a fresh DRAFT", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await project(t, "QUOTED");
+    await sentQuote(t);
+    await t.withIdentity(asUser()).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: "logv2", now: NOW + 1,
+    });
+    // No unlock session needed — v1's SENT lock no longer applies once v2 (a
+    // fresh DRAFT) is the project's current revision.
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
+      actor: ACTOR, auditId: "log1", now: NOW + 2,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(Number(li?.unitPrice)).toBe(500);
+    });
+  });
+
+  test("sanctioned exit: sendNative isn't blocked sending v1 for the very first time", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await project(t, "QUOTED"); // no quote row yet at all
+    const res = await t.withIdentity(asUser()).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: ORG, projectId: "p1", quoteDate: NOW, actor: ACTOR, auditId: "logsend", now: NOW,
+    });
+    expect(res.version).toBe(1);
+  });
+
+  test("projectLocksRead.status reports reason QUOTE_SENT + the revision + quote state", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED");
+    await sentQuote(t);
+    const status = await t.withIdentity(asUser()).query(api.projectLocksRead.status, { projectId: "p1", orgId: ORG });
+    expect(status?.tier).toBe("FINANCE_LOCKED");
+    expect(status?.reason).toBe("QUOTE_SENT");
+    expect(status?.revision).toBe(1);
+    expect(status?.quoteState).toBe("SENT");
+  });
+
+  test("projectLocksRead.status reports STATUS-driven FINANCE_LOCKED unaffected by quote state on a CONFIRMED project", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED");
+    const status = await t.withIdentity(asUser()).query(api.projectLocksRead.status, { projectId: "p1", orgId: ORG });
+    expect(status?.tier).toBe("FINANCE_LOCKED");
+    expect(status?.reason).toBe("STATUS");
+    expect(status?.quoteState).toBeNull();
+  });
+});

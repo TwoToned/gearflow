@@ -11405,6 +11405,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -11415,8 +11420,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "6c012673b4cd07b8",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "171d09f36dccd4bc",
     "returnsSha": "bec0cd60d81a5175"
   },
   {
@@ -11451,6 +11458,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -11466,8 +11478,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "117f2bb2ab75ea78",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "7074dcef8d9702c8",
     "returnsSha": "04471d174c91281a"
   },
   {
@@ -11683,13 +11697,20 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "56f39965728b3fac",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "7eed1de1dd291c44",
     "returnsSha": "ca20c8538a3cc095"
   },
   {
@@ -21434,6 +21455,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -21444,8 +21470,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "aaf0b683ae95206d",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "e6c1a2f24c1b92f5",
     "returnsSha": "efde83ecf2efd768"
   },
   {
@@ -30493,6 +30521,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
@@ -30504,8 +30537,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "01c68efecbfae39d"
+    "argsSha": "8f3456c860a78207",
+    "returnsSha": "d8256f5e1e3ca1ff"
   },
   {
     "operation": "projectManagers.applyDiff",
@@ -32964,6 +32997,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -32974,8 +33012,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "a12d4885e3521cab",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "f8c0a774a625c95a",
     "returnsSha": "bec0cd60d81a5175"
   },
   {
@@ -33010,6 +33050,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -33025,8 +33070,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "aebc53739f87fc9c",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "bde61e4f154287cc",
     "returnsSha": "04471d174c91281a"
   },
   {
@@ -33056,6 +33103,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -33076,8 +33128,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "f5c283a774e01e69",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "284ec9d64e3a082c",
     "returnsSha": "400f378b3746f7c8"
   },
   {
@@ -33107,6 +33161,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "lineItemId",
         "optional": false,
         "type": "string"
@@ -33127,8 +33186,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "9b953d2d794458ef",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "c11e2197bf58b40c",
     "returnsSha": "8b114161049d5d20"
   },
   {
@@ -33556,6 +33617,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -33571,8 +33637,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "9faae7a468ef5dd4",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "d3e6c9c5f8632774",
     "returnsSha": "055fda7228358ed7"
   },
   {

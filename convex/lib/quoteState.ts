@@ -170,6 +170,27 @@ export async function requireProjectInOrg(
   return project;
 }
 
+/**
+ * The quote at the project's CURRENT revision, normalised, with NO time-based
+ * `EXPIRED` resolution — #988 (Phase C)'s `resolveLockTier` treats `SENT` and
+ * `EXPIRED` identically (both are "sent and not yet superseded by a new
+ * version"), so distinguishing them isn't needed to gate a write. That in turn
+ * means `assertLifecycleGuard` doesn't need a `now` argument threaded through
+ * the ~25 existing gate sites that call it — none of them pass one today.
+ * Null when no row exists at this revision yet (a project that has never
+ * quoted, or a fresh `DRAFT` created by `newVersionNative`) — reads exactly
+ * like a `DRAFT` for lock purposes.
+ */
+export async function currentRevisionQuoteStatus(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  projectId: string,
+  revision: number,
+): Promise<EffectiveQuoteStatus | null> {
+  const quote = await findQuoteAtRevision(ctx, orgId, projectId, revision);
+  return quote ? normalizeStoredQuoteStatus(quote.status) : null;
+}
+
 /** Human label for a revision — `<projectNumber> v<version>`. There is
  *  deliberately no quote number (decision 5): the project number is already the
  *  shared reference with the client, and a second counter would be one more

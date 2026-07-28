@@ -8,7 +8,7 @@ import { useServiceTemplates } from "@/hooks/use-service-templates";
 import { refreshProjectCrew } from "@/hooks/use-project-crew";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Plus,
@@ -69,6 +69,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { ComboboxPicker, MultiComboboxPicker } from "@/components/ui/combobox-picker";
+import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xero-coding-fields";
+import { useXeroLinked } from "@/hooks/use-xero-linked";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1441,6 +1443,7 @@ function ServiceDialog({
   const isEditing = !!editingService;
   const isManagerPlus = useIsManagerPlus();
   const svcWrites = useProjectServiceWrites();
+  const xeroLinked = useXeroLinked();
 
   const matchingTemplate = preselectedType
     ? templates.find((t) => t.type === preselectedType && t.isActive)
@@ -1496,6 +1499,8 @@ function ServiceDialog({
         numberOfTrips: (editingService.numberOfTrips as number) || undefined,
         crewCountRequired: (editingService.crewCountRequired as number) || undefined,
         crewRoleId: (editingService.crewRoleId as string) || "",
+        xeroAccountCode: (editingService.xeroAccountCode as string) || undefined,
+        xeroTaxType: (editingService.xeroTaxType as string) || undefined,
         crew: editingService.crewAssignments
           ? (editingService.crewAssignments as ServiceRow["crewAssignments"])
               .filter((a): a is typeof a & { crewMember: NonNullable<typeof a.crewMember> } => !!a.crewMember)
@@ -2126,6 +2131,28 @@ function ServiceDialog({
               </div>
             )}
           </div>
+
+          {xeroLinked && (
+            <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
+              <div className="t-overline text-muted">Xero coding</div>
+              <div className="grid grid-cols-2 gap-3">
+                <Controller
+                  control={form.control}
+                  name="xeroAccountCode"
+                  render={({ field }) => (
+                    <XeroAccountCodeField value={field.value} onChange={field.onChange} label="Account" placeholder="Inherit default" />
+                  )}
+                />
+                <Controller
+                  control={form.control}
+                  name="xeroTaxType"
+                  render={({ field }) => (
+                    <XeroTaxTypeField value={field.value} onChange={field.onChange} label="Tax type" placeholder="Use org default" />
+                  )}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Notes */}
           <div className="space-y-1.5">

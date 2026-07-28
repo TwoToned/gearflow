@@ -193,6 +193,45 @@ nothing else). Every equipment line resolves via the RENTAL branch of the
 cascade today; the SALE branch is unit-tested but unreachable until #950
 wires an actual sale line type.
 
+### Per-entity coding override UI
+
+Every level of the cascade above has a write path + form field:
+
+- **Category default** — `categories.xeroAccountCode`, one field on the
+  category create/edit dialog (`src/components/assets/category-manager.tsx`).
+- **Model defaults** — `models.xeroRentalAccountCode`/`xeroSaleAccountCode`,
+  a "Xero coding" `SmartFormSection` on `src/components/assets/model-form.tsx`
+  (rental and sale are independent — a kit-parent line reads `kits.xeroAccountCode`
+  instead, since a kit isn't a model).
+- **Kit default** — `kits.xeroAccountCode`, same pattern on
+  `src/components/kits/kit-form.tsx`.
+- **Line override** — `projectLineItems.xeroAccountCode`/`xeroTaxType`, on
+  `src/components/projects/edit-line-item-dialog.tsx`. Note `lineItemWrites.patchNative`
+  is a BLOCKLIST model (`LINE_IMMUTABLE_ON_PATCH`), not an allowlist, so these
+  two fields technically already passed through server-side before this UI
+  landed — what was missing was the client never sending them
+  (`buildLineItemSetClear` in `src/hooks/use-line-item-writes.ts`) and no
+  length bound (`assertLineItemFields` in `convex/lineItemWrites.ts`), both
+  now added (R-8.6.2 — defense-in-depth on a blocklist mutation).
+- **Service override** — `projectServices.xeroAccountCode`/`xeroTaxType`, on
+  the `ServiceDialog` in `src/components/projects/services-panel.tsx`.
+
+All five write paths mirror `categorySchema`/`modelSchema`/etc.'s new
+`.max(50)` bound server-side (`assertCategoryFields`/`assertModelFields`/
+`assertKitFields`/`assertLineItemFields`/`assertServiceFields` — R-8.6.2,
+a browser-direct caller bypassing the client Zod parse can't skip the bound).
+
+**Shared UI**: `src/components/settings/xero-coding-fields.tsx` —
+`XeroAccountCodeField`/`XeroTaxTypeField`, both self-gating on `useXeroLinked()`
+(render `null` when unlinked, matching every other Xero-linked-only surface)
+and sourced from the same `useXeroCodingOptions()` hook Settings → Xero's own
+org-default pickers use (R-3.1 — one mapping from `xeroIntegrations.cachedAccounts`/
+`cachedTaxRates` to `ComboboxPicker` options, not five copies). Every "Xero
+coding" section on category/model/kit is itself conditionally rendered on
+`useXeroLinked()` too — a titled section with self-gating-to-null fields
+inside would otherwise show an empty section with no content, which reads as
+broken.
+
 ### Linked gate
 
 `convex/lib/xeroGate.ts` `isXeroLinked(ctx, orgId)` (server) and
@@ -283,6 +322,7 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | `src/components/settings/xero-client-mapping.tsx` | Searchable client list + per-row `XeroContactCard` (Settings → Xero) |
 | `src/components/clients/xero-contact-card.tsx` | The actual per-client search/link/unlink UI, embedded by the above |
 | `src/components/ui/combobox-picker.tsx` | Searchable, scrollable account/tax-type pickers on Settings → Xero |
+| `src/components/settings/xero-coding-fields.tsx` | `XeroAccountCodeField`/`XeroTaxTypeField` — shared, self-gating cascade override fields used on category/model/kit/line/service forms |
 
 ## Testing
 
@@ -311,22 +351,15 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
   is the pattern to follow when this lands.
 - **Project financial tab "invoiced/paid/outstanding" summary** beyond what
   `financial-summary.tsx`'s new Invoicing block already shows.
-- **Live Xero verification.** No Xero developer app credentials exist in
-  this sandbox — the OAuth round trip and a real invoice push have only been
-  exercised against fixture responses, never Xero's live servers.
-- **Per-entity Xero coding override UI (category/model/kit/line/service).**
-  The schema fields, the cascade resolver (all 4 levels, unit-tested), and
-  the push-time resolution (`convex/xeroPush.ts`) are ALL built and fully
-  functional — what's NOT built is the collapsed "Xero coding" form section
-  the spec calls for on the category/model/kit forms and the project line/
-  kit/service dialogs. Until that UI lands, every equipment/service line
-  resolves straight through to whichever of the org default account
-  (Settings → Xero) applies — levels 1-3 of the cascade (per-line override,
-  model/kit, category) have no write path yet, so they're currently always
-  absent. This mirrors the `billableToClient` precedent already documented
-  in FEATUREDOCS/13 ("a field with no UI has no live behaviour") — tracked
-  as the immediate next follow-up, not silently dropped. What IS wired:
-  client Xero contact mapping (client detail page) and the org-level
-  defaults (Settings → Xero: default account, per-service-type defaults,
-  default tax type) — enough for Xero-linked orgs to push correctly-coded
-  invoices today, just without per-line overrides.
+- **Live Xero verification — partial.** The OAuth connect/callback round trip
+  HAS since been exercised against Xero's live servers (a real developer app,
+  post-deploy) and works end to end. A real invoice push has still only been
+  exercised against fixture responses (`src/lib/xero-client.test.ts`), never
+  a live Xero org's Accounting API.
+  Two live-only gotchas discovered so far, both fixed: (1) Xero split the
+  broad `accounting.transactions` OAuth scope into granular scopes on 4 March
+  2026 — any app created after that date is issued ONLY the granular set, so
+  `XERO_OAUTH_SCOPES` (`src/lib/xero-client.ts`) requests `accounting.invoices`,
+  not the deprecated broad scope. (2) the OAuth callback route's post-exchange
+  redirect must be built from `env.NEXT_PUBLIC_APP_URL`, never `request.url`
+  — see "Connection (OAuth2)" above.

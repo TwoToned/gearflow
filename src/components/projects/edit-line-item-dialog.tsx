@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { checkAvailability } from "@/server/line-items";
@@ -118,6 +119,11 @@ interface EditLineItemDialogProps {
    *  sent. Omitted (or the Placement section hidden) when the item is a kit
    *  child, which moves with its parent kit rather than independently. */
   onMove?: (id: string, placement: EditLineItemPlacement) => void;
+  /** #990 — money fields render read-only via `<LockedField>` when true (the
+   *  same condition the server's `defaultToZero` force-zeros new prices under). */
+  locked?: boolean;
+  lockReason?: string;
+  onUnlockExit?: () => void;
 }
 
 export function EditLineItemDialog(props: EditLineItemDialogProps) {
@@ -145,6 +151,9 @@ function EditLineItemDialogBody({
   onClose,
   onSubmit,
   onMove,
+  locked,
+  lockReason,
+  onUnlockExit,
 }: EditLineItemDialogProps & { item: LineItemData }) {
   const xeroLinked = useXeroLinked();
 
@@ -319,26 +328,30 @@ function EditLineItemDialogBody({
         <section className="space-y-4 border-t border-line pt-5">
           <SectionTitle title="Pricing" hint="Rate and discount for this line." />
           <Field label="Unit price ($)" htmlFor="edit-unitPrice">
-            <Input
-              id="edit-unitPrice"
-              type="number"
-              step="0.01"
-              min={0}
-              placeholder="Enter price"
-              {...form.register("unitPrice")}
-            />
+            <LockedField locked={!!locked} reason={lockReason ?? "Pricing is locked."} exitLabel={onUnlockExit ? "Unlock financials" : undefined} onExit={onUnlockExit}>
+              <Input
+                id="edit-unitPrice"
+                type="number"
+                step="0.01"
+                min={0}
+                placeholder="Enter price"
+                {...form.register("unitPrice")}
+              />
+            </LockedField>
           </Field>
           <Controller
             control={form.control}
             name="discount"
             render={({ field }) => (
-              <DiscountField
-                id="edit-discount"
-                value={field.value == null ? "" : String(field.value)}
-                onValueChange={field.onChange}
-                mode={discountMode}
-                onModeChange={setDiscountMode}
-              />
+              <LockedField locked={!!locked} reason={lockReason ?? "Pricing is locked."} exitLabel={onUnlockExit ? "Unlock financials" : undefined} onExit={onUnlockExit}>
+                <DiscountField
+                  id="edit-discount"
+                  value={field.value == null ? "" : String(field.value)}
+                  onValueChange={field.onChange}
+                  mode={discountMode}
+                  onModeChange={setDiscountMode}
+                />
+              </LockedField>
             )}
           />
         </section>

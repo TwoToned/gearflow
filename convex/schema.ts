@@ -1070,6 +1070,14 @@ export default defineSchema({
     depositPercent: v.optional(v.number()),
     depositPaid: v.optional(v.number()),
     invoicedTotal: v.optional(v.number()),
+    // #986 — THE revision counter for this project. Project v2 == Quote v2 ==
+    // the projectSnapshots row taken at v2; there is deliberately no second
+    // counter anywhere (R-3.1). SERVER-OWNED: written only by createNative
+    // (seeded to 1) and quotesWrites.newVersionNative, and stripped from every
+    // generic client patch the same way PROJECT_MONEY_ANCHORS are. Optional so
+    // pre-#986 documents validate; absent ⇒ 1 via `projectRevision()`
+    // (convex/lib/quoteState.ts), and `backfillQuoteRevisions.ts` stamps it.
+    revision: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     isTemplate: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
@@ -2074,11 +2082,23 @@ export default defineSchema({
     // single-project scan; this is the org-wide equivalent R-9.8 needs.
     .index("by_organizationId_date", ["organizationId", "date"]),
 
-  // Quote (WS1 #940) — snapshot-on-publish, versioned. `snapshot` is a JSON blob
-  // (lines + totals) frozen at publish time; republishing bumps `version` and
-  // supersedes the previous PUBLISHED row (never overwritten in place — an audit
-  // trail of every quote a client was actually sent). `pdfFileId` links the
-  // generated PDF (Convex file storage) for re-download without regenerating.
+  // Quote revision (WS1 #940, reworked by #986). ONE row per
+  // `(projectId, projects.revision)` — `version` IS the revision the row was cut
+  // from, never an independent counter. `snapshot` is a JSON blob (lines +
+  // totals) frozen at SEND time; `snapshotId` points at the `projectSnapshots`
+  // row capturing the whole entity state for the same revision.
+  //
+  // State machine (convex/quotesWrites.ts): DRAFT ─send→ SENT ─accept→ ACCEPTED,
+  // ─decline→ DECLINED, ─recall→ DRAFT; the previous SENT/ACCEPTED row flips to
+  // SUPERSEDED only when the NEXT revision actually sends (never on draft), so
+  // there is always exactly one row representing "what the client currently
+  // has". EXPIRED is DERIVED on read (validUntil < now && SENT) — never stored,
+  // no cron, no clock skew (convex/lib/quoteState.ts).
+  //
+  // `publishedAt`/`publishedById` are the DEPRECATED pre-#986 names, kept
+  // declared until `backfillQuoteRevisions.ts` confirms zero remaining rows
+  // carry them (schema-validation precedent: FEATUREDOCS/66 `depositPercent`).
+  // `pdfFileId` links the stored immutable artifact — written in Phase B (#987).
   quotes: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -2087,6 +2107,28 @@ export default defineSchema({
     status: enums.QuoteStatus,
     snapshot: v.any(),
     pdfFileId: v.optional(v.string()),
+    snapshotId: v.optional(v.string()),
+    // Send (the freeze moment)
+    quoteDate: v.optional(v.number()),
+    validUntil: v.optional(v.number()),
+    validityDays: v.optional(v.number()),
+    recipientContactId: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    sentById: v.optional(v.string()),
+    // Outcome
+    acceptedAt: v.optional(v.number()),
+    acceptedById: v.optional(v.string()),
+    acceptanceRef: v.optional(v.string()),
+    declinedAt: v.optional(v.number()),
+    declinedById: v.optional(v.string()),
+    declineReason: v.optional(v.string()),
+    // Recall (un-send; the artifact is retained, never deleted)
+    recalledAt: v.optional(v.number()),
+    recalledById: v.optional(v.string()),
+    recallReason: v.optional(v.string()),
+    supersededByQuoteId: v.optional(v.string()),
+    // DEPRECATED (pre-#986) — backfilled into sentAt/sentById.
     publishedAt: v.optional(v.number()),
     publishedById: v.optional(v.string()),
     createdById: v.optional(v.string()),
@@ -2096,7 +2138,9 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_projectId", ["projectId"])
+    // The uniqueness guard for "exactly one quote row per (projectId, revision)".
     .index("by_projectId_version", ["projectId", "version"])
+    .index("by_projectId_status", ["projectId", "status"])
     .index("by_organizationId_status", ["organizationId", "status"]),
 
   // Invoice (WS1 #940) — Flow owns generation + numbering, Xero owns the ledger.
@@ -2753,7 +2797,17 @@ export default defineSchema({
     id: v.string(),
     organizationId: v.string(),
     projectId: v.string(),
-    reason: v.union(v.literal("CONFIRMED"), v.literal("COMPLETED"), v.literal("UNLOCK")),
+    // QUOTE_SENT (#986) — the frozen entity state for a quote revision, captured
+    // by quotesWrites.sendNative. Unlike the status-driven reasons it carries
+    // `revision`, so "as of quote v2" and "the snapshot taken at v2" are the
+    // same row (one shared counter — projects.revision).
+    reason: v.union(
+      v.literal("CONFIRMED"),
+      v.literal("COMPLETED"),
+      v.literal("UNLOCK"),
+      v.literal("QUOTE_SENT"),
+    ),
+    revision: v.optional(v.number()),
     takenAt: v.number(),
     takenBy: v.string(),
     takenByName: v.optional(v.string()),

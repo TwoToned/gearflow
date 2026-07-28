@@ -446,10 +446,29 @@ export const ProjectTaskPriority = v.union(
 
 // ─── WS1 Finance (#940) — Quote/Invoice entities, client payment profiles, Xero ───
 
+/**
+ * Quote revision state (#986 — Phase A of the finance version-control program).
+ *
+ * `EXPIRED` is DERIVED ON READ (`validUntil < now && status === "SENT"`), never
+ * stored — see `convex/lib/quoteState.ts` `effectiveQuoteStatus`. It is declared
+ * here only so the vocabulary is complete in one place for the client-facing
+ * `EffectiveQuoteStatus` type; no mutation ever writes it.
+ *
+ * `PUBLISHED` is DEPRECATED (pre-#986 vocabulary — "published" was never accurate,
+ * nothing was published anywhere). `backfillQuoteRevisions.ts` rewrites every
+ * live row to `SENT`; the literal stays declared until a run confirms zero
+ * remaining, because strict Convex schema validation rejects a push where an
+ * existing document carries a value the validator no longer declares (the
+ * `projects.depositPercent` prod-deploy incident, FEATUREDOCS/66).
+ */
 export const QuoteStatus = v.union(
   v.literal("DRAFT"),
-  v.literal("PUBLISHED"),
+  v.literal("SENT"),
+  v.literal("ACCEPTED"),
+  v.literal("DECLINED"),
   v.literal("SUPERSEDED"),
+  v.literal("EXPIRED"),
+  v.literal("PUBLISHED"),
 );
 export const InvoiceKind = v.union(
   v.literal("FULL"),

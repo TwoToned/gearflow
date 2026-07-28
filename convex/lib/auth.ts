@@ -452,13 +452,46 @@ export async function isCallerManagerPlus(
   const auth = await getAuthContext(ctx);
   if (auth?.kind === "service") return true;
   // An agent inherits the acting user's standing — "the key acts as a human".
-  // (Field-level suppression for keys flagged `noFinancials` is Phase 4.)
+  // Field-level suppression for keys flagged `noFinancials` is a SEPARATE,
+  // stronger check — see `isAgentNoFinancials` below — because it must force
+  // redaction regardless of the acting user's role, not just gate on it.
   if (!isMemberAuth(auth) || auth.orgId !== orgId) return false;
   const row = await ctx.db
     .query("members")
     .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", auth.userId))
     .first();
   return isManagerPlusRole(row?.role ?? null);
+}
+
+/**
+ * Decision 6 (docs/designs/api-mcp-reimplementation.md §14) — does the caller's
+ * API key carry `noFinancials: true`? When true, cost/margin fields must be
+ * force-redacted regardless of the acting user's own role (closes the gap
+ * where a read-only key acting as an owner still sees full margins).
+ *
+ * Re-reads the key document in-transaction (same pattern as
+ * `requireAgentScope`/`assertKeyStillValid`) rather than trusting a token
+ * claim, so flipping the flag off takes effect on the NEXT call. No-op
+ * (false) for service/user callers — this is an agent-key-only restriction,
+ * not a role gate.
+ *
+ * NOTE: as of Phase 6 (#1002) this is wired into ONE call site
+ * (`projectCosts.operationalCosts`, backing the `get_project_financials`
+ * curated MCP tool — the documented agent-facing financial read). Extending
+ * it across every financial field family (quotes, invoices, line-item costs)
+ * is Phase 4 (#1000) scope, tracked there — don't assume this covers reads
+ * it hasn't been added to.
+ */
+export async function isAgentNoFinancials(
+  ctx: QueryCtx | MutationCtx,
+  auth: ConvexAuthContext | null,
+): Promise<boolean> {
+  if (auth?.kind !== "agent") return false;
+  const key = await ctx.db
+    .query("apiKeys")
+    .withIndex("by_cuid", (q) => q.eq("id", auth.apiKeyId))
+    .first();
+  return key?.noFinancials === true;
 }
 
 // ─── Actor identity (Phase 3 — browser-direct security baseline) ────────────

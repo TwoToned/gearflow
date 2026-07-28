@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { assertProjectInOrg } from "./projectLineItems";
@@ -1172,3 +1173,49 @@ export const quickAddAndCheckOut = mutation({
     }); // { id }
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * Nearly everything here is a physical stock movement (gear leaving/entering the
+ * building) or a forced override of one, hence `high` by default. The three
+ * exceptions are pure container/pointer bookkeeping verified against the
+ * `warehouseOps` core bodies: `ensureContainerOnProject`/`syncContainersBatch`
+ * only create/roll up a container line item's own status from its already-moved
+ * contents (no independent movement decision), and `reassignLineItemUnit`/
+ * `reassignKitMemberSerial` only repoint which line/serial fulfils a slot — the
+ * kit-member swap is explicitly pre-deployment-only in its core (an asset already
+ * CHECKED_OUT can't be swapped), so neither asset's status changes.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  bulkForceReturnAssets: { danger: "high" }, // force-closes checkouts + physical restock
+  checkInItems: { danger: "high" }, // physical return
+  checkInKit: { danger: "high" },
+  checkInKitsBatch: { danger: "high" },
+  checkOutItems: { danger: "high" }, // physical deploy (gear leaves the building)
+  checkOutKit: { danger: "high" },
+  checkOutKitsBatch: { danger: "high" },
+  // Pure metadata: strips a grouping label off lines, no status/stock change, no audit.
+  clearPrepContainer: { danger: "low" },
+  // Idempotent check-then-create of a container line item — bookkeeping, not movement.
+  ensureContainerOnProject: { danger: "medium" },
+  forceReturnAsset: { danger: "high" },
+  forceReturnKit: { danger: "high" },
+  forceReturnKits: { danger: "high" },
+  // Paper trail only (notes + audit) — no stock/status effect.
+  logAccessoryCheckoutOverride: { danger: "low" },
+  // Adds a line item + preps it (prepStatus PENDING); no asset.status change here.
+  quickAddAndCheckOut: { danger: "medium" },
+  // Pointer swap of which serial fills a kit slot — pre-deployment only, no movement.
+  reassignKitMemberSerial: { danger: "medium" },
+  // Repoints a unit to a different line in the same project — no physical movement.
+  reassignLineItemUnit: { danger: "medium" },
+  // Rolls up a container's own status/asset flag from its (already-moved) contents.
+  syncContainersBatch: { danger: "medium" },
+  undeployItems: { danger: "high" }, // physical un-deploy (Deployed -> Prepped)
+  undeployKit: { danger: "high" },
+  undeployKitsBatch: { danger: "high" },
+  undeprepLine: { danger: "high" }, // reverses a return; part of the physical-movement family
+  unreturnItems: { danger: "high" }, // reverses a check-in (Returned -> Deployed)
+  unreturnKit: { danger: "high" },
+  unreturnKitsBatch: { danger: "high" },
+};

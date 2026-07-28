@@ -4,6 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 
 /**
@@ -263,3 +264,14 @@ export const batchCloseOutNative = mutation({
     return results;
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * Both are `high`: closing a project's warehouse activity is a one-way finalisation
+ * — `closeOutCore` throws "already closed" on a second attempt, and there is no
+ * reopen path, so it's irreversible from the API's point of view.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  batchCloseOutNative: { danger: "high" },
+  closeOutNative: { danger: "high" },
+};

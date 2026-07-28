@@ -3,6 +3,7 @@ import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { kitModelQuantities } from "./kitAllocations";
 import { getKitByCuid } from "./lib/kits";
@@ -160,3 +161,14 @@ export const clearNative = mutation({
     return { ok: true, count };
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * Both set/clear the kit's revenue-split percentages, not physical/serialized
+ * units — an ordinary, fully-recoverable config write (re-running either call
+ * replaces the prior state), so `medium` rather than `high`.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  clearNative: { danger: "medium" },
+  replaceNative: { danger: "medium" },
+};

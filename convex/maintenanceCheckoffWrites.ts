@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { assertNumRange } from "./lib/fieldGuards";
 import { isCheckoffRow, computeCheckoffProgress } from "./lib/maintenanceRecordAssetKind";
@@ -228,3 +229,15 @@ export const checkOffBulkSession = mutation({
     return { completed: (after?.status ?? "SCHEDULED") === "COMPLETED", quantityRecorded: quantity };
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * Both are `medium`: an ordinary, recoverable record-keeping write (marking a
+ * maintenance check as done). The file-level "non-blocking invariant" comment
+ * above guarantees neither ever touches `asset.status`/`bulkAsset.
+ * availableQuantity`/availability — no stock effect, so not `high`.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  checkOffBulkSession: { danger: "medium" },
+  checkOffUnit: { danger: "medium" },
+};

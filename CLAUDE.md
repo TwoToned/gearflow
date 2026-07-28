@@ -297,6 +297,21 @@ classified deliberately. `assertBulkSizeOk(ctx, count)` is async and ctx-taking 
 the same reason: the cap (50 agent / 500 human) has to come from the verified
 identity, not a caller-supplied hint.
 
+**Danger classification is CI-gated too (Phase 4, #1000).** Every agent-reachable
+mutation needs a `danger: "low" | "medium" | "high"` entry in its module's colocated
+`agentOps` export (`convex/lib/agentOps.ts` has the type; see `convex/lineItemWrites.ts`
+for the pattern) or `pnpm run api:registry` fails the build the same way an unclassified
+privileged arg does. `high` (stock-affecting, irreversible, lock-softening, delete/
+archive, financial issue/void, warehouse movement, bulk-destructive) makes the API
+dispatcher require `confirm: true` before the call reaches Convex at all
+(`src/lib/api/dispatcher.ts`'s confirmation gate) — a `medium`/`low` op that ALSO
+supplies a privileged arg whose own policy `danger` is `"high"` (e.g. a non-empty
+`justification`) escalates for THAT call without reclassifying the operation. A new
+`apiKeys.noFinancials` flag force-redacts cost/margin fields (never the model's own
+sell rates — those stay visible, an agent needs them to quote/book) regardless of the
+acting user's role — see `convex/lib/auth.ts` `isNoFinancialsAgent`, applied per read
+site (there is no generic "cost field" registry; each query decides what's cost-shaped).
+
 ### The API dispatcher (`src/lib/api/dispatcher.ts`) — one call site, closed by default
 
 `POST /api/v1/ops/{operation}` is the ONE route that reaches every agent-reachable

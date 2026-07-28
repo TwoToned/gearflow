@@ -2,8 +2,8 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
-> **STATUS 2026-07-28 — reinstatement underway. Phases 0, 1, 2 + 3 have landed
-> (#996, #997, #998, #999): there is now a real, curl-verifiable HTTP API —
+> **STATUS 2026-07-28 — reinstatement underway. Phases 0-4 have landed (#996,
+> #997, #998, #999, #1000): there is now a real, curl-verifiable HTTP API —
 > `POST /api/v1/ops/{operation}` (the universal dispatcher), `GET
 > /api/v1/operations{,/[operation]}`, `GET /api/v1/whoami`, `GET
 > /api/v1/openapi.json`, `GET /llms.txt`, a handful of curated REST
@@ -15,9 +15,17 @@
 > templates, plus a local stdio↔HTTP proxy for clients that don't speak
 > remote MCP yet. The Phase-0 throwaway prover (`POST
 > /api/v1/probe/line-items`) is gone — Phase 2 replaced it wholesale.
-> Next up: Phase 4 (#1000), safety rails — agent write scopes stay
-> unrestricted by any preset (there are no presets yet; Phase 6) until the
-> `danger`/`confirm` pass lands.**
+> **Phase 4 (#1000) added the safety rails that gate writes going wide:**
+> every agent-reachable mutation now carries a `danger: "low"|"medium"|"high"`
+> classification (a colocated `agentOps` export per module), `danger:"high"`
+> requires `confirm: true` at the dispatcher, the §6 privileged-argument table
+> is now enforced end to end (`project:unlock_session` denied by default,
+> `emitSideEffects` re-asserted in Convex), a `noFinancials` key flag
+> force-redacts cost/margin fields regardless of the acting user's role, the
+> activity log has an agent-authored badge/filter, and `revertAgentWindow`
+> gives an operator a real (scoped) tool to reverse a bad agent warehouse run.
+> Next up: Phase 5 (#1001), the coverage sweep — migrating the remaining
+> `requireOrgRead` call sites and triaging the SERVICE-only queries.**
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:
@@ -300,6 +308,84 @@ rather than REST's "however many calls a script makes") reads comfortably
 under both buckets in manual testing; recalibrating from *measured* production
 volume instead of a session-count estimate is left to whichever phase first
 has real usage data to point at, per design §16.
+
+## What Phase 4 built (#1000)
+
+**Danger classification, generated and CI-gated** (`convex/lib/agentOps.ts` +
+`scripts/generate-api-registry.mts` gate 5) — every agent-reachable mutation
+carries a `low`/`medium`/`high` `danger` in a colocated `agentOps` export next
+to the mutation itself (e.g. `convex/lineItemWrites.ts`'s `export const
+agentOps: AgentOpsAnnotations = { removeNative: { danger: "high" }, … }`), the
+same "colocated, generated, build fails if missing" posture as the
+privileged-arg policy table. All 264 agent-reachable mutations across 51
+modules are classified: 86 `high`, 141 `medium`, 37 `low` (`docs/api-coverage.md`).
+`RegistryOperation.danger` is published in the registry so the dispatcher, the
+OpenAPI/MCP-manifest generators, and any future consumer read the SAME
+classification.
+
+**The confirmation gate** (`src/lib/api/dispatcher.ts`) — a mutation whose
+EFFECTIVE danger is `"high"` — its own classification, OR escalated because it
+supplies a privileged arg whose own policy `danger` is `"high"` (e.g. a
+non-empty `justification`, per `src/lib/api/privileged-args.ts`) — must carry
+`confirm: true` in the same call or it fails `CONFIRMATION_REQUIRED` with a
+rendered summary of the operation, resource/action, and which privileged args
+triggered it, before Convex is ever touched. `idempotencyKey` is already
+mandatory for every mutation (Phase 2), which is the other half of "confirm +
+idempotency" the design asks for. No preview→commit token (decision 11) — the
+identical call, re-sent with `confirm: true`, is the only recovery path.
+
+**Privileged-argument enforcement completed** (`convex/lib/agentArgs.ts`):
+- `emitSideEffects` — the dispatcher already forced this `true`; Convex now
+  ALSO asserts it for an agent token calling Convex directly
+  (`assertEmitSideEffectsAgentTrue`), the same "force in Node AND assert in
+  Convex" redundancy `allowOverbook` already had.
+- `projectUnlockSessionsWrites.openNative` — the one true HARD_LOCKED /
+  FINANCE_LOCKED escape hatch is now `agentAccess:"denied"` by default: an
+  agent needs the explicit `project:unlock_session` scope (granted in no
+  preset), checked unconditionally regardless of which scope (`FINANCIAL`/
+  `FULL`) it's opening.
+- `allowOverbook`, `justification`, `overrideReason`, `forceSeparate`,
+  `allowOrgCreation` were already enforced correctly by Phases 0-1; unchanged.
+
+**`no_financials` key flag** (`convex/schema.ts` `apiKeys.noFinancials`,
+`convex/lib/auth.ts` `isNoFinancialsAgent`) — when set, force-redacts
+cost/margin fields regardless of the acting user's manager+ standing, verified
+across THREE independent reads (not just one): `models.{list,getById,detail}`
+strip `replacementCost`/`defaultPurchasePrice` while leaving the model's own
+sell rates (`dailyRate`/`weeklyRate`/`defaultRentalPrice`) visible — an agent
+still needs those to quote/book; `crewAssignments.{list,getById,listByProject,
+projectCrew}` strip `estimatedCost`/`rateOverride` plus the nested
+`crewMember`/`crewRole` rate fields; `projectCosts.operationalCosts` (the
+`get_project_financials` MCP tool) is denied outright with `FINANCIALS_REDACTED`
+since its entire payload IS a cost/margin breakdown — there's no non-financial
+subset of its fixed `costsShape` returns validator to redact fields out of.
+The settings toggle to SET the flag is still Phase 6; the enforcement (this
+phase) works today against a hand-set `noFinancials: true` row.
+
+**Agent-justified activity-log badge/filter** — `convex/activityLog.ts` gained
+an `agentAuthored` filter arg (and the exported `isAgentAuthored` helper) over
+the `metadata.actorType === "apiKey"` stamp Phase 3 already wrote on every
+agent-caused row. The `/activity` page (`src/app/(app)/activity/page.tsx`)
+gained an "Actor" column — an `Agent`/`Human` badge plus an enum filter — and
+the CSV export carries the same filter, so agent-authored writes (especially
+agent-supplied justifications) are reviewable as a set instead of buried in
+per-row metadata.
+
+**`revertAgentWindow`** (`convex/agentRevert.ts`) — enumerates one API key's
+agent-authored activity-log rows in a `[fromMs, toMs]` window and reverses the
+ones with a known inverse, via the SAME reverse-mutation core helpers a human
+uses from the Warehouse tab: a deploy (`CHECK_OUT`) reverses through
+`undeployItemsCore`/`undeployKitFull`, a return (`CHECK_IN`) through
+`unreturnItemsCore`/`unreturnKitFull`. Denied by default for agents (a new
+`warehouse:revert_agent_window` scope, granted in no preset — the same "no
+legitimate agent use case" posture as `project:unlock_session`); an operator
+needs ordinary `warehouse:check_in` RBAC plus that scope. **Scope stated
+honestly**: only the physical-movement actions above have a mechanical
+inverse — creates/updates/deletes/archives/force-returns in the window are
+reported in `skipped` with a reason, not silently ignored, because there is no
+generic "undo any write" primitive in this codebase to call. An operator still
+gets the full agent-authored slice of the activity log (the badge/filter
+above) to review and hand-fix anything `skipped` lists.
 
 ## What shipped before removal (for scale/scope reference)
 

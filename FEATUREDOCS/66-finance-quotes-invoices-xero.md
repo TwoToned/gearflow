@@ -215,6 +215,19 @@ direct visit to `/settings/xero` shows a "not configured" message instead of
 a "Connect Xero" button that would otherwise throw at click-time
 (`requireXeroAppCredentials()` in `src/server/xero.ts`).
 
+### Account-coding pickers are searchable, not plain `Select`s
+
+`/settings/xero`'s org-default-account, default-tax-type, and per-service-type
+account fields use `ComboboxPicker` (`src/components/ui/combobox-picker.tsx`),
+not the plain Radix `Select`. A full chart of accounts commonly runs into the
+hundreds of rows — a bare `Select`'s dropdown has no built-in scroll affordance
+in this codebase's wrapper and can render off-screen; `ComboboxPicker` gives a
+search input plus an internally-scrollable (`max-h-60 overflow-y-auto`) list,
+the same component already used everywhere else in the app for name+code
+pickers (e.g. the model picker in `asset-form.tsx`). `allowClear` lets a
+default be reset back to "unset" (falls through to the next cascade level)
+without a separate clear control.
+
 ### Client contact mapping
 
 Client detail page (Xero-linked only) — search Xero contacts by name, or

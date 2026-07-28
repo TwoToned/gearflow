@@ -310,6 +310,16 @@ export interface PageHeaderConfig {
   documentColor: string;
 }
 
+/**
+ * Config for the draft-watermark plugin (#987) — the "this is NOT the document
+ * the client has" banner stamped on a preview render. Only ever produced by the
+ * `preview=1` path; a stored artifact never carries one.
+ */
+export interface DraftWatermarkConfig {
+  title: string;
+  subtitle: string;
+}
+
 /** Config for signature line plugin */
 export interface SignatureLineConfig {
   columns: { label: string; subLabel?: string }[];

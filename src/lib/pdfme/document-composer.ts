@@ -22,10 +22,12 @@ import type {
   PageHeaderConfig,
   FooterConfig,
   SignatureLineConfig,
+  DraftWatermarkConfig,
 } from "./types";
 import {
   getDocumentLayout,
   type DocumentLayout,
+  type DocumentLayoutOptions,
   type LayoutBlock,
   type TableLayoutConfig,
   type ProjectDocumentType,
@@ -381,6 +383,13 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
     case "totalItemsNote":
       return 8;
 
+    // Title (14pt ≈ 5mm) + subtitle (7.5pt ≈ 2.6mm) + the banner's own padding,
+    // matching gearflow-draft-watermark.ts's draw sizes. Reserved like any other
+    // block — an unreserved overlay is exactly how the v0.8.1.1 tail-drop
+    // happened, and this one repeats on every page.
+    case "draftWatermark":
+      return 14;
+
     case "termsAndConditions": {
       // Optional — collapses to zero height (and is skipped entirely by the
       // page-layout walk) when the org hasn't set any T&Cs text.
@@ -420,6 +429,30 @@ interface Page {
 }
 
 /**
+ * Page FURNITURE — the blocks repeated on EVERY page rather than flowing with
+ * the body: the header, and (preview renders only) the draft watermark. A
+ * "DRAFT PREVIEW — NOT SENT" banner that appeared only on page 1 of a 4-page
+ * quote would not be a warning, so it lives here alongside the header rather
+ * than in the body walk (#987).
+ */
+function isPageFurniture(block: LayoutBlock): boolean {
+  return block.kind === "header" || block.kind === "draftWatermark";
+}
+
+/** Furniture blocks with their measured heights, plus the vertical space they
+ *  consume at the top of every page (each block + its trailing section gap). */
+function measurePageFurniture(
+  layout: DocumentLayout,
+  data: DocumentData,
+  ctx: LayoutContext,
+): { blocks: { block: LayoutBlock; height: number }[]; totalHeight: number } {
+  const blocks = layout.blocks
+    .filter(isPageFurniture)
+    .map((block) => ({ block, height: estimateBlockHeight(block, data, ctx) }));
+  return { blocks, totalHeight: blocks.reduce((sum, b) => sum + b.height + SECTION_GAP, 0) };
+}
+
+/**
  * Compute the multi-page layout for one document: walk the layout's blocks
  * top-to-bottom, starting a new page when a block doesn't fit. Table blocks
  * split across pages (per-item cumulative heights) instead of moving whole —
@@ -433,12 +466,11 @@ interface Page {
  */
 function computePages(layout: DocumentLayout, data: DocumentData, docType: ProjectDocumentType, fonts?: RichTextFonts): Page[] {
   const ctx: LayoutContext = { docType, filterByStatus: layout.filterByStatus, fonts };
-  const headerBlock = layout.blocks.find((b) => b.kind === "header") as Extract<LayoutBlock, { kind: "header" }> | undefined;
-  const bodyBlocks = layout.blocks.filter((b) => b.kind !== "header");
+  const furniture = measurePageFurniture(layout, data, ctx);
+  const bodyBlocks = layout.blocks.filter((b) => !isPageFurniture(b));
 
   const maxY = PAGE_HEIGHT - MARGIN - FOOTER_HEIGHT;
-  const headerHeight = headerBlock ? estimateBlockHeight(headerBlock, data, ctx) : 0;
-  const continuationContentHeight = maxY - MARGIN - (headerBlock ? headerHeight + SECTION_GAP : 0);
+  const continuationContentHeight = maxY - MARGIN - furniture.totalHeight;
   const tableHeaderMm = ptToMm(TABLE_HEADER_PT);
   const groupHeaderMm = ptToMm(GROUP_HEADER_PT);
 
@@ -446,17 +478,18 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
   let currentPage: Page = { entries: [] };
   let currentY = MARGIN;
 
-  function placeHeader() {
-    if (!headerBlock) return;
-    currentPage.entries.push({ block: headerBlock, y: currentY, height: headerHeight });
-    currentY += headerHeight + SECTION_GAP;
+  function placePageFurniture() {
+    for (const { block, height } of furniture.blocks) {
+      currentPage.entries.push({ block, y: currentY, height });
+      currentY += height + SECTION_GAP;
+    }
   }
 
   function startNewPage() {
     pages.push(currentPage);
     currentPage = { entries: [] };
     currentY = MARGIN;
-    placeHeader();
+    placePageFurniture();
   }
 
   /** Split a table block across pages using per-item cumulative heights. */
@@ -716,7 +749,7 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     return false;
   }
 
-  placeHeader();
+  placePageFurniture();
 
   for (const block of bodyBlocks) {
     const height = estimateBlockHeight(block, data, ctx);
@@ -783,6 +816,16 @@ function buildEntryFields(
       return [
         {
           schema: { name, type: "gearflowPageHeader", content: "", position: { x: MARGIN, y }, width: CONTENT_WIDTH, height },
+          input: JSON.stringify(config),
+        },
+      ];
+    }
+
+    case "draftWatermark": {
+      const config: DraftWatermarkConfig = { title: block.title, subtitle: block.subtitle };
+      return [
+        {
+          schema: { name, type: "gearflowDraftWatermark", content: "", position: { x: MARGIN, y }, width: CONTENT_WIDTH, height },
           input: JSON.stringify(config),
         },
       ];
@@ -1011,14 +1054,19 @@ export interface ComposeResult {
  * a short trailing block alone on a near-empty page). Stays optional, and
  * `composeDocument` stays synchronous, so no existing caller/test needs to
  * change — the accurate path is additive.
+ *
+ * `options.draftPreview` (#987) splices the "DRAFT PREVIEW — NOT SENT" banner in
+ * as page furniture. Only the preview route sets it; the stored artifact is
+ * always rendered without it.
  */
 export function composeDocument(
   docType: ProjectDocumentType,
   data: DocumentData,
   docColor: string,
   fonts?: RichTextFonts,
+  options?: DocumentLayoutOptions,
 ): ComposeResult {
-  const layout = getDocumentLayout(docType);
+  const layout = getDocumentLayout(docType, options);
   const pages = computePages(layout, data, docType, fonts);
 
   const allSchemas: (Schema & Record<string, unknown>)[][] = [];

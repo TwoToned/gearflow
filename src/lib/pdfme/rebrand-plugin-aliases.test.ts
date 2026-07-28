@@ -19,6 +19,7 @@ const PLUGIN_SUFFIXES = [
   "CallSheetInfo",
   "DayHeader",
   "RichText",
+  "DraftWatermark",
   "DataTable",
   "SummaryBox",
   "TextBlock",

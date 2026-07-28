@@ -21,6 +21,20 @@ export function assertFinite(value: number | null | undefined, field: string): v
 }
 
 /**
+ * #1012 — reject a `discountMode` that isn't one of the two literals. Mutations
+ * whose arg validator is `enums.DiscountMode` get this for free; this exists for
+ * the untyped surfaces (`patchNative`'s `set: v.any()`, and `patchManyNative`'s
+ * `mode: v.string()` legacy shape), where a browser-direct caller could otherwise
+ * write an arbitrary string into the column and break the PDF's mode switch.
+ */
+export function assertDiscountMode(mode: unknown): void {
+  if (mode == null) return;
+  if (mode !== "$" && mode !== "%") {
+    throw new ConvexError({ code: "INVALID_DISCOUNT_MODE", message: 'Discount mode must be "$" or "%".' });
+  }
+}
+
+/**
  * Validate the numeric line-item fields to the same bounds `lineItemSchema` /
  * `customLineItemSchema` enforce, EXCEPT the two derived values that can legitimately
  * exceed their input caps and so are only checked finite + non-negative:
@@ -36,9 +50,11 @@ export function assertLineMoneyFields(f: {
   quantity?: number | null;
   unitPrice?: number | null;
   discount?: number | null;
+  discountMode?: unknown;
   duration?: number | null;
   lineTotal?: number | null;
 }): void {
+  assertDiscountMode(f.discountMode);
   if (f.quantity != null) {
     // No upper cap — the merge path sums two Zod-capped quantities (see doc above).
     if (!Number.isFinite(f.quantity) || !Number.isInteger(f.quantity) || f.quantity < 1) {

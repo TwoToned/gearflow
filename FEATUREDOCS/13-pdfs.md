@@ -731,6 +731,46 @@ section header + divider treatment as a real category, not a blank/falsy
 - Pull slip: per-unit checkboxes for qty > 1 items, ticked for already-deployed units
 - Per-unit rows (`showPerUnitCheckboxes`): a qty > 1 line expands to one row per assigned unit ("Unit 1 — TTP00042", …) instead of collapsing tags to "tag, tag +N". On for `packing-list`, `return-sheet`, and `delivery-docket` — a single literal in each doc type's `DOCUMENT_LAYOUTS` entry (there is exactly one default source now, not two that have to be kept in sync).
 
+### Discount column prints the discount as it was ENTERED (#1012, 2026-07-28)
+
+The Discount column always resolved to dollars — a line negotiated at "15%"
+printed `-$150.00`, because **discount mode was never persisted anywhere**.
+`resolveDiscountAmount` converted `%` → flat dollars client-side and only the
+resulting number crossed into the mutation, by design (`discount` is the one
+number recalc / invoicing / `lineTotal` all read).
+
+`projectLineItems.discountMode` and `projectGroups.discountMode`
+(`v.optional(enums.DiscountMode)` — `"$" | "%"`) now record the **entry shape**
+alongside that dollar amount. Absent = `"$"`, which is byte-identical to the old
+behaviour, so **no backfill** was needed. Nothing about pricing math changed:
+the mode is display-only.
+
+- **The percentage is DERIVED, never stored.** `discountCellText` in
+  `gearflow-table.ts` recomputes it from the stored dollar amount against the
+  row's own gross (`unitPrice × quantity × duration`, via `lineGrossAmount`).
+  Storing the typed `15` would let a document contradict itself: the dollar
+  amount is frozen at save time, so a later unit-price change would print "15%"
+  next to numbers that say 7.5%. Deriving keeps the printed percentage and the
+  printed line total in agreement by construction, and leaves one source of
+  truth for the discount (R-3.1). A `%` row whose gross is `0` (no percentage
+  is expressible) falls back to the dollar amount.
+- **One helper, three row tiers.** `discountCellText` is shared by the parent,
+  kit/accessory-child and per-unit-grandchild renderers, which previously had
+  three hand-rolled copies of the same `-${formatCurrency(...)}` expression.
+- **Synthetic Project Group rows** carry `discountMode` through
+  `structure-line-items.ts`; the row's `unitPrice`/`quantity`/`duration`
+  (bundle price × qty × 1) are the gross the percentage is measured against.
+- **No pagination impact** — the cell is still a single line at every tier, so
+  `calculateItemHeight` is unchanged (checklist item 2 below: verified, no
+  change required).
+
+The conversions live in `src/lib/discount-mode.ts` (plain module, no
+`"use client"`) so the Convex mutations, the Zod schemas, the seven add/edit
+forms and this renderer all share one definition of the mode union,
+`resolveDiscountAmount`, and its inverse. See
+[FEATUREDOCS/10](./10-projects.md#groups-projectgroup--the-billable-unit) for
+the write side.
+
 ## PDF Data-Shape Consumers (audit checklist)
 
 Any change to the `DocumentLineItem` shape (new field, new synthetic row

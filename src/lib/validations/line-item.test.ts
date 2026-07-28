@@ -482,3 +482,29 @@ describe("customLineItemSchema", () => {
     });
   });
 });
+
+// #1012 — the discount ENTRY mode rides alongside the resolved dollar amount.
+describe("discountMode (#1012)", () => {
+  for (const schema of [lineItemSchema, customLineItemSchema]) {
+    const base = schema === lineItemSchema ? {} : { description: "Item" };
+
+    it(`accepts "$" and "%" (${schema === lineItemSchema ? "lineItemSchema" : "customLineItemSchema"})`, () => {
+      for (const mode of ["$", "%"] as const) {
+        const result = schema.safeParse({ ...base, discount: 10, discountMode: mode });
+        expect(result.success).toBe(true);
+        if (result.success) expect(result.data.discountMode).toBe(mode);
+      }
+    });
+
+    it(`is optional — absent means "$" downstream (${schema === lineItemSchema ? "lineItemSchema" : "customLineItemSchema"})`, () => {
+      const result = schema.safeParse({ ...base, discount: 10 });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.discountMode).toBeUndefined();
+    });
+
+    it(`rejects any other string (${schema === lineItemSchema ? "lineItemSchema" : "customLineItemSchema"})`, () => {
+      expect(schema.safeParse({ ...base, discount: 10, discountMode: "pct" }).success).toBe(false);
+      expect(schema.safeParse({ ...base, discount: 10, discountMode: "USD" }).success).toBe(false);
+    });
+  }
+});

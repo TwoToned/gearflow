@@ -17,6 +17,8 @@ export interface LineItemData {
   pricingType?: string;
   duration?: number;
   discount?: unknown;
+  /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
+  discountMode?: string | null;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
@@ -70,6 +72,8 @@ export interface GroupData {
   quantity: number;
   price: unknown;
   discount: unknown;
+  /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
+  discountMode?: string | null;
   suggestedPrice: unknown;
   sortOrder: number;
   lineItems?: LineItemData[];

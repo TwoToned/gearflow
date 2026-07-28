@@ -45,7 +45,15 @@ import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xe
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
+import {
+  SectionTitle,
+  Field,
+  DiscountField,
+  discountEntryValue,
+  resolveDiscountAmount,
+  toDiscountMode,
+  type DiscountMode,
+} from "./line-item-form-fields";
 import type { LineItemData, CategoryData } from "./equipment-rows";
 
 export interface EditLineItemPayload {
@@ -56,10 +64,26 @@ export interface EditLineItemPayload {
   pricingType: string;
   duration: number;
   discount?: number;
+  /** #1012 — how the discount above was entered; persisted for document display. */
+  discountMode?: DiscountMode;
   notes?: string;
   isOptional: boolean;
   xeroAccountCode?: string;
   xeroTaxType?: string;
+}
+
+/**
+ * #1012 — reopen the editor showing the discount the way it was ENTERED: a line
+ * saved as 15% comes back as "15" with the toggle on `%`, not as the resolved
+ * dollar amount with the toggle reset to `$` (which would silently rewrite the
+ * stored mode on the next save). The percentage is derived from the stored
+ * dollar amount against the line's current gross — see
+ * `src/lib/discount-mode.ts` for why it isn't stored.
+ */
+function initialDiscountEntry(item: LineItemData): { value: string; mode: DiscountMode } {
+  const mode = toDiscountMode(item.discountMode);
+  const gross = Number(item.unitPrice ?? 0) * Number(item.quantity ?? 1) * Number(item.duration ?? 1);
+  return { value: discountEntryValue(item.discount != null ? Number(item.discount) : null, mode, gross), mode };
 }
 
 export interface EditLineItemPlacement {
@@ -138,6 +162,8 @@ function EditLineItemDialogBody({
   const formDisabled = isLocked;
   const xeroLinked = useXeroLinked();
 
+  const initialDiscount = initialDiscountEntry(item);
+
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
     defaultValues: {
@@ -147,14 +173,14 @@ function EditLineItemDialogBody({
       unitPrice: item.unitPrice != null ? Number(item.unitPrice) : undefined,
       pricingType: (item.pricingType as LineItemFormValues["pricingType"]) ?? "PER_DAY",
       duration: item.duration ?? 1,
-      discount: item.discount != null && Number(item.discount) > 0 ? Number(item.discount) : undefined,
+      discount: initialDiscount.value !== "" ? Number(initialDiscount.value) : undefined,
       notes: item.notes ?? "",
       isOptional: item.isOptional ?? false,
       xeroAccountCode: item.xeroAccountCode ?? "",
       xeroTaxType: item.xeroTaxType ?? "",
     },
   });
-  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
+  const [discountMode, setDiscountMode] = useState<DiscountMode>(initialDiscount.mode);
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
 
   // Placement — kit children move with their parent kit, not independently.
@@ -207,10 +233,9 @@ function EditLineItemDialogBody({
     const qty = Number(data.quantity) || 1;
     const price = data.unitPrice != null ? Number(data.unitPrice) : undefined;
     const dur = Number(data.duration) || item.duration || 1;
-    let disc = data.discount != null ? Number(data.discount) : undefined;
-    if (disc && discountMode === "%" && price != null) {
-      disc = Math.round((price * qty * dur * disc) / 100 * 100) / 100;
-    }
+    // #1012: shared conversion (resolveDiscountAmount) + the mode is submitted
+    // alongside the resolved amount instead of being discarded.
+    const disc = resolveDiscountAmount(discountMode, data.discount as number | string | undefined, (price ?? 0) * qty * dur);
     onSubmit(
       item.id,
       {
@@ -221,6 +246,7 @@ function EditLineItemDialogBody({
         pricingType: data.pricingType ?? item.pricingType ?? "PER_DAY",
         duration: dur,
         discount: disc,
+        discountMode,
         notes: data.notes || undefined,
         isOptional: data.isOptional ?? false,
         xeroAccountCode: data.xeroAccountCode || undefined,

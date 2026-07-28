@@ -259,11 +259,21 @@ three independently hand-rolled implementations (`equipment-add-form`,
 `edit-line-item-dialog`, `bulk-edit-line-items-dialog`) that had quietly
 drifted in exact classes — now `DiscountField` (labelled) and
 `DiscountAmountInput` (bare, for callers with their own label, e.g.
-`bulk-edit-line-items-dialog`'s checkbox-gated rows). The mode is a pure
-client-side display convenience: every caller resolves a `%` value to a
-flat dollar amount before it reaches the schema/mutation — discount is
-*always* persisted as a flat $ amount (see `line-item.ts`'s `discountField`
-and the new `project-group.ts` `discount` field below).
+`bulk-edit-line-items-dialog`'s checkbox-gated rows). Every caller resolves
+a `%` value to a flat dollar amount before it reaches the schema/mutation —
+discount is *always* persisted as a flat $ amount (see `line-item.ts`'s
+`discountField` and the new `project-group.ts` `discount` field below).
+
+> **Superseded in part by #1012** (2026-07-28): the mode is no longer *purely*
+> a client-side display convenience. `discount` is still always the resolved
+> flat dollar amount, but the mode itself is now persisted next to it as
+> `discountMode` (`"$" | "%"`, on `projectLineItems` + `projectGroups`) so
+> quote/invoice PDFs can print the discount the way it was entered. The
+> conversions moved out of this file into `src/lib/discount-mode.ts` (a plain
+> module the Convex mutations, Zod schemas and PDF renderer can all import);
+> `line-item-form-fields.tsx` re-exports them so the forms' imports are
+> unchanged. See [FEATUREDOCS/13](./13-pdfs.md) and
+> [FEATUREDOCS/10](./10-projects.md).
 
 **RHF + Zod everywhere.** `custom-item-add-form.tsx` moved from hand-rolled
 `useState` per field (only `.parse()`d at submit) to

@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
+import type { DiscountMode } from "@/lib/discount-mode";
 
 /**
  * Browser-direct PROJECT-GROUP writes (Phase 3 — replaces the create/update/
@@ -73,12 +74,19 @@ export function useProjectGroupWrites() {
       });
     },
 
-    updatePrice: async (groupId: string, price: number, discount?: number): Promise<void> => {
+    updatePrice: async (
+      groupId: string,
+      price: number,
+      discount?: number,
+      /** #1012 — how `discount` was entered; persisted for document display. */
+      discountMode?: DiscountMode,
+    ): Promise<void> => {
       await updatePriceM({
         id: groupId,
         orgId: requireOrg(),
         price,
         discount,
+        discountMode: discount != null ? discountMode : undefined,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

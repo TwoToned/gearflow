@@ -94,9 +94,13 @@ export const LOCKED_PROJECT_FIELDS = [
   "discountPercent",
 ] as const;
 
-export const LOCKED_GROUP_FIELDS = ["price", "discount", "rentalPeriod", "rentalQuantity"] as const;
+// `discountMode` (#1012) travels with `discount` in both lists: it is the entry
+// shape of that exact number, so a FINANCIAL-scope revert that restores the
+// dollar amount must restore how it was entered too — otherwise a reverted line
+// keeps printing "%" for a `$` discount (or vice versa).
+export const LOCKED_GROUP_FIELDS = ["price", "discount", "discountMode", "rentalPeriod", "rentalQuantity"] as const;
 
-export const LOCKED_LINE_ITEM_FIELDS = ["unitPrice", "discount", "duration"] as const;
+export const LOCKED_LINE_ITEM_FIELDS = ["unitPrice", "discount", "discountMode", "duration"] as const;
 
 /** `costTotal` is locked only for CREW-LESS services — a crew-attached service's
  *  costTotal keeps auto-deriving from the crew rate table even post-CONFIRMED

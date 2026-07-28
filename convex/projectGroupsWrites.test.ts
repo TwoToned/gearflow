@@ -302,6 +302,41 @@ describe("projectGroupsWrites.updateGroupPriceNative", () => {
     });
   });
 
+  // #1012 — the ENTRY shape of the discount rides with the amount so quote/
+  // invoice PDFs can print a priced group's discount as "10%" rather than
+  // "-$30.00". Display only: `discount` stays the number recalc reads.
+  test("stores discountMode alongside the resolved discount", async () => {
+    const t = makeT();
+    await seedPricedGroup(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 150, discount: 30, discountMode: "%", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.discount).toBe(30);
+      expect(g?.discountMode).toBe("%");
+      // The mode is inert for money: 150 × 2 − 30 = 270, + 10% tax = 297.
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(project?.total).toBe(297);
+    });
+  });
+
+  test("drops a stale discountMode when the discount is zeroed", async () => {
+    const t = makeT();
+    await seedPricedGroup(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 150, discount: 30, discountMode: "%", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 150, discount: 0, now: NOW + 1, actor: ACTOR, auditId: "log2",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.discount).toBe(0);
+      expect(g?.discountMode).toBeUndefined();
+    });
+  });
+
   test("rejects a non-finite discount (NaN/Infinity would poison recalc)", async () => {
     const t = makeT();
     await seedPricedGroup(t);

@@ -20495,7 +20495,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "6e40b4ae9447367f",
+    "argsSha": "9398503fdb975de4",
     "returnsSha": "8b114161049d5d20"
   },
   {
@@ -20533,6 +20533,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "discount",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "discountMode",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "emitActivity",
@@ -20603,7 +20608,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "a17baf9e971bdc2e",
+    "argsSha": "55cfc9c05853293e",
     "returnsSha": "8b114161049d5d20"
   },
   {
@@ -20702,7 +20707,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "forceSeparate",
       "justification"
     ],
-    "argsSha": "3e1600f51d7419c8",
+    "argsSha": "5770d4dbaf53b101",
     "returnsSha": "6f1a1d586199c07b"
   },
   {
@@ -20790,7 +20795,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "allowOverbook",
       "justification"
     ],
-    "argsSha": "311a0467d2110601",
+    "argsSha": "44de6ce05a129219",
     "returnsSha": "b462b96a443b48b3"
   },
   {
@@ -28014,6 +28019,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "discountMode",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -28057,7 +28067,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "2cc9d4c58527033e",
+    "argsSha": "03cef26c41f3f16d",
     "returnsSha": "e2697643f2e08227"
   },
   {
@@ -28395,6 +28405,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "discountMode",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -28416,7 +28431,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "380f9941af80e6a8",
+    "argsSha": "80d77a6e0365a610",
     "returnsSha": "efde83ecf2efd768"
   },
   {

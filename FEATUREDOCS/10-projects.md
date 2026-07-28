@@ -373,6 +373,19 @@ See [FEATUREDOCS/66-finance-quotes-invoices-xero.md](./66-finance-quotes-invoice
   for the full plumbing list. There is no discount UI at group *creation*
   (`AddGroupToolbarDialog`) — same as `price`, which is also only set
   after creation via one of the two edit surfaces above.
+- `discountMode` (`"$" | "%"`, issue #1012) records **how that discount was
+  entered**, next to the resolved dollar amount. It is display-only — recalc,
+  allocation and invoicing still read `discount` and nothing else — and exists
+  so quote/invoice PDFs can print `-10%` instead of `-$100.00`
+  ([FEATUREDOCS/13](./13-pdfs.md)). Absent on every pre-#1012 row and read as
+  `"$"`, so no backfill was needed. It is written **only alongside the amount
+  it describes**: `updateGroupPriceNative` drops a stale mode when the discount
+  is zeroed, and the lifecycle-lock `defaultToZero` path clears both together.
+  Both edit surfaces seed the toggle *and* the input from the stored mode on
+  open (`discountEntryValue`), so reopening a 10% group shows "10 %" rather
+  than silently rewriting it back to `$`. `LOCKED_GROUP_FIELDS` /
+  `LOCKED_LINE_ITEM_FIELDS` include `discountMode` so a FINANCIAL-scope revert
+  restores the entry shape with the amount.
 - `categoryId` is **nullable since v0.10.0.0** — a group can live in
   the project's Uncategorized zone (mirrors `SubHireGroup.targetCategoryId`).
   The toolbar "Add Group" dialog and per-group Move dialog both offer

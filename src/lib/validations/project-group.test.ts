@@ -223,3 +223,26 @@ describe("moveLineItemSchema", () => {
     expect(result.success).toBe(false);
   });
 });
+
+// #1012 — the discount ENTRY mode, shared with the line-item schema.
+describe("discountMode (#1012)", () => {
+  it("accepts the two modes on projectGroupSchema", () => {
+    for (const mode of ["$", "%"] as const) {
+      const result = projectGroupSchema.safeParse({ ...validMinimal, discount: 10, discountMode: mode });
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.discountMode).toBe(mode);
+    }
+  });
+
+  it("rejects any other string", () => {
+    expect(projectGroupSchema.safeParse({ ...validMinimal, discount: 10, discountMode: "pct" }).success).toBe(false);
+  });
+
+  it("is carried through to updateGroupPriceSchema (derived, not re-declared)", () => {
+    const result = updateGroupPriceSchema.safeParse({ price: 100, discount: 10, discountMode: "%" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.discountMode).toBe("%");
+    // Still optional there — omitting it leaves the stored mode untouched.
+    expect(updateGroupPriceSchema.safeParse({ price: 100 }).success).toBe(true);
+  });
+});

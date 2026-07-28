@@ -57,6 +57,9 @@ export interface CategoryForStructuring {
     quantity: number;
     price: number | null;
     discount: number | null;
+    /** #1012 — how `discount` was entered; carried onto the synthetic group row
+     *  so the Discount column can print "10%" instead of "-$120.00". */
+    discountMode?: "$" | "%" | null;
     sortOrder: number;
   }>;
 }
@@ -289,6 +292,7 @@ export function structureLineItems(
         pricingType: "FLAT",
         duration: 1,
         discount: discount > 0 ? discount : null,
+        discountMode: discount > 0 ? group.discountMode ?? null : null,
         lineTotal: total,
         groupName: bucketLabel,
         categoryName: cat.name,

@@ -627,6 +627,9 @@ export async function createKitLineItemCore(
     /** Flat dollar amount off `unitPrice`, KIT_PRICE mode only — mirrors how
      *  discount already works for equipment/custom line items. */
     discount?: number;
+    /** #1012 — entry shape of `discount` ($ off vs % of `unitPrice`). Display
+     *  only; stored alongside the resolved dollar amount above. */
+    discountMode?: "$" | "%";
     pricingMode: "KIT_PRICE" | "ITEMIZED";
     groupName?: string;
     categoryId?: string;
@@ -647,7 +650,9 @@ export async function createKitLineItemCore(
     await ctx.db.insert("projectLineItems", {
       id: a.id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", kitId: a.kitId,
       description: `${kit.assetTag} - ${kit.name}`, quantity: 1, unitPrice: a.unitPrice, pricingType: "PER_DAY",
-      duration: 1, discount: a.unitPrice != null ? a.discount : undefined, lineTotal: kitLineTotal, sortOrder: sort++, pricingMode: a.pricingMode,
+      duration: 1, discount: a.unitPrice != null ? a.discount : undefined,
+      discountMode: a.unitPrice != null && a.discount != null ? a.discountMode : undefined,
+      lineTotal: kitLineTotal, sortOrder: sort++, pricingMode: a.pricingMode,
       groupName: a.groupName, categoryId: a.categoryId, groupId: a.groupId, status: "CONFIRMED",
       createdAt: a.now, updatedAt: a.now,
     });

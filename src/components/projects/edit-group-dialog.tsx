@@ -31,7 +31,13 @@ import { COLLAB_TARGET_TYPES } from "@/lib/collaboration-targets";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xero-coding-fields";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
-import { DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
+import {
+  DiscountField,
+  discountEntryValue,
+  resolveDiscountAmount,
+  toDiscountMode,
+  type DiscountMode,
+} from "./line-item-form-fields";
 import type { GroupData } from "./equipment-rows";
 
 export interface EditGroupFormValues {
@@ -57,6 +63,8 @@ interface EditGroupDialogProps {
     values: EditGroupFormValues,
     price: number | undefined,
     discount: number | undefined,
+    /** #1012 — how `discount` was entered; persisted for document display. */
+    discountMode: DiscountMode | undefined,
   ) => void;
 }
 
@@ -96,8 +104,14 @@ function EditGroupDialogBody({
   const [description, setDescription] = useState(group.description ?? "");
   const [quantity, setQuantity] = useState(String(group.quantity));
   const [price, setPrice] = useState(priceVal != null ? String(priceVal) : "");
-  const [discount, setDiscount] = useState(discountVal != null ? String(discountVal) : "");
-  const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
+  // #1012 — reopen showing the discount the way it was ENTERED (a group saved
+  // as 10% comes back as "10" with the `%` toggle), not the resolved dollar
+  // amount with the toggle reset to `$`.
+  const initialDiscountMode = toDiscountMode(group.discountMode);
+  const [discount, setDiscount] = useState(
+    discountEntryValue(discountVal, initialDiscountMode, (priceVal ?? 0) * (group.quantity || 1)),
+  );
+  const [discountMode, setDiscountMode] = useState<DiscountMode>(initialDiscountMode);
   const [xeroAccountCode, setXeroAccountCode] = useState(group.xeroAccountCode ?? "");
   const [xeroTaxType, setXeroTaxType] = useState(group.xeroTaxType ?? "");
   const xeroLinked = useXeroLinked();
@@ -124,6 +138,7 @@ function EditGroupDialogBody({
       },
       resolvedPrice,
       resolvedDiscount,
+      discountMode,
     );
   }
 

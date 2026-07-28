@@ -61,6 +61,14 @@ type UnitDoc = Doc<"projectLineItemUnits">;
 type CategoryDoc = Doc<"projectCategories">;
 type GroupDoc = Doc<"projectGroups">;
 
+/** Convex's "field absent" (`undefined`) → the Prisma row shape's `null`. One
+ *  helper rather than a `?? null` per field — the mapper below is a straight
+ *  field-for-field projection, and the repeated null-coalescing was all this
+ *  function's cyclomatic complexity (R-3.6). */
+function orNull<T>(value: T | undefined | null): T | null {
+  return value ?? null;
+}
+
 /** epoch-ms (Convex) → `Date`; absent/`null` → `null`. */
 function msToDate(n: number | null | undefined): Date | null {
   return n == null ? null : new Date(n);
@@ -91,6 +99,7 @@ export type MappedLineItem = Omit<
   | "pricingType"
   | "duration"
   | "discount"
+  | "discountMode"
   | "lineTotal"
   | "priceBreakdown"
   | "priceOverridden"
@@ -144,6 +153,9 @@ export type MappedLineItem = Omit<
   pricingType: string;
   duration: number;
   discount: number | null;
+  /** #1012 — how `discount` was ENTERED. Null on every pre-#1012 row, which the
+   *  document renderer reads as `"$"` (the pre-#1012 behaviour, no backfill). */
+  discountMode: "$" | "%" | null;
   lineTotal: number | null;
   priceBreakdown: string | null;
   priceOverridden: boolean;
@@ -204,6 +216,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     pricingType: d.pricingType ?? "PER_DAY",
     duration: d.duration ?? 1,
     discount: d.discount ?? null,
+    discountMode: d.discountMode ?? null,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,
@@ -347,6 +360,7 @@ export type MappedGroup = Omit<
   | "quantity"
   | "price"
   | "discount"
+  | "discountMode"
   | "suggestedPrice"
   | "sortOrder"
   | "xeroAccountCode"
@@ -359,6 +373,8 @@ export type MappedGroup = Omit<
   quantity: number;
   price: number | null;
   discount: number | null;
+  /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
+  discountMode: "$" | "%" | null;
   suggestedPrice: number | null;
   sortOrder: number;
   xeroAccountCode: string | null;
@@ -372,16 +388,17 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     id: d.id,
     organizationId: d.organizationId,
     projectId: d.projectId,
-    categoryId: d.categoryId ?? null,
+    categoryId: orNull(d.categoryId),
     title: d.title,
-    description: d.description ?? null,
+    description: orNull(d.description),
     quantity: d.quantity ?? 1,
-    price: d.price ?? null,
-    discount: d.discount ?? null,
-    suggestedPrice: d.suggestedPrice ?? null,
+    price: orNull(d.price),
+    discount: orNull(d.discount),
+    discountMode: orNull(d.discountMode),
+    suggestedPrice: orNull(d.suggestedPrice),
     sortOrder: d.sortOrder ?? 0,
-    xeroAccountCode: d.xeroAccountCode ?? null,
-    xeroTaxType: d.xeroTaxType ?? null,
+    xeroAccountCode: orNull(d.xeroAccountCode),
+    xeroTaxType: orNull(d.xeroTaxType),
     createdAt: msToDate(d.createdAt),
     updatedAt: msToDate(d.updatedAt),
   };

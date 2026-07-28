@@ -15,6 +15,32 @@ import {
 } from "./helpers";
 import type { DocumentLineItem, TablePluginConfig } from "../types";
 import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
+import { discountPercentOf, lineGrossAmount } from "@/lib/discount-mode";
+
+/**
+ * The Discount cell's text for one row (#1012) — the discount printed the way
+ * the operator entered it: `-15%` for a line discounted by percentage, and
+ * `-$40.00` for a flat amount. `"-"` when the row carries no discount.
+ *
+ * `discountMode` is the ENTRY shape; the percentage itself is derived here from
+ * the stored dollar amount against the row's own gross, so the printed percent
+ * and the printed line total can never contradict each other (see
+ * `src/lib/discount-mode.ts`). A row with no stored mode — every row written
+ * before #1012 — prints the dollar amount, exactly as it did before.
+ *
+ * Shared by all three renderers in this file (parent rows, kit/accessory
+ * children, per-unit grandchildren) so the three can never drift apart.
+ */
+function discountCellText(item: DocumentLineItem): string {
+  if (!item.discount) return "-";
+  if (item.discountMode === "%") {
+    const pct = discountPercentOf(item.discount, lineGrossAmount(item));
+    // A $0-gross row has no meaningful percentage — fall back to the amount
+    // rather than printing a nonsense "-0%" / "-Infinity%".
+    if (pct != null) return `-${pct}%`;
+  }
+  return `-${formatCurrency(item.discount)}`;
+}
 
 /** Formatted breakdown label for a line, or "" when there's nothing to show
  *  (no stored breakdown, malformed JSON, or a manually-priced line). Shared by
@@ -582,7 +608,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
           case "discount": {
             if (!config.showPricing) break;
-            const discStr = !isItemized && item.discount ? `-${formatCurrency(item.discount)}` : "-";
+            const discStr = !isItemized ? discountCellText(item) : "-";
             const discWidth = fonts.regular.widthOfTextAtSize(discStr, fontSize);
             page.drawText(discStr, {
               x: colEndX - discWidth - cellPadding,
@@ -834,7 +860,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
               case "discount": {
                 if (!config.showPricing) break;
-                const discStr = child.discount ? `-${formatCurrency(child.discount)}` : "-";
+                const discStr = discountCellText(child);
                 const discWidth = fonts.regular.widthOfTextAtSize(discStr, childFontSize);
                 page.drawText(discStr, {
                   x: colEndX - discWidth - cellPadding,
@@ -1015,7 +1041,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
                   case "discount": {
                     if (!config.showPricing) break;
-                    const dStr = nested.discount ? `-${formatCurrency(nested.discount)}` : "-";
+                    const dStr = discountCellText(nested);
                     const dW = fonts.regular.widthOfTextAtSize(dStr, grandchildFontSize);
                     page.drawText(dStr, {
                       x: colEndX - dW - cellPadding,

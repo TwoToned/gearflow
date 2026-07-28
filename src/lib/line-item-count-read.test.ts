@@ -43,6 +43,7 @@ function li(over: Partial<MappedLineItem>): MappedLineItem {
     pricingType: "PER_DAY",
     duration: 1,
     discount: null,
+    discountMode: null,
     lineTotal: null,
     priceBreakdown: null,
     priceOverridden: false,

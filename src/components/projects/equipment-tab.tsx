@@ -1155,6 +1155,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 quantity: group.quantity,
                                 price: priceVal,
                                 discount: group.discount != null ? Number(group.discount) : null,
+                                discountMode: group.discountMode ?? null,
                               })}
                               onAddEquipment={() => {
                                 setUnifiedAddTarget({ categoryId: cat.id, groupId: group.id, label: `${cat.name} > ${group.title}` });
@@ -1358,6 +1359,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           quantity: group.quantity,
                           price: priceVal,
                           discount: group.discount != null ? Number(group.discount) : null,
+                          discountMode: group.discountMode ?? null,
                         })}
                         onAddEquipment={() => {
                           setUnifiedAddTarget({ groupId: group.id, label: `Uncategorized > ${group.title}` });
@@ -1941,10 +1943,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         projectId={projectId}
         orgId={orgId}
         onClose={() => setEditGroupData(null)}
-        onSubmit={(groupId, values, price, discount) => {
+        onSubmit={(groupId, values, price, discount, discountMode) => {
           updateGroupMut.mutate({ groupId, data: values });
           if (price !== undefined) {
-            groupWrites.updatePrice(groupId, price, discount)
+            groupWrites.updatePrice(groupId, price, discount, discountMode)
               .then(() => invalidate())
               .catch((e: Error) => toast.error(e.message));
           }

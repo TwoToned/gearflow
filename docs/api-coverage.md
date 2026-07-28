@@ -23,15 +23,28 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 395 | 67 | 158 | 168 | 2 |
-| Mutations | 724 | 264 | 453 | 1 | 6 |
-| **Total** | **1119** | **331** | **611** | **169** | **8** |
+| Mutations | 725 | 265 | 453 | 1 | 6 |
+| **Total** | **1120** | **332** | **611** | **169** | **8** |
 
-<!-- reachability-floor: 331 -->
+<!-- reachability-floor: 332 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
 diff — that is the whole mechanism. Raising it happens naturally as Phase 5
 migrates `requireOrgRead` call sites to `requireOrgReadFor`.
+
+## Danger classification (Phase 4, #1000)
+
+Every agent-reachable mutation carries a `low`/`medium`/`high` `danger` tier from
+its module's colocated `agentOps` export. `high` requires `confirm: true` (and an
+idempotency key, already required of every mutation) at the dispatcher — see
+`src/lib/api/dispatcher.ts`.
+
+| Tier | Agent-reachable mutations |
+|---|---|
+| `high` | 87 |
+| `medium` | 141 |
+| `low` | 37 |
 
 ## Modules with no agent-reachable operation
 

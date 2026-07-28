@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for SupplierOrder (Convex table "supplierOrders"). GENERATED — Phase 2/5.
@@ -17,7 +18,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "supplier");
     return doc;
   },
 });
@@ -31,7 +32,7 @@ export const getById = query({
 export const listBySupplier = query({
   args: { orgId: v.string(), supplierId: v.string() },
   handler: async (ctx, { orgId, supplierId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier");
     const orders = await ctx.db
       .query("supplierOrders")
       .withIndex("by_organizationId_supplierId", (q) => q.eq("organizationId", orgId).eq("supplierId", supplierId))
@@ -82,7 +83,7 @@ export const listBySupplier = query({
 export const getDetail = query({
   args: { orgId: v.string(), id: v.string() },
   handler: async (ctx, { orgId, id }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier");
     const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!order || order.organizationId !== orgId) return null;
 
@@ -265,3 +266,9 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  getById: { summary: "Get a supplier order by id.", danger: "low", mcpTier: 2 },
+  listBySupplier: { summary: "List a supplier's orders with item counts.", danger: "low", mcpTier: 1 },
+  getDetail: { summary: "Supplier order detail: header, items, linked assets, invoice pointer.", danger: "low", mcpTier: 1 },
+};

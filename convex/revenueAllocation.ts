@@ -5,6 +5,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { applyProjectAllocation } from "./lib/allocation";
 import { deriveBillingSummary } from "./lib/billingDerivation";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Recompute a project's revenue allocation on its own.
@@ -85,3 +86,11 @@ export const listProjectIdsPage = query({
     };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  listProjectIdsPage: {
+    agentAccess: "denied",
+    reason:
+      "Backfill-only pagination helper for scripts/convex-backfill-revenue-allocation.ts, not a runtime read; a raw project-id enumeration doesn't fit the normal resource/scope model and financial allocation detail is out of scope pending Phase 4's no_financials flag.",
+  },
+};

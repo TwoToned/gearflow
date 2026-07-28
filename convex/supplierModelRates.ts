@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor, requireOrgReadDocFor } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for SupplierModelRate (Convex table "supplierModelRates"). GENERATED — Phase 2/5.
@@ -16,8 +17,9 @@ import * as enums from "./lib/validators";
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("supplierModelRates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("supplierModelRates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "supplier");
+    return doc;
   },
 });
 
@@ -95,7 +97,7 @@ export const remove = mutation({
 export const getByComposite = query({
   args: { organizationId: v.string(), supplierId: v.string(), modelId: v.string() },
   handler: async (ctx, { organizationId, supplierId, modelId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, organizationId, "supplier");
     return await ctx.db
       .query("supplierModelRates")
       .withIndex("by_organizationId_supplierId_modelId", (q) =>
@@ -108,7 +110,7 @@ export const getByComposite = query({
 export const listByModel = query({
   args: { organizationId: v.string(), modelId: v.string() },
   handler: async (ctx, { organizationId, modelId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, organizationId, "supplier");
     return await ctx.db
       .query("supplierModelRates")
       .withIndex("by_organizationId_modelId", (q) =>
@@ -117,3 +119,9 @@ export const listByModel = query({
       .collect();
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  getById: { summary: "Get a supplier's last-used rate for a model by id.", danger: "low", mcpTier: 3 },
+  getByComposite: { summary: "Look up a supplier's last-used rate for a specific model.", danger: "low", mcpTier: 3 },
+  listByModel: { summary: "List every supplier's last-used rate for a model.", danger: "low", mcpTier: 3 },
+};

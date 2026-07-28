@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import {
   effectiveQuoteStatus,
   isLiveQuoteStatus,
@@ -30,7 +31,7 @@ import {
 export const listForProject = query({
   args: { orgId: v.string(), projectId: v.string(), now: v.optional(v.number()) },
   handler: async (ctx, { orgId, projectId, now }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "invoice");
     const at = now ?? 0;
     const quotes = await listProjectQuotes(ctx, orgId, projectId);
     return quotes
@@ -48,7 +49,7 @@ export const listForProject = query({
 export const revisionStateForProject = query({
   args: { orgId: v.string(), projectId: v.string(), now: v.optional(v.number()) },
   handler: async (ctx, { orgId, projectId, now }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "invoice");
     const at = now ?? 0;
     const project = await requireProjectInOrg(ctx, projectId, orgId);
     const revision = projectRevision(project);
@@ -75,3 +76,8 @@ export const revisionStateForProject = query({
     };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  listForProject: { summary: "List a project's quotes with derived effective status.", danger: "low", mcpTier: 1 },
+  revisionStateForProject: { summary: "Project revision state: current draft + live quote.", danger: "low", mcpTier: 1 },
+};

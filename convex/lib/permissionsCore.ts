@@ -273,10 +273,14 @@ export function isBuiltInRole(role: string): boolean {
 // with .first(), look up + org-scope the custom role, JSON.parse its permissions)
 // lives in convex/lib/auth.ts and feeds resolved inputs to this function.
 
-/** Minimal auth shape — mirrors ConvexAuthContext without importing convex/server. */
+/** Minimal auth shape — mirrors ConvexAuthContext without importing convex/server.
+ *  `agent` (an API-key-minted token) is deliberately handled by the SAME branch as
+ *  `user`: an agent gets exactly the acting human's RBAC, no more. The key's scopes
+ *  are the *other* half of the intersection and are enforced separately by
+ *  `requireAgentScope` — never by widening this decision. */
 export type OrgPermissionAuth =
   | { kind: "service" }
-  | { kind: "user"; userId: string; orgId: string | null }
+  | { kind: "user" | "agent"; userId: string; orgId: string | null }
   | null;
 
 export type OrgPermissionDecision =

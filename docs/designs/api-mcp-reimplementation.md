@@ -156,6 +156,52 @@ raw table CRUD, mirror writes, backfills, org-export internals — are simply no
 the project row's own `status`, with no caller-supplied bypass. There is no code path from
 the API to a project mutation that doesn't go through it.
 
+### Phase 0 findings (2026-07-28) — what the pattern-prover actually showed
+
+Required by #996's definition of done. All eight assertions are green
+(`convex/agentVertical.test.ts`), so the architectural premise holds and Phase 1
+was unblocked. Four things behaved differently than predicted, all recorded here
+rather than quietly absorbed.
+
+**1. Assertion 6 is stronger than the design claimed, and it was cheap to prove
+exhaustively.** The plan was one representative rejection. Because Convex attaches
+`exportArgs()` to every registered function, arguments can be synthesised from a
+function's own validator — so `convex/agentServiceUnreachable.test.ts` *invokes
+all 602* service-gated functions with an owner-backed wildcard key and asserts
+each rejects. 602/602 reached the handler and threw the service guard. The
+invariant the whole design rests on is now machine-checked across the tree, not
+argued from a sample.
+
+**2. The static guard classifier was wrong, and only the runtime probe found it.**
+Extracting `(resource, action)` by reading the `requireOrgPermission` call is
+sound, but the first implementation took the FIRST match per handler.
+`collaboration.createThread` gates conditionally — `project:manage_line_items` for
+a blocking comment, `project:read` otherwise — so the registry advertised a scope
+that a non-blocking call does not need. Nothing else would have caught it: the
+generator was self-consistent, the staleness gate compared it against itself, and
+the operation worked. The fix is `scopePairs` (every pair a handler can enforce,
+with the singular fields nulled when there is more than one) plus the probe that
+withholds exactly the declared scope. **Generalisable lesson for §7: a
+statically-extracted contract needs a runtime probe, or it is only a hypothesis.**
+
+**3. Reads fail closed harder than §14's read-bootstrap estimate implies.** The
+design predicted ~21 queries carrying a resource; measured, it is 20 queries and
+258 mutations reachable, with **216 reads** still on the resource-less guard. The
+"can write, can barely read" shape §14 warns about is real and is now visible on
+every PR (`docs/api-coverage.md`). No change to the plan — the read bootstrap
+stays Phase 2 — but the number to migrate is the one to plan against.
+
+**4. `assertBulkSizeOk` had to become async and ctx-taking.** §9 describes it
+taking "the cap from the auth kind", which reads as a parameter change; the cap
+must actually come from the *verified identity*, since a caller-supplied hint
+would defeat the point. Three call sites, no behaviour change for humans.
+
+Two things behaved exactly as designed and are worth recording as confirmed: the
+in-mutation availability check makes a divergent commit unrepresentable (decision
+11's premise — preview→commit tokens really are unnecessary), and stamping the
+agent attribution inside `writeActivityLog` rather than at each call site gave all
+~272 write paths the audit trail at once with no schema change.
+
 ### Cost / risk of the inversion
 
 - **Impersonation capability.** Minting a `sub = arbitrary user` token is powerful. It MUST

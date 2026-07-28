@@ -215,6 +215,38 @@ export default defineSchema({
     .index("by_tokenHash", ["tokenHash"])
     .index("by_actingUserId", ["actingUserId"]),
 
+  // ApiIdempotency — the API/MCP write-replay ledger
+  // (docs/designs/api-mcp-reimplementation.md §9). Three-step per write:
+  // `claim` (insert PENDING) -> run the operation -> `complete` (DONE + result).
+  // A replay of a DONE key returns the stored `result` with `replayed: true` — a
+  // SUCCESS, not an error; a still-PENDING key returns the retryable
+  // `IDEMPOTENT_IN_PROGRESS`; the same key with a different `argsHash` is
+  // `IDEMPOTENCY_KEY_REUSED`, never a silent divergent write.
+  //
+  // This ledger is deliberately NOT atomic with the effect. The real double-write
+  // defence is deterministic id derivation — the entity `id` and `auditId` are
+  // derived from (idempotencyKey, operation), so a retry after a crash between
+  // "run" and "complete" re-derives the same id and the mutation's own by_cuid
+  // duplicate guard rejects the second insert even when the ledger is stale.
+  // Making it atomic would mean threading an idempotency arg through 223
+  // mutations for a guarantee determinism already provides (decision 8).
+  //
+  // `by_org_key` is the claim/replay lookup; `by_apiKeyId` backs the per-key
+  // request log and the Phase-4 `revertAgentWindow` sweep.
+  apiIdempotency: defineTable({
+    organizationId: v.string(),
+    apiKeyId: v.string(),
+    key: v.string(),
+    operation: v.string(),
+    argsHash: v.string(),
+    status: v.union(v.literal("PENDING"), v.literal("DONE")),
+    result: v.optional(v.any()),
+    createdAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_org_key", ["organizationId", "key"])
+    .index("by_apiKeyId", ["apiKeyId"]),
+
   // StoredFile — the org-association for a Convex-storage file (the byte store is
   // Convex `_storage`). The /api/files proxy authorises a serve by looking up this
   // record's org (replacing the old S3 org-prefixed-key path auth). organizationId

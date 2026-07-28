@@ -8,7 +8,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { assertOverbookAllowed } from "./lib/agentArgs";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
-import { assertLineMoneyFields } from "./lib/moneyGuards";
+import { assertDiscountMode, assertLineMoneyFields } from "./lib/moneyGuards";
 import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import { roundCurrency, computeLineTotal } from "./lib/lineTotal";
 import { writeActivityLog } from "./lib/audit";
@@ -613,8 +613,11 @@ export const patchNative = mutation({
     });
 
     assertLineMoneyFields(setObj as {
-      quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
+      quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number;
     });
+    // #1012: `discountMode` describes `discount`, so it never outlives it — a patch
+    // that clears the amount clears the mode too, whatever the client sent.
+    if (clear.includes("discount") && !clear.includes("discountMode")) clear.push("discountMode");
     assertLineItemFields(setObj as { description?: string; subhireOrderNumber?: string; xeroAccountCode?: string; xeroTaxType?: string }); // R-8.6.2
 
     // lineTotal is a DERIVED value — assertLineMoneyFields only bounds it, it never
@@ -846,17 +849,25 @@ export const patchManyNative = mutation({
       }
 
       if (patch.discount !== undefined) {
+        // #1012: `mode` used to be consumed here and thrown away — it now lands
+        // in `discountMode` alongside the resolved amount so documents can print
+        // the discount the way it was entered. `mode` arrives as a bare
+        // `v.string()` (pre-#1012 arg shape), so validate it explicitly.
+        assertDiscountMode(patch.discount?.mode);
         let discountApplied: number | undefined;
         if (patch.discount == null || patch.discount.value <= 0) {
           clear.push("discount");
+          clear.push("discountMode");
           discountApplied = undefined;
         } else if (patch.discount.mode === "%") {
           const base = (doc.unitPrice ?? 0) * (doc.quantity ?? 0) * (doc.duration ?? 1);
           discountApplied = roundCurrency((base * patch.discount.value) / 100);
           set.discount = discountApplied;
+          set.discountMode = "%";
         } else {
           discountApplied = patch.discount.value;
           set.discount = discountApplied;
+          set.discountMode = "$";
         }
         // Discount feeds the stored line total — recompute from the item's own
         // price/quantity/duration (unchanged) + the new discount.
@@ -873,7 +884,7 @@ export const patchManyNative = mutation({
       // Belt-and-braces bound-check on the money fields this bulk edit can touch (a
       // browser-direct caller bypasses the server-side Zod).
       assertLineMoneyFields(set as {
-        quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
+        quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number;
       });
 
       if (clear.length === 0) {
@@ -1171,6 +1182,9 @@ export const addCustomNative = mutation({
       pricingType: v.optional(enums.PricingType),
       duration: v.optional(v.number()),
       discount: v.optional(v.number()),
+      // #1012 — entry shape of `discount` (display only; the number above is
+      // still the resolved flat dollar amount every money path reads).
+      discountMode: v.optional(enums.DiscountMode),
       notes: v.optional(v.string()),
       isOptional: v.optional(v.boolean()),
       categoryId: v.optional(v.string()),
@@ -1208,9 +1222,12 @@ export const addCustomNative = mutation({
     if (guard.defaultToZero) {
       fields.unitPrice = 0;
       fields.discount = undefined;
+      fields.discountMode = undefined; // #1012: no amount, no entry shape
     }
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
+    // #1012: `discountMode` describes `discount` — it never lands without one.
+    if (fields.discount == null) fields.discountMode = undefined;
     // customLineItemSchema bounds (src/lib/validations/line-item.ts): description is
     // required 1-200 chars, notes optional up to 500 — DIFFERENT from lineItemSchema's
     // bounds (assertLineItemFields), so checked inline rather than shared.
@@ -1318,6 +1335,8 @@ export const addNative = mutation({
       pricingType: v.optional(enums.PricingType),
       duration: v.optional(v.number()),
       discount: v.optional(v.number()),
+      // #1012 — entry shape of `discount` (display only).
+      discountMode: v.optional(enums.DiscountMode),
       lineTotal: v.optional(v.number()),
       groupName: v.optional(v.string()),
       notes: v.optional(v.string()),
@@ -1363,9 +1382,12 @@ export const addNative = mutation({
     if (guard.defaultToZero) {
       fields.unitPrice = 0;
       fields.discount = undefined;
+      fields.discountMode = undefined; // #1012: no amount, no entry shape
     }
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
+    // #1012: `discountMode` describes `discount` — it never lands without one.
+    if (fields.discount == null) fields.discountMode = undefined;
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
     assertAccessoryPlanFields(accessoryPlan);
     forceSaleFlatPricing(fields); // WS11 (#950) — SALE always FLAT/duration:1
@@ -1638,6 +1660,8 @@ export const addKitNative = mutation({
     /** Flat $ discount off unitPrice — KIT_PRICE mode only. Mirrors the
      *  equipment/custom line-item discount field (#883). */
     discount: v.optional(v.number()),
+    /** #1012 — entry shape of the discount above (display only). */
+    discountMode: v.optional(enums.DiscountMode),
     pricingMode: enums.KitPricingMode,
     groupName: v.optional(v.string()),
     categoryId: v.optional(v.string()),
@@ -1661,7 +1685,7 @@ export const addKitNative = mutation({
     justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, justification, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, discountMode, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1676,6 +1700,8 @@ export const addKitNative = mutation({
     const guard = await assertLifecycleGuard(ctx, kitProject, { kind: "structural", justification });
     const effectiveUnitPrice = guard.defaultToZero ? 0 : unitPrice;
     const effectiveDiscount = guard.defaultToZero ? undefined : discount;
+    // #1012: no amount, no entry shape.
+    const effectiveDiscountMode = effectiveDiscount != null ? discountMode : undefined;
 
     // Every other add* mutation in this file bounds unitPrice/lineTotal before insert
     // (assertLineMoneyFields) — this one didn't, so a browser caller sending
@@ -1724,7 +1750,8 @@ export const addKitNative = mutation({
     }
 
     await createKitLineItemCore(ctx, {
-      id, organizationId, projectId, kitId, unitPrice: effectiveUnitPrice, discount: effectiveDiscount, pricingMode, groupName, categoryId, groupId, now,
+      id, organizationId, projectId, kitId, unitPrice: effectiveUnitPrice, discount: effectiveDiscount,
+      discountMode: effectiveDiscountMode, pricingMode, groupName, categoryId, groupId, now,
     });
 
     // Parity with the deleted addKitLineItem: when the client can't resolve the kit
@@ -1889,6 +1916,8 @@ export const addLineItemSmartNative = mutation({
       pricingType: v.optional(enums.PricingType),
       duration: v.optional(v.number()),
       discount: v.optional(v.number()),
+      // #1012 — entry shape of `discount` (display only).
+      discountMode: v.optional(enums.DiscountMode),
       groupName: v.optional(v.string()),
       notes: v.optional(v.string()),
       isOptional: v.optional(v.boolean()),
@@ -2053,6 +2082,10 @@ export const addLineItemSmartNative = mutation({
         // an already-priced existing line also isn't reset to $0 just because it grew.
         const mergeUnitPriceInput = guard.defaultToZero ? undefined : fields.unitPrice;
         const mergeDiscountInput = guard.defaultToZero ? undefined : fields.discount;
+        // #1012: the entry shape follows the amount it describes — when the
+        // client's discount is the one that wins, so is its mode; when the
+        // existing line's amount is kept, its stored mode is kept too.
+        const mergeDiscountModeInput = mergeDiscountInput != null ? fields.discountMode : undefined;
         // lineTotal recomputed server-side (never trusts the client). Mirrors the server
         // merge exactly: parsed value first, else the existing row's value.
         const mergedUnitPrice = mergeUnitPriceInput ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined);
@@ -2071,6 +2104,7 @@ export const addLineItemSmartNative = mutation({
           pricingType: fields.pricingType || existing.pricingType,
           duration: fields.duration || existing.duration || undefined,
           discount: mergeDiscountInput ?? existing.discount ?? undefined,
+          discountMode: mergeDiscountModeInput ?? existing.discountMode ?? undefined,
           lineTotal: newLineTotal ?? undefined,
           groupName: fields.groupName || existing.groupName || undefined,
           notes: mergedNotes || undefined,
@@ -2133,6 +2167,8 @@ export const addLineItemSmartNative = mutation({
     let autoDuration = fields.duration;
     let autoPriceBreakdown: string | undefined;
     const insertDiscount = guard.defaultToZero ? undefined : fields.discount;
+    // #1012: no amount, no entry shape (the lock drops both together).
+    const insertDiscountMode = insertDiscount != null ? fields.discountMode : undefined;
     // `== null` (not `!unitPrice`) — an EXPLICIT $0 manual price (a free item) is a real
     // choice and must be kept, not overwritten by the model rate.
     if (fields.type === "SALE") {
@@ -2192,6 +2228,7 @@ export const addLineItemSmartNative = mutation({
       pricingType: fields.pricingType,
       duration: autoDuration ?? undefined,
       discount: insertDiscount ?? undefined,
+      discountMode: insertDiscountMode,
       lineTotal: lineTotal ?? undefined,
       priceBreakdown: autoPriceBreakdown,
       groupName: fields.groupName || undefined,

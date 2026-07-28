@@ -10,6 +10,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 import { assertStrLen } from "./lib/fieldGuards";
+import * as enums from "./lib/validators";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -224,6 +225,9 @@ export const createGroupNative = mutation({
     quantity: v.optional(v.number()),
     price: v.optional(v.number()),
     discount: v.optional(v.number()),
+    // #1012 — entry shape of the discount above ($ off vs % of `price × quantity`).
+    // Display only; `discount` stays the resolved flat dollar amount.
+    discountMode: v.optional(enums.DiscountMode),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -248,6 +252,7 @@ export const createGroupNative = mutation({
     if (guard.defaultToZero) {
       a.price = undefined;
       a.discount = undefined;
+      a.discountMode = undefined; // #1012: no amount, no entry shape
     }
 
     assertValidTitle(a.title);
@@ -293,6 +298,7 @@ export const createGroupNative = mutation({
       quantity,
       price: a.price != null ? a.price : undefined,
       discount: a.discount != null ? a.discount : undefined,
+      discountMode: a.discount != null ? a.discountMode : undefined,
       suggestedPrice: 0,
       sortOrder,
       createdAt: a.now,
@@ -441,6 +447,9 @@ export const updateGroupPriceNative = mutation({
     // or leaves the arg out entirely, mirroring how discount already works for
     // patchNative on line items).
     discount: v.optional(v.number()),
+    // #1012 — entry shape of the discount above. Only meaningful when `discount`
+    // is also supplied; omitted alongside an omitted discount ("leave untouched").
+    discountMode: v.optional(enums.DiscountMode),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -461,7 +470,13 @@ export const updateGroupPriceNative = mutation({
     const guard = await assertLifecycleGuard(ctx, priceProject, { kind: "financial" });
 
     const patch: Record<string, unknown> = { price: a.price, updatedAt: a.now };
-    if (a.discount !== undefined) patch.discount = a.discount;
+    if (a.discount !== undefined) {
+      patch.discount = a.discount;
+      // #1012: the mode is written with the amount it describes — a discount set
+      // back to 0 (or with no mode supplied) drops the stale mode rather than
+      // leaving the previous entry shape hanging off a different number.
+      patch.discountMode = a.discount > 0 ? a.discountMode : undefined;
+    }
     await ctx.db.patch(group._id, patch);
 
     await logGroupChange(ctx, {

@@ -706,6 +706,131 @@ describe("lineItemWrites.addKitNative", () => {
   });
 });
 
+describe("lineItemWrites — discount entry mode (#1012)", () => {
+  // `discount` stays the resolved flat dollar amount everywhere; `discountMode`
+  // records how it was ENTERED so quote/invoice PDFs can print "-15%" instead of
+  // "-$150.00". These lock in that the mode actually LANDS (it used to be
+  // consumed and thrown away) and that it never outlives the amount it describes.
+
+  test("patchManyNative stores the mode alongside the resolved % amount", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        isKitChild: false, unitPrice: 100, quantity: 2, duration: 1,
+      });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchManyNative, {
+      ids: ["l1"], orgId: ORG, patch: { discount: { mode: "%", value: 15 } },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const l1 = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l1")).first();
+      expect(l1?.discount).toBe(30); // 15% of the 200.00 gross, resolved server-side
+      expect(l1?.discountMode).toBe("%");
+    });
+  });
+
+  test("patchManyNative clears the mode when the discount is cleared", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        isKitChild: false, unitPrice: 100, quantity: 2, duration: 1, discount: 30, discountMode: "%",
+      });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchManyNative, {
+      ids: ["l1"], orgId: ORG, patch: { discount: null },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const l1 = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l1")).first();
+      expect(l1?.discount).toBeUndefined();
+      // A stale "%" hanging off no amount would print a phantom percentage.
+      expect(l1?.discountMode).toBeUndefined();
+    });
+  });
+
+  test("patchManyNative rejects a mode that isn't one of the two literals", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        isKitChild: false, unitPrice: 100, quantity: 1, duration: 1,
+      });
+    });
+    // `mode` is a bare v.string() in this mutation's arg shape, so the literal
+    // check has to be explicit — a browser-direct caller could otherwise write
+    // arbitrary text into the column and break the PDF's mode switch.
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchManyNative, {
+        ids: ["l1"], orgId: ORG, patch: { discount: { mode: "pct", value: 15 } },
+        actor: ACTOR, auditId: "log1", now: NOW,
+      }),
+    ).rejects.toThrow(/Discount mode/i);
+  });
+
+  test("patchNative clears the mode whenever the amount is cleared", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        isKitChild: false, unitPrice: 100, quantity: 1, duration: 1, discount: 15, discountMode: "%",
+      });
+    });
+    // The client only asked to clear `discount`; the server keeps the pair in step.
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...args, set: { quantity: 1 }, clear: ["discount"], entityName: "Light", allowOverbook: false,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.discount).toBeUndefined();
+      expect(li?.discountMode).toBeUndefined();
+    });
+  });
+
+  test("patchNative rejects a bogus mode smuggled through the `set: v.any()` surface", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "li1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        isKitChild: false, unitPrice: 100, quantity: 1, duration: 1,
+      });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+        ...args, set: { discount: 10, discountMode: "EUR" }, clear: [], entityName: "Light", allowOverbook: false,
+      }),
+    ).rejects.toThrow(/Discount mode/i);
+  });
+
+  test("addCustomNative persists the mode with the line", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Rigging", quantity: 1, unitPrice: 500, duration: 1, discount: 50, discountMode: "%" },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.discount).toBe(50);
+      expect(li?.discountMode).toBe("%");
+    });
+  });
+});
+
 describe("lineItemWrites bulk-size cap", () => {
   // Array size, not per-item body, so build cheap oversized arrays inline.
   const bigIds = Array.from({ length: 501 }, (_, i) => `id-${i}`);

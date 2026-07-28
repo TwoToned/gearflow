@@ -108,6 +108,14 @@ and cutting a draft never invalidates it. That is the difference between version
 control and a delete button. **Recall reverses it**: un-sending v2 restores the
 row it superseded to `SENT`, because v1 is then the last thing actually sent.
 
+Supersede applies to an `ACCEPTED` revision as well, which has a consequence
+worth stating outright: **acceptance does not survive a re-quote.** Accept v1,
+then send v2, and `hasAcceptedQuote` goes false — the client agreed to v1's
+price, not v2's, so the project needs v2 accepted (or an admin override) before
+it can advance to `CONFIRMED` again. Cutting the v2 *draft* changes nothing; only
+sending it does. A project that is ALREADY `CONFIRMED` stays confirmed — the gate
+fires on transitions, not continuously.
+
 **`EXPIRED` is derived on read**, never stored — `validUntil < now && SENT`
 (`convex/lib/quoteState.ts` `effectiveQuoteStatus`). No cron, no clock skew, no
 stale row, same precedent as the derived readiness chips below. Consumers MUST

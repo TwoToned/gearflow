@@ -149,6 +149,36 @@ describe("quotesWrites.sendNative", () => {
     await expect(send(t, { recipientContactId: "ct1" })).rejects.toThrow(/client contact not found/i);
   });
 
+  test("supersedes an ACCEPTED revision too — acceptance doesn't survive a re-quote", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a3", now: NOW + 2,
+    });
+    // v1 is STILL accepted while v2 is only a draft — cutting a draft never
+    // invalidates what the client agreed to.
+    let state = await t
+      .withIdentity(asUser(ORG))
+      .query(api.quotes.revisionStateForProject, { orgId: ORG, projectId: "p1", now: NOW + 2 });
+    expect(state.hasAcceptedQuote).toBe(true);
+
+    await send(t, { id: "ignored", auditId: "a4", now: NOW + 3 });
+
+    // …but once v2 actually goes out, v1 is no longer the deal. The project
+    // needs v2 accepted (or an admin override) before it can confirm again —
+    // the pricing the client agreed to has changed.
+    state = await t
+      .withIdentity(asUser(ORG))
+      .query(api.quotes.revisionStateForProject, { orgId: ORG, projectId: "p1", now: NOW + 3 });
+    expect(state.hasAcceptedQuote).toBe(false);
+    expect((await getQuotes(t)).find((q) => q.id === "q1")?.status).toBe("SUPERSEDED");
+  });
+
   test("rejects a cross-org projectId (IDOR guard)", async () => {
     const t = makeT();
     await seedMember(t);

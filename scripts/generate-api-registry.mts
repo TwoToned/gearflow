@@ -335,6 +335,29 @@ function asPublicFn(value: unknown): { fn: RegisteredFn; kind: "query" | "mutati
   return null;
 }
 
+/** Split out of `annotationFields` so neither function's branch count trips
+ *  the complexity ratchet on its own. */
+function deniedReasonFor(annotation: AgentOpAnnotation | undefined): string | null {
+  if (annotation?.agentAccess !== "denied") return null;
+  return annotation.reason ?? null;
+}
+
+/** Pulls the agentOps-derived fields out of `toOperation` so its own branch
+ *  count stays under the complexity ratchet — this is the only part of an
+ *  operation that comes from optional, annotation-shaped data. */
+function annotationFields(annotation: AgentOpAnnotation | undefined): Pick<
+  Operation,
+  "summary" | "danger" | "mcpTier" | "agentAccess" | "deniedReason"
+> {
+  return {
+    summary: annotation?.summary ?? null,
+    danger: annotation?.danger ?? null,
+    mcpTier: annotation?.mcpTier ?? null,
+    agentAccess: annotation?.agentAccess ?? null,
+    deniedReason: deniedReasonFor(annotation),
+  };
+}
+
 function toOperation(
   moduleName: string,
   fnName: string,
@@ -360,11 +383,7 @@ function toOperation(
     privilegedArgs: args.map((a) => a.name).filter(isPrivilegedArgName),
     argsSha: sha(argsJson),
     returnsSha: sha(returnsJson),
-    summary: annotation?.summary ?? null,
-    danger: annotation?.danger ?? null,
-    mcpTier: annotation?.mcpTier ?? null,
-    agentAccess: annotation?.agentAccess ?? null,
-    deniedReason: annotation?.agentAccess === "denied" ? (annotation.reason ?? null) : null,
+    ...annotationFields(annotation),
   };
 }
 

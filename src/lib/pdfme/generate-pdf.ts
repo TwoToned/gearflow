@@ -7,9 +7,12 @@
  * service-based builder (`templates/call-sheet-services.ts`); T&T reports use
  * their own single-purpose builders (`templates/tt-*.ts`).
  */
+import { PDFDocument } from "@pdfme/pdf-lib";
+import * as pdfLib from "@pdfme/pdf-lib";
 import { buildDocumentData } from "./build-document-data";
 import { composeDocument } from "./document-composer";
 import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
+import { getHelveticaFonts } from "./plugins/helpers";
 import { renderPdfTemplate } from "./pdf-render";
 import { getTtReportBuilder } from "./templates";
 import type { TestTagReportType } from "./types";
@@ -32,7 +35,14 @@ export async function generatePdf(
     expandProjectGroups: layout.expandProjectGroups,
   });
 
-  const { template, inputs } = composeDocument(docType, data, data.org_document_color);
+  // Real font metrics for composeDocument's accurate text-wrap measurement
+  // (clientNotes/termsAndConditions) — a throwaway document used purely to
+  // embed the standard fonts, never rendered itself; the actual PDF is
+  // produced by renderPdfTemplate()'s own pdfme generate() call below.
+  const measureDoc = await PDFDocument.create();
+  const fonts = await getHelveticaFonts(measureDoc, pdfLib, new Map());
+
+  const { template, inputs } = composeDocument(docType, data, data.org_document_color, fonts);
   return renderPdfTemplate(template, inputs);
 }
 

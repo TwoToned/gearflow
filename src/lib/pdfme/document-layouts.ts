@@ -62,7 +62,6 @@ export type LayoutBlock =
   | { kind: "totals"; config: TotalsLayoutConfig }
   | { kind: "clientNotes" }
   | { kind: "totalItemsNote" }
-  | { kind: "quoteValidityNote" }
   | { kind: "termsAndConditions" }
   | { kind: "signature"; columns: number; labels: string[] };
 
@@ -152,7 +151,6 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
       { kind: "totals", config: defaultTotals },
       { kind: "clientNotes" },
       { kind: "termsAndConditions" },
-      { kind: "quoteValidityNote" },
     ],
   },
 

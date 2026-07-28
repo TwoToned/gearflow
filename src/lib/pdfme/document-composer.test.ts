@@ -7,10 +7,20 @@
  * ported from the deleted section-renderer.test.ts as this engine's spec.
  */
 import { describe, it, expect } from "vitest";
+import { PDFDocument } from "@pdfme/pdf-lib";
+import * as pdfLib from "@pdfme/pdf-lib";
+import { mm2pt } from "@pdfme/common";
 import { composeDocument, type ComposeResult } from "./document-composer";
 import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
+import { CONTENT_WIDTH } from "./template-constants";
 import { makeLineItem, runTablePlugin } from "./plugins/test-utils";
+import { getHelveticaFonts, wrapRichText, type RichTextFonts } from "./plugins/helpers";
 import type { DocumentData, DocumentLineItem, TablePluginConfig } from "./types";
+
+async function makeFonts(): Promise<RichTextFonts> {
+  const doc = await PDFDocument.create();
+  return getHelveticaFonts(doc, pdfLib, new Map());
+}
 
 function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
   return {
@@ -342,10 +352,22 @@ describe("composeDocument — org document settings (footer, T&Cs, quote validit
     expect(result.inputs[0][termsSchema.name as string]).toBe("All sales final.");
   });
 
-  it("renders the quote validity note using the real computed date, not static copy", () => {
+  it("renders the quote expiry in the header meta (\"Expiry: <date>\"), using the real computed date — no separate bottom-of-document line", () => {
     const result = composeDocument("quote", soloData({ quote_valid_until: "2026-09-15" }), "#0d4f4f");
-    const validitySchema = result.template.schemas[0].find((s) => String(s.name).startsWith("quoteValidityNote"))!;
-    expect(result.inputs[0][validitySchema.name as string]).toBe("This quote is valid until 2026-09-15.");
+
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.docMeta).toContain("Expiry: 2026-09-15");
+
+    const hasValidityNoteSchema = result.template.schemas[0].some((s) => String(s.name).startsWith("quoteValidityNote"));
+    expect(hasValidityNoteSchema).toBe(false);
+  });
+
+  it("invoice header never shows a quote expiry line", () => {
+    const result = composeDocument("invoice", soloData({ quote_valid_until: "2026-09-15" }), "#0d4f4f");
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.docMeta).not.toContain("Expiry");
   });
 });
 
@@ -659,5 +681,96 @@ describe("composeDocument — mixed rental + SALE fixture (WS11 #950)", () => {
       expect(li.isKitChild).toBeFalsy();
       expect(li.groupName).toBeFalsy();
     }
+  });
+});
+
+// ─── Accurate wrap-aware pagination for clientNotes/termsAndConditions ────────
+//
+// Repro of a real bug: a long terms & conditions block (many bulleted clauses,
+// several of which word-wrap onto a second physical line) rendered on a quote
+// where the raw-"\n"-count height estimate under-counted the real wrapped
+// line total, so the reserved space was too small — the actual text ran past
+// its box into the footer. Fixed by measuring the SAME wrapRichText() output
+// used at render time, and by letting clientNotes/termsAndConditions split
+// across pages (like the table already does) instead of always moving whole.
+
+/** A realistic long T&Cs: numbered sections, several long clauses that word-wrap
+ *  onto more physical lines than there are literal `\n`s in the source. */
+function makeLongTermsAndConditions(sections = 10): string {
+  const lines: string[] = [];
+  for (let s = 1; s <= sections; s++) {
+    lines.push(`${s}. SECTION ${s} HEADING`);
+    lines.push(
+      `- ${s}.1 This is a long clause that should word-wrap across more than one physical line once it is rendered at the document's real content width, the exact scenario the literal-newline-count heuristic could never see coming.`,
+    );
+    lines.push(`- ${s}.2 A second, shorter clause.`);
+    lines.push(`- ${s}.3 A third clause with just enough text to matter.`);
+  }
+  return lines.join("\n");
+}
+
+function findAllSchemasOfType(result: ComposeResult, type: string) {
+  return result.template.schemas.flatMap((pageSchemas, pageIdx) =>
+    pageSchemas.filter((s) => s.type === type).map((s) => ({ schema: s, pageIdx })),
+  );
+}
+
+describe("composeDocument — accurate rich-text pagination (fonts provided)", () => {
+  it("estimates termsAndConditions height from real wrapped lines, not raw newline count, when fonts are supplied", async () => {
+    const fonts = await makeFonts();
+    const text = makeLongTermsAndConditions(3);
+    const rawNewlineCount = text.split("\n").length;
+    const realWrappedCount = wrapRichText(text, { maxWidth: mm2pt(CONTENT_WIDTH), fontSize: 8, fonts }).length;
+
+    // The long clauses genuinely wrap onto extra physical lines — the fixture
+    // is only a meaningful regression test if this holds.
+    expect(realWrappedCount).toBeGreaterThan(rawNewlineCount);
+
+    const withFonts = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f", fonts);
+    const withoutFonts = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f");
+
+    const heightOf = (r: ComposeResult) =>
+      findAllSchemasOfType(r, "gearflowRichText")
+        .filter(({ schema }) => (schema.name as string).startsWith("termsAndConditions_"))
+        .reduce((sum, { schema }) => sum + (schema.height as number), 0);
+
+    // The accurate (fonts) estimate reserves MORE space than the old
+    // raw-newline heuristic for text that wraps — the under-reservation
+    // that caused the footer overlap is gone.
+    expect(heightOf(withFonts)).toBeGreaterThan(heightOf(withoutFonts));
+  });
+
+  it("splits a terms & conditions block too long for one page across multiple pages with no dropped lines", async () => {
+    const fonts = await makeFonts();
+    const text = makeLongTermsAndConditions(20); // long enough to exceed a single page
+    const result = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f", fonts);
+
+    const tcEntries = findAllSchemasOfType(result, "gearflowRichText").filter(({ schema }) =>
+      (schema.name as string).startsWith("termsAndConditions_"),
+    );
+    const pagesUsed = new Set(tcEntries.map((e) => e.pageIdx));
+    expect(pagesUsed.size).toBeGreaterThan(1); // actually split, not silently overflowed on one page
+
+    // Reassemble every rendered line across every page's slice, in order,
+    // and confirm it's IDENTICAL to wrapping the source text once — no
+    // line dropped, none duplicated.
+    const expectedLines = wrapRichText(text, { maxWidth: mm2pt(CONTENT_WIDTH), fontSize: 8, fonts });
+    const renderedLineTexts = tcEntries.flatMap(({ schema }) => {
+      const input = result.inputs[0][schema.name as string];
+      const parsed = JSON.parse(input) as { lines: { spans: { text: string }[] }[] };
+      return parsed.lines.map((l) => l.spans.map((s) => s.text).join(""));
+    });
+    const expectedLineTexts = expectedLines.map((l) => l.spans.map((s) => s.text).join(""));
+    expect(renderedLineTexts).toEqual(expectedLineTexts);
+  });
+
+  it("without fonts, a very long T&Cs block still moves whole to a fresh page (unchanged fallback behavior)", () => {
+    const text = makeLongTermsAndConditions(20);
+    const result = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f");
+    const tcEntries = findAllSchemasOfType(result, "gearflowRichText").filter(({ schema }) =>
+      (schema.name as string).startsWith("termsAndConditions_"),
+    );
+    // Exactly one schema — never split when fonts weren't provided.
+    expect(tcEntries).toHaveLength(1);
   });
 });

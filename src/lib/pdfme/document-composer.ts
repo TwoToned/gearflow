@@ -12,6 +12,7 @@
  * See docs/designs/pdf-system-redesign.md.
  */
 import type { Template, Schema } from "@pdfme/common";
+import { mm2pt } from "@pdfme/common";
 import type {
   DocumentData,
   DocumentLineItem,
@@ -38,6 +39,7 @@ import {
   SECTION_GAP,
 } from "./template-constants";
 import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
+import { wrapRichText, richTextLineHeight, type RichLine, type RichTextFonts } from "./plugins/helpers";
 
 // ─── Height constants (pt) — must match gearflow-table.ts's actual draw sizes ─
 const PT_PER_MM = 2.835;
@@ -48,10 +50,21 @@ const PER_UNIT_ROW_PT = 10;
 const GROUP_HEADER_PT = 9 + 4 * 2;
 const TABLE_HEADER_PT = 7 + 4 * 2 + 4;
 const TABLE_PADDING_BOTTOM_MM = 1; // safety margin at the bottom of a table block
+// gearflowRichText's schema fontSize for both clientNotes and termsAndConditions
+// (buildEntryFields) — shared here so the accurate estimate/split math can
+// never drift from what's actually configured on the rendered schema.
+const RICH_TEXT_FONT_SIZE = 8;
 
 function ptToMm(pt: number): number {
   return pt / PT_PER_MM;
 }
+
+/** Content width in pt, at pdfme's exact mm->pt precision (not the rounded
+ *  PT_PER_MM approximation used elsewhere in this file) — must match
+ *  exactly what gearflowRichText's own `getLayoutProps` resolves to when it
+ *  wraps unwrapped text itself, or the estimate and the fallback render
+ *  path could disagree by a hair on where a line breaks. */
+const CONTENT_WIDTH_PT = mm2pt(CONTENT_WIDTH);
 
 /** Ungrouped-items bucket key, per docType's plugin convention. */
 export function getUngroupedKey(docType: ProjectDocumentType): string {
@@ -292,13 +305,34 @@ function calculateTableItemHeights(
 interface LayoutContext {
   docType: ProjectDocumentType;
   filterByStatus: string[] | null;
+  /**
+   * Real embedded Helvetica fonts, when the caller provided them (production
+   * rendering via generate-pdf.ts). When present, clientNotes/
+   * termsAndConditions measure their ACTUAL wrapped line count instead of
+   * counting literal `\n`s — the previous heuristic silently under-reserved
+   * space for any line that word-wraps, which could overflow past a page's
+   * footer. Optional so composeDocument stays synchronous and every existing
+   * caller/test that doesn't pass fonts keeps its exact prior behavior.
+   */
+  fonts?: RichTextFonts;
+}
+
+/** Wrapped line count for a markdown-lite block, using real font metrics
+ *  when available (see LayoutContext.fonts) — shared by the height estimate
+ *  and the page-splitting logic so they can never disagree. */
+function wrappedLineCount(text: string, fonts: RichTextFonts): number {
+  return wrapRichText(text, { maxWidth: CONTENT_WIDTH_PT, fontSize: RICH_TEXT_FONT_SIZE, fonts }).length;
 }
 
 function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: LayoutContext): number {
   switch (block.kind) {
     case "header": {
       const mode = data.org_branding?.documentLogoMode ?? "icon";
-      return mode === "logo" ? 25 + 22 : 25;
+      const base = mode === "logo" ? 25 + 22 : 25;
+      // Quote's header meta gains a 3rd line ("Expiry: <date>") — a little
+      // extra headroom so it can't ever crowd the details row below it.
+      const hasExpiryLine = ctx.docType === "quote" && !!data.quote_valid_until;
+      return hasExpiryLine ? base + 5 : base;
     }
 
     case "detailsRow": {
@@ -336,17 +370,27 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       return hasItemDiscounts ? 44 : 34;
     }
 
-    case "clientNotes":
-      return data.client_notes ? 12 : 4;
+    case "clientNotes": {
+      if (!data.client_notes) return 4;
+      if (ctx.fonts) {
+        return Math.max(ptToMm(wrappedLineCount(data.client_notes, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)), 4);
+      }
+      return 12; // fallback heuristic — unchanged when no fonts are provided
+    }
 
     case "totalItemsNote":
-    case "quoteValidityNote":
       return 8;
 
     case "termsAndConditions": {
       // Optional — collapses to zero height (and is skipped entirely by the
       // page-layout walk) when the org hasn't set any T&Cs text.
       if (!data.quote_terms_and_conditions) return 0;
+      if (ctx.fonts) {
+        return Math.max(
+          ptToMm(wrappedLineCount(data.quote_terms_and_conditions, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
+          8,
+        );
+      }
       const lines = data.quote_terms_and_conditions.split("\n").length;
       return Math.max(lines * 4 + 4, 8);
     }
@@ -365,6 +409,10 @@ interface PageEntry {
   tableStartIndex?: number;
   tableEndIndex?: number;
   tableSubIndex?: number;
+  /** Pre-wrapped slice of a clientNotes/termsAndConditions block for THIS
+   *  page (see splitRichTextBlock). Only set when the caller provided real
+   *  fonts — buildEntryFields falls back to raw text otherwise. */
+  textLines?: RichLine[];
 }
 
 interface Page {
@@ -375,12 +423,16 @@ interface Page {
  * Compute the multi-page layout for one document: walk the layout's blocks
  * top-to-bottom, starting a new page when a block doesn't fit. Table blocks
  * split across pages (per-item cumulative heights) instead of moving whole —
- * this is the tail-drop fix. All mutable page/cursor state lives in this
- * function's closure so the table-split branch can push finished pages and
- * open new ones without a separate state object to keep in sync.
+ * this is the tail-drop fix. clientNotes/termsAndConditions split the same
+ * way, by wrapped line, whenever real fonts are available (see
+ * splitRichTextBlock) — a long T&Cs block no longer has to fit on a single
+ * page (or silently overflow into the footer trying to). All mutable
+ * page/cursor state lives in this function's closure so the split branches
+ * can push finished pages and open new ones without a separate state object
+ * to keep in sync.
  */
-function computePages(layout: DocumentLayout, data: DocumentData, docType: ProjectDocumentType): Page[] {
-  const ctx: LayoutContext = { docType, filterByStatus: layout.filterByStatus };
+function computePages(layout: DocumentLayout, data: DocumentData, docType: ProjectDocumentType, fonts?: RichTextFonts): Page[] {
+  const ctx: LayoutContext = { docType, filterByStatus: layout.filterByStatus, fonts };
   const headerBlock = layout.blocks.find((b) => b.kind === "header") as Extract<LayoutBlock, { kind: "header" }> | undefined;
   const bodyBlocks = layout.blocks.filter((b) => b.kind !== "header");
 
@@ -611,6 +663,39 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     }
   }
 
+  /**
+   * Split a clientNotes/termsAndConditions block across pages by wrapped
+   * line — mirrors splitTable's per-item fill loop, but lines are uniform
+   * height and atomic (no sub-items/children to worry about), so the loop
+   * is a straight "how many whole lines fit in what's left" fill. Wraps
+   * ONCE up front with real font metrics (the same call estimateBlockHeight
+   * used to decide this block needed splitting in the first place) so the
+   * line breaks placed on the page are identical to what was measured.
+   */
+  function splitRichTextBlock(block: Extract<LayoutBlock, { kind: "clientNotes" | "termsAndConditions" }>, text: string, fonts: RichTextFonts) {
+    const lineHeightMm = ptToMm(richTextLineHeight(RICH_TEXT_FONT_SIZE));
+    const allLines = wrapRichText(text, { maxWidth: CONTENT_WIDTH_PT, fontSize: RICH_TEXT_FONT_SIZE, fonts });
+
+    let idx = 0;
+    while (idx < allLines.length) {
+      let available = maxY - currentY;
+      if (available < lineHeightMm) {
+        startNewPage();
+        available = maxY - currentY;
+      }
+      // Always place at least one line, even if it doesn't fit — matches
+      // splitTable's "always render at least one item" invariant, so a
+      // single oversized line can never cause an infinite loop.
+      const count = Math.max(1, Math.min(allLines.length - idx, Math.floor(available / lineHeightMm)));
+      const slice = allLines.slice(idx, idx + count);
+      const blockHeight = count * lineHeightMm;
+
+      currentPage.entries.push({ block, y: currentY, height: blockHeight, textLines: slice });
+      currentY += blockHeight + SECTION_GAP;
+      idx += count;
+    }
+  }
+
   placeHeader();
 
   for (const block of bodyBlocks) {
@@ -622,6 +707,11 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     if (currentY + height > maxY && currentPage.entries.length > 0) {
       if (block.kind === "table") {
         splitTable(block);
+        continue;
+      }
+      if ((block.kind === "clientNotes" || block.kind === "termsAndConditions") && ctx.fonts) {
+        const text = block.kind === "clientNotes" ? data.client_notes || "" : data.quote_terms_and_conditions;
+        splitRichTextBlock(block, text, ctx.fonts);
         continue;
       }
       startNewPage();
@@ -660,11 +750,18 @@ function buildEntryFields(
       if (data.org_email) orgDetailParts.push(data.org_email);
       if (data.org_website) orgDetailParts.push(data.org_website);
 
+      // Quote expiry moves from its own bottom-of-document line into the
+      // header meta (with the doc number/date) — a simple "Expiry: <date>"
+      // read right where the client is already looking, not a standalone
+      // sentence buried at the end of a possibly multi-page document.
+      const docMetaLines = [data.project_number || "", data.document_date || ""];
+      if (docType === "quote" && data.quote_valid_until) docMetaLines.push(`Expiry: ${data.quote_valid_until}`);
+
       const config: PageHeaderConfig = {
         orgName: data.org_name || "",
         orgDetails: orgDetailParts.join("\n"),
         docTitle: block.title,
-        docMeta: `${data.project_number || ""}\n${data.document_date || ""}`,
+        docMeta: docMetaLines.join("\n"),
         logoData: data.org_logo,
         iconData: data.org_icon,
         documentLogoMode: data.org_branding?.documentLogoMode ?? "icon",
@@ -818,10 +915,15 @@ function buildEntryFields(
             position: { x: MARGIN, y },
             width: CONTENT_WIDTH,
             height,
-            fontSize: 8,
+            fontSize: RICH_TEXT_FONT_SIZE,
             fontColor: "#666666",
           },
-          input: data.client_notes || "",
+          // Pre-wrapped slice (see splitRichTextBlock) when this page's
+          // entry carries one — the exact line breakdown that drove the
+          // page-break math, so estimate and render can't disagree. Falls
+          // back to raw text (the plugin wraps it itself) when composeDocument
+          // was called without fonts.
+          input: entry.textLines ? JSON.stringify({ lines: entry.textLines }) : data.client_notes || "",
         },
       ];
 
@@ -842,23 +944,6 @@ function buildEntryFields(
         },
       ];
 
-    case "quoteValidityNote":
-      return [
-        {
-          schema: {
-            name,
-            type: "gearflowRichText",
-            content: "",
-            position: { x: MARGIN, y },
-            width: CONTENT_WIDTH,
-            height,
-            fontSize: 9,
-            fontColor: "#333333",
-          },
-          input: `This quote is valid until ${data.quote_valid_until}.`,
-        },
-      ];
-
     // Org-authored free text (`/settings/branding`'s "Documents" card) —
     // markdown-lite friendly, same convention as line-item notes: `**bold**`,
     // `*italic*`, `- `/`* ` bullets (gearflowRichText / parseRichText).
@@ -872,10 +957,10 @@ function buildEntryFields(
             position: { x: MARGIN, y },
             width: CONTENT_WIDTH,
             height,
-            fontSize: 8,
+            fontSize: RICH_TEXT_FONT_SIZE,
             fontColor: "#666666",
           },
-          input: data.quote_terms_and_conditions,
+          input: entry.textLines ? JSON.stringify({ lines: entry.textLines }) : data.quote_terms_and_conditions,
         },
       ];
 
@@ -905,10 +990,24 @@ export interface ComposeResult {
  * comes from `data.document_footer_text`/`document_footer_second_line` (org
  * "documents" settings — see org-settings-types.ts); empty falls back to an
  * auto-generated "{org} | {email} | {phone}" line.
+ *
+ * `fonts` (optional): real embedded Helvetica fonts (see
+ * `getComposerFonts`/`generate-pdf.ts`). When supplied, clientNotes/
+ * termsAndConditions get an accurate, real-wrap-aware height estimate and
+ * split across pages by line instead of only ever moving as one whole block
+ * (which could either overflow into the footer if underestimated, or strand
+ * a short trailing block alone on a near-empty page). Stays optional, and
+ * `composeDocument` stays synchronous, so no existing caller/test needs to
+ * change — the accurate path is additive.
  */
-export function composeDocument(docType: ProjectDocumentType, data: DocumentData, docColor: string): ComposeResult {
+export function composeDocument(
+  docType: ProjectDocumentType,
+  data: DocumentData,
+  docColor: string,
+  fonts?: RichTextFonts,
+): ComposeResult {
   const layout = getDocumentLayout(docType);
-  const pages = computePages(layout, data, docType);
+  const pages = computePages(layout, data, docType, fonts);
 
   const allSchemas: (Schema & Record<string, unknown>)[][] = [];
   const mergedInputs: Record<string, string> = {};

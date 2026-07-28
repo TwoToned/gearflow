@@ -13,33 +13,20 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn, focusRing } from "@/lib/utils";
+import {
+  discountEntryValue,
+  resolveDiscountAmount,
+  toDiscountMode,
+  type DiscountMode,
+} from "@/lib/discount-mode";
 
-export type DiscountMode = "$" | "%";
-
-/**
- * Resolves a raw discount input to the flat dollar amount the schema/mutation
- * expects — discount is always persisted as a flat $ amount (never a
- * percentage), so every caller needs this same conversion before submit.
- * `%` mode multiplies against `grossAmount` (the pre-discount line/bundle
- * total); `$` mode passes the value through unchanged. Returns `undefined`
- * for blank/zero/invalid input — "nothing to discount".
- */
-export function resolveDiscountAmount(
-  mode: DiscountMode,
-  rawValue: number | string | null | undefined,
-  grossAmount: number,
-): number | undefined {
-  // Blank/unset is distinct from an explicit 0 — a blank field means "no
-  // discount" (or, for callers with an omit-to-preserve mutation like
-  // updateGroupPriceNative, "don't touch the existing discount"), while a
-  // deliberately typed 0 clears/zeroes a previously-set discount. Checking
-  // the raw value BEFORE Number() coercion is what keeps that distinction —
-  // `Number(0)` is falsy too, so a truthiness check alone would collapse them.
-  if (rawValue === "" || rawValue == null) return undefined;
-  const raw = Number(rawValue);
-  if (!Number.isFinite(raw) || raw < 0) return undefined;
-  return mode === "%" ? Math.round(grossAmount * raw) / 100 : raw;
-}
+// The mode union + both conversions live in `src/lib/discount-mode.ts` (#1012)
+// so the Convex mutations, the Zod schemas and the PDF renderer — none of which
+// can import a `"use client"` module — share this file's definitions instead of
+// re-deriving them. Re-exported here so the seven add/edit forms keep their
+// existing single import from this module.
+export { discountEntryValue, resolveDiscountAmount, toDiscountMode };
+export type { DiscountMode };
 
 export function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
@@ -85,10 +72,11 @@ export interface DiscountAmountInputProps {
  * Discount amount input + $/% mode toggle, with no Field/Label wrapper — for
  * callers that supply their own label (e.g. bulk-edit-line-items-dialog's
  * checkbox-gated field rows). Most callers want `DiscountField` below instead.
- * The mode is a pure client-side display convenience — callers are responsible
- * for resolving a `%` value to a dollar amount before it reaches the
- * schema/mutation (discount is always persisted as a flat dollar amount; see
- * `src/lib/validations/line-item.ts`).
+ * Callers are responsible for resolving a `%` value to a dollar amount before
+ * it reaches the schema/mutation (discount is always persisted as a flat dollar
+ * amount; see `src/lib/validations/line-item.ts`) AND for submitting the mode
+ * itself alongside it, so documents can print the discount the way it was
+ * entered (#1012 — see `src/lib/discount-mode.ts`).
  */
 export function DiscountAmountInput({
   id,

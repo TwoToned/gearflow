@@ -3,6 +3,13 @@ import { RateLimiter, MINUTE } from "@convex-dev/rate-limiter";
 import { components } from "../_generated/api";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getAuthContext } from "./auth";
+import {
+  AGENT_READ_LIMIT,
+  AGENT_WRITE_LIMIT,
+  BROWSER_WRITE_LIMIT,
+  MAX_BULK_ITEMS,
+  MAX_BULK_ITEMS_AGENT,
+} from "./rateLimits";
 
 /**
  * Rate limiting for the browser-direct mutation surface (Phase 3 security baseline).
@@ -24,7 +31,7 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Per-user browser-direct write budget. Token bucket = burst up to `capacity`,
   // refilling at `rate` per `period`. 300/min sustained (5/s) with a 100-op burst
   // comfortably covers rapid optimistic editing yet stops a runaway client loop.
-  browserWrite: { kind: "token bucket", rate: 300, period: MINUTE, capacity: 100 },
+  browserWrite: { kind: "token bucket", rate: BROWSER_WRITE_LIMIT.rate, period: MINUTE, capacity: BROWSER_WRITE_LIMIT.capacity },
 
   // Agent (API-key) budgets, keyed on `apiKeyId` — NOT the token subject. An agent
   // token's subject IS a real human, so sharing the `browserWrite` bucket would let
@@ -34,9 +41,11 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // Deliberately far below the human write budget: a runaway agent should be
   // throttled long before a human notices anything. Starting values from
   // docs/designs/api-mcp-reimplementation.md §16.1 — calibrate against one real
-  // MCP session in Phase 3.
-  agentRead: { kind: "token bucket", rate: 600, period: MINUTE, capacity: 200 },
-  agentWrite: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 20 },
+  // MCP session in Phase 3. Numbers live in ./rateLimits.ts (R-3.1) so
+  // `/api/v1/whoami` can publish them without importing this Convex-component-
+  // bound module into Node.
+  agentRead: { kind: "token bucket", rate: AGENT_READ_LIMIT.rate, period: MINUTE, capacity: AGENT_READ_LIMIT.capacity },
+  agentWrite: { kind: "token bucket", rate: AGENT_WRITE_LIMIT.rate, period: MINUTE, capacity: AGENT_WRITE_LIMIT.capacity },
 });
 
 /**
@@ -83,12 +92,12 @@ export async function enforceAgentReadLimit(
  *  oversized array becomes an uncapped amplification vector: one rate-limit token
  *  buys N point-queries/writes inside one transaction. 500 comfortably covers the
  *  largest real bulk UI action (select-all on a big project) with headroom. */
-export const MAX_BULK_ITEMS = 500;
+export { MAX_BULK_ITEMS };
 
 /** The same cap for AGENT callers. A human select-all is a deliberate, visible act
  *  with an undo path; one confused agent call is neither, so its blast radius is an
  *  order of magnitude smaller and over-cap tells it to split the batch. */
-export const MAX_BULK_ITEMS_AGENT = 50;
+export { MAX_BULK_ITEMS_AGENT };
 
 /**
  * Enforce the bulk-array cap for the caller's auth kind (50 agent / 500 human).

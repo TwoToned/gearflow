@@ -7,7 +7,6 @@ import { useSearchParams } from "next/navigation";
 import { useAsset, useBulkAsset } from "@/hooks/use-assets";
 import { AssetForm } from "@/components/assets/asset-form";
 import { BulkAssetForm } from "@/components/assets/bulk-asset-form";
-import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
@@ -88,9 +87,7 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
             </BreadcrumbList>
           </Breadcrumb>
           <PageHeader title="Edit bulk asset" description={ba.assetTag} />
-          <EditLockGate entityType="asset" entityId={id}>
-            <BulkAssetForm initialData={initialData} />
-          </EditLockGate>
+          <BulkAssetForm initialData={initialData} />
         </div>
       </FadeIn>
     );
@@ -151,9 +148,7 @@ function EditAssetContent({ params }: { params: Promise<{ id: string }> }) {
           </BreadcrumbList>
         </Breadcrumb>
         <PageHeader title="Edit asset" description={asset.assetTag} />
-        <EditLockGate entityType="asset" entityId={id}>
-          <AssetForm initialData={initialData} />
-        </EditLockGate>
+        <AssetForm initialData={initialData} />
       </div>
     </FadeIn>
   );

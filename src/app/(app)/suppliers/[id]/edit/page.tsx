@@ -9,7 +9,6 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/page-header";
-import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -63,25 +62,23 @@ function EditSupplierContent({ params }: { params: Promise<{ id: string }> }) {
           </BreadcrumbList>
         </Breadcrumb>
         <PageHeader title="Edit supplier" description="Update supplier details." />
-        <EditLockGate entityType="supplier" entityId={id}>
-          <SupplierForm initialData={{
-            id,
-            name: supplier.name,
-            contactName: supplier.contactName || "",
-            email: supplier.email || "",
-            phone: supplier.phone || "",
-            website: supplier.website || "",
-            address: supplier.address || "",
-            latitude: supplier.latitude ?? null,
-            longitude: supplier.longitude ?? null,
-            notes: supplier.notes || "",
-            accountNumber: supplier.accountNumber || "",
-            paymentTerms: supplier.paymentTerms || "",
-            defaultLeadTime: supplier.defaultLeadTime || "",
-            tags: supplier.tags || [],
-            isActive: supplier.isActive ?? true,
-          }} />
-        </EditLockGate>
+        <SupplierForm initialData={{
+          id,
+          name: supplier.name,
+          contactName: supplier.contactName || "",
+          email: supplier.email || "",
+          phone: supplier.phone || "",
+          website: supplier.website || "",
+          address: supplier.address || "",
+          latitude: supplier.latitude ?? null,
+          longitude: supplier.longitude ?? null,
+          notes: supplier.notes || "",
+          accountNumber: supplier.accountNumber || "",
+          paymentTerms: supplier.paymentTerms || "",
+          defaultLeadTime: supplier.defaultLeadTime || "",
+          tags: supplier.tags || [],
+          isActive: supplier.isActive ?? true,
+        }} />
       </div>
     </FadeIn>
   );

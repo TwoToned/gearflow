@@ -30,6 +30,11 @@ export function middleware(request: NextRequest) {
   // - Org calendar feeds: /api/calendar/[token]/[feed]
   // - Crew iCal feeds: /api/crew/calendar/[token] (but NOT /api/crew/calendar/assignment/)
   // - Offer responses: /api/crew/respond/[token]
+  // - Agent-accessible API (#998): /api/v1/* — bearer-only (R-8.11.1), authenticated
+  //   INSIDE the dispatcher/route from the Authorization header, never a session
+  //   cookie. Without this exemption every unauthenticated call 302s to /login
+  //   instead of getting a 401 JSON envelope — silently breaking every non-browser
+  //   client (curl, MCP, a script) that doesn't follow redirects.
   if (
     pathname.startsWith("/api/calendar/") ||
     (pathname.startsWith("/api/crew/calendar/") &&
@@ -39,7 +44,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/warehouse/display/") ||
     pathname.startsWith("/auditor/") ||
     pathname.startsWith("/api/auditor/") ||
-    pathname.startsWith("/api/cron/")
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/v1/")
   ) {
     return withRequestId(NextResponse.next({ request: forwardedRequest }), requestId);
   }

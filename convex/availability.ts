@@ -1,7 +1,7 @@
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 import {
   buildModelBookings,
   buildKitBookings,
@@ -163,7 +163,7 @@ export const modelBookings = query({
     effectiveStock: v.number(),
   }),
   handler: async (ctx, { orgId, modelId, startMs, endMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     const window: DateWindowMs = { startMs, endMs };
 
     const lineDocs = (
@@ -221,7 +221,7 @@ export const assetBookings = query({
   args: { orgId: v.string(), assetId: v.string(), startMs: v.number(), endMs: v.number() },
   returns: v.array(bookingEntryValidator),
   handler: async (ctx, { orgId, assetId, startMs, endMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     const window: DateWindowMs = { startMs, endMs };
 
     const legacyLineDocs = (
@@ -260,7 +260,7 @@ export const kitBookings = query({
   args: { orgId: v.string(), kitId: v.string(), startMs: v.number(), endMs: v.number() },
   returns: v.array(bookingEntryValidator),
   handler: async (ctx, { orgId, kitId, startMs, endMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     const window: DateWindowMs = { startMs, endMs };
 
     const lineDocs = (
@@ -282,7 +282,7 @@ export const calendarData = query({
   args: { orgId: v.string(), startMs: v.number(), endMs: v.number() },
   returns: v.array(calendarProjectValidator),
   handler: async (ctx, { orgId, startMs, endMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     const window: DateWindowMs = { startMs, endMs };
 
     const allProjects = await ctx.db

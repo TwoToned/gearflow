@@ -2,9 +2,9 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
 
-Convex-backed collaboration substrate for projects: presence, edit locks, comment
-threads, review markers, blocking gates, and a realtime activity feed. Every piece
-of collaboration state persists to **Convex** (not Prisma) so it is shared and
+Convex-backed collaboration substrate for projects: comment threads, review
+markers, blocking gates, and a realtime activity feed. Every piece of
+collaboration state persists to **Convex** (not Prisma) so it is shared and
 reactive across all viewers of a project. Reads and most writes are now
 Convex-native browser-direct (see the note under Targets, below) — the browser
 subscribes reactively via `useQuery` and calls mutations directly via `useMutation`,
@@ -14,7 +14,7 @@ server-action bridge.
 ## Targets
 
 > **Note (Convex-native browser-direct):** most of `convex/collaboration.ts` is now
-> called directly from the browser (`src/hooks/use-collaboration.ts` uses
+> called directly from the browser (`src/hooks/use-collaboration-writes.ts` uses
 > `useMutation`/`useQuery` against it), with authorization (`requireOrgRead` /
 > `requireOrgPermission`) enforced inside each Convex function rather than in a
 > `src/server/collaboration.ts` bridge (that file no longer exists). Only
@@ -39,11 +39,15 @@ to look rows up against a single project-wide subscription.
 
 ## Convex tables (`convex/schema.ts`, mutations in `convex/collaboration.ts`)
 
-- **`collaborationLocks`** — edit locks. Heartbeat-kept, auto-expiring; a stale
-  lock can be taken over. Mutations: `acquireLock`, `heartbeatLock`,
-  `releaseLock`, `takeoverLock`. Reads: `getLock`, `listLocksForEntity`.
-- **`presence`** — transient "who is here" heartbeats (`heartbeatPresence`,
-  `clearPresence`).
+> **Removed 2026-07-28:** the `collaborationLocks` (edit locks) and
+> `collaborationPresence` ("who is here" heartbeats) tables, and their mutations
+> (`acquireLock`/`heartbeatLock`/`releaseLock`/`takeoverLock`/`getLock`/
+> `listLocksForEntity`, `heartbeatPresence`/`clearPresence`/`listPresence`), were
+> deleted. Each open editor/viewer wrote a heartbeat every 10–15 s with no
+> reuse of released rows and no cleanup cron, so the tables grew unbounded —
+> removed rather than patched. See the git history for this file for the prior
+> section describing the feature.
+
 - **`commentThreads` / `comments`** — threaded comments per target. Threads carry
   `isBlocking`, `status` (`open` / `resolved`), and `mentionUserIds`. Mutations:
   `createThread`, `addComment`, `setThreadBlocking`, `resolveThread`,
@@ -61,22 +65,6 @@ is no more server-action bridge holding a service token. The one holdout is
 "Operational data mirroring" below, has no live caller left — `writeCollabActivityEvent`,
 the helper that used to call it from server actions, is now dead code). Reads use
 `requireOrgRead`/`requireOrgPermission`.
-
-## Edit locks (section-level) — point 2
-
-`useEditLock` (`src/hooks/use-collaboration.ts`) acquires a lock for the open
-editor and heartbeats it, releasing on unmount. Wired into:
-
-- `edit-group-dialog.tsx` — `targetType: group` while editing a project group.
-- `rename-category-dialog.tsx` — `targetType: category` while renaming a section.
-
-While locked by someone else the form is disabled and `LockedEditorOverlay` shows
-who holds it; a **stale** lock exposes a takeover button.
-
-Passive "X is editing" badges on group/category rows are fed from a **single**
-`listLocksForEntity` subscription in `equipment-tab.tsx` (memoized into
-`lockByTarget`, looked up by `targetKey`) rather than mounting an active hook per
-row.
 
 ## Comment threads & blocking gates — point 4
 
@@ -103,28 +91,19 @@ threads.
 The equipment rows give subtle realtime feedback while collaborators work
 (`equipment-rows.tsx` + keyframes in `globals.css`):
 
-- **Editing pulse** — a row another user currently holds an edit lock on shows a
-  softly pulsing left edge tinted with the editor's colour (`.collab-editing`,
-  `--collab-color` set inline).
 - **Changed flash** — whenever a row's `updatedAt` changes (own save or a
   realtime push from another user) it briefly flashes (`.collab-changed`).
-- Both animations are gated behind `prefers-reduced-motion`: a static edge / no
-  flash when motion is reduced. Per-user attribution ("who changed it") lives in
-  the activity feed rather than per-row text.
+- Gated behind `prefers-reduced-motion`: no flash when motion is reduced.
+  Per-user attribution ("who changed it") lives in the activity feed rather
+  than per-row text.
 
-## Other records — presence, comments, edit locks (Phase 6)
+## Other records — comments (Phase 6)
 
 The substrate is generic over `entityType` (a free string), so the same
 primitives extend to non-project records with **no schema changes**. Client,
-supplier, and asset-registry detail pages now carry:
-
-- a `PresenceAvatarStack` (who else is viewing),
-- an `EntityCommentsButton` (`entity-comments-button.tsx`) — wraps
-  `CommentThreadPanel` with a live open-thread count for any record,
-- an `EditLockGate` (`edit-lock-gate.tsx`) wrapping their edit forms — a
-  record-level edit lock (`targetType`/`targetId` mirror the entity) that shows
-  the form read-only behind a `LockedEditorOverlay` while another user edits,
-  with stale takeover. The server-side revision check stays authoritative.
+supplier, and asset-registry detail pages carry an `EntityCommentsButton`
+(`entity-comments-button.tsx`) — wraps `CommentThreadPanel` with a live
+open-thread count for any record.
 
 ## Resolved-thread reply behavior — point 5
 
@@ -193,11 +172,10 @@ not replace those mirrors.
   code (no importers) — see point 2 under "Activity feed" above.
 - `src/lib/collaboration-colors.ts` — deterministic per-user colours.
 - `src/components/collaboration/entity-comments-button.tsx` — generic record comments button.
-- `src/components/collaboration/edit-lock-gate.tsx` — record edit-lock wrapper (Phase 6).
 - `convex/groupTemplatesWrites.ts` — grouped `template_applied` import event (formerly `src/server/group-templates.ts`, deleted).
-- `src/app/(app)/{clients,suppliers,assets/registry}/[id]/{page,edit/page}.tsx` — record collaboration wiring.
+- `src/app/(app)/{clients,suppliers,assets/registry}/[id]/{page,edit/page}.tsx` — record collaboration wiring (comments).
 - `src/server/check-records.ts` — prep/pull gates pass `groupId`.
 - `convex/lineItemWrites.ts`, `convex/projectGroupsWrites.ts`, `convex/projectCategoriesWrites.ts` — feed writes on edits (formerly `src/server/line-items.ts`, `src/server/project-groups.ts`, `src/server/project-categories.ts`, all deleted).
-- `src/hooks/use-collaboration.ts` — `useEditLock` and friends.
-- `src/components/collaboration/*` — comment panel, activity feed, locked-editor overlay.
+- `src/hooks/use-collaboration-writes.ts` — comment/marker mutations.
+- `src/components/collaboration/*` — comment panel, activity feed, review-marker badge.
 - `src/components/projects/equipment-tab.tsx`, `equipment-rows.tsx`, `edit-group-dialog.tsx`, `rename-category-dialog.tsx` — UI wiring.

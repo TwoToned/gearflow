@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 
 /**
  * BROWSER-facing native replacement for the warehouse LANDING list
@@ -43,7 +43,7 @@ type ProjectDoc = {
 export const bundle = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "warehouse"); // Phase 2 read bootstrap (#998)
 
     // Query ONLY the 5 pipeline statuses via the composite index (mirrors the
     // former listVersion) — reads ~the pipeline size, not the whole project history.

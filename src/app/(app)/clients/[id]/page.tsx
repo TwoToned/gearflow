@@ -27,7 +27,6 @@ import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
-import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { NotesEditor } from "@/components/ui/notes-editor";
@@ -241,9 +240,6 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     <span className="rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-muted">
                       +{additionalContactCount} more
                     </span>
-                  )}
-                  {orgId && (
-                    <PresenceAvatarStack entityType="client" entityId={id} size="sm" />
                   )}
                 </div>
               </div>

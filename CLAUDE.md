@@ -280,8 +280,11 @@ passes `requireAgentScope` (the key's scopes ∩ the user's live RBAC). See
    read guards, which fail closed on purpose (decision 2).
 3. **A new read should use `requireOrgReadFor(ctx, orgId, resource)`**, not
    `requireOrgRead`. The resource-less guard has nothing to intersect a key's scopes
-   against, so it rejects agents — 216 existing queries are invisible to the API
-   until Phase 5 migrates them. Personal-scope surfaces use `requireSelfScope`.
+   against, so it rejects agents — most queries are still invisible to the API until
+   Phase 5's coverage sweep migrates them (Phase 2's `#998` read bootstrap moved
+   ~45: assets/models/categories/projects/lineItems/groups/availability/
+   overbookings/clients/crew/warehouse/maintenance/kits/bulkAssets). Personal-scope
+   surfaces use `requireSelfScope`.
 
 **Privileged args are CI-gated.** A new mutation argument matching
 `/^(allow|force|skip|override|ignore|bypass)/` or named `justification` fails the
@@ -290,6 +293,22 @@ only ways a legitimately-permitted caller can soften a gate, so each one is
 classified deliberately. `assertBulkSizeOk(ctx, count)` is async and ctx-taking for
 the same reason: the cap (50 agent / 500 human) has to come from the verified
 identity, not a caller-supplied hint.
+
+### The API dispatcher (`src/lib/api/dispatcher.ts`) — one call site, closed by default
+
+`POST /api/v1/ops/{operation}` is the ONE route that reaches every agent-reachable
+Convex function (`GET /api/v1/{operations,whoami,openapi.json}` and the curated REST
+aliases in `src/lib/api/alias.ts` all sit on top of it or the same registry). Do not
+add a second hand-written route that calls Convex directly with an agent token — an
+operation absent from `src/lib/api/registry.generated.ts` (regenerate with
+`pnpm run api:registry`, never hand-edit) is a 404 by construction, and a bespoke
+route would bypass that. If a new curated alias is warranted, add it to
+`src/lib/api/alias.ts` calling `dispatchAlias()`, not a standalone Convex call — the
+point is that REST and the dispatcher cannot drift because one literally calls the
+other. After any change under `src/lib/api/registry.generated.ts`'s inputs (a new
+`*Native` mutation, a guard change, a new read migrated to `requireOrgReadFor`), run
+`pnpm run api:registry && pnpm run api:docs` and commit both — CI gates staleness on
+each independently.
 
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved

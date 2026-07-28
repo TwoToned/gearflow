@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireOrgPermission, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireOrgPermission, requireService } from "./lib/auth";
 
 /**
  * Thin CRUD for WarehouseClose (Convex table "warehouseCloses"). GENERATED — Phase 2/5.
@@ -16,7 +16,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("warehouseCloses").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "warehouse"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });
@@ -103,7 +103,7 @@ export const remove = mutation({
 export const getByProject = query({
   args: { orgId: v.string(), projectId: v.string() },
   handler: async (ctx, { orgId, projectId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "warehouse"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("warehouseCloses")
       .withIndex("by_projectId_organizationId", (q) =>

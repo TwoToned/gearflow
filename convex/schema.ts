@@ -247,6 +247,30 @@ export default defineSchema({
     .index("by_org_key", ["organizationId", "key"])
     .index("by_apiKeyId", ["apiKeyId"]),
 
+  // Per-key API/MCP request log (Phase 2, #998, design §11 observability). EVERY
+  // dispatcher call (query or mutation, success or error) writes one row here —
+  // unlike apiIdempotency, which only ever sees claimed writes. Args are
+  // PII-redacted before they reach this table (src/lib/api/request-log-redact.ts,
+  // R-8.12.4/docs/pii-inventory.md) — this table stores what a key OWNER is
+  // allowed to see about their own key's traffic, not a raw request capture.
+  // Retention: 30 days (T-P2, proposed), aged out by the daily
+  // "api-request-log-retention" cron (convex/crons.ts).
+  apiRequestLog: defineTable({
+    organizationId: v.string(),
+    apiKeyId: v.string(),
+    ts: v.number(),
+    operation: v.string(),
+    kind: v.union(v.literal("query"), v.literal("mutation")),
+    status: v.union(v.literal("success"), v.literal("error")),
+    errorCode: v.optional(v.string()),
+    missingScope: v.optional(v.string()),
+    latencyMs: v.number(),
+    requestId: v.optional(v.string()),
+    argsRedacted: v.optional(v.any()),
+  })
+    .index("by_apiKeyId_ts", ["apiKeyId", "ts"])
+    .index("by_organizationId_ts", ["organizationId", "ts"]),
+
   // StoredFile — the org-association for a Convex-storage file (the byte store is
   // Convex `_storage`). The /api/files proxy authorises a serve by looking up this
   // record's org (replacing the old S3 org-prefixed-key path auth). organizationId
@@ -2685,50 +2709,6 @@ export default defineSchema({
     .index("by_userId_tableId", ["userId", "tableId"]),
 
   // ─── Collaboration substrate ───────────────────────────────────────────────
-
-  // Who is currently viewing / editing a collaborative entity.
-  // TTL: expiresAt = lastSeenAt + 45 s. Stale rows are excluded by queries
-  // (not hard-deleted) so clients can let them age out naturally.
-  collaborationPresence: defineTable({
-    orgId: v.string(),
-    userId: v.string(),
-    userName: v.string(),
-    userColor: v.string(),
-    avatarUrl: v.optional(v.string()),
-    entityType: v.string(), // "project" | "asset" | "client"
-    entityId: v.string(),
-    section: v.optional(v.string()),
-    mode: v.union(v.literal("viewing"), v.literal("editing")),
-    activeTargetType: v.optional(v.string()),
-    activeTargetId: v.optional(v.string()),
-    lastSeenAt: v.number(),
-    expiresAt: v.number(),
-  })
-    .index("by_orgId_entityType_entityId", ["orgId", "entityType", "entityId"])
-    .index("by_orgId_userId_entityType_entityId", ["orgId", "userId", "entityType", "entityId"])
-    .index("by_expiresAt", ["expiresAt"]),
-
-  // Record-level edit locks. Prevents two users editing the same target
-  // simultaneously. Atomic acquire; heartbeat extends expiresAt.
-  collaborationLocks: defineTable({
-    orgId: v.string(),
-    entityType: v.string(),
-    entityId: v.string(),
-    targetType: v.string(), // "lineItem" | "section" | "asset" | "client"
-    targetId: v.string(),
-    ownerUserId: v.string(),
-    ownerName: v.string(),
-    ownerColor: v.string(),
-    acquiredAt: v.number(),
-    heartbeatAt: v.number(),
-    expiresAt: v.number(),
-    releasedAt: v.optional(v.number()),
-    status: v.union(v.literal("active"), v.literal("released"), v.literal("expired")),
-    clientSessionId: v.string(),
-  })
-    .index("by_orgId_entityType_entityId_targetType_targetId", ["orgId", "entityType", "entityId", "targetType", "targetId"])
-    .index("by_ownerUserId_status", ["ownerUserId", "status"])
-    .index("by_expiresAt", ["expiresAt"]),
 
   // Comment threads. Each thread belongs to an entity (e.g. project) and
   // optionally a sub-target (e.g. a specific line item).

@@ -8,7 +8,7 @@
  * change. The 3-axis RowDescriptor refactor lands in the next commit.
  */
 
-import { useState, useEffect, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "../../../convex/_generated/api";
@@ -46,7 +46,6 @@ import { formatCurrency } from "@/lib/formatters";
 import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
 import { cn, focusRing } from "@/lib/utils";
 import { useRowShortcuts } from "./use-row-shortcuts";
-import { targetKey, lineItemTarget } from "@/lib/collaboration-targets";
 import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
 import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
 import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";
@@ -313,7 +312,6 @@ export function GroupRow({
   onSaveAsTemplate,
   orgId,
   projectId,
-  lockedBy,
   commentBadge,
   onMoveUp,
   onMoveDown,
@@ -325,9 +323,6 @@ export function GroupRow({
   indented?: boolean;
   orgId?: string;
   projectId?: string;
-  /** Passive "X is editing" badge — fed from a single entity-level lock
-   *  subscription in the parent so we don't mount a hook per row. */
-  lockedBy?: { name: string; color: string } | null;
   /** Open / blocking comment counts for this group's thread target. */
   commentBadge?: { open: number; blocking: number };
   /** 8H — render the Cost column cell. Project groups don't have a
@@ -407,14 +402,6 @@ export function GroupRow({
     return (
       <GroupCard
         title={group.title}
-        subtext={
-          lockedBy ? (
-            <span className="inline-flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lockedBy.color }} />
-              Editing: {lockedBy.name}
-            </span>
-          ) : undefined
-        }
         qty={group.quantity}
         total={groupTotal}
         isExpanded={isExpanded}
@@ -584,17 +571,6 @@ export function GroupRow({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          {/* Lock badge stays visible (not part of the hover cluster) — it
-              signals another editor and must always be seen. */}
-          {lockedBy ? (
-            <Badge status="neutral" className="gap-1 text-[10px]">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: lockedBy.color }}
-              />
-              Editing: {lockedBy.name}
-            </Badge>
-          ) : null}
         </div>
       </TableCell>
     </TableRow>
@@ -801,7 +777,6 @@ export function SubHireGroupRow({
 export function CategoryRow({
   cat,
   columnCount,
-  lockedBy,
   onRename,
   onDelete,
   onAddEquipment,
@@ -816,9 +791,6 @@ export function CategoryRow({
   /** Total rendered column count (COL_COUNT + cost). The header cell spans this so it
    *  stays consistent with the separator/empty rows when the cost column is shown. */
   columnCount: number;
-  /** Passive "X is editing" badge — fed from the parent's single
-   *  entity-level lock subscription, looked up by category target key. */
-  lockedBy?: { name: string; color: string } | null;
   onRename: () => void;
   onDelete: () => void;
   /** Open the unified add dialog scoped to this category (no group).
@@ -889,12 +861,6 @@ export function CategoryRow({
         name={cat.name}
         action={
           <div className="flex shrink-0 items-center gap-1">
-            {lockedBy ? (
-              <Badge status="neutral" className="gap-1 text-[10px]">
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lockedBy.color }} />
-                {lockedBy.name}
-              </Badge>
-            ) : null}
             {onAddEquipment && <CardAddButton onClick={onAddEquipment} />}
             {categoryMenu}
           </div>
@@ -915,15 +881,6 @@ export function CategoryRow({
             className="px-1 md:group-hover/cat:opacity-100 md:group-focus-within/cat:opacity-100"
           />
           <h3 className="t-overline text-muted">{cat.name}</h3>
-          {lockedBy ? (
-            <Badge status="neutral" className="gap-1 text-[10px]">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: lockedBy.color }}
-              />
-              Editing: {lockedBy.name}
-            </Badge>
-          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="size-8 opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/cat:opacity-100 focus-visible:opacity-100">
@@ -990,7 +947,6 @@ export function LineItemRow({
   showCostColumn,
   orgId,
   projectId,
-  lockByTarget,
   markerByTarget,
   onToggle,
   onEdit,
@@ -1022,9 +978,8 @@ export function LineItemRow({
   /** Collaboration: org and project identifiers for live status badges. */
   orgId?: string;
   projectId?: string;
-  /** Project-wide lock/marker maps (one subscription each, built by the caller)
+  /** Project-wide review-marker map (one subscription, built by the caller)
    *  looked up by target key instead of this row mounting its own subscription. */
-  lockByTarget?: Map<string, { ownerName: string; ownerColor: string; isStale: boolean }>;
   markerByTarget?: Map<string, { status: string; reason?: string }>;
   onToggle?: () => void;
   onEdit: () => void;
@@ -1048,12 +1003,11 @@ export function LineItemRow({
   const shiftKeyRef = useRef(false);
   const { setReviewMarker } = useCollaborationWrites();
 
-  // Collaboration: reactive lock and review marker for this row, looked up from
-  // the project-wide maps the caller (equipment-tab.tsx) already subscribes to
+  // Collaboration: reactive review marker for this row, looked up from the
+  // project-wide map the caller (equipment-tab.tsx) already subscribes to
   // ONCE — NOT a per-row subscription (targetId differs per row, so Convex can't
-  // dedupe a per-row getLock/getReviewMarker query the way it dedupes the
-  // identical-args listThreadCommentCounts call below).
-  const liveLock = lockByTarget?.get(targetKey(lineItemTarget(item.id)));
+  // dedupe a per-row getReviewMarker query the way it dedupes the identical-args
+  // listThreadCommentCounts call below).
   const liveMarker = markerByTarget?.get(item.id);
   // Comment counts for all line items on the project — Convex dedupes this
   // identical subscription across every row, so it's a single live query.
@@ -1064,9 +1018,6 @@ export function LineItemRow({
   const myCounts = commentCounts?.[item.id];
   const openComments = myCounts?.open ?? 0;
   const blockingComments = myCounts?.blockingOpen ?? 0;
-  // listLocksForEntity already filters to status "active" server-side, so
-  // presence in the map implies active — only isStale needs re-checking here.
-  const hasActiveLock = !!liveLock && !liveLock.isStale;
 
   // Phase 4 live-build feedback: briefly highlight the row whenever its data
   // changes — on the editor's own save and on a realtime update pushed by
@@ -1100,10 +1051,6 @@ export function LineItemRow({
       toast.error(error instanceof Error ? error.message : "Failed to update marker");
     }
   };
-
-  const style = (
-    hasActiveLock ? { ["--collab-color"]: liveLock.ownerColor } : {}
-  ) as CSSProperties;
 
   // Map content indent to grip indent (margin-based to avoid affecting column width)
   const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
@@ -1152,19 +1099,6 @@ export function LineItemRow({
       {item.status === "CANCELLED" && <Badge status="overbooked">Cancelled</Badge>}
       {item.prepStatus === "PREPPED" && <Badge status="ok">Prepped</Badge>}
       <OverbookedBadge info={overbookedInfo} />
-      {hasActiveLock && (
-        <span
-          className="inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none"
-          style={{
-            background: liveLock.ownerColor + "22",
-            borderColor: liveLock.ownerColor + "66",
-            color: liveLock.ownerColor,
-          }}
-          title={`${liveLock.ownerName} is editing`}
-        >
-          ✏ {liveLock.ownerName.split(" ")[0]}
-        </span>
-      )}
       {liveMarker && liveMarker.status !== "resolved" && (
         <ReviewMarkerBadge status={liveMarker.status as MarkerStatus} reason={liveMarker.reason} />
       )}
@@ -1267,12 +1201,10 @@ export function LineItemRow({
     return (
       <div className={cn("space-y-1.5", nestInset)}>
         <div
-          style={style}
           className={cn(
             "flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card transition-colors",
             isContainer ? "px-3 py-2 ring-1 ring-line-2" : "px-3 py-2 ring-1 ring-line",
             isSelected && "ring-2 ring-red",
-            hasActiveLock && "collab-editing",
             justChanged && "collab-changed",
           )}
         >
@@ -1397,11 +1329,9 @@ export function LineItemRow({
   return (
     <>
     <TableRow
-      style={style}
       className={cn(
         "group/row",
         isSelected && "bg-select",
-        hasActiveLock && "collab-editing",
         justChanged && "collab-changed",
       )}
       onClick={onClick}
@@ -1514,20 +1444,7 @@ export function LineItemRow({
             </Badge>
           )}
           <OverbookedBadge info={overbookedInfo} />
-          {/* Collaboration badges: editing lock + review marker */}
-          {hasActiveLock && (
-            <span
-              className="inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none ml-1"
-              style={{
-                background: liveLock.ownerColor + "22",
-                borderColor: liveLock.ownerColor + "66",
-                color: liveLock.ownerColor,
-              }}
-              title={`${liveLock.ownerName} is editing`}
-            >
-              ✏ {liveLock.ownerName.split(" ")[0]}
-            </span>
-          )}
+          {/* Collaboration badge: review marker */}
           {liveMarker && liveMarker.status !== "resolved" && (
             <ReviewMarkerBadge
               status={liveMarker.status as MarkerStatus}

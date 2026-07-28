@@ -66,7 +66,6 @@ import { MediaThumbnail } from "@/components/media/media-thumbnail";
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { resolveAssetPhotoUrl, isAssetPhotoCustom } from "@/lib/media-utils";
 import { CanDo } from "@/components/auth/permission-gate";
-import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { BookingCalendar } from "@/components/bookings/booking-calendar";
@@ -421,9 +420,6 @@ function AssetDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   <Link href={`/assets/models/${asset.modelId}`} className={cn("hover:text-ink-2 hover:underline rounded-sm", focusRing)}>
                     {asset.model?.name || "Model"}
                   </Link>
-                  {orgId && (
-                    <PresenceAvatarStack entityType="asset" entityId={id} size="sm" />
-                  )}
                 </div>
                 {/* "Where is it now?" — the prominent locator line */}
                 <div className="mt-3 inline-flex items-center gap-2 rounded-[var(--r)] border border-line bg-paper-2 px-3 py-1.5 text-ui-text">

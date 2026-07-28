@@ -1,7 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 import { EXCLUDED_ASSIGNMENT_STATUSES as EXCLUDED, overlaps, iso, classifyAvailabilityBlock, classifyAssignmentConflict } from "./lib/crewConflicts";
 
 /**
@@ -25,7 +25,7 @@ async function orgMemberIds(ctx: QueryCtx, orgId: string): Promise<Set<string>> 
 export const memberAvailability = query({
   args: { orgId: v.string(), crewMemberId: v.string(), startMs: v.optional(v.number()), endMs: v.optional(v.number()) },
   handler: async (ctx, { orgId, crewMemberId, startMs, endMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     if (!(await orgMemberIds(ctx, orgId)).has(crewMemberId)) throw new ConvexError("Crew member not found");
     const rows = (await ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).collect())
       .filter((r) => r.organizationId === orgId);
@@ -41,7 +41,7 @@ export const memberAvailability = query({
 export const conflicts = query({
   args: { orgId: v.string(), crewMemberId: v.string(), startMs: v.number(), endMs: v.number(), excludeAssignmentId: v.optional(v.string()) },
   handler: async (ctx, { orgId, crewMemberId, startMs, endMs, excludeAssignmentId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const inOrg = (await orgMemberIds(ctx, orgId)).has(crewMemberId);
     const out: { type: "availability" | "assignment"; severity: "hard" | "soft"; label: string; startDate: string; endDate: string }[] = [];
 
@@ -88,7 +88,7 @@ export const conflicts = query({
 export const plannerData = query({
   args: { orgId: v.string(), startMs: v.number(), endMs: v.number() },
   handler: async (ctx, { orgId, startMs, endMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [allMembers, roles] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph — see docs/exceptions.md R-8.3.3
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: planner view aggregates the whole crew graph — see docs/exceptions.md R-8.3.3

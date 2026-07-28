@@ -9,6 +9,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings, OrgDocumentSettings } from "@/lib/org-settings-types";
 import { DEFAULT_QUOTE_VALIDITY_DAYS, QUOTE_VALIDITY_BOUNDS } from "@/lib/quote-validity";
+import { DEFAULT_PAYMENT_TERMS_DAYS, PAYMENT_TERMS_BOUNDS } from "@/lib/invoice-terms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,6 +31,7 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
   const [footerSecondLine, setFooterSecondLine] = useState(documents.footerSecondLine || "");
   const [termsAndConditions, setTermsAndConditions] = useState(documents.termsAndConditions || "");
   const [quoteValidityDays, setQuoteValidityDays] = useState(documents.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS);
+  const [paymentTermsDays, setPaymentTermsDays] = useState(documents.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS);
 
   // Sync from server when settings change
   useEffect(() => {
@@ -38,6 +40,7 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
     setFooterSecondLine(d.footerSecondLine || ""); // eslint-disable-line react-hooks/set-state-in-effect
     setTermsAndConditions(d.termsAndConditions || ""); // eslint-disable-line react-hooks/set-state-in-effect
     setQuoteValidityDays(d.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS); // eslint-disable-line react-hooks/set-state-in-effect
+    setPaymentTermsDays(d.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS); // eslint-disable-line react-hooks/set-state-in-effect
   }, [settings.documents]);
 
   function buildDocuments(): OrgDocumentSettings | undefined {
@@ -46,9 +49,14 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
       footerSecondLine: footerSecondLine.trim() || undefined,
       termsAndConditions: termsAndConditions.trim() || undefined,
       quoteValidityDays: quoteValidityDays !== DEFAULT_QUOTE_VALIDITY_DAYS ? quoteValidityDays : undefined,
+      paymentTermsDays: paymentTermsDays !== DEFAULT_PAYMENT_TERMS_DAYS ? paymentTermsDays : undefined,
     };
     const hasAny =
-      !!next.footerText || !!next.footerSecondLine || !!next.termsAndConditions || next.quoteValidityDays !== undefined;
+      !!next.footerText ||
+      !!next.footerSecondLine ||
+      !!next.termsAndConditions ||
+      next.quoteValidityDays !== undefined ||
+      next.paymentTermsDays !== undefined;
     return hasAny ? next : undefined;
   }
 
@@ -70,12 +78,18 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
     footerText !== (documents.footerText || "") ||
     footerSecondLine !== (documents.footerSecondLine || "") ||
     termsAndConditions !== (documents.termsAndConditions || "") ||
-    quoteValidityDays !== (documents.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS);
+    quoteValidityDays !== (documents.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS) ||
+    paymentTermsDays !== (documents.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS);
 
   const validityOutOfRange =
     !Number.isFinite(quoteValidityDays) ||
     quoteValidityDays < QUOTE_VALIDITY_BOUNDS.min ||
     quoteValidityDays > QUOTE_VALIDITY_BOUNDS.max;
+
+  const paymentTermsOutOfRange =
+    !Number.isFinite(paymentTermsDays) ||
+    paymentTermsDays < PAYMENT_TERMS_BOUNDS.min ||
+    paymentTermsDays > PAYMENT_TERMS_BOUNDS.max;
 
   return (
     <div className="space-y-4">
@@ -134,10 +148,26 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
         </p>
       </div>
 
+      <div className="space-y-2 sm:max-w-xs">
+        <Label htmlFor="paymentTermsDays">Payment terms (days)</Label>
+        <Input
+          id="paymentTermsDays"
+          type="number"
+          min={PAYMENT_TERMS_BOUNDS.min}
+          max={PAYMENT_TERMS_BOUNDS.max}
+          value={paymentTermsDays}
+          onChange={(e) => setPaymentTermsDays(e.target.valueAsNumber)}
+          aria-invalid={paymentTermsOutOfRange}
+        />
+        <p className="text-xs text-fg-3">
+          Default due date when issuing an invoice — invoice date + this many days (&ldquo;Net {paymentTermsDays || DEFAULT_PAYMENT_TERMS_DAYS}&rdquo;). The issue dialog lets you override it per invoice.
+        </p>
+      </div>
+
       <div className="flex justify-end">
         <Button
           onClick={() => mutation.mutate()}
-          disabled={mutation.isPending || !hasChanges || validityOutOfRange}
+          disabled={mutation.isPending || !hasChanges || validityOutOfRange || paymentTermsOutOfRange}
         >
           {mutation.isPending ? "Saving..." : "Save Document Settings"}
         </Button>

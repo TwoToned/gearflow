@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Download, Eye, FileText, Send, Undo2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Eye, FileText, History, Send, Undo2, XCircle } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
@@ -10,37 +10,31 @@ import { useQuoteWrites } from "@/hooks/use-quote-writes";
 import { generateQuoteArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { quoteStatusIntent } from "@/lib/status-colors";
+import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { CanDo } from "@/components/auth/permission-gate";
+import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
+import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
+import { QuoteRevisionViewerDialog } from "@/components/projects/finance/quote-revision-viewer-dialog";
+import { RepriceFromRevisionDialog } from "@/components/projects/finance/reprice-from-revision-dialog";
+import { QuoteDriftIndicator } from "@/components/projects/finance/quote-drift-indicator";
 
 /**
- * The quote REVISION RAIL (#986, Phase A) — one row per revision over the
- * project's single `revision` counter, with the five verbs wired up.
- *
- * This is the minimum viable surface for exercising the model. The real Finance
- * tab — a send dialog with quote date / valid-until / recipient / watermarked
- * preview, version history with diffs, and the drift indicator — is Phase D
- * (#989). The state → intent mapping likewise lands there as
- * `quoteStatusIntent()` in `status-colors.ts`; this uses the badge vocabulary
- * the finance panel already had.
+ * The Finance tab's QUOTE section (#989) — the structured workflow that
+ * replaces "press the Documents button and hope". One row per revision over
+ * the project's single `revision` counter (#986), with the five verbs, a send
+ * dialog that captures quote date / validity / recipient (no money — R-9.3), a
+ * read-only revision viewer + diff, and the reprice-from-revision forward-only
+ * undo (§8.1).
  */
 
-/** Minimum reason length per verb — mirrors `quoteRecallSchema`/
- *  `quoteDeclineSchema`, which the server mirrors again via `fieldGuards`. The
- *  disabled button is UX; neither client check is the security boundary. */
-const REASON_MIN = { recall: 10, decline: 3 } as const;
-
-const QUOTE_STATUS_BADGE: Record<string, "ok" | "warn" | "neutral" | "overbooked"> = {
-  DRAFT: "neutral",
-  SENT: "ok",
-  ACCEPTED: "ok",
-  DECLINED: "overbooked",
-  EXPIRED: "warn",
-  SUPERSEDED: "neutral",
-};
+/** Rows beyond this are collapsed behind "Show N earlier revisions" — a haggled
+ *  job reaching v7 would otherwise push invoices below the fold. */
+const INITIAL_VISIBLE_REVISIONS = 3;
 
 interface QuoteRevisionDoc {
   id: string;
@@ -52,6 +46,7 @@ interface QuoteRevisionDoc {
   sentAt?: number;
   validUntil?: number;
   snapshot?: unknown;
+  snapshotId?: string | null;
   /** The STORED document for this revision (#987) — the bytes the client was
    *  given. Null on a never-sent draft, and on a sent revision whose render
    *  failed (which is what the retry action is for). */
@@ -65,12 +60,27 @@ interface ReasonTarget {
   verb: ReasonVerb;
 }
 
-export function ProjectQuoteRail({ projectId, orgId }: { projectId: string; orgId: string | undefined }) {
+interface ProjectQuoteRailProps {
+  projectId: string;
+  orgId: string | undefined;
+  projectNumber: string;
+  clientId?: string | null;
+  projectStatus?: string | null;
+  subtotal: number | null;
+  taxAmount: number | null;
+  total: number | null;
+}
+
+export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total }: ProjectQuoteRailProps) {
   // Frozen at mount: `now` only drives the DERIVED expiry read, and a value that
-  // changed every render would re-subscribe the queries on every render. Phase D
-  // owns live-ticking validity copy.
+  // changed every render would re-subscribe the queries on every render.
   const [now] = useState(() => Date.now());
   const [reasonTarget, setReasonTarget] = useState<ReasonTarget | null>(null);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [acceptTarget, setAcceptTarget] = useState<QuoteRevisionDoc | null>(null);
+  const [viewerTarget, setViewerTarget] = useState<QuoteRevisionDoc | null>(null);
+  const [repriceTarget, setRepriceTarget] = useState<QuoteRevisionDoc | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const quotes = useAuthedQuery(api.quotes.listForProject, orgId ? { orgId, projectId, now } : "skip");
   const revisionState = useAuthedQuery(
@@ -79,49 +89,60 @@ export function ProjectQuoteRail({ projectId, orgId }: { projectId: string; orgI
   );
   const quoteWrites = useQuoteWrites();
 
-  const sendMutation = useServerMutation({
-    mutationFn: () => quoteWrites.send(projectId),
-    onSuccess: (r) => {
-      toast.success(`Sent quote v${r.version} — pricing is now frozen at this revision`);
-      // The send itself succeeded; only the document render didn't. Say so, and
-      // leave the row's retry action to fix it — never silently.
-      if (!r.artifactReady) {
-        toast.warning(`The document for v${r.version} didn't generate — use “Document missing” on that revision to make one.`);
-      }
-    },
-    onError: (e) => toast.error(e.message),
-  });
   const newVersionMutation = useServerMutation({
     mutationFn: () => quoteWrites.newVersion(projectId),
     onSuccess: (r) => toast.success(`Started quote v${r.version}`),
     onError: (e) => toast.error(e.message),
   });
 
-  async function acceptQuote(quote: QuoteRevisionDoc) {
-    try {
-      await quoteWrites.markAccepted(quote.id);
-      toast.success(`Marked v${quote.version} accepted — this project can now be confirmed`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to mark accepted");
-    }
-  }
-
   if (quotes === undefined || revisionState === undefined) {
     return <p className="t-micro text-fg-4">Loading quotes…</p>;
   }
 
-  const { revision, liveQuote, hasAcceptedQuote, draftQuoteId } = revisionState;
+  const { revision, hasAcceptedQuote, draftQuoteId, liveQuote } = revisionState;
+  const hasOpenDraft = draftQuoteId != null || quotes.length === 0;
+  const visibleQuotes = showAll ? quotes : quotes.slice(0, INITIAL_VISIBLE_REVISIONS);
+  const hiddenCount = quotes.length - visibleQuotes.length;
+
+  function findPrevious(version: number): QuoteRevisionDoc | null {
+    return (quotes ?? []).find((q) => q.version === version - 1) ?? null;
+  }
 
   return (
     <div className="space-y-2">
-      <RailHeader
-        revision={revision}
-        hasOpenDraft={draftQuoteId != null || quotes.length === 0}
-        sending={sendMutation.isPending}
-        creating={newVersionMutation.isPending}
-        onSend={() => sendMutation.mutate(undefined)}
-        onNewVersion={() => newVersionMutation.mutate(undefined)}
-      />
+      <div className="flex items-center justify-between">
+        <h3 className="t-overline text-fg-3">Quote</h3>
+        <CanDo resource="invoice" action="publish">
+          {hasOpenDraft ? (
+            <Button type="button" variant="line" size="sm" onClick={() => setSendOpen(true)}>
+              <Send className="h-3.5 w-3.5" /> Send quote v{revision}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="line"
+              size="sm"
+              loading={newVersionMutation.isPending}
+              onClick={() => newVersionMutation.mutate(undefined)}
+            >
+              <FileText className="h-3.5 w-3.5" /> Create quote v{revision + 1}
+            </Button>
+          )}
+        </CanDo>
+      </div>
+
+      {orgId && (
+        <QuoteDriftIndicator
+          projectId={projectId}
+          orgId={orgId}
+          snapshotId={liveQuote?.snapshotId ?? null}
+          version={liveQuote?.version ?? revision}
+          onSeeWhatChanged={() => {
+            const q = quotes.find((qt) => qt.id === liveQuote?.id);
+            if (q) setViewerTarget(q);
+          }}
+        />
+      )}
 
       <p className="t-micro text-fg-4">
         Sending freezes pricing at that revision — to change prices afterwards, create the next version.
@@ -131,18 +152,31 @@ export function ProjectQuoteRail({ projectId, orgId }: { projectId: string; orgI
       {quotes.length === 0 ? (
         <p className="t-micro text-fg-4">No quote yet — sending creates v{revision}.</p>
       ) : (
-        <ul className="space-y-1.5">
-          {quotes.map((quote) => (
-            <QuoteRevisionRow
-              key={quote.id}
-              quote={quote}
-              projectId={projectId}
-              onAccept={() => void acceptQuote(quote)}
-              onDecline={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
-              onRecall={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
-            />
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-1.5">
+            {visibleQuotes.map((quote) => (
+              <QuoteRevisionRow
+                key={quote.id}
+                quote={quote}
+                projectId={projectId}
+                onAccept={() => setAcceptTarget(quote)}
+                onDecline={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
+                onRecall={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
+                onView={() => setViewerTarget(quote)}
+                now={now}
+              />
+            ))}
+          </ul>
+          {hiddenCount > 0 && !showAll && (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 t-micro text-fg-4 underline underline-offset-2"
+              onClick={() => setShowAll(true)}
+            >
+              <History className="h-3 w-3" /> Show {hiddenCount} earlier revision{hiddenCount === 1 ? "" : "s"}
+            </button>
+          )}
+        </>
       )}
 
       {liveQuote && !hasAcceptedQuote && (
@@ -153,39 +187,59 @@ export function ProjectQuoteRail({ projectId, orgId }: { projectId: string; orgI
       )}
 
       <ReasonDialog target={reasonTarget} onClose={() => setReasonTarget(null)} />
-    </div>
-  );
-}
 
-function RailHeader({
-  revision,
-  hasOpenDraft,
-  sending,
-  creating,
-  onSend,
-  onNewVersion,
-}: {
-  revision: number;
-  hasOpenDraft: boolean;
-  sending: boolean;
-  creating: boolean;
-  onSend: () => void;
-  onNewVersion: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <h3 className="t-overline text-fg-3">Quote</h3>
-      <CanDo resource="invoice" action="publish">
-        {hasOpenDraft ? (
-          <Button type="button" variant="line" size="sm" loading={sending} onClick={onSend}>
-            <Send className="h-3.5 w-3.5" /> Send quote v{revision}
-          </Button>
-        ) : (
-          <Button type="button" variant="line" size="sm" loading={creating} onClick={onNewVersion}>
-            <FileText className="h-3.5 w-3.5" /> Create quote v{revision + 1}
-          </Button>
-        )}
-      </CanDo>
+      <SendQuoteDialog
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        projectId={projectId}
+        projectNumber={projectNumber}
+        orgId={orgId}
+        clientId={clientId}
+        revision={revision}
+        subtotal={subtotal}
+        taxAmount={taxAmount}
+        total={total}
+        projectStatus={projectStatus}
+      />
+
+      {acceptTarget && (
+        <AcceptQuoteDialog
+          open={!!acceptTarget}
+          onOpenChange={(open) => !open && setAcceptTarget(null)}
+          quoteId={acceptTarget.id}
+          version={acceptTarget.version}
+        />
+      )}
+
+      {viewerTarget && orgId && (
+        <QuoteRevisionViewerDialog
+          open={!!viewerTarget}
+          onOpenChange={(open) => !open && setViewerTarget(null)}
+          projectId={projectId}
+          orgId={orgId}
+          quote={viewerTarget}
+          previousQuote={findPrevious(viewerTarget.version)}
+          canReprice={!hasOpenDraft}
+          nextVersion={revision + 1}
+          onReprice={() => {
+            setRepriceTarget(viewerTarget);
+            setViewerTarget(null);
+          }}
+        />
+      )}
+
+      {repriceTarget && orgId && repriceTarget.snapshotId && (
+        <RepriceFromRevisionDialog
+          open={!!repriceTarget}
+          onOpenChange={(open) => !open && setRepriceTarget(null)}
+          projectId={projectId}
+          orgId={orgId}
+          sourceQuoteId={repriceTarget.id}
+          sourceSnapshotId={repriceTarget.snapshotId}
+          sourceVersion={repriceTarget.version}
+          nextVersion={revision + 1}
+        />
+      )}
     </div>
   );
 }
@@ -201,12 +255,16 @@ function QuoteRevisionRow({
   onAccept,
   onDecline,
   onRecall,
+  onView,
+  now,
 }: {
   quote: QuoteRevisionDoc;
   projectId: string;
   onAccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
+  onView: () => void;
+  now: number;
 }) {
   const isSent = quote.effectiveStatus === "SENT";
   // A sent-or-expired revision is the one the client is holding: it can be
@@ -215,7 +273,9 @@ function QuoteRevisionRow({
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
-      <RevisionMeta quote={quote} />
+      <button type="button" className="flex min-w-0 items-center gap-2 text-left" onClick={onView}>
+        <RevisionMeta quote={quote} now={now} />
+      </button>
       <div className="flex flex-wrap items-center gap-1.5">
         <QuoteDocumentAction quote={quote} projectId={projectId} />
         <CanDo resource="invoice" action="publish">
@@ -297,21 +357,63 @@ function QuoteDocumentAction({ quote, projectId }: { quote: QuoteRevisionDoc; pr
   );
 }
 
-function RevisionMeta({ quote }: { quote: QuoteRevisionDoc }) {
+function RevisionMeta({ quote, now }: { quote: QuoteRevisionDoc; now: number }) {
   // A DRAFT carries no frozen money — its figures are the project's live totals
   // until it is sent, so the row deliberately shows no amount.
   const total = (quote.snapshot as { total?: number } | null)?.total;
+  const isSuperseded = quote.effectiveStatus === "SUPERSEDED";
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <Badge status={QUOTE_STATUS_BADGE[quote.effectiveStatus] ?? "neutral"}>{quote.effectiveStatus}</Badge>
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {/* SUPERSEDED earns no pill — a dead revision doesn't earn a filled shape
+          (finance-workflow-ux.md §3.5). */}
+      {isSuperseded ? (
+        <span className="t-micro text-fg-4">Superseded</span>
+      ) : (
+        <Badge status={intentToBadgeStatus(quoteStatusIntent(quote.effectiveStatus))}>{quote.effectiveStatus}</Badge>
+      )}
       <span className="font-medium text-fg">v{quote.version}</span>
       {total != null && <span className="tabular-nums text-fg-4">{formatCurrency(total)}</span>}
       {quote.sentAt != null && <span className="text-fg-4">sent {formatDate(new Date(quote.sentAt))}</span>}
-      {quote.effectiveStatus === "SENT" && quote.validUntil != null && (
-        <span className="text-fg-4">valid until {formatDate(new Date(quote.validUntil))}</span>
-      )}
+      {quote.effectiveStatus === "SENT" && quote.validUntil != null && <ValidityLabel validUntil={quote.validUntil} now={now} />}
     </div>
   );
+}
+
+/** Expiry urgency — colour AND words, never colour alone (a11y): "Valid until
+ *  25 Aug (28 days)" → within QUOTE_EXPIRING_SOON_DAYS "(3 days left)" in warn
+ *  → past "Expired 2 days ago" in the error tone. */
+function ValidityLabel({ validUntil, now }: { validUntil: number; now: number }) {
+  const daysLeft = daysUntilValidUntil(validUntil, now);
+  if (daysLeft == null) return null;
+  const validUntilStr = formatDate(new Date(validUntil));
+  if (daysLeft < 0) {
+    return <span className="font-medium text-t-out">Expired {formatDate(new Date(validUntil))} ({Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? "" : "s"} ago)</span>;
+  }
+  if (daysLeft <= QUOTE_EXPIRING_SOON_DAYS) {
+    return <span className="font-medium text-warn">Valid until {validUntilStr} ({daysLeft} day{daysLeft === 1 ? "" : "s"} left)</span>;
+  }
+  return <span className="text-fg-4">Valid until {validUntilStr}</span>;
+}
+
+/** Bridge to the `Badge` component's `status` prop vocabulary — `info`/`primary`
+ *  were added to `Badge` alongside this feature specifically so SENT/ACCEPTED
+ *  render in status-colors.ts's own `ColorIntent` vocabulary rather than being
+ *  lossily mapped onto the unrelated ok/warn/overbooked set. */
+function intentToBadgeStatus(intent: ReturnType<typeof quoteStatusIntent>): "ok" | "warn" | "overbooked" | "info" | "primary" | "neutral" {
+  switch (intent) {
+    case "success":
+      return "ok";
+    case "warning":
+      return "warn";
+    case "error":
+      return "overbooked";
+    case "info":
+      return "info";
+    case "primary":
+      return "primary";
+    default:
+      return "neutral";
+  }
 }
 
 /** Recall and decline both take a bounded reason, so both route through ONE
@@ -374,7 +476,7 @@ function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClos
           <Button type="button" variant="line" onClick={onClose}>Cancel</Button>
           <Button
             type="button"
-            disabled={reason.trim().length < REASON_MIN[target?.verb ?? "decline"]}
+            disabled={reason.trim().length < (isRecall ? 10 : 3)}
             onClick={() => void confirm()}
           >
             {isRecall ? "Recall quote" : "Mark declined"}
@@ -384,3 +486,4 @@ function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClos
     </Dialog>
   );
 }
+

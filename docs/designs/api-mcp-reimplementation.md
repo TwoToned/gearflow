@@ -11,6 +11,8 @@ then MCP on the API infrastructure for AI collaboration. Both must touch all asp
 the app, read and write, so the MCP is useful for real requests. Gates and checks must
 still be followed — the API or an AI shouldn't be able to bypass project locks etc."
 **Supersedes:** [`archive/api-mcp-agent-access.md`](./archive/api-mcp-agent-access.md)
+**Decisions:** the 12 forks in §0 were settled with the owner on 2026-07-28 and are
+recorded there as the authoritative answers; the rest of this document follows from them.
 **Related:** [FEATUREDOCS/56](../../FEATUREDOCS/56-api-mcp.md),
 [54 (Convex data layer)](../../FEATUREDOCS/54-convex-data-layer.md),
 [62 (project lifecycle locks)](../../FEATUREDOCS/62-project-lifecycle-locks.md),
@@ -18,6 +20,23 @@ still be followed — the API or an AI shouldn't be able to bypass project locks
 [04 (auth/permissions)](../../FEATUREDOCS/04-auth-permissions.md)
 
 ---
+
+## 0. Settled decisions (2026-07-28)
+
+| # | Fork | Decision |
+|---|------|----------|
+| 1 | Agent writes on JUSTIFY-tier projects (ON_SITE/RETURNED) | **Allowed**, but `danger:"high"` → `confirm:true` required, and agent-authored justifications are badged/filterable in the activity log for review |
+| 2 | `requireOrgRead` → resource migration (~350 sites) | **Incremental, fail-closed.** Unmigrated reads are invisible to agents; migrate per domain, each an independently shippable PR |
+| 3 | First end-to-end target | **You + Claude Code over MCP.** MCP moves ahead of the key-management UI (see §14 and the read-bootstrap consequence) |
+| 4 | MCP clients | Claude Code/dev tools, claude.ai + desktop connectors, a local stdio proxy, **and eventually third-party agents** |
+| 5 | Public developer platform | **Design for it now, ship it later.** No third-party code in v1, but every v1 decision is made as if it were public |
+| 6 | Cost/margin exposure | **`no_financials` per-key flag** forcing `redactFields` regardless of the acting user's role |
+| 7 | Destructive writes (delete/archive/bulk) | **Allowed** with `confirm:true` + `idempotencyKey` + per-resource scope; agent bulk cap **50** (vs the human 500); bulk-revert tooling by `apiKeyId` + time window |
+| 8 | Idempotency atomicity | **Accept the deterministic-id trade** — no mutation signatures change |
+| 9 | MCP OAuth 2.1 | **Bearer first (Phase 3), OAuth right after (Phase 7)** — same dispatcher, so OAuth is a pure auth adapter |
+| 10 | Warehouse check-out / check-in (physical-world writes) | **Allowed** with an explicit `warehouse:check_out` / `check_in` scope + `confirm:true` + idempotency. Not in any default preset |
+| 11 | Preview→commit tokens | **Dropped.** The overbooking check now runs *inside* the mutation, so the TOCTOU those tokens existed to close no longer exists. Keep the enriched `conflicts[]` + `suggestions[]` rejection |
+| 12 | Compatibility guarantee | **Additive-only within `/v1`.** Curated ops + error codes are stable contract; the generic `call_operation` surface is explicitly "tracks the app, may change" |
 
 ## 1. Intent
 
@@ -224,9 +243,24 @@ check a scope against. 277 + 74 call sites. Plan:
 - **`requireOrgRead` fails closed for `kind: "agent"`** from day one. So an unmigrated query
   is invisible to the API rather than unscoped — the safe default, and it makes the
   migration incrementally shippable instead of one 350-site commit.
-- Migrate per domain in Phase 3, ordered by agent value (assets → projects → availability →
+- A ~40-query **read bootstrap** lands in Phase 2 (see §14); the rest migrate per domain in
+  Phase 5, ordered by agent value (assets → projects → availability →
   crew → warehouse → finance). The change is one argument per call site; a codemod plus the
   Phase-1 classifier tracks the remainder.
+
+### The `no_financials` key flag (decision 6)
+
+Scopes are `resource:action`; cost/margin visibility is a *field*-level concern gated by
+`isCallerManagerPlus` against the **acting user**. So a read-only key acting as an owner
+still sees full margins — correct by the "key acts as a human" model, wrong if the
+transcript leaves the building.
+
+Fix: a boolean `noFinancials` on the `apiKeys` document. When set, the read guards force
+`redactFields` over the cost/margin field families **regardless** of the acting user's role,
+reusing the existing redaction path (`convex/lib/auth.ts` `redactFields`, the
+`crewRoles.listForSettings` vs `list` precedent). Chosen over a separate `finance:*` scope
+family because it needs no new vocabulary and can't be partially granted by mistake.
+Enforcement lands in Phase 4; the settings toggle in Phase 6.
 
 ### Personal-scope operations
 
@@ -244,12 +278,18 @@ overbook or justify past a lock:
 | Arg | Sites | Gate it softens | Agent policy |
 |---|---|---|---|
 | `allowOverbook` | 6 | in-mutation availability check | **Forced `false`** by the dispatcher **and** rejected in Convex unless the key holds `project:allow_overbook`. (The archived design said "do not expose"; forcing plus a server-side assert is strictly stronger than stripping it in Node.) |
-| `justification` | 50 | `assertLifecycleGuard` JUSTIFY tier | Allowed — it is the human-equivalent act — but the op is `danger:"high"`, requires `confirm:true`, and the audit row already carries `justification` + `apiKeyId` via `lifecycleAuditMetadata`, so every agent-justified edit is reviewable. |
+| `justification` | 50 | `assertLifecycleGuard` JUSTIFY tier | **Allowed** (decision 1) — it is the human-equivalent act. `danger:"high"` → `confirm:true`; the audit row already carries `justification` + `apiKeyId` via `lifecycleAuditMetadata`, and the activity log gains an **agent-justified filter/badge** so these edits are reviewable as a set rather than buried. |
 | `projectUnlockSessionsWrites.openNative` | — | HARD_LOCKED / FINANCE_LOCKED escape | **`agentAccess:"denied"` by default.** Opening an unlock session is the one true lock override; it also needs `isHardLockOverrideAllowed` (admin/owner/assigned PM). Enabling it for a key requires the explicit `project:unlock_session` scope, off in every preset. |
 | `overrideReason` | 6 | line-item override trail | Allowed; `danger:"medium"`, string-bounded. |
 | `forceSeparate` | 2 | merge-dedup | Allowed; cosmetic. |
 | `emitSideEffects` | 12 | webhook/side-effect fold | Dispatcher-injected `true` — never agent-controlled. |
 | `allowOrgCreation` | 5 | `siteSettings` | Site-admin surface; `agentAccess:"denied"`. |
+
+Two further scope-gated capabilities that aren't args but belong to the same family
+(decision 10): `warehouse:check_out` and `warehouse:check_in` are **physical-world**
+transitions — gear leaves the building. They are agent-callable, but require their own
+explicit scope, `confirm:true` and an idempotency key, and appear in **no default preset**;
+granting one is a deliberate operator act.
 
 This table is generated by the registry build and a CI test fails if a **new** arg matching
 `/^(allow|force|skip|override|ignore|bypass)/` or named `justification` appears without a
@@ -314,7 +354,7 @@ their Convex arg field-sets. Promote that test-local table to
 dispatcher. The dispatcher runs the same `.parse()` the hook runs, so the API inherits every
 business bound instead of relying on `fieldGuards`/`moneyGuards` alone (which remain the
 in-Convex backstop — belt and braces, R-9.3). Extending that registry from 18 to full
-coverage is tracked per-domain in Phase 3.
+coverage is tracked per-domain in Phase 5.
 
 ## 9. Idempotency and confirmation rails
 
@@ -343,13 +383,32 @@ even if the ledger is stale. Making it atomic would mean threading an idempotenc
 223 mutations — a large, invasive change for a guarantee determinism already provides. Recorded
 as a conscious trade, not an oversight.
 
-**Confirmation.** Operations classified `danger:"high"` (stock-affecting, irreversible,
-lock-softening, financial issue/void, bulk destructive) require `confirm: true`. For
-availability-affecting writes, a **preview → commit** pair: preview returns a
-`confirmationToken` bound to `{org, key, actor, argsHash, availability snapshot}`,
-single-use and expiring; commit consumes it and returns `STALE_PREVIEW` (retryable) if the
-world moved. One tool per verb with a `confirm` flag — fewer tools for a model to reason
-over than `preview_*`/`commit_*` pairs.
+**Confirmation.** Operations classified `danger:"high"` — stock-affecting, irreversible,
+lock-softening, delete/archive, financial issue/void, warehouse movement, bulk destructive —
+require `confirm: true` **and** an `idempotencyKey`. A missing `confirm` returns
+`CONFIRMATION_REQUIRED` with a rendered summary of what the call would do, so an agent's
+natural next step is to show a human and re-call.
+
+**No preview→commit tokens** (decision 11). The archived design specified a content-bound
+`confirmationToken` carrying an inventory snapshot, with `STALE_PREVIEW` on divergence. That
+existed to close the old check-then-write TOCTOU — and that race is gone: the availability
+check now runs *inside* the same mutation as the insert, so a divergent commit is not
+representable. A stale attempt simply fails the write with `INVENTORY_CONFLICT` +
+`conflicts[]` + `suggestions[]`. Dropping the token subsystem removes a whole moving part
+for a guarantee the data layer already provides.
+
+**Destructive writes** (decision 7) are allowed, with three limits:
+- a per-resource scope (`asset:delete`, `project:delete`, …), granted in no read-only preset;
+- `confirm:true` + `idempotencyKey`;
+- **agent bulk arrays capped at 50**, against the human `MAX_BULK_ITEMS` of 500
+  (`convex/lib/rateLimiter.ts`). `assertBulkSizeOk` takes the cap from the auth kind, so one
+  confused agent call has a small blast radius. Over-cap returns `BULK_TOO_LARGE` telling the
+  agent to split.
+
+**Bulk revert.** Because every agent write's audit row carries `apiKeyId`, a
+`revertAgentWindow(apiKeyId, from, to)` operator tool can enumerate and reverse a bad run
+using the existing reverse-mutations (`undeployItems` / `unreturnItems` / `undeprepLine`,
+archive restores). This is the real safety net behind "let the agent write" — Phase 4.
 
 **Audit is already fail-closed** and in-transaction (`writeActivityLog`). The only addition:
 stamp `apiKeyId` + `actorType: "apiKey"` into the existing `metadata` field, so every agent
@@ -412,7 +471,8 @@ model reasons well over that list. Three tiers:
    overbooking triage).
 
 Every tool description states: prerequisites, the FROM→TO transition, whether it's
-preview-first, the exact scope string, idempotency behaviour, and its error codes — the
+whether it needs `confirm:true`, the exact scope string, idempotency behaviour, and its
+error codes — the
 descriptions *are* the docs, and they're generated from the registry.
 
 ## 13. Observability, limits, budgets
@@ -427,11 +487,45 @@ descriptions *are* the docs, and they're generated from the registry.
   R-8.12.4 / `docs/pii-inventory.md`; args are redacted, not stored raw.
 - **PostHog** — `api_request` / `mcp_tool_call` events with cuid-only props; p95 latency SLO
   per R-9.11 registered in the README budget table; alert at 80% (R-9.2).
-- **Versioning from day one** — `/v1`, `rvlt_flow.v1.*` MCP namespace, versioned webhook
-  events, in-band `warnings[]` plus a version header (the only channel an autonomous agent
-  reliably consumes).
+### Compatibility policy (decisions 5 + 12)
+
+Third-party consumers don't ship in v1, but every v1 decision is made **as if they had**, so
+nothing needs re-litigating when they do. Concretely, two stability tiers, declared per
+operation in the registry and stated in the OpenAPI description:
+
+- **`stability: "stable"`** — the ~25 curated operations, the error `code` vocabulary, the
+  scope vocabulary, the envelope shape, and webhook event schemas. **Additive-only within
+  `/v1`**: fields and operations may be added, never removed or narrowed. A breaking change
+  means `/v2`.
+- **`stability: "tracks-app"`** — the generic `call_operation` surface and everything reached
+  through it. Explicitly documented as following the app's internals, so ordinary Convex
+  refactors are not breaking API changes. This is the release valve that keeps additive-only
+  honest instead of freezing the codebase.
+
+Mechanics from day one: `/v1` path prefix, `rvlt_flow.v1.*` MCP namespace, versioned webhook
+events (`project.status_changed.v1`), an `X-RVLT-Flow-API-Version` response header, and
+in-band `warnings[]` — the only deprecation channel an autonomous agent reliably consumes.
+A CI test fails if a `stable` operation's generated schema loses a field or an op disappears.
 
 ## 14. Build plan
+
+Ordered for decision 3 — **you, in Claude Code, over MCP** is the first thing that works.
+That pulls MCP ahead of the key-management UI and forces one refinement, below.
+
+> ### ⚠ The read-bootstrap consequence (found while re-sequencing)
+> Decision 2 makes `requireOrgRead`/`requireOrgReadDoc` fail closed for agents until each
+> call site is migrated. Only **~21 queries** use `requireOrgPermission` (which carries a
+> resource) today; the other 215 org-guarded reads don't. Writes, by contrast, almost all use
+> `requireOrgPermission` and are reachable immediately.
+>
+> So a naive ordering yields an MCP server that can **write** to 272 operations but can barely
+> **read** anything — the worst possible first impression, and genuinely dangerous (an agent
+> acting with no ability to check its work).
+>
+> **Fix:** a *read bootstrap* is pulled into Phase 2 — migrate ~40 hand-picked queries
+> covering assets, models, projects, availability, clients, crew and warehouse status, chosen
+> so the curated MCP tool set is fully backed. Writes stay gated behind Phase 4's `danger`
+> pass. **Reads land before writes**, which is the right order for trust anyway.
 
 **Phase 0 — pattern-prover (gates everything else).** One vertical: API key → agent token →
 `api.lineItemWrites.addNative` on a `CONFIRMED` project. Must demonstrate, with tests:
@@ -441,35 +535,47 @@ overbooking rejected under concurrency; `allowOverbook: true` rejected without t
 token; cross-org args rejected. If this holds, every other operation is a template.
 
 **Phase 1 — foundations.** `kind: "agent"` in `getAuthContext`; agent-token minter (+ the
-"sub must equal actingUserId" test); `requireAgentScope`; agent rate-limit buckets;
-`apiIdempotency` table; error envelope; the guard/reachability classifier + privileged-arg
-CI gate; the registry generator and its staleness gate.
+"sub must equal actingUserId" test); `requireAgentScope`; agent rate-limit buckets +
+kind-aware bulk cap; `apiIdempotency` table; error envelope; the guard/reachability
+classifier + privileged-arg CI gate; the registry generator and its staleness gate.
 
-**Phase 2 — API core.** `/api/v1/ops/{operation}`, `/operations`, `/whoami`; the arg
-normalizer; the Zod validation registry; per-key request log; OpenAPI + `llms.txt`.
-*Ships useful on its own — this is the "full customisation" milestone.*
+**Phase 2 — API core + read bootstrap.** `/api/v1/ops/{operation}`, `/operations`,
+`/whoami`; the arg normalizer; the Zod validation registry; per-key request log; OpenAPI +
+`llms.txt`; the ~40-query read bootstrap above. *Ships useful on its own — this is the "full
+customisation" milestone, verifiable with curl.*
 
-**Phase 3 — coverage sweep (the long pole).** Per domain, in agent-value order: migrate
-`requireOrgRead` → `requireOrgReadFor`, triage the SERVICE-only queries (widen / sibling /
-deny), extend the Zod registry, write the `agentOps` annotations. Each domain is an
-independently shippable PR, and the classifier prints remaining coverage on every one.
+**Phase 3 — MCP over bearer keys (first AI milestone).** `/api/v1/mcp` streamable HTTP on
+the same dispatcher; the ~25 curated tools; `list_operations` / `describe_operation` /
+`call_operation`; resources + prompts; the tool-manifest staleness gate; the local stdio
+proxy (decision 4). Key minted by hand from the existing `createApiKey` server action — no
+UI needed yet. **This is the "wire it into Claude Code and ask it real things" milestone.**
 
-**Phase 4 — safety rails.** Preview→commit tokens for availability-affecting writes;
-`danger` classification pass across all 272 writes; confirmation enforcement; bulk-revert
-tooling ("undo everything key X did between T1 and T2").
+**Phase 4 — safety rails (gates writes going wide).** `danger` classification pass across
+all 272 writes; `confirm` + idempotency enforcement; the agent bulk cap; `no_financials`
+enforcement; the agent-justified activity-log badge/filter; bulk-revert tooling
+(`revertAgentWindow`). Until this lands, agent write scopes stay off in every preset.
 
-**Phase 5 — key management UX.** Rebuild `/settings/api-keys`: scope presets
-(`read_only_agent`, `warehouse_operator`, `finance_reader`, `full_agent`), one-click
-"Connect an AI Agent" producing a copy-paste MCP config, a "Test connection" button echoing
-the org name, the per-key request log, rotation with a grace window, kill switch. Target
-time-to-hello-world < 5 minutes.
+**Phase 5 — coverage sweep (the long pole).** Per domain, in agent-value order: migrate the
+remaining `requireOrgRead` → `requireOrgReadFor`, triage the 152 SERVICE-only queries
+(widen / sibling / deny), extend the Zod registry, write the `agentOps` annotations. Each
+domain is an independently shippable PR; the classifier prints remaining coverage on every one.
 
-**Phase 6 — MCP.** `/api/v1/mcp` over the same dispatcher; the 25 curated tools; discovery +
-`call_operation`; resources + prompts; the tool-manifest staleness gate.
+**Phase 6 — key management UX.** Rebuild `/settings/api-keys`: scope presets
+(`read_only_agent`, `warehouse_operator`, `finance_reader`, `full_agent` — none granting
+delete, warehouse movement, unlock sessions or `allow_overbook`), one-click "Connect an AI
+Agent" producing a copy-paste MCP config, "Test connection" echoing the org name, the
+per-key request log, rotation with a grace window, kill switch, the `no_financials` toggle.
+Target time-to-hello-world < 5 min.
 
-**Phase 7 — polish.** Webhook `api.*` events; SDK snippets; docs site page; a Mira wiring
-spike (`MiraContextProvider` already exists — the in-app assistant becomes the first
-first-party MCP consumer).
+**Phase 7 — MCP OAuth 2.1 (decision 9).** Authorization-server metadata, dynamic client
+registration, consent screen, token exchange → an agent token. Purely an auth adapter in
+front of the Phase 3 dispatcher, so no rework. Unlocks claude.ai + desktop connectors for
+non-technical staff.
+
+**Phase 8 — polish + external readiness.** Webhook `api.*` events; SDK snippets; docs-site
+page; Mira wired as a first-party consumer (`MiraContextProvider` already exists); the
+`stability` tier annotations and the additive-only CI check hardened ahead of any
+third-party program.
 
 ## 15. Testing (highest value first)
 
@@ -498,31 +604,31 @@ The previous build's 106 tests were removed with it. The critical set, re-derive
    real preview deployment for the concurrency and end-to-end tests (same approach the
    previous build used).
 
-## 16. Open questions
+## 16. Remaining open questions
 
-1. **`requireOrgRead` migration size.** ~350 call sites gain one argument. Codemod-able, but
-   it touches nearly every read module. Alternative considered and rejected: derive the
-   resource from the module filename (hidden coupling, and unenforceable). Confirm the
-   incremental fail-closed rollout is acceptable — it means the API's read coverage grows
-   over Phase 3 rather than landing complete on day one.
-2. **Field-level read sensitivity.** Scopes are `resource:action`; cost/margin visibility is
-   gated by `isCallerManagerPlus` against the *acting user*, which is correct but coarse — a
-   `read_only_agent` acting as an owner sees margins. Do we want a `no_financials` key flag
-   that forces `redactFields` regardless of the acting user's role? (Recommended, cheap,
-   Phase 4.)
-3. **`justification` from an AI.** An agent can satisfy the JUSTIFY gate by writing prose.
-   Attributable and reviewable, but is "agent-authored justification" acceptable at all, or
-   should JUSTIFY-tier structural edits be `agentAccess:"denied"` by default like unlock
-   sessions? This is a product call, not a technical one.
-4. **Idempotency atomicity.** Accept the deterministic-id trade (§9), or invest in threading
-   an idempotency arg through the write mutations later?
-5. **Trust ramp.** Internal agents + same-org power users only, as before. A public
-   third-party developer platform (OAuth apps, quotas, marketplace) stays out of scope.
+The twelve design forks are settled (§0). What's left is calibration, answerable during the
+build rather than before it:
 
-## 17. Not in scope
+1. **Rate-limit numbers.** Starting proposal: `agentRead` 600/min (burst 200), `agentWrite`
+   60/min (burst 20) per key — deliberately far below the human `browserWrite` 300/min so a
+   looping agent is throttled long before it's noticed by a human. Needs one real MCP session
+   to calibrate.
+2. **Request-log retention.** R-8.12.2 requires a registered retention period (T-P2) for the
+   per-key request log, since redacted args can still carry business context. Proposal: 30
+   days, aged out by a Convex cron. Needs registering in `docs/exceptions.md` / the README
+   budget table.
+3. **Preset composition.** Which exact scope sets ship as `read_only_agent`,
+   `warehouse_operator`, `finance_reader`, `full_agent` — a Phase 6 detail, but worth your eye
+   since presets are what most keys will actually use.
+4. **`allow_overbook` for agents at all.** Currently a grantable scope. It may be better as a
+   permanent deny — a human deliberately overbooking is a judgement call; an agent doing it is
+   almost always a mistake. Cheap to decide later; the scope exists either way.
 
-Public third-party developer platform (OAuth apps, marketplace, quotas); raw table CRUD
-(structurally excluded, §3); billing/packaging of API access; exposing `allowOverbook` by
-default; USER-token minting for browser use; replacing the surviving server-action carve-outs
+## 17. Not in scope for v1
+
+Third-party consumers (**designed for**, per decision 5, but no OAuth apps, client
+registration, quotas, marketplace or public docs ship in v1 — Phase 7 delivers OAuth for
+same-org staff only); raw table CRUD (structurally excluded, §3); billing/packaging of API
+access; USER-token minting for browser use; replacing the surviving server-action carve-outs
 (email, SSO, CSV, cron, Xero OAuth) — those get thin `ops/*` wrappers if an agent needs them,
 not a rewrite.

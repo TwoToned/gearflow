@@ -104,87 +104,46 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   const visibleQuotes = showAll ? quotes : quotes.slice(0, INITIAL_VISIBLE_REVISIONS);
   const hiddenCount = quotes.length - visibleQuotes.length;
 
-  function findPrevious(version: number): QuoteRevisionDoc | null {
-    return (quotes ?? []).find((q) => q.version === version - 1) ?? null;
-  }
-
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <h3 className="t-overline text-fg-3">Quote</h3>
-        <CanDo resource="invoice" action="publish">
-          {hasOpenDraft ? (
-            <Button type="button" variant="line" size="sm" onClick={() => setSendOpen(true)}>
-              <Send className="h-3.5 w-3.5" /> Send quote v{revision}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="line"
-              size="sm"
-              loading={newVersionMutation.isPending}
-              onClick={() => newVersionMutation.mutate(undefined)}
-            >
-              <FileText className="h-3.5 w-3.5" /> Create quote v{revision + 1}
-            </Button>
-          )}
-        </CanDo>
-      </div>
+      <QuoteRailHeader
+        revision={revision}
+        hasOpenDraft={hasOpenDraft}
+        onSend={() => setSendOpen(true)}
+        onCreateNextVersion={() => newVersionMutation.mutate(undefined)}
+        creatingNextVersion={newVersionMutation.isPending}
+      />
 
-      {orgId && (
-        <QuoteDriftIndicator
-          projectId={projectId}
-          orgId={orgId}
-          snapshotId={liveQuote?.snapshotId ?? null}
-          version={liveQuote?.version ?? revision}
-          onSeeWhatChanged={() => {
-            const q = quotes.find((qt) => qt.id === liveQuote?.id);
-            if (q) setViewerTarget(q);
-          }}
-        />
-      )}
+      <QuoteRailDriftIndicator
+        projectId={projectId}
+        orgId={orgId}
+        revision={revision}
+        liveQuote={liveQuote}
+        quotes={quotes}
+        onSeeWhatChanged={setViewerTarget}
+      />
 
       <p className="t-micro text-fg-4">
         Sending freezes pricing at that revision — to change prices afterwards, create the next version.
         Flow doesn&rsquo;t email clients; sending records the send and generates the document for you.
       </p>
 
-      {quotes.length === 0 ? (
-        <p className="t-micro text-fg-4">No quote yet — sending creates v{revision}.</p>
-      ) : (
-        <>
-          <ul className="space-y-1.5">
-            {visibleQuotes.map((quote) => (
-              <QuoteRevisionRow
-                key={quote.id}
-                quote={quote}
-                projectId={projectId}
-                onAccept={() => setAcceptTarget(quote)}
-                onDecline={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
-                onRecall={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
-                onView={() => setViewerTarget(quote)}
-                now={now}
-              />
-            ))}
-          </ul>
-          {hiddenCount > 0 && !showAll && (
-            <button
-              type="button"
-              className="flex items-center gap-1.5 t-micro text-fg-4 underline underline-offset-2"
-              onClick={() => setShowAll(true)}
-            >
-              <History className="h-3 w-3" /> Show {hiddenCount} earlier revision{hiddenCount === 1 ? "" : "s"}
-            </button>
-          )}
-        </>
-      )}
+      <QuoteRevisionList
+        quotes={quotes}
+        visibleQuotes={visibleQuotes}
+        hiddenCount={hiddenCount}
+        showAll={showAll}
+        onShowAll={() => setShowAll(true)}
+        revision={revision}
+        projectId={projectId}
+        now={now}
+        onAccept={setAcceptTarget}
+        onDecline={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
+        onRecall={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
+        onView={setViewerTarget}
+      />
 
-      {liveQuote && !hasAcceptedQuote && (
-        <p className="t-micro text-warn">
-          This project can&rsquo;t be confirmed until a quote revision is marked accepted (admins and the
-          project&rsquo;s PMs can override with a reason).
-        </p>
-      )}
+      <UnacceptedLiveQuoteNotice liveQuote={liveQuote} hasAcceptedQuote={hasAcceptedQuote} />
 
       <ReasonDialog target={reasonTarget} onClose={() => setReasonTarget(null)} />
 
@@ -202,10 +161,202 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         projectStatus={projectStatus}
       />
 
+      <QuoteRailTargetDialogs
+        projectId={projectId}
+        orgId={orgId}
+        revision={revision}
+        hasOpenDraft={hasOpenDraft}
+        quotes={quotes}
+        acceptTarget={acceptTarget}
+        onCloseAccept={() => setAcceptTarget(null)}
+        viewerTarget={viewerTarget}
+        onCloseViewer={() => setViewerTarget(null)}
+        onReprice={() => {
+          setRepriceTarget(viewerTarget);
+          setViewerTarget(null);
+        }}
+        repriceTarget={repriceTarget}
+        onCloseReprice={() => setRepriceTarget(null)}
+      />
+    </div>
+  );
+}
+
+function QuoteRailHeader({
+  revision,
+  hasOpenDraft,
+  onSend,
+  onCreateNextVersion,
+  creatingNextVersion,
+}: {
+  revision: number;
+  hasOpenDraft: boolean;
+  onSend: () => void;
+  onCreateNextVersion: () => void;
+  creatingNextVersion: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <h3 className="t-overline text-fg-3">Quote</h3>
+      <CanDo resource="invoice" action="publish">
+        {hasOpenDraft ? (
+          <Button type="button" variant="line" size="sm" onClick={onSend}>
+            <Send className="h-3.5 w-3.5" /> Send quote v{revision}
+          </Button>
+        ) : (
+          <Button type="button" variant="line" size="sm" loading={creatingNextVersion} onClick={onCreateNextVersion}>
+            <FileText className="h-3.5 w-3.5" /> Create quote v{revision + 1}
+          </Button>
+        )}
+      </CanDo>
+    </div>
+  );
+}
+
+function QuoteRailDriftIndicator({
+  projectId,
+  orgId,
+  revision,
+  liveQuote,
+  quotes,
+  onSeeWhatChanged,
+}: {
+  projectId: string;
+  orgId: string | undefined;
+  revision: number;
+  liveQuote: { id: string; snapshotId?: string | null; version: number } | null | undefined;
+  quotes: QuoteRevisionDoc[];
+  onSeeWhatChanged: (quote: QuoteRevisionDoc) => void;
+}) {
+  if (!orgId) return null;
+  return (
+    <QuoteDriftIndicator
+      projectId={projectId}
+      orgId={orgId}
+      snapshotId={liveQuote?.snapshotId ?? null}
+      version={liveQuote?.version ?? revision}
+      onSeeWhatChanged={() => {
+        const q = quotes.find((qt) => qt.id === liveQuote?.id);
+        if (q) onSeeWhatChanged(q);
+      }}
+    />
+  );
+}
+
+function QuoteRevisionList({
+  quotes,
+  visibleQuotes,
+  hiddenCount,
+  showAll,
+  onShowAll,
+  revision,
+  projectId,
+  now,
+  onAccept,
+  onDecline,
+  onRecall,
+  onView,
+}: {
+  quotes: QuoteRevisionDoc[];
+  visibleQuotes: QuoteRevisionDoc[];
+  hiddenCount: number;
+  showAll: boolean;
+  onShowAll: () => void;
+  revision: number;
+  projectId: string;
+  now: number;
+  onAccept: (quote: QuoteRevisionDoc) => void;
+  onDecline: (quote: QuoteRevisionDoc) => void;
+  onRecall: (quote: QuoteRevisionDoc) => void;
+  onView: (quote: QuoteRevisionDoc) => void;
+}) {
+  if (quotes.length === 0) {
+    return <p className="t-micro text-fg-4">No quote yet — sending creates v{revision}.</p>;
+  }
+  return (
+    <>
+      <ul className="space-y-1.5">
+        {visibleQuotes.map((quote) => (
+          <QuoteRevisionRow
+            key={quote.id}
+            quote={quote}
+            projectId={projectId}
+            onAccept={() => onAccept(quote)}
+            onDecline={() => onDecline(quote)}
+            onRecall={() => onRecall(quote)}
+            onView={() => onView(quote)}
+            now={now}
+          />
+        ))}
+      </ul>
+      {hiddenCount > 0 && !showAll && (
+        <button
+          type="button"
+          className="flex items-center gap-1.5 t-micro text-fg-4 underline underline-offset-2"
+          onClick={onShowAll}
+        >
+          <History className="h-3 w-3" /> Show {hiddenCount} earlier revision{hiddenCount === 1 ? "" : "s"}
+        </button>
+      )}
+    </>
+  );
+}
+
+function UnacceptedLiveQuoteNotice({
+  liveQuote,
+  hasAcceptedQuote,
+}: {
+  liveQuote: { id: string } | null | undefined;
+  hasAcceptedQuote: boolean;
+}) {
+  if (!liveQuote || hasAcceptedQuote) return null;
+  return (
+    <p className="t-micro text-warn">
+      This project can&rsquo;t be confirmed until a quote revision is marked accepted (admins and the
+      project&rsquo;s PMs can override with a reason).
+    </p>
+  );
+}
+
+/** The three revision-scoped dialogs (accept / viewer / reprice) — each keyed
+ *  off its own "target" state, so only one mounts at a time. */
+function QuoteRailTargetDialogs({
+  projectId,
+  orgId,
+  revision,
+  hasOpenDraft,
+  quotes,
+  acceptTarget,
+  onCloseAccept,
+  viewerTarget,
+  onCloseViewer,
+  onReprice,
+  repriceTarget,
+  onCloseReprice,
+}: {
+  projectId: string;
+  orgId: string | undefined;
+  revision: number;
+  hasOpenDraft: boolean;
+  quotes: QuoteRevisionDoc[];
+  acceptTarget: QuoteRevisionDoc | null;
+  onCloseAccept: () => void;
+  viewerTarget: QuoteRevisionDoc | null;
+  onCloseViewer: () => void;
+  onReprice: () => void;
+  repriceTarget: QuoteRevisionDoc | null;
+  onCloseReprice: () => void;
+}) {
+  const previousQuote = viewerTarget
+    ? (quotes.find((q) => q.version === viewerTarget.version - 1) ?? null)
+    : null;
+
+  return (
+    <>
       {acceptTarget && (
         <AcceptQuoteDialog
           open={!!acceptTarget}
-          onOpenChange={(open) => !open && setAcceptTarget(null)}
+          onOpenChange={(open) => !open && onCloseAccept()}
           quoteId={acceptTarget.id}
           version={acceptTarget.version}
         />
@@ -214,24 +365,21 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
       {viewerTarget && orgId && (
         <QuoteRevisionViewerDialog
           open={!!viewerTarget}
-          onOpenChange={(open) => !open && setViewerTarget(null)}
+          onOpenChange={(open) => !open && onCloseViewer()}
           projectId={projectId}
           orgId={orgId}
           quote={viewerTarget}
-          previousQuote={findPrevious(viewerTarget.version)}
+          previousQuote={previousQuote}
           canReprice={!hasOpenDraft}
           nextVersion={revision + 1}
-          onReprice={() => {
-            setRepriceTarget(viewerTarget);
-            setViewerTarget(null);
-          }}
+          onReprice={onReprice}
         />
       )}
 
       {repriceTarget && orgId && repriceTarget.snapshotId && (
         <RepriceFromRevisionDialog
           open={!!repriceTarget}
-          onOpenChange={(open) => !open && setRepriceTarget(null)}
+          onOpenChange={(open) => !open && onCloseReprice()}
           projectId={projectId}
           orgId={orgId}
           sourceQuoteId={repriceTarget.id}
@@ -240,7 +388,7 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
           nextVersion={revision + 1}
         />
       )}
-    </div>
+    </>
   );
 }
 

@@ -230,15 +230,23 @@ without a separate clear control.
 
 ### Client contact mapping
 
-Client detail page (Xero-linked only) — search Xero contacts by name, or
-push an unmapped client's invoice and the push flow auto-creates the
-contact. **Duplicate protection:** auto-create first tries an exact-email
-match against Xero (`findXeroContactByEmail`) and LINKS instead of creating
-when found — verified by `src/server/xero.test.ts`'s mocked-boundary tests.
-`convex/clientXeroWrites.ts` is deliberately separate from the general
-`clientWrites.ts` browser-direct mutations — `xeroContactId`/`xeroContactName`
-can only change through a real Xero search/create/link round trip, never a
-plain client-form save.
+Lives on **Settings → Xero → "Client mapping"** (`src/components/settings/xero-client-mapping.tsx`),
+not the client detail page — moved there so mapping doesn't require opening
+each client individually: one searchable box (`useClientSearch`, the
+indexed `api.search.clients` query, not a whole-org JS filter) lists every
+client with its current mapping status, and expanding a row reveals the
+actual search/link/unlink UI. That per-client UI itself is unchanged —
+`XeroContactCard` (`src/components/clients/xero-contact-card.tsx`) is reused
+as-is, just embedded per-row instead of standalone on the client page, so
+there's one definition of "how to map a client," not two. Search Xero
+contacts by name, or push an unmapped client's invoice and the push flow
+auto-creates the contact. **Duplicate protection:** auto-create first tries
+an exact-email match against Xero (`findXeroContactByEmail`) and LINKS
+instead of creating when found — verified by `src/server/xero.test.ts`'s
+mocked-boundary tests. `convex/clientXeroWrites.ts` is deliberately separate
+from the general `clientWrites.ts` browser-direct mutations —
+`xeroContactId`/`xeroContactName` can only change through a real Xero
+search/create/link round trip, never a plain client-form save.
 
 ### Reference data cache
 
@@ -272,6 +280,9 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | `src/lib/invoices-read.ts` | Service-token read — latest issued invoice number (PDF `invoice_number` token) |
 | `src/hooks/use-xero-linked.ts` | Client-side linked gate |
 | `src/app/api/integrations/xero/callback/route.ts` | Public OAuth callback route |
+| `src/components/settings/xero-client-mapping.tsx` | Searchable client list + per-row `XeroContactCard` (Settings → Xero) |
+| `src/components/clients/xero-contact-card.tsx` | The actual per-client search/link/unlink UI, embedded by the above |
+| `src/components/ui/combobox-picker.tsx` | Searchable, scrollable account/tax-type pickers on Settings → Xero |
 
 ## Testing
 

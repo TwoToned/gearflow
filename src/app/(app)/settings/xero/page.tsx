@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { XeroClientMapping } from "@/components/settings/xero-client-mapping";
 import { RequirePermission } from "@/components/auth/require-permission";
 
 interface XeroAccount {
@@ -247,6 +248,14 @@ export default function XeroSettingsPage() {
               </RequirePermission>
             </SettingsCard>
           </FormSection>
+
+          <RequirePermission resource="invoice" action="xero_manage">
+            <FormSection title="Client mapping" description="Map each client to a Xero contact. Search for a client, then search/link/unlink its Xero contact.">
+              <SettingsCard>
+                <XeroClientMapping />
+              </SettingsCard>
+            </FormSection>
+          </RequirePermission>
 
           <FormSection title="Invoice numbering" description="Configured on Settings -> General (same format engine as project numbers, namespaced separately). Default: INV-%YYYY-%SEQ, yearly reset, 4 digits.">
             <SettingsCard>

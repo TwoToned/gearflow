@@ -696,6 +696,26 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     }
   }
 
+  /**
+   * Try to split a block that doesn't fit on the current page instead of
+   * moving it whole. Returns whether it actually split (the caller falls
+   * back to startNewPage() when it didn't). Pulled out of the main loop
+   * body to keep computePages's own branch count down (R-3.6) — the
+   * table/richText special-casing lives here instead.
+   */
+  function trySplitAcrossPages(block: LayoutBlock): boolean {
+    if (block.kind === "table") {
+      splitTable(block);
+      return true;
+    }
+    if ((block.kind === "clientNotes" || block.kind === "termsAndConditions") && ctx.fonts) {
+      const text = block.kind === "clientNotes" ? data.client_notes || "" : data.quote_terms_and_conditions;
+      splitRichTextBlock(block, text, ctx.fonts);
+      return true;
+    }
+    return false;
+  }
+
   placeHeader();
 
   for (const block of bodyBlocks) {
@@ -705,15 +725,7 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     if (height <= 0) continue;
 
     if (currentY + height > maxY && currentPage.entries.length > 0) {
-      if (block.kind === "table") {
-        splitTable(block);
-        continue;
-      }
-      if ((block.kind === "clientNotes" || block.kind === "termsAndConditions") && ctx.fonts) {
-        const text = block.kind === "clientNotes" ? data.client_notes || "" : data.quote_terms_and_conditions;
-        splitRichTextBlock(block, text, ctx.fonts);
-        continue;
-      }
+      if (trySplitAcrossPages(block)) continue;
       startNewPage();
     }
 

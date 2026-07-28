@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for WooCommerceOrderLog (Convex table "wooCommerceOrderLogs"). GENERATED — Phase 2/5.
@@ -134,3 +135,23 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). DEVIATION FLAG: the triage brief
+ * offered "widen if no embedded credentials" for this file, but `payload`
+ * (v.any()) is the raw incoming WooCommerce webhook order body, which
+ * (src/lib/validations/woocommerce.ts's billing schema) includes the
+ * customer's first/last name, email, phone, and street address — real
+ * customer PII, not a credential, but squarely R-8.12 territory and NOT
+ * mentioned in the brief's "credentials" framing. Denying all three reads
+ * pending an explicit redacted-projection design (flagging for a second look
+ * rather than guessing this is fine).
+ */
+const wooCommerceOrderLogsDenyReason =
+  "The raw `payload` field stores the full WooCommerce webhook order body, which includes customer billing PII (name/email/phone/address) per src/lib/validations/woocommerce.ts — not a credential, but real customer PII with no redacted projection available (R-8.12).";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: wooCommerceOrderLogsDenyReason },
+  getById: { agentAccess: "denied", reason: wooCommerceOrderLogsDenyReason },
+  findCompletedByOrder: { agentAccess: "denied", reason: wooCommerceOrderLogsDenyReason },
+};

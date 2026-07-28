@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectNumberSequence (Convex table "projectNumberSequences"). GENERATED — Phase 2/5.
@@ -115,3 +116,11 @@ export const reserveNextNumber = mutation({
     return await reserveProjectNumberCounter(ctx, organizationId, scopeKey, newId, now);
   },
 });
+
+const projectNumberSequencesDenyReason =
+  "Internal sequence-counter bookkeeping, not a meaningful read for an agent.";
+
+export const agentOps: AgentOpsAnnotations = {
+  getById: { agentAccess: "denied", reason: projectNumberSequencesDenyReason },
+  getByOrgAndScopeKey: { agentAccess: "denied", reason: projectNumberSequencesDenyReason },
+};

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * PendingSSOApproval — Convex-native domain (Phase-1 decommission; the Postgres
@@ -117,3 +118,11 @@ export const revertToPending = mutation({
     });
   },
 });
+
+const pendingSSOApprovalsDenyReason =
+  "Site-admin SSO approval queue; platform-operator surface, not an org-scoped agent concern.";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: pendingSSOApprovalsDenyReason },
+  getByOrgUser: { agentAccess: "denied", reason: pendingSSOApprovalsDenyReason },
+};

@@ -11,6 +11,7 @@ import {
   type SearchTerms,
 } from "./lib/searchScore";
 import { getPrimaryContact, type ClientContactLike } from "./lib/clientContactCore";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native global search — the LIVE-Convex replacement for the frozen-Postgres
@@ -728,3 +729,22 @@ export const search = query({
     return { results: sorted };
   },
 });
+
+/**
+ * Agent-op annotation (Phase 5, #1001). Left on bare `requireOrgRead` (still
+ * fail-closed for agents — AGENT_READ_NOT_MIGRATED) deliberately: `search`
+ * blends 14 entity types (models/kits/assets/bulk/projects/clients/suppliers/
+ * locations/categories/maintenance/crew/checkItems/groupTemplates/subHires),
+ * each its own RBAC domain. No single `Resource` scope is a correct fit — an
+ * agent key scoped to only `asset:read` has no business also searching
+ * clients/crew/subHire through the same call. Denying pending a per-result-
+ * type scope design (out of scope for a guard swap); `convex/search.ts`'s
+ * per-entity queries (models/kits/clients/suppliers) already cover the
+ * common single-type picker use case and ARE widened.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  search: {
+    agentAccess: "denied",
+    reason: "Cross-resource search spans multiple RBAC domains; needs per-result-type scope design, not a single blanket resource.",
+  },
+};

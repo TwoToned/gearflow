@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * ApiKey (agent-accessible API/MCP access keys) — Convex-native domain (Phase-1
@@ -108,3 +109,11 @@ export const touchLastUsed = mutation({
     if (doc) await ctx.db.patch(doc._id, { lastUsedAt: Date.now() });
   },
 });
+
+const apiKeysDenyReason =
+  "The API key management surface itself must not be self-servable by an API key (privilege escalation risk).";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: apiKeysDenyReason },
+  getByTokenHash: { agentAccess: "denied", reason: apiKeysDenyReason },
+};

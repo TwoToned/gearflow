@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
@@ -223,3 +224,10 @@ export const reorderSupplierOrderItemsNative = mutation({
     return { ok: true };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  addSupplierOrderItemNative: { danger: "medium" },
+  removeSupplierOrderItemNative: { danger: "high" },
+  reorderSupplierOrderItemsNative: { danger: "low" },
+  updateSupplierOrderItemNative: { danger: "medium" },
+};

@@ -4,6 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 
 /**
@@ -140,3 +141,9 @@ export const removeNative = mutation({
     return { id: a.id };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  removeNative: { danger: "high" },
+  updateNative: { danger: "medium" },
+};

@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
@@ -351,3 +352,16 @@ async function deleteFileById(ctx: MutationCtx, fileId: string, orgId: string): 
   }
   await ctx.db.delete(file._id);
 }
+
+export const agentOps: AgentOpsAnnotations = {
+  // Attaching an invoice is recoverable (removeInvoiceNative / re-attach) — not a
+  // financial issue/void action.
+  attachInvoiceNative: { danger: "medium" },
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  removeInvoiceNative: { danger: "medium" },
+  // RECEIVED/CANCELLED are terminal (VALID_TRANSITIONS has no way out), and RECEIVED
+  // is a real-world stock-received event — same lock-lifecycle-sensitive shape as
+  // projectWrites.updateStatusNative / subHiresWrites.updateSubHireStatusNative.
+  updateNative: { danger: "high" },
+};

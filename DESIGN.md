@@ -258,11 +258,17 @@ Registry `StatusIndicator` (when deployed) offers `dot` / `glow` / `inline` vari
 - **Never:** Plain colored rectangles, badges without semantic mapping
 
 ### Tables
-- **Headers:** `t-overline` (10px/700/uppercase), `fg-3`, no background
+- **Headers:** `t-overline` (11px/600, **sentence case**), `muted`, no background
 - **Rows:** 1px `border-top` separator, 10–12px cell padding
 - **Hover:** Left-edge 2px red bar (opacity 0→1) + subtle `bg-elevated` tint
-- **IDs/tags:** `t-mono` (JetBrains Mono), `fg-3`
+- **IDs/tags:** `t-mono` (Geist Mono), `muted`
 - **Values:** Right-aligned, `tabular-nums`, 500 weight
+
+> _Corrected 2026-07-28 (#985 design review): this section previously read
+> "`t-overline` (10px/700/uppercase)" and "`t-mono` (JetBrains Mono)" — both stale.
+> 10px breaks the absolute 11px floor, uppercase is banned by §5.2, and the mono stack
+> is Geist Mono (see Type Stack). The Type Scale and §5.2 are authoritative; this
+> section now matches them._
 
 ### Forms
 - **Layout:** Flat sections separated by `border-top`. No card wrapping per section.

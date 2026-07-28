@@ -12,7 +12,10 @@ after you've already tried something.
 **Supersedes/extends:** WS1 (#940, FEATUREDOCS/66) shipped the finance *entities*;
 #957/#791/#792/#793 (FEATUREDOCS/62) shipped the lock *enforcement*. This doc is the
 workflow and UX layer neither of them built.
-**Tracking:** [#985](https://github.com/TwoToned/gearflow/issues/985) (sub-issues #986–#990).
+**Tracking:** [#985](https://github.com/TwoToned/gearflow/issues/985) (sub-issues #986–#990, #992).
+**UI/UX spec:** [`finance-workflow-ux.md`](./finance-workflow-ux.md) — authoritative for
+anything visual (layout, states, copy, tokens, the action matrix). Reviewed via
+`/plan-design-review` 2026-07-28.
 **Owning docs to update:** [FEATUREDOCS/66](../../FEATUREDOCS/66-finance-quotes-invoices-xero.md),
 [FEATUREDOCS/62](../../FEATUREDOCS/62-project-lifecycle-locks.md),
 [FEATUREDOCS/13](../../FEATUREDOCS/13-pdfs.md),
@@ -367,20 +370,22 @@ existing `financials` tab is retired, not duplicated. Templates keep hiding it, 
 │  Totals:  Subtotal · Discount · GST · Total · Margin                   │
 │           Deposit invoiced · Invoiced to date · Outstanding            │
 ├────────────────────────────────────────────────────────────────────────┤
-│  QUOTES                                          [ Send quote v3 ▸ ]   │
+│  Quote                                         [ Create quote v3 ▸ ]   │
 │   ○ v3  Draft      —            $18,400   [Preview draft]              │
-│   ● v2  Sent       26 Jul 26    $18,120   [PDF] [Diff v1→v2] [Accept]  │
-│   ○ v1  Superseded 19 Jul 26    $16,900   [PDF] [Diff]                 │
+│   ● v2  Sent       26 Jul 26    $18,120   [Mark accepted]          ⋯   │
+│   ○ v1  Superseded 19 Jul 26    $16,900   [PDF]                    ⋯   │
 ├────────────────────────────────────────────────────────────────────────┤
-│  INVOICES                              [ Deposit ] [ Balance ] [ Full ]│
+│  Invoices                                        [ New invoice ▾ ]     │
 │   ● INV-2026-0043  Deposit  Issued  25 Jul  $4,530  [PDF] [Xero ✓]     │
 │   ○ (draft)        Balance  —               $13,590 [Issue] [Delete]   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 Each revision row: version, state chip (`status-colors.ts` intents — never hardcoded per
-DESIGN.md §3), quote date, valid-until (amber when within 3 days, red when expired), total,
-who sent it, and its actions. There is no quote document number (decision 5) — the row reads
+DESIGN.md §3), quote date, valid-until, total, who sent it, and **one** primary action.
+Full visual spec, state→intent mapping, validity thresholds and the state × role × tier action
+matrix live in [`finance-workflow-ux.md`](./finance-workflow-ux.md) — that doc is authoritative
+for anything visual, so the constants aren't duplicated here (R-3.1). There is no quote document number (decision 5) — the row reads
 `v2` and the PDF header reads `Quote — RVLT-2026-0087 v2`. Clicking a row opens the read-only
 "as of v N" view — which is `project-versions-panel.tsx`'s existing snapshot summary +
 `project-snapshot-diff.ts`'s existing diff, now reachable from the workflow instead of a ⋯

@@ -250,9 +250,11 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
  * `customLineItemSchema`'s DIFFERENT bounds (description min 1/max 200, notes max 500)
  * are enforced separately in `addCustomNative` — the two schemas diverge here.
  */
-function assertLineItemFields(f: { description?: string | null; subhireOrderNumber?: string | null }): void {
+function assertLineItemFields(f: { description?: string | null; subhireOrderNumber?: string | null; xeroAccountCode?: string | null; xeroTaxType?: string | null }): void {
   assertStrLen(f.description, "description", { max: 500 });
   assertStrLen(f.subhireOrderNumber, "subhireOrderNumber", { max: 100 });
+  assertStrLen(f.xeroAccountCode, "xeroAccountCode", { max: 50 });
+  assertStrLen(f.xeroTaxType, "xeroTaxType", { max: 50 });
 }
 
 /** Bound `accessoryPlan.excluded`/`.added` (R-8.6.2) — a browser-direct caller
@@ -610,7 +612,7 @@ export const patchNative = mutation({
     assertLineMoneyFields(setObj as {
       quantity?: number; unitPrice?: number; discount?: number; duration?: number; lineTotal?: number;
     });
-    assertLineItemFields(setObj as { description?: string; subhireOrderNumber?: string }); // R-8.6.2
+    assertLineItemFields(setObj as { description?: string; subhireOrderNumber?: string; xeroAccountCode?: string; xeroTaxType?: string }); // R-8.6.2
 
     // lineTotal is a DERIVED value — assertLineMoneyFields only bounds it, it never
     // verifies it matches unitPrice×quantity×duration−discount. The legit client

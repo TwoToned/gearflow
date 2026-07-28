@@ -198,3 +198,83 @@ describe("dispatch — request logging happens on every path", () => {
     expect(logApiRequest).toHaveBeenCalledWith(expect.objectContaining({ status: "error", errorCode: "UNKNOWN_OPERATION" }));
   });
 });
+
+describe("dispatch — confirmation gate (Phase 4, #1000)", () => {
+  // assetWrites.deleteNative is classified `danger: "high"` (delete/archive) in
+  // its module's agentOps export.
+  test("a high-danger write without confirm:true is CONFIRMATION_REQUIRED, and Convex is never called", async () => {
+    const result = await dispatch(
+      "assetWrites.deleteNative",
+      { args: { id: "a1", orgId: "org_A" }, idempotencyKey: "idem-key-12345" },
+      auth(),
+      "req_12",
+    );
+    expect(result.status).toBe(409);
+    const body = result.body as unknown as { error: { code: string; details: { danger: string; summary: string } } };
+    expect(body.error.code).toBe("CONFIRMATION_REQUIRED");
+    expect(body.error.details.danger).toBe("high");
+    expect(body.error.details.summary).toMatch(/confirm: true/);
+    expect(mockClient.mutation).not.toHaveBeenCalled();
+    expect(idempotencyClient.mutation).not.toHaveBeenCalled();
+  });
+
+  test("the identical call WITH confirm:true proceeds", async () => {
+    idempotencyClient.mutation.mockResolvedValueOnce({ status: "CLAIMED" }).mockResolvedValueOnce(null);
+    mockClient.mutation.mockResolvedValueOnce({ id: "a1" });
+
+    const result = await dispatch(
+      "assetWrites.deleteNative",
+      { args: { id: "a1", orgId: "org_A" }, idempotencyKey: "idem-key-12345", confirm: true },
+      auth(),
+      "req_13",
+    );
+    expect(result.status).toBe(201);
+    expect(mockClient.mutation).toHaveBeenCalledTimes(1);
+  });
+
+  test("a medium-danger write (assetWrites.updateNative) needs no confirm at all", async () => {
+    idempotencyClient.mutation.mockResolvedValueOnce({ status: "CLAIMED" }).mockResolvedValueOnce(null);
+    mockClient.mutation.mockResolvedValueOnce({ id: "a1" });
+
+    const result = await dispatch(
+      "assetWrites.updateNative",
+      { args: { id: "a1", orgId: "org_A", set: {} }, idempotencyKey: "idem-key-12345" },
+      auth(),
+      "req_14",
+    );
+    expect(result.status).toBe(201);
+  });
+
+  // lineItemWrites.patchNative is classified `medium`, but `justification` itself
+  // carries `danger: "high"` in the privileged-arg policy table — supplying one
+  // escalates THIS call to confirm-required without reclassifying the operation.
+  test("a medium-danger op escalates to confirm-required when it supplies a privileged arg whose OWN policy danger is high", async () => {
+    const result = await dispatch(
+      "lineItemWrites.patchNative",
+      {
+        args: { id: "li1", orgId: "org_A", set: {}, clear: [], justification: "Client asked for a change on site." },
+        idempotencyKey: "idem-key-12345",
+      },
+      auth(),
+      "req_15",
+    );
+    expect(result.status).toBe(409);
+    const body = result.body as unknown as { error: { code: string; details: { summary: string } } };
+    expect(body.error.code).toBe("CONFIRMATION_REQUIRED");
+    expect(body.error.details.summary).toMatch(/justification/);
+    expect(mockClient.mutation).not.toHaveBeenCalled();
+  });
+
+  test("the same op with an EMPTY justification does not escalate (nothing is actually being invoked)", async () => {
+    idempotencyClient.mutation.mockResolvedValueOnce({ status: "CLAIMED" }).mockResolvedValueOnce(null);
+    mockClient.mutation.mockResolvedValueOnce({ id: "li1" });
+
+    const result = await dispatch(
+      "lineItemWrites.patchNative",
+      { args: { id: "li1", orgId: "org_A", set: {}, clear: [], justification: "" }, idempotencyKey: "idem-key-12345" },
+      auth(),
+      "req_16",
+    );
+    expect(result.status).toBe(201);
+  });
+});

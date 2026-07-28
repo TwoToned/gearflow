@@ -10,6 +10,7 @@
 
 import type * as activityLog from "../activityLog.js";
 import type * as activityLogWrites from "../activityLogWrites.js";
+import type * as agentRevert from "../agentRevert.js";
 import type * as apiIdempotency from "../apiIdempotency.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as apiRequestLog from "../apiRequestLog.js";
@@ -275,6 +276,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   activityLog: typeof activityLog;
   activityLogWrites: typeof activityLogWrites;
+  agentRevert: typeof agentRevert;
   apiIdempotency: typeof apiIdempotency;
   apiKeys: typeof apiKeys;
   apiRequestLog: typeof apiRequestLog;

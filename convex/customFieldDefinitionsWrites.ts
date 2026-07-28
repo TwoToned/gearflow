@@ -4,6 +4,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import * as enums from "./lib/validators";
 
 /**
@@ -249,3 +250,16 @@ export const removeNative = mutation({
     return { ok: true };
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * removeNative stays `medium` rather than the categorical delete=high: the handler
+ * explicitly leaves values already stored in each entity's customFieldValues JSON
+ * as-is (orphaned keys are harmless — the form just stops rendering them), so this
+ * delete is not destructive to existing row data, only to the schema definition.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  removeNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+};

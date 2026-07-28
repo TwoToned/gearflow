@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import { getAuthContext, isMemberAuth, requireSelfScope } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Browser-direct USER-scoped notification-dismissal read + writes (Phase 3 —
@@ -148,3 +149,12 @@ export const pruneStaleNative = mutation({
     return { removed };
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * Personal-scope (self:write) UI preference bookkeeping — no domain effect.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  dismissManyNative: { danger: "low" },
+  pruneStaleNative: { danger: "low" },
+};

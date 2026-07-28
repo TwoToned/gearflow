@@ -5,6 +5,7 @@ import { getAuthContext, isMemberAuth, requireSelfScope, resolveActor, type Acto
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native SAVED-TABLE-VIEW write mutations (Phase 3 browser-direct — replaces the
@@ -255,3 +256,15 @@ export const setDefaultNative = mutation({
     return { ok: true };
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * All personal-scope (self:write) — a user's own saved views, trivially recreated
+ * or reversed by the owner.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "low" },
+  removeNative: { danger: "low" },
+  setDefaultNative: { danger: "low" },
+  updateNative: { danger: "low" },
+};

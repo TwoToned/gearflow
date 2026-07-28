@@ -5,6 +5,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { assertStrLen } from "./lib/fieldGuards";
@@ -172,3 +173,14 @@ export const removeNative = mutation({
     return { id: a.id };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+  // Notes-only patch — cosmetic, trivially reversible.
+  updateNotesNative: { danger: "low" },
+  // Delete = high (§9): irreversible from the API's point of view, even though
+  // guarded against locations with children/assets attached.
+  removeNative: { danger: "high" },
+};

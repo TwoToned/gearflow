@@ -7,6 +7,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { createKitLineItemCore } from "./projectLineItems";
 import { findKitConflict } from "./lib/availabilityCore";
 import { recalcProjectTotals } from "./lib/recalc";
@@ -606,3 +607,15 @@ export const applyNative = mutation({
     return { groupId: a.groupId, kitWarnings };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  saveGroupAsTemplateNative: { danger: "medium" },
+  updateTemplateNative: { danger: "medium" },
+  // Delete = high (§9), same categorical rule as every other module.
+  deleteTemplateNative: { danger: "high" },
+  // Books real kit/model line items + recalcs project totals, same effect class as
+  // addKitNative/addLineItemSmartNative in lineItemWrites.ts — an ordinary, recoverable
+  // create, not a stock-affecting or irreversible action.
+  applyNative: { danger: "medium" },
+};

@@ -3,6 +3,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertEmitSideEffectsAgentTrue } from "./lib/agentArgs";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
 import { renderProjectNumber, scopeKeyFor } from "./lib/projectNumber";
 import { recalcProjectTotals } from "./lib/recalc";
@@ -135,6 +137,7 @@ export const updateStatusNative = mutation({
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
+    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
     const actor = await resolveActor(ctx, suppliedActor);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1467,3 +1470,19 @@ export const saveAsTemplateNative = mutation({
     return { id: newId };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  archiveNative: { danger: "high" },
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  deleteTemplateNative: { danger: "high" },
+  duplicateNative: { danger: "medium" },
+  saveAsTemplateNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+  updateNotesNative: { danger: "low" },
+  // Status transitions gate the project lifecycle tiers (JUSTIFY/FINANCE_LOCKED/
+  // HARD_LOCKED) and can revert OUT of HARD_LOCKED via `justification` — the
+  // single most lock-sensitive write in this module.
+  updateStatusNative: { danger: "high" },
+};

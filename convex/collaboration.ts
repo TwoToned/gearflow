@@ -6,6 +6,7 @@ import { requireOrgRead, requireOrgPermission, requireService, resolveActor } fr
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getUserColor } from "./lib/collaborationColors";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Convex collaboration substrate — comment threads, review markers, and
@@ -674,3 +675,16 @@ export const listOpenBlockingThreads = query({
     return out;
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  addComment: { danger: "low" },
+  createThread: { danger: "low" },
+  reopenThread: { danger: "low" },
+  resolveThread: { danger: "low" },
+  // A lightweight annotation flag — no RBAC beyond project:read, trivially reversible.
+  setReviewMarker: { danger: "low" },
+  // Toggling this gates whether OTHER writes (prep/send-out) are blocked project-
+  // wide — real but recoverable, so medium rather than low.
+  setThreadBlocking: { danger: "medium" },
+};

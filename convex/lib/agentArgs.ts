@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import { getAuthContext, requireAgentScope } from "./auth";
 
@@ -42,4 +43,67 @@ export async function assertOverbookAllowed(
   const auth = await getAuthContext(ctx);
   if (auth?.kind !== "agent") return;
   await requireAgentScope(ctx, auth, OVERBOOK_SCOPE.resource, OVERBOOK_SCOPE.action);
+}
+
+/**
+ * Throw if an AGENT caller sent `emitSideEffects: false`.
+ *
+ * The dispatcher already forces this arg to `true` before the Convex call
+ * (`src/lib/api/arg-normalizer.ts`), so this only fires for a token used to call
+ * Convex directly, bypassing the dispatcher — the same "force in Node AND assert
+ * in Convex" redundancy as {@link assertOverbookAllowed}. No-op for browser/service
+ * callers: a human turning webhooks off for one write (rare, deliberate) is
+ * existing, intended behaviour.
+ */
+export async function assertEmitSideEffectsAgentTrue(
+  ctx: QueryCtx | MutationCtx,
+  emitSideEffects: boolean | undefined,
+): Promise<void> {
+  if (emitSideEffects !== false) return;
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind !== "agent") return;
+  throw new ConvexError({
+    code: "FORBIDDEN",
+    message: "An API key may not suppress side effects (emitSideEffects must be true).",
+  });
+}
+
+/** The extra scope a key must hold to open a project unlock session at all — the
+ *  one true HARD_LOCKED / FINANCE_LOCKED escape hatch. Granted in no preset. */
+export const UNLOCK_SESSION_SCOPE = { resource: "project", action: "unlock_session" } as const;
+
+/**
+ * Throw unless the caller may open a project unlock session.
+ *
+ * Unlike {@link assertOverbookAllowed}, this is unconditional for agents — opening
+ * ANY unlock session (`FULL` or `PARTIAL` scope) is the one true lock override, so
+ * an agent token needs the explicit scope regardless of which scope it's opening.
+ * No-op for browser/service callers, who are still gated by
+ * `isHardLockOverrideAllowed`'s ordinary RBAC/assignment check.
+ */
+export async function assertUnlockSessionAllowed(
+  ctx: QueryCtx | MutationCtx,
+): Promise<void> {
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind !== "agent") return;
+  await requireAgentScope(ctx, auth, UNLOCK_SESSION_SCOPE.resource, UNLOCK_SESSION_SCOPE.action);
+}
+
+/** The extra scope a key must hold to run `agentRevert.revertAgentWindow` on
+ *  itself. Granted in no preset — this is an OPERATOR safety-net tool for a
+ *  human to clean up after a bad agent run, not something an agent should ever
+ *  be able to invoke on its own writes. */
+export const REVERT_AGENT_WINDOW_SCOPE = { resource: "warehouse", action: "revert_agent_window" } as const;
+
+/**
+ * Throw unless the caller may run `revertAgentWindow`. Unconditional for
+ * agents, same posture as {@link assertUnlockSessionAllowed} — there is no
+ * legitimate agent use case for this mutation, only a human operator's.
+ */
+export async function assertRevertAgentWindowAllowed(
+  ctx: QueryCtx | MutationCtx,
+): Promise<void> {
+  const auth = await getAuthContext(ctx);
+  if (auth?.kind !== "agent") return;
+  await requireAgentScope(ctx, auth, REVERT_AGENT_WINDOW_SCOPE.resource, REVERT_AGENT_WINDOW_SCOPE.action);
 }

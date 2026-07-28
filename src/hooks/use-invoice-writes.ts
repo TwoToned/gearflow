@@ -4,7 +4,12 @@ import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
-import { invoiceSchema, type InvoiceFormValues } from "@/lib/validations/invoice";
+import {
+  invoiceSchema,
+  invoiceIssueSchema,
+  type InvoiceFormValues,
+  type InvoiceIssueValues,
+} from "@/lib/validations/invoice";
 import { getInvoiceNumberConfig } from "@/server/settings";
 import { generateInvoiceArtifact } from "@/server/finance-documents";
 import { datePartsInTimezone } from "@/lib/project-number";
@@ -59,12 +64,18 @@ export function useInvoiceWrites() {
      * Same failure contract as sending a quote: a render failure leaves the
      * invoice issued with `artifactReady: false` and a retry in the finance
      * panel, never an unissued invoice or a silent gap.
+     *
+     * `data` carries the issue dialog's fields (#989) — invoiceDate defaults to
+     * today, dueDate defaults server-side to invoiceDate + the org's
+     * `paymentTermsDays` when omitted. This is what closes the "every invoice
+     * issued has no due date" bug: the panel used to call `issue(id)` bare.
      */
     issue: async (
       id: string,
-      dueDate?: Date,
+      data: InvoiceIssueValues = {},
     ): Promise<{ id: string; invoiceNumber: string; artifactReady: boolean }> => {
       const org = requireOrg();
+      const parsed = invoiceIssueSchema.parse(data);
       const config = await getInvoiceNumberConfig();
       const now = new Date();
       const result = await issueM({
@@ -76,7 +87,9 @@ export function useInvoiceWrites() {
           padding: config.padding,
           parts: datePartsInTimezone(now, config.timezone),
         },
-        dueDate: dueDate?.getTime(),
+        invoiceDate: (parsed.invoiceDate ?? now).getTime(),
+        dueDate: parsed.dueDate?.getTime(),
+        notes: parsed.notes || undefined,
         actor: actor(),
         auditId: createId(),
         now: now.getTime(),

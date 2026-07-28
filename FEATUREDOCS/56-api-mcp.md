@@ -279,10 +279,11 @@ client and `/api/v1/mcp` by wiring the SDK's `StdioServerTransport` directly to
 `StreamableHTTPClientTransport` (no re-implementation, no re-validation — a
 pipe, not a second server). Runs today via `pnpm exec tsx
 scripts/mcp-stdio-proxy.mts --url <url> --key <key>` for anyone with the repo
-checked out; publishing it as a standalone `npx`-able package is Phase 8
-(#1004). Until then, `npx mcp-remote <url> --header
-"Authorization:Bearer <key>"` (a maintained third-party proxy) is the
-zero-install equivalent.
+checked out; publishing it as a standalone package for zero-install use (never
+`npm`/`npx` — see the pnpm-only note above) is Phase 8 (#1004). Until then, a
+maintained third-party stdio↔HTTP MCP proxy (`pnpm dlx mcp-remote <url>
+--header "Authorization:Bearer <key>"`) is the zero-install equivalent for
+anyone without this repo checked out.
 
 **Write posture unchanged from REST.** Phase 3 added no new write capability —
 every curated write tool (`create_project`, `add_line_items`, `dispatch_gear`,

@@ -8,10 +8,11 @@
  *
  * Today this lives in-repo, run via `pnpm exec tsx scripts/mcp-stdio-proxy.mts`
  * (or `pnpm run mcp:stdio-proxy`) by anyone with the repo checked out.
- * Publishing it as a standalone `npx`-able package is Phase 8 (#1004,
- * "polish + external readiness") — until then, `npx mcp-remote <url> --header
- * "Authorization:Bearer <key>"` (a maintained third-party stdio↔HTTP MCP
- * proxy) is the zero-install equivalent for anyone without this repo.
+ * Publishing it as a standalone zero-install package (this repo is pnpm-only
+ * — never `npm`/`npx`) is Phase 8 (#1004, "polish + external readiness") —
+ * until then, `pnpm dlx mcp-remote <url> --header "Authorization:Bearer
+ * <key>"` (a maintained third-party stdio↔HTTP MCP proxy) is the
+ * zero-install equivalent for anyone without this repo.
  *
  * Usage:
  *   pnpm run mcp:stdio-proxy -- --url https://flow.rvlt.app/api/v1/mcp --key gf_live_...

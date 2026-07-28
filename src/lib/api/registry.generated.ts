@@ -599,6 +599,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "noFinancials",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
@@ -625,7 +630,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "631b70cd7437d487",
+    "argsSha": "b1623ad4916734ca",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
     "danger": null,
@@ -690,6 +695,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "noFinancials",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
@@ -716,7 +726,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "631b70cd7437d487",
+    "argsSha": "b1623ad4916734ca",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
     "danger": null,
@@ -800,6 +810,52 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "apiKeys.rotate",
+    "module": "apiKeys",
+    "fn": "rotate",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "prefix",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "previousTokenHashExpiresAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "tokenHash",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f978dbb828cc8bd1",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
     "danger": null,
@@ -57216,10 +57272,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1119,
+  total: 1120,
   agentReachable: 549,
   queries: 395,
-  mutations: 724,
+  mutations: 725,
   agentReachableQueries: 284,
   agentReachableMutations: 265,
 } as const;

@@ -322,6 +322,13 @@ export const PAGE_COMMANDS: PageCommand[] = [
         searchable: true,
         searchType: "group-template" as const,
       },
+      {
+        label: "API Keys",
+        href: "/settings/api-keys",
+        aliases: ["apikeys", "api", "mcp", "agent", "keys", "developer", "tokens"],
+        icon: "KeyRound",
+        description: "API and MCP access keys for AI agents and integrations",
+      },
     ],
   },
   {

@@ -19,6 +19,7 @@ type ConvexApiKey = {
   id: string; name: string; prefix: string; scopes?: string; isActive?: boolean;
   actingUserId: string; expiresAt?: number; lastUsedAt?: number;
   lastRotatedAt?: number; revokedAt?: number; createdAt?: number;
+  noFinancials?: boolean;
 };
 function toKeyRow(k: ConvexApiKey) {
   const d = (n: number | undefined | null) => (n != null ? new Date(n) : null);
@@ -27,6 +28,7 @@ function toKeyRow(k: ConvexApiKey) {
     scopes: k.scopes ?? "[]",
     isActive: k.isActive ?? true,
     actingUserId: k.actingUserId,
+    noFinancials: k.noFinancials ?? false,
     expiresAt: d(k.expiresAt),
     lastUsedAt: d(k.lastUsedAt),
     lastRotatedAt: d(k.lastRotatedAt),
@@ -53,6 +55,14 @@ export async function listApiKeys() {
   return serialize({ keys, apiKillSwitchAt });
 }
 
+/** `undefined` = no expiry. Throws on an unparseable/non-finite date. */
+function parseExpiresAt(expiresAt: Date | string | null | undefined): number | undefined {
+  if (!expiresAt) return undefined;
+  const ms = new Date(expiresAt).getTime();
+  if (!Number.isFinite(ms)) throw new Error("Invalid expiry date.");
+  return ms;
+}
+
 /**
  * Mint a new key. Returns the raw token ONCE — show it to the user immediately;
  * it can never be retrieved again. The key acts as `actingUserId` (defaults to the
@@ -64,6 +74,8 @@ export async function createApiKey(input: {
   scopes: string[];
   actingUserId?: string;
   expiresAt?: Date | string | null;
+  /** Decision 6 — force-redact cost/margin regardless of the acting user's role. */
+  noFinancials?: boolean;
 }) {
   const { organizationId, userId, userName } = await requirePermission(
     "orgSettings",
@@ -92,10 +104,8 @@ export async function createApiKey(input: {
 
   const id = createId();
   const now = Date.now();
-  const expiresAtMs = input.expiresAt ? new Date(input.expiresAt).getTime() : undefined;
-  if (expiresAtMs !== undefined && !Number.isFinite(expiresAtMs)) {
-    throw new Error("Invalid expiry date.");
-  }
+  const expiresAtMs = parseExpiresAt(input.expiresAt);
+  const noFinancials = input.noFinancials === true;
   await (await getConvexClient()).mutation(api.apiKeys.create, {
     id,
     organizationId,
@@ -108,10 +118,11 @@ export async function createApiKey(input: {
     createdById: userId,
     expiresAt: expiresAtMs,
     createdAt: now,
+    noFinancials,
   });
   const created = toKeyRow({
     id, name, prefix, scopes: JSON.stringify(scopes), isActive: true,
-    actingUserId, expiresAt: expiresAtMs, createdAt: now,
+    actingUserId, expiresAt: expiresAtMs, createdAt: now, noFinancials,
   });
 
   await logActivity({
@@ -123,7 +134,7 @@ export async function createApiKey(input: {
     entityId: created.id,
     entityName: name,
     summary: `Created API key "${name}"`,
-    metadata: { scopes, actingUserId },
+    metadata: { scopes, actingUserId, noFinancials },
   });
 
   // `token` is the only time the raw secret is ever exposed.
@@ -189,4 +200,72 @@ export async function setOrgApiKillSwitch(enabled: boolean) {
   });
 
   return serialize({ apiKillSwitchAt });
+}
+
+/**
+ * Rotate a key's secret with a grace window (design §14): the OLD secret keeps
+ * authenticating for `graceMinutes` (default 60, capped at 24h — same bounds as
+ * `rotateWebhookSecret`) so an in-flight agent/MCP client can roll over without
+ * a hard cutover. Returns the new raw token ONCE — same one-time-reveal
+ * contract as `createApiKey`.
+ */
+export async function rotateApiKey(id: string, graceMinutes?: number) {
+  const { organizationId, userId, userName } = await requirePermission(
+    "orgSettings",
+    "update",
+  );
+
+  const { raw, prefix, tokenHash } = generateApiKey();
+  const grace = Math.min(Math.max(graceMinutes ?? 60, 0), 24 * 60);
+
+  let rotated: { id: string; name: string; prefix: string };
+  try {
+    rotated = await (await getConvexClient()).mutation(api.apiKeys.rotate, {
+      id,
+      orgId: organizationId,
+      prefix,
+      tokenHash,
+      previousTokenHashExpiresAt: Date.now() + grace * 60_000,
+    });
+  } catch {
+    throw new Error("API key not found.");
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "update",
+    entityType: "apiKey",
+    entityId: id,
+    entityName: rotated.name,
+    summary: `Rotated API key "${rotated.name}"`,
+    metadata: { graceMinutes: grace },
+  });
+
+  // `token` is the only time the new raw secret is ever exposed.
+  return serialize({ token: raw, prefix: rotated.prefix, graceMinutes: grace });
+}
+
+/**
+ * The per-key request log a Settings page renders (design §11, "last ~200
+ * calls"). `apiRequestLog.recentForKey` is keyed by `apiKeyId` alone with no
+ * org check of its own (it's SERVICE-only, trusted-caller infrastructure) —
+ * so this wrapper MUST confirm the key belongs to the caller's org before
+ * querying it, or a guessed/leaked key id would leak another org's redacted
+ * request log (R-8.4.3).
+ */
+export async function getApiKeyRequestLog(apiKeyId: string, limit?: number) {
+  const { organizationId } = await requirePermission("orgSettings", "read");
+
+  const convex = await getConvexClient();
+  const orgKeys = await convex.query(api.apiKeys.list, { orgId: organizationId });
+  const owned = orgKeys.some((k: { id: string }) => k.id === apiKeyId);
+  if (!owned) throw new Error("API key not found.");
+
+  const entries = await convex.query(api.apiRequestLog.recentForKey, {
+    apiKeyId,
+    limit,
+  });
+  return serialize({ entries });
 }

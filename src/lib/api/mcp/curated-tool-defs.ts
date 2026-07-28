@@ -200,7 +200,8 @@ export const CURATED_TOOL_DEFS: readonly CuratedToolDef[] = [
     title: "Get project financials",
     operation: "projectCosts.operationalCosts",
     summary:
-      "Cost/margin breakdown for one project. A `no_financials` key flag will force-redact this regardless of role " +
-      "once Phase 6 ships the settings toggle — until then, visibility follows the acting user's role like everywhere else.",
+      "Cost/margin breakdown for one project. A key created with the `no_financials` flag set " +
+      "(/settings/api-keys) force-redacts this regardless of the acting user's role — otherwise " +
+      "visibility follows their role like everywhere else.",
   },
 ];

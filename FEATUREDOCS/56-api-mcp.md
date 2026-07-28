@@ -2,8 +2,8 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
-> **STATUS 2026-07-28 — reinstatement underway. Phases 0, 1, 2, 3 + 5 have
-> landed (#996, #997, #998, #999, #1001): there is now a real,
+> **STATUS 2026-07-28 — reinstatement underway. Phases 0, 1, 2, 3, 5 + 6
+> have landed (#996, #997, #998, #999, #1001, #1002): there is now a real,
 > curl-verifiable HTTP API — `POST /api/v1/ops/{operation}` (the universal
 > dispatcher), `GET /api/v1/operations{,/[operation]}`, `GET
 > /api/v1/whoami`, `GET /api/v1/openapi.json`, `GET /llms.txt`, a handful
@@ -19,12 +19,20 @@
 > agent-reachable operations went from 331 to 549 (284 queries + 265
 > mutations), and the resource-less `requireOrgRead`/`requireOrgReadDoc`
 > guard now has exactly ONE remaining call site in the whole app
-> (`globalSearch.search`, deliberately denied — see below). Phase 4
-> (#1000) is still open: agent write scopes stay unrestricted by any
-> preset (there are no presets yet; Phase 6) until the `danger`/`confirm`
-> pass lands — Phase 5 landed the `agentOps` annotation FORMAT
-> (`convex/lib/agentOps.ts`) that Phase 4's `danger` classification will
-> populate, but nothing enforces it yet.**
+> (`globalSearch.search`, deliberately denied — see below). Phase 5 also
+> landed the `agentOps` annotation FORMAT (`convex/lib/agentOps.ts`) that
+> Phase 4's `danger` classification will populate, but nothing enforces it
+> yet. **Phase 6 (#1002) has also landed** — `/settings/api-keys` (key
+> management, scope presets, rotation, the org kill switch, the per-key
+> request log, and a "Connect an AI Agent" one-screen MCP flow) — ahead of
+> Phase 4 in numeric order, at the tracking issue's request. This does
+> NOT mean writes are safe-by-default yet: presets only set a key's
+> *starting* scope list (an operator can still hand-pick anything via the
+> explicit picker, bounded only by `assertScopesWithinActor`), and agent
+> write scopes stay otherwise unrestricted until the `danger`/`confirm`
+> enforcement pass that makes a `high`-danger write require
+> `confirm: true` lands — still Phase 4 (#1000), not built. Next up:
+> Phase 4, safety rails.**
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:

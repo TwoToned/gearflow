@@ -20,6 +20,7 @@ import {
   Bookmark,
   SlidersHorizontal,
   Landmark,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -95,6 +96,14 @@ const settingsNav: SettingsNavSection[] = [
       // disconnecting Xero and editing coding defaults is a more sensitive
       // action than most org settings, restricted to owner/admin by default.
       { title: "Xero", href: "/settings/xero", icon: Landmark, permission: "invoice" },
+    ],
+  },
+  {
+    label: "Developer",
+    items: [
+      // Phase 6 (#1002) — API keys mint the bearer credentials the agent-
+      // accessible API + MCP server (FEATUREDOCS/56) authenticate with.
+      { title: "API Keys", href: "/settings/api-keys", icon: KeyRound, permission: "orgSettings" },
     ],
   },
 ];

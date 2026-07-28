@@ -31,10 +31,24 @@ export const getByTokenHash = query({
   args: { tokenHash: v.string() },
   handler: async (ctx, { tokenHash }) => {
     await requireService(ctx);
-    return await ctx.db
+    const current = await ctx.db
       .query("apiKeys")
       .withIndex("by_tokenHash", (q) => q.eq("tokenHash", tokenHash))
       .unique();
+    if (current) return current;
+    // Rotation grace window: the OLD secret keeps authenticating until
+    // previousTokenHashExpiresAt so a consumer can roll over without a hard
+    // cutover (mirrors webhooks.rotateSecret's previousSecret). A non-unique
+    // stale row (shouldn't happen — rotate() clears it on the next rotation)
+    // fails closed via `.unique()`'s own error rather than picking one.
+    const prior = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_previousTokenHash", (q) => q.eq("previousTokenHash", tokenHash))
+      .unique();
+    if (prior && prior.previousTokenHashExpiresAt && prior.previousTokenHashExpiresAt > Date.now()) {
+      return prior;
+    }
+    return null;
   },
 });
 
@@ -53,6 +67,7 @@ const writeArgs = {
   lastRotatedAt: v.optional(v.number()),
   revokedAt: v.optional(v.number()),
   createdAt: v.optional(v.number()),
+  noFinancials: v.optional(v.boolean()),
 };
 
 export const create = mutation({
@@ -97,6 +112,39 @@ export const revoke = mutation({
     if (!doc || doc.organizationId !== orgId) throw new ConvexError("apiKey not found: " + id);
     await ctx.db.patch(doc._id, { isActive: false, revokedAt: Date.now() });
     return { id: doc.id, name: doc.name };
+  },
+});
+
+/**
+ * Rotate a key's secret (org-guarded): the OLD tokenHash moves to
+ * `previousTokenHash` with a grace-window expiry (mirrors
+ * `webhooks.rotateSecret`); the NEW prefix/tokenHash become current
+ * immediately. A second rotation before the first grace window elapses
+ * simply overwrites `previousTokenHash` — the key generation before last
+ * stops working, which is the expected "one grace window" semantics.
+ */
+export const rotate = mutation({
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    prefix: v.string(),
+    tokenHash: v.string(),
+    previousTokenHashExpiresAt: v.number(),
+  },
+  handler: async (ctx, { id, orgId, prefix, tokenHash, previousTokenHashExpiresAt }) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("apiKeys").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    if (!doc || doc.organizationId !== orgId) throw new ConvexError("apiKey not found: " + id);
+    const dupHash = await ctx.db.query("apiKeys").withIndex("by_tokenHash", (q) => q.eq("tokenHash", tokenHash)).first();
+    if (dupHash) throw new ConvexError("apiKey tokenHash collision");
+    await ctx.db.patch(doc._id, {
+      prefix,
+      tokenHash,
+      previousTokenHash: doc.tokenHash,
+      previousTokenHashExpiresAt,
+      lastRotatedAt: Date.now(),
+    });
+    return { id: doc.id, name: doc.name, prefix };
   },
 });
 

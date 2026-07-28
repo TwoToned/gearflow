@@ -55,6 +55,7 @@ const segmentLabels: Record<string, string> = {
   displays: "Displays",
   woocommerce: "WooCommerce",
   xero: "Xero",
+  "api-keys": "API Keys",
 };
 
 function getPageTitle(pathname: string): string {

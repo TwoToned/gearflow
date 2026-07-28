@@ -306,6 +306,26 @@ taken at v2). It is server-owned — written only by `createNative` and
 `quotesWrites.newVersionNative`, and stripped from client patches the same way
 `PROJECT_MONEY_ANCHORS` are. See FEATUREDOCS/66.
 
+### ⚠️ A client-facing finance document is STORED BYTES — never a fresh render
+A sent quote / issued invoice PDF is rendered **once** (`src/server/finance-documents.ts`)
+and its Convex `_storage` id attached to the row (`quotes.pdfFileId` / `invoices.pdfFileId`,
+via `convex/financeArtifacts.ts`). Downloads stream those bytes
+(`/api/finance/{quote,invoice}/[id]/pdf`); there is deliberately **no regeneration
+fallback anywhere**, because a route that can regenerate is a route that can hand the
+client a different document under the same name (#987). Three rules follow:
+
+1. **Never add a live-render path for `type=quote`/`type=invoice`.** `/api/documents/[projectId]`
+   serves those only behind `preview=1`, which requires `invoice:read` and stamps a
+   DRAFT PREVIEW — NOT SENT watermark on every page. The header's Documents ▾ is
+   warehouse artifacts only; putting a finance doc back in it re-opens the rogue path.
+2. **Never overwrite or delete an artifact.** `attach*Artifact` returns `attached: false`
+   rather than replacing one, which is what makes the "generate" retry safe on a row whose
+   render failed. A recalled/superseded/voided row keeps its document — the client may be
+   holding that copy.
+3. **A finance render takes its dates from the row**, never `now`
+   (`buildDocumentData`'s `stampedDates`). Recomputing `quote_valid_until` at render time
+   is what used to silently extend how long a quote was valid every time it was re-opened.
+
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev
@@ -402,6 +422,13 @@ one and shipping leaves silent bugs in the others:
 1. **`gearflow-table.ts` rendering** — what gets drawn (bold, indented, etc.)
 2. **`document-composer.ts`'s `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
 3. **`document-composer.ts`'s `getFilteredParentItems`** — top-level status filter (miss this → items disappear from docket / return-sheet). `gearflow-table.ts`'s own top-level filter mirrors this and must stay in sync (documented cross-reference in both files).
+
+A new **`LayoutBlock` kind** (`draftWatermark` was the first, #987) is a smaller but
+equally silent audit: `estimateBlockHeight` must reserve its height (miss it → it draws
+over the block below, or the tail drops) and `buildEntryFields` must emit its schema
+(miss it → nothing renders). Both are exhaustive switches, so a missing arm fails the
+build — keep the union closed. A block that belongs on EVERY page is page furniture
+(`isPageFurniture`/`measurePageFurniture`), not a body block.
 
 **Synthetic rows (e.g. `isGroupRow: true`) are footguns.** Their hard-coded fields (`status: "CONFIRMED"`, etc.) silently fail any filter that compares against them. Every status/filter site must special-case the synthetic row type, or compute the field dynamically from children.
 

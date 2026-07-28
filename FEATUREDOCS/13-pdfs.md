@@ -1,6 +1,6 @@
 # PDF Document Generation
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
 ## Architecture
 
@@ -91,6 +91,9 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 | `src/lib/pdfme/types.ts` | `DocumentType`, `TestTagReportType`, `DocumentData`, plugin config types |
 | `src/lib/pdfme/plugins/index.ts` | Plugin registry — all custom + built-in plugins |
 | `src/lib/pdfme/fonts.ts` | Font configuration for pdfme |
+| `src/server/finance-documents.ts` | **Immutable finance artifacts (#987)** — renders a quote/invoice PDF ONCE at send/issue, uploads it to Convex `_storage`, attaches the storage id. The only writer of `quotes.pdfFileId` / `invoices.pdfFileId`. |
+| `src/lib/finance-artifacts.ts` | Artifact file naming (`RVLT-2026-0087-quote-v2.pdf`) + filename sanitising — one definition shared by the upload and the download routes. |
+| `src/lib/finance-artifact-response.ts` | Streaming half of the two artifact routes: org re-check on the stored file, headers, and deliberately **no** regeneration fallback. |
 | `src/lib/pdfme/template-constants.ts` | Shared height/dimension constants (row heights, padding, font sizes, page dimensions) — the composer's single source of truth for pagination math |
 
 ### Custom Plugins (`src/lib/pdfme/plugins/`)
@@ -107,6 +110,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 | `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |
 | `gearflowCallSheetInfo` | 2-column info block: PM/client/equipment (left), venue/schedule (right) |
 | `gearflowDayHeader` | Day separator with accent bar, date label, phase badges, crew count |
+| `gearflowDraftWatermark` | "DRAFT PREVIEW — NOT SENT" banner (#987). Only ever produced by `?preview=1`; a stored artifact never carries one. Page furniture — repeated under the header on **every** page (see "Immutable finance artifacts"). Helvetica can't encode an em dash, so the plugin normalises `—`/curly quotes before drawing. |
 | `gearflowRichText` | Markdown-lite text block (`**bold**`, `*italic*`, `- `/`* ` bullets, word-wrapped to the box width) — replaces the pdfme built-in `text` type for every free-text/paragraph block in the 5 project document layouts: client+project details columns, client notes, total-items note, terms & conditions. When real font metrics are available (`generate-pdf.ts`), clientNotes/termsAndConditions also split across pages by wrapped line instead of only ever moving whole — see "Wrap-accurate pagination" below. |
 
 **Report Plugins:**
@@ -190,6 +194,42 @@ Call sheets are a 6th `DocumentType` value but are **not** in
 `DOCUMENT_LAYOUTS` — they render via `templates/call-sheet-services.ts`
 instead (`ProjectDocumentType = Exclude<DocumentType, "call-sheet">`).
 
+`getDocumentLayout(docType, { draftPreview: true })` (#987) returns the same
+layout with one extra block spliced in after the header: `draftWatermark`. It is
+the ONE variant of a fixed layout that exists, it is never persisted, and only
+`/api/documents/[projectId]?preview=1` asks for it.
+
+## Immutable finance artifacts (#987)
+
+A quote or invoice PDF is **rendered once and stored**, then never regenerated:
+
+```
+send / issue ──▶ src/server/finance-documents.ts (pdfme runs in Node)
+                   └─▶ generatePdf(...) ──▶ uploadToS3()   [= Convex _storage]
+                         └─▶ storageId ──▶ quotes.pdfFileId / invoices.pdfFileId
+                                            (convex/financeArtifacts.ts — attach ONCE)
+```
+
+Before this, `/api/documents/[projectId]?type=quote` re-rendered from live
+project state on every click: two downloads a week apart produced two different
+documents under the same name, and the document the client was actually holding
+existed nowhere in the system. Storing the bytes makes immutability structural
+instead of disciplinary — a "reconstruct it from the snapshot" path would
+re-execute ~1,400 lines of `build-document-data.ts` plus the composer, so any
+later change to that code would silently rewrite historical documents.
+
+What this changes in the PDF pipeline itself:
+
+| Concern | Behaviour |
+|---|---|
+| **Dates** | `buildDocumentData(..., { stampedDates })` takes `documentDate` / `quoteValidUntil` from the frozen row. `quote_valid_until` used to be recomputed from `now` on every render, so re-opening an old quote silently extended how long it was valid. The `now` fallback now only applies to a preview, which has no stamped dates because nothing has been sent. |
+| **Watermark** | `draftWatermark` is **page furniture** (like the header): `measurePageFurniture()` reserves its height and `placePageFurniture()` repeats it on every page. A banner on page 1 of a 4-page quote is not a warning — and an unreserved block is the v0.8.1.1 tail-drop bug. |
+| **Retrieval** | `/api/finance/{quote,invoice}/…/pdf` streams the stored bytes. There is deliberately no regeneration fallback: a route that can regenerate is a route that can hand the client a different document under the same name. |
+| **Failure** | A `SENT` quote with a null `pdfFileId` is a real state — the render runs after the Convex transaction commits and can fail on its own. The finance panel shows "Document missing — generate", and the attach mutation refuses to overwrite, so a retry can never rewrite history. |
+
+Superseded, recalled and voided rows keep their artifacts: the client may be
+holding that copy, so deleting ours makes the record worse, not better.
+
 ## Global Document Settings
 
 Org-level, stored in the existing `orgSettings` Convex blob (`OrgSettings.documents`,
@@ -202,7 +242,7 @@ card at `/settings/branding` ("Branding & documents").
 |---|---|
 | `footerText` / `footerSecondLine` | Rendered on every page of every doc type. Empty falls back to an auto-generated `{org name} \| {org email} \| {org phone}` line. |
 | `termsAndConditions` | Plain text (no token system) rendered as a block on the quote only. Omitted entirely (zero height, no schema) when unset — no empty box by default. |
-| `quoteValidityDays` (default 30) | Feeds a **real computed date** — `document_date + quoteValidityDays` — into the quote header's "Expiry: {date}" meta line (2026-07-28 — previously its own "This quote is valid until {date}." sentence at the bottom of the document; moved into the header alongside the doc number/date so it's visible without scrolling to the end of a possibly multi-page quote — see below). Replaces the two hardcoded "valid for 30 days" static-text copies the deleted customization layer used to carry. |
+| `quoteValidityDays` (default 30) | The org DEFAULT `sendNative` stamps `validUntil` from at send time (#986). A SENT revision's document renders that stamped date, not a fresh computation (#987); only the draft preview still derives it live. Feeds a **real computed date** — `document_date + quoteValidityDays` — into the quote header's "Expiry: {date}" meta line (2026-07-28 — previously its own "This quote is valid until {date}." sentence at the bottom of the document; moved into the header alongside the doc number/date so it's visible without scrolling to the end of a possibly multi-page quote — see below). Replaces the two hardcoded "valid for 30 days" static-text copies the deleted customization layer used to carry. |
 
 `build-document-data.ts` computes 4 `DocumentData` fields from these settings each
 time a document is built: `document_footer_text`, `document_footer_second_line`,
@@ -525,7 +565,9 @@ other fields:
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/api/documents/[projectId]` | GET | Generate project document. Param: `type` (quote/invoice/pull-slip/delivery-docket/return-sheet) |
+| `/api/documents/[projectId]` | GET | Generate a **warehouse** project document from live state. Param: `type` (pull-slip/delivery-docket/return-sheet). `type=quote`/`type=invoice` are **400 unless `preview=1`** (#987), which additionally requires `invoice:read` and stamps the DRAFT PREVIEW watermark. |
+| `/api/finance/quote/[quoteId]/pdf` | GET | Stream the **stored** quote artifact. `invoice:read` + org check (`quotes.by_cuid` is global — R-8.4.3). No regeneration path; 404 when a revision has no artifact. |
+| `/api/finance/invoice/[invoiceId]/pdf` | GET | Stream the **stored** invoice artifact. Same guards. A VOIDed invoice keeps its document. |
 | `/api/documents/call-sheet/[projectId]` | GET | Generate call sheet. Params: `date`, `dates` (comma-separated), `allDates=true`, `crewMemberId`, `crewRoleId` (all optional). |
 | `/api/documents/timeline/[projectId]` | GET | Generate project timeline PDF |
 | `/api/test-tag-reports/[reportType]` | GET | Generate T&T report. Params: `format` (pdf/csv), filters (dateFrom, dateTo, status, equipmentClass, etc.) |
@@ -594,6 +636,13 @@ PDF footgun section for the pre-#790 history of exactly this):
 2. **`document-composer.ts`'s `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
 3. **`document-composer.ts`'s `getFilteredParentItems`** — status filter (miss this → items disappear from docket / return-sheet)
 4. **`gearflow-table.ts`'s own top-level filter** — mirrors #3, must stay in sync (documented cross-reference in both files)
+
+A new **LayoutBlock kind** (e.g. `draftWatermark`, #987) is a different audit
+with two entries, not four: `estimateBlockHeight`'s switch (miss it → the block
+draws over whatever follows, or is silently dropped) and `buildEntryFields`'s
+switch (miss it → nothing renders). Both are exhaustive `switch`es over
+`LayoutBlock["kind"]`, so TypeScript fails the build on a missing arm — which is
+the point of keeping the block union closed.
 
 This is down from 5 consumers in 2 files pre-redesign (the dual pipeline
 meant `section-renderer.ts` and `gearflow-table.ts` each had their own filter

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -133,7 +133,7 @@ export function CreateApiKeyDialog({
 
   const scopes = form.watch("scopes") ?? [];
   const actingUserId = form.watch("actingUserId");
-  const noFinancials = form.watch("noFinancials");
+  const noFinancials = form.watch("noFinancials") ?? false;
 
   function onSubmit(data: ApiKeyCreateFormValues) {
     createMutation.mutate(data);
@@ -147,85 +147,16 @@ export function CreateApiKeyDialog({
         </DialogHeader>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input {...form.register("name")} placeholder="e.g. Claude Code, nightly sync" />
-            {form.formState.errors.name && (
-              <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Acting user</Label>
-            <ComboboxPicker
-              value={actingUserId}
-              onChange={(v) => form.setValue("actingUserId", v)}
-              options={memberOptions}
-              placeholder={membersLoading ? "Loading members…" : "Select who this key acts as…"}
-              searchPlaceholder="Search members…"
-            />
-            <p className="text-xs text-fg-3">
-              Effective permission is this member&apos;s live role intersected with the key&apos;s scopes below.
-            </p>
-            {form.formState.errors.actingUserId && (
-              <p className="text-xs text-destructive">{form.formState.errors.actingUserId.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Expiry (optional)</Label>
-            <Input type="date" {...form.register("expiresAt")} />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Scope preset</Label>
-            <Select value={presetId} onValueChange={applyPreset}>
-              <SelectTrigger>
-                <SelectValue>
-                  {API_KEY_PRESETS.find((p) => p.id === presetId)?.label ?? "Custom"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {API_KEY_PRESETS.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-fg-3">
-              {API_KEY_PRESETS.find((p) => p.id === presetId)?.description}
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Scopes ({scopes.length} selected)</Label>
-            <MultiComboboxPicker
-              values={scopes}
-              onChange={(v) => form.setValue("scopes", v)}
-              options={ALL_SCOPE_OPTIONS.map((s) => ({ value: s, label: s }))}
-              placeholder="Add or remove scopes…"
-              searchPlaceholder="Search scopes…"
-            />
-            <p className="text-xs text-fg-3">
-              Delete, warehouse check-out/check-in, and org administration are never granted here —
-              those stay explicit, single-scope opt-ins.
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between rounded-md border border-border p-3">
-            <div>
-              <Label htmlFor="no-financials">No financials</Label>
-              <p className="text-xs text-fg-3">
-                Force-redacts cost/margin data for this key, regardless of the acting user&apos;s role.
-              </p>
-            </div>
-            <Switch
-              id="no-financials"
-              checked={noFinancials}
-              onCheckedChange={(checked) => form.setValue("noFinancials", checked)}
-            />
-          </div>
+          <CreateApiKeyFields
+            form={form}
+            memberOptions={memberOptions}
+            membersLoading={membersLoading}
+            presetId={presetId}
+            applyPreset={applyPreset}
+            scopes={scopes}
+            actingUserId={actingUserId}
+            noFinancials={noFinancials}
+          />
 
           <DialogFooter>
             <Button type="button" variant="line" onClick={() => onOpenChange(false)}>
@@ -239,5 +170,109 @@ export function CreateApiKeyDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The form body — split out of CreateApiKeyDialog so its per-field error/
+ *  loading conditionals don't add to the dialog's own complexity (R-3.6). */
+function CreateApiKeyFields({
+  form,
+  memberOptions,
+  membersLoading,
+  presetId,
+  applyPreset,
+  scopes,
+  actingUserId,
+  noFinancials,
+}: {
+  form: UseFormReturn<ApiKeyCreateFormValues>;
+  memberOptions: { value: string; label: string }[];
+  membersLoading: boolean;
+  presetId: string;
+  applyPreset: (id: string) => void;
+  scopes: string[];
+  actingUserId: string;
+  noFinancials: boolean;
+}) {
+  const preset = API_KEY_PRESETS.find((p) => p.id === presetId);
+
+  return (
+    <>
+      <div className="space-y-1.5">
+        <Label>Name</Label>
+        <Input {...form.register("name")} placeholder="e.g. Claude Code, nightly sync" />
+        {form.formState.errors.name && (
+          <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Acting user</Label>
+        <ComboboxPicker
+          value={actingUserId}
+          onChange={(v) => form.setValue("actingUserId", v)}
+          options={memberOptions}
+          placeholder={membersLoading ? "Loading members…" : "Select who this key acts as…"}
+          searchPlaceholder="Search members…"
+        />
+        <p className="text-xs text-fg-3">
+          Effective permission is this member&apos;s live role intersected with the key&apos;s scopes below.
+        </p>
+        {form.formState.errors.actingUserId && (
+          <p className="text-xs text-destructive">{form.formState.errors.actingUserId.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Expiry (optional)</Label>
+        <Input type="date" {...form.register("expiresAt")} />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Scope preset</Label>
+        <Select value={presetId} onValueChange={applyPreset}>
+          <SelectTrigger>
+            <SelectValue>{preset?.label ?? "Custom"}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {API_KEY_PRESETS.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-fg-3">{preset?.description}</p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Scopes ({scopes.length} selected)</Label>
+        <MultiComboboxPicker
+          values={scopes}
+          onChange={(v) => form.setValue("scopes", v)}
+          options={ALL_SCOPE_OPTIONS.map((s) => ({ value: s, label: s }))}
+          placeholder="Add or remove scopes…"
+          searchPlaceholder="Search scopes…"
+        />
+        <p className="text-xs text-fg-3">
+          Delete, warehouse check-out/check-in, and org administration are never granted here —
+          those stay explicit, single-scope opt-ins.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between rounded-md border border-border p-3">
+        <div>
+          <Label htmlFor="no-financials">No financials</Label>
+          <p className="text-xs text-fg-3">
+            Force-redacts cost/margin data for this key, regardless of the acting user&apos;s role.
+          </p>
+        </div>
+        <Switch
+          id="no-financials"
+          checked={noFinancials}
+          onCheckedChange={(checked) => form.setValue("noFinancials", checked)}
+        />
+      </div>
+    </>
   );
 }

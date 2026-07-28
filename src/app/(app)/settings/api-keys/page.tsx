@@ -46,6 +46,15 @@ export interface ApiKeyRow {
   createdAt: Date | string;
 }
 
+interface RevealTarget {
+  token: string;
+  name: string;
+}
+interface IdNameTarget {
+  id: string;
+  name: string;
+}
+
 function keyStatus(key: ApiKeyRow): { label: string; status: "ok" | "warn" | "overbooked" | "neutral" } {
   if (key.revokedAt || !key.isActive) return { label: "Revoked", status: "neutral" };
   if (key.expiresAt && new Date(key.expiresAt).getTime() <= Date.now()) {
@@ -60,9 +69,9 @@ export default function ApiKeysSettingsPage() {
   const canManage = useCanDo("orgSettings", "update");
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [revealToken, setRevealToken] = useState<{ token: string; name: string } | null>(null);
-  const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null);
-  const [logTarget, setLogTarget] = useState<{ id: string; name: string } | null>(null);
+  const [revealToken, setRevealToken] = useState<RevealTarget | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<IdNameTarget | null>(null);
+  const [logTarget, setLogTarget] = useState<IdNameTarget | null>(null);
 
   const { data, isLoading, refetch } = useServerQuery({
     queryKey: ["api-keys", orgId],
@@ -82,6 +91,167 @@ export default function ApiKeysSettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  const cols = buildApiKeyColumns({
+    canManage,
+    onViewLog: (t) => setLogTarget(t),
+    onRevoke: (t) => setRevokeTarget(t),
+    onRotated: (name, token) => {
+      setRevealToken({ token, name });
+      refetch();
+    },
+  });
+
+  if (!canManage && !isLoading) return <AccessDenied />;
+
+  return (
+    <FadeIn>
+      <div className="space-y-6">
+        <ConnectAgentCard
+          orgId={orgId}
+          disabled={!canManage}
+          onCreated={(token, name) => {
+            setRevealToken({ token, name });
+            refetch();
+          }}
+        />
+
+        <ApiKeyListCard
+          keys={keys}
+          cols={cols}
+          isLoading={isLoading}
+          canManage={canManage}
+          onCreateClick={() => setCreateOpen(true)}
+        />
+
+        {canManage && <KillSwitchCard orgId={orgId} apiKillSwitchAt={apiKillSwitchAt} onToggled={refetch} />}
+      </div>
+
+      <ApiKeyDialogs
+        createOpen={createOpen}
+        onCreateOpenChange={setCreateOpen}
+        revealToken={revealToken}
+        onRevealClose={() => setRevealToken(null)}
+        onCreated={(token, name) => {
+          setCreateOpen(false);
+          setRevealToken({ token, name });
+          refetch();
+        }}
+        logTarget={logTarget}
+        onLogClose={() => setLogTarget(null)}
+        revokeTarget={revokeTarget}
+        onRevokeClose={() => setRevokeTarget(null)}
+        onRevoke={revokeMutation.mutate}
+        revokePending={revokeMutation.isPending}
+      />
+    </FadeIn>
+  );
+}
+
+/** Every dialog the page can open, in one place — split out so their `??`
+ *  fallback props don't add to ApiKeysSettingsPage's own complexity (R-3.6). */
+function ApiKeyDialogs({
+  createOpen,
+  onCreateOpenChange,
+  onCreated,
+  revealToken,
+  onRevealClose,
+  logTarget,
+  onLogClose,
+  revokeTarget,
+  onRevokeClose,
+  onRevoke,
+  revokePending,
+}: {
+  createOpen: boolean;
+  onCreateOpenChange: (open: boolean) => void;
+  onCreated: (token: string, name: string) => void;
+  revealToken: RevealTarget | null;
+  onRevealClose: () => void;
+  logTarget: IdNameTarget | null;
+  onLogClose: () => void;
+  revokeTarget: IdNameTarget | null;
+  onRevokeClose: () => void;
+  onRevoke: (id: string) => void;
+  revokePending: boolean;
+}) {
+  return (
+    <>
+      <CreateApiKeyDialog open={createOpen} onOpenChange={onCreateOpenChange} onCreated={onCreated} />
+
+      <TokenRevealDialog
+        open={!!revealToken}
+        onOpenChange={(open) => !open && onRevealClose()}
+        token={revealToken?.token ?? ""}
+        keyName={revealToken?.name ?? ""}
+      />
+
+      <RequestLogDialog
+        open={!!logTarget}
+        onOpenChange={(open) => !open && onLogClose()}
+        apiKeyId={logTarget?.id ?? null}
+        keyName={logTarget?.name ?? ""}
+      />
+
+      <RevokeKeyDialog target={revokeTarget} onClose={onRevokeClose} onRevoked={onRevoke} pending={revokePending} />
+    </>
+  );
+}
+
+function AccessDenied() {
+  return (
+    <FadeIn>
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <h2 className="t-title text-ink">Access denied</h2>
+        <p className="mt-2 t-body text-muted">
+          You don&apos;t have permission to manage API keys for this organization.
+        </p>
+      </div>
+    </FadeIn>
+  );
+}
+
+function RevokeKeyDialog({
+  target,
+  onClose,
+  onRevoked,
+  pending,
+}: {
+  target: IdNameTarget | null;
+  onClose: () => void;
+  onRevoked: (id: string) => void;
+  pending: boolean;
+}) {
+  return (
+    <DeleteDialog
+      open={!!target}
+      onOpenChange={(open) => !open && onClose()}
+      title={`Revoke "${target?.name ?? ""}"?`}
+      description="This key stops authenticating immediately — every in-flight request using it will start failing. This cannot be undone; mint a new key to replace it."
+      confirmLabel="Revoke key"
+      onConfirm={() => {
+        if (!target) return;
+        onRevoked(target.id);
+        onClose();
+      }}
+      pending={pending}
+    />
+  );
+}
+
+/** Builds the key-list table/card columns — split out of the page component
+ *  so the `canManage` actions-column branch doesn't add to its complexity
+ *  (R-3.6). Cell renderers are independent closures, not evaluated here. */
+function buildApiKeyColumns({
+  canManage,
+  onViewLog,
+  onRevoke,
+  onRotated,
+}: {
+  canManage: boolean;
+  onViewLog: (t: IdNameTarget) => void;
+  onRevoke: (t: IdNameTarget) => void;
+  onRotated: (name: string, token: string) => void;
+}): ColumnDef<ApiKeyRow>[] {
   const cols: ColumnDef<ApiKeyRow>[] = [
     {
       id: "name",
@@ -107,17 +277,7 @@ export default function ApiKeysSettingsPage() {
       id: "scopes",
       header: "Scopes",
       mobile: "meta",
-      cell: (key) => {
-        const scopes = JSON.parse(key.scopes || "[]") as string[];
-        if (scopes.length === 0) return <span className="text-fg-3">None</span>;
-        if (scopes.includes("*")) return <Badge status="primary">All scopes</Badge>;
-        return (
-          <span className="text-xs text-fg-3">
-            {scopes.length} scope{scopes.length !== 1 ? "s" : ""}
-            {key.noFinancials ? " · no financials" : ""}
-          </span>
-        );
-      },
+      cell: (key) => <ScopesCell keyRow={key} />,
     },
     {
       id: "lastUsed",
@@ -138,186 +298,189 @@ export default function ApiKeysSettingsPage() {
       header: "Actions",
       mobile: "actions",
       cell: (key) => (
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={`View request log for ${key.name}`}
-            onClick={() => setLogTarget({ id: key.id, name: key.name })}
-          >
-            <FileClock className="h-3.5 w-3.5" />
-          </Button>
-          {!key.revokedAt && (
-            <>
-              <RotateKeyButton
-                keyId={key.id}
-                keyName={key.name}
-                onRotated={(token) => {
-                  setRevealToken({ token, name: key.name });
-                  refetch();
-                }}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive"
-                aria-label={`Revoke ${key.name}`}
-                onClick={() => setRevokeTarget({ id: key.id, name: key.name })}
-              >
-                <Ban className="h-3.5 w-3.5" />
-              </Button>
-            </>
-          )}
-        </div>
+        <KeyRowActions key={key.id} keyRow={key} onViewLog={onViewLog} onRevoke={onRevoke} onRotated={onRotated} />
       ),
     });
   }
+  return cols;
+}
 
-  if (!canManage && !isLoading) {
-    return (
-      <FadeIn>
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <h2 className="t-title text-ink">Access denied</h2>
-          <p className="mt-2 t-body text-muted">
-            You don&apos;t have permission to manage API keys for this organization.
-          </p>
+function ScopesCell({ keyRow }: { keyRow: ApiKeyRow }) {
+  const scopes = JSON.parse(keyRow.scopes || "[]") as string[];
+  if (scopes.length === 0) return <span className="text-fg-3">None</span>;
+  if (scopes.includes("*")) return <Badge status="primary">All scopes</Badge>;
+  return (
+    <span className="text-xs text-fg-3">
+      {scopes.length} scope{scopes.length !== 1 ? "s" : ""}
+      {keyRow.noFinancials ? " · no financials" : ""}
+    </span>
+  );
+}
+
+function KeyRowActions({
+  keyRow,
+  onViewLog,
+  onRevoke,
+  onRotated,
+}: {
+  keyRow: ApiKeyRow;
+  onViewLog: (t: IdNameTarget) => void;
+  onRevoke: (t: IdNameTarget) => void;
+  onRotated: (name: string, token: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label={`View request log for ${keyRow.name}`}
+        onClick={() => onViewLog({ id: keyRow.id, name: keyRow.name })}
+      >
+        <FileClock className="h-3.5 w-3.5" />
+      </Button>
+      {!keyRow.revokedAt && (
+        <>
+          <RotateKeyButton
+            keyId={keyRow.id}
+            keyName={keyRow.name}
+            onRotated={(token) => onRotated(keyRow.name, token)}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive"
+            aria-label={`Revoke ${keyRow.name}`}
+            onClick={() => onRevoke({ id: keyRow.id, name: keyRow.name })}
+          >
+            <Ban className="h-3.5 w-3.5" />
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The "API keys" settings card — key-list table/mobile-list plus the
+ *  loading/empty states. Split out of the page component (R-3.6). */
+function ApiKeyListCard({
+  keys,
+  cols,
+  isLoading,
+  canManage,
+  onCreateClick,
+}: {
+  keys: ApiKeyRow[];
+  cols: ColumnDef<ApiKeyRow>[];
+  isLoading: boolean;
+  canManage: boolean;
+  onCreateClick: () => void;
+}) {
+  return (
+    <SettingsCard>
+      <FormSection
+        title="API keys"
+        description="Keys mint a short-lived agent token, scoped bearer credentials for the API and MCP server (FEATUREDOCS/56). The raw secret is shown once, at creation."
+      >
+        <div className="sm:col-span-2 space-y-4">
+          <div className="flex items-center justify-end">
+            {canManage && (
+              <Button size="sm" onClick={onCreateClick}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create key
+              </Button>
+            )}
+          </div>
+
+          <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
+            <ApiKeyListBody keys={keys} cols={cols} isLoading={isLoading} canManage={canManage} />
+          </div>
         </div>
-      </FadeIn>
+      </FormSection>
+    </SettingsCard>
+  );
+}
+
+function ApiKeyListBody({
+  keys,
+  cols,
+  isLoading,
+  canManage,
+}: {
+  keys: ApiKeyRow[];
+  cols: ColumnDef<ApiKeyRow>[];
+  isLoading: boolean;
+  canManage: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-fg-3">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Loading...
+      </div>
     );
   }
+  if (keys.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-fg-3">
+        <KeyRound className="mb-2 h-8 w-8 opacity-50" />
+        <p className="font-medium">No API keys yet</p>
+        <p className="mt-1 text-xs">
+          Create one, or use &ldquo;Connect an AI Agent&rdquo; above for a ready-to-paste MCP config.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <>
+      <div className="hidden md:block">
+        <ApiKeyTable keys={keys} cols={cols} canManage={canManage} />
+      </div>
+      <MobileCardList className="md:hidden" data={keys} columns={cols} getRowId={(k) => k.id} />
+    </>
+  );
+}
+
+function ApiKeyTable({
+  keys,
+  cols,
+  canManage,
+}: {
+  keys: ApiKeyRow[];
+  cols: ColumnDef<ApiKeyRow>[];
+  canManage: boolean;
+}) {
+  const nameCol = cols.find((c) => c.id === "name")!;
+  const statusCol = cols.find((c) => c.id === "status")!;
+  const scopesCol = cols.find((c) => c.id === "scopes")!;
+  const lastUsedCol = cols.find((c) => c.id === "lastUsed")!;
+  const expiresCol = cols.find((c) => c.id === "expires")!;
+  const actionsCol = cols.find((c) => c.id === "actions");
 
   return (
-    <FadeIn>
-      <div className="space-y-6">
-        <ConnectAgentCard
-          orgId={orgId}
-          disabled={!canManage}
-          onCreated={(token, name) => {
-            setRevealToken({ token, name });
-            refetch();
-          }}
-        />
-
-        <SettingsCard>
-          <FormSection
-            title="API keys"
-            description="Keys mint a short-lived agent token, scoped bearer credentials for the API and MCP server (FEATUREDOCS/56). The raw secret is shown once, at creation."
-          >
-            <div className="sm:col-span-2 space-y-4">
-              <div className="flex items-center justify-end">
-                {canManage && (
-                  <Button size="sm" onClick={() => setCreateOpen(true)}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create key
-                  </Button>
-                )}
-              </div>
-
-              <div className="rounded-lg bg-bg-surface surface-ring overflow-hidden">
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12 text-fg-3">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Loading...
-                  </div>
-                ) : keys.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-fg-3">
-                    <KeyRound className="mb-2 h-8 w-8 opacity-50" />
-                    <p className="font-medium">No API keys yet</p>
-                    <p className="mt-1 text-xs">
-                      Create one, or use &ldquo;Connect an AI Agent&rdquo; above for a ready-to-paste MCP config.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="hidden md:block">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Scopes</TableHead>
-                            <TableHead className="hidden sm:table-cell">Last used</TableHead>
-                            <TableHead className="hidden md:table-cell">Expires</TableHead>
-                            {canManage && <TableHead className="w-[120px]" />}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {keys.map((key) => {
-                            const nameCol = cols.find((c) => c.id === "name")!;
-                            const statusCol = cols.find((c) => c.id === "status")!;
-                            const scopesCol = cols.find((c) => c.id === "scopes")!;
-                            const lastUsedCol = cols.find((c) => c.id === "lastUsed")!;
-                            const expiresCol = cols.find((c) => c.id === "expires")!;
-                            const actionsCol = cols.find((c) => c.id === "actions");
-                            return (
-                              <TableRow key={key.id}>
-                                <TableCell>{nameCol.cell?.(key)}</TableCell>
-                                <TableCell>{statusCol.cell?.(key)}</TableCell>
-                                <TableCell>{scopesCol.cell?.(key)}</TableCell>
-                                <TableCell className="hidden sm:table-cell">{lastUsedCol.cell?.(key)}</TableCell>
-                                <TableCell className="hidden md:table-cell">{expiresCol.cell?.(key)}</TableCell>
-                                {actionsCol && <TableCell>{actionsCol.cell?.(key)}</TableCell>}
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    <MobileCardList
-                      className="md:hidden"
-                      data={keys}
-                      columns={cols}
-                      getRowId={(k) => k.id}
-                    />
-                  </>
-                )}
-              </div>
-            </div>
-          </FormSection>
-        </SettingsCard>
-
-        {canManage && <KillSwitchCard orgId={orgId} apiKillSwitchAt={apiKillSwitchAt} onToggled={refetch} />}
-      </div>
-
-      <CreateApiKeyDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={(token, name) => {
-          setCreateOpen(false);
-          setRevealToken({ token, name });
-          refetch();
-        }}
-      />
-
-      <TokenRevealDialog
-        open={!!revealToken}
-        onOpenChange={(open) => !open && setRevealToken(null)}
-        token={revealToken?.token ?? ""}
-        keyName={revealToken?.name ?? ""}
-      />
-
-      <RequestLogDialog
-        open={!!logTarget}
-        onOpenChange={(open) => !open && setLogTarget(null)}
-        apiKeyId={logTarget?.id ?? null}
-        keyName={logTarget?.name ?? ""}
-      />
-
-      <DeleteDialog
-        open={!!revokeTarget}
-        onOpenChange={(open) => !open && setRevokeTarget(null)}
-        title={`Revoke "${revokeTarget?.name ?? ""}"?`}
-        description="This key stops authenticating immediately — every in-flight request using it will start failing. This cannot be undone; mint a new key to replace it."
-        confirmLabel="Revoke key"
-        onConfirm={() => {
-          if (revokeTarget) {
-            revokeMutation.mutate(revokeTarget.id);
-            setRevokeTarget(null);
-          }
-        }}
-        pending={revokeMutation.isPending}
-      />
-    </FadeIn>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Scopes</TableHead>
+          <TableHead className="hidden sm:table-cell">Last used</TableHead>
+          <TableHead className="hidden md:table-cell">Expires</TableHead>
+          {canManage && <TableHead className="w-[120px]" />}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {keys.map((key) => (
+          <TableRow key={key.id}>
+            <TableCell>{nameCol.cell?.(key)}</TableCell>
+            <TableCell>{statusCol.cell?.(key)}</TableCell>
+            <TableCell>{scopesCol.cell?.(key)}</TableCell>
+            <TableCell className="hidden sm:table-cell">{lastUsedCol.cell?.(key)}</TableCell>
+            <TableCell className="hidden md:table-cell">{expiresCol.cell?.(key)}</TableCell>
+            {actionsCol && <TableCell>{actionsCol.cell?.(key)}</TableCell>}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 

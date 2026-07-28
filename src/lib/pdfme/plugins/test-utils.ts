@@ -72,6 +72,7 @@ const DEFAULT_CONFIG: TablePluginConfig = {
 export async function runTablePlugin(
   items: DocumentLineItem[],
   configOverrides: Partial<TablePluginConfig> = {},
+  pageSlice: { startIndex?: number; startSubIndex?: number; endIndex?: number } = {},
 ): Promise<RendererCalls> {
   const pdfDoc = await PDFDocument.create();
   // A4 portrait — matches the default packing-list layout.
@@ -118,7 +119,7 @@ export async function runTablePlugin(
   // some internal validation; the no-op stubs above are enough.
 
   const config = { ...DEFAULT_CONFIG, ...configOverrides };
-  const value = JSON.stringify({ items, config });
+  const value = JSON.stringify({ items, config, ...pageSlice });
 
   const schema = {
     name: "table",

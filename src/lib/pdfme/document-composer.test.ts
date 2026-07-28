@@ -954,3 +954,74 @@ describe("calculateItemHeight — sub-hire 'via Supplier' line (tail-drop regres
     assertFullCoverage(result, items.length);
   });
 });
+
+// ─── Group header does not repeat on continuation pages (2026-07-28) ────────
+//
+// Real bug: every page recomputed the full groups Map and drew a group's
+// header whenever ANY of its items fell in that page's slice — including a
+// page that merely continues a group started on the page before. On a doc
+// with a category long enough to span several pages, its header printed at
+// the top of every one of them. Fixed by only drawing a group's header on
+// the page where it *starts*; the composer's height budget for continuation
+// pages was updated in lockstep (it used to reserve extra space assuming the
+// header would repeat).
+describe("composeDocument + gearflowTable — group header prints once across a multi-page group", () => {
+  it("a single long group spanning 3+ pages draws its header exactly once, and every item still renders", async () => {
+    const items: DocumentLineItem[] = [];
+    for (let i = 0; i < 100; i++) {
+      items.push(
+        makeLineItem({
+          id: `li-${i}`,
+          status: "CONFIRMED",
+          categoryName: "Lighting",
+          groupName: "Lighting",
+          model: { name: `Lighting Item ${i}` },
+          unitPrice: 100 + i,
+          lineTotal: 100 + i,
+        }),
+      );
+    }
+
+    const data = makeData({ line_items: items, subtotal: items.reduce((s, li) => s + (li.lineTotal ?? 0), 0) });
+    const result = composeDocument("quote", data, "#0d4f4f");
+
+    expect(result.template.schemas.length).toBeGreaterThan(2); // actually spans several pages
+    assertFullCoverage(result, items.length);
+
+    const tableBlock = DOCUMENT_LAYOUTS.quote.blocks.find((b) => b.kind === "table");
+    if (tableBlock?.kind !== "table") throw new Error("quote layout has no table block");
+    const tableConfig: TablePluginConfig = {
+      documentType: "quote",
+      documentColor: "#0d4f4f",
+      showGroupHeaders: tableBlock.config.showGroupHeaders,
+      showKitChildren: tableBlock.config.showKitChildren,
+      showCheckboxes: tableBlock.config.showCheckboxes,
+      showConditionColumns: tableBlock.config.showConditionColumns,
+      showPricing: tableBlock.config.showPricing,
+      showBadges: tableBlock.config.showBadges,
+      showNotes: tableBlock.config.showNotes,
+      showPerUnitCheckboxes: tableBlock.config.showPerUnitCheckboxes,
+      showAssetTags: tableBlock.config.showAssetTags,
+      showCategories: tableBlock.config.showCategories,
+      showRowNumbers: tableBlock.config.showRowNumbers,
+      filterOptional: false,
+      filterByStatus: null,
+      hidePricingPeriodSuffix: tableBlock.config.hidePricingPeriodSuffix ?? false,
+    };
+
+    let headerDrawCount = 0;
+    for (const pageSchemas of result.template.schemas) {
+      const tableSchema = pageSchemas.find((s) => s.type === "gearflowTable");
+      if (!tableSchema) continue;
+      const value = JSON.parse(result.inputs[0][tableSchema.name as string]) as {
+        startIndex?: number;
+        endIndex?: number;
+        startSubIndex?: number;
+      };
+      const calls = await runTablePlugin(items, tableConfig, value);
+      headerDrawCount += calls.drawText.filter((c) => c.text === "Lighting").length;
+    }
+
+    expect(headerDrawCount).toBe(1);
+  });
+});

@@ -513,6 +513,58 @@ column leads with the client's name; `document-composer.ts` now wraps it in
 `**...**` before handing it to `gearflowRichText`, the same convention
 already used to bold the project column's leading line.
 
+### Uncategorized section gets a real header; group headers stop repeating on continuation pages (2026-07-28)
+
+**Uncategorized items were visually merging into the category printed above
+them.** Two spots fed rows into the table with a falsy `groupName`, and
+`gearflow-table.ts`'s bucketing (`item.groupName || item.prepContainer ||
+ungroupedKey`) treats any falsy `groupName` as "no section, no header" —
+correct for items that genuinely have no place on the doc, wrong for items
+the office just hasn't filed under a category yet:
+
+1. `buildDocumentLineItemData` (`src/lib/project-line-item-read.ts`) folds
+   Project Groups living in the equipment tab's "Uncategorized" zone
+   (`ProjectGroup.categoryId: null`) into a synthetic pseudo-category —
+   previously `{ id: "__uncategorized__", name: "" }`, deliberately blank so
+   it fell through to the same silent fallback. Now `name: "Uncategorized"`.
+2. `structureLineItems`'s final branch (line items with no category AND no
+   group at all) pushed them through with whatever `groupName` they already
+   had (typically none). Now explicitly bucketed under `"Uncategorized"` via
+   the existing `kitBucketLabel` helper, same as every other category bucket.
+
+Both now get a normal section header + divider, same visual treatment as any
+named category — no more silent blending into whatever printed above them.
+Regression coverage: `structure-line-items.test.ts`'s "Uncategorized-zone
+Project Group" describe block (updated to assert `groupName: "Uncategorized"`
+instead of `""`) plus the Phase-0 integration fixture's uncategorized custom
+item.
+
+**A long category's header was redrawing at the top of every continuation
+page it spanned.** `gearflow-table.ts` recomputes the full `groups` Map on
+every page render call (each page gets the complete `items` array plus its
+own `startIndex`/`endIndex` slice) and used to draw a group's header
+whenever *any* of its items fell within that page's slice — including a page
+that only continues a group whose header already printed on the page
+before. Fixed by tracking `groupStartIdx` (the group's position before its
+own items) and skipping the header draw when `groupStartIdx < startIndex`
+(the group started on an earlier page). `document-composer.ts`'s
+`splitTable` height budget had a matching "reserve extra `GROUP_HEADER_PT`
+on a continuation page whose leading group already printed its header
+earlier" branch — that was deliberately compensating for the old
+repeat-on-continuation render behavior, so it's now dead weight and was
+removed in lockstep (along with the `groupHeaderIdx`/`entryGroupKey`
+bookkeeping that only existed to feed it). Leaving either side unfixed alone
+would have reintroduced a height/render mismatch — the exact class of bug
+the "PDF Data-Shape Consumers" checklist below exists to catch, extended
+here to cover a render *condition* change, not just a shape change.
+Regression coverage: `gearflow-table.test.ts`'s "group header does not
+repeat on a continuation page" describe block (renders page 1 and a
+simulated continuation page directly via `runTablePlugin`'s new
+`startIndex`/`endIndex` param) and `document-composer.test.ts`'s "group
+header prints once across a multi-page group" full-pipeline test (100-item
+single-category fixture spanning 3+ real composed pages, counts header draws
+across every page via `runTablePlugin`).
+
 ### Quote-specific fixes (#790 Phase 4)
 
 - **No "/day" (or other period) price suffix on the quote.** `TablePluginConfig.hidePricingPeriodSuffix`
@@ -664,6 +716,11 @@ Three additional behaviours layer onto expand mode:
   bottom of each bucket via a sentinel character. Sort is controlled
   by `options.packerSort`, tied 1:1 to `expandProjectGroups` (every
   expand-mode doc also wants packer order).
+
+Applies to both modes: line items with no category and no group at all
+bucket under a literal `"Uncategorized"` section (2026-07-28) — same
+section header + divider treatment as a real category, not a blank/falsy
+`groupName` that silently merges them into whichever bucket printed above.
 
 ## Constraints
 - **Helvetica only** — no Unicode symbols (use ASCII: `-` not `—`, `|` not `•`)

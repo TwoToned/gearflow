@@ -272,6 +272,31 @@ describe("gearflowTable — Project Group rendering", () => {
   });
 });
 
+describe("gearflowTable — group header does not repeat on a continuation page (2026-07-28)", () => {
+  const bandItems = [
+    makeLineItem({ id: "b-1", groupName: "Band", model: { name: "e602 ii" } }),
+    makeLineItem({ id: "b-2", groupName: "Band", model: { name: "e604" } }),
+    makeLineItem({ id: "b-3", groupName: "Band", model: { name: "e906" } }),
+  ];
+
+  it("draws the header once on the page where the group starts (startIndex 0)", async () => {
+    const calls = await runTablePlugin(bandItems, {}, { startIndex: 0 });
+
+    expect(calls.drawText.filter(c => c.text === "Band")).toHaveLength(1);
+  });
+
+  it("does NOT redraw the header on a page that only continues the group", async () => {
+    // Simulates a second page: item b-1 (globalIdx 1) already rendered on
+    // page 1, so this page's slice starts at globalIdx 2 — mid-group.
+    const calls = await runTablePlugin(bandItems, {}, { startIndex: 1 });
+
+    expect(calls.drawText.filter(c => c.text === "Band")).toHaveLength(0);
+    // The remaining items still render.
+    expect(calls.drawText.some(c => c.text === "e604")).toBe(true);
+    expect(calls.drawText.some(c => c.text === "e906")).toBe(true);
+  });
+});
+
 // ─── #943 — derived billing weeks/days price breakdown ────────────────────
 
 describe("gearflowTable — priceBreakdown rendering (#943)", () => {

@@ -322,9 +322,11 @@ export function structureLineItems(
     }
   }
 
-  // Items not in any category and not inside a group — render as-is,
-  // sorted in packer-walk order when the option is on. Sub-hire items
-  // are excluded so they don't double-appear (they render below).
+  // Items not in any category and not inside a group — render under their
+  // own "Uncategorized" section (2026-07-28) so they're visibly separated
+  // from whatever category prints above them, sorted in packer-walk order
+  // when the option is on. Sub-hire items are excluded so they don't
+  // double-appear (they render below).
   const uncategorized = rawLineItems.filter(li => {
     if (li.isKitChild || li.isContainerLineItem) return false;
     if (li.categoryName || li.groupTitle) return false;
@@ -333,7 +335,7 @@ export function structureLineItems(
     return true;
   });
   for (const li of maybeSort(uncategorized)) {
-    structured.push(li);
+    structured.push({ ...li, groupName: kitBucketLabel(li, "Uncategorized") });
   }
 
   // Sub-hire sections — one per SubHireGroup that has actual items.

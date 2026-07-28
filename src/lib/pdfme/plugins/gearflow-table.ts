@@ -322,11 +322,20 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
 
     // Check if any items in this group will actually be rendered
     // (skip group header if all items are before startIndex)
-    const groupEndIdx = globalIdx + groupItems.length;
+    const groupStartIdx = globalIdx;
+    const groupEndIdx = groupStartIdx + groupItems.length;
     const hasVisibleItems = groupEndIdx > startIndex;
+    // True when this group's first item already rendered on an earlier
+    // page — this page is a continuation of it, not a fresh start. Every
+    // page recomputes the full `groups` map and evaluates every group
+    // against its own startIndex/endIndex slice, so without this check a
+    // long group's header redraws at the top of every continuation page
+    // it spans (2026-07-28) instead of only where the group begins.
+    const isContinuationOfEarlierPage = groupStartIdx < startIndex;
 
-    // Group header — only draw if this group has visible items on this page
-    if (groupName !== ungroupedKey && config.showGroupHeaders && hasVisibleItems) {
+    // Group header — only draw if this group has visible items on this
+    // page AND is starting fresh here (not continuing from a prior page).
+    if (groupName !== ungroupedKey && config.showGroupHeaders && hasVisibleItems && !isContinuationOfEarlierPage) {
       const ghHeight = fontSize + rowPadding * 2;
       // Orphan-check: reserve space for the header AND at least one body
       // row underneath, so headers never strand at a page bottom with

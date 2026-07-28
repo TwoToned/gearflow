@@ -8,6 +8,7 @@ import { writeActivityLog } from "./lib/audit";
 import { adjustBulkAvailability } from "./lib/inventory";
 import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native ASSET-ACCESSORY write mutations (Phase 3 browser-direct — replaces
@@ -183,3 +184,10 @@ export const removeBulkNative = mutation({
     return { ok: true };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  addBulkNative: { danger: "medium" },
+  addSerializedNative: { danger: "medium" },
+  removeBulkNative: { danger: "medium" },
+  removeSerializedNative: { danger: "medium" },
+};

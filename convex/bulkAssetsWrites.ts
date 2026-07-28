@@ -10,6 +10,7 @@ import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native BULK-ASSET write mutations (Phase 3 browser-direct — replaces
@@ -222,3 +223,10 @@ export const archiveNative = mutation({
     return { id: a.id };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  archiveNative: { danger: "high" },
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  updateNative: { danger: "medium" },
+};

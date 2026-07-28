@@ -132,6 +132,14 @@ export const SaleMode = v.union(
   v.literal("NEW_STOCK"),
   v.literal("FROM_RENTAL_STOCK"),
 );
+/** #1012 — how the operator ENTERED a discount ($ off, or % of the line/bundle
+ *  gross). `discount` itself is always the resolved flat dollar amount; this is
+ *  the entry shape, kept only so documents can print it back the way it was
+ *  typed. Absent on every pre-#1012 row = `"$"` (see src/lib/discount-mode.ts). */
+export const DiscountMode = v.union(
+  v.literal("$"),
+  v.literal("%"),
+);
 export const PricingType = v.union(
   v.literal("PER_DAY"),
   v.literal("PER_WEEK"),

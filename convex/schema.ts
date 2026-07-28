@@ -1176,6 +1176,11 @@ export default defineSchema({
     pricingType: v.optional(enums.PricingType),
     duration: v.optional(v.number()),
     discount: v.optional(v.number()),
+    // #1012 — how `discount` was ENTERED ($ off vs % of the line gross). The
+    // number above stays the resolved flat dollar amount every money path
+    // reads; this only lets a document print it back as "15%" instead of
+    // "-$150.00". Absent = "$" (every pre-#1012 row; no backfill needed).
+    discountMode: v.optional(enums.DiscountMode),
     lineTotal: v.optional(v.number()),
     allocatedRevenue: v.optional(v.number()),
     allocationBasis: v.optional(enums.AllocationBasis),
@@ -1354,6 +1359,10 @@ export default defineSchema({
     price: v.optional(v.number()),
     // Flat $ amount off `price × quantity` (#883) — mirrors projectLineItems.discount.
     discount: v.optional(v.number()),
+    // #1012 — mirrors projectLineItems.discountMode: the ENTRY shape of the
+    // discount above ($ off vs % of `price × quantity`), for document display
+    // only. Absent = "$".
+    discountMode: v.optional(enums.DiscountMode),
     suggestedPrice: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     // WS1 (#940) — Xero account-coding override for a priced group's own

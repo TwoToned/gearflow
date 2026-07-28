@@ -1,7 +1,21 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadDocFor } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+// subTestRecords is a parent-scoped table (no `organizationId` column of its
+// own). `list`/`getById` are single-parent lookups, so they widen by fetching
+// the parent `testTagRecords` doc and org-checking THAT via
+// requireOrgReadDocFor (R-8.4.3 pattern for a non-org foreign key).
+// `listByRecordIds` fans out across MANY caller-supplied parent ids with no
+// per-id org filter — widening that needs a verify-and-filter redesign, out of
+// scope for this pass, so it stays denied.
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List the sub-test rows for one test & tag record.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get a single sub-test record by id.", danger: "low", mcpTier: 3 },
+  listByRecordIds: { agentAccess: "denied", reason: "Batch join across caller-supplied recordIds with no per-id org check — would need a verify-and-filter redesign to scope safely." },
+};
 
 /**
  * Thin CRUD for SubTestRecord (Convex table "subTestRecords"). GENERATED — Phase 2/5.
@@ -16,7 +30,9 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { testTagRecordId: v.string() },
   handler: async (ctx, { testTagRecordId }) => {
-    await requireService(ctx);
+    const parent = await ctx.db.query("testTagRecords").withIndex("by_cuid", (q) => q.eq("id", testTagRecordId)).unique();
+    await requireOrgReadDocFor(ctx, parent, "testTag");
+    if (!parent) return [];
     return await ctx.db
       .query("subTestRecords")
       .withIndex("by_testTagRecordId", (q) => q.eq("testTagRecordId", testTagRecordId))
@@ -27,8 +43,16 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("subTestRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("subTestRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const parent = doc
+      ? await ctx.db.query("testTagRecords").withIndex("by_cuid", (q) => q.eq("id", doc.testTagRecordId)).unique()
+      : null;
+    await requireOrgReadDocFor(ctx, parent, "testTag");
+    // Orphaned row (parent missing) falls through requireOrgReadDocFor's
+    // "nothing to leak" null-doc branch regardless of the caller's org — guard
+    // it explicitly so an orphan is never handed back unscoped.
+    if (doc && !parent) return null;
+    return doc;
   },
 });
 

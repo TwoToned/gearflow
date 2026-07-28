@@ -1,6 +1,17 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+// Every query here returns the raw doc, which includes the PLAINTEXT `token`
+// field (not just `tokenHash`) — a warehouse-display kiosk credential. None of
+// these are safe to widen; an agent reading any of them would exfiltrate a
+// live, unauthenticated-dashboard-granting secret.
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: "Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material." },
+  getById: { agentAccess: "denied", reason: "Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material." },
+  getByTokenHash: { agentAccess: "denied", reason: "Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material." },
+};
 
 /**
  * Thin CRUD for WarehouseDashboardToken (Convex table "warehouseDashboardTokens"). GENERATED — Phase 2/5.

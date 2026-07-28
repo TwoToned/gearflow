@@ -29,6 +29,7 @@ import {
   MoreHorizontal,
   AlertTriangle,
   Undo2,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -110,6 +111,10 @@ const RAIL: RailItem[] = [
       { title: "Overbookings", url: "/overbookings", icon: AlertTriangle, resource: "project" },
     ],
   },
+  // #992 (Phase F) — org-wide "what's chaseable" finance view: quotes out,
+  // expiring, never sent, confirmed-uninvoiced, deposit due, outstanding.
+  // Gated on `invoice` (same resource the per-project Finance tab uses).
+  { title: "Finance", url: "/finance", icon: Landmark, hue: "green", resource: "invoice" },
   { title: "Schedule", url: "/availability", icon: CalendarRange, hue: "green", resource: "asset" },
   {
     title: "Crew", url: "/crew", icon: HardHat, hue: "purple", resource: "crew",

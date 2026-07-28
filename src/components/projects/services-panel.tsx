@@ -71,6 +71,7 @@ import { FadeIn, StaggerList, StaggerItem } from "@/components/ui/motion";
 import { ComboboxPicker, MultiComboboxPicker } from "@/components/ui/combobox-picker";
 import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xero-coding-fields";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2133,25 +2134,29 @@ function ServiceDialog({
           </div>
 
           {xeroLinked && (
-            <div className="space-y-3 rounded-[var(--r)] border border-line p-3">
-              <div className="t-overline text-muted">Xero coding</div>
-              <div className="grid grid-cols-2 gap-3">
-                <Controller
-                  control={form.control}
-                  name="xeroAccountCode"
-                  render={({ field }) => (
-                    <XeroAccountCodeField value={field.value} onChange={field.onChange} label="Account" placeholder="Inherit default" />
-                  )}
-                />
-                <Controller
-                  control={form.control}
-                  name="xeroTaxType"
-                  render={({ field }) => (
-                    <XeroTaxTypeField value={field.value} onChange={field.onChange} label="Tax type" placeholder="Use org default" />
-                  )}
-                />
-              </div>
-            </div>
+            <Accordion type="single" collapsible className="rounded-[var(--r)] border border-line">
+              <AccordionItem value="xero-coding" className="border-none px-3">
+                <AccordionTrigger>Advanced: Xero coding</AccordionTrigger>
+                <AccordionContent>
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <Controller
+                      control={form.control}
+                      name="xeroAccountCode"
+                      render={({ field }) => (
+                        <XeroAccountCodeField value={field.value} onChange={field.onChange} label="Account" placeholder="Inherit default" />
+                      )}
+                    />
+                    <Controller
+                      control={form.control}
+                      name="xeroTaxType"
+                      render={({ field }) => (
+                        <XeroTaxTypeField value={field.value} onChange={field.onChange} label="Tax type" placeholder="Use org default" />
+                      )}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           )}
 
           {/* Notes */}

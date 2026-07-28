@@ -197,8 +197,12 @@ wires an actual sale line type.
 
 Every level of the cascade above has a write path + form field:
 
-- **Category default** — `categories.xeroAccountCode`, one field on the
-  category create/edit dialog (`src/components/assets/category-manager.tsx`).
+- **Category default** — `categories.xeroAccountCode`, a labelled "Xero
+  coding" section (border-separated, not just a bare field) on the category
+  create/edit dialog (`src/components/assets/category-manager.tsx`) — this
+  dialog has no `SmartFormSection`-style layout the way model/kit forms do,
+  so the field needs its own visual heading to not blend into the plain
+  field list around it.
 - **Model defaults** — `models.xeroRentalAccountCode`/`xeroSaleAccountCode`,
   a "Xero coding" `SmartFormSection` on `src/components/assets/model-form.tsx`
   (rental and sale are independent — a kit-parent line reads `kits.xeroAccountCode`
@@ -212,9 +216,13 @@ Every level of the cascade above has a write path + form field:
   landed — what was missing was the client never sending them
   (`buildLineItemSetClear` in `src/hooks/use-line-item-writes.ts`) and no
   length bound (`assertLineItemFields` in `convex/lineItemWrites.ts`), both
-  now added (R-8.6.2 — defense-in-depth on a blocklist mutation).
+  now added (R-8.6.2 — defense-in-depth on a blocklist mutation). Tucked
+  behind a collapsed-by-default "Advanced: Xero coding" `Accordion` — this
+  dialog is on the everyday line-editing path, unlike category/model/kit
+  forms, so the override stays reachable without cluttering the common case.
 - **Service override** — `projectServices.xeroAccountCode`/`xeroTaxType`, on
-  the `ServiceDialog` in `src/components/projects/services-panel.tsx`.
+  the `ServiceDialog` in `src/components/projects/services-panel.tsx` — same
+  collapsed-by-default `Accordion` treatment, same reasoning.
 
 All five write paths mirror `categorySchema`/`modelSchema`/etc.'s new
 `.max(50)` bound server-side (`assertCategoryFields`/`assertModelFields`/
@@ -231,6 +239,19 @@ coding" section on category/model/kit is itself conditionally rendered on
 `useXeroLinked()` too — a titled section with self-gating-to-null fields
 inside would otherwise show an empty section with no content, which reads as
 broken.
+
+**Codeless accounts are excluded from the picker, not just displayed oddly.**
+`useXeroCodingOptions()` filters `cachedAccounts` down to `!!a.Code` before
+mapping to `ComboboxPicker` options — Xero's Invoices API `AccountCode` field
+takes the short account CODE, never the internal `AccountID` GUID, so an
+account with no code was never a valid selection regardless. This also fixed
+a real bug: the old fallback `a.Code ?? a.AccountID` only triggers on
+null/undefined, not on `Code: ""` (which Xero returns for some accounts with
+no code assigned) — that account's option `value` silently collapsed to
+`""`, the exact sentinel every picker here uses for "nothing selected."
+Every UNSET override field then matched that account by coincidence and
+rendered it as if selected, which read as "every override defaults to the
+first account in the list, and clearing never actually clears."
 
 ### Linked gate
 

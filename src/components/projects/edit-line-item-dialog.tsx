@@ -42,6 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { checkAvailability } from "@/server/line-items";
 import { lineItemSchema, type LineItemFormValues } from "@/lib/validations/line-item";
 import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xero-coding-fields";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { PlacementFields } from "./placement-fields";
 import { SectionTitle, Field, DiscountField, type DiscountMode } from "./line-item-form-fields";
@@ -343,22 +344,31 @@ function EditLineItemDialogBody({
         </section>
 
         {xeroLinked && (
-          <section className="space-y-4 border-t border-line pt-5">
-            <SectionTitle title="Xero coding" hint="Overrides the model/kit/category default for this line only." />
-            <Controller
-              control={form.control}
-              name="xeroAccountCode"
-              render={({ field }) => (
-                <XeroAccountCodeField value={field.value} onChange={field.onChange} label="Account" placeholder="Inherit default" />
-              )}
-            />
-            <Controller
-              control={form.control}
-              name="xeroTaxType"
-              render={({ field }) => (
-                <XeroTaxTypeField value={field.value} onChange={field.onChange} label="Tax type" placeholder="Use org default" />
-              )}
-            />
+          <section className="border-t border-line pt-5">
+            <Accordion type="single" collapsible>
+              <AccordionItem value="xero-coding" className="border-line">
+                <AccordionTrigger>Advanced: Xero coding</AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-4 pt-1">
+                    <p className="text-caption text-muted">Overrides the model/kit/category default for this line only.</p>
+                    <Controller
+                      control={form.control}
+                      name="xeroAccountCode"
+                      render={({ field }) => (
+                        <XeroAccountCodeField value={field.value} onChange={field.onChange} label="Account" placeholder="Inherit default" />
+                      )}
+                    />
+                    <Controller
+                      control={form.control}
+                      name="xeroTaxType"
+                      render={({ field }) => (
+                        <XeroTaxTypeField value={field.value} onChange={field.onChange} label="Tax type" placeholder="Use org default" />
+                      )}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
           </section>
         )}
 

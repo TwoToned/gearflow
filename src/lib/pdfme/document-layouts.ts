@@ -62,7 +62,10 @@ export type LayoutBlock =
   | { kind: "totals"; config: TotalsLayoutConfig }
   | { kind: "clientNotes" }
   | { kind: "totalItemsNote" }
-  | { kind: "termsAndConditions" }
+  /** `forceNewPage`: always starts on a fresh page rather than sharing
+   *  whatever room is left on the page above it — the legal boilerplate
+   *  reads as its own section, not a tacked-on tail. */
+  | { kind: "termsAndConditions"; forceNewPage?: boolean }
   | { kind: "signature"; columns: number; labels: string[] };
 
 export interface DocumentLayout {
@@ -150,7 +153,7 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
       { kind: "table", config: { ...clientFacingTable, hidePricingPeriodSuffix: true } },
       { kind: "totals", config: defaultTotals },
       { kind: "clientNotes" },
-      { kind: "termsAndConditions" },
+      { kind: "termsAndConditions", forceNewPage: true },
     ],
   },
 

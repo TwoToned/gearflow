@@ -35,12 +35,18 @@ async function seedInvoiceWithLines(t: ReturnType<typeof makeT>) {
     await ctx.db.insert("projectLineItems", { id: "li4", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", isKitChild: false, description: "Misc gear", quantity: 1, unitPrice: 50, lineTotal: 50 });
     // Line 5: SERVICE, LABOUR type -> resolves via the LABOUR service-type default.
     await ctx.db.insert("projectServices", { id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Crew", lineTotal: 150 });
+    // Group 1: no per-group override -> falls through to its category's default.
+    await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Priced bundle", quantity: 1, price: 250 });
+    // Group 2: per-group override -> wins over its category.
+    await ctx.db.insert("projectGroups", { id: "grp2", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Custom-coded bundle", quantity: 1, price: 400, xeroAccountCode: "8888-GROUP", xeroTaxType: "ZERORATED" });
 
     await ctx.db.insert("invoiceLines", { id: "line1", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li1", description: "Speaker", quantity: 1, unitPrice: 200, lineTotal: 200, sortOrder: 0 });
     await ctx.db.insert("invoiceLines", { id: "line2", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li2", description: "Band Kit", quantity: 1, unitPrice: 300, lineTotal: 300, sortOrder: 1 });
     await ctx.db.insert("invoiceLines", { id: "line3", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li3", description: "Special item", quantity: 1, unitPrice: 100, lineTotal: 100, sortOrder: 2 });
     await ctx.db.insert("invoiceLines", { id: "line4", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li4", description: "Misc gear", quantity: 1, unitPrice: 50, lineTotal: 50, sortOrder: 3 });
     await ctx.db.insert("invoiceLines", { id: "line5", invoiceId: "inv1", sourceType: "SERVICE", sourceLineItemId: "svc1", description: "Crew", quantity: 1, unitPrice: 150, lineTotal: 150, sortOrder: 4 });
+    await ctx.db.insert("invoiceLines", { id: "line6", invoiceId: "inv1", sourceType: "GROUP", sourceLineItemId: "grp1", description: "Priced bundle", quantity: 1, unitPrice: 250, lineTotal: 250, sortOrder: 5 });
+    await ctx.db.insert("invoiceLines", { id: "line7", invoiceId: "inv1", sourceType: "GROUP", sourceLineItemId: "grp2", description: "Custom-coded bundle", quantity: 1, unitPrice: 400, lineTotal: 400, sortOrder: 6 });
 
     await ctx.db.insert("xeroIntegrations", {
       id: "xi1", organizationId: ORG, isConnected: true, tenantId: "tenant1",
@@ -62,14 +68,16 @@ describe("xeroPush.resolveCodingForInvoice", () => {
     expect(byId.get("line3")).toEqual({ lineId: "line3", accountCode: "9999-OVERRIDE", taxType: "EXEMPT" }); // per-line override wins over everything
     expect(byId.get("line4")).toEqual({ lineId: "line4", accountCode: "4000", taxType: "OUTPUT2" }); // org default (no model/kit/category)
     expect(byId.get("line5")).toEqual({ lineId: "line5", accountCode: "4600", taxType: "OUTPUT2" }); // LABOUR service-type default
+    expect(byId.get("line6")).toEqual({ lineId: "line6", accountCode: "4300", taxType: "OUTPUT2" }); // group falls through to its category default
+    expect(byId.get("line7")).toEqual({ lineId: "line7", accountCode: "8888-GROUP", taxType: "ZERORATED" }); // group override wins over its category
   });
 
   test("flags a variance note when a line's tax type diverges from the org default", async () => {
     const t = makeT();
     await seedInvoiceWithLines(t);
     const result = await t.withIdentity(SERVICE).query(api.xeroPush.resolveCodingForInvoice, { invoiceId: "inv1", orgId: ORG });
-    // line3 has an EXEMPT override vs the org default OUTPUT2.
-    expect(result.varianceNote).toMatch(/1 line/i);
+    // line3 (EXEMPT) and line7 (ZERORATED) both diverge from the org default OUTPUT2.
+    expect(result.varianceNote).toMatch(/2 line/i);
   });
 
   test("no variance note when every line uses the org default tax type", async () => {

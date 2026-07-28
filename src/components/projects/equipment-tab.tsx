@@ -701,7 +701,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   });
 
   const updateGroupMut = useServerMutation({
-    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number }> }) =>
+    mutationFn: ({ groupId, data }: { groupId: string; data: Partial<{ title: string; description: string; quantity: number; xeroAccountCode: string; xeroTaxType: string }> }) =>
       groupWrites.update(groupId, data),
     onSuccess: () => {
       invalidate();

@@ -343,6 +343,13 @@ every level:
 (`xeroIntegrations.serviceAccountDefaults[LABOUR|DELIVERY_TRANSPORT|MISC]`) →
 org default. **Tax type**: per-line override → `xeroIntegrations.defaultTaxType`.
 
+**Group** (a priced `projectGroups` row bills as its own invoice line —
+`convex/lib/financeSnapshot.ts` "priced groups bill as ONE line"): group
+override → `projectGroups.categoryId`'s category default → org default. A
+group isn't a model/kit, so it has no level-2 equivalent — reuses
+`resolveEquipmentAccountCode` with `modelOrKitCode: null` rather than a
+bespoke 2-level function (`resolveGroupLineCode` in `convex/xeroPush.ts`).
+
 Resolved server-side at PUSH time (`convex/xeroPush.ts` `resolveCodingForInvoice`
 — one Convex query, all the DB reads through model/kit/category/service-type/
 org-default) and snapshotted onto `invoiceLines` — never re-resolved after
@@ -386,11 +393,38 @@ Every level of the cascade above has a write path + form field:
 - **Service override** — `projectServices.xeroAccountCode`/`xeroTaxType`, on
   the `ServiceDialog` in `src/components/projects/services-panel.tsx` — same
   collapsed-by-default `Accordion` treatment, same reasoning.
+- **Group override** — `projectGroups.xeroAccountCode`/`xeroTaxType`, on
+  `EditGroupDialog` (`src/components/projects/edit-group-dialog.tsx`) — same
+  collapsed-by-default `Accordion` treatment (a group's own dialog is also on
+  the everyday project-editing path). This dialog uses local `useState`, not
+  React Hook Form, so the field is wired directly (`value`/`onChange`), not
+  through a `Controller`. Sent as the raw string on every save, never
+  `|| undefined` the way `description` is — an omitted/`undefined` key never
+  reaches the Convex mutation at all (`JSON.stringify` drops `undefined`
+  values), so "clear the override" would otherwise be silently lost instead
+  of patching back to unset; `updateGroupNative`'s own `a.xeroAccountCode ||
+  undefined` does the clear-on-empty-string itself.
 
-All five write paths mirror `categorySchema`/`modelSchema`/etc.'s new
+Kit-parent project lines were the other explicit ask ("show up on kits...
+when they [are] items on a project") — already covered by the line override
+above without any extra work: a kit-parent row (`kitId` set, `isKitChild:
+false`) opens the exact same `EditLineItemDialog` as any other equipment
+line, with no kit-specific code path that would intercept or hide the Xero
+section.
+
+`MappedGroup` (both copies — `src/lib/project-equipment-reconstruct.ts` for
+the client-safe equipment-tab bundle, `src/lib/project-line-item-read.ts` for
+the server-side read path) and `GroupData`
+(`src/components/projects/equipment-row-types.ts`) all needed the two new
+fields threaded through explicitly — both are allowlist mappers over the raw
+`projectGroups` doc, not passthrough spreads, so a new schema field is
+invisible to either read path until added by hand.
+
+All six write paths mirror `categorySchema`/`modelSchema`/etc.'s new
 `.max(50)` bound server-side (`assertCategoryFields`/`assertModelFields`/
-`assertKitFields`/`assertLineItemFields`/`assertServiceFields` — R-8.6.2,
-a browser-direct caller bypassing the client Zod parse can't skip the bound).
+`assertKitFields`/`assertLineItemFields`/`assertServiceFields`/`assertStrLen`
+calls in `updateGroupNative` — R-8.6.2, a browser-direct caller bypassing the
+client Zod parse can't skip the bound).
 
 **Shared UI**: `src/components/settings/xero-coding-fields.tsx` —
 `XeroAccountCodeField`/`XeroTaxTypeField`, both self-gating on `useXeroLinked()`

@@ -76,6 +76,7 @@ import type * as equipmentTab from "../equipmentTab.js";
 import type * as fileUploads from "../fileUploads.js";
 import type * as files from "../files.js";
 import type * as financeArtifacts from "../financeArtifacts.js";
+import type * as financeOrg from "../financeOrg.js";
 import type * as globalSearch from "../globalSearch.js";
 import type * as groupTemplateItems from "../groupTemplateItems.js";
 import type * as groupTemplates from "../groupTemplates.js";
@@ -341,6 +342,7 @@ declare const fullApi: ApiFromModules<{
   fileUploads: typeof fileUploads;
   files: typeof files;
   financeArtifacts: typeof financeArtifacts;
+  financeOrg: typeof financeOrg;
   globalSearch: typeof globalSearch;
   groupTemplateItems: typeof groupTemplateItems;
   groupTemplates: typeof groupTemplates;

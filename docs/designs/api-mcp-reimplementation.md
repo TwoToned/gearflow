@@ -606,6 +606,59 @@ the same dispatcher; the ~25 curated tools; `list_operations` / `describe_operat
 proxy (decision 4). Key minted by hand from the existing `createApiKey` server action — no
 UI needed yet. **This is the "wire it into Claude Code and ask it real things" milestone.**
 
+### Phase 3 findings (2026-07-28) — what building the MCP layer actually showed
+
+Required by #999's acceptance criteria. Recorded here rather than quietly absorbed,
+same convention as §3's Phase 0 findings.
+
+**1. §12's ~25 curated tools landed at 20 (19 named + `whoami`).** All 19 names from
+the issue/design list are present; the count reads lower only because "~25" was always
+an estimate and 19 covers every named job without inventing a 20th.
+
+**2. Two of the 19 — `reserve_items`/`release_items` — don't have a 1:1 "reserve"
+primitive in the registry, because the app doesn't model a reservation as a distinct
+entity.** Booking gear (line-item add) already reserves it — the in-mutation
+availability check runs on every add — so a naive mapping would have made
+`add_line_items` and `reserve_items` two names for the same call. Resolved by mapping
+`reserve_items` → `warehouseWrites.reassignLineItemUnit` (committing a specific
+serialized unit to a line item — a real, distinct staging action) and `release_items` →
+`warehouseWrites.undeprepLine` (its inverse). Both are genuinely different operations
+from `add_line_items`/`lineItemWrites.removeNative`, not renames.
+
+**3. `search_assets` has no server-side search.** `assets.list` — the only reachable
+assets read — takes just `orgId`; there's no query/filter param in the Convex validator
+to widen into. Rather than invent search capability (out of Phase 3's "protocol adapter,
+no business logic" charter, and squarely Phase 5 territory if it needs a new
+`requireOrgReadFor` migration or a new query), `search_assets` returns the full list and
+the tool description says so plainly — filtering is left to the calling agent, which is
+a normal and correct pattern for an LLM client.
+
+**4. `agentOps` (§7's planned per-operation annotation) doesn't exist yet — it's Phase 5
+scope, and Phase 3 didn't need to pull it forward.** Curated-tool prose
+(summary/prerequisites/transition) lives in a Phase-3-scoped hand-authored table,
+`src/lib/api/mcp/curated-tool-defs.ts`, combined with registry-derived facts (scope,
+idempotency, schema, error codes) by the manifest generator. Migrate this table into
+`agentOps` when Phase 5 builds it, rather than keeping both as parallel sources.
+
+**5. The `X-RVLT-Flow-API-Version` header and `warnings[]` channel (§13) hadn't actually
+been wired up despite being described as "mechanics from day one."** Phase 2 shipped
+without them. Since Phase 3 is where the gap was noticed and MCP needed *a* versioning
+story anyway, the header was added to every `/api/v1` REST response too (not just MCP)
+in the same PR — cheap, additive, and it closes the gap instead of only half-fixing it
+for the new surface. `warnings[]` stays documented-but-empty: no operation is deprecated
+yet, so there's nothing for it to carry, and adding a permanent empty array to the
+existing (already-tested) REST envelope shape felt like a change looking for a reason
+rather than a real need.
+
+**6. Rate limits were left at the Phase 1 proposal, not recalibrated.** #999's
+acceptance criteria ask for calibration "from a real session." A curated-tool MCP
+session (one tool call per agent turn) generates meaningfully less traffic than the
+REST dispatcher's original design point (an arbitrary script hitting `/ops/*` in a
+loop), and manual testing stayed comfortably under both `agentRead` (600/min) and
+`agentWrite` (60/min). Recorded as "not recalibrated, evidence points the current
+numbers are conservative rather than tight" — genuine production volume, once it
+exists, is a better input than a manually-driven session count.
+
 **Phase 4 — safety rails (gates writes going wide).** `danger` classification pass across
 all 272 writes; `confirm` + idempotency enforcement; the agent bulk cap; `no_financials`
 enforcement; the agent-justified activity-log badge/filter; bulk-revert tooling

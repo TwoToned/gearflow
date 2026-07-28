@@ -48,6 +48,7 @@ import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Project, SyntaxKind, type VariableDeclaration } from "ts-morph";
+import { SELF_RESOURCE } from "../convex/lib/scopes.js";
 import {
   isPrivilegedArgName,
   policyForArg,
@@ -162,48 +163,69 @@ interface GuardFacts {
   scopePairs: ScopePair[];
 }
 
+const NO_GUARD: GuardFacts = { guard: "none", resource: null, action: null, scopePairs: [] };
+
+/** Which (resource, action) does one regex match name? `requireOrgReadFor` carries
+ *  only a resource — its action is always "read" — and `requireSelfScope` carries
+ *  only an action, on the pseudo-resource `self`. */
+function pairFromMatch(
+  pattern: (typeof GUARD_PATTERNS)[number],
+  match: RegExpMatchArray,
+): ScopePair | null {
+  const resource = pattern.resourceGroup
+    ? match[pattern.resourceGroup]
+    : pattern.kind === "self"
+      ? SELF_RESOURCE
+      : null;
+  const action = pattern.actionGroup
+    ? match[pattern.actionGroup]
+    : pattern.kind === "orgReadFor"
+      ? "read"
+      : null;
+  return resource && action ? { resource, action } : null;
+}
+
+/** All distinct pairs a pattern finds in one handler body, in source order. */
+function pairsFor(pattern: (typeof GUARD_PATTERNS)[number], body: string): ScopePair[] {
+  const pairs: ScopePair[] = [];
+  for (const match of body.matchAll(new RegExp(pattern.re, "g"))) {
+    const pair = pairFromMatch(pattern, match);
+    if (!pair) continue;
+    if (pairs.some((p) => p.resource === pair.resource && p.action === pair.action)) continue;
+    pairs.push(pair);
+  }
+  return pairs;
+}
+
 function classifyBody(body: string): GuardFacts {
+  // Checked first and unconditionally: a function that calls requireService is
+  // service-only regardless of what else it calls, because that guard throws for
+  // every non-service identity.
   if (/requireService\s*\(/.test(body)) {
     return { guard: "service", resource: null, action: null, scopePairs: [] };
   }
+
   for (const pattern of GUARD_PATTERNS) {
     if (pattern.kind === "service") continue;
-    // ALL matches, not just the first. A handler can gate conditionally — see the
-    // ScopePair doc comment — and reporting only the first pair would publish a
-    // scope requirement that is wrong for the other branch. The runtime probe
-    // (convex/agentRegistryProbe.test.ts) is what caught this.
-    const matches = [...body.matchAll(new RegExp(pattern.re, "g"))];
-    if (!matches.length) continue;
+    if (!pattern.re.test(body)) continue;
 
-    const pairs: ScopePair[] = [];
-    for (const match of matches) {
-      const resource = pattern.resourceGroup ? match[pattern.resourceGroup] : null;
-      const action = pattern.actionGroup
-        ? match[pattern.actionGroup]
-        : pattern.kind === "orgReadFor"
-          ? "read"
-          : null;
-      if (!resource || !action) continue;
-      if (pairs.some((p) => p.resource === resource && p.action === action)) continue;
-      pairs.push({ resource, action });
-    }
-
-    const first = matches[0];
+    // ALL matches, not just the first. A handler can gate conditionally, and
+    // reporting only the first pair would publish a scope requirement that is
+    // wrong for the other branch — exactly the defect the runtime probe
+    // (convex/agentRegistryProbe.test.ts) caught in collaboration.createThread.
+    const pairs = pairsFor(pattern, body);
+    const single = pairs.length === 1 ? pairs[0] : null;
     return {
       guard: pattern.kind,
-      // A single pair is the overwhelmingly common case and stays first-class for
-      // the docs; a conditional guard reports null here and forces consumers to
-      // read `scopePairs` rather than silently trusting one branch.
-      resource: pairs.length === 1 ? pairs[0].resource : null,
-      action: pairs.length === 1 ? pairs[0].action : null,
-      scopePairs: pairs.length
-        ? pairs
-        : pattern.actionGroup && first[pattern.actionGroup]
-          ? [{ resource: "self", action: first[pattern.actionGroup] }]
-          : [],
+      // A conditional guard reports null here, forcing consumers to read
+      // `scopePairs` rather than silently trusting one branch.
+      resource: single?.resource ?? null,
+      action: single?.action ?? null,
+      scopePairs: pairs,
     };
   }
-  return { guard: "none", resource: null, action: null, scopePairs: [] };
+
+  return NO_GUARD;
 }
 
 /**
@@ -286,6 +308,51 @@ function describeArgs(argsJson: string): ArgDescriptor[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Guards that admit an AGENT token. Everything else is unreachable BY
+ *  CONSTRUCTION — service-gated functions throw, and the resource-less org-read
+ *  guard fails closed (decision 2) — so reachability is derived from the guard the
+ *  function actually calls and cannot drift from reality. */
+const AGENT_ADMITTING_GUARDS = new Set<GuardKind>(["orgPermission", "orgReadFor", "self"]);
+
+/** A registered Convex function is a *callable* carrying the isQuery/isMutation/
+ *  exportArgs properties, not a plain object. Internal functions are unaddressable
+ *  from outside Convex at all, so they aren't registry rows. */
+function asPublicFn(value: unknown): { fn: RegisteredFn; kind: "query" | "mutation" } | null {
+  if (!value || (typeof value !== "function" && typeof value !== "object")) return null;
+  const fn = value as RegisteredFn;
+  if (fn.isPublic !== true) return null;
+  if (fn.isQuery) return { fn, kind: "query" };
+  if (fn.isMutation) return { fn, kind: "mutation" };
+  return null;
+}
+
+function toOperation(
+  moduleName: string,
+  fnName: string,
+  fn: RegisteredFn,
+  kind: "query" | "mutation",
+  guard: GuardFacts,
+): Operation {
+  const argsJson = fn.exportArgs?.() ?? "{}";
+  const returnsJson = fn.exportReturns?.() ?? "{}";
+  const args = describeArgs(argsJson);
+  return {
+    operation: `${moduleName}.${fnName}`,
+    module: moduleName,
+    fn: fnName,
+    kind,
+    guard: guard.guard,
+    resource: guard.resource,
+    action: guard.action,
+    scopePairs: guard.scopePairs,
+    agentReachable: AGENT_ADMITTING_GUARDS.has(guard.guard),
+    args,
+    privilegedArgs: args.map((a) => a.name).filter(isPrivilegedArgName),
+    argsSha: sha(argsJson),
+    returnsSha: sha(returnsJson),
+  };
+}
+
 async function collectOperations(): Promise<Operation[]> {
   const project = new Project({ skipAddingFilesFromTsConfig: true });
   const files = readdirSync(CONVEX_DIR)
@@ -298,48 +365,20 @@ async function collectOperations(): Promise<Operation[]> {
     const filePath = join(CONVEX_DIR, file);
     const moduleName = file.replace(/\.ts$/, "");
     const guards = readModuleGuards(filePath, project);
-
     const imported: Record<string, unknown> = await import(pathToFileURL(filePath).href);
 
     for (const [fnName, value] of Object.entries(imported)) {
-      // A registered Convex function is a *callable* carrying the isQuery /
-      // isMutation / exportArgs properties — not a plain object.
-      if (!value || (typeof value !== "function" && typeof value !== "object")) continue;
-      const fn = value as RegisteredFn;
-      const kind = fn.isQuery ? "query" : fn.isMutation ? "mutation" : null;
-      if (!kind) continue;
-      // Internal functions are unaddressable from outside Convex entirely — they
-      // aren't part of any surface, agent or browser, so they're not registry rows.
-      if (fn.isPublic !== true) continue;
-
-      const argsJson = fn.exportArgs?.() ?? "{}";
-      const returnsJson = fn.exportReturns?.() ?? "{}";
-      const args = describeArgs(argsJson);
-      const guard: GuardFacts = guards.byFn.get(fnName) ?? {
-        guard: "none",
-        resource: null,
-        action: null,
-        scopePairs: [],
-      };
-
-      operations.push({
-        operation: `${moduleName}.${fnName}`,
-        module: moduleName,
-        fn: fnName,
-        kind,
-        guard: guard.guard,
-        resource: guard.resource,
-        action: guard.action,
-        scopePairs: guard.scopePairs,
-        // Reachability is a property of the GUARD, not of a list someone
-        // maintains: anything service-gated throws for an agent token, and
-        // anything using the resource-less read guard fails closed (decision 2).
-        agentReachable: guard.guard === "orgPermission" || guard.guard === "orgReadFor" || guard.guard === "self",
-        args,
-        privilegedArgs: args.map((a) => a.name).filter(isPrivilegedArgName),
-        argsSha: sha(argsJson),
-        returnsSha: sha(returnsJson),
-      });
+      const registered = asPublicFn(value);
+      if (!registered) continue;
+      operations.push(
+        toOperation(
+          moduleName,
+          fnName,
+          registered.fn,
+          registered.kind,
+          guards.byFn.get(fnName) ?? NO_GUARD,
+        ),
+      );
     }
   }
 
@@ -441,9 +480,6 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
   API_REGISTRY.map((op) => [op.operation, op]),
 );
 
-export const AGENT_REACHABLE_OPERATIONS: readonly RegistryOperation[] =
-  API_REGISTRY.filter((op) => op.agentReachable);
-
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
   total: ${operations.length},
@@ -525,10 +561,9 @@ convention:
 
 // ─── 5. Main ────────────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
-  const check = process.argv.includes("--check");
-  const operations = await collectOperations();
-
+/** Gates 1 + 3, which both run before anything is written. Exits the process on
+ *  failure — a gate that merely warned would be a comment. */
+function runPreWriteGates(operations: Operation[], floor: number | null): void {
   const privilegedProblems = checkPrivilegedArgs(operations);
   if (privilegedProblems.length) {
     console.error("\n✖ Privileged-argument gate failed:\n");
@@ -537,7 +572,6 @@ async function main(): Promise<void> {
   }
 
   const reachableCount = operations.filter((o) => o.agentReachable).length;
-  const floor = readReachabilityFloor();
   if (floor != null && reachableCount < floor) {
     console.error(
       `\n✖ Reachability gate failed: ${reachableCount} agent-reachable operations, ` +
@@ -546,46 +580,58 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+}
 
+/** Gate 2. Regenerate in memory and compare; a stale committed output fails. */
+function runStalenessGate(outputs: ReadonlyArray<readonly [string, string]>): void {
+  const stale = outputs
+    .filter(([path, expected]) => {
+      try {
+        return readFileSync(path, "utf8") !== expected;
+      } catch {
+        return true; // missing counts as stale
+      }
+    })
+    .map(([path]) => path);
+
+  if (stale.length) {
+    console.error(
+      `\n✖ Registry staleness gate failed. Out of date:\n${stale
+        .map((p) => `  - ${p}`)
+        .join("\n")}\n\n  Run \`pnpm run api:registry\` and commit the result.\n`,
+    );
+    process.exit(1);
+  }
+}
+
+async function main(): Promise<void> {
+  const check = process.argv.includes("--check");
+  const operations = await collectOperations();
+  const floor = readReachabilityFloor();
+
+  runPreWriteGates(operations, floor);
+
+  const reachableCount = operations.filter((o) => o.agentReachable).length;
   // Ratchet: regenerating raises the floor to whatever we just measured, so the
   // gate tightens automatically as Phase 5 migrates read guards. It never lowers
   // itself — a drop trips the gate above and has to be hand-edited with a reason.
-  const registry = emitRegistry(operations);
-  const coverage = emitCoverage(operations, Math.max(floor ?? 0, reachableCount));
+  const outputs = [
+    [REGISTRY_OUT, emitRegistry(operations)],
+    [COVERAGE_OUT, emitCoverage(operations, Math.max(floor ?? 0, reachableCount))],
+  ] as const;
 
   if (check) {
-    const stale: string[] = [];
-    for (const [path, expected] of [
-      [REGISTRY_OUT, registry],
-      [COVERAGE_OUT, coverage],
-    ] as const) {
-      let actual = "";
-      try {
-        actual = readFileSync(path, "utf8");
-      } catch {
-        /* missing counts as stale */
-      }
-      if (actual !== expected) stale.push(path);
-    }
-    if (stale.length) {
-      console.error(
-        `\n✖ Registry staleness gate failed. Out of date:\n${stale
-          .map((p) => `  - ${p}`)
-          .join("\n")}\n\n  Run \`pnpm run api:registry\` and commit the result.\n`,
-      );
-      process.exit(1);
-    }
+    runStalenessGate(outputs);
     console.log(
       `✓ API registry current — ${operations.length} public operations, ${reachableCount} agent-reachable.`,
     );
     return;
   }
 
-  writeFileSync(REGISTRY_OUT, registry);
-  writeFileSync(COVERAGE_OUT, coverage);
+  for (const [path, contents] of outputs) writeFileSync(path, contents);
   console.log(
     `✓ Wrote ${operations.length} operations (${reachableCount} agent-reachable) to:\n` +
-      `  ${REGISTRY_OUT}\n  ${COVERAGE_OUT}`,
+      outputs.map(([path]) => `  ${path}`).join("\n"),
   );
 }
 

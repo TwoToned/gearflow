@@ -1,5 +1,6 @@
-import type { Auth } from "convex/server";
+import type { Auth, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
+import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import {
   decideOrgPermission,
@@ -90,18 +91,21 @@ export async function getAuthContext(
   // Nor may anything but the reserved subject impersonate the service identity.
   if (identity.subject === SERVICE_SUBJECT) return null;
 
+  return memberAuthFrom(identity);
+}
+
+/** Shape a verified non-service identity into a user or agent context. The `akid`
+ *  claim is the ONLY difference between the two — everything downstream then
+ *  treats them identically apart from the scope check and the rate-limit bucket. */
+function memberAuthFrom(identity: UserIdentity): ConvexMemberAuth {
+  const userId = identity.subject;
   const orgId = typeof identity.orgId === "string" ? identity.orgId : null;
   const role = typeof identity.role === "string" ? identity.role : null;
+  const akid = identity[AGENT_KEY_CLAIM];
 
-  const akid =
-    typeof identity[AGENT_KEY_CLAIM] === "string" && identity[AGENT_KEY_CLAIM].length > 0
-      ? identity[AGENT_KEY_CLAIM]
-      : null;
-  if (akid) {
-    return { kind: "agent", userId: identity.subject, orgId, role, apiKeyId: akid };
-  }
-
-  return { kind: "user", userId: identity.subject, orgId, role };
+  return typeof akid === "string" && akid.length > 0
+    ? { kind: "agent", userId, orgId, role, apiKeyId: akid }
+    : { kind: "user", userId, orgId, role };
 }
 
 /** True for the two identity kinds backed by a member row (user + agent). */
@@ -244,6 +248,31 @@ export async function requireAgentScope(
     .withIndex("by_cuid", (q) => q.eq("id", auth.apiKeyId))
     .first();
 
+  assertKeyStillValid(key, auth);
+
+  if (!hasScope(parseScopes(key?.scopes), resource, action)) {
+    // MISSING_SCOPE is deliberately DISTINCT from FORBIDDEN: the key is too
+    // narrow (an operator can widen it), versus the acting user's role forbids
+    // the action (widening the key would change nothing). Conflating them sends
+    // an agent down the wrong recovery path.
+    throw new ConvexError({
+      code: "MISSING_SCOPE",
+      message: `This API key is missing the '${resource}:${action}' scope.`,
+      requiredScope: `${resource}:${action}`,
+    });
+  }
+}
+
+/**
+ * The key document must still authorise this token, right now, inside this
+ * transaction. This is what makes revoke/expiry/re-point land on the NEXT call
+ * rather than after the token's 60s TTL, and it is why a leaked agent token is
+ * worth so little.
+ */
+function assertKeyStillValid(
+  key: Doc<"apiKeys"> | null,
+  auth: Extract<ConvexAuthContext, { kind: "agent" }>,
+): void {
   if (!key || key.isActive === false || key.revokedAt != null) {
     throw new ConvexError({
       code: "KEY_INACTIVE",
@@ -274,17 +303,6 @@ export async function requireAgentScope(
         message: "This API key has expired.",
       });
     }
-  }
-  if (!hasScope(parseScopes(key.scopes), resource, action)) {
-    // MISSING_SCOPE is deliberately DISTINCT from FORBIDDEN: the key is too
-    // narrow (an operator can widen it), versus the acting user's role forbids
-    // the action (widening the key would change nothing). Conflating them sends
-    // an agent down the wrong recovery path.
-    throw new ConvexError({
-      code: "MISSING_SCOPE",
-      message: `This API key is missing the '${resource}:${action}' scope.`,
-      requiredScope: `${resource}:${action}`,
-    });
   }
 }
 

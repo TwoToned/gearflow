@@ -28,7 +28,7 @@ import { AgentTokenError } from "./agent-token";
  *      just "no". The availability bundle already computes both.
  */
 
-export type ErrorCategory =
+type ErrorCategory =
   /** The credential itself: missing, invalid, revoked, expired. */
   | "auth"
   /** The key's scopes don't cover the operation. Operator-fixable. */
@@ -48,7 +48,7 @@ export type ErrorCategory =
   /** Anything unclassified. Never leaks an internal message — see below. */
   | "internal";
 
-export interface ApiErrorRecovery {
+interface ApiErrorRecovery {
   /** A stable machine token naming the next step (`open_unlock_session`, …). */
   action: string;
   /** One human sentence an agent can surface to its operator verbatim. */
@@ -310,9 +310,8 @@ const UNKNOWN_SPEC: CodeSpec = {
   recovery: null,
 };
 
-/** Look up a code's classification. Exported for the registry generator, which
- *  publishes each operation's possible error codes in the OpenAPI/MCP docs. */
-export function specForCode(code: string): CodeSpec {
+/** Look up a code's classification, falling back to the conservative unknown spec. */
+function specForCode(code: string): CodeSpec {
   return CODE_SPECS[code] ?? UNKNOWN_SPEC;
 }
 
@@ -332,7 +331,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * added since). Handle both, and recognise the rate limiter's `kind: "RateLimited"`
  * payload, which names its discriminator `kind` rather than `code`.
  */
-function extract(err: unknown): { code: string; message: string; data: Record<string, unknown> } {
+interface Extracted {
+  code: string;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+const UNKNOWN: Extracted = {
+  code: "INTERNAL_ERROR",
+  message: "An unexpected error occurred.",
+  data: {},
+};
+
+/** A ConvexError's payload is either a bare string (the older guards) or an object
+ *  carrying a `code` — or, for the rate limiter, a `kind`. Both shapes here. */
+function extractConvex(err: ConvexError<never>): Extracted {
+  const data: unknown = err.data;
+  if (typeof data === "string") {
+    return { code: inferCodeFromMessage(data), message: data, data: {} };
+  }
+  if (!isRecord(data)) return { ...UNKNOWN, message: err.message };
+
+  const discriminator = typeof data.code === "string" ? data.code : data.kind;
+  return {
+    code: typeof discriminator === "string" ? discriminator : "INTERNAL_ERROR",
+    message: typeof data.message === "string" ? data.message : err.message,
+    data,
+  };
+}
+
+function extract(err: unknown): Extracted {
   if (err instanceof ApiKeyAuthError) {
     return {
       code: err.code,
@@ -343,18 +371,8 @@ function extract(err: unknown): { code: string; message: string; data: Record<st
   if (err instanceof AgentTokenError) {
     return { code: err.code, message: err.message, data: {} };
   }
-  if (err instanceof ConvexError) {
-    const data: unknown = err.data;
-    if (typeof data === "string") return { code: inferCodeFromMessage(data), message: data, data: {} };
-    if (isRecord(data)) {
-      const kind = typeof data.kind === "string" ? data.kind : null;
-      const code = typeof data.code === "string" ? data.code : kind;
-      const message = typeof data.message === "string" ? data.message : err.message;
-      return { code: code ?? "INTERNAL_ERROR", message, data };
-    }
-    return { code: "INTERNAL_ERROR", message: err.message, data: {} };
-  }
-  return { code: "INTERNAL_ERROR", message: "An unexpected error occurred.", data: {} };
+  if (err instanceof ConvexError) return extractConvex(err as ConvexError<never>);
+  return UNKNOWN;
 }
 
 /**

@@ -21,6 +21,12 @@ import { register as registerShardedCounter } from "@convex-dev/sharded-counter/
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { API_REGISTRY } from "../src/lib/api/registry.generated";
+import {
+  callConvexDynamic,
+  isArgumentValidationError,
+  loadConvexFunctions,
+  synthesiseArgs,
+} from "../tests/helpers/convex-function-surface";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -36,104 +42,6 @@ const asAgent = { subject: USER, orgId: ORG, akid: KEY };
 /** The literal `requireService` rejection message (convex/lib/auth.ts). */
 const SERVICE_GUARD = /requires the RVLT Flow server/i;
 
-// ─── Argument synthesis from Convex's exported validator tree ────────────────
-//
-// We only need arguments that PASS validation — the call must reach the handler
-// so the guard can reject it. Values are otherwise meaningless.
-
-interface ValidatorNode {
-  type: string;
-  value?: unknown;
-  tableName?: string;
-  fieldType?: ValidatorNode;
-  optional?: boolean;
-}
-
-function synth(node: ValidatorNode): unknown {
-  switch (node.type) {
-    case "string":
-      return "x";
-    case "number":
-      return 0;
-    case "int64":
-    case "bigint":
-      return BigInt(0);
-    case "boolean":
-      return false;
-    case "null":
-      return null;
-    case "any":
-      return null;
-    case "bytes":
-      return new ArrayBuffer(0);
-    case "id":
-      // A syntactically valid but non-existent id: the guard runs before any read.
-      return "kg000000000000000000000000000";
-    case "array":
-      return [];
-    case "literal":
-      return node.value;
-    case "record":
-      return {};
-    case "union": {
-      const options = (node.value ?? []) as ValidatorNode[];
-      // Prefer a `null` branch when the union has one (v.union(v.number(), v.null())),
-      // otherwise take the first — either satisfies the validator.
-      const nullBranch = options.find((o) => o.type === "null");
-      return synth(nullBranch ?? options[0]);
-    }
-    case "object": {
-      const fields = (node.value ?? {}) as Record<string, ValidatorNode>;
-      const out: Record<string, unknown> = {};
-      for (const [name, spec] of Object.entries(fields)) {
-        if (spec.optional) continue; // omit every optional — smallest valid payload
-        out[name] = synth(spec.fieldType as ValidatorNode);
-      }
-      return out;
-    }
-    default:
-      return null;
-  }
-}
-
-function synthArgs(argsJson: string): Record<string, unknown> {
-  const parsed = JSON.parse(argsJson) as ValidatorNode;
-  const value = synth(parsed);
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
-}
-
-// ─── Load every registered function, keyed by "module.fn" ────────────────────
-
-interface RegisteredFn {
-  isQuery?: boolean;
-  isMutation?: boolean;
-  isPublic?: boolean;
-  exportArgs?: () => string;
-}
-
-async function loadFunctions(): Promise<Map<string, RegisteredFn>> {
-  const found = new Map<string, RegisteredFn>();
-  for (const [path, load] of Object.entries(modules)) {
-    const match = /^\.\/([^/]+)\.ts$/.exec(path);
-    if (!match || match[1].endsWith(".test")) continue;
-    const moduleName = match[1];
-    let imported: Record<string, unknown>;
-    try {
-      imported = (await load()) as Record<string, unknown>;
-    } catch {
-      continue; // schema.ts / config modules that aren't function modules
-    }
-    for (const [fnName, value] of Object.entries(imported)) {
-      if (!value || (typeof value !== "function" && typeof value !== "object")) continue;
-      const fn = value as RegisteredFn;
-      if (fn.isPublic !== true) continue;
-      if (!fn.isQuery && !fn.isMutation) continue;
-      found.set(`${moduleName}.${fnName}`, fn);
-    }
-  }
-  return found;
-}
-
 function makeT(): T {
   const t = convexTest(schema, modules);
   registerRateLimiter(t, "rateLimiter");
@@ -148,28 +56,6 @@ function apiRef(operation: string, api: Record<string, Record<string, unknown>>)
 }
 
 
-/**
- * Invoke a function chosen at RUNTIME. `convex-test`'s typed `query`/`mutation`
- * signatures infer args from a statically-known FunctionReference, which a sweep
- * over the whole surface cannot provide — the reference and its args are both
- * computed. One narrow, commented cast here beats sprinkling `as never` at every
- * call site.
- */
-type DynamicCaller = {
-  withIdentity: (identity: Record<string, unknown>) => {
-    query: (ref: unknown, args: unknown) => Promise<unknown>;
-    mutation: (ref: unknown, args: unknown) => Promise<unknown>;
-  };
-};
-
-function callDynamic(
-  t: T,
-  kind: "query" | "mutation",
-  reference: unknown,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  return (t as unknown as DynamicCaller).withIdentity(asAgent)[kind](reference, args);
-}
 
 const SERVICE_OPERATIONS = API_REGISTRY.filter((op) => op.guard === "service");
 
@@ -184,7 +70,7 @@ describe("requireService is unreachable by an agent token", () => {
     const { api } = (await import("./_generated/api")) as unknown as {
       api: Record<string, Record<string, unknown>>;
     };
-    const functions = await loadFunctions();
+    const functions = await loadConvexFunctions(modules);
     const t = makeT();
 
     // Best-case caller: an OWNER acting user holding a `*` key. Anything that
@@ -209,15 +95,15 @@ describe("requireService is unreachable by an agent token", () => {
 
       let args: Record<string, unknown>;
       try {
-        args = synthArgs(fn.exportArgs());
+        args = synthesiseArgs(fn.exportArgs());
       } catch {
         continue; // unsynthesisable validator — covered by the arg-coverage test below
       }
 
       swept += 1;
-      const invoke = fn.isMutation
-        ? callDynamic(t, "mutation", reference, args)
-        : callDynamic(t, "query", reference, args);
+      const invoke = callConvexDynamic(
+        t, asAgent, fn.isMutation ? "mutation" : "query", reference, args,
+      );
 
       try {
         await invoke;
@@ -227,7 +113,7 @@ describe("requireService is unreachable by an agent token", () => {
         // An argument-validation rejection means we never reached the handler, so
         // the guard was not actually exercised — count it as unswept rather than
         // as a pass, and let the coverage assertion below judge the total.
-        if (/ArgumentValidationError|Validator error/i.test(message)) {
+        if (isArgumentValidationError(message)) {
           swept -= 1;
           continue;
         }

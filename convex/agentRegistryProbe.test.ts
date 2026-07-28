@@ -31,6 +31,13 @@ import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { RESOURCES } from "./lib/permissionsCore";
 import { API_REGISTRY } from "../src/lib/api/registry.generated";
+import {
+  callConvexDynamic,
+  isArgumentValidationError,
+  loadConvexFunctions,
+  synthesiseArgs,
+  type RegisteredFn,
+} from "../tests/helpers/convex-function-surface";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -39,70 +46,6 @@ const ORG = "org_A";
 const USER = "user_1";
 const KEY = "key_1";
 const asAgent = { subject: USER, orgId: ORG, akid: KEY };
-
-interface ValidatorNode {
-  type: string;
-  value?: unknown;
-  fieldType?: ValidatorNode;
-  optional?: boolean;
-}
-
-function synth(node: ValidatorNode): unknown {
-  switch (node.type) {
-    case "string": return "x";
-    case "number": return 0;
-    case "int64": case "bigint": return BigInt(0);
-    case "boolean": return false;
-    case "null": case "any": return null;
-    case "bytes": return new ArrayBuffer(0);
-    case "id": return "kg000000000000000000000000000";
-    case "array": return [];
-    case "record": return {};
-    case "literal": return node.value;
-    case "union": {
-      const options = (node.value ?? []) as ValidatorNode[];
-      return synth(options.find((o) => o.type === "null") ?? options[0]);
-    }
-    case "object": {
-      const fields = (node.value ?? {}) as Record<string, ValidatorNode>;
-      const out: Record<string, unknown> = {};
-      for (const [name, spec] of Object.entries(fields)) {
-        if (spec.optional) continue;
-        out[name] = synth(spec.fieldType as ValidatorNode);
-      }
-      return out;
-    }
-    default: return null;
-  }
-}
-
-interface RegisteredFn {
-  isQuery?: boolean;
-  isMutation?: boolean;
-  isPublic?: boolean;
-  exportArgs?: () => string;
-}
-
-async function loadFunctions(): Promise<Map<string, RegisteredFn>> {
-  const found = new Map<string, RegisteredFn>();
-  for (const [path, load] of Object.entries(modules)) {
-    const match = /^\.\/([^/]+)\.ts$/.exec(path);
-    if (!match || match[1].endsWith(".test")) continue;
-    let imported: Record<string, unknown>;
-    try {
-      imported = (await load()) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    for (const [fnName, value] of Object.entries(imported)) {
-      if (!value || (typeof value !== "function" && typeof value !== "object")) continue;
-      const fn = value as RegisteredFn;
-      if (fn.isPublic !== true || (!fn.isQuery && !fn.isMutation)) continue;
-      found.set(`${match[1]}.${fnName}`, fn);
-    }
-  }
-  return found;
-}
 
 /** Every scope in the vocabulary EXCEPT the declared ones, so the ONLY thing that
  *  can produce a MISSING_SCOPE rejection is a pair we're probing. Resources named
@@ -150,28 +93,6 @@ async function seedKey(t: T, scopes: string[]) {
 }
 
 
-/**
- * Invoke a function chosen at RUNTIME. `convex-test`'s typed `query`/`mutation`
- * signatures infer args from a statically-known FunctionReference, which a sweep
- * over the whole surface cannot provide — the reference and its args are both
- * computed. One narrow, commented cast here beats sprinkling `as never` at every
- * call site.
- */
-type DynamicCaller = {
-  withIdentity: (identity: Record<string, unknown>) => {
-    query: (ref: unknown, args: unknown) => Promise<unknown>;
-    mutation: (ref: unknown, args: unknown) => Promise<unknown>;
-  };
-};
-
-function callDynamic(
-  t: T,
-  kind: "query" | "mutation",
-  reference: unknown,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  return (t as unknown as DynamicCaller).withIdentity(asAgent)[kind](reference, args);
-}
 
 const MISSING_SCOPE = /missing the '([^']+)' scope/;
 
@@ -182,6 +103,80 @@ const PROBED = API_REGISTRY.filter(
   (op) => op.guard === "orgPermission" && op.scopePairs.length > 0,
 );
 
+/** Smallest valid arg object for a probe call, or null if it can't be built.
+ *  The org args are forced to the caller's org so the call fails on SCOPE rather
+ *  than on an org mismatch that would mask the result we're after. */
+function prepareArgs(argsJson: string): Record<string, unknown> | null {
+  let args: Record<string, unknown>;
+  try {
+    args = synthesiseArgs(argsJson);
+  } catch {
+    return null;
+  }
+  for (const key of ["orgId", "organizationId"]) {
+    if (key in args) args[key] = ORG;
+  }
+  return args;
+}
+
+/** What one probed call told us about the registry's claim. */
+type ProbeVerdict =
+  /** The call never reached the guard, so it proves nothing either way. */
+  | { kind: "inconclusive" }
+  /** Rejected for exactly one of the declared scopes — the registry is right. */
+  | { kind: "confirmed" }
+  /** Rejected for a scope the registry does not publish. */
+  | { kind: "wrong-scope"; enforced: string; declared: string[] }
+  /** Went through with the declared scope withheld — the registry is wrong. */
+  | { kind: "not-enforced" };
+
+/** Classify a single probe attempt. Split out so the sweep below reads as a loop
+ *  over verdicts rather than a nest of error-string branches. */
+function verdictFor(outcome: { ok: boolean; message: string }, declared: string[]): ProbeVerdict {
+  if (outcome.ok) return { kind: "not-enforced" };
+
+  const enforced = MISSING_SCOPE.exec(outcome.message)?.[1];
+  if (enforced) {
+    // The enforced scope must be one the registry published. Any other string
+    // means the docs would send an operator to grant the wrong thing.
+    return declared.includes(enforced)
+      ? { kind: "confirmed" }
+      : { kind: "wrong-scope", enforced, declared };
+  }
+
+  // Either the args never validated, or the call was rejected before the scope
+  // check could speak (a kill switch, a not-found on a synthesised id). Neither
+  // tells us anything about the declared pair.
+  return { kind: "inconclusive" };
+}
+
+/** Run one operation against a key that holds everything EXCEPT its declared
+ *  scope(s), and say what that told us. */
+async function probeOne(
+  t: TestConvex<typeof schema>,
+  api: Record<string, Record<string, unknown>>,
+  functions: Map<string, RegisteredFn>,
+  op: (typeof PROBED)[number],
+): Promise<ProbeVerdict> {
+  const fn = functions.get(op.operation);
+  const [moduleName, fnName] = op.operation.split(".");
+  const reference = api[moduleName]?.[fnName];
+  const args = fn?.exportArgs && reference ? prepareArgs(fn.exportArgs()) : null;
+  if (!fn || !reference || !args) return { kind: "inconclusive" };
+
+  const declared = op.scopePairs.map((p) => `${p.resource}:${p.action}`);
+  await seedKey(t, everyScopeExcept(op.scopePairs));
+
+  const outcome = await callConvexDynamic(
+    t, asAgent, fn.isMutation ? "mutation" : "query", reference, args,
+  ).then(
+    () => ({ ok: true, message: "" }),
+    (error: unknown) => ({ ok: false, message: String(error) }),
+  );
+
+  return verdictFor(outcome, declared);
+}
+
 describe("static (resource, action) extraction matches runtime enforcement", () => {
   test("there is a meaningful population to probe", () => {
     expect(PROBED.length).toBeGreaterThan(200);
@@ -191,7 +186,7 @@ describe("static (resource, action) extraction matches runtime enforcement", () 
     const { api } = (await import("./_generated/api")) as unknown as {
       api: Record<string, Record<string, unknown>>;
     };
-    const functions = await loadFunctions();
+    const functions = await loadConvexFunctions(modules);
 
     const t = convexTest(schema, modules);
     registerRateLimiter(t, "rateLimiter");
@@ -200,80 +195,36 @@ describe("static (resource, action) extraction matches runtime enforcement", () 
       await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "owner" });
     });
 
-    const notEnforced: string[] = [];
-    const wrongPair: Array<{ operation: string; declared: string; enforced: string }> = [];
-    let probed = 0;
+    const results = new Map<string, ProbeVerdict>();
 
     for (const op of PROBED) {
-      const fn = functions.get(op.operation);
-      const [moduleName, fnName] = op.operation.split(".");
-      const reference = api[moduleName]?.[fnName];
-      if (!fn?.exportArgs || !reference) continue;
-
-      let args: Record<string, unknown>;
-      try {
-        const value = synth(JSON.parse(fn.exportArgs()) as ValidatorNode);
-        if (typeof value !== "object" || value === null) continue;
-        args = value as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-      // Force the org args to the caller's org so the call fails on SCOPE, not on
-      // an org mismatch that would mask the result.
-      for (const key of ["orgId", "organizationId"]) {
-        if (key in args) args[key] = ORG;
-      }
-
-      const declared = op.scopePairs.map((p) => `${p.resource}:${p.action}`);
-      await seedKey(t, everyScopeExcept(op.scopePairs));
-      probed += 1;
-
-      try {
-        await (fn.isMutation
-          ? callDynamic(t, "mutation", reference, args)
-          : callDynamic(t, "query", reference, args));
-        // Reaching the handler without a scope rejection means the declared pairs
-        // are NOT what the function enforces.
-        notEnforced.push(`${op.operation} (declared ${declared.join(" | ")})`);
-      } catch (error) {
-        const message = String(error);
-        const match = MISSING_SCOPE.exec(message);
-        if (match) {
-          // The enforced scope must be one the registry published. Any other
-          // string means the docs would send an operator to grant the wrong thing.
-          if (!declared.includes(match[1])) {
-            wrongPair.push({ operation: op.operation, declared: declared.join(" | "), enforced: match[1] });
-          }
-          continue;
-        }
-        if (/ArgumentValidationError|Validator error/i.test(message)) {
-          probed -= 1;
-          continue;
-        }
-        // Rejected for some OTHER reason before the scope check could speak (a
-        // kill switch, a not-found on a synthesised id). That tells us nothing
-        // about the pair, so it isn't counted either way.
-        probed -= 1;
-      }
+      const verdict = await probeOne(t, api, functions, op);
+      if (verdict.kind !== "inconclusive") results.set(op.operation, verdict);
     }
 
+    const wrongPair = [...results.entries()].filter(
+      (entry): entry is [string, Extract<ProbeVerdict, { kind: "wrong-scope" }>] =>
+        entry[1].kind === "wrong-scope",
+    );
+    const notEnforced = [...results.entries()].filter(([, v]) => v.kind === "not-enforced");
+
     expect(
-      wrongPair,
-      `Registry declares a scope the function does not enforce:\n${wrongPair
-        .map((w) => `  ${w.operation}: declared ${w.declared}, enforces ${w.enforced}`)
-        .join("\n")}`,
+      wrongPair.map(
+        ([operation, v]) => `${operation}: declared ${v.declared.join(" | ")}, enforces ${v.enforced}`,
+      ),
+      "Registry declares a scope the function does not enforce",
     ).toEqual([]);
 
     expect(
-      notEnforced,
-      `Registry declares a scope, but the call went through without it:\n${notEnforced.join("\n")}`,
+      notEnforced.map(([operation]) => operation),
+      "Registry declares a scope, but the call went through without it",
     ).toEqual([]);
 
     // The probe is only evidence if it actually landed on the surface. Today it
     // reaches 100% of the probed population; asserted at 90% so one operation that
     // starts rejecting earlier for an unrelated reason doesn't turn the suite red,
     // while a synthesis regression that quietly reached nothing still trips it.
-    expect(probed).toBeGreaterThanOrEqual(Math.floor(PROBED.length * 0.9));
+    expect(results.size).toBeGreaterThanOrEqual(Math.floor(PROBED.length * 0.9));
   }, 120_000);
 
   test("every declared resource is a real member of the RBAC vocabulary", () => {

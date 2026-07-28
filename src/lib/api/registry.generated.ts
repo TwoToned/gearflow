@@ -25691,8 +25691,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "dismissManyNative",
     "kind": "mutation",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "write",
     "scopePairs": [
       {
         "resource": "self",
@@ -25722,8 +25722,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "mine",
     "kind": "query",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "read",
     "scopePairs": [
       {
         "resource": "self",
@@ -25742,8 +25742,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "pruneStaleNative",
     "kind": "mutation",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "write",
     "scopePairs": [
       {
         "resource": "self",
@@ -35978,8 +35978,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "createNative",
     "kind": "mutation",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "write",
     "scopePairs": [
       {
         "resource": "self",
@@ -36039,8 +36039,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "removeNative",
     "kind": "mutation",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "write",
     "scopePairs": [
       {
         "resource": "self",
@@ -36080,8 +36080,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "setDefaultNative",
     "kind": "mutation",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "write",
     "scopePairs": [
       {
         "resource": "self",
@@ -36126,8 +36126,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "updateNative",
     "kind": "mutation",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "write",
     "scopePairs": [
       {
         "resource": "self",
@@ -45155,8 +45155,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "mine",
     "kind": "query",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "read",
     "scopePairs": [
       {
         "resource": "self",
@@ -45222,8 +45222,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "upsertMine",
     "kind": "mutation",
     "guard": "self",
-    "resource": null,
-    "action": null,
+    "resource": "self",
+    "action": "write",
     "scopePairs": [
       {
         "resource": "self",
@@ -50007,9 +50007,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
 export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> = new Map(
   API_REGISTRY.map((op) => [op.operation, op]),
 );
-
-export const AGENT_REACHABLE_OPERATIONS: readonly RegistryOperation[] =
-  API_REGISTRY.filter((op) => op.agentReachable);
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {

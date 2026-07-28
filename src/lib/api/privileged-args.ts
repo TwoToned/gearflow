@@ -20,7 +20,7 @@
  */
 
 /** What an AGENT may do with this argument. */
-export type PrivilegedArgAccess =
+type PrivilegedArgAccess =
   /** Never reachable by an agent — the dispatcher strips it and Convex rejects it. */
   | "denied"
   /** Reachable only if the key holds the named extra scope. */
@@ -115,9 +115,10 @@ export const PRIVILEGED_ARG_POLICIES: readonly PrivilegedArgPolicy[] = [
 
 const BY_ARG = new Map(PRIVILEGED_ARG_POLICIES.map((p) => [p.arg, p]));
 
-/** The shape that triggers the CI gate. Kept here so the generator and the docs
- *  can't disagree about what counts as privileged. */
-export const PRIVILEGED_ARG_PATTERN = /^(allow|force|skip|override|ignore|bypass)/;
+/** The shape that triggers the CI gate. Module-private on purpose: callers ask
+ *  {@link isPrivilegedArgName}, so there is exactly one place that decides what
+ *  counts as privileged and no second copy of the pattern to drift. */
+const PRIVILEGED_ARG_PATTERN = /^(allow|force|skip|override|ignore|bypass)/;
 
 /** Does this argument name need a policy row? */
 export function isPrivilegedArgName(name: string): boolean {

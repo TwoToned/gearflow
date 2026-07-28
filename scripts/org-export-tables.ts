@@ -150,7 +150,17 @@ export const EXCLUDED = {
   // operational state, not per-org domain data.
   platform: ["siteSettings", "sentEmails", "organizations", "systemFlags"],
   // Ephemeral / live-only presence + preferences — no restore value.
-  ephemeral: ["collaborationLocks", "collaborationPresence", "activityEvents", "userNotificationPreferences"],
+  // apiIdempotency is the API/MCP replay ledger: short-lived dedup rows whose
+  // `result` blobs are cached copies of data the real tables already hold.
+  // Restoring them would let a stale key replay into a fresh org, and exporting
+  // them would duplicate row contents outside their own table's redaction path.
+  ephemeral: [
+    "collaborationLocks",
+    "collaborationPresence",
+    "activityEvents",
+    "userNotificationPreferences",
+    "apiIdempotency",
+  ],
 } as const;
 
 /**
@@ -183,7 +193,8 @@ export const EXCLUDED_TABLES: string[] = [
 export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABLES];
 
 // WS1 (#940): +5 — quotes, invoices, invoiceLines, xeroIntegrations, xeroSyncLogs.
-export const EXPECTED_TABLE_COUNT = 109;
+// #997: +1 — apiIdempotency (EXCLUDED/ephemeral, the API replay ledger).
+export const EXPECTED_TABLE_COUNT = 110;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

@@ -12,6 +12,7 @@ import type * as activityLog from "../activityLog.js";
 import type * as activityLogWrites from "../activityLogWrites.js";
 import type * as apiIdempotency from "../apiIdempotency.js";
 import type * as apiKeys from "../apiKeys.js";
+import type * as apiRequestLog from "../apiRequestLog.js";
 import type * as assetAccessories from "../assetAccessories.js";
 import type * as assetAccessoriesWrites from "../assetAccessoriesWrites.js";
 import type * as assetBulkChildren from "../assetBulkChildren.js";
@@ -276,6 +277,7 @@ declare const fullApi: ApiFromModules<{
   activityLogWrites: typeof activityLogWrites;
   apiIdempotency: typeof apiIdempotency;
   apiKeys: typeof apiKeys;
+  apiRequestLog: typeof apiRequestLog;
   assetAccessories: typeof assetAccessories;
   assetAccessoriesWrites: typeof assetAccessoriesWrites;
   assetBulkChildren: typeof assetBulkChildren;

@@ -602,3 +602,121 @@ describe("service template CRUD", () => {
     ).rejects.toThrow(/Template not found/i);
   });
 });
+
+// ─── #988 (Phase C) — the previously-deferred bulk/generate/clone/convert gate
+// sites (FEATUREDOCS/62 "Deliberately deferred") are now gated. Each of these
+// is a "kind: structural" gate (same family a single create/update/delete
+// already uses), so an ON_SITE project (JUSTIFY tier) rejects without a
+// justification and succeeds with one. ─────────────────────────────────────
+describe("#988 previously-deferred gate sites", () => {
+  const JUSTIFICATION = "Client requested a change while on site today.";
+
+  test("bulkDeleteServicesNative rejects on ON_SITE without justification, succeeds with one", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { status: "ON_SITE" });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, justification: JUSTIFICATION, now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkDeleteServicesNative, { ids: ["s1"], orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logbd" }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkDeleteServicesNative, {
+      ids: ["s1"], orgId: ORG, now: NOW + 2, actor: ACTOR, auditId: "logbd2", justification: JUSTIFICATION,
+    });
+    expect(res.deleted).toBe(1);
+  });
+
+  test("bulkUpdateServiceStatusNative rejects on ON_SITE without justification, succeeds with one", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { status: "ON_SITE" });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, justification: JUSTIFICATION, now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkUpdateServiceStatusNative, { ids: ["s1"], orgId: ORG, status: "CONFIRMED", now: NOW + 1, actor: ACTOR, auditId: "logbs" }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.bulkUpdateServiceStatusNative, {
+      ids: ["s1"], orgId: ORG, status: "CONFIRMED", now: NOW + 2, actor: ACTOR, auditId: "logbs2", justification: JUSTIFICATION,
+    });
+    expect(res.updated).toBe(1);
+  });
+
+  test("generateServicesNative rejects on ON_SITE without justification, succeeds with one", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { status: "ON_SITE", projectStartDate: NOW, projectEndDate: NOW });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, { projectId: "p1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logg" }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
+      projectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logg2", justification: JUSTIFICATION,
+    });
+    expect(res.created).toBeGreaterThan(0);
+  });
+
+  test("generateServicesNative $0-defaults new services when the project is locked with no open session", async () => {
+    const t = makeT();
+    await member(t, "admin"); // orgSettings:update (template create) + project:update
+    await seedProject(t, "p1", ORG, { status: "CONFIRMED", projectStartDate: NOW, projectEndDate: NOW });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceTemplateNative, {
+      id: "tp1", orgId: ORG, type: "DELIVERY", title: "Std Delivery", showOnDocuments: true, isAutoAdded: true, isActive: true, defaultUnitPrice: 150, now: NOW, actor: ACTOR, auditId: "logtc",
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
+      projectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logg",
+    });
+    expect(res.created).toBe(1);
+    const svcs = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    expect(svcs[0].unitPrice).toBeUndefined(); // template's defaultUnitPrice was zeroed, not copied
+  });
+
+  test("cloneServicesNative rejects on an ON_SITE target without justification, succeeds with one", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { projectStartDate: NOW });
+    await seedProject(t, "p2", ORG, { status: "ON_SITE", projectStartDate: NOW });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, { targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcl" }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, {
+      targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 2, actor: ACTOR, auditId: "logcl2", justification: JUSTIFICATION,
+    });
+    expect(res.cloned).toBe(1);
+  });
+
+  test("cloneServicesNative $0-defaults copied pricing when the target is locked with no open session", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { projectStartDate: NOW });
+    await seedProject(t, "p2", ORG, { status: "CONFIRMED", projectStartDate: NOW });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+      id: "s1", orgId: ORG, projectId: "p1", ...baseInput, unitPrice: 250, now: NOW, actor: ACTOR, auditId: "logc",
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, {
+      targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcl",
+    });
+    expect(res.cloned).toBe(1);
+    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect());
+    expect(targetServices[0].unitPrice).toBeUndefined();
+  });
+
+  test("convertLineItemToServiceNative rejects on ON_SITE without justification, succeeds with one", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t, "p1", ORG, { status: "ON_SITE" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", type: "SERVICE", description: "Rigging", quantity: 1, lineTotal: 50, isKitChild: false, status: "CONFIRMED" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, { serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logcv" }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, {
+      serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcv2", justification: JUSTIFICATION,
+    });
+    expect(res.id).toBe("s1");
+  });
+});

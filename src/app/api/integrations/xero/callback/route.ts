@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { completeXeroConnection } from "@/server/xero";
 import { XeroOAuthStateError } from "@/lib/xero-oauth-state";
 import { logger } from "@/lib/logger";
+import { env } from "@/env";
 
 /**
  * Xero OAuth2 callback — PUBLIC route (added to `src/middleware.ts`
@@ -18,7 +19,14 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get("state");
   const error = searchParams.get("error");
 
-  const settingsUrl = new URL("/settings/xero", request.url);
+  // NOT request.url: behind the prod reverse proxy, Next.js's Node process
+  // sees an internal Host header, so new URL(..., request.url) resolves to
+  // http://localhost:3000 instead of the public https://flow.rvlt.app --
+  // exactly the localhost redirect this route was producing after a real,
+  // successful token exchange. env.NEXT_PUBLIC_APP_URL is the same trusted
+  // base xeroRedirectUri() (src/server/xero.ts) already builds the Xero-side
+  // redirect_uri from, so both halves of the round trip agree.
+  const settingsUrl = new URL("/settings/xero", env.NEXT_PUBLIC_APP_URL);
 
   if (error) {
     settingsUrl.searchParams.set("xero_error", error);

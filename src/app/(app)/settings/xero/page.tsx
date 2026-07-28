@@ -21,9 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { FormSection, SettingsCard } from "@/components/layout/page-layouts";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { RequirePermission } from "@/components/auth/require-permission";
 
 interface XeroAccount {
@@ -77,6 +75,16 @@ export default function XeroSettingsPage() {
   const isConnected = integration?.isConnected === true;
   const accounts = (integration?.cachedAccounts as XeroAccount[] | undefined) ?? [];
   const taxRates = (integration?.cachedTaxRates as XeroTaxRate[] | undefined) ?? [];
+  const accountOptions = accounts.map((a) => ({
+    value: a.Code ?? a.AccountID,
+    label: a.Name,
+    description: a.Code || undefined,
+  }));
+  const taxRateOptions = taxRates.map((t) => ({
+    value: t.TaxType,
+    label: t.Name,
+    description: t.TaxType,
+  }));
 
   const [defaultAccountCode, setDefaultAccountCode] = useState(integration?.defaultAccountCode ?? "");
   const [defaultTaxType, setDefaultTaxType] = useState(integration?.defaultTaxType ?? "");
@@ -172,30 +180,30 @@ export default function XeroSettingsPage() {
             <SettingsCard>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="defaultAccountCode">Org default account</Label>
-                  <Select value={defaultAccountCode} onValueChange={setDefaultAccountCode}>
-                    <SelectTrigger id="defaultAccountCode">
-                      <SelectValue>{accountLabel(accounts, defaultAccountCode) || "Select…"}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts.map((a) => (
-                        <SelectItem key={a.AccountID} value={a.Code ?? a.AccountID}>{a.Code ? `${a.Code} · ${a.Name}` : a.Name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Org default account</Label>
+                  <ComboboxPicker
+                    value={defaultAccountCode}
+                    onChange={setDefaultAccountCode}
+                    options={accountOptions}
+                    placeholder="Select…"
+                    searchPlaceholder="Search accounts…"
+                    emptyMessage="No accounts found."
+                    allowClear
+                    className="w-full"
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="defaultTaxType">Default GST tax type</Label>
-                  <Select value={defaultTaxType} onValueChange={setDefaultTaxType}>
-                    <SelectTrigger id="defaultTaxType">
-                      <SelectValue>{taxLabel(taxRates, defaultTaxType) || "Select…"}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {taxRates.map((t) => (
-                        <SelectItem key={t.TaxType} value={t.TaxType}>{t.Name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Default GST tax type</Label>
+                  <ComboboxPicker
+                    value={defaultTaxType}
+                    onChange={setDefaultTaxType}
+                    options={taxRateOptions}
+                    placeholder="Select…"
+                    searchPlaceholder="Search tax types…"
+                    emptyMessage="No tax types found."
+                    allowClear
+                    className="w-full"
+                  />
                 </div>
               </div>
 
@@ -205,19 +213,16 @@ export default function XeroSettingsPage() {
                   {SERVICE_TYPES.map((s) => (
                     <div key={s.key} className="space-y-1">
                       <Label className="t-micro text-fg-3">{s.label}</Label>
-                      <Select
+                      <ComboboxPicker
                         value={serviceDefaults[s.key] ?? ""}
-                        onValueChange={(v) => setServiceDefaults((prev) => ({ ...prev, [s.key]: v }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue>{accountLabel(accounts, serviceDefaults[s.key]) || "Org default"}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {accounts.map((a) => (
-                            <SelectItem key={a.AccountID} value={a.Code ?? a.AccountID}>{a.Code ? `${a.Code} · ${a.Name}` : a.Name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={(v) => setServiceDefaults((prev) => ({ ...prev, [s.key]: v }))}
+                        options={accountOptions}
+                        placeholder="Org default"
+                        searchPlaceholder="Search accounts…"
+                        emptyMessage="No accounts found."
+                        allowClear
+                        className="w-full"
+                      />
                     </div>
                   ))}
                 </div>
@@ -254,15 +259,4 @@ export default function XeroSettingsPage() {
       )}
     </div>
   );
-}
-
-function accountLabel(accounts: XeroAccount[], code: string | undefined): string {
-  if (!code) return "";
-  const match = accounts.find((a) => (a.Code ?? a.AccountID) === code);
-  return match ? (match.Code ? `${match.Code} · ${match.Name}` : match.Name) : code;
-}
-function taxLabel(rates: XeroTaxRate[], taxType: string | undefined): string {
-  if (!taxType) return "";
-  const match = rates.find((t) => t.TaxType === taxType);
-  return match?.Name ?? taxType;
 }

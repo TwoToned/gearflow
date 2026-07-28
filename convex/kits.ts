@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
@@ -23,7 +23,7 @@ import { getKitByCuid } from "./lib/kits";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("kits")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive catalog read (perf design); accepted R-9.8 tradeoff — see docs/exceptions.md R-8.3.3
@@ -35,7 +35,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await getKitByCuid(ctx, id);
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "kit"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });

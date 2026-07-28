@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 import { getProjectWindow } from "./lib/projectWindow";
 import type { Doc } from "./_generated/dataModel";
 
@@ -45,7 +45,7 @@ export const bundle = query({
     rentalEndDate: v.optional(v.number()),
   },
   handler: async (ctx, { orgId, modelIds, thisProjectId, rentalStartDate, rentalEndDate }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     const unique = [...new Set(modelIds)];
     // Matches the old assets/bulkAssets/projectLineItems.listByModelIds cap — guards
     // against an unbounded 3*N index fan-out hitting Convex read/time limits.

@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
@@ -22,7 +22,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("assets")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: cross-domain server-read helper (getAssetsByOrg/getMappedAssetsByOrg), not a browser subscription — see docs/exceptions.md R-8.3.3
@@ -215,7 +215,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "asset"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });
@@ -234,7 +234,7 @@ export const getByAssetTag = query({
 export const listByModel = query({
   args: { modelId: v.string(), orgId: v.string() },
   handler: async (ctx, { modelId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 2 read bootstrap (#998)
     // by_modelId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("assets")

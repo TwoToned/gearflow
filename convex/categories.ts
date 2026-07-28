@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 
 /**
  * Thin CRUD for Category (Convex table "categories"). GENERATED — Phase 2/5.
@@ -15,7 +15,7 @@ import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("categories")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: categories is a small bounded per-org set — see docs/exceptions.md R-8.3.3
@@ -27,7 +27,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "model"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 import { isCheckoffRow, computeCheckoffProgress } from "./lib/maintenanceRecordAssetKind";
 import { resolveModelAssetType } from "./lib/availabilityCore";
 
@@ -20,7 +20,7 @@ const DUE_SOON_WINDOW_MS = 14 * 24 * 60 * 60 * 1000; // 14 days — same "due so
 export const dueWorklist = query({
   args: { orgId: v.string(), nowMs: v.number() },
   handler: async (ctx, { orgId, nowMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "maintenance"); // Phase 2 read bootstrap (#998)
 
     const schedules = (
       await ctx.db.query("serviceSchedules").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect() // r9.8-ok: small admin-created catalog table, same class as crewRoles/models — see docs/exceptions.md

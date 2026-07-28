@@ -3,7 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead, requireOrgReadDoc, requireService, requireOrgPermission, resolveActor } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireOrgReadFor, requireOrgReadDocFor, requireService, requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -26,7 +26,7 @@ import { getProjectWindow } from "./lib/projectWindow";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("projectLineItems")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: GDPR org-delete export needs every line item — see docs/exceptions.md R-8.3.3
@@ -63,7 +63,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "project"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });
@@ -71,7 +71,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     const rows = await ctx.db
       .query("projectLineItems")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))

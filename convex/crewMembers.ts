@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService, getAuthContext, redactFields } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
@@ -18,7 +18,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const docs = await ctx.db
       .query("crewMembers")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded by the org's crew roster (full roster read) — see docs/exceptions.md R-8.3.3
@@ -104,7 +104,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
     if (!doc) return doc;
     const auth = await getAuthContext(ctx);
     return auth?.kind === "service" ? doc : redactFields(doc, ["icalToken"]);

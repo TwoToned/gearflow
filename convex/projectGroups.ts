@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadDoc, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 
 /**
  * Thin CRUD for ProjectGroup (Convex table "projectGroups"). GENERATED — Phase 2/5.
@@ -16,7 +16,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "project"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });
@@ -24,7 +24,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
     const rows = await ctx.db
       .query("projectGroups")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))

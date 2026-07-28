@@ -140,6 +140,17 @@ docs. Recommend shipping **read-only v1 first** (a much smaller, lower-risk
 surface) and adding write endpoints once the read API has real users. API
 reference docs belong with the user guide (see Continuous tracks).
 
+### 3.3 — Finance as a first-class, version-controlled workflow
+**Effort:** L · **Tracking:** [#985](https://github.com/TwoToned/gearflow/issues/985)
+(sub-issues #986–#990)
+WS1 (#940) shipped the finance *entities* and #957 shipped the lock *enforcement*;
+neither built the workflow or the UX. This program adds quote revisions on a single
+shared `projects.revision` counter (project v2 == quote v2), immutable stored PDF
+artifacts so a sent quote is actually reproducible, a top-level Finance tab that owns
+send / new-version / accept / invoice, and lock UI that is visible before you try
+rather than a toast after you've tried. Design:
+[`docs/designs/finance-first-class-version-control.md`](./designs/finance-first-class-version-control.md).
+
 ---
 
 ## Phase 4 — Experience pass

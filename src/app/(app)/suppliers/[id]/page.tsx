@@ -20,7 +20,6 @@ import { assetStatusLabels, supplierOrderStatusLabels, supplierOrderTypeLabels, 
 import { formatCurrency } from "@/lib/formatters";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { CanDo } from "@/components/auth/permission-gate";
-import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
@@ -338,9 +337,6 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                     <Badge status="ok">Active</Badge>
                   ) : (
                     <Badge status="overbooked">Archived</Badge>
-                  )}
-                  {orgId && (
-                    <PresenceAvatarStack entityType="supplier" entityId={id} size="sm" />
                   )}
                 </div>
                 {/* Contact meta line — only render bits that exist (no "—" noise) */}

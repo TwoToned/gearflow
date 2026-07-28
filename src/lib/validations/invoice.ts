@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { PAYMENT_TERMS_BOUNDS } from "@/lib/invoice-terms";
+
 /**
  * Invoice create form (WS1 #940). `id`/`organizationId`/`projectId`/
  * `clientId` are create-time args the hook supplies directly (mirrors
@@ -18,3 +20,21 @@ export const invoiceSchema = z.object({
 });
 
 export type InvoiceFormValues = z.input<typeof invoiceSchema>;
+
+/**
+ * Invoice ISSUE form (#989 — the issue dialog, distinct from the create form
+ * above: an invoice's kind/deposit-% are fixed at create, only date/due-date/
+ * notes are still open at issue). No monetary field (R-9.3) — the read-only
+ * amount summary the dialog shows comes from the already-created draft row.
+ */
+export const invoiceIssueSchema = z.object({
+  /** Defaults to today. Printed on the PDF. */
+  invoiceDate: z.coerce.date().optional(),
+  /** Defaults to invoiceDate + the org's `documents.paymentTermsDays`. */
+  dueDate: z.coerce.date().optional(),
+  notes: z.string().max(2000).optional(),
+});
+
+export type InvoiceIssueValues = z.input<typeof invoiceIssueSchema>;
+
+export { PAYMENT_TERMS_BOUNDS };

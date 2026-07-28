@@ -30,6 +30,9 @@ export interface OrgDocumentSettings {
   termsAndConditions?: string;
   /** Days a quote stays valid from its generation date. Default 30. */
   quoteValidityDays?: number;
+  /** Default payment terms for an issued invoice — the due date defaults to
+   *  invoiceDate + this many days (#989). Default 14. */
+  paymentTermsDays?: number;
 }
 
 export interface TestTagSettings {

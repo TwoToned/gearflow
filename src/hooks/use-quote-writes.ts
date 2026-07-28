@@ -37,6 +37,7 @@ export function useQuoteWrites() {
   const newVersionM = useMutation(api.quotesWrites.newVersionNative);
   const acceptM = useMutation(api.quotesWrites.markAcceptedNative);
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
+  const repriceFromRevisionM = useMutation(api.quotesWrites.repriceFromRevisionNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -150,6 +151,25 @@ export function useQuoteWrites() {
         id: quoteId,
         organizationId: org,
         reason: parsed.reason,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** "Use v2's pricing for v4" (#989 §8.1) — cut the next draft revision
+     *  seeded with an earlier revision's money fields. Structure (gear,
+     *  quantities, dates) is untouched. */
+    repriceFromRevision: async (
+      projectId: string,
+      sourceQuoteId: string,
+    ): Promise<{ id: string; version: number; sourceVersion: number }> => {
+      const org = requireOrg();
+      return await repriceFromRevisionM({
+        id: createId(),
+        organizationId: org,
+        projectId,
+        sourceQuoteId,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),

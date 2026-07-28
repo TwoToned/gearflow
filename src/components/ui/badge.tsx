@@ -17,6 +17,12 @@ const badgeVariants = cva(
         overbooked: "text-t-out bg-out-soft", // overbooked / short / error
         repair: "text-rep bg-rep-soft", // in repair / neutral
         neutral: "text-ink-2 bg-paper-2",
+        // #989 — mirrors status-colors.ts's `info`/`primary` ColorIntent pills
+        // (`intentStyles.info.pill` / `.primary.pill`) so a quote's SENT/ACCEPTED
+        // state renders in the SAME solid-red-is-live vocabulary DESIGN.md defines,
+        // instead of borrowing the unrelated ok/warn/overbooked set.
+        info: "text-blue bg-blue-soft", // sent / in-progress-but-not-live
+        primary: "text-white bg-red", // live/active/in-use — DESIGN.md's solid red
       },
     },
     defaultVariants: { status: "neutral" },

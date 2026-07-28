@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Send, Ban, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye } from "lucide-react";
+import { Ban, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye, Send } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -14,7 +14,7 @@ import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { pushInvoiceToXero } from "@/server/xero";
 import { generateInvoiceArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { formatCurrency, formatDate } from "@/lib/formatters";
+import { formatCurrency } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,11 +22,16 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { CanDo } from "@/components/auth/permission-gate";
+import { IssueInvoiceDialog } from "@/components/projects/finance/issue-invoice-dialog";
 
 interface ProjectFinancePanelProps {
   projectId: string;
+  projectNumber: string;
   clientId?: string | null;
   projectStatus?: string | null;
+  subtotal: number | null;
+  taxAmount: number | null;
+  total: number | null;
 }
 
 const INVOICE_STATUS_BADGE: Record<string, "ok" | "warn" | "neutral" | "overbooked"> = {
@@ -55,10 +60,12 @@ const INVOICE_STATUS_BADGE: Record<string, "ok" | "warn" | "neutral" | "overbook
  * the header's Documents ▾ — a client-facing finance document is never a fresh
  * render of live project state.
  *
- * The full Finance tab — send dialog, version history + diffs, invoice issue
- * dialog with due dates, drift indicator — is Phase D (#989).
+ * Issuing goes through `<IssueInvoiceDialog>` (#989) — invoice date, due date
+ * (defaulting to the org's `paymentTermsDays`), notes — instead of a bare
+ * click, and the "advance to INVOICED?" follow-up is a `Dialog`, never
+ * `window.confirm` (CLAUDE.md convention, DESIGN.md).
  */
-export function ProjectFinancePanel({ projectId, clientId, projectStatus }: ProjectFinancePanelProps) {
+export function ProjectFinancePanel({ projectId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total }: ProjectFinancePanelProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const xeroLinked = useXeroLinked();
@@ -71,6 +78,8 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
 
   const [voidTarget, setVoidTarget] = useState<{ id: string; number: string } | null>(null);
   const [voidReason, setVoidReason] = useState("");
+  const [issueTarget, setIssueTarget] = useState<{ id: string; kind: string; total: number } | null>(null);
+  const [advanceOffer, setAdvanceOffer] = useState<{ invoiceNumber: string } | null>(null);
 
   if (!clientId) {
     return <p className="t-micro text-fg-4">Assign a client to this project to generate quotes and invoices.</p>;
@@ -100,30 +109,29 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
     }
   }
 
-  async function issueInvoice(id: string) {
+  /** UI chain (not a nested mutation) — offer to advance the project once a
+   *  BALANCE/FULL invoice is issued (spec: "issuing offers to advance status").
+   *  Offered via a `Dialog`, never forced and never `window.confirm`. */
+  function offerAdvanceIfEligible(invoiceId: string, invoiceNumber: string) {
+    const invoice = invoices?.find((i) => i.id === invoiceId);
+    if (
+      (invoice?.kind === "BALANCE" || invoice?.kind === "FULL") &&
+      projectStatus &&
+      projectStatus !== "INVOICED" &&
+      projectStatus !== "COMPLETED"
+    ) {
+      setAdvanceOffer({ invoiceNumber });
+    }
+  }
+
+  async function confirmAdvanceToInvoiced() {
     try {
-      const result = await invoiceWrites.issue(id);
-      toast.success(`Issued ${result.invoiceNumber}`);
-      // Issued, but the document render failed — the row's retry action fixes
-      // it. Never silent (#987).
-      if (!result.artifactReady) {
-        toast.warning(`The document for ${result.invoiceNumber} didn't generate — use “Document missing” on that invoice to make one.`);
-      }
-      // UI chain (not a nested mutation) — offer to advance the project once a
-      // BALANCE/FULL invoice is issued (spec: "issuing offers to advance status").
-      const invoice = invoices?.find((i) => i.id === id);
-      if (
-        (invoice?.kind === "BALANCE" || invoice?.kind === "FULL") &&
-        projectStatus &&
-        projectStatus !== "INVOICED" &&
-        projectStatus !== "COMPLETED"
-      ) {
-        if (window.confirm("Advance this project's status to INVOICED?")) {
-          await updateStatus(projectId, "INVOICED");
-        }
-      }
+      await updateStatus(projectId, "INVOICED");
+      toast.success("Moved to Invoiced");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to issue invoice");
+      toast.error(e instanceof Error ? e.message : "Failed to update status");
+    } finally {
+      setAdvanceOffer(null);
     }
   }
 
@@ -141,8 +149,17 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
 
   return (
     <div className="space-y-6">
-      {/* Quote revisions (#986) */}
-      <ProjectQuoteRail projectId={projectId} orgId={orgId} />
+      {/* Quote revisions (#986, #989) */}
+      <ProjectQuoteRail
+        projectId={projectId}
+        orgId={orgId}
+        projectNumber={projectNumber}
+        clientId={clientId}
+        projectStatus={projectStatus}
+        subtotal={subtotal}
+        taxAmount={taxAmount}
+        total={total}
+      />
 
       {/* Nudge chips */}
       {paymentProfile === "DEPOSIT_BALANCE" ? (
@@ -175,7 +192,7 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
                 invoice={inv}
                 projectId={projectId}
                 xeroLinked={xeroLinked}
-                onIssue={() => void issueInvoice(inv.id)}
+                onIssue={() => setIssueTarget({ id: inv.id, kind: inv.kind, total: inv.total })}
                 onDeleteDraft={() =>
                   void invoiceWrites.deleteDraft(inv.id).then(() => toast.success("Draft deleted")).catch((e) => toast.error(e instanceof Error ? e.message : "Failed"))
                 }
@@ -200,6 +217,34 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
           <DialogFooter>
             <Button type="button" variant="line" onClick={() => setVoidTarget(null)}>Cancel</Button>
             <Button type="button" disabled={voidReason.trim().length === 0} onClick={() => void confirmVoid()}>Void invoice</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {issueTarget && (
+        <IssueInvoiceDialog
+          open={!!issueTarget}
+          onOpenChange={(open) => !open && setIssueTarget(null)}
+          projectId={projectId}
+          invoiceId={issueTarget.id}
+          invoiceKind={issueTarget.kind}
+          total={issueTarget.total}
+          onIssued={(invoiceNumber) => offerAdvanceIfEligible(issueTarget.id, invoiceNumber)}
+        />
+      )}
+
+      {/* Offered, not forced — a `Dialog`, never `window.confirm` (#989). */}
+      <Dialog open={!!advanceOffer} onOpenChange={(open) => !open && setAdvanceOffer(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move this project to Invoiced?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-fg-4">
+            {advanceOffer?.invoiceNumber} has been issued. This project can move to Invoiced whenever you&rsquo;re ready — it&rsquo;s not required.
+          </p>
+          <DialogFooter>
+            <Button type="button" variant="line" onClick={() => setAdvanceOffer(null)}>Not yet</Button>
+            <Button type="button" onClick={() => void confirmAdvanceToInvoiced()}>Move to Invoiced</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

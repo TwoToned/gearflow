@@ -33,6 +33,7 @@ import { ServicesPanel } from "@/components/projects/services-panel";
 import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
+import { QuoteLockStrip } from "@/components/projects/finance/quote-lock-strip";
 import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
@@ -493,7 +494,7 @@ export default function ProjectDetailPage({
                     <TabsTrigger value="equipment">Equipment</TabsTrigger>
                     <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
                     {!project.isTemplate && (
-                      <TabsTrigger value="financials">Financials</TabsTrigger>
+                      <TabsTrigger value="finance">Finance</TabsTrigger>
                     )}
                     <TabsTrigger value="tasks">Tasks</TabsTrigger>
                     <TabsTrigger value="notes">Notes</TabsTrigger>
@@ -548,10 +549,14 @@ export default function ProjectDetailPage({
                   </div>
                 </TabsContent>
 
-                {/* Financials Tab — financial summary + operational P&L */}
+                {/* Finance Tab (#989) — top-level tab: quote revisions + send
+                    dialog, invoices + issue dialog, financial summary +
+                    operational P&L. Retired the standalone "Financials" tab —
+                    this is that content, not a duplicate of it. */}
                 {!project.isTemplate && (
-                  <TabsContent value="financials">
+                  <TabsContent value="finance">
                     <div className="space-y-6 pt-4">
+                      <QuoteLockStrip projectId={project.id} orgId={orgId} />
                       <StalePricingBanner projectId={project.id} orgId={orgId} />
                       <BillingSummaryRow
                         projectId={project.id}
@@ -630,11 +635,15 @@ export default function ProjectDetailPage({
                       <div className="h-px bg-line" />
                       <ProjectCostsPanel projectId={project.id} />
                       <div className="h-px bg-line" />
-                      {/* WS1 (#940) — Quotes & Invoices */}
+                      {/* WS1 (#940), Phase D (#989) — Quotes & Invoices */}
                       <ProjectFinancePanel
                         projectId={project.id}
+                        projectNumber={project.projectNumber}
                         clientId={project.clientId as string | null | undefined}
                         projectStatus={project.status as string | null | undefined}
+                        subtotal={project.subtotal as number | null}
+                        taxAmount={project.taxAmount as number | null}
+                        total={project.total as number | null}
                       />
                     </div>
                   </TabsContent>

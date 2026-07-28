@@ -212,6 +212,72 @@ describe("invoicesWrites.issueNative", () => {
     });
     expect(result.invoiceNumber).toBe("INV-2023-0001");
   });
+
+  // #989 — regression for the live bug this closes: the panel used to call
+  // `issue(id)` with no date argument at all, so EVERY invoice issued had no
+  // due date. `invoiceDate`/`dueDate` are now always stamped, one or the other
+  // way, even when the caller supplies neither.
+  test("stamps invoiceDate (defaulting to now) and dueDate (defaulting to invoiceDate + paymentTermsDays) even when neither is supplied", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
+    });
+
+    const invoice = await t.run(async (ctx) => ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "i1")).first());
+    expect(invoice?.invoiceDate).not.toBeNull();
+    expect(invoice?.invoiceDate).not.toBeUndefined();
+    expect(invoice?.dueDate).not.toBeNull();
+    expect(invoice?.dueDate).not.toBeUndefined();
+    // Net 14 default (DEFAULT_PAYMENT_TERMS_DAYS), no org override configured.
+    // invoiceDate is start-of-day; dueDate is the END of the 14th day after —
+    // i.e. 15 whole days later, minus 1ms (mirrors computeValidUntil's contract).
+    expect(invoice!.dueDate! - invoice!.invoiceDate!).toBe(15 * 86_400_000 - 1);
+  });
+
+  test("an explicit invoiceDate + dueDate override the default", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+
+    const chosenInvoiceDate = Date.UTC(2026, 6, 26);
+    const chosenDueDate = Date.UTC(2026, 6, 28);
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: ORG, autoNumber, invoiceDate: chosenInvoiceDate, dueDate: chosenDueDate, notes: "Net 2, rush job", actor, auditId: "a2", now: NOW,
+    });
+
+    const invoice = await t.run(async (ctx) => ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "i1")).first());
+    expect(new Date(invoice!.invoiceDate!).toISOString().slice(0, 10)).toBe("2026-07-26");
+    expect(new Date(invoice!.dueDate!).toISOString().slice(0, 10)).toBe("2026-07-28");
+    expect(invoice?.notes).toBe("Net 2, rush job");
+  });
+
+  test("respects the org's configured paymentTermsDays", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ documents: { paymentTermsDays: 7 } }) });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: ORG, autoNumber, invoiceDate: NOW, actor, auditId: "a2", now: NOW,
+    });
+
+    const invoice = await t.run(async (ctx) => ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "i1")).first());
+    expect(invoice!.dueDate! - invoice!.invoiceDate!).toBe(8 * 86_400_000 - 1);
+  });
 });
 
 describe("invoicesWrites.voidNative / deleteDraftNative", () => {

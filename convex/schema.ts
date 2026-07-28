@@ -2243,6 +2243,10 @@ export default defineSchema({
     invoiceNumber: v.optional(v.string()),
     issuedAt: v.optional(v.number()),
     issuedById: v.optional(v.string()),
+    // User-chosen date printed on the PDF (#989) — distinct from `issuedAt`,
+    // the system audit timestamp of when the mutation ran. Stamped at issue,
+    // normalised to the org's calendar day like a quote's `quoteDate`.
+    invoiceDate: v.optional(v.number()),
     dueDate: v.optional(v.number()),
     pdfFileId: v.optional(v.string()),
     // Money snapshot, frozen at create/issue time (never recomputed from live

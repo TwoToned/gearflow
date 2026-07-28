@@ -5,13 +5,16 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
-import { assertStrLen } from "./lib/fieldGuards";
+import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertLifecycleGuard } from "./lib/projectLocks";
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
 import { renderProjectNumber, scopeKeyFor, type IncrementReset, type ProjectNumberDateParts } from "./lib/projectNumber";
+import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
+import { computeDueDate } from "./lib/invoiceDates";
+import { startOfDayInTimezone } from "./lib/quoteDates";
 import * as enums from "./lib/validators";
 
 /**
@@ -37,10 +40,25 @@ import * as enums from "./lib/validators";
 
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
+/** Any date a client may stamp on an invoice at issue — mirrors `DATE_BOUNDS` in
+ *  `quotesWrites.ts` (≤ 2100-01-01), so a typo'd year can't mint a due date
+ *  centuries out. */
+const DATE_BOUNDS = { min: 0, max: 4_102_444_800_000 } as const;
+
 function assertInvoiceFields(f: { notes?: string; voidReason?: string }): void {
   assertStrLen(f.notes, "notes", { max: 2000 });
   assertStrLen(f.voidReason, "voidReason", { max: 1000 });
 }
+
+/** The client-input subset of issueNative's args, mirrored to Zod
+ *  (`invoiceIssueSchema` in `src/lib/validations/invoice.ts`) — registered in
+ *  `validationDrift.test.ts`. `id`/`orgId`/`autoNumber`/`actor`/`auditId`/`now`
+ *  are issueNative's own structural args, not business fields. */
+export const invoiceIssueFields = {
+  invoiceDate: v.optional(v.number()),
+  dueDate: v.optional(v.number()),
+  notes: v.optional(v.string()),
+};
 
 /** The client-input subset of createNative's args (mirrors invoiceSchema in
  *  src/lib/validations/invoice.ts — registered in validationDrift.test.ts).
@@ -211,16 +229,28 @@ export const issueNative = mutation({
       padding: v.number(),
       parts: v.object({ year: v.number(), month: v.number(), day: v.number() }),
     }),
+    /** User-chosen date printed on the PDF (#989). Defaults to today client-side
+     *  (`invoiceIssueSchema`) and to `now` here when omitted entirely; normalised
+     *  to the org's calendar day, same as a quote's `quoteDate`. */
+    invoiceDate: v.optional(v.number()),
+    /** Defaults to `invoiceDate + OrgDocumentSettings.paymentTermsDays` when
+     *  omitted — closes the "every invoice issued has no due date" bug (#985):
+     *  the panel used to call `issue(id)` with no date argument at all. */
     dueDate: v.optional(v.number()),
+    notes: v.optional(v.string()),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, autoNumber, dueDate, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, autoNumber, invoiceDate, dueDate, notes, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "invoice");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "invoice", "issue");
     const actor = await resolveActor(ctx, suppliedActor);
+
+    assertNumRange(invoiceDate, "invoiceDate", DATE_BOUNDS);
+    assertNumRange(dueDate, "dueDate", DATE_BOUNDS);
+    assertStrLen(notes, "notes", { max: 2000 });
 
     const doc = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Invoice not found: " + id);
@@ -234,12 +264,21 @@ export const issueNative = mutation({
 
     const invoiceNumber = await allocateInvoiceNumber(ctx, orgId, autoNumber, now);
 
+    const config = await resolveOrgInvoiceConfig(ctx, orgId);
+    const stampedInvoiceDate = startOfDayInTimezone(invoiceDate ?? now, config.timezone);
+    const stampedDueDate =
+      dueDate != null
+        ? startOfDayInTimezone(dueDate, config.timezone)
+        : computeDueDate(stampedInvoiceDate, config.paymentTermsDays, config.timezone);
+
     await ctx.db.patch(doc._id, {
       status: "ISSUED",
       invoiceNumber,
       issuedAt: now,
       issuedById: actor.userId,
-      dueDate: dueDate ?? doc.dueDate,
+      invoiceDate: stampedInvoiceDate,
+      dueDate: stampedDueDate,
+      notes: notes ?? doc.notes,
       updatedAt: now,
     });
 

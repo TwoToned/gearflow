@@ -291,6 +291,22 @@ const conflictSeverityIntent: Record<string, ColorIntent> = {
   preferred: "success",
 };
 
+// Quote revision state (#989 — finance-workflow-ux.md §3.5). SENT is `info`
+// (blue) and ACCEPTED is `primary` (solid red) — an earlier draft inverted
+// these (SENT/ACCEPTED both mapped to a green "ok" pill in the Phase A rail's
+// ad-hoc map), which contradicted DESIGN.md's own worked example: solid red is
+// LIVE/ACTIVE and explicitly names ACCEPTED as a member. SUPERSEDED has no
+// entry — a dead revision doesn't earn a filled pill (rendered as plain
+// `text-muted` text by the caller, not looked up here).
+const quoteStatusIntentMap: Record<string, ColorIntent> = {
+  DRAFT: "neutral",
+  SENT: "info",
+  ACCEPTED: "primary",
+  DECLINED: "error",
+  EXPIRED: "warning",
+  RECALLED: "warning",
+};
+
 // ─── Category Registry ──────────────────────────────────────────
 
 export type StatusCategory =
@@ -317,7 +333,8 @@ export type StatusCategory =
   | "subHire"
   | "testTag"
   | "testTagResult"
-  | "conflictSeverity";
+  | "conflictSeverity"
+  | "quote";
 
 const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   asset: assetStatusIntent,
@@ -344,6 +361,7 @@ const categoryMap: Record<StatusCategory, Record<string, ColorIntent>> = {
   testTag: testTagStatusIntent,
   testTagResult: testTagResultIntent,
   conflictSeverity: conflictSeverityIntent,
+  quote: quoteStatusIntentMap,
 };
 
 /**
@@ -386,4 +404,17 @@ export function getStatusColor(category: StatusCategory, value: string) {
  */
 export function intentBorderClass(intent: ColorIntent): string {
   return intentStyles[intent].dot.replace(/^bg-/, "border-l-");
+}
+
+/**
+ * Quote revision state → intent (#989), alongside `assetStatusIntent`. Callers
+ * render `SUPERSEDED` as plain `text-muted` text rather than calling this —
+ * a dead revision doesn't earn a filled pill (finance-workflow-ux.md §3.5).
+ *
+ * @example
+ * quoteStatusIntent("SENT")     // → "info"
+ * quoteStatusIntent("ACCEPTED") // → "primary"
+ */
+export function quoteStatusIntent(status: string): ColorIntent {
+  return getStatusIntent("quote", status);
 }

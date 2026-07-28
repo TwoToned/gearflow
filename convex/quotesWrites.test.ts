@@ -507,3 +507,127 @@ describe("quotes read queries", () => {
     expect(state.hasAcceptedQuote).toBe(false);
   });
 });
+
+describe("quotesWrites.repriceFromRevisionNative — 'use vN's pricing for v(N+1)' (#989 §8.1)", () => {
+  const reprice = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.repriceFromRevisionNative, {
+      id: "q3", organizationId: ORG, projectId: "p1", sourceQuoteId: "q1", actor, auditId: "a9", now: NOW + 3,
+      ...over,
+    } as never);
+
+  /** v1 sent at $100/unit, v2 cut then re-priced live to $500 before being sent. */
+  async function seedTwoSentRevisions(t: ReturnType<typeof makeT>) {
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 (q1) — frozen at unitPrice 100
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    await t.run(async (ctx) => {
+      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l1")).first();
+      await ctx.db.patch(line!._id, { unitPrice: 500, lineTotal: 500 });
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(project!._id, { subtotal: 500, total: 550 });
+    });
+    await send(t, { id: "ignored", auditId: "a3", now: NOW + 2 }); // v2 (q2) — frozen at 500
+  }
+
+  test("seeds the next draft with an earlier revision's money fields, structure untouched", async () => {
+    const t = makeT();
+    await seedTwoSentRevisions(t);
+
+    const result = await reprice(t);
+    expect(result).toEqual({ id: "q3", version: 3, sourceVersion: 1 });
+    expect((await getProject(t))?.revision).toBe(3);
+
+    const quotes = await getQuotes(t);
+    expect(quotes.find((q) => q.id === "q3")?.status).toBe("DRAFT");
+    expect(quotes.find((q) => q.id === "q3")?.snapshot).toBeNull();
+    // v1 and v2's own rows are untouched by this — only current live state moved.
+    expect(quotes.find((q) => q.id === "q1")?.status).toBe("SUPERSEDED");
+    expect(quotes.find((q) => q.id === "q2")?.status).toBe("SENT");
+
+    // The live line item's price reverted to v1's frozen $100 (was $500 from v2's
+    // live edit) — but it's still the SAME row (structure untouched). This patches
+    // exactly `LOCKED_LINE_ITEM_FIELDS` (unitPrice/discount/discountMode/duration)
+    // — the same fields the pre-existing unlock-session FINANCIAL discard restores
+    // (`convex/projectUnlockSessionsWrites.ts`); `lineTotal`'s own recompute-on-
+    // write is that shared function's concern, not new to this mutation.
+    const line = await t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l1")).first());
+    expect(line?.unitPrice).toBe(100);
+
+    // recalc ran (the project row's updatedAt moved) even though this fixture's
+    // stale lineTotal keeps the aggregate subtotal unchanged.
+    expect((await getProject(t))?.updatedAt).toBe(NOW + 3);
+  });
+
+  test("writes exactly ONE audit entry for the whole operation", async () => {
+    const t = makeT();
+    await seedTwoSentRevisions(t);
+    await reprice(t);
+
+    const entries = await t.run(async (ctx) =>
+      ctx.db.query("activityLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect(),
+    );
+    const repriceEntries = entries.filter((e) => e.entityId === "q3");
+    expect(repriceEntries).toHaveLength(1);
+    expect(repriceEntries[0]?.summary).toMatch(/using.*v1.*pricing/i);
+  });
+
+  test("rejects a source quote that doesn't belong to this project", async () => {
+    const t = makeT();
+    await seedTwoSentRevisions(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "RVLT-2026-0088", name: "Other gig", isTemplate: false, revision: 1 });
+      await ctx.db.insert("quotes", { id: "qOther", organizationId: ORG, projectId: "p2", version: 1, status: "SENT", snapshot: null, snapshotId: "snap_other" });
+    });
+
+    await expect(reprice(t, { sourceQuoteId: "qOther" })).rejects.toThrow(/doesn't belong to this project/i);
+  });
+
+  test("rejects a source quote with no stored snapshot (never sent)", async () => {
+    const t = makeT();
+    await seedTwoSentRevisions(t);
+    // q2 is SENT (has a snapshotId); a never-sent draft has none — insert one directly.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", { id: "qDraftOnly", organizationId: ORG, projectId: "p1", version: 99, status: "DRAFT", snapshot: null });
+    });
+
+    await expect(reprice(t, { sourceQuoteId: "qDraftOnly" })).rejects.toThrow(/no stored pricing snapshot/i);
+  });
+
+  test("rejects when the current revision is still an open draft — edit that instead", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 sent
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    }); // v2 draft, still open
+
+    await expect(reprice(t)).rejects.toThrow(/hasn't been sent yet/i);
+  });
+
+  test("a viewer is denied", async () => {
+    const t = makeT();
+    await seedTwoSentRevisions(t);
+    await t.run(async (ctx) => {
+      const member = await ctx.db.query("members").first();
+      await ctx.db.patch(member!._id, { role: "viewer" });
+    });
+
+    await expect(reprice(t)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects a cross-org projectId (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "qF1", organizationId: OTHER, projectId: "p1", quoteDate: NOW, actor: { userId: "user_2", userName: "Bob" }, auditId: "aF1", now: NOW,
+    });
+
+    await expect(reprice(t, { sourceQuoteId: "qF1" })).rejects.toThrow(/not found in your organization/i);
+  });
+});

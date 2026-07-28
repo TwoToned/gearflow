@@ -13,18 +13,40 @@ import { api } from "../../convex/_generated/api";
  * discards a session (#791 FINANCIAL scope, #792 FULL scope — same mutations,
  * different `scope` + server-checked audience).
  */
-export function useProjectLockStatus(projectId: string | undefined, orgId: string | undefined) {
-  const status = useQuery(
-    api.projectLocksRead.status,
-    projectId && orgId ? { projectId, orgId } : "skip",
-  );
+type ProjectLockStatus = ReturnType<typeof useQuery<typeof api.projectLocksRead.status>>;
+
+// #988/#989 — why `tier` is what it is (a bare status transition vs. a sent
+// quote raising the tier), plus the shared revision counter + the current
+// revision's quote state, so the Finance tab's lock summary and the alert
+// rail can both render from this ONE subscription instead of a second
+// round trip (finance-workflow-ux.md §2 "subscription ownership").
+function deriveLockStatus(status: ProjectLockStatus) {
+  const {
+    tier = "OPEN",
+    openSession = null,
+    canOverrideHardLock = false,
+    reason = "STATUS",
+    revision = 1,
+    quoteState = null,
+  } = status ?? {};
   return {
     loading: status === undefined,
-    tier: status?.tier ?? "OPEN",
-    openSession: status?.openSession ?? null,
-    hasOpenSession: status != null && status.openSession != null,
-    canOverrideHardLock: status?.canOverrideHardLock ?? false,
+    tier,
+    openSession,
+    hasOpenSession: openSession != null,
+    canOverrideHardLock,
+    reason,
+    revision,
+    quoteState,
   };
+}
+
+export function useProjectLockStatus(projectId: string | undefined, orgId: string | undefined, now?: number) {
+  const status = useQuery(
+    api.projectLocksRead.status,
+    projectId && orgId ? { projectId, orgId, now } : "skip",
+  );
+  return deriveLockStatus(status);
 }
 
 export function useUnlockSession(projectId: string | undefined, orgId: string | undefined) {

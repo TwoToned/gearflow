@@ -1158,3 +1158,70 @@ describe("structureLineItems — Phase 0 baseline", () => {
     expect(result.filter(r => r.isGroupRow).length).toBe(20);
   });
 });
+
+describe("structureLineItems — Uncategorized-zone Project Group (2026-07-28)", () => {
+  // buildDocumentLineItemData folds a `categoryId: null` ProjectGroup into a
+  // pseudo-category `{ id: "__uncategorized__", name: "" }` before calling
+  // structureLineItems — this simulates that shape directly. Members carry
+  // `groupId` (set whenever `groupTitle` is resolved from it, per
+  // buildDocumentLineItemData) but their OWN `categoryName` is null, since
+  // the member's `categoryId` is independently unset.
+  const uncategorizedZone = (
+    groups: CategoryForStructuring["groups"],
+  ): CategoryForStructuring[] => [{ id: "__uncategorized__", name: "", sortOrder: Number.MAX_SAFE_INTEGER, groups }];
+
+  it("collapse mode (quote/invoice): collapses into ONE row, not flat individual members", () => {
+    const categories = uncategorizedZone([
+      makeGroup("grp-1", "Small PA Package", 0, { quantity: 1, price: 275 }),
+    ]);
+    const raw: DocumentLineItem[] = [
+      makeLineItem({ id: "k10", groupId: "grp-1", groupTitle: "Small PA Package", model: { name: "K10.2" } }),
+      makeLineItem({ id: "dm3d", groupId: "grp-1", groupTitle: "Small PA Package", model: { name: "DM3-D Dante" } }),
+    ];
+
+    const result = structureLineItems(raw, categories); // expandProjectGroups defaults false
+
+    expect(result).toHaveLength(1);
+    expect(result[0].isGroupRow).toBe(true);
+    expect(result[0].groupTitle).toBe("Small PA Package");
+    expect(result[0].lineTotal).toBe(275);
+    // No spurious "Uncategorized" section header — buckets under the
+    // doc's normal ungrouped fallback instead.
+    expect(result[0].groupName).toBe("");
+    // The real members are NOT also listed flat (would be double-counting /
+    // the exact "split into flat items" bug this fixes).
+    expect(result.some(r => r.id === "k10")).toBe(false);
+    expect(result.some(r => r.id === "dm3d")).toBe(false);
+  });
+
+  it("expand mode (warehouse docs): group row carries its real members as childLineItems", () => {
+    const categories = uncategorizedZone([
+      makeGroup("grp-1", "Small PA Package", 0, { quantity: 1, price: 275 }),
+    ]);
+    const raw: DocumentLineItem[] = [
+      makeLineItem({ id: "k10", groupId: "grp-1", groupTitle: "Small PA Package", model: { name: "K10.2" } }),
+      makeLineItem({ id: "dm3d", groupId: "grp-1", groupTitle: "Small PA Package", model: { name: "DM3-D Dante" } }),
+    ];
+
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+
+    const groupRow = result.find(r => r.isGroupRow);
+    expect(groupRow).toBeDefined();
+    expect(groupRow?.childLineItems?.map(c => c.id).sort()).toEqual(["dm3d", "k10"]);
+    // Members aren't ALSO emitted as separate top-level rows.
+    expect(result.filter(r => !r.isGroupRow)).toHaveLength(0);
+  });
+
+  it("a categorized group's members are unaffected by the groupId-first matching (control)", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Audio Hire", 0, [makeGroup("grp-1", "Small PA Package", 0, { quantity: 1, price: 275 })]),
+    ];
+    const raw: DocumentLineItem[] = [
+      makeLineItem({ id: "k10", categoryName: "Audio Hire", groupTitle: "Small PA Package", model: { name: "K10.2" } }),
+    ];
+
+    const result = structureLineItems(raw, categories, { expandProjectGroups: true });
+    const groupRow = result.find(r => r.isGroupRow);
+    expect(groupRow?.childLineItems?.map(c => c.id)).toEqual(["k10"]);
+  });
+});

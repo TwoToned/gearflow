@@ -36,17 +36,19 @@ async function pdfRender(arg: PDFRenderProps<FinancialSummarySchema>) {
     const fontSize = opts?.fontSize || 9;
 
     if (opts?.divider) {
-      // Draw the divider line clear of both the row above (spacing before)
-      // and this row's own text (spacing after, sized for the bold total's
-      // ascent) so it never strikes through either.
-      currentY -= 6;
+      // Draw the divider line clear of both the row above (space before)
+      // and this row's own bold, larger text (space after). Deliberately
+      // generous — a prior smaller gap (6pt/10pt) still visually touched
+      // the "Total" text on real renders, so this uses a wide safety
+      // margin instead of the tightest theoretically-sufficient value.
+      currentY -= 8;
       page.drawLine({
         start: { x: blockX, y: currentY },
         end: { x: blockX + blockWidth, y: currentY },
         thickness: 1,
         color: docColor,
       });
-      currentY -= 10;
+      currentY -= 16;
     }
 
     // Label
@@ -71,6 +73,15 @@ async function pdfRender(arg: PDFRenderProps<FinancialSummarySchema>) {
     });
 
     currentY -= rowHeight;
+  }
+
+  // Item discounts (only if any line carries its own discount) — purely
+  // informational rows ABOVE the real (already net) subtotal: the gross
+  // figure here plus these two rows always nets back to `config.subtotal`,
+  // so nothing is subtracted twice.
+  if (config.itemDiscountTotal > 0) {
+    drawRow("Subtotal (before discounts)", formatCurrency(config.subtotal + config.itemDiscountTotal));
+    drawRow("Item Discounts", `-${formatCurrency(config.itemDiscountTotal)}`);
   }
 
   // Subtotal

@@ -30,6 +30,18 @@
  * Group is hoisted out of the group's `childLineItems` and emitted at
  * the top level under its own `[Kit] <name>` bucket. This preserves the
  * existing kit-boundary contract.
+ *
+ * Groups in the equipment tab's "Uncategorized" zone (`ProjectGroup.categoryId:
+ * null` — a first-class, fully-supported state, not an error) are folded into
+ * a synthetic pseudo-category by `buildDocumentLineItemData`
+ * (project-line-item-read.ts) before reaching this function, so they collapse
+ * into one row (client-facing) or expand with their members (warehouse docs)
+ * exactly like a categorized group — a group is never split into its flat
+ * members just because the office hasn't filed it under a category yet.
+ * Member matching keys off `groupId` (the FK), not `groupTitle`+`categoryName`
+ * string matching — a member's own `categoryId` can be null even when its
+ * `groupId` is set, since only the GROUP is guaranteed to carry a resolvable
+ * category (via the pseudo-category), not each individual member row.
  */
 import type { DocumentLineItem } from "./types";
 
@@ -181,6 +193,19 @@ export function structureLineItems(
     }
   }
 
+  /**
+   * Is `li` a member of `group`? `groupId` (the FK) is authoritative and
+   * checked first — it's the only field guaranteed to hold regardless of
+   * whether the member's own `categoryId` happens to be set (see the
+   * "Uncategorized zone" note in the file header). The `groupTitle`+
+   * `categoryName` string match is a fallback for callers that only ever
+   * set the resolved display strings without the id (in practice: this
+   * file's own test fixtures — real data from `buildDocumentLineItemData`
+   * always sets `groupId` whenever `groupTitle` is resolved from it).
+   */
+  const isGroupMember = (li: DocumentLineItem, group: { id: string; title: string }, catName: string): boolean =>
+    li.groupId ? li.groupId === group.id : li.groupTitle === group.title && li.categoryName === catName;
+
   const structured: DocumentLineItem[] = [];
 
   for (const cat of categories) {
@@ -203,8 +228,7 @@ export function structureLineItems(
       ? cat.groups.some(g =>
           rawLineItems.some(
             li =>
-              li.groupTitle === g.title &&
-              li.categoryName === cat.name &&
+              isGroupMember(li, g, cat.name) &&
               !li.isKitChild &&
               !li.isContainerLineItem &&
               !isInSubHireSection(li),
@@ -234,8 +258,7 @@ export function structureLineItems(
       const groupChildren = expand
         ? rawLineItems.filter(
             li =>
-              li.groupTitle === group.title &&
-              li.categoryName === cat.name &&
+              isGroupMember(li, group, cat.name) &&
               !li.isKitChild &&
               !li.isContainerLineItem &&
               !isInSubHireSection(li),
@@ -306,9 +329,7 @@ export function structureLineItems(
     if (li.isKitChild || li.isContainerLineItem) return false;
     if (li.categoryName || li.groupTitle) return false;
     if (isInSubHireSection(li)) return false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const groupId = (li as any).groupId as string | null | undefined;
-    if (groupId && groupIds.has(groupId)) return false;
+    if (li.groupId && groupIds.has(li.groupId)) return false;
     return true;
   });
   for (const li of maybeSort(uncategorized)) {

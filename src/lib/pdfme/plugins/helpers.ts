@@ -137,6 +137,19 @@ export function drawWrappedText(
 
 type RichSpan = { text: string; style: "regular" | "bold" | "italic" };
 export type RichLine = { spans: RichSpan[]; bullet: boolean };
+export type RichTextFonts = { regular: PDFFont; bold: PDFFont; oblique: PDFFont };
+
+/**
+ * Shared line-advance formula for markdown-lite text blocks. Used by BOTH
+ * gearflowRichText's renderer (its `lineHeight` default) and
+ * document-composer.ts's height-estimate/pagination-split math, so the
+ * space reserved for a block can never drift from the space it actually
+ * renders into — the exact class of bug the PDF pipeline's "data-shape
+ * consumer audit" convention exists to prevent (CLAUDE.md).
+ */
+export function richTextLineHeight(fontSize: number): number {
+  return fontSize + 2.34; // ~mm2pt(4), matches the pre-existing ~4mm/line heuristic
+}
 
 /**
  * Parse simple markdown into lines of styled spans.

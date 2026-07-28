@@ -107,7 +107,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 | `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |
 | `gearflowCallSheetInfo` | 2-column info block: PM/client/equipment (left), venue/schedule (right) |
 | `gearflowDayHeader` | Day separator with accent bar, date label, phase badges, crew count |
-| `gearflowRichText` | Markdown-lite text block (`**bold**`, `*italic*`, `- `/`* ` bullets, word-wrapped to the box width) — replaces the pdfme built-in `text` type for every free-text/paragraph block in the 5 project document layouts: client+project details columns, client notes, total-items note, quote-validity note, terms & conditions. |
+| `gearflowRichText` | Markdown-lite text block (`**bold**`, `*italic*`, `- `/`* ` bullets, word-wrapped to the box width) — replaces the pdfme built-in `text` type for every free-text/paragraph block in the 5 project document layouts: client+project details columns, client notes, total-items note, terms & conditions. When real font metrics are available (`generate-pdf.ts`), clientNotes/termsAndConditions also split across pages by wrapped line instead of only ever moving whole — see "Wrap-accurate pagination" below. |
 
 **Report Plugins:**
 | Plugin | Purpose |
@@ -180,7 +180,7 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 
 | Type | Blocks | `expandProjectGroups` | Status filter |
 |------|--------|------------------------|----------------|
-| `quote` | header, client+project details, table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset), quote-validity note (real computed date) | false (collapse groups) | none |
+| `quote` | header (+ "Expiry: {date}" meta line, real computed date), client+project details, table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset) | false (collapse groups) | none |
 | `invoice` | header, client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no badges, no kit/accessory children), totals (+ deposit/balance), client notes | false | none |
 | `packing-list` | header, client+project details, table (checkboxes, per-unit, asset tags, categories), total-items note | true (expand groups) | none |
 | `return-sheet` | header, client+project details, table (checkboxes, condition columns, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT`, `RETURNED` |
@@ -202,7 +202,7 @@ card at `/settings/branding` ("Branding & documents").
 |---|---|
 | `footerText` / `footerSecondLine` | Rendered on every page of every doc type. Empty falls back to an auto-generated `{org name} \| {org email} \| {org phone}` line. |
 | `termsAndConditions` | Plain text (no token system) rendered as a block on the quote only. Omitted entirely (zero height, no schema) when unset — no empty box by default. |
-| `quoteValidityDays` (default 30) | Feeds a **real computed date** — `document_date + quoteValidityDays` — into the quote's "This quote is valid until {date}" line. Replaces the two hardcoded "valid for 30 days" static-text copies the deleted customization layer used to carry. |
+| `quoteValidityDays` (default 30) | Feeds a **real computed date** — `document_date + quoteValidityDays` — into the quote header's "Expiry: {date}" meta line (2026-07-28 — previously its own "This quote is valid until {date}." sentence at the bottom of the document; moved into the header alongside the doc number/date so it's visible without scrolling to the end of a possibly multi-page quote — see below). Replaces the two hardcoded "valid for 30 days" static-text copies the deleted customization layer used to carry. |
 
 `build-document-data.ts` computes 4 `DocumentData` fields from these settings each
 time a document is built: `document_footer_text`, `document_footer_second_line`,
@@ -274,6 +274,155 @@ automatically; a naive markdown-lite swap would have silently dropped that.
 - Registered as both `gearflowRichText` and `rvltFlowRichText` in
   `plugins/index.ts` per the rebrand-alias convention
   (`rebrand-plugin-aliases.test.ts`).
+
+### Totals-divider redesign, bold gate, per-item Discount column (2026-07-28)
+
+- **Totals divider, take 2.** The first divider-clearance fix (6pt/16pt →
+  reserved height 34mm) still visually read as touching the "Total" text on
+  a real render — the arithmetic left only ~1.6pt of clearance once the
+  divider line's own 1pt stroke width and the bold size-11 text's real
+  ascent (measured via pdf-lib's `font.heightAtSize(11, {descender:
+  false})` ≈ 7.9pt, not a guessed constant) were both accounted for.
+  `gearflowFinancialSummary`'s divider gap is now 8pt above the line + 16pt
+  below it (was 6/10) — ~7.6pt of real clearance, an order of magnitude more
+  margin than the minimum needed. `document-composer.ts`'s `totals` block
+  height estimate is unaffected by this specific change (still `34` — the
+  extra 4pt fit within the existing mm rounding), but see the new
+  itemDiscountTotal case below. `gearflow-financial-summary.test.ts` is the
+  regression guard: it asserts the line sits strictly between the two rows'
+  baselines AND that the Total text's real ascent (not a guess) still can't
+  reach the line — this is the shape of test that should have existed
+  before the first attempt.
+- **Parent-row bold is now gated by `showKitChildren`, matching the
+  children-visibility gate.** Previously a kit/group/accessory parent's
+  description was unconditionally bold whenever it *had* children, even on
+  quote/invoice where those children are hidden (`showKitChildren: false`)
+  — the client saw an unexplained bold row with nothing visibly grouped
+  under it (e.g. an accessory parent bolded for a battery accessory that
+  never renders). `gearflow-table.ts`'s description-cell font is now
+  `isParentWithChildren && config.showKitChildren ? fonts.bold :
+  fonts.regular`. Warehouse docs (`showKitChildren: true`) are unaffected.
+- **Per-item Discount column (quote/invoice).** `projectLineItems.discount`
+  (a flat $ amount, already subtracted into `lineTotal` server-side —
+  `lineTotal = unitPrice × quantity × duration − discount`, see
+  `convex/lineItemWrites.ts`) was already on `DocumentLineItem` but never
+  rendered. `getColumnsForDocType`'s quote/invoice columns gained a
+  `discount` column between Unit Price and Total (`-$X.XX`, or `-` when
+  unset), rendered at all three row tiers (parent/child/grandchild) for
+  column-shape consistency, though children never render there today
+  (`showKitChildren: false`). Purely additive — no pricing math changed,
+  since `lineTotal` already was (and still is) the post-discount figure.
+- **"Item Discounts" transparency rows in the totals block.** Because
+  `lineTotal`/`subtotal` are already net of each line's own discount, simply
+  adding a "Discount" line to the totals block would have double-subtracted
+  it. Instead, `FinancialSummaryConfig.itemDiscountTotal` (summed in
+  `document-composer.ts`'s `computeItemDiscountTotal` from the same
+  structured `data.line_items` the table renders, so it always reconciles
+  with what's visible in the new Discount column) drives two rows drawn
+  **above** the existing net `Subtotal` row, only when the sum is > 0:
+  `Subtotal (before discounts)` (= `subtotal + itemDiscountTotal`) then
+  `Item Discounts` (`-$X.XX`). The pre-existing `Discount (X%)` row is
+  unrelated — it's still the separate project-wide manual discount
+  (`data.discount_percent`/`discount_amount`) applied on top of the net
+  subtotal, unchanged. `estimateBlockHeight`'s `totals` case reserves 44mm
+  instead of 34mm when `computeItemDiscountTotal(data) > 0`, to fit the two
+  extra rows.
+
+### Wrap-accurate pagination for free-text blocks, "Uncategorized zone" Project Groups, quote expiry moved to the header (2026-07-28)
+
+**Accurate pagination for clientNotes/termsAndConditions — no more silent
+footer overlap or empty trailing pages.** A long org T&Cs block (numbered
+sections with several clauses long enough to word-wrap) exposed two related
+bugs:
+- `estimateBlockHeight`'s `termsAndConditions`/`clientNotes` cases counted
+  literal `\n`s in the source text to estimate height — but `gearflowRichText`
+  word-wraps to the box width at render time (2026-07-27), so a long clause
+  could render as 2+ physical lines while only counting as 1 in the estimate.
+  The reserved space under-shot the real rendered height, and the actual text
+  ran past its box — visually into the footer on the affected page.
+- Because `termsAndConditions`/`clientNotes` could only ever move as ONE
+  whole block to a fresh page (never split, unlike the `table` block), a
+  block that nearly filled a fresh page left almost nothing for whatever
+  came after it — a one-line `quoteValidityNote`-style block could end up
+  alone on its own near-empty page.
+
+Fixed properly, not patched around: `composeDocument(docType, data, docColor,
+fonts?)` gained an **optional 4th parameter** — real embedded Helvetica fonts
+(`RichTextFonts`, `helpers.ts`). `generate-pdf.ts` embeds them once (a
+throwaway `PDFDocument.create()` used purely for font metrics, never
+rendered) and passes them through. When `fonts` is supplied:
+- `estimateBlockHeight` measures the block's ACTUAL wrapped line count via
+  `wrapRichText()` — the exact same function `gearflowRichText` uses to
+  render — instead of the raw-newline heuristic. `richTextLineHeight(fontSize)`
+  (`helpers.ts`) is the single shared line-advance formula both the estimate
+  and the plugin's render default use, so they can never drift apart again
+  (the class of bug CLAUDE.md's PDF "audit checklist" exists to prevent).
+- `computePages`'s `splitRichTextBlock` (mirrors `splitTable`, but simpler —
+  wrapped lines are uniform-height and atomic, no sub-items/children) wraps
+  the block ONCE up front and fills each page with as many whole lines as
+  fit, continuing the rest on the next page(s) — a `termsAndConditions` block
+  longer than a single page's content height now actually spans multiple
+  pages instead of silently overflowing the one it was squeezed onto.
+- `PageEntry.textLines` carries the pre-wrapped slice for that page.
+  `buildEntryFields` passes it to `gearflowRichText` as `{ lines: [...] }`
+  JSON instead of the raw markdown string — the plugin draws the given lines
+  directly with **zero re-wrapping**, so the exact line breaks that drove the
+  page-break math are the exact line breaks rendered; they cannot diverge.
+
+**Backward-compatible by construction, not by exception.** `composeDocument`
+stays fully synchronous; `fonts` is optional specifically so every existing
+caller/test that doesn't pass it keeps its EXACT prior behavior (raw-newline
+estimate, whole-block-only movement, plugin wraps the raw string itself at
+render time) — confirmed by the full existing test suite passing unchanged.
+Only `generate-pdf.ts` (the real render path) and new pagination-specific
+tests opt into the accurate path. See `document-composer.test.ts`'s "accurate
+rich-text pagination (fonts provided)" describe block.
+
+**"Uncategorized zone" Project Groups now collapse/expand correctly instead
+of splitting into flat items.** A `ProjectGroup` can have `categoryId: null`
+— the equipment tab's "Uncategorized" zone is a first-class, fully-supported
+state there (`equipment-tab.tsx`), not an error. But
+`buildDocumentLineItemData` (`project-line-item-read.ts`) only ever nested
+groups under a REAL category (`mappedGroups.filter(g => g.categoryId ===
+c.id)`) when building the `categories` array `structureLineItems` reads —
+an uncategorized group was invisible to it: its own synthetic collapsed row
+never rendered, and (in expand/warehouse mode) its members' `groupChildren`
+match failed too, since it was keyed on `groupTitle === group.title &&
+categoryName === cat.name` and a member's OWN `categoryName` is null
+whenever its `categoryId` is unset — even though the member correctly
+carries `groupId` pointing at the group. Net effect: the whole group printed
+as disconnected flat line items on quotes/invoices instead of one collapsed
+row (and vanished from warehouse docs' childLineItems entirely).
+
+Fixed two ways, together:
+1. `buildDocumentLineItemData` now folds every `categoryId: null` group into
+   a synthetic pseudo-category `{ id: "__uncategorized__", name: "", groups:
+   [...] }` appended to `categories`. `name: ""` buckets its synthetic row
+   under each doc type's normal "no header" fallback
+   (`groupName || prepContainer || ungroupedKey`) rather than printing a
+   spurious "Uncategorized" section title on a client-facing document.
+2. `structure-line-items.ts`'s member matching (`groupChildren`,
+   `hasGroupContent` in expand mode) now keys off `groupId` (the FK, added
+   to `DocumentLineItem` — `structureLineItems — Uncategorized-zone Project
+   Group` in `structure-line-items.test.ts`) first, falling back to the old
+   `groupTitle`+`categoryName` string match only when `groupId` is absent
+   (in practice: this file's own test fixtures, which predate the field —
+   real data from `buildDocumentLineItemData` always sets `groupId`
+   whenever `groupTitle` is resolved from it, so production traffic always
+   takes the id-based path).
+
+**Quote expiry moved into the header.** The quote's "This quote is valid
+until {date}." sentence used to be its own block at the very end of the
+document (`quoteValidityNote` — now deleted from `LayoutBlock` and
+`DOCUMENT_LAYOUTS.quote.blocks` entirely, since nothing else used it). It's
+now a third header-meta line, "Expiry: {date}", next to the doc number/date
+(`document-composer.ts`'s `header` case, quote-only,
+`docType === "quote" && data.quote_valid_until`) — visible immediately
+without scrolling to the end of a possibly multi-page quote.
+`estimateBlockHeight`'s `header` case reserves 5mm of extra height for the
+quote's 3-line meta block (vs. the usual 2 lines) as a safety margin, mirroring
+the "reserve generously, don't cut it close" lesson from the totals-divider
+fix above.
 
 ### Quote-specific fixes (#790 Phase 4)
 

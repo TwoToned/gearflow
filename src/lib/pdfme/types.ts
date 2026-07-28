@@ -49,6 +49,16 @@ export interface DocumentLineItem {
   categoryName: string | null;
   groupTitle: string | null;
   /**
+   * The Project Group's own id (FK — `projectLineItems.groupId`), when this
+   * line belongs to one. `groupTitle`/`categoryName` are resolved display
+   * strings that depend on the item's OWN `categoryId` also being set; a
+   * group's members can have `groupId` set while their `categoryId` is
+   * still null (e.g. the group itself lives in the equipment tab's
+   * "Uncategorized" zone) — `groupId` is the one field guaranteed to be
+   * authoritative regardless of that. See structure-line-items.ts.
+   */
+  groupId?: string | null;
+  /**
    * The physical location (warehouse area, rack, shelf) the line item's
    * gear lives at, derived from the asset / bulk asset record. Null for
    * custom items, services, and unassigned bulk requests. Used by
@@ -271,6 +281,12 @@ export interface TablePluginConfig {
 /** Config for financial summary plugin */
 export interface FinancialSummaryConfig {
   subtotal: number;
+  /** Sum of every visible line's own `discount` field (the new per-item
+   *  Discount column). `subtotal` is already net of these — they're baked
+   *  into each line's `lineTotal` — so this is purely informational: shown
+   *  as "Subtotal (before discounts)" + "Item Discounts" ABOVE the existing
+   *  net `subtotal` row, never subtracted a second time. */
+  itemDiscountTotal: number;
   discountPercent: number;
   discountAmount: number;
   taxLabel: string;

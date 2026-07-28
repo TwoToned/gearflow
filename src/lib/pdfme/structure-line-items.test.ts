@@ -1042,7 +1042,7 @@ describe("structureLineItems — Phase 0 baseline", () => {
     expect(result.find(r => r.id === "owned-loose")?.groupName).toBe("Lighting");
     expect(result.find(r => r.id === "kit-foh")?.groupName).toBe("[Kit] FOH Rack");
     expect(result.find(r => r.id === "hired-1")?.groupName).toBe("Sub-Hire: Mainstage AV — Moving Lights");
-    expect(result.find(r => r.id === "custom-1")?.groupName).toBeNull(); // uncategorized
+    expect(result.find(r => r.id === "custom-1")?.groupName).toBe("Uncategorized");
 
     // Kit child is filtered out of top-level structuring
     expect(result.find(r => r.id === "kit-foh-child")).toBeUndefined();
@@ -1161,14 +1161,16 @@ describe("structureLineItems — Phase 0 baseline", () => {
 
 describe("structureLineItems — Uncategorized-zone Project Group (2026-07-28)", () => {
   // buildDocumentLineItemData folds a `categoryId: null` ProjectGroup into a
-  // pseudo-category `{ id: "__uncategorized__", name: "" }` before calling
-  // structureLineItems — this simulates that shape directly. Members carry
-  // `groupId` (set whenever `groupTitle` is resolved from it, per
-  // buildDocumentLineItemData) but their OWN `categoryName` is null, since
-  // the member's `categoryId` is independently unset.
+  // pseudo-category `{ id: "__uncategorized__", name: "Uncategorized" }`
+  // before calling structureLineItems — this simulates that shape directly.
+  // Members carry `groupId` (set whenever `groupTitle` is resolved from it,
+  // per buildDocumentLineItemData) but their OWN `categoryName` is null,
+  // since the member's `categoryId` is independently unset.
   const uncategorizedZone = (
     groups: CategoryForStructuring["groups"],
-  ): CategoryForStructuring[] => [{ id: "__uncategorized__", name: "", sortOrder: Number.MAX_SAFE_INTEGER, groups }];
+  ): CategoryForStructuring[] => [
+    { id: "__uncategorized__", name: "Uncategorized", sortOrder: Number.MAX_SAFE_INTEGER, groups },
+  ];
 
   it("collapse mode (quote/invoice): collapses into ONE row, not flat individual members", () => {
     const categories = uncategorizedZone([
@@ -1185,9 +1187,10 @@ describe("structureLineItems — Uncategorized-zone Project Group (2026-07-28)",
     expect(result[0].isGroupRow).toBe(true);
     expect(result[0].groupTitle).toBe("Small PA Package");
     expect(result[0].lineTotal).toBe(275);
-    // No spurious "Uncategorized" section header — buckets under the
-    // doc's normal ungrouped fallback instead.
-    expect(result[0].groupName).toBe("");
+    // Gets its own "Uncategorized" section header (2026-07-28) — a blank
+    // bucket label used to silently merge it into whatever category printed
+    // above it on the doc.
+    expect(result[0].groupName).toBe("Uncategorized");
     // The real members are NOT also listed flat (would be double-counting /
     // the exact "split into flat items" bug this fixes).
     expect(result.some(r => r.id === "k10")).toBe(false);

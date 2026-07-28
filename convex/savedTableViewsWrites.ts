@@ -1,7 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { getAuthContext, resolveActor, type Actor } from "./lib/auth";
+import { getAuthContext, isMemberAuth, requireSelfScope, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -23,18 +23,23 @@ import { writeActivityLog } from "./lib/audit";
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 const MAX_NAME = 60;
 
-/** Resolve the verified caller to {userId, orgId, actor}; reject anon / no-org. */
+/** Resolve the verified caller to {userId, orgId, actor}; reject anon / no-org.
+ *  An AGENT token is admitted only with the `self:write` scope — these rows have
+ *  no `Resource` to intersect against (a `project:read` key has no business
+ *  touching someone's saved views), so they get the dedicated personal scope
+ *  instead of being folded into a resource one. */
 async function requireUserOrg(
   ctx: MutationCtx,
   suppliedActor: Actor,
 ): Promise<{ userId: string; orgId: string; actor: Actor }> {
   const auth = await getAuthContext(ctx);
-  if (!auth || auth.kind !== "user") {
+  if (!isMemberAuth(auth)) {
     throw new ConvexError("Unauthorized: a signed-in user is required.");
   }
   if (!auth.orgId) {
     throw new ConvexError("Forbidden: no active organization.");
   }
+  await requireSelfScope(ctx, "write");
   // resolveActor pins actor.userId to the verified subject + resolves the display name.
   const actor = await resolveActor(ctx, suppliedActor);
   return { userId: actor.userId, orgId: auth.orgId, actor };

@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { getAuthContext } from "./lib/auth";
+import { getAuthContext, isMemberAuth, requireSelfScope } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 
@@ -35,7 +35,8 @@ export const mine = query({
   args: {},
   handler: async (ctx): Promise<string[]> => {
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user" || !auth.orgId) return [];
+    if (!isMemberAuth(auth) || !auth.orgId) return [];
+    await requireSelfScope(ctx, "read");
     const rows = await ctx.db
       .query("notificationDismissals")
       .withIndex("by_organizationId_userId", (q) =>
@@ -65,12 +66,13 @@ export const dismissManyNative = mutation({
     await assertWritesEnabled(ctx, "notifications");
     await enforceBrowserWriteLimit(ctx);
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") {
+    if (!isMemberAuth(auth)) {
       throw new ConvexError("Unauthorized: a signed-in user is required.");
     }
     if (!auth.orgId) {
       throw new ConvexError("Forbidden: no active organization.");
     }
+    await requireSelfScope(ctx, "write");
     const organizationId = auth.orgId;
     const userId = auth.userId;
 
@@ -122,12 +124,13 @@ export const pruneStaleNative = mutation({
     await assertWritesEnabled(ctx, "notifications");
     await enforceBrowserWriteLimit(ctx);
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") {
+    if (!isMemberAuth(auth)) {
       throw new ConvexError("Unauthorized: a signed-in user is required.");
     }
     if (!auth.orgId) {
       throw new ConvexError("Forbidden: no active organization.");
     }
+    await requireSelfScope(ctx, "write");
     const active = new Set(activeKeys);
     const rows = await ctx.db
       .query("notificationDismissals")

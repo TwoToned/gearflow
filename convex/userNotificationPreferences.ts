@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { getAuthContext, requireService, resolveActor } from "./lib/auth";
+import { getAuthContext, isMemberAuth, requireSelfScope, requireService, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -149,9 +149,10 @@ export const mine = query({
   args: {},
   handler: async (ctx): Promise<NotificationPreferenceValues> => {
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") {
+    if (!isMemberAuth(auth)) {
       throw new ConvexError("Unauthorized: a signed-in user is required.");
     }
+    await requireSelfScope(ctx, "read");
     const row = await ctx.db
       .query("userNotificationPreferences")
       .withIndex("by_userId", (q) => q.eq("userId", auth.userId))
@@ -181,12 +182,13 @@ export const upsertMine = mutation({
     await assertWritesEnabled(ctx, "notificationPreferences");
     await enforceBrowserWriteLimit(ctx);
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") {
+    if (!isMemberAuth(auth)) {
       throw new ConvexError("Unauthorized: a signed-in user is required.");
     }
     if (!auth.orgId) {
       throw new ConvexError("Forbidden: no active organization.");
     }
+    await requireSelfScope(ctx, "write");
     // Pins userId to the verified subject + resolves the display name from the users
     // mirror (the row key + audit attribution can't be spoofed by the client).
     const actor = await resolveActor(ctx, suppliedActor);

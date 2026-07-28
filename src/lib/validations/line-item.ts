@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { DISCOUNT_MODES } from "@/lib/discount-mode";
+
 // Shared field pieces (R-3.1/R-8.6.1 single source of truth) — `lineItemSchema` and
 // `customLineItemSchema` used to hand-duplicate these bounds character-for-character;
 // a divergence between the two copies would be a defect even while they stayed in sync
@@ -11,6 +13,10 @@ const quantityField = z.coerce.number().int().min(1).max(99999).default(1);
 const unitPriceField = z.coerce.number().min(0).max(999999.99).optional();
 const durationField = z.coerce.number().int().min(1).max(3650).default(1);
 const discountField = z.coerce.number().min(0).max(999999.99).optional();
+// #1012 — the ENTRY shape of `discountField` ($ off vs % of the line gross).
+// `discount` stays the resolved flat dollar amount; this rides alongside it so
+// documents can print the discount the way it was typed. Optional/absent = "$".
+export const discountModeField = z.enum(DISCOUNT_MODES).optional();
 const categoryIdField = z.string().optional();
 const groupIdField = z.string().optional();
 const isOptionalField = z.boolean().default(false);
@@ -36,6 +42,7 @@ export const lineItemSchema = z.object({
   pricingType: z.enum(["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR", "OPTIMIZED"]).default("PER_DAY"),
   duration: durationField,
   discount: discountField,
+  discountMode: discountModeField,
   priceBreakdown: z.string().optional(),
   priceOverridden: z.boolean().default(false),
   overrideReason: z.string().max(200).optional(),
@@ -59,6 +66,7 @@ export const customLineItemSchema = z.object({
   pricingType: z.enum(["PER_DAY", "PER_WEEK", "FLAT", "PER_HOUR"]).default("FLAT"),
   duration: durationField,
   discount: discountField,
+  discountMode: discountModeField,
   categoryId: categoryIdField,
   groupId: groupIdField,
   notes: z.string().max(500).optional(),

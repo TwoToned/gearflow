@@ -107,7 +107,7 @@ use text-link (blue, § links-never-red). tsc clean (0 assets errors), eslint cl
 
 **Chunk 4 — review fixes applied (merged Claude + Codex):**
 - Auth gates (§8): wrapped registry/new (asset.create), registry/[id]/edit
-  (asset.update — EditLockGate isn't authz), models/new (model.create),
+  (asset.update), models/new (model.create),
   models/[id]/edit (model.update), categories list + [id] detail (model.read —
   the resource getCategories/getCategory's mutations require; their reads are
   org-scoped) in `RequirePermission`. Hoisted the existing model.read gate on

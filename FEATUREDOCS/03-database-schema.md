@@ -92,9 +92,9 @@ Grouped by area (table names are the Convex identifiers, e.g. `assets`,
   (idempotency ledger for Convex-scheduled emails).
 - **Custom fields** — `customFieldDefinitions`.
 - **Saved views** — `savedTableViews`.
-- **Collaboration substrate** — `collaborationPresence`, `collaborationLocks`,
-  `commentThreads`, `comments`, `reviewMarkers`, `activityEvents` (a
-  lightweight per-project feed, distinct from the audit trail below).
+- **Collaboration substrate** — `commentThreads`, `comments`, `reviewMarkers`,
+  `activityEvents` (a lightweight per-project feed, distinct from the audit
+  trail below).
 - **Audit** — `activityLogs` (the live audit trail — see "Dormant / frozen" above).
 - **Webhooks** — `webhooks`, `webhookDeliveries`.
 - **WooCommerce** — `wooCommerceIntegrations`, `wooCommerceOrderLogs`.

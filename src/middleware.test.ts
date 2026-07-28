@@ -29,6 +29,12 @@ describe("middleware — session redirect gating", () => {
     expect(redirectsToLogin(middleware(req("/api/calendar/tok/feed")))).toBe(false);
     expect(redirectsToLogin(middleware(req("/api/crew/respond/tok")))).toBe(false);
   });
+
+  it("lets the bearer-only agent API through without a login redirect (#998)", () => {
+    expect(redirectsToLogin(middleware(req("/api/v1/ops/assets.list")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/api/v1/whoami")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/api/v1/operations")))).toBe(false);
+  });
 });
 
 describe("middleware — x-request-id correlation (R-8.9.5)", () => {

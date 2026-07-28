@@ -372,6 +372,19 @@ function extract(err: unknown): Extracted {
     return { code: err.code, message: err.message, data: {} };
   }
   if (err instanceof ConvexError) return extractConvex(err as ConvexError<never>);
+  // Dispatcher-thrown errors (missing bearer token, unknown operation, envelope/
+  // business validation) are plain `Error`s carrying a `.code` matching a
+  // `CODE_SPECS` key — `Object.assign(new Error(message), { code })`, the same
+  // pattern used throughout src/lib/api/dispatcher.ts. Recognise that shape
+  // generically rather than adding a bespoke error class per call site.
+  if (err instanceof Error && typeof (err as unknown as { code?: unknown }).code === "string") {
+    const withDetails = err as unknown as { code: string; details?: unknown };
+    return {
+      code: withDetails.code,
+      message: err.message,
+      data: isRecord(withDetails.details) ? withDetails.details : {},
+    };
+  }
   return UNKNOWN;
 }
 

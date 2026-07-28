@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -376,3 +377,12 @@ export const reorderCategoriesNative = mutation({
     return { ok: true };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  createCategoryNative: { danger: "medium" },
+  // Cascade-deletes the category's groups + all categorySlots, and un-categorizes
+  // every affected line item — delete/archive tier (§9).
+  deleteCategoryNative: { danger: "high" },
+  reorderCategoriesNative: { danger: "low" },
+  updateCategoryNative: { danger: "medium" },
+};

@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -199,3 +200,9 @@ export const setNative = mutation({
     return { added: toAdd, removed: toRemove.map((r) => r.userId) };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  addNative: { danger: "medium" },
+  removeNative: { danger: "medium" },
+  setNative: { danger: "medium" }, // bulk add/remove sync — same access-grant effect as add/removeNative, just batched
+};

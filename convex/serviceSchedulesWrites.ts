@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -181,3 +182,11 @@ export const deactivateNative = mutation({
     return { id: a.id };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  // Soft-delete (isActive: false) — classified `high` under the delete/archive
+  // tier (§9) regardless of the "not a hard delete" nuance in the docstring above.
+  deactivateNative: { danger: "high" },
+  updateNative: { danger: "medium" },
+};

@@ -86,7 +86,6 @@ import {
 import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useSelection } from "./use-selection";
-import { targetKey } from "@/lib/collaboration-targets";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CategoryCardHeading } from "./equipment-cards";
 
@@ -131,21 +130,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   }, []);
   const native = useNativeEquipmentTab(projectId, orgId, pendingEdits);
 
-  // Passive section/group/line-item collaboration state: one lock subscription,
-  // one review-marker subscription, and one comment-count subscription for the
-  // whole project, then row lookups by target key. This avoids mounting a
-  // getLock/getReviewMarker hook PER ROW — LineItemRow used to do exactly that
-  // (2 extra live subscriptions per line item, un-dedupeable since each row's
-  // targetId differs), which is why collaboration.getLock/getReviewMarker were
-  // 9-10K calls/month on a 2-user org (Phase 0 baseline,
-  // docs/designs/perf-convex-efficiency-2026-06.md Finding #4). Both
-  // listLocksForEntity/listReviewMarkersForEntity already return every target
-  // under this project (no targetType filter), so the same maps cover section/
-  // group/category rows AND line-item rows.
-  const sectionLocks = useAuthedQuery(
-    api.collaboration.listLocksForEntity,
-    orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
-  );
+  // Passive section/group/line-item collaboration state: one review-marker
+  // subscription and one comment-count subscription for the whole project,
+  // then row lookups by target key. This avoids mounting a getReviewMarker
+  // hook PER ROW — LineItemRow used to do exactly that (an extra live
+  // subscription per line item, un-dedupeable since each row's targetId
+  // differs), which is why collaboration.getReviewMarker was thousands of
+  // calls/month on a small org (Phase 0 baseline,
+  // docs/designs/perf-convex-efficiency-2026-06.md Finding #4).
+  // listReviewMarkersForEntity already returns every target under this
+  // project (no targetType filter), so the same map covers section/group/
+  // category rows AND line-item rows.
   const reviewMarkers = useAuthedQuery(
     api.collaboration.listReviewMarkersForEntity,
     orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
@@ -154,20 +149,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     api.collaboration.listThreadCommentCounts,
     orgId ? { orgId, entityType: "project", entityId: projectId } : "skip"
   ) as Record<string, { open: number; total: number; blockingOpen: number }> | undefined;
-  const lockByTarget = React.useMemo(
-    () =>
-      new Map(
-        (sectionLocks ?? []).map((lock) => [
-          targetKey({ targetType: lock.targetType, targetId: lock.targetId }),
-          // `name`/`color` for the existing category/group `lockedBy` prop;
-          // `ownerName`/`ownerColor`/`isStale` for LineItemRow's badge (listLocksForEntity
-          // already filters to status "active" server-side, so presence in this map
-          // implies active — only `isStale` needs re-checking client-side).
-          { name: lock.ownerName, color: lock.ownerColor, ownerName: lock.ownerName, ownerColor: lock.ownerColor, isStale: lock.isStale },
-        ])
-      ),
-    [sectionLocks]
-  );
   const markerByTarget = React.useMemo(
     () => new Map((reviewMarkers ?? []).map((m) => [m.targetId, m])),
     [reviewMarkers]
@@ -1010,7 +991,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         onMoveDown={() => moveCategory(catIndex, 1)}
                         canMoveUp={catIndex > 0}
                         canMoveDown={catIndex < typedCategories.length - 1}
-                        lockedBy={lockByTarget.get(targetKey({ targetType: "category", targetId: cat.id })) ?? null}
                         onRename={() => {
                           setRenameCategoryId(cat.id);
                           setRenameCategoryValue(cat.name);
@@ -1090,7 +1070,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   key={item.id}
                                   item={item}
                                   indent="ml-12"
-                                  lockByTarget={lockByTarget}
                                   markerByTarget={markerByTarget}
                                   overbookedInfo={undefined}
                                   isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
@@ -1132,7 +1111,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               onMoveDown={() => moveGroupSlot(cat, slotIndex, 1)}
                               canMoveUp={canSlotUp}
                               canMoveDown={canSlotDown}
-                              lockedBy={lockByTarget.get(targetKey({ targetType: "group", targetId: group.id })) ?? null}
                               commentBadge={{
                                 open: commentCounts?.[group.id]?.open ?? 0,
                                 blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
@@ -1189,7 +1167,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 indent="ml-12"
                                 orgId={orgId}
                                 projectId={projectId}
-                                lockByTarget={lockByTarget}
                                 markerByTarget={markerByTarget}
                                 onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
                                 onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
@@ -1232,7 +1209,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           indent="ml-3"
                           orgId={orgId}
                           projectId={projectId}
-                          lockByTarget={lockByTarget}
                           markerByTarget={markerByTarget}
                           onMoveUp={() => moveLineItemInList(standaloneItems, itemIndex, -1)}
                           onMoveDown={() => moveLineItemInList(standaloneItems, itemIndex, 1)}
@@ -1290,7 +1266,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     indent=""
                     orgId={orgId}
                     projectId={projectId}
-                    lockByTarget={lockByTarget}
                     markerByTarget={markerByTarget}
                     onMoveUp={() => moveLineItemInList(uncatVisible, itemIndex, -1)}
                     onMoveDown={() => moveLineItemInList(uncatVisible, itemIndex, 1)}
@@ -1336,7 +1311,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         isExpanded={isExpanded}
                         orgId={orgId}
                         projectId={projectId}
-                        lockedBy={lockByTarget.get(targetKey({ targetType: "group", targetId: group.id })) ?? null}
                         commentBadge={{
                           open: commentCounts?.[group.id]?.open ?? 0,
                           blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
@@ -1391,7 +1365,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           indent="ml-12"
                           orgId={orgId}
                           projectId={projectId}
-                          lockByTarget={lockByTarget}
                           markerByTarget={markerByTarget}
                           onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
                           onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
@@ -1467,7 +1440,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           key={item.id}
                           item={item}
                           indent="ml-8"
-                          lockByTarget={lockByTarget}
                           markerByTarget={markerByTarget}
                           overbookedInfo={undefined}
                           isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}

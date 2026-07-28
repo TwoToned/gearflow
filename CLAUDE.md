@@ -84,6 +84,8 @@ pnpm test:watch      # Run tests in watch mode
 pnpm test:coverage   # Run tests with coverage report
 pnpm exec prisma generate  # Regenerate Prisma client (after schema changes)
 pnpm exec prisma migrate dev --name <name>  # Create + apply migration
+pnpm run api:registry       # Regenerate the API/MCP contract registry + coverage table
+pnpm run api:registry:check # Verify it is current (the CI gate)
 ```
 
 ### Worktree Setup
@@ -257,6 +259,37 @@ index. To add a table: generate into a scratch dir, diff, hand-merge the stanza.
 Related: `by_cuid` and `by_modelId` are **global** Convex indexes, and `requireOrgRead`
 authorises the *caller's* org, not the *row's*. Any doc fetched by cuid or modelId must
 be checked against `organizationId`, or you have a cross-tenant read.
+
+### The agent (API/MCP) auth kind — three rules when touching `convex/*.ts`
+
+The API mints a short-lived **AGENT token** shaped like a user token plus an `akid`
+claim (`src/lib/api/agent-token.ts`), so `getAuthContext` has three kinds:
+`service` / `user` / `agent`. An agent behaves as a user everywhere and additionally
+passes `requireAgentScope` (the key's scopes ∩ the user's live RBAC). See
+[FEATUREDOCS/56](./FEATUREDOCS/56-api-mcp.md) and
+`docs/designs/api-mcp-reimplementation.md`.
+
+1. **Never give `requireService` an agent escape hatch.** An agent token failing it
+   is what makes the 602 service-gated functions structurally unreachable from the
+   API rather than merely undocumented. `convex/agentServiceUnreachable.test.ts`
+   invokes every one of them and asserts it rejects.
+2. **`auth.kind !== "user"` is now a bug in most places.** Use `isMemberAuth(auth)`
+   for "a real end-user identity" — an `!== "user"` check silently locks agents out
+   of a surface that was meant to include them (or, worse, reads as an intentional
+   deny when it isn't). The genuinely agent-only branches are the two resource-less
+   read guards, which fail closed on purpose (decision 2).
+3. **A new read should use `requireOrgReadFor(ctx, orgId, resource)`**, not
+   `requireOrgRead`. The resource-less guard has nothing to intersect a key's scopes
+   against, so it rejects agents — 216 existing queries are invisible to the API
+   until Phase 5 migrates them. Personal-scope surfaces use `requireSelfScope`.
+
+**Privileged args are CI-gated.** A new mutation argument matching
+`/^(allow|force|skip|override|ignore|bypass)/` or named `justification` fails the
+build unless it has a policy row in `src/lib/api/privileged-args.ts` — these are the
+only ways a legitimately-permitted caller can soften a gate, so each one is
+classified deliberately. `assertBulkSizeOk(ctx, count)` is async and ctx-taking for
+the same reason: the cap (50 agent / 500 human) has to come from the verified
+identity, not a caller-supplied hint.
 
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)

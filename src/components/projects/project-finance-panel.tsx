@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Send, Ban, Trash2, UploadCloud, AlertCircle } from "lucide-react";
+import { Send, Ban, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -12,6 +12,7 @@ import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { pushInvoiceToXero } from "@/server/xero";
+import { generateInvoiceArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -43,10 +44,16 @@ const INVOICE_STATUS_BADGE: Record<string, "ok" | "warn" | "neutral" | "overbook
  * accept/decline. Sending does NOT email anyone — it records the send and
  * freezes the numbers.
  *
- * Invoices are unchanged: create/issue/void per the client's payment profile,
- * and (Xero-linked orgs) push an issued invoice as a Xero draft. "Deposit not
- * yet invoiced" nudge chips are DERIVED (kind/status of existing invoices), not
- * a stored flag — there is no READY_TO_INVOICE project status.
+ * Invoices: create/issue/void per the client's payment profile, and (Xero-linked
+ * orgs) push an issued invoice as a Xero draft. "Deposit not yet invoiced" nudge
+ * chips are DERIVED (kind/status of existing invoices), not a stored flag —
+ * there is no READY_TO_INVOICE project status.
+ *
+ * Both halves now carry a DOCUMENT action (#987): the stored, immutable artifact
+ * for anything sent or issued, a watermarked preview for anything still a draft,
+ * and an explicit retry when a render failed. Quote and Invoice are no longer in
+ * the header's Documents ▾ — a client-facing finance document is never a fresh
+ * render of live project state.
  *
  * The full Finance tab — send dialog, version history + diffs, invoice issue
  * dialog with due dates, drift indicator — is Phase D (#989).
@@ -97,6 +104,11 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
     try {
       const result = await invoiceWrites.issue(id);
       toast.success(`Issued ${result.invoiceNumber}`);
+      // Issued, but the document render failed — the row's retry action fixes
+      // it. Never silent (#987).
+      if (!result.artifactReady) {
+        toast.warning(`The document for ${result.invoiceNumber} didn't generate — use “Document missing” on that invoice to make one.`);
+      }
       // UI chain (not a nested mutation) — offer to advance the project once a
       // BALANCE/FULL invoice is issued (spec: "issuing offers to advance status").
       const invoice = invoices?.find((i) => i.id === id);
@@ -161,6 +173,7 @@ export function ProjectFinancePanel({ projectId, clientId, projectStatus }: Proj
               <InvoiceRow
                 key={inv.id}
                 invoice={inv}
+                projectId={projectId}
                 xeroLinked={xeroLinked}
                 onIssue={() => void issueInvoice(inv.id)}
                 onDeleteDraft={() =>
@@ -202,16 +215,22 @@ interface InvoiceRowDoc {
   total: number;
   xeroSyncStatus?: string;
   lastSyncError?: string;
+  /** The STORED document, rendered once at issue (#987). Null on a draft, and
+   *  on an issued invoice whose render failed — hence the retry. */
+  pdfFileId?: string;
+  issuedAt?: number;
 }
 
 function InvoiceRow({
   invoice: inv,
+  projectId,
   xeroLinked,
   onIssue,
   onDeleteDraft,
   onVoidRequest,
 }: {
   invoice: InvoiceRowDoc;
+  projectId: string;
   xeroLinked: boolean;
   onIssue: () => void;
   onDeleteDraft: () => void;
@@ -230,7 +249,8 @@ function InvoiceRow({
           </span>
         )}
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <InvoiceDocumentAction invoice={inv} projectId={projectId} />
         {inv.status === "DRAFT" && (
           <CanDo resource="invoice" action="issue">
             <Button type="button" variant="line" size="sm" onClick={onIssue}>
@@ -259,6 +279,60 @@ function InvoiceRow({
         )}
       </div>
     </li>
+  );
+}
+
+/**
+ * The document side of an invoice (#987). An ISSUED invoice's PDF is rendered
+ * once and stored, so re-downloading it can never produce a different document
+ * from the one the client was sent — the row was already immutable, this is what
+ * carries that past the database boundary. A VOIDed invoice keeps its document.
+ *
+ * A DRAFT has none by design: its amounts are still mutable, so the only
+ * document it can produce is the watermarked preview.
+ */
+function InvoiceDocumentAction({ invoice: inv, projectId }: { invoice: InvoiceRowDoc; projectId: string }) {
+  const retry = useServerMutation({
+    mutationFn: () => generateInvoiceArtifact(inv.id),
+    onSuccess: () => toast.success("Generated the invoice document"),
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (inv.pdfFileId) {
+    return (
+      <Button variant="line" size="sm" asChild>
+        <a href={`/api/finance/invoice/${inv.id}/pdf`} target="_blank" rel="noopener noreferrer">
+          <Download className="h-3.5 w-3.5" /> Document
+        </a>
+      </Button>
+    );
+  }
+
+  // A draft's only document is the watermarked preview — the one place a
+  // client-facing finance PDF is still rendered from live state, and it says
+  // "NOT SENT" on every page.
+  if (inv.issuedAt == null) {
+    return (
+      <Button variant="line" size="sm" asChild>
+        <a href={`/api/documents/${projectId}?type=invoice&preview=1`} target="_blank" rel="noopener noreferrer">
+          <Eye className="h-3.5 w-3.5" /> Preview
+        </a>
+      </Button>
+    );
+  }
+
+  return (
+    <CanDo resource="invoice" action="issue">
+      <Button
+        type="button"
+        variant="line"
+        size="sm"
+        loading={retry.isPending}
+        onClick={() => retry.mutate(undefined)}
+      >
+        <AlertTriangle className="h-3.5 w-3.5 text-warn" /> Document missing — generate
+      </Button>
+    </CanDo>
   );
 }
 

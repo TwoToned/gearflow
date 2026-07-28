@@ -3,6 +3,7 @@
 import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
+import { generateQuoteArtifact } from "@/server/finance-documents";
 import { api } from "../../convex/_generated/api";
 import {
   quoteAcceptSchema,
@@ -44,15 +45,30 @@ export function useQuoteWrites() {
   };
 
   return {
-    /** Freeze the current revision and stamp it sent. Does NOT email the client
-     *  (decision 7) — it records the send and, from Phase B, stores the PDF. */
+    /**
+     * Freeze the current revision and stamp it sent. Does NOT email the client
+     * (decision 7) — it records the send, freezes the money, and then renders
+     * and stores the PDF (#987).
+     *
+     * The artifact render runs in a server action AFTER the Convex transaction
+     * commits, so it can fail independently. It never fails the send: the row is
+     * already `SENT`, and a `SENT` revision with no `pdfFileId` renders a
+     * "document failed — retry" state in the rail rather than a silent gap. That
+     * is why `artifactReady` is reported rather than thrown.
+     */
     send: async (
       projectId: string,
       data: QuoteSendValues = {},
-    ): Promise<{ id: string; version: number; validUntil: number; offerStatusChange: QuoteStatusOffer }> => {
+    ): Promise<{
+      id: string;
+      version: number;
+      validUntil: number;
+      offerStatusChange: QuoteStatusOffer;
+      artifactReady: boolean;
+    }> => {
       const org = requireOrg();
       const parsed = quoteSendSchema.parse(data);
-      return await sendM({
+      const result = await sendM({
         id: createId(),
         organizationId: org,
         projectId,
@@ -64,6 +80,14 @@ export function useQuoteWrites() {
         auditId: createId(),
         now: Date.now(),
       });
+
+      let artifactReady = true;
+      try {
+        await generateQuoteArtifact(result.id);
+      } catch {
+        artifactReady = false;
+      }
+      return { ...result, artifactReady };
     },
 
     /** Un-send a revision. Needs admin/owner or one of the project's PMs on top

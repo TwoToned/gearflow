@@ -352,9 +352,13 @@ export default function ProjectDetailPage({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {/* Warehouse artifacts only. Quote and Invoice are
+                          deliberately absent (#987): a client-facing finance
+                          document comes from the Finance panel as the STORED
+                          revision, never a fresh render of live state — two
+                          clicks a week apart used to produce two different
+                          documents under the same name. */}
                       {([
-                        { label: "Quote / proposal", apiType: "quote" },
-                        { label: "Invoice", apiType: "invoice" },
                         { label: "Pull slip", apiType: "pull-slip" },
                         { label: "Delivery docket", apiType: "delivery-docket" },
                         { label: "Return sheet", apiType: "return-sheet" },

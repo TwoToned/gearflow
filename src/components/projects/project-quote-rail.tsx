@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle2, FileText, Send, Undo2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Eye, FileText, Send, Undo2, XCircle } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
 import { useQuoteWrites } from "@/hooks/use-quote-writes";
+import { generateQuoteArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,10 @@ interface QuoteRevisionDoc {
   sentAt?: number;
   validUntil?: number;
   snapshot?: unknown;
+  /** The STORED document for this revision (#987) — the bytes the client was
+   *  given. Null on a never-sent draft, and on a sent revision whose render
+   *  failed (which is what the retry action is for). */
+  pdfFileId?: string;
 }
 
 type ReasonVerb = "recall" | "decline";
@@ -76,7 +81,14 @@ export function ProjectQuoteRail({ projectId, orgId }: { projectId: string; orgI
 
   const sendMutation = useServerMutation({
     mutationFn: () => quoteWrites.send(projectId),
-    onSuccess: (r) => toast.success(`Sent quote v${r.version} — pricing is now frozen at this revision`),
+    onSuccess: (r) => {
+      toast.success(`Sent quote v${r.version} — pricing is now frozen at this revision`);
+      // The send itself succeeded; only the document render didn't. Say so, and
+      // leave the row's retry action to fix it — never silently.
+      if (!r.artifactReady) {
+        toast.warning(`The document for v${r.version} didn't generate — use “Document missing” on that revision to make one.`);
+      }
+    },
     onError: (e) => toast.error(e.message),
   });
   const newVersionMutation = useServerMutation({
@@ -124,6 +136,7 @@ export function ProjectQuoteRail({ projectId, orgId }: { projectId: string; orgI
             <QuoteRevisionRow
               key={quote.id}
               quote={quote}
+              projectId={projectId}
               onAccept={() => void acceptQuote(quote)}
               onDecline={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
               onRecall={() => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
@@ -184,11 +197,13 @@ function RailHeader({
  */
 function QuoteRevisionRow({
   quote,
+  projectId,
   onAccept,
   onDecline,
   onRecall,
 }: {
   quote: QuoteRevisionDoc;
+  projectId: string;
   onAccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
@@ -201,26 +216,84 @@ function QuoteRevisionRow({
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
       <RevisionMeta quote={quote} />
-      <CanDo resource="invoice" action="publish">
-        <div className="flex items-center gap-1.5">
-          {isSent && (
-            <Button type="button" variant="line" size="sm" onClick={onAccept}>
-              <CheckCircle2 className="h-3.5 w-3.5" /> Mark accepted
-            </Button>
-          )}
-          {isHeldByClient && (
-            <Button type="button" variant="line" size="sm" onClick={onDecline}>
-              <XCircle className="h-3.5 w-3.5" /> Declined
-            </Button>
-          )}
-          {isHeldByClient && (
-            <Button type="button" variant="line" size="sm" onClick={onRecall}>
-              <Undo2 className="h-3.5 w-3.5" /> Recall
-            </Button>
-          )}
-        </div>
-      </CanDo>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <QuoteDocumentAction quote={quote} projectId={projectId} />
+        <CanDo resource="invoice" action="publish">
+          <div className="flex items-center gap-1.5">
+            {isSent && (
+              <Button type="button" variant="line" size="sm" onClick={onAccept}>
+                <CheckCircle2 className="h-3.5 w-3.5" /> Mark accepted
+              </Button>
+            )}
+            {isHeldByClient && (
+              <Button type="button" variant="line" size="sm" onClick={onDecline}>
+                <XCircle className="h-3.5 w-3.5" /> Declined
+              </Button>
+            )}
+            {isHeldByClient && (
+              <Button type="button" variant="line" size="sm" onClick={onRecall}>
+                <Undo2 className="h-3.5 w-3.5" /> Recall
+              </Button>
+            )}
+          </div>
+        </CanDo>
+      </div>
     </li>
+  );
+}
+
+/**
+ * The document side of a revision (#987) — exactly one of three states, so the
+ * absence of a document is never silent:
+ *
+ * 1. **Stored artifact** → download the bytes the client was given. Still
+ *    offered on a superseded/recalled/declined revision: they may be holding
+ *    that copy, and the record is worse without it.
+ * 2. **Sent, but no artifact** → the render failed after the send committed.
+ *    Retry (only ever callable while `pdfFileId` is null — the server refuses to
+ *    overwrite, so this can't rewrite history).
+ * 3. **Never sent** → a watermarked DRAFT PREVIEW, which is deliberately not
+ *    stored anywhere and says "NOT SENT" on every page.
+ */
+function QuoteDocumentAction({ quote, projectId }: { quote: QuoteRevisionDoc; projectId: string }) {
+  const retry = useServerMutation({
+    mutationFn: () => generateQuoteArtifact(quote.id),
+    onSuccess: () => toast.success(`Generated the document for v${quote.version}`),
+    onError: (e) => toast.error(e.message),
+  });
+
+  if (quote.pdfFileId) {
+    return (
+      <Button variant="line" size="sm" asChild>
+        <a href={`/api/finance/quote/${quote.id}/pdf`} target="_blank" rel="noopener noreferrer">
+          <Download className="h-3.5 w-3.5" /> Document
+        </a>
+      </Button>
+    );
+  }
+
+  if (quote.sentAt != null) {
+    return (
+      <CanDo resource="invoice" action="publish">
+        <Button
+          type="button"
+          variant="line"
+          size="sm"
+          loading={retry.isPending}
+          onClick={() => retry.mutate(undefined)}
+        >
+          <AlertTriangle className="h-3.5 w-3.5 text-warn" /> Document missing — generate
+        </Button>
+      </CanDo>
+    );
+  }
+
+  return (
+    <Button variant="line" size="sm" asChild>
+      <a href={`/api/documents/${projectId}?type=quote&preview=1`} target="_blank" rel="noopener noreferrer">
+        <Eye className="h-3.5 w-3.5" /> Preview draft
+      </a>
+    </Button>
   );
 }
 

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { QUOTE_VALIDITY_BOUNDS } from "@/lib/quote-validity";
+
 /**
  * Global document settings (footer text, terms & conditions, quote
  * validity) — org-level, part of the `orgSettings` Convex blob
@@ -12,7 +14,12 @@ export const orgDocumentSettingsSchema = z.object({
   footerSecondLine: z.string().max(200).optional(),
   termsAndConditions: z.string().max(4000).optional(),
   /** Days a quote stays valid from its generation date. Default 30. */
-  quoteValidityDays: z.coerce.number().int().min(1).max(365).optional(),
+  quoteValidityDays: z.coerce
+    .number()
+    .int()
+    .min(QUOTE_VALIDITY_BOUNDS.min)
+    .max(QUOTE_VALIDITY_BOUNDS.max)
+    .optional(),
 });
 
 export type OrgDocumentSettingsValues = z.input<typeof orgDocumentSettingsSchema>;

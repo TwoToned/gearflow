@@ -36,6 +36,7 @@ import {
 } from "./structure-line-items";
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 import type { OrgDocumentSettings } from "@/lib/org-settings-types";
+import { computeValidUntil, resolveQuoteValidityDays } from "@/lib/quote-validity";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
@@ -669,8 +670,16 @@ export async function buildDocumentData(
   const totalNum = Number(serialized.total) || 0;
   const depositNum = Number(serialized.depositPaid) || 0;
   const now = new Date();
-  const quoteValidityDays = documentSettings?.quoteValidityDays ?? 30;
-  const quoteValidUntil = new Date(now.getTime() + quoteValidityDays * 24 * 60 * 60 * 1000);
+  // #986 — the validity DEFAULT and the day-boundary maths now come from the one
+  // shared module (`quote-validity.ts`), resolved in the ORG's timezone rather
+  // than the render host's. This is still computed from `now`, which means a
+  // re-render of an un-sent draft still moves the date — Phase B (#987) is what
+  // makes the PDF read the SENT revision's stamped `validUntil` instead of
+  // recomputing. A sent revision already carries an immutable `validUntil`
+  // (stamped by `quotesWrites.sendNative`); nothing extends it after the fact.
+  const quoteValidityDays = resolveQuoteValidityDays(documentSettings?.quoteValidityDays);
+  const orgTimezone = typeof orgSettings.timezone === "string" ? orgSettings.timezone : undefined;
+  const quoteValidUntil = new Date(computeValidUntil(now.getTime(), quoteValidityDays, orgTimezone));
 
   // WS1 (#940) — only the invoice doc type renders this; skip the extra
   // Convex round trip for the other 4 doc types.

@@ -8,6 +8,7 @@ import { refreshOrganization } from "@/hooks/use-organization";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings, OrgDocumentSettings } from "@/lib/org-settings-types";
+import { DEFAULT_QUOTE_VALIDITY_DAYS, QUOTE_VALIDITY_BOUNDS } from "@/lib/quote-validity";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,7 +20,6 @@ interface DocumentSettingsProps {
   onDocumentsChange?: (documents: OrgDocumentSettings | undefined) => void;
 }
 
-const DEFAULT_QUOTE_VALIDITY_DAYS = 30;
 
 export function DocumentSettings({ orgName, settings, onDocumentsChange }: DocumentSettingsProps) {
   const { data: activeOrg } = useActiveOrganization();
@@ -72,7 +72,10 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
     termsAndConditions !== (documents.termsAndConditions || "") ||
     quoteValidityDays !== (documents.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS);
 
-  const validityOutOfRange = !Number.isFinite(quoteValidityDays) || quoteValidityDays < 1 || quoteValidityDays > 365;
+  const validityOutOfRange =
+    !Number.isFinite(quoteValidityDays) ||
+    quoteValidityDays < QUOTE_VALIDITY_BOUNDS.min ||
+    quoteValidityDays > QUOTE_VALIDITY_BOUNDS.max;
 
   return (
     <div className="space-y-4">
@@ -119,14 +122,15 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
         <Input
           id="quoteValidityDays"
           type="number"
-          min={1}
-          max={365}
+          min={QUOTE_VALIDITY_BOUNDS.min}
+          max={QUOTE_VALIDITY_BOUNDS.max}
           value={quoteValidityDays}
           onChange={(e) => setQuoteValidityDays(e.target.valueAsNumber)}
           aria-invalid={validityOutOfRange}
         />
         <p className="text-xs text-fg-3">
-          Quotes show &ldquo;Valid until&rdquo; computed from the generation date plus this many days.
+          Default &ldquo;valid for&rdquo; when sending a quote. The send dialog stamps the resulting
+          &ldquo;valid until&rdquo; date onto that revision, so it never shifts afterwards.
         </p>
       </div>
 

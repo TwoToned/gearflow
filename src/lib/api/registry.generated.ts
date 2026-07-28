@@ -17436,6 +17436,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "invoiceDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -17447,7 +17457,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "dfb874f53db5e633",
+    "argsSha": "eeb89046dcd145de",
     "returnsSha": "4fa32762aba93eee"
   },
   {
@@ -35625,6 +35635,62 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "c76d0325e401c8da"
   },
   {
+    "operation": "quotesWrites.repriceFromRevisionNative",
+    "module": "quotesWrites",
+    "fn": "repriceFromRevisionNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "sourceQuoteId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3e1f2b02aceadf0c",
+    "returnsSha": "cc64da96694ae5c3"
+  },
+  {
     "operation": "quotesWrites.sendNative",
     "module": "quotesWrites",
     "fn": "sendNative",
@@ -50549,10 +50615,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1124,
-  agentReachable: 291,
+  total: 1125,
+  agentReachable: 292,
   queries: 397,
-  mutations: 727,
+  mutations: 728,
   agentReachableQueries: 22,
-  agentReachableMutations: 269,
+  agentReachableMutations: 270,
 } as const;

@@ -203,19 +203,22 @@ export function CategoryManager() {
                 <Label htmlFor="cat-sort">Sort order</Label>
                 <Input id="cat-sort" type="number" {...form.register("sortOrder")} className="w-24" />
               </div>
-              <Controller
-                name="xeroAccountCode"
-                control={form.control}
-                render={({ field }) => (
-                  <XeroAccountCodeField
-                    value={field.value}
-                    onChange={field.onChange}
-                    label="Xero account"
-                    placeholder="Inherit org default"
-                    helpText="Applied to every model/kit under this category unless overridden."
-                  />
-                )}
-              />
+              <div className="space-y-2 border-t border-line pt-4">
+                <Label className="text-ui-text font-medium text-ink">Xero coding</Label>
+                <Controller
+                  name="xeroAccountCode"
+                  control={form.control}
+                  render={({ field }) => (
+                    <XeroAccountCodeField
+                      value={field.value}
+                      onChange={field.onChange}
+                      label="Account"
+                      placeholder="Inherit org default"
+                      helpText="Applied to every model/kit under this category unless overridden."
+                    />
+                  )}
+                />
+              </div>
               {parentId && (
                 <p className="text-caption text-muted">
                   Subcategory of: {categories.find((c) => c.id === parentId)?.name}

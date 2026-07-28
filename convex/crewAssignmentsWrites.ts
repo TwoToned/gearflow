@@ -22,6 +22,23 @@ async function requireCrewProjectInOrg(ctx: MutationCtx, projectId: string, orgI
   return p;
 }
 
+/** #988 — gate a project exactly once per bulk mutation, no matter how many of
+ *  its rows the selection touches. Pulled out of the bulk handlers themselves
+ *  (rather than inlined per-row) to keep their cyclomatic complexity down —
+ *  same "kind: structural" gate a single create/update/delete already uses. */
+async function guardProjectOnce(
+  ctx: MutationCtx,
+  orgId: string,
+  projectId: string,
+  guardedProjectIds: Set<string>,
+  justification: string | undefined,
+): Promise<void> {
+  if (guardedProjectIds.has(projectId)) return;
+  const project = await requireCrewProjectInOrg(ctx, projectId, orgId);
+  await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
+  guardedProjectIds.add(projectId);
+}
+
 /**
  * Reject a non-finite OR negative money/hours input before it flows into resolveRate /
  * calculateEstimatedCost → estimatedCost → project labourCostTotal. Convex `v.number()`
@@ -345,7 +362,15 @@ export const deleteNative = mutation({
 
 export const bulkDeleteNative = mutation({
   returns: v.object({ deleted: v.number(), skipped: v.number() }),
-  args: { orgId: v.string(), ids: v.array(v.string()), now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    orgId: v.string(),
+    ids: v.array(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+    // #988: required once a touched project is JUSTIFY+ and no session is open.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "crew");
     await enforceBrowserWriteLimit(ctx);
@@ -356,9 +381,13 @@ export const bulkDeleteNative = mutation({
     let deleted = 0, skipped = 0;
     const projectIds = new Set<string>();
     const serviceIds = new Set<string>();
+    // #988: deleting is structural (same "kind" a single deleteNative uses),
+    // gated once per distinct project this selection touches.
+    const guardedProjectIds = new Set<string>();
     for (const id of a.ids) {
       const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== a.orgId) { skipped++; continue; }
+      await guardProjectOnce(ctx, a.orgId, doc.projectId, guardedProjectIds, a.justification);
       projectIds.add(doc.projectId);
       if (doc.serviceId) serviceIds.add(doc.serviceId);
       await cascadeDelete(ctx, doc, a.orgId);
@@ -374,7 +403,16 @@ export const bulkDeleteNative = mutation({
 
 export const bulkStatusNative = mutation({
   returns: v.object({ updated: v.number(), skipped: v.number() }),
-  args: { orgId: v.string(), ids: v.array(v.string()), status: enums.AssignmentStatus, now: v.number(), actor: actorValidator, auditId: v.string() },
+  args: {
+    orgId: v.string(),
+    ids: v.array(v.string()),
+    status: enums.AssignmentStatus,
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+    // #988: required once a touched project is JUSTIFY+ and no session is open.
+    justification: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "crew");
     await enforceBrowserWriteLimit(ctx);
@@ -384,9 +422,12 @@ export const bulkStatusNative = mutation({
 
     let updated = 0, skipped = 0;
     const projectIds = new Set<string>();
+    // #988: a status change is structural, gated once per distinct project.
+    const guardedProjectIds = new Set<string>();
     for (const id of a.ids) {
       const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== a.orgId) { skipped++; continue; }
+      await guardProjectOnce(ctx, a.orgId, doc.projectId, guardedProjectIds, a.justification);
       const patch: Record<string, unknown> = { status: a.status, updatedAt: a.now };
       if (a.status === "CONFIRMED" && !doc.confirmedAt) { patch.confirmedAt = a.now; patch.confirmedById = actor.userId; }
       await ctx.db.patch(doc._id, patch);
@@ -402,14 +443,23 @@ export const bulkStatusNative = mutation({
 // generateShifts is no-audit (parity — the old action logged none), so resolveActor omitted.
 export const generateShiftsNative = mutation({
   returns: v.object({ count: v.number() }),
-  args: { assignmentId: v.string(), orgId: v.string() },
-  handler: async (ctx, { assignmentId, orgId }) => {
+  args: {
+    assignmentId: v.string(),
+    orgId: v.string(),
+    // #988: required once the project is JUSTIFY+ and no session is open.
+    justification: v.optional(v.string()),
+  },
+  handler: async (ctx, { assignmentId, orgId, justification }) => {
     await assertWritesEnabled(ctx, "crew");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "crew", "update");
 
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", assignmentId)).first();
     if (!doc || doc.organizationId !== orgId) throw new ConvexError("Assignment not found");
+    // #988: regenerating shifts is structural (creates/removes crewShifts rows,
+    // no money touched).
+    const shiftsProject = await requireCrewProjectInOrg(ctx, doc.projectId, orgId);
+    await assertLifecycleGuard(ctx, shiftsProject, { kind: "structural", justification });
     if (doc.startDate == null || doc.endDate == null) throw new ConvexError("Assignment must have start and end dates to generate shifts");
 
     // Delete existing SCHEDULED shifts (preserve non-SCHEDULED), then regenerate.

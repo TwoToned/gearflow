@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 394 | 22 | 157 | 213 | 2 |
-| Mutations | 721 | 263 | 451 | 1 | 6 |
-| **Total** | **1115** | **285** | **608** | **214** | **8** |
+| Queries | 398 | 67 | 158 | 171 | 2 |
+| Mutations | 729 | 269 | 453 | 1 | 6 |
+| **Total** | **1127** | **336** | **611** | **172** | **8** |
 
-<!-- reachability-floor: 285 -->
+<!-- reachability-floor: 336 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -45,21 +45,18 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `activityLog` | 3 |
 | `apiIdempotency` | 4 |
 | `apiKeys` | 6 |
+| `apiRequestLog` | 3 |
 | `assetAccessories` | 1 |
 | `assetBulkChildren` | 6 |
 | `assetMedia` | 8 |
 | `assetScanLogs` | 10 |
-| `assets` | 18 |
 | `availabilityCheck` | 1 |
-| `availability` | 4 |
 | `backfillClientContacts` | 1 |
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
 | `backfillProjectWindow` | 1 |
 | `backfillQuoteRevisions` | 2 |
 | `backfillStripProjectDepositPercent` | 1 |
-| `bulkAssets` | 14 |
-| `categories` | 9 |
 | `categorySlots` | 11 |
 | `checkItems` | 7 |
 | `checkRecordOps` | 8 |
@@ -67,12 +64,8 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `clientContacts` | 8 |
 | `clientMedia` | 7 |
 | `clientXeroWrites` | 2 |
-| `clients` | 9 |
-| `crewAssignments` | 19 |
 | `crewAvailabilities` | 8 |
-| `crewAvailability` | 3 |
 | `crewDashboard` | 6 |
-| `crewMembers` | 11 |
 | `crewRoles` | 8 |
 | `crewShifts` | 9 |
 | `crewSkills` | 6 |
@@ -97,37 +90,29 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `kitCheckItems` | 11 |
 | `kitMedia` | 8 |
 | `kitSerializedItems` | 9 |
-| `kits` | 20 |
 | `lineItemMergeMaps` | 6 |
 | `locationMedia` | 7 |
 | `locations` | 9 |
 | `maintenanceRecordAssets` | 9 |
-| `maintenanceRecords` | 10 |
-| `maintenanceScheduleWorklist` | 1 |
 | `mediaWrites` | 4 |
 | `members` | 5 |
 | `modelBulkAccessories` | 7 |
 | `modelCheckItems` | 13 |
 | `modelMedia` | 9 |
-| `models` | 9 |
 | `notificationDismissals` | 7 |
 | `notificationEmailLogs` | 6 |
 | `orgExport` | 6 |
 | `orgSettings` | 8 |
-| `overbooking` | 1 |
 | `parity` | 1 |
 | `pendingSSOApprovals` | 5 |
 | `projectCategories` | 11 |
-| `projectGroups` | 10 |
 | `projectLineItemUnits` | 9 |
 | `projectManagers` | 8 |
 | `projectMedia` | 7 |
 | `projectNumberSequences` | 7 |
 | `projectServices` | 8 |
 | `projectTasks` | 12 |
-| `projects` | 12 |
 | `quotes` | 2 |
-| `reservationConflicts` | 2 |
 | `returnsLookup` | 1 |
 | `roi` | 4 |
 | `savedTableViews` | 8 |
@@ -153,7 +138,6 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `testTagRecords` | 11 |
 | `users` | 5 |
 | `warehouseDashboardTokens` | 7 |
-| `warehouseList` | 1 |
 | `warehouseOps` | 24 |
 | `webhooks` | 14 |
 | `wooCommerceIntegrations` | 7 |

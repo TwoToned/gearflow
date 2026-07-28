@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { assertStrLen } from "./fieldGuards";
+import { currentRevisionQuoteStatus, projectRevision, type EffectiveQuoteStatus } from "./quoteState";
 
 /**
  * Project lifecycle lock-tier module (#957) — the SINGLE source of truth for the
@@ -20,6 +21,12 @@ import { assertStrLen } from "./fieldGuards";
  *   COMPLETED / INVOICED                 → HARD_LOCKED     (everything gated,
  *                                                            no per-edit path)
  *   CANCELLED                            → OPEN            (ungated — #957 open Q)
+ *
+ * #988 (Phase C, part of #985's finance version-control program) folds ONE
+ * more input into this same resolver rather than adding a second lock: a
+ * `resolveLockTier({ status, quoteState })` on top of `lockTierForStatus`,
+ * where an OPEN-status project whose current quote revision has been sent
+ * escalates to FINANCE_LOCKED too. See `resolveLockTier` below.
  */
 
 export type LockTier = "OPEN" | "FINANCE_LOCKED" | "JUSTIFY" | "HARD_LOCKED";
@@ -47,6 +54,60 @@ export function lockTierForStatus(status: string | null | undefined): LockTier {
 
 export function isConfirmedOrLater(status: string | null | undefined): boolean {
   return lockTierForStatus(status) !== "OPEN";
+}
+
+// ─── #988 (Phase C) — the quote-send lock folds into the SAME tier resolver ──
+
+/** Why the effective tier is what it is — lets the UI explain itself and offer
+ *  the right exit (Phase E). `STATUS` covers both "nothing is locked" and
+ *  every status-driven tier (FINANCE_LOCKED/JUSTIFY/HARD_LOCKED via CONFIRMED+);
+ *  `QUOTE_SENT` is the one new case — an OPEN-status project (ENQUIRY/QUOTING/
+ *  QUOTED) whose current revision has already gone out. */
+export type LockTierReason = "STATUS" | "QUOTE_SENT";
+
+export interface ResolveLockTierResult {
+  tier: LockTier;
+  reason: LockTierReason;
+}
+
+/**
+ * A quote state that keeps pricing OPEN when the status tier is itself OPEN:
+ * nothing has ever been sent for this revision (`null`), or the current
+ * revision is a fresh, unsent `DRAFT`. Every other state — `SENT`, `ACCEPTED`,
+ * `DECLINED`, `SUPERSEDED`, `EXPIRED` — means this exact revision has already
+ * gone out and is either still live or terminal; decision 2 ("cutting a new
+ * version is the unlock") makes `newVersionNative` the ONLY way out of any of
+ * them, so all five raise the tier identically. `DECLINED`/`SUPERSEDED` are
+ * defensive completeness — a project's CURRENT revision is never SUPERSEDED in
+ * normal flow (only an older, already-superseded one is), and a declined
+ * revision still needs a new version rather than silent re-editing.
+ */
+function quoteStateKeepsOpen(quoteState: EffectiveQuoteStatus | null | undefined): boolean {
+  return quoteState == null || quoteState === "DRAFT";
+}
+
+/**
+ * `lockTierForStatus(status)` → `resolveLockTier({ status, quoteState })` — the
+ * quote-send lock (decision 2, #985) is not a second lock mechanism, it is a
+ * second INPUT to this one. `quoteState` is the CURRENT revision's quote status
+ * (`quoteState.ts#currentRevisionQuoteStatus`, or an already-resolved
+ * `effectiveQuoteStatus` for a caller that has one to hand, e.g. a read query
+ * with real EXPIRED detection).
+ *
+ * Monotonic by construction: a quote state can only ever raise OPEN to
+ * FINANCE_LOCKED, never touch (let alone lower) FINANCE_LOCKED/JUSTIFY/
+ * HARD_LOCKED — those are already at or above FINANCE_LOCKED from status alone.
+ * `LockTier` values are unchanged, so every existing `FINANCIALS_LOCKED` /
+ * `PROJECT_LOCKED` code and toast mapping still applies untouched.
+ */
+export function resolveLockTier(input: {
+  status: string | null | undefined;
+  quoteState?: EffectiveQuoteStatus | null;
+}): ResolveLockTierResult {
+  const statusTier = lockTierForStatus(input.status);
+  if (statusTier !== "OPEN") return { tier: statusTier, reason: "STATUS" };
+  if (quoteStateKeepsOpen(input.quoteState)) return { tier: "OPEN", reason: "STATUS" };
+  return { tier: "FINANCE_LOCKED", reason: "QUOTE_SENT" };
 }
 
 /** The linear pipeline order (CANCELLED is off-pipeline, reachable from any
@@ -148,10 +209,26 @@ export interface LifecycleGuardOptions {
   /** Caller-supplied justification text (#793), checked only when the tier
    *  requires it and no session is already open. */
   justification?: string | null;
+  /**
+   * Skip the #988 quote-derived escalation and resolve the tier from STATUS
+   * alone. Reserved for `quotesWrites.ts`'s `sendNative`/`newVersionNative` —
+   * the two mutations that raise/cut the quote-derived lock are also the
+   * SANCTIONED EXIT from it ("cutting a new version is the unlock", decision
+   * 2), so gating them against their own revision's not-yet-superseded state
+   * would be a chicken-and-egg deadlock: `newVersionNative` runs while the
+   * current revision is still the live `SENT` quote it's about to move past.
+   * No other gate site should ever set this — the entire point of #988 is
+   * that the other ~25 sites pick up the quote lock with ZERO changes.
+   */
+  bypassQuoteLock?: boolean;
 }
 
 export interface LifecycleGuardResult {
   tier: LockTier;
+  /** Why `tier` is what it is (#988) — STATUS-driven or raised by a sent quote
+   *  on an otherwise-OPEN project. Lets the UI explain itself and offer the
+   *  right exit instead of a bare "locked". */
+  reason: LockTierReason;
   openSession: Doc<"projectUnlockSessions"> | null;
   /** True when a $0 default should be applied to a NEW add (see shouldDefaultToZero). */
   defaultToZero: boolean;
@@ -190,22 +267,35 @@ export function requireJustification(justification: string | null | undefined, m
  *  - JUSTIFY structural write: open session suppresses the prompt (no double-
  *    prompt); otherwise requires a bounded justification.
  *
+ * #988 (Phase C) folds one more input into the SAME tier: an OPEN-status
+ * project (ENQUIRY/QUOTING/QUOTED) whose current revision has already been
+ * sent resolves to FINANCE_LOCKED too (`resolveLockTier`) — every rule above
+ * still applies unchanged, just against a tier that can now come from either
+ * source. The quote lookup only runs when the status tier is itself OPEN
+ * (any higher tier already dominates — monotonic), so this adds no DB read to
+ * the CONFIRMED+/ON_SITE+/COMPLETED+ paths that make up most gated writes.
+ *
  * Throws `ConvexError` with a stable `code` the client can branch on:
  * `PROJECT_LOCKED` | `FINANCIALS_LOCKED` | `JUSTIFICATION_REQUIRED`.
  */
 export async function assertLifecycleGuard(
   ctx: MutationCtx,
-  project: Pick<Doc<"projects">, "id" | "organizationId" | "status">,
+  project: Pick<Doc<"projects">, "id" | "organizationId" | "status" | "revision">,
   opts: LifecycleGuardOptions,
 ): Promise<LifecycleGuardResult> {
-  const tier = lockTierForStatus(project.status);
-  if (tier === "OPEN") return { tier, openSession: null, defaultToZero: false };
+  const statusTier = lockTierForStatus(project.status);
+  const quoteState =
+    statusTier === "OPEN" && !opts.bypassQuoteLock
+      ? await currentRevisionQuoteStatus(ctx, project.organizationId, project.id, projectRevision(project))
+      : null;
+  const { tier, reason } = resolveLockTier({ status: project.status, quoteState });
+  if (tier === "OPEN") return { tier, reason, openSession: null, defaultToZero: false };
 
   const openSession = await getOpenUnlockSession(ctx, project.organizationId, project.id);
   const defaultToZero = shouldDefaultToZero(tier, openSession);
 
   if (tier === "HARD_LOCKED") {
-    if (openSession?.scope === "FULL") return { tier, openSession, defaultToZero };
+    if (openSession?.scope === "FULL") return { tier, reason, openSession, defaultToZero };
     throw new ConvexError({
       code: "PROJECT_LOCKED",
       message: "This project is completed and hard-locked. Open a full unlock session to make changes.",
@@ -213,22 +303,26 @@ export async function assertLifecycleGuard(
   }
 
   if (opts.kind === "financial") {
-    if (openSession) return { tier, openSession, defaultToZero };
+    if (openSession) return { tier, reason, openSession, defaultToZero };
     throw new ConvexError({
       code: "FINANCIALS_LOCKED",
-      message: "This project's financials are locked. Open an unlock session (Financials tab) to edit money fields.",
+      message:
+        reason === "QUOTE_SENT"
+          ? "This quote has already been sent, which locks pricing. Create a new quote version to change prices, or open an unlock session."
+          : "This project's financials are locked. Open an unlock session (Financials tab) to edit money fields.",
     });
   }
 
   // structural
   if (tier === "FINANCE_LOCKED") {
     // #793's structural gate doesn't start until ON_SITE — CONFIRMED/PREPPING/
-    // CHECKED_OUT only gate financial fields (handled above).
-    return { tier, openSession, defaultToZero };
+    // CHECKED_OUT (or an OPEN-status project whose quote was sent) only gate
+    // financial fields (handled above).
+    return { tier, reason, openSession, defaultToZero };
   }
 
   // tier === "JUSTIFY"
-  if (openSession) return { tier, openSession, defaultToZero }; // no double-prompt
+  if (openSession) return { tier, reason, openSession, defaultToZero }; // no double-prompt
   const justification = opts.justification?.trim();
   if (!justification || justification.length < JUSTIFICATION_BOUNDS.min) {
     throw new ConvexError({
@@ -237,7 +331,7 @@ export async function assertLifecycleGuard(
     });
   }
   assertStrLen(justification, "justification", JUSTIFICATION_BOUNDS);
-  return { tier, openSession, defaultToZero };
+  return { tier, reason, openSession, defaultToZero };
 }
 
 /** Persist the justification onto an activity-log write's `metadata` (#793:

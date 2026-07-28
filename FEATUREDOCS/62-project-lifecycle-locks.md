@@ -6,6 +6,11 @@ coherent model — a shared status-tier definition, an unlock-session mechanism,
 a snapshot mechanism, and justification-in-audit plumbing — not three
 independent features.
 
+**#988** (Phase C of #985's finance version-control program) extends the same
+model with a second tier input — a sent quote can lock pricing on an
+otherwise-OPEN project — and closes every previously-deferred gate site. See
+"The quote-send lock is a second INPUT, not a second lock" below.
+
 ## Lock-tier model (single source of truth)
 
 `convex/lib/projectLocks.ts` exports `lockTierForStatus()` — the ONE place the
@@ -18,11 +23,67 @@ boundary — a second hand-maintained copy would be a defect even in sync
 
 | Statuses | Tier | What's gated |
 |---|---|---|
-| `ENQUIRY` / `QUOTING` / `QUOTED` | **OPEN** | Nothing |
+| `ENQUIRY` / `QUOTING` / `QUOTED` | **OPEN** | Nothing (unless a quote has been sent — see below) |
 | `CONFIRMED` / `PREPPING` / `CHECKED_OUT` | **FINANCE_LOCKED** | Financial fields locked behind a finance unlock session; new items/groups/services default to $0 |
 | `ON_SITE` / `RETURNED` | **FINANCE_LOCKED + JUSTIFY** | Above, plus structural mutations require per-edit confirm + written justification |
 | `COMPLETED` / `INVOICED` | **HARD_LOCKED** | All structural + financial mutations blocked; full unlock session restricted to org admins/owners + the project's assigned PM(s) |
 | `CANCELLED` | OPEN | Ungated (open question — see below) |
+
+### The quote-send lock is a second INPUT, not a second lock (#988, Phase C)
+
+#985's finance version-control program adds one more input to the SAME
+resolver rather than a second lock mechanism (that would be an R-3.1 defect on
+the most safety-critical code in the app): `convex/lib/projectLocks.ts` exports
+`resolveLockTier({ status, quoteState })`, and `lockTierForStatus(status)` is
+now the STATUS-only half of it.
+
+| Status tier | Current revision's quote state | Effective tier | Reason |
+|---|---|---|---|
+| OPEN (`ENQUIRY`/`QUOTING`/`QUOTED`) | none, or `DRAFT` | **OPEN** | `STATUS` |
+| OPEN | `SENT` / `ACCEPTED` / `DECLINED` / `SUPERSEDED` / `EXPIRED` | **FINANCE_LOCKED** | `QUOTE_SENT` |
+| FINANCE_LOCKED / JUSTIFY / HARD_LOCKED (CONFIRMED+) | any | unchanged | `STATUS` |
+
+"Current revision's quote state" is the quote row at `projects.revision`
+(`quoteState.ts#currentRevisionQuoteStatus`) — NOT any historical row. That's
+what makes "cutting a new version is the unlock" (#985 decision 2) true:
+`newVersionNative` bumps `projects.revision` and inserts a fresh `DRAFT` at the
+new number, so the CURRENT revision reads `DRAFT` again even though the
+previous one is still sitting there `SENT` (soon to flip to `SUPERSEDED` when
+the new one actually sends). Every state other than none/`DRAFT` escalates
+identically — `DECLINED`/`SUPERSEDED`/`EXPIRED` included — because decision 2
+makes `newVersionNative` the ONLY sanctioned way off any of them; there's no
+"quietly keep editing the same revision" path once it's gone out.
+
+Properties that make this safe (see the full truth table in
+`convex/lib/projectLocks.test.ts`):
+- **Monotonic.** Quote state can only ever raise OPEN to FINANCE_LOCKED, never
+  touch (let alone lower) a tier that's already FINANCE_LOCKED/JUSTIFY/
+  HARD_LOCKED from status alone. A sent quote on a COMPLETED project softens
+  nothing.
+- **One function, zero new gate sites.** All ~25 existing call sites still
+  call `assertLifecycleGuard(ctx, project, opts)` completely unchanged —
+  `assertLifecycleGuard` looks up the current revision's quote state itself
+  (only when the status tier is itself OPEN — any higher tier already
+  dominates, so this adds no extra read to the CONFIRMED+/ON_SITE+/COMPLETED+
+  paths that make up most gated writes).
+- **`LockTier` values are unchanged** — `FINANCIALS_LOCKED`/`PROJECT_LOCKED`
+  codes and their `native-writes.ts` toast mappings still apply untouched.
+  `defaultToZero` is likewise unchanged: a quote-sent OPEN-status project
+  defaults new adds to $0 exactly like a CONFIRMED one.
+- **`reason: "STATUS" | "QUOTE_SENT"`** is new on `LifecycleGuardResult` and on
+  `projectLocksRead.status`'s return (alongside `revision` and `quoteState`),
+  so the UI can say _why_ pricing is locked and offer the right exit ("Create
+  quote v(N+1)" / "Recall quote" vs. the existing unlock-session flow) instead
+  of a bare "locked" — Phase E (#990) renders that from this one query.
+
+**The sanctioned-exit exception.** `quotesWrites.ts`'s `sendNative` and
+`newVersionNative` are the two mutations that raise/cut the quote-derived
+lock, so they'd otherwise deadlock against their own not-yet-superseded state
+(`newVersionNative` runs while the current revision is STILL the live `SENT`
+quote it's about to move past). Both pass `bypassQuoteLock: true` to
+`assertLifecycleGuard`, resolving the tier from STATUS alone — the one
+deliberate opt-out `LifecycleGuardOptions` exposes, and the only two call
+sites that should ever set it.
 
 ## The shared guard: `assertLifecycleGuard`
 
@@ -197,24 +258,30 @@ on: `FINANCIALS_LOCKED`, `JUSTIFICATION_REQUIRED`, `PROJECT_LOCKED`,
 Gated: `projectWrites.ts` (`updateNative`, `updateStatusNative`, `deleteNative`'s
 snapshot/session cascade), `lineItemWrites.ts` (`addNative`, `addCustomNative`,
 `addKitNative`, `addLineItemSmartNative`, `patchNative`, `patchManyNative`,
-`removeNative`, `removeManyNative`), `projectGroupsWrites.ts` (`createGroupNative`,
-`updateGroupNative`, `updateGroupPriceNative`, `deleteGroupNative`,
-`moveLineItemNative`, `moveLineItemsNative`), `projectCategoriesWrites.ts`
-(`createCategoryNative`, `updateCategoryNative`, `deleteCategoryNative`),
-`projectServicesWrites.ts` (`createServiceNative`, `updateServiceNative`,
-`deleteServiceNative`), `crewAssignmentsWrites.ts` (`createNative`,
-`updateNative`, `deleteNative`).
+`removeNative`, `removeManyNative`, `reorderNative`), `projectGroupsWrites.ts`
+(`createGroupNative`, `updateGroupNative`, `updateGroupPriceNative`,
+`deleteGroupNative`, `moveLineItemNative`, `moveLineItemsNative`),
+`projectCategoriesWrites.ts` (`createCategoryNative`, `updateCategoryNative`,
+`deleteCategoryNative`), `projectServicesWrites.ts` (`createServiceNative`,
+`updateServiceNative`, `deleteServiceNative`, `bulkDeleteServicesNative`,
+`bulkUpdateServiceStatusNative`, `generateServicesNative`,
+`cloneServicesNative`, `convertLineItemToServiceNative`),
+`crewAssignmentsWrites.ts` (`createNative`, `updateNative`, `deleteNative`,
+`bulkDeleteNative`, `bulkStatusNative`, `generateShiftsNative`).
 
-**Deliberately deferred, not silently dropped:** bulk/generate/clone variants —
-`projectServicesWrites.ts`'s `bulkDeleteServicesNative` /
-`bulkUpdateServiceStatusNative` / `generateServicesNative` /
-`cloneServicesNative` / `convertLineItemToServiceNative`, `lineItemWrites.ts`'s
-`reorderNative` (sortOrder-only, no audit today, mirrors `reorderGroupsNative`),
-and `crewAssignmentsWrites.ts`'s `bulkDeleteNative` / `bulkStatusNative` /
-`generateShiftsNative` are not yet gated. These are lower-blast-radius than the
-primary create/update/delete paths above but should be closed in a follow-up
-PR before this is considered complete coverage of the #791/#793 acceptance
-criteria ("every gate site").
+That closes every site #791/#793's acceptance criteria asked for ("every gate
+site") — the bulk/generate/clone/reorder variants below were the deferred set;
+#988 (Phase C) gates each with `kind: "structural"` (the same family a single
+create/update/delete already uses), a per-distinct-project dedup for the ones
+that can span more than one project (mirroring `patchManyNative`/
+`removeManyNative`'s existing dedup pattern), and `defaultToZero` applied to
+every new/copied money field exactly like a manually-added entity:
+`bulkDeleteServicesNative`, `bulkUpdateServiceStatusNative`,
+`generateServicesNative`, `cloneServicesNative` (gated on the TARGET project —
+the source isn't written to), `convertLineItemToServiceNative`,
+`lineItemWrites.reorderNative`, `crewAssignmentsWrites.bulkDeleteNative`,
+`bulkStatusNative`, `generateShiftsNative`. Each has a "rejects on an ON_SITE
+project without justification, succeeds with one" test.
 
 ## Open questions (from #957, unresolved)
 

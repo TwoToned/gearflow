@@ -154,10 +154,14 @@ export const EXCLUDED = {
   // `result` blobs are cached copies of data the real tables already hold.
   // Restoring them would let a stale key replay into a fresh org, and exporting
   // them would duplicate row contents outside their own table's redaction path.
+  // apiRequestLog is the API/MCP per-key request log (#998): observability rows
+  // (ts/operation/status/latency + redacted args) with a 30-day retention cron,
+  // not domain data — same exclusion rationale as apiIdempotency.
   ephemeral: [
     "activityEvents",
     "userNotificationPreferences",
     "apiIdempotency",
+    "apiRequestLog",
   ],
 } as const;
 
@@ -192,8 +196,9 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 
 // WS1 (#940): +5 — quotes, invoices, invoiceLines, xeroIntegrations, xeroSyncLogs.
 // #997: +1 — apiIdempotency (EXCLUDED/ephemeral, the API replay ledger).
+// #998: +1 — apiRequestLog (EXCLUDED/ephemeral, the API request log).
 // Project-locks removal: -2 — collaborationLocks, collaborationPresence dropped from schema.
-export const EXPECTED_TABLE_COUNT = 108;
+export const EXPECTED_TABLE_COUNT = 109;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

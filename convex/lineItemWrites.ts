@@ -1821,15 +1821,26 @@ export const reorderNative = mutation({
     orgId: v.string(),
     items: v.array(v.object({ id: v.string(), sortOrder: v.number(), groupName: v.optional(v.string()) })),
     now: v.number(),
+    // #988: required once a touched project is JUSTIFY+ and no session is open.
+    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, items, now }) => {
+  handler: async (ctx, { orgId, items, now, justification }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await assertBulkSizeOk(ctx, items.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    // #988: reordering is structural (sortOrder-only, no money touched) — gated
+    // once per distinct project this selection touches, same dedup pattern as
+    // patchManyNative/removeManyNative.
+    const guardedProjectIds = new Set<string>();
     for (const it of items) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).first();
       if (doc && doc.organizationId === orgId) {
+        if (!guardedProjectIds.has(doc.projectId)) {
+          const project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
+          await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
+          guardedProjectIds.add(doc.projectId);
+        }
         await ctx.db.patch(doc._id, { sortOrder: it.sortOrder, groupName: it.groupName, updatedAt: now });
       }
     }

@@ -60,6 +60,52 @@ describe("read-leak org filter", () => {
   });
 });
 
+describe("read-leak org filter — agent identity (R-8.4.3, #998)", () => {
+  // Same class of bug, the API/MCP path: `assets.listByModel` migrated from
+  // `requireOrgRead` to `requireOrgReadFor(ctx, orgId, "asset")` in the Phase 2
+  // read bootstrap (#998), which makes it agent-reachable for the first time.
+  // The `by_modelId` index it reads is GLOBAL — the org re-check inside the
+  // handler is what stops a cross-tenant leak, and that re-check has to hold
+  // for an agent token exactly as it does for a user token above. `asset:read`
+  // is the narrowest scope that can even reach this query — proves the leak
+  // can't be reached by under-scoping either.
+  const KEY = "key_1";
+  const asAgentA = { subject: USER, orgId: A, akid: KEY };
+
+  async function agentMember(t: T, org: string, role = "admin") {
+    await member(t, org, role);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("apiKeys", {
+        id: KEY, organizationId: org, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h",
+        scopes: JSON.stringify(["asset:read"]), isActive: true, actingUserId: USER, createdById: USER,
+      });
+    });
+  }
+
+  test("assets.listByModel excludes a foreign-org asset sharing the modelId, for an agent token", async () => {
+    const t = makeT(); await agentMember(t, A);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "aA", organizationId: A, assetTag: "A1", modelId: "m1" });
+      await ctx.db.insert("assets", { id: "aB", organizationId: B, assetTag: "B1", modelId: "m1" });
+    });
+    const rows = await t.withIdentity(asAgentA).query(api.assets.listByModel, { orgId: A, modelId: "m1" });
+    expect(rows.map((r) => r.id)).toEqual(["aA"]);
+  });
+
+  test("...and organizationId in the request naming the OTHER org doesn't widen it either", async () => {
+    const t = makeT(); await agentMember(t, A);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "aA", organizationId: A, assetTag: "A1", modelId: "m1" });
+      await ctx.db.insert("assets", { id: "aB", organizationId: B, assetTag: "B1", modelId: "m1" });
+    });
+    // The agent's own orgId (from the key) is A; asking for B outright is a
+    // hard org mismatch the guard rejects before the query even runs.
+    await expect(
+      t.withIdentity(asAgentA).query(api.assets.listByModel, { orgId: B, modelId: "m1" }),
+    ).rejects.toThrow(/organization mismatch/i);
+  });
+});
+
 describe("create dup-guard", () => {
   test("clientWrites.createNative rejects a colliding cuid (idempotency + cross-org DoS guard)", async () => {
     const t = makeT(); await member(t, A);

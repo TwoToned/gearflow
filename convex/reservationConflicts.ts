@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgReadDoc } from "./lib/auth";
+import { requireOrgReadDocFor } from "./lib/auth";
 import {
   overlappingProjectIds,
   collectHereAssetRefs,
@@ -55,7 +55,7 @@ export const projectConflicts = query({
   args: { projectId: v.string() },
   handler: async (ctx, { projectId }) => {
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
-    await requireOrgReadDoc(ctx, project); // authorizes + confirms the project is in the caller's org
+    await requireOrgReadDocFor(ctx, project, "project"); // authorizes + confirms the project is in the caller's org — Phase 2 read bootstrap (#998)
     if (!project) return [];
     const startMs = project.rentalStartDate ?? null;
     const endMs = project.rentalEndDate ?? null;
@@ -102,7 +102,7 @@ export const swapCandidates = query({
   args: { lineItemId: v.string() },
   handler: async (ctx, { lineItemId }) => {
     const lineItem = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
-    await requireOrgReadDoc(ctx, lineItem); // authorizes + confirms the line item is in the caller's org
+    await requireOrgReadDocFor(ctx, lineItem, "project"); // authorizes + confirms the line item is in the caller's org — Phase 2 read bootstrap (#998)
     if (!lineItem || !lineItem.modelId) return [];
 
     const orgId = lineItem.organizationId;

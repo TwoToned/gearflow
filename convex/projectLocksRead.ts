@@ -1,9 +1,10 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
-import { getOpenUnlockSession, isHardLockOverrideAllowed, lockTierForStatus } from "./lib/projectLocks";
+import { getOpenUnlockSession, isHardLockOverrideAllowed, resolveLockTier } from "./lib/projectLocks";
 import { getAuthContext } from "./lib/auth";
 import { collectCurrentEntries } from "./lib/projectSnapshots";
+import { effectiveQuoteStatus, findQuoteAtRevision, projectRevision } from "./lib/quoteState";
 
 const ENTRY_RETURNS = v.array(
   v.object({
@@ -29,11 +30,37 @@ const ENTRY_RETURNS = v.array(
  */
 
 export const status = query({
-  args: { projectId: v.string(), orgId: v.string() },
+  args: {
+    projectId: v.string(),
+    orgId: v.string(),
+    // Optional (like `quotes.ts`'s reads) — a Convex query must be deterministic
+    // to stay reactively cacheable, so `now` is client-supplied rather than
+    // `Date.now()`. Only used to resolve a real EXPIRED for display; omitting it
+    // still resolves the correct TIER (#988's lock escalation treats SENT and
+    // EXPIRED identically — see `quoteState.ts#currentRevisionQuoteStatus`).
+    now: v.optional(v.number()),
+  },
   returns: v.union(
     v.null(),
     v.object({
       tier: v.union(v.literal("OPEN"), v.literal("FINANCE_LOCKED"), v.literal("JUSTIFY"), v.literal("HARD_LOCKED")),
+      // #988 — why `tier` is what it is, so the UI can explain itself and offer
+      // the right exit (Create quote v(N+1) / Recall vs. the existing unlock
+      // session flow) instead of a bare "locked".
+      reason: v.union(v.literal("STATUS"), v.literal("QUOTE_SENT")),
+      // #988 — the shared revision counter + the current revision's quote state,
+      // so Phase E can render one coherent banner from this single query instead
+      // of a second round trip.
+      revision: v.number(),
+      quoteState: v.union(
+        v.null(),
+        v.literal("DRAFT"),
+        v.literal("SENT"),
+        v.literal("ACCEPTED"),
+        v.literal("DECLINED"),
+        v.literal("SUPERSEDED"),
+        v.literal("EXPIRED"),
+      ),
       canOverrideHardLock: v.boolean(),
       openSession: v.union(
         v.null(),
@@ -48,12 +75,15 @@ export const status = query({
       ),
     }),
   ),
-  handler: async (ctx, { projectId, orgId }) => {
+  handler: async (ctx, { projectId, orgId, now }) => {
     await requireOrgPermission(ctx, orgId, "project", "read");
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
     if (!project || project.organizationId !== orgId) return null;
 
-    const tier = lockTierForStatus(project.status);
+    const revision = projectRevision(project);
+    const currentQuote = await findQuoteAtRevision(ctx, orgId, projectId, revision);
+    const quoteState = currentQuote ? effectiveQuoteStatus(currentQuote, now ?? 0) : null;
+    const { tier, reason } = resolveLockTier({ status: project.status, quoteState });
     const session = await getOpenUnlockSession(ctx, orgId, projectId);
 
     const auth = await getAuthContext(ctx);
@@ -63,6 +93,9 @@ export const status = query({
 
     return {
       tier,
+      reason,
+      revision,
+      quoteState,
       canOverrideHardLock,
       openSession: session
         ? {

@@ -183,12 +183,14 @@ async function prepareSend(
     throw new ConvexError({ code: "TEMPLATE_QUOTE", message: "Templates don't have quotes." });
   }
   // Same financial gate every money-touching mutation uses, so a hard-locked
-  // project can't emit a quote out of band. NOTE for #988 (Phase C): once
-  // `resolveLockTier` folds quote state in, a SENT quote itself raises the tier —
-  // this call site must then treat "cut and send the NEXT revision" as the
-  // sanctioned exit from the quote-derived lock, or sending v2 would be blocked
-  // by v1's own lock.
-  await assertLifecycleGuard(ctx, project, { kind: "financial" });
+  // (or status-FINANCE_LOCKED, e.g. CONFIRMED+) project can't emit a quote out
+  // of band. `bypassQuoteLock: true` (#988) because THIS is the mutation that
+  // freezes the current revision's own quote lock — gating it against its own
+  // not-yet-sent state would be a no-op (a fresh/DRAFT revision never raises
+  // the tier anyway) and gating a RESEND against the revision's own prior SENT
+  // state would be a chicken-and-egg deadlock. STATUS-driven tiers (CONFIRMED+
+  // / ON_SITE+ / COMPLETED+) are unaffected by this flag and still gate normally.
+  await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
 
   // The recipient must belong to THIS project's client — otherwise a caller could
   // stamp another client's contact onto the revision and leak their PII onto the
@@ -450,7 +452,13 @@ export const newVersionNative = mutation({
     if (project.isTemplate) {
       throw new ConvexError({ code: "TEMPLATE_QUOTE", message: "Templates don't have quotes." });
     }
-    await assertLifecycleGuard(ctx, project, { kind: "financial" });
+    // `bypassQuoteLock: true` (#988) — THIS is the sanctioned exit from a
+    // quote-derived lock ("cutting a new version is the unlock", decision 2).
+    // At call time the current revision is still the live SENT/ACCEPTED/etc.
+    // quote this mutation is about to move past, so gating against its own
+    // escalation would make the unlock action unreachable. STATUS-driven tiers
+    // (CONFIRMED+/ON_SITE+/COMPLETED+) still gate normally.
+    await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
 
     const revision = projectRevision(project);
     const current = await findQuoteAtRevision(ctx, organizationId, projectId, revision);

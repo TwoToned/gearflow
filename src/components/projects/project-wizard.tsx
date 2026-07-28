@@ -29,7 +29,10 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
+import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { TagInput } from "@/components/ui/tag-input";
 import {
@@ -121,6 +124,15 @@ export function ProjectWizard({
   const projectWrites = useProjectWrites(orgId);
 
   const isEditing = !!project;
+
+  // #990 — `discountPercent` is a LOCKED_PROJECT_FIELDS entry
+  // (convex/lib/projectLocks.ts). `taxRate` is likewise locked but has no
+  // field in this form (org-default only, resolved server-side) — nothing to
+  // wrap. Skipped entirely on create (no project yet to be locked).
+  const [wizardLockNow] = useState(() => Date.now());
+  const wizardLockStatus = useProjectLockStatus(isEditing ? project.id : undefined, orgId, wizardLockNow);
+  const discountLocked = isEditing && !wizardLockStatus.loading && wizardLockStatus.tier !== "OPEN" && !wizardLockStatus.hasOpenSession;
+  const discountLockReason = resolveLockCopy(wizardLockStatus, wizardLockNow).oneLiner;
   const isTemplate = isTemplateProp ?? project?.isTemplate ?? false;
 
   const initialManagerIds = (project?.projectManagers ?? []).map((pm) => pm.user.id);
@@ -428,10 +440,17 @@ export function ProjectWizard({
                     : undefined
                 }
               >
-                <Input
-                  type="number" step="0.01" min="0" max="100" placeholder="0"
-                  {...form.register("discountPercent", { onChange: () => { discountTouchedRef.current = true; } })}
-                />
+                <LockedField
+                  locked={discountLocked}
+                  reason={discountLockReason}
+                  exitLabel="Unlock financials"
+                  onExit={scrollToLockStrip}
+                >
+                  <Input
+                    type="number" step="0.01" min="0" max="100" placeholder="0"
+                    {...form.register("discountPercent", { onChange: () => { discountTouchedRef.current = true; } })}
+                  />
+                </LockedField>
               </Field>
               <Field label="Project manager(s)" error={membersError ? "Couldn't load org members — you may not have permission to view them." : undefined}>
                 <ComboboxPicker value="" onChange={(id) => { if (id && !managerIds.includes(id)) setManagerIds((p) => [...p, id]); }}

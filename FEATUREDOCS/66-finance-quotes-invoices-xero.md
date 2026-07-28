@@ -149,6 +149,21 @@ no access token is persisted — it's minted from the refresh token on demand
 and the ROTATED refresh token Xero returns is persisted immediately
 (Xero invalidates the old one on every refresh).
 
+**Scopes are granular, not the broad legacy set** — Xero split `accounting.transactions`
+into granular scopes on 4 March 2026, and any Xero app created after that date is issued
+ONLY the granular set, so `XERO_OAUTH_SCOPES` (`src/lib/xero-client.ts`) requests
+`accounting.invoices` (covers invoices/credit notes/quotes — everything this integration
+pushes), not the deprecated broad scope.
+
+**The callback route's post-exchange redirect is built from `env.NEXT_PUBLIC_APP_URL`,
+never `request.url`** — behind the prod reverse proxy, `new URL(path, request.url)`
+resolves off whatever `Host` header Next's Node process sees internally, which isn't
+guaranteed to be the public hostname (this shipped once, sending users to
+`http://localhost:3000/settings/xero?xero_connected=1` after an otherwise-successful
+token exchange). `xeroRedirectUri()` (same file, used to build the Xero-side
+`redirect_uri`) already used the trusted env var; the callback's own redirect now
+matches it.
+
 ### Account-coding cascade
 
 `convex/lib/xeroAccountCascade.ts` — pure resolver functions, unit-tested at
@@ -199,6 +214,19 @@ invalidated, a deployment's env config doesn't change mid-session) and a
 direct visit to `/settings/xero` shows a "not configured" message instead of
 a "Connect Xero" button that would otherwise throw at click-time
 (`requireXeroAppCredentials()` in `src/server/xero.ts`).
+
+### Account-coding pickers are searchable, not plain `Select`s
+
+`/settings/xero`'s org-default-account, default-tax-type, and per-service-type
+account fields use `ComboboxPicker` (`src/components/ui/combobox-picker.tsx`),
+not the plain Radix `Select`. A full chart of accounts commonly runs into the
+hundreds of rows — a bare `Select`'s dropdown has no built-in scroll affordance
+in this codebase's wrapper and can render off-screen; `ComboboxPicker` gives a
+search input plus an internally-scrollable (`max-h-60 overflow-y-auto`) list,
+the same component already used everywhere else in the app for name+code
+pickers (e.g. the model picker in `asset-form.tsx`). `allowClear` lets a
+default be reset back to "unset" (falls through to the next cascade level)
+without a separate clear control.
 
 ### Client contact mapping
 

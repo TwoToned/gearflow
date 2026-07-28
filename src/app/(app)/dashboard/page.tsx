@@ -37,6 +37,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
+import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { formatDistanceToNow, format } from "date-fns";
 import type { LucideIcon } from "lucide-react";
 
@@ -223,11 +224,14 @@ export default function DashboardPage() {
                           <p className="truncate text-[14px] font-medium text-ink">{p.name as string}</p>
                           <p className="t-micro truncate text-muted"><span className="font-mono">{p.projectNumber as string}</span>{client?.name ? <> · {client.name}</> : null}</p>
                         </div>
-                        {start && (
-                          <span className={`shrink-0 text-[11px] font-medium ${hueText[intent === "primary" ? "red" : (intent as Hue)] ?? "text-muted"}`}>
-                            {format(start, "MMM d")}
-                          </span>
-                        )}
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <ProjectLockGlyph status={p.status as string | null | undefined} />
+                          {start && (
+                            <span className={`text-[11px] font-medium ${hueText[intent === "primary" ? "red" : (intent as Hue)] ?? "text-muted"}`}>
+                              {format(start, "MMM d")}
+                            </span>
+                          )}
+                        </div>
                       </Link>
                     </StaggerItem>
                   );

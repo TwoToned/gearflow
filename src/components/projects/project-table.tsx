@@ -21,6 +21,7 @@ import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { CanDo } from "@/components/auth/permission-gate";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { projectStatusLabels } from "@/lib/status-labels";
 import { getStatusColor } from "@/lib/status-colors";
@@ -179,7 +180,10 @@ const projectColumns: ColumnDef<AnyProject>[] = [
       { value: "CANCELLED", label: "Cancelled", color: getStatusColor("project", "CANCELLED").dot },
     ],
     cell: (row) => (
-      <StatusIndicator category="project" value={row.status} label={projectStatusLabels[row.status] || row.status} variant="pill" />
+      <div className="flex items-center gap-1.5">
+        <StatusIndicator category="project" value={row.status} label={projectStatusLabels[row.status] || row.status} variant="pill" />
+        <ProjectLockGlyph status={row.status} />
+      </div>
     ),
   },
   {

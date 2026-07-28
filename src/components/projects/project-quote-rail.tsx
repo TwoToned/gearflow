@@ -54,7 +54,7 @@ interface QuoteRevisionDoc {
 }
 
 type ReasonVerb = "recall" | "decline";
-interface ReasonTarget {
+export interface ReasonTarget {
   id: string;
   version: number;
   verb: ReasonVerb;
@@ -566,8 +566,10 @@ function intentToBadgeStatus(intent: ReturnType<typeof quoteStatusIntent>): "ok"
 
 /** Recall and decline both take a bounded reason, so both route through ONE
  *  Dialog rather than two near-identical ones. (Radix `Dialog` — there is no
- *  `AlertDialog` in this codebase.) */
-function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClose: () => void }) {
+ *  `AlertDialog` in this codebase.) Exported so `<ProjectLockStrip>` (#990)
+ *  can offer "Recall" from the top-level lock strip without a second
+ *  hand-built recall dialog (POLICY.md R-3.1). */
+export function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClose: () => void }) {
   const [reason, setReason] = useState("");
   const quoteWrites = useQuoteWrites();
   const isRecall = target?.verb === "recall";

@@ -93,13 +93,16 @@ export function useProjectGroupWrites() {
       });
     },
 
-    remove: async (groupId: string): Promise<void> => {
+    /** `justification` (#990) — forwarded to `deleteGroupNative`, required once
+     *  the project is ON_SITE+ with no open unlock session. */
+    remove: async (groupId: string, justification?: string): Promise<void> => {
       await deleteM({
         id: groupId,
         orgId: requireOrg(),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
+        justification,
       });
     },
 

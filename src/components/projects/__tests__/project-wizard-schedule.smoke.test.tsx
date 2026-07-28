@@ -39,6 +39,9 @@ vi.mock("@/hooks/use-native-project-writes", () => ({
 vi.mock("@/hooks/use-project-managers-writes", () => ({
   useProjectManagerWrites: () => ({ set: vi.fn() }),
 }));
+vi.mock("@/hooks/use-project-lock", () => ({
+  useProjectLockStatus: () => ({ loading: true, tier: "OPEN", hasOpenSession: false, canOverrideHardLock: false }),
+}));
 vi.mock("@/hooks/use-clients", () => ({
   useClientSearch: () => [],
   useClient: () => undefined,

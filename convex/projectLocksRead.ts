@@ -71,6 +71,11 @@ export const status = query({
           openedBy: v.string(),
           openedByName: v.optional(v.string()),
           openedAt: v.number(),
+          // #990 (Phase E) — the UNLOCK snapshot this session opened against,
+          // so the client can diff it against `currentEntries` before Save &
+          // relock / Discard (finance-workflow-ux.md §7.2 "committing blind is
+          // the one thing that turns an audit trail into noise").
+          snapshotId: v.string(),
         }),
       ),
     }),
@@ -105,6 +110,7 @@ export const status = query({
             openedBy: session.openedBy,
             openedByName: session.openedByName,
             openedAt: session.openedAt,
+            snapshotId: session.snapshotId,
           }
         : null,
     };

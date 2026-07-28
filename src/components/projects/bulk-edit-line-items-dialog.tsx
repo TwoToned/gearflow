@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -48,12 +49,22 @@ export function BulkEditLineItemsDialog({
   count,
   isPending,
   onSubmit,
+  locked,
+  lockReason,
+  onUnlockExit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   count: number;
   isPending?: boolean;
   onSubmit: (patch: BulkLineItemPatch) => void;
+  /** #990 — the Discount field (the only money field here) renders read-only
+   *  via `<LockedField>` when true. Pricing type/notes/optional aren't
+   *  locked fields (`convex/lib/projectLocks.ts`'s `LOCKED_LINE_ITEM_FIELDS`
+   *  is `unitPrice`/`discount`/`duration` — pricing TYPE isn't in that list). */
+  locked?: boolean;
+  lockReason?: string;
+  onUnlockExit?: () => void;
 }) {
   const [pricingOn, setPricingOn] = React.useState(false);
   const [pricingType, setPricingType] = React.useState<PricingType>("PER_DAY");
@@ -149,33 +160,40 @@ export function BulkEditLineItemsDialog({
           </div>
 
           {/* Discount */}
-          <div className="flex items-start gap-3">
-            <Checkbox
-              id="bulk-discount-on"
-              checked={discountOn}
-              onCheckedChange={(v: boolean | "indeterminate") => setDiscountOn(v === true)}
-              className="mt-1"
-            />
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="bulk-discount">Discount</Label>
-              <DiscountAmountInput
-                id="bulk-discount"
-                value={discount}
-                onValueChange={(value) => {
-                  setDiscount(value);
-                  setDiscountOn(true);
-                }}
-                mode={discountMode}
-                onModeChange={setDiscountMode}
-                disabled={!discountOn}
+          <LockedField
+            locked={!!locked}
+            reason={lockReason ?? "Pricing is locked."}
+            exitLabel={onUnlockExit ? "Unlock financials" : undefined}
+            onExit={onUnlockExit}
+          >
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="bulk-discount-on"
+                checked={discountOn}
+                onCheckedChange={(v: boolean | "indeterminate") => setDiscountOn(v === true)}
+                className="mt-1"
               />
-              <p className="text-caption text-muted">
-                Clears the discount when left blank or zero.
-                {discountMode === "%" &&
-                  " Percentage is applied to each item's own line value."}
-              </p>
+              <div className="flex-1 space-y-1.5">
+                <Label htmlFor="bulk-discount">Discount</Label>
+                <DiscountAmountInput
+                  id="bulk-discount"
+                  value={discount}
+                  onValueChange={(value) => {
+                    setDiscount(value);
+                    setDiscountOn(true);
+                  }}
+                  mode={discountMode}
+                  onModeChange={setDiscountMode}
+                  disabled={!discountOn}
+                />
+                <p className="text-caption text-muted">
+                  Clears the discount when left blank or zero.
+                  {discountMode === "%" &&
+                    " Percentage is applied to each item's own line value."}
+                </p>
+              </div>
             </div>
-          </div>
+          </LockedField>
 
           {/* Notes */}
           <div className="flex items-start gap-3">

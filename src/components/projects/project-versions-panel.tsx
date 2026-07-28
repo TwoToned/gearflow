@@ -12,11 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api } from "../../../convex/_generated/api";
-import {
-  diffSnapshotEntries,
-  projectTotalsFromEntry,
-  type SnapshotEntryLike,
-} from "@/lib/project-snapshot-diff";
+import { SnapshotDiffSummary } from "@/components/projects/snapshot-diff-summary";
 
 /**
  * #792 "Versions" UI — list of whole-project snapshots (CONFIRMED/COMPLETED/
@@ -30,11 +26,6 @@ const REASON_LABEL: Record<string, string> = {
   UNLOCK: "Unlock session opened",
 };
 
-function money(n: number | null): string {
-  if (n == null) return "—";
-  return n.toLocaleString(undefined, { style: "currency", currency: "USD" });
-}
-
 interface ProjectVersionsPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,25 +38,6 @@ export function ProjectVersionsPanel({ open, onOpenChange, projectId, orgId }: P
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
   const selected = snapshots?.find((s) => s.id === selectedId) ?? null;
-  const selectedEntries = useQuery(
-    api.projectLocksRead.snapshotEntries,
-    selectedId ? { snapshotId: selectedId, orgId } : "skip",
-  );
-  const currentEntries = useQuery(
-    api.projectLocksRead.currentEntries,
-    selectedId ? { projectId, orgId } : "skip",
-  );
-
-  const diff = React.useMemo(() => {
-    if (!selectedEntries || !currentEntries) return null;
-    const before = selectedEntries as SnapshotEntryLike[];
-    const after = currentEntries as SnapshotEntryLike[];
-    return {
-      rows: diffSnapshotEntries(before, after),
-      before: projectTotalsFromEntry(before.find((e) => e.entityType === "project")),
-      after: projectTotalsFromEntry(after.find((e) => e.entityType === "project")),
-    };
-  }, [selectedEntries, currentEntries]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -108,50 +80,13 @@ export function ProjectVersionsPanel({ open, onOpenChange, projectId, orgId }: P
               ← Back to versions
             </Button>
 
-            {diff && (diff.before || diff.after) && (
-              <div className="grid grid-cols-1 gap-3 rounded-[var(--radius)] border-2 border-line p-3.5 text-sm sm:grid-cols-3">
-                <div>
-                  <p className="text-xs text-ink-2">Subtotal</p>
-                  <p>{money(diff.before?.subtotal ?? null)} → {money(diff.after?.subtotal ?? null)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-ink-2">Total</p>
-                  <p>{money(diff.before?.total ?? null)} → {money(diff.after?.total ?? null)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-ink-2">Margin</p>
-                  <p>{money(diff.before?.margin ?? null)} → {money(diff.after?.margin ?? null)}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <p className="text-sm font-semibold">Changes since this version</p>
-              {!diff && <p className="text-sm text-ink-2">Loading…</p>}
-              {diff && diff.rows.length === 0 && (
-                <p className="text-sm text-ink-2">No changes — the project matches this version.</p>
-              )}
-              {diff?.rows.map((row) => (
-                <div
-                  key={`${row.entityType}:${row.entityId}`}
-                  className="flex items-center justify-between rounded-[var(--radius)] border border-line px-3 py-2 text-sm"
-                >
-                  <span className="flex items-center gap-2">
-                    <Badge
-                      status={row.status === "removed" ? "overbooked" : row.status === "added" ? "ok" : "warn"}
-                    >
-                      {row.status}
-                    </Badge>
-                    {row.label}
-                  </span>
-                  {(row.beforePrice != null || row.afterPrice != null) && (
-                    <span className="text-ink-2">
-                      {money(row.beforePrice)} → {money(row.afterPrice)}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
+            <p className="text-sm font-semibold">Changes since this version</p>
+            <SnapshotDiffSummary
+              projectId={projectId}
+              orgId={orgId}
+              snapshotId={selected.id}
+              emptyLabel="No changes — the project matches this version."
+            />
           </div>
         )}
       </DialogContent>

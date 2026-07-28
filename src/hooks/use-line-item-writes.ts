@@ -350,8 +350,10 @@ export function useLineItemWrites() {
     },
 
     /** Remove a line — child-guard + cascade (children + units) + recalc + audit +
-     *  collab, atomic. */
-    remove: async (id: string): Promise<{ projectId: string }> => {
+     *  collab, atomic. `justification` (#990) — forwarded to `removeNative`,
+     *  required once the project is ON_SITE+ with no open unlock session
+     *  (`useJustifiedMutation` supplies it after prompting). */
+    remove: async (id: string, justification?: string): Promise<{ projectId: string }> => {
       try {
         return await removeM({
           id,
@@ -359,6 +361,7 @@ export function useLineItemWrites() {
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
+          justification,
           now: Date.now(),
         });
       } catch (e) {
@@ -386,8 +389,10 @@ export function useLineItemWrites() {
 
     /** Bulk remove — one atomic backend-local pass: child-guard + cascade (children +
      *  units) per row + ONE aggregate DELETE audit + recalc-per-project. Returns
-     *  `{ removed, skipped }` (children/cross-org rows counted as skipped). */
-    removeMany: async (ids: string[]): Promise<{ removed: number; skipped: number }> => {
+     *  `{ removed, skipped }` (children/cross-org rows counted as skipped).
+     *  `justification` (#990) — one reason applied to every affected row's audit
+     *  entry, checked once per distinct project the selection touches. */
+    removeMany: async (ids: string[], justification?: string): Promise<{ removed: number; skipped: number }> => {
       if (!enabled) throw new Error("Not ready — try again in a moment.");
       try {
         return await removeManyM({
@@ -395,6 +400,7 @@ export function useLineItemWrites() {
           orgId: requireOrg(),
           actor: actor(),
           auditId: createId(),
+          justification,
           now: Date.now(),
         });
       } catch (e) {

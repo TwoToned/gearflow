@@ -82,7 +82,13 @@ describe("UnlockSessionBanner smoke", () => {
       <UnlockSessionBanner
         projectId="p1"
         orgId="org1"
-        session={{ scope: "FINANCIAL", justification: "Client requested a discount.", openedByName: "Bob" }}
+        session={{
+          scope: "FINANCIAL",
+          justification: "Client requested a discount.",
+          openedByName: "Bob",
+          openedAt: Date.now() - 5 * 60_000,
+          snapshotId: "snap1",
+        }}
       />,
     );
     expect(screen.getByText(/Financials unlocked by Bob/i)).toBeTruthy();

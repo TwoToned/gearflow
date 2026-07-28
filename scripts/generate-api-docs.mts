@@ -31,7 +31,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { API_REGISTRY, type RegistryOperation } from "../src/lib/api/registry.generated.js";
-import { injectedArgNames } from "../src/lib/api/arg-normalizer.js";
+import { argsObjectSchema, type JsonSchema } from "../src/lib/api/json-schema.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const OPENAPI_OUT = join(ROOT, "src/lib/api/openapi.generated.ts");
@@ -40,51 +40,13 @@ const LLMS_PUBLIC_OUT = join(ROOT, "public/llms.txt");
 
 const BASE_URL = "https://flow.rvlt.app";
 
-type JsonSchema = Record<string, unknown>;
-
-const TYPE_MAP: Record<string, JsonSchema> = {
-  string: { type: "string" },
-  number: { type: "number" },
-  boolean: { type: "boolean" },
-  object: { type: "object" },
-  array: { type: "array" },
-  // A Convex union member set isn't tracked at this coarseness (see file
-  // docstring) — publish it as "any JSON value" rather than guess a shape.
-  union: {},
-  any: {},
-};
-
 function reachableOps(): RegistryOperation[] {
   return API_REGISTRY.filter((op) => op.agentReachable);
 }
 
-/** The agent-facing arg set for one operation: injected args (actor/id/
- *  auditId/now/org — arg-normalizer.ts) are never something a caller sends. */
-function publicArgs(op: RegistryOperation) {
-  const argNames = new Set(op.args.map((a) => a.name));
-  const injected = injectedArgNames(argNames, op.fn);
-  return op.args.filter((a) => !injected.has(a.name));
-}
-
-function argsSchema(op: RegistryOperation): JsonSchema {
-  const args = publicArgs(op);
-  const properties: Record<string, JsonSchema> = {};
-  const required: string[] = [];
-  for (const arg of args) {
-    properties[arg.name] = TYPE_MAP[arg.type] ?? {};
-    if (!arg.optional) required.push(arg.name);
-  }
-  return {
-    type: "object",
-    properties,
-    ...(required.length ? { required } : {}),
-    additionalProperties: false,
-  };
-}
-
 function operationPath(op: RegistryOperation): JsonSchema {
   const bodyProperties: Record<string, JsonSchema> = {
-    args: argsSchema(op),
+    args: argsObjectSchema(op),
   };
   const bodyRequired = ["args"];
   if (op.kind === "mutation") {

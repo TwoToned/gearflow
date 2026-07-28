@@ -155,8 +155,6 @@ export const EXCLUDED = {
   // Restoring them would let a stale key replay into a fresh org, and exporting
   // them would duplicate row contents outside their own table's redaction path.
   ephemeral: [
-    "collaborationLocks",
-    "collaborationPresence",
     "activityEvents",
     "userNotificationPreferences",
     "apiIdempotency",
@@ -194,7 +192,8 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 
 // WS1 (#940): +5 — quotes, invoices, invoiceLines, xeroIntegrations, xeroSyncLogs.
 // #997: +1 — apiIdempotency (EXCLUDED/ephemeral, the API replay ledger).
-export const EXPECTED_TABLE_COUNT = 110;
+// Project-locks removal: -2 — collaborationLocks, collaborationPresence dropped from schema.
+export const EXPECTED_TABLE_COUNT = 108;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

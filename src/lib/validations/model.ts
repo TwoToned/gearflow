@@ -36,6 +36,8 @@ export const modelSchema = z.object({
   barcodeLabelTemplate: z.string().optional(),
   isActive: z.boolean().default(true),
   tags: z.array(z.string()).default([]),
+  xeroRentalAccountCode: z.string().max(50).optional(),
+  xeroSaleAccountCode: z.string().max(50).optional(),
 });
 
 export type ModelFormValues = z.input<typeof modelSchema>;

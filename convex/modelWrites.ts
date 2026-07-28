@@ -68,6 +68,8 @@ export const modelFields = {
   barcodeLabelTemplate: v.optional(v.string()),
   tags: v.optional(v.array(v.string())),
   isActive: v.optional(v.boolean()),
+  xeroRentalAccountCode: v.optional(v.string()),
+  xeroSaleAccountCode: v.optional(v.string()),
 };
 
 type ModelArgs = {
@@ -82,6 +84,7 @@ type ModelArgs = {
   defaultEquipmentClass?: string; defaultApplianceType?: string; defaultTestProfileId?: string;
   maintenanceIntervalDays?: number; assetType?: string; barcodeLabelTemplate?: string;
   tags?: string[]; isActive?: boolean;
+  xeroRentalAccountCode?: string; xeroSaleAccountCode?: string;
 };
 
 /**
@@ -100,6 +103,8 @@ function assertModelFields(a: ModelArgs) {
   assertStrLen(a.modelNumber, "modelNumber", { max: 100 });
   assertStrLen(a.sku, "sku", { max: 100 });
   assertStrLen(a.description, "description", { max: 2000 });
+  assertStrLen(a.xeroRentalAccountCode, "xeroRentalAccountCode", { max: 50 });
+  assertStrLen(a.xeroSaleAccountCode, "xeroSaleAccountCode", { max: 50 });
 
   if (a.dailyRate != null && (!Number.isFinite(a.dailyRate) || a.dailyRate < 0)) {
     throw new ConvexError("Daily rate must be zero or positive");
@@ -156,6 +161,8 @@ function toDoc(a: ModelArgs) {
     barcodeLabelTemplate: a.barcodeLabelTemplate ?? undefined,
     isActive: a.isActive ?? true,
     tags: a.tags ?? [],
+    xeroRentalAccountCode: a.xeroRentalAccountCode || undefined,
+    xeroSaleAccountCode: a.xeroSaleAccountCode || undefined,
   };
 }
 

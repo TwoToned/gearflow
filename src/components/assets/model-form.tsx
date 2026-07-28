@@ -30,6 +30,8 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { XeroAccountCodeField } from "@/components/settings/xero-coding-fields";
+import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { QuickCreateCategory } from "./quick-create-category";
 import { SpecificationsEditor } from "./specifications-editor";
 import {
@@ -58,6 +60,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
   const categories = useCategoriesWithParent(orgId) ?? [];
 
   const orgTags = useOrgTags(orgId);
+  const xeroLinked = useXeroLinked();
 
   // Reactive: testProfiles subscribes to Convex (Convex list returns all; filter
   // isActive client-side to match the old getTestProfiles default).
@@ -287,6 +290,37 @@ export function ModelForm({ initialData }: ModelFormProps) {
             </div>
           </div>
         </SmartFormSection>
+
+        {xeroLinked && (
+          <SmartFormSection title="Xero coding" hint="Overrides the category default for lines using this model — leave blank to inherit.">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Controller
+                name="xeroRentalAccountCode"
+                control={form.control}
+                render={({ field }) => (
+                  <XeroAccountCodeField
+                    value={field.value}
+                    onChange={field.onChange}
+                    label="Rental account"
+                    placeholder="Inherit category default"
+                  />
+                )}
+              />
+              <Controller
+                name="xeroSaleAccountCode"
+                control={form.control}
+                render={({ field }) => (
+                  <XeroAccountCodeField
+                    value={field.value}
+                    onChange={field.onChange}
+                    label="Sale account"
+                    placeholder="Inherit category default"
+                  />
+                )}
+              />
+            </div>
+          </SmartFormSection>
+        )}
 
         {/* Compliance & technical */}
         <SmartFormSection title="Compliance & technical" hint="Test & tag and physical specs — optional.">

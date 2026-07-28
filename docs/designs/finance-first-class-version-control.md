@@ -113,6 +113,35 @@ spine, and this doc builds that spine once.
    artifact for a sent revision / issued invoice, plus an explicitly watermarked **DRAFT
    PREVIEW** before sending.
 
+Refined 2026-07-28 (second pass):
+
+5. **No quote numbering engine.** A quote is identified by its project number + version —
+   `RVLT-2026-0087 v2`. No `QTE:` counter, no new org settings, no second numbering surface
+   to keep in sync. The project number is already the shared reference with the client.
+6. **Invoices get full parity** with the quote workflow: a real issue dialog with invoice
+   date, due date and notes. This also fixes a live bug — `dueDate` is plumbed all the way
+   through `issueNative` (`convex/invoicesWrites.ts` L214-242) but the UI's `issueInvoice(id)`
+   never passes it, so **every invoice issued today has no due date at all**.
+7. **"Send" means freeze + generate, not email.** Flow records that you sent it (date,
+   recipient, version), freezes pricing and produces the PDF; you attach it to your own
+   email. This holds the #934 "no client-facing emails" decision. The button still reads
+   "Send quote" because that's the real-world act, but the dialog says plainly that Flow
+   doesn't email the client.
+8. **Rental dates stay editable after a send, but drift is flagged loudly.** Gigs move;
+   locking dates would fight operational reality. Instead the Finance tab and lock strip
+   surface "this project has changed since quote v2 was sent", with what changed (§6.5).
+9. **Finance gets an org-level home** — a `/finance` section, not only a per-project tab
+   (Phase F, §6.6). Today finance is visible one project at a time, so nothing is chaseable.
+10. **Quotes do not push to Xero.** Flow owns the quote end to end; Xero only ever sees the
+    invoice. Two systems holding divergent quote versions is the exact failure this program
+    exists to remove.
+11. **Send/accept = manager+ (`invoice:publish`); recall = admin/owner or the project's PM.**
+    Un-sending a document the client may already hold is trust-sensitive, so it reuses
+    #792's narrower `isHardLockOverrideAllowed` audience rather than the general permission.
+12. **Production has effectively no live quote/invoice data** (confirmed by Jayden) — the
+    #940 features shipped recently and haven't been used in anger. The backfill is therefore
+    a simple forward migration, not a defensive one (§8).
+
 ---
 
 ## 3. Target model — the quote revision is the unit of version control
@@ -128,6 +157,11 @@ projects.revision : number         ← the authority (starts at 1 on create)
 `projects.revision` is **recalc-adjacent but not recalc-owned**: it is written only by the
 two revision mutations below, stripped from every generic client patch the same way
 `PROJECT_MONEY_ANCHORS` already are (`convex/projectWrites.ts`). Never client-supplied.
+
+**Identity.** A quote has no document number of its own (decision 5). It is referred to
+everywhere — UI, PDF header, filename, audit log — as `<projectNumber> v<version>`, e.g.
+`RVLT-2026-0087 v2`. `src/lib/project-number.ts`'s engine is untouched by this program;
+only invoices keep their `INV:`-namespaced counter.
 
 **Invariants (server-enforced, tested):**
 - Exactly one quote row per `(projectId, revision)`. The existing
@@ -183,6 +217,18 @@ All five: the standard 4-guard browser-direct shape (FEATUREDOCS/54) — `assert
 `enforceBrowserWriteLimit`, `requireOrgPermission`, `resolveActor` — plus `assertRefInOrg`,
 plus `writeActivityLog`. `sendNative` keeps `assertLifecycleGuard(…, { kind: "financial" })`
 so a hard-locked project can't emit a new quote out of band.
+
+**Permissions (decision 11).** Send, new-version, accept and decline check
+`invoice:publish` — owner/admin/manager, the existing audience. **Recall additionally
+requires `isHardLockOverrideAllowed`** (org admin/owner, or a member of the project's
+`projectManagers` set — `convex/lib/projectLocks.ts`), because un-sending a document the
+client may already be holding is a trust-sensitive act. No new permission resource is
+introduced; both checks already exist.
+
+**"Send" does not email anyone (decision 7).** Flow stamps the revision as sent, freezes
+pricing, and produces the PDF. The dialog states this outright so nobody assumes the client
+was contacted — which is the failure mode of naming a button "Send" in a product that
+doesn't deliver mail (#934: "no client-facing emails — PDFs sent manually / by Xero").
 
 **Money still never originates from the client** (R-9.3). The send dialog's only inputs are
 `quoteDate`, `validityDays`, `recipientContactId`, `notes`. Every figure comes from
@@ -315,6 +361,9 @@ existing `financials` tab is retired, not duplicated. Templates keep hiding it, 
 │  Lock strip:  🔒 Pricing locked — Quote v2 sent 26 Jul                  │
 │               [ Create quote v3 ]  [ Recall v2 ]                       │
 ├────────────────────────────────────────────────────────────────────────┤
+│  ⚠ Changed since v2 was sent: 3 lines added, rental window +2 days      │
+│                                            [ See what changed ]        │
+├────────────────────────────────────────────────────────────────────────┤
 │  Totals:  Subtotal · Discount · GST · Total · Margin                   │
 │           Deposit invoiced · Invoiced to date · Outstanding            │
 ├────────────────────────────────────────────────────────────────────────┤
@@ -331,10 +380,11 @@ existing `financials` tab is retired, not duplicated. Templates keep hiding it, 
 
 Each revision row: version, state chip (`status-colors.ts` intents — never hardcoded per
 DESIGN.md §3), quote date, valid-until (amber when within 3 days, red when expired), total,
-who sent it, and its actions. Clicking a row opens the read-only "as of v N" view — which is
-`project-versions-panel.tsx`'s existing snapshot summary + `project-snapshot-diff.ts`'s
-existing diff, now reachable from the workflow instead of a ⋯ menu. The ⋯ "Versions" entry
-stays as a deep link; the panel is not duplicated.
+who sent it, and its actions. There is no quote document number (decision 5) — the row reads
+`v2` and the PDF header reads `Quote — RVLT-2026-0087 v2`. Clicking a row opens the read-only
+"as of v N" view — which is `project-versions-panel.tsx`'s existing snapshot summary +
+`project-snapshot-diff.ts`'s existing diff, now reachable from the workflow instead of a ⋯
+menu. The ⋯ "Versions" entry stays as a deep link; the panel is not duplicated.
 
 ### 6.3 Send dialog
 
@@ -352,13 +402,68 @@ The one place a quote leaves the building. Radix `Dialog` (no `AlertDialog`), fi
   _"Sending freezes pricing at v N. To change prices afterwards, create v N+1."_
 - **[ Preview draft PDF ]** (watermarked) and **[ Send quote v N ]**.
 
-No monetary input anywhere in this dialog.
+No monetary input anywhere in this dialog. The footer states plainly: _"Flow doesn't email
+clients — this generates the PDF for you to send."_ (decision 7).
 
-### 6.4 Documents dropdown
+### 6.4 Invoice issue dialog (decision 6)
+
+Invoices get the same treatment, because "or an invoice willy nilly" was half the original
+complaint. Radix `Dialog` on **issue** (not on draft creation, which stays one click):
+
+- **Invoice date** — user-set, defaults to today
+- **Due date** — defaults to invoice date + `OrgDocumentSettings.paymentTermsDays` (**new
+  setting**, default 14). Today `dueDate` is fully plumbed through `issueNative`
+  (`convex/invoicesWrites.ts` L214-242) but `issueInvoice(id)` never passes it, so **every
+  invoice issued today carries no due date** — an outright bug this closes.
+- **Notes** and a **read-only amount summary** (server-computed; the deposit % and balance
+  math are unchanged)
+- **[ Preview ]** (watermarked) and **[ Issue INV-… ]** — the number is still assigned
+  server-side at issue, the one numbering moment (FEATUREDOCS/66)
+
+The existing "advance the project to INVOICED?" chain moves into this dialog's success path
+as a proper `Dialog`, replacing `window.confirm`.
+
+### 6.5 Drift indicator — "changed since v2 was sent" (decision 8)
+
+Rental dates and gear stay editable after a send; the drift is made loud instead
+(§2 decision 8). **This costs almost nothing to build**, because the pieces already exist:
+`sendNative` captures a snapshot for the revision, `collectCurrentEntries` reads current
+state through the identical shape, and `diffSnapshotEntries` already compares them. Drift is
+just that diff, rendered as a summary line.
+
+- Shows when a `SENT`/`ACCEPTED` revision exists and its snapshot differs from current
+- Summarises by kind — lines added/removed, prices changed, rental window moved, services
+  or crew changed — and "See what changed" opens the full existing diff view
+- Appears on the Finance tab and in the lock strip, so it's visible from any tab
+- Distinct from `StalePricingBanner`, which answers a different question ("stored prices no
+  longer match what current dates would derive" → offers Recalculate). Drift answers "the
+  job no longer matches the document the client is holding" → offers "Create quote v3".
+  Both can be true at once; they are not merged.
+
+### 6.6 Documents dropdown
 
 Loses "Quote / proposal" and "Invoice". Keeps Pull slip, Delivery docket, Return sheet, Call
 sheet, Project timeline. The `typeMap` entries for `quote`/`invoice` in
 `src/app/api/documents/[projectId]/route.tsx` survive only behind `preview=1` + permission.
+
+### 6.7 Org-level Finance section (decision 9 — Phase F)
+
+Per-project finance can't be chased. A `/finance` nav section answers the questions nobody
+can currently ask without opening projects one at a time:
+
+- **Quotes out** — sent, awaiting acceptance, sorted by age
+- **Expiring** — `validUntil` inside 7 days, and already-expired
+- **Never sent** — draft revisions sitting on active projects
+- **Confirmed but uninvoiced** — accepted/confirmed jobs with no issued invoice
+- **Deposit due** — `DEPOSIT_BALANCE` clients whose deposit invoice hasn't issued
+  (the existing derived nudge, lifted to org scope)
+- **Outstanding** — issued invoices unpaid, once the Xero payment poll lands (FEATUREDOCS/66
+  phase 2); until then the section renders issued-and-unreconciled
+
+**Performance constraint, learned the hard way:** this must be a **date-ranged aggregation
+query, not a per-project loop**. #942 records that unbounded overbooking reads once
+accounted for 77% of org DB I/O. Indexes to add: `quotes.by_organizationId_status`,
+`invoices.by_organizationId_status` (exists), and a bounded default horizon.
 
 ---
 
@@ -440,33 +545,50 @@ snapshotId: v.optional(v.string()),           // the projectSnapshots row for th
 
 // invoices
 pdfFileId: v.optional(v.string()),            // stored artifact, written at issueNative
+invoiceDate: v.optional(v.number()),          // user-set at issue (decision 6)
 
 // projectSnapshots
 reason: … | v.literal("QUOTE_SENT"),
 revision: v.optional(v.number()),
+
+// OrgDocumentSettings (src/lib/org-settings-types.ts)
+paymentTermsDays?: number;                    // default 14 — due-date default at issue
 ```
 
-New index: `quotes.by_projectId_status`. `by_projectId_version` becomes the uniqueness guard.
+New indexes: `quotes.by_projectId_status`, `quotes.by_organizationId_status` (Phase F).
+`by_projectId_version` becomes the uniqueness guard.
+
+**No quote numbering fields** (decision 5) — no `quoteNumber`, no `QTE:` scope key, no new
+`OrgSettings` numbering entries. `src/lib/project-number.ts` and `src/lib/invoice-number.ts`
+are untouched by this program.
 
 **Schema discipline:** `convex/schema.ts` is hand-maintained — never regenerate
 (CLAUDE.md). Every new field is `v.optional` on arrival; nothing is removed from a validator
 while live documents may still carry it (the `depositPercent` prod-deploy incident recorded in
 FEATUREDOCS/66 is the standing precedent).
 
-**Backfill** (`convex/backfill*.ts`, the established pattern):
+**Backfill** (`convex/backfill*.ts`, the established pattern). Production has effectively no
+live quote/invoice data (decision 12 — the #940 features shipped days ago and haven't been
+used in anger), so this is a **simple forward migration**, not a defensive one. The
+originally-planned lazy-draft-on-first-load path is dropped as unnecessary complexity:
+
 1. `projects.revision` ← `max(quotes.version)` for the project, else 1.
 2. `quotes.status: "PUBLISHED"` → `"SENT"`; `publishedAt/ById` → `sentAt/ById`.
 3. `quotes.quoteDate` ← `sentAt`; `validUntil` ← `sentAt + quoteValidityDays`.
-4. Existing sent quotes get **no** artifact — their rows render "no stored document
-   (pre-versioning)" rather than a regenerated fake. Retro-rendering a historical quote from
-   today's project state would manufacture a document that was never sent, which is the exact
-   defect this program exists to remove.
-5. Projects with no quote row get a `DRAFT` v1 lazily on first Finance-tab load, not a bulk
-   insert.
+4. Every project without a quote row gets a `DRAFT` v1 inserted directly — a bulk insert is
+   fine at this data volume, and it means every project has a coherent revision from day one
+   with no lazy-creation race to reason about.
+5. Any pre-existing sent quote gets **no** artifact — its row renders "no stored document
+   (pre-versioning)". Retro-rendering a historical quote from today's project state would
+   manufacture a document that was never sent, which is the exact defect this program removes.
+
+**Still run a count first.** "Effectively none" is a reasonable basis for choosing the simple
+path, not a licence to skip verification — the migration logs the row counts it touched, and
+a mismatch against expectation halts rather than proceeds.
 
 ---
 
-## 9. Rollout — five phases, five issues under one tracker
+## 9. Rollout — six phases, six issues under one tracker
 
 Tracking issue: [#985](https://github.com/TwoToned/gearflow/issues/985).
 Sequenced so each phase is independently shippable and nothing half-lands.
@@ -476,10 +598,11 @@ Sequenced so each phase is independently shippable and nothing half-lands.
 | **A** | Revision model + state machine | [#986](https://github.com/TwoToned/gearflow/issues/986) | `projects.revision`, quote schema + enum, the five verbs, acceptance gate on CONFIRMED, backfill, server tests | M |
 | **B** | Immutable artifacts | [#987](https://github.com/TwoToned/gearflow/issues/987) | Render-and-store at send/issue, `pdfFileId` wiring, artifact routes, watermarked draft preview, Documents-menu removal | M |
 | **C** | Unified lock state | [#988](https://github.com/TwoToned/gearflow/issues/988) | `resolveLockTier` (status × quote), `reason` plumbing, close the deferred gate sites, parity tests | S |
-| **D** | Finance tab | [#989](https://github.com/TwoToned/gearflow/issues/989) | Tab promotion, quote rail + version history + diff entry, send dialog, invoice rail, retire `window.confirm` | M |
+| **D** | Finance tab | [#989](https://github.com/TwoToned/gearflow/issues/989) | Tab promotion, quote rail + version history + diff entry, send dialog, **invoice issue dialog + due dates**, **drift indicator**, retire `window.confirm` | M |
 | **E** | Lock UX | [#990](https://github.com/TwoToned/gearflow/issues/990) | Lock strip, header chip, `<LockedField>`, `aria-disabled` action pattern, `useJustifiedMutation` wiring, `UnpricedBadge` mounting, list/board glyphs, session diff-before-commit | M |
+| **F** | Org-level Finance section | [#992](https://github.com/TwoToned/gearflow/issues/992) | `/finance` nav section — quotes out, expiring, never sent, confirmed-uninvoiced, deposit due, outstanding; aggregation query (not a per-project loop) | M |
 
-**Dependencies:** A → B, A → C, (A,B,C) → D, C → E. D and E are parallelisable.
+**Dependencies:** A → B, A → C, (A,B,C) → D, C → E, (A,B,D) → F. D and E are parallelisable.
 
 ---
 
@@ -500,10 +623,27 @@ Sequenced so each phase is independently shippable and nothing half-lands.
   `TooltipProvider` / Radix-in-modal footguns from CLAUDE.md); locked state renders read-only
   fields and the tooltip explains; `aria-disabled` actions are reachable by keyboard.
 - **a11y** — lock states announced, not colour-only (DESIGN.md); `docs/a11y-manual-checklist.md`.
+- **Drift** — `diffSnapshotEntries(sentRevisionSnapshot, currentEntries)` produces the
+  expected summary for each change kind (line added/removed, price changed, dates moved),
+  and produces *nothing* on an untouched project (zero-noise, mirroring
+  `ProjectConflictsBanner`).
+- **Org finance query (Phase F)** — asserted to be a single aggregation, not an N-project
+  loop; a fixture org with many projects bounds the read count.
 
 ---
 
-## 11. Open questions
+## 11. Resolved questions
+
+- **Quote numbering?** No — project number + version (`RVLT-2026-0087 v2`). Decision 5.
+- **Do quotes push to Xero as Xero Quotes?** No — Flow owns the quote end to end; Xero only
+  sees the invoice. Two systems holding divergent quote versions is the failure this program
+  exists to remove. Decision 10.
+- **Does "Send" email the client?** No — it freezes and generates; you send it yourself. The
+  dialog says so explicitly. Decision 7.
+- **Do rental dates lock after a send?** No — they stay editable and drift is flagged loudly
+  (§6.5). Decision 8.
+
+## 12. Open questions
 
 - **Multiple concurrent draft revisions?** Ruled out for v1 (one draft, always at
   `projects.revision`). Comparing two speculative options is a real workflow ("with and
@@ -519,9 +659,13 @@ Sequenced so each phase is independently shippable and nothing half-lands.
   not `window.confirm`.
 - **CANCELLED remains ungated** — inherited open question from #957, unchanged here.
 
+- **Duplicated projects / templates** — a duplicate starts at `revision: 1` with a fresh
+  `DRAFT` v1 and copies no quote history; a template carries no revision at all. Assumed,
+  not asked — say so if that's wrong.
+
 ---
 
-## 12. POLICY.md compliance notes (BUILD mode)
+## 13. POLICY.md compliance notes (BUILD mode)
 
 - **R-3.1 / single source of truth** — one revision counter; one lock-tier resolver; the send
   dialog's validity math resolves through the same `quoteValidityDays` setting the PDF reads.

@@ -6,6 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertOverbookAllowed } from "./lib/agentArgs";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertLineMoneyFields } from "./lib/moneyGuards";
 import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
@@ -587,6 +588,8 @@ export const patchNative = mutation({
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    // §6 privileged arg: softening the availability check needs its own scope.
+    await assertOverbookAllowed(ctx, allowOverbook);
     const actor = await resolveActor(ctx, suppliedActor);
 
     const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1344,6 +1347,8 @@ export const addNative = mutation({
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    // §6 privileged arg: softening the availability check needs its own scope.
+    await assertOverbookAllowed(ctx, allowOverbook);
     const actor = await resolveActor(ctx, suppliedActor);
 
     // The client supplies `projectId`; requireOrgPermission only proves the caller's
@@ -1921,6 +1926,8 @@ export const addLineItemSmartNative = mutation({
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    // §6 privileged arg: softening the availability check needs its own scope.
+    await assertOverbookAllowed(ctx, allowOverbook);
     const actor = await resolveActor(ctx, suppliedActor);
 
     // Client-supplied projectId: prove it's the caller's org before reading/sweeping its

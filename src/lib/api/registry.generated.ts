@@ -38,6 +38,13 @@ export interface RegistryOperation {
   readonly privilegedArgs: readonly string[];
   readonly argsSha: string;
   readonly returnsSha: string;
+  /** Phase 5 (#1001) colocated annotation — see convex/lib/agentOps.ts. Purely
+   *  additive metadata; never affects `agentReachable`. */
+  readonly summary: string | null;
+  readonly danger: "low" | "medium" | "high" | null;
+  readonly mcpTier: 1 | 2 | 3 | null;
+  readonly agentAccess: "denied" | null;
+  readonly deniedReason: string | null;
 }
 
 export const API_REGISTRY: readonly RegistryOperation[] = [
@@ -105,7 +112,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff720184a010feab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "activityLog.list",
@@ -191,7 +203,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a65e64bf7c108c99",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "activityLog.listByEntity",
@@ -227,7 +244,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8a5b72d1a9bf2b72",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "activityLogWrites.record",
@@ -318,7 +340,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "26827a3d213d383e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "activityLogWrites.recordMany",
@@ -339,7 +366,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ba469669c7e04cf1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiIdempotency.claim",
@@ -385,7 +417,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8518b3c165e1a44b",
-    "returnsSha": "6efb5edfc3d9a2e2"
+    "returnsSha": "6efb5edfc3d9a2e2",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiIdempotency.complete",
@@ -421,7 +458,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dc89ae33d0baafa7",
-    "returnsSha": "bcde375ebd4cbacf"
+    "returnsSha": "bcde375ebd4cbacf",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiIdempotency.getByKey",
@@ -447,7 +489,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2c6e7911a4094f3a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiIdempotency.release",
@@ -473,7 +520,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2c6e7911a4094f3a",
-    "returnsSha": "bcde375ebd4cbacf"
+    "returnsSha": "bcde375ebd4cbacf",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiKeys.create",
@@ -559,7 +611,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "631b70cd7437d487",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiKeys.createIfMissing",
@@ -645,7 +702,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "631b70cd7437d487",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiKeys.getByTokenHash",
@@ -666,7 +728,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ae509fe4bbe41e6f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiKeys.list",
@@ -687,7 +754,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiKeys.revoke",
@@ -713,7 +785,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiKeys.touchLastUsed",
@@ -734,7 +811,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiRequestLog.logRequest",
@@ -805,7 +887,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9d13e309fcb4e5c1",
-    "returnsSha": "bcde375ebd4cbacf"
+    "returnsSha": "bcde375ebd4cbacf",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiRequestLog.recentForKey",
@@ -831,7 +918,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2c91b83427c5c69d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "apiRequestLog.spendReadLimit",
@@ -852,7 +944,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "408c1cf19dbb0dbb",
-    "returnsSha": "bcde375ebd4cbacf"
+    "returnsSha": "bcde375ebd4cbacf",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetAccessories.availableSerialized",
@@ -878,7 +975,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac9318cfe0bd009f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetAccessoriesWrites.addBulkNative",
@@ -949,7 +1051,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fece3759efa04e28",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetAccessoriesWrites.addSerializedNative",
@@ -1005,7 +1112,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f33321fb3e9c4f6",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetAccessoriesWrites.removeBulkNative",
@@ -1056,7 +1168,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2ae99bf194334f48",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetAccessoriesWrites.removeSerializedNative",
@@ -1107,7 +1224,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "397c878570c1e344",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetBulkChildren.create",
@@ -1173,7 +1295,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b7c8113302d4286e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetBulkChildren.createIfMissing",
@@ -1239,7 +1366,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b7c8113302d4286e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetBulkChildren.getById",
@@ -1260,7 +1392,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetBulkChildren.listByParentAssetId",
@@ -1286,7 +1423,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "94f2dd640458852b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetBulkChildren.remove",
@@ -1307,7 +1449,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetBulkChildren.update",
@@ -1333,7 +1480,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b8f1c4fb3e06795e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetDetail.bundle",
@@ -1364,7 +1516,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8bf357eea605d847",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.create",
@@ -1425,7 +1582,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "274239982b5bad35",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.createIfMissing",
@@ -1486,7 +1648,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "274239982b5bad35",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.getById",
@@ -1507,7 +1674,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.list",
@@ -1528,7 +1700,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.listByParent",
@@ -1549,7 +1726,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.remove",
@@ -1570,7 +1752,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.setPrimary",
@@ -1596,7 +1783,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5af5b9fed2ccabd6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetMedia.update",
@@ -1622,7 +1814,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c2cd089f90bf2b4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.bulkAddTags",
@@ -1653,7 +1850,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "814b475af0a02de1",
-    "returnsSha": "cddf8275afa15408"
+    "returnsSha": "cddf8275afa15408",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.bulkUpdate",
@@ -1689,7 +1891,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "77d5a9c19a77df4f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.create",
@@ -1850,7 +2057,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9aa3d41d50a925ef",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.createIfMissing",
@@ -2011,7 +2223,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9aa3d41d50a925ef",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.createMany",
@@ -2032,7 +2249,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d78eda891a91b3e8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.getByAssetTag",
@@ -2058,7 +2280,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4ecff986ff661046",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.getById",
@@ -2084,7 +2311,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.list",
@@ -2110,7 +2342,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.listByIds",
@@ -2136,7 +2373,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.listByModel",
@@ -2167,7 +2409,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ec9e5654f5228328",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.listByModelIds",
@@ -2193,7 +2440,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0a315903684b83e9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.listByParentAssetId",
@@ -2219,7 +2471,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "94f2dd640458852b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.listGallery",
@@ -2245,7 +2502,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3ffb2bbf35f7c1b9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.listPage",
@@ -2346,7 +2608,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9eb9fbed11f72f53",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.patchAsset",
@@ -2377,7 +2644,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3ce59a290bb19e29",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.registryPhotos",
@@ -2398,7 +2670,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.remove",
@@ -2419,7 +2696,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assets.update",
@@ -2445,7 +2727,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ed16dae7becade0e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.create",
@@ -2516,7 +2803,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aaeaa5669f5bf9c0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.createIfMissing",
@@ -2587,7 +2879,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aaeaa5669f5bf9c0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.getById",
@@ -2608,7 +2905,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.list",
@@ -2629,7 +2931,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.listByKitId",
@@ -2655,7 +2962,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.listByOrgAndAsset",
@@ -2681,7 +2993,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b726f9a3bca87faf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.listByProject",
@@ -2707,7 +3024,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.listByScannedById",
@@ -2728,7 +3050,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a6904807102cb7de",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.remove",
@@ -2749,7 +3076,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetScanLogs.update",
@@ -2775,7 +3107,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "58d98677b46915b4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.archiveNative",
@@ -2821,7 +3158,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.bulkTagNative",
@@ -2862,7 +3204,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f48b87367d1c1ef9",
-    "returnsSha": "ca20c8538a3cc095"
+    "returnsSha": "ca20c8538a3cc095",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.bulkUpdateNative",
@@ -2908,7 +3255,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d85d3ef2efb376fe",
-    "returnsSha": "ca20c8538a3cc095"
+    "returnsSha": "ca20c8538a3cc095",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.createManyNative",
@@ -2949,7 +3301,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1598801cf159e539",
-    "returnsSha": "b67b074b9a2f2e30"
+    "returnsSha": "b67b074b9a2f2e30",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.createNative",
@@ -3125,7 +3482,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "514a9d8fd6de5e82",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.deleteNative",
@@ -3171,7 +3533,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.updateNative",
@@ -3227,7 +3594,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a7a1a60bd7b8e40b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "assetWrites.updateNotesNative",
@@ -3278,7 +3650,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "59fd782b8d5b533f",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "availability.assetBookings",
@@ -3319,7 +3696,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b6153ee6813bcf6a",
-    "returnsSha": "0ca6436620d5280c"
+    "returnsSha": "0ca6436620d5280c",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "availability.calendarData",
@@ -3355,7 +3737,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1810374176adf92f",
-    "returnsSha": "624a3fa495a85dcf"
+    "returnsSha": "624a3fa495a85dcf",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "availability.kitBookings",
@@ -3396,7 +3783,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "432b1d6b269ddce6",
-    "returnsSha": "0ca6436620d5280c"
+    "returnsSha": "0ca6436620d5280c",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "availability.modelBookings",
@@ -3437,7 +3829,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "25956a18ee08f20a",
-    "returnsSha": "712558d1098bafb0"
+    "returnsSha": "712558d1098bafb0",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "availabilityCheck.checkBundle",
@@ -3463,7 +3860,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ec9e5654f5228328",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "backfillClientContacts.backfillClientContactsPage",
@@ -3494,7 +3896,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a4d51d7dca5806e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "backfillKitUnits.backfillKitUnitsPage",
@@ -3525,7 +3932,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a4d51d7dca5806e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "backfillMaintenanceSchedules.backfillMaintenanceSchedulesPage",
@@ -3561,7 +3973,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "081f33be28f82ead",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "backfillProjectWindow.backfillProjectWindowPage",
@@ -3592,7 +4009,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a4d51d7dca5806e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "backfillQuoteRevisions.backfillQuoteRevisionsPage",
@@ -3623,7 +4045,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a4d51d7dca5806e",
-    "returnsSha": "c5b2117bf0bef91e"
+    "returnsSha": "c5b2117bf0bef91e",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "backfillQuoteRevisions.verifyQuoteRevisions",
@@ -3649,7 +4076,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1e9753884d189782",
-    "returnsSha": "a0eb1bfe148fbe51"
+    "returnsSha": "a0eb1bfe148fbe51",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "backfillStripProjectDepositPercent.backfillStripProjectDepositPercentPage",
@@ -3680,7 +4112,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a4d51d7dca5806e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.adjustAvailability",
@@ -3706,7 +4143,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b18ae283dd5b0446",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.create",
@@ -3792,7 +4234,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "16a38c83e109fbd7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.createIfMissing",
@@ -3878,7 +4325,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "16a38c83e109fbd7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.detail",
@@ -3904,7 +4356,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.getByAssetTag",
@@ -3930,7 +4387,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4ecff986ff661046",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.getById",
@@ -3956,7 +4418,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.list",
@@ -3982,7 +4449,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.listByIds",
@@ -4008,7 +4480,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.listByModel",
@@ -4034,7 +4511,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ec9e5654f5228328",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.listByModelIds",
@@ -4060,7 +4542,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0a315903684b83e9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.listPage",
@@ -4131,7 +4618,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "958f04675202f3e0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.patchBulkAsset",
@@ -4162,7 +4654,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0690e11269876690",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.remove",
@@ -4183,7 +4680,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssets.update",
@@ -4209,7 +4711,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "69bebe34fb9041e7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssetsWrites.archiveNative",
@@ -4245,7 +4752,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7f94cc7688b6fe86",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssetsWrites.createNative",
@@ -4336,7 +4848,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "43c7e7d3f5942d77",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssetsWrites.deleteNative",
@@ -4382,7 +4899,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "bulkAssetsWrites.updateNative",
@@ -4473,7 +4995,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "43c7e7d3f5942d77",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.containerAssetSearch",
@@ -4499,7 +5026,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "db5e7ea1b467f3dc",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.counts",
@@ -4520,7 +5052,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "16ff2663750c0c68"
+    "returnsSha": "16ff2663750c0c68",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.create",
@@ -4591,7 +5128,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e58b11f57a03b8a4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.createIfMissing",
@@ -4662,7 +5204,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e58b11f57a03b8a4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.detail",
@@ -4688,7 +5235,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.getById",
@@ -4714,7 +5266,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.list",
@@ -4740,7 +5297,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.remove",
@@ -4761,7 +5323,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categories.update",
@@ -4787,7 +5354,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a78bd83e93fbf5cf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categoriesWrites.createNative",
@@ -4868,7 +5440,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d10581b967f8b455",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categoriesWrites.removeNative",
@@ -4914,7 +5491,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categoriesWrites.updateNative",
@@ -4995,7 +5577,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d10581b967f8b455",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.create",
@@ -5046,7 +5633,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ed14261c0a4a40d8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.createIfMissing",
@@ -5097,7 +5689,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ed14261c0a4a40d8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.getById",
@@ -5118,7 +5715,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.list",
@@ -5139,7 +5741,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2a7ae2c04d9610f3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.listByProjectGroupId",
@@ -5160,7 +5767,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "53cf93651338f4f7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.listBySubHireGroupId",
@@ -5181,7 +5793,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "19d5eb959e9ce1a9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.remove",
@@ -5202,7 +5819,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.reorderSlots",
@@ -5238,7 +5860,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b4104aece9c115fe",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.update",
@@ -5264,7 +5891,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "adefa35f7367c393",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.upsertSlotForProjectGroup",
@@ -5300,7 +5932,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "626ce48a4d2a3bfe",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlots.upsertSlotForSubHireGroup",
@@ -5336,7 +5973,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0d0ae5a6adc6af1c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlotsWrites.createCategoryAndPlaceGroup",
@@ -5402,7 +6044,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d91d7a97c4bf69e8",
-    "returnsSha": "23df8b9b6473ed03"
+    "returnsSha": "23df8b9b6473ed03",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlotsWrites.moveProjectGroupToCategory",
@@ -5458,7 +6105,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3fea7c7062c98d32",
-    "returnsSha": "efda0e408ef31eef"
+    "returnsSha": "efda0e408ef31eef",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlotsWrites.moveSubHireGroupToCategory",
@@ -5518,7 +6170,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3fea7c7062c98d32",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "categorySlotsWrites.reorderMixedGroupsInCategory",
@@ -5568,7 +6225,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bf6185a8a2f45559",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItems.create",
@@ -5649,7 +6311,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a1c8c5004aa39827",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItems.createIfMissing",
@@ -5730,7 +6397,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a1c8c5004aa39827",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItems.getById",
@@ -5751,7 +6423,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItems.list",
@@ -5772,7 +6449,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItems.patchCheckItem",
@@ -5803,7 +6485,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "31ed76452206c9be",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItems.remove",
@@ -5824,7 +6511,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItems.update",
@@ -5850,7 +6542,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fd3472ca93497236",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.addCheckItemToKitNative",
@@ -5906,7 +6603,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "746ccab02d4cabfd",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.addCheckItemToModelNative",
@@ -5962,7 +6664,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c74781ae4bd29260",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.bulkAddCheckItemsToModelsNative",
@@ -6018,7 +6725,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "76001b97d57fd6d4",
-    "returnsSha": "bfb38c6e5b5b2178"
+    "returnsSha": "bfb38c6e5b5b2178",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.createCheckItemNative",
@@ -6104,7 +6816,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1d9e9bda6e5f752a",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.deleteCheckItemNative",
@@ -6150,7 +6867,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.removeCheckItemFromKitNative",
@@ -6201,7 +6923,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4ce52d0989c9e5bc",
-    "returnsSha": "296b6c98fce8621a"
+    "returnsSha": "296b6c98fce8621a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.removeCheckItemFromModelNative",
@@ -6252,7 +6979,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "676d3f3f12b00cc7",
-    "returnsSha": "296b6c98fce8621a"
+    "returnsSha": "296b6c98fce8621a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.reorderKitCheckItemsNative",
@@ -6288,7 +7020,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e204246f9f0b916b",
-    "returnsSha": "296b6c98fce8621a"
+    "returnsSha": "296b6c98fce8621a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.reorderModelCheckItemsNative",
@@ -6324,7 +7061,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "87ea7c7af3fb93a1",
-    "returnsSha": "296b6c98fce8621a"
+    "returnsSha": "296b6c98fce8621a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkItemsWrites.updateCheckItemNative",
@@ -6410,7 +7152,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1d9e9bda6e5f752a",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.completeCheckAndDeprepLine",
@@ -6451,7 +7198,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9768baf5438fbc5c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.deprepItem",
@@ -6492,7 +7244,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a974cd75dbc0ca72",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.deprepItems",
@@ -6528,7 +7285,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c4e7cd4ad7822730",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.deprepKit",
@@ -6564,7 +7326,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d0d0e61dd09f072a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.prepItem",
@@ -6625,7 +7392,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aaa65aaf14dc537e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.prepItems",
@@ -6661,7 +7433,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "326d15e9c8f30c6f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.prepKitChildren",
@@ -6697,7 +7474,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d0d0e61dd09f072a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordOps.prepKitsBatch",
@@ -6733,7 +7515,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "571d3f01e5d2ad17",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.create",
@@ -6834,7 +7621,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a6428f0b0679e069",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.createIfMissing",
@@ -6935,7 +7727,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a6428f0b0679e069",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.createManyIfMissing",
@@ -6956,7 +7753,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "54c510bfc88665a0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.getById",
@@ -6977,7 +7779,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.list",
@@ -6998,7 +7805,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.listByOrgAndAsset",
@@ -7024,7 +7836,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b726f9a3bca87faf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.remove",
@@ -7045,7 +7862,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecords.update",
@@ -7071,7 +7893,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f31b9dfd649d2fd2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordWrites.completeCheckAndDeprep",
@@ -7137,7 +7964,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1eece84fe4a2f1dc",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordWrites.completeCheckAndFlag",
@@ -7218,7 +8050,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6b8c55185904c193",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordWrites.completeCheckAndPack",
@@ -7304,7 +8141,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f80e811b78902046",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordWrites.completeCheckAndStore",
@@ -7390,7 +8232,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "debd19969f492b7f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordWrites.saveAdHocCheck",
@@ -7456,7 +8303,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ceb2bfa94ca72f52",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordWrites.saveChildItemChecks",
@@ -7527,7 +8379,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d9a0c6238b9998ef",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "checkRecordWrites.saveKitLevelChecks",
@@ -7583,7 +8440,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9b3a00068bdf11f7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.create",
@@ -7659,7 +8521,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "457964bb7ac0af69",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.createIfMissing",
@@ -7735,7 +8602,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "457964bb7ac0af69",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.forClient",
@@ -7761,7 +8633,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "29d783ab75aa46af",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.getById",
@@ -7782,7 +8659,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.listByClientId",
@@ -7808,7 +8690,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "eaca716d77578719",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.listByOrg",
@@ -7829,7 +8716,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b21345538722cfa9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.remove",
@@ -7850,7 +8742,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContacts.update",
@@ -7876,7 +8773,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "057a39e5207d8516",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContactWrites.addNative",
@@ -7957,7 +8859,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7adffadb40ad08ce",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContactWrites.removeNative",
@@ -8008,7 +8915,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4b0a52c5484c48f6",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContactWrites.reorderNative",
@@ -8044,7 +8956,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "13f6781d41d354d2",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContactWrites.setPrimaryNative",
@@ -8080,7 +8997,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "66efcfd61e2e9496",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientContactWrites.updateNative",
@@ -8156,7 +9078,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "337f72e993aa5151",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientMedia.create",
@@ -8212,7 +9139,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6ed2991746165935",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientMedia.createIfMissing",
@@ -8268,7 +9200,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6ed2991746165935",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientMedia.getById",
@@ -8289,7 +9226,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientMedia.list",
@@ -8310,7 +9252,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientMedia.listByParent",
@@ -8331,7 +9278,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientMedia.remove",
@@ -8352,7 +9304,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientMedia.update",
@@ -8378,7 +9335,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e7a8ca617e2e810b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.create",
@@ -8499,7 +9461,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "20a5cfcb4d5abafa",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.createIfMissing",
@@ -8620,7 +9587,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "20a5cfcb4d5abafa",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.detail",
@@ -8651,7 +9623,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.getById",
@@ -8677,7 +9654,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.list",
@@ -8703,7 +9685,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.listPage",
@@ -8754,7 +9741,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f6d2aad4321c5d2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.projectCounts",
@@ -8775,7 +9767,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "ed784e8a8fdb5fe9"
+    "returnsSha": "ed784e8a8fdb5fe9",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.remove",
@@ -8796,7 +9793,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clients.update",
@@ -8822,7 +9824,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "811acfa10d3f5017",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientWrites.archiveManyNative",
@@ -8863,7 +9870,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5878020390254e44",
-    "returnsSha": "13431994f56592f3"
+    "returnsSha": "13431994f56592f3",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientWrites.archiveNative",
@@ -8909,7 +9921,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientWrites.createNative",
@@ -9055,7 +10072,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cde5156c25c201f6",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientWrites.updateNative",
@@ -9106,7 +10128,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0960873b9e1b300b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientWrites.updateNotesNative",
@@ -9157,7 +10184,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "59fd782b8d5b533f",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientXeroWrites.setXeroContactNative",
@@ -9213,7 +10245,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "696bdf221bce2f4d",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "clientXeroWrites.unlinkXeroContactNative",
@@ -9259,7 +10296,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "00cf1d761c4d0bf7",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.addComment",
@@ -9315,7 +10357,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e4d877fa9afe8f30",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.createThread",
@@ -9400,7 +10447,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3298a6eace07e75d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.getProjectBlockingSummary",
@@ -9426,7 +10478,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.getReviewMarker",
@@ -9457,7 +10514,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2fbb77229b52469e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.listActivityEvents",
@@ -9493,7 +10555,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8a5b72d1a9bf2b72",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.listBlockingForProjects",
@@ -9519,7 +10586,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5752f034278d25dc",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.listComments",
@@ -9545,7 +10617,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d65053ba9165f2ec",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.listOpenBlockingThreads",
@@ -9566,7 +10643,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.listReviewMarkersForEntity",
@@ -9597,7 +10679,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0adaa27fab584be5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.listThreadCommentCounts",
@@ -9628,7 +10715,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0adaa27fab584be5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.listThreads",
@@ -9669,7 +10761,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac240d36dd29e0a4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.logActivityEvent",
@@ -9740,7 +10837,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6ffeec833763bdd4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.reopenThread",
@@ -9786,7 +10888,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6f7dc650f00e56bf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.resolveThread",
@@ -9832,7 +10939,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "399eca2fce05e25b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.setReviewMarker",
@@ -9908,7 +11020,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e2ae3c2ff377c135",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "collaboration.setThreadBlocking",
@@ -9959,7 +11076,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d3644603406b073a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crew.memberDetail",
@@ -9990,7 +11112,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crew.memberExtras",
@@ -10016,7 +11143,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crew.myCrewMemberId",
@@ -10037,7 +11169,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crew.orgUsersForCrewLink",
@@ -10063,7 +11200,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.conflictsForProject",
@@ -10099,7 +11241,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "975a8168946736c5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.create",
@@ -10250,7 +11397,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1ad4ae8aa65101e3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.createIfMissing",
@@ -10401,7 +11553,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1ad4ae8aa65101e3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.createManyServiceAssignments",
@@ -10427,7 +11584,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b8f8c3ecc1c67ce1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.createServiceAssignment",
@@ -10538,7 +11700,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4b383a98c20f386d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.deleteCascade",
@@ -10559,7 +11726,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.deleteManyCascade",
@@ -10585,7 +11757,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d37e5fc9f7f8dd0e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.getById",
@@ -10611,7 +11788,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.getByResponseToken",
@@ -10632,7 +11814,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4cf139e46bc23dd",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.list",
@@ -10658,7 +11845,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.listByProject",
@@ -10689,7 +11881,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.listByServiceIds",
@@ -10715,7 +11912,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b23bf1c387a683d5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.membersForAssignment",
@@ -10761,7 +11963,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e802303e93424482",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.patchAssignment",
@@ -10792,7 +11999,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fe051f8c35b7e1e3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.patchManyStatus",
@@ -10833,7 +12045,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "56fd7077a59aa968",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.projectCrew",
@@ -10864,7 +12081,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.projectLabourCost",
@@ -10890,7 +12112,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.remove",
@@ -10911,7 +12138,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignments.update",
@@ -10937,7 +12169,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fa9937ab904fcb45",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignmentsWrites.bulkDeleteNative",
@@ -10990,7 +12227,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "171d09f36dccd4bc",
-    "returnsSha": "bec0cd60d81a5175"
+    "returnsSha": "bec0cd60d81a5175",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignmentsWrites.bulkStatusNative",
@@ -11048,7 +12290,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "7074dcef8d9702c8",
-    "returnsSha": "04471d174c91281a"
+    "returnsSha": "04471d174c91281a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignmentsWrites.createNative",
@@ -11186,7 +12433,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "6f51443bf2cc1131",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignmentsWrites.deleteNative",
@@ -11239,7 +12491,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "248d10f18c611aae",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignmentsWrites.generateShiftsNative",
@@ -11277,7 +12534,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "7eed1de1dd291c44",
-    "returnsSha": "ca20c8538a3cc095"
+    "returnsSha": "ca20c8538a3cc095",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignmentsWrites.updateNative",
@@ -11405,7 +12667,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "7a201d50e6aa3d30",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAssignmentsWrites.updateStatusNative",
@@ -11456,7 +12723,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dfc17f4b6ae38865",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.create",
@@ -11532,7 +12804,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "093b140cd4bd61b1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.createIfMissing",
@@ -11608,7 +12885,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "093b140cd4bd61b1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.getById",
@@ -11629,7 +12911,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.list",
@@ -11650,7 +12937,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.listByCrewMemberIds",
@@ -11671,7 +12963,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4da4976717463752",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.remove",
@@ -11692,7 +12989,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.removeMany",
@@ -11718,7 +13020,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9f2de211eb3c2b40",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilities.update",
@@ -11744,7 +13051,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "636babbe5209f8b4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailability.conflicts",
@@ -11790,7 +13102,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac550041360d32c5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailability.memberAvailability",
@@ -11831,7 +13148,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c7bb41eecde21233",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailability.plannerData",
@@ -11867,7 +13189,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1810374176adf92f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilityWrites.addNative",
@@ -11953,7 +13280,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "289dfc5248e97474",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewAvailabilityWrites.removeNative",
@@ -11994,7 +13326,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f583d63368f39d78",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewDashboard.activeAssignmentsSummary",
@@ -12020,7 +13357,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewDashboard.pendingOffers",
@@ -12041,7 +13383,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewDashboard.pendingTimeEntries",
@@ -12062,7 +13409,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewDashboard.pickerList",
@@ -12083,7 +13435,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewDashboard.stats",
@@ -12109,7 +13466,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewDashboard.upcomingShifts",
@@ -12135,7 +13497,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.create",
@@ -12306,7 +13673,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "33da8256a845fa35",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.createIfMissing",
@@ -12477,7 +13849,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "33da8256a845fa35",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.existsByUserId",
@@ -12498,7 +13875,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3b83ee450a3cde21",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.getByIcalToken",
@@ -12519,7 +13901,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3062513f9e83ec74",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.getById",
@@ -12545,7 +13932,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.list",
@@ -12571,7 +13963,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.listPage",
@@ -12632,7 +14029,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac988481d3f8323c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.patchMember",
@@ -12663,7 +14065,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7e38d78d04530170",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.remove",
@@ -12684,7 +14091,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.scrubUserRefs",
@@ -12705,7 +14117,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3b83ee450a3cde21",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewMembers.update",
@@ -12731,7 +14148,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1afbf7c5ea61b8ac",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.create",
@@ -12797,7 +14219,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6a6250c51769e73f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.createIfMissing",
@@ -12863,7 +14290,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6a6250c51769e73f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.getById",
@@ -12884,7 +14316,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.list",
@@ -12905,7 +14342,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.listForSettings",
@@ -12926,7 +14368,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.remove",
@@ -12947,7 +14394,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.update",
@@ -12973,7 +14425,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4cace7afbab221f1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRoles.usage",
@@ -12999,7 +14456,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRolesWrites.archiveNative",
@@ -13050,7 +14512,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c7db02cb8d3fcd48",
-    "returnsSha": "d6539bdf8ff6b3b8"
+    "returnsSha": "d6539bdf8ff6b3b8",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRolesWrites.createNative",
@@ -13141,7 +14608,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c26563b6fc713a02",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewRolesWrites.updateNative",
@@ -13227,7 +14699,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "da1fe3f93d58d352",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.create",
@@ -13288,7 +14765,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bc47e1d2d1c6787a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.createIfMissing",
@@ -13349,7 +14831,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bc47e1d2d1c6787a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.getById",
@@ -13370,7 +14857,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.list",
@@ -13391,7 +14883,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7dcc756db884fb9a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.listByAssignmentIds",
@@ -13412,7 +14909,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "375ae4923261d473",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.patchShift",
@@ -13443,7 +14945,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a562fda0bdae9001",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.remove",
@@ -13464,7 +14971,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.removeScheduledByAssignment",
@@ -13485,7 +14997,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7dcc756db884fb9a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewShifts.update",
@@ -13511,7 +15028,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4cdb3e6e57977419",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewSkills.create",
@@ -13547,7 +15069,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f9c56a14b1377523",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewSkills.createIfMissing",
@@ -13583,7 +15110,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f9c56a14b1377523",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewSkills.getById",
@@ -13604,7 +15136,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewSkills.list",
@@ -13625,7 +15162,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewSkills.remove",
@@ -13646,7 +15188,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewSkills.update",
@@ -13672,7 +15219,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "61a66760677eebb7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.allEntries",
@@ -13723,7 +15275,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8916a3ab1362a387",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.create",
@@ -13819,7 +15376,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aca22cf5fa075723",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.createIfMissing",
@@ -13915,7 +15477,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aca22cf5fa075723",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.createMany",
@@ -13936,7 +15503,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f4d03c63e8a05e36",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.forMember",
@@ -13962,7 +15534,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0cc87f0053396699",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.getById",
@@ -13983,7 +15560,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.list",
@@ -14004,7 +15586,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.patchManyStatus",
@@ -14040,7 +15627,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ecd84a4bb560b381",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.patchTimeEntry",
@@ -14071,7 +15663,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "59f968c6f98ed562",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.remove",
@@ -14092,7 +15689,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.removeMany",
@@ -14118,7 +15720,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9f2de211eb3c2b40",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntries.update",
@@ -14144,7 +15751,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "22d43e43b46d4b58",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntriesWrites.approveNative",
@@ -14190,7 +15802,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c012673b4cd07b8",
-    "returnsSha": "ca20c8538a3cc095"
+    "returnsSha": "ca20c8538a3cc095",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntriesWrites.createManyNative",
@@ -14236,7 +15853,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3c0af6f70d4b6ebb",
-    "returnsSha": "5e36bfe745c39ad2"
+    "returnsSha": "5e36bfe745c39ad2",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntriesWrites.createNative",
@@ -14322,7 +15944,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "16a4e485dfd99476",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntriesWrites.deleteNative",
@@ -14368,7 +15995,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntriesWrites.disputeNative",
@@ -14419,7 +16051,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c70ce80453590576",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntriesWrites.submitNative",
@@ -14465,7 +16102,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c012673b4cd07b8",
-    "returnsSha": "ca20c8538a3cc095"
+    "returnsSha": "ca20c8538a3cc095",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewTimeEntriesWrites.updateNative",
@@ -14551,7 +16193,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "16a4e485dfd99476",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewWrites.createNative",
@@ -14737,7 +16384,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "eac49e0c780f8a15",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewWrites.deleteNative",
@@ -14783,7 +16435,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "crewWrites.updateNative",
@@ -14839,7 +16496,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c74c200bca1acf46",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitions.create",
@@ -14920,7 +16582,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c23e3bad0ab5a544",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitions.createIfMissing",
@@ -15001,7 +16668,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c23e3bad0ab5a544",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitions.getById",
@@ -15022,7 +16694,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitions.list",
@@ -15043,7 +16720,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitions.remove",
@@ -15064,7 +16746,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitions.reorderMany",
@@ -15095,7 +16782,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3d94ab45a7fa8bb1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitions.update",
@@ -15121,7 +16813,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "61ac2467ba031a67",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitionsWrites.createNative",
@@ -15212,7 +16909,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "72fe6fbe6e55dfbd",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitionsWrites.removeNative",
@@ -15258,7 +16960,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "customFieldDefinitionsWrites.updateNative",
@@ -15339,7 +17046,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0b65692d8e3690fa",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardActivity.bundle",
@@ -15360,7 +17072,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardCounters.bump",
@@ -15396,7 +17113,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4ce83b725a972506",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardCounters.getByOrg",
@@ -15417,7 +17139,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardCounters.reconcile",
@@ -15443,7 +17170,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardCounters.reconcileIfStale",
@@ -15474,7 +17206,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3cc3fe076356e1a7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardLists.blocking",
@@ -15495,7 +17232,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardLists.home",
@@ -15516,7 +17258,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardLists.upcoming",
@@ -15542,7 +17289,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardStats.bundle",
@@ -15568,7 +17320,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "dashboardSubHire.bundle",
@@ -15599,7 +17356,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4994fe34eaec3517",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "emails.enqueue",
@@ -15635,7 +17397,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cd0715840f9f837e",
-    "returnsSha": "046abb8e2fdf16eb"
+    "returnsSha": "046abb8e2fdf16eb",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "equipmentTab.bundle",
@@ -15666,7 +17433,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "files.deleteFile",
@@ -15687,7 +17459,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8c7a079e770de215",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "files.generateUploadUrl",
@@ -15702,7 +17479,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "files.getServeInfo",
@@ -15723,7 +17505,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8c7a079e770de215",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "files.register",
@@ -15764,7 +17551,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0e5319b7bb7248e1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.create",
@@ -15845,7 +17637,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dad5af6579e2b26c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.createIfMissing",
@@ -15926,7 +17723,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dad5af6579e2b26c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.getById",
@@ -15947,7 +17749,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.getByThumbnailUrl",
@@ -15968,7 +17775,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cc898ad2ee9055c0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.isReferencedByMedia",
@@ -15989,7 +17801,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0040e47b66b2e5e4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.list",
@@ -16010,7 +17827,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.remove",
@@ -16031,7 +17853,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "fileUploads.update",
@@ -16057,7 +17884,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bce612fad8955513",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "financeArtifacts.attachInvoiceArtifact",
@@ -16093,7 +17925,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7514c8a5fd874eab",
-    "returnsSha": "82f81e090dcc6b52"
+    "returnsSha": "82f81e090dcc6b52",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "financeArtifacts.attachQuoteArtifact",
@@ -16129,7 +17966,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7a7816d7a8c25004",
-    "returnsSha": "82f81e090dcc6b52"
+    "returnsSha": "82f81e090dcc6b52",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "financeArtifacts.invoiceArtifactContext",
@@ -16155,7 +17997,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "84248e6f6265683d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "financeArtifacts.quoteArtifactContext",
@@ -16186,7 +18033,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6e90c446e495449b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "globalSearch.search",
@@ -16212,7 +18064,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ea329e37494347bd",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplateItems.create",
@@ -16263,7 +18120,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f189f689de79bed6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplateItems.createIfMissing",
@@ -16314,7 +18176,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f189f689de79bed6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplateItems.getById",
@@ -16335,7 +18202,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplateItems.list",
@@ -16356,7 +18228,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplateItems.remove",
@@ -16377,7 +18254,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplateItems.update",
@@ -16403,7 +18285,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cafcdd1c20f447de",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplates.create",
@@ -16449,7 +18336,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ce7eb33a46f3df99",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplates.createIfMissing",
@@ -16495,7 +18387,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ce7eb33a46f3df99",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplates.getById",
@@ -16516,7 +18413,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplates.list",
@@ -16537,7 +18439,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplates.remove",
@@ -16558,7 +18465,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplates.update",
@@ -16584,7 +18496,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "810845c0be81456e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplatesWrites.applyNative",
@@ -16660,7 +18577,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d6aec6b55214bdbb",
-    "returnsSha": "d6a34739b6044ec4"
+    "returnsSha": "d6a34739b6044ec4",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplatesWrites.deleteTemplateNative",
@@ -16706,7 +18628,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5ffc9e0d344be248",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplatesWrites.saveGroupAsTemplateNative",
@@ -16767,7 +18694,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a2e51ead7805a582",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "groupTemplatesWrites.updateTemplateNative",
@@ -16828,7 +18760,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3d6064993c47c1fd",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "incidentWrites.reportIssueNative",
@@ -16914,7 +18851,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f9c4cff03ed5c8cd",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoiceLines.listForInvoice",
@@ -16940,7 +18882,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "83c8d5cb09b4b3f8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoices.getById",
@@ -16961,7 +18908,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoices.listForProject",
@@ -16987,7 +18939,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoices.listRecentForOrg",
@@ -17013,7 +18970,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5b680ee1045e20ea",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoicesWrites.createCreditNative",
@@ -17069,7 +19031,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "74726414256d01f1",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoicesWrites.createNative",
@@ -17145,7 +19112,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fddc6cb9441d58ba",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoicesWrites.deleteDraftNative",
@@ -17191,7 +19163,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoicesWrites.issueNative",
@@ -17257,7 +19234,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "eeb89046dcd145de",
-    "returnsSha": "4fa32762aba93eee"
+    "returnsSha": "4fa32762aba93eee",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "invoicesWrites.voidNative",
@@ -17308,7 +19290,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9a1efd90fa9e1974",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitAllocations.getKitAllocation",
@@ -17334,7 +19321,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5c16b6928f6b011a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitAllocationsWrites.clearNative",
@@ -17380,7 +19372,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1c67abe6a28f9ace",
-    "returnsSha": "56974b7ca9592fe8"
+    "returnsSha": "56974b7ca9592fe8",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitAllocationsWrites.replaceNative",
@@ -17431,7 +19428,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7f1874cb71fadde3",
-    "returnsSha": "56974b7ca9592fe8"
+    "returnsSha": "56974b7ca9592fe8",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.create",
@@ -17497,7 +19499,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "82f2dc0dd5f29cd9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.createIfMissing",
@@ -17563,7 +19570,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "82f2dc0dd5f29cd9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.getById",
@@ -17584,7 +19596,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.list",
@@ -17605,7 +19622,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.listByAddedById",
@@ -17626,7 +19648,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d627aaf06e90dc05",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.listByKitId",
@@ -17652,7 +19679,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.remove",
@@ -17673,7 +19705,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitBulkItems.update",
@@ -17699,7 +19736,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4b7c3b2b2136df8f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.assignmentsForKit",
@@ -17725,7 +19767,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.create",
@@ -17771,7 +19818,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "61b35471e8e03ad6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.createIfMissing",
@@ -17817,7 +19869,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "61b35471e8e03ad6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.getById",
@@ -17838,7 +19895,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.getByKitAndCheckItem",
@@ -17869,7 +19931,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "52f8077f12eec30d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.list",
@@ -17890,7 +19957,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.listByCheckItemId",
@@ -17916,7 +19988,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "33c02c2387a0f356",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.listByKitId",
@@ -17942,7 +20019,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.remove",
@@ -17963,7 +20045,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.reorderMany",
@@ -17989,7 +20076,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f382b9baa08b000",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitCheckItems.update",
@@ -18015,7 +20107,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4b7a95a4618e068e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitDetail.bundle",
@@ -18046,7 +20143,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5c16b6928f6b011a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.create",
@@ -18107,7 +20209,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8cad80e954b602b0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.createIfMissing",
@@ -18168,7 +20275,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8cad80e954b602b0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.getById",
@@ -18189,7 +20301,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.list",
@@ -18210,7 +20327,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.listByParent",
@@ -18231,7 +20353,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.remove",
@@ -18252,7 +20379,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.setPrimary",
@@ -18278,7 +20410,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5af5b9fed2ccabd6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitMedia.update",
@@ -18304,7 +20441,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b5604b9c54583447",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.addBulkItem",
@@ -18360,7 +20502,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9f043520047bd77b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.addSerializedItem",
@@ -18411,7 +20558,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f7e9030b88920336",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.addSerializedItems",
@@ -18452,7 +20604,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e5215f295ae65026",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.archiveCascade",
@@ -18483,7 +20640,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "476e94b4071a0493",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.availableAssets",
@@ -18509,7 +20671,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "14c1f0e47c825678",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.availableBulkAssets",
@@ -18530,7 +20697,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.counts",
@@ -18551,7 +20723,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.create",
@@ -18697,7 +20874,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dc5d6081b9111702",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.createIfMissing",
@@ -18843,7 +21025,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dc5d6081b9111702",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.deletability",
@@ -18869,7 +21056,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
-    "returnsSha": "b35f7b7941d5eced"
+    "returnsSha": "b35f7b7941d5eced",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.deleteCascade",
@@ -18900,7 +21092,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "476e94b4071a0493",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.getByAssetTag",
@@ -18926,7 +21123,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4ecff986ff661046",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.getById",
@@ -18952,7 +21154,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.list",
@@ -18978,7 +21185,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.listByIds",
@@ -19004,7 +21216,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.listPage",
@@ -19075,7 +21292,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3085370ce0798e03",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.remove",
@@ -19096,7 +21318,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.removeBulkItem",
@@ -19132,7 +21359,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "257c71e80c65f44e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.removeSerializedItem",
@@ -19168,7 +21400,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fa8c80783211929c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kits.update",
@@ -19194,7 +21431,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ce5e685c64154932",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.create",
@@ -19255,7 +21497,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3d90dcc928181be6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.createIfMissing",
@@ -19316,7 +21563,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3d90dcc928181be6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.getByAssetId",
@@ -19342,7 +21594,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8bf357eea605d847",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.getById",
@@ -19363,7 +21620,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.list",
@@ -19384,7 +21646,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.listByAddedById",
@@ -19405,7 +21672,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d627aaf06e90dc05",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.listByKitId",
@@ -19431,7 +21703,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0287fa8fff3317e4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.remove",
@@ -19452,7 +21729,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitSerializedItems.update",
@@ -19478,7 +21760,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "04281767aaaf525c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.addBulkItemNative",
@@ -19544,7 +21831,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "df2a1d03ebe110e1",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.addSerializedItemsNative",
@@ -19595,7 +21887,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3115fdc177d66122",
-    "returnsSha": "b67b074b9a2f2e30"
+    "returnsSha": "b67b074b9a2f2e30",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.archiveNative",
@@ -19641,7 +21938,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.createNative",
@@ -19802,7 +22104,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1e6682d20e8207cf",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.deleteNative",
@@ -19848,7 +22155,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.removeBulkItemNative",
@@ -19899,7 +22211,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b533cedf00676c4d",
-    "returnsSha": "fb15bfca86e8fa3a"
+    "returnsSha": "fb15bfca86e8fa3a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.removeSerializedItemNative",
@@ -19950,7 +22267,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f3b5dd539109736",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.updateNative",
@@ -20001,7 +22323,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "46d50bfedd7e00da",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "kitWrites.updateNotesNative",
@@ -20052,7 +22379,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "59fd782b8d5b533f",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemMergeMaps.create",
@@ -20113,7 +22445,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e335044bf1d8357e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemMergeMaps.createIfMissing",
@@ -20174,7 +22511,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e335044bf1d8357e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemMergeMaps.getById",
@@ -20195,7 +22537,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemMergeMaps.list",
@@ -20216,7 +22563,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemMergeMaps.remove",
@@ -20237,7 +22589,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemMergeMaps.update",
@@ -20263,7 +22620,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "211981774156ccff",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.addCustomNative",
@@ -20336,7 +22698,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "9398503fdb975de4",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.addKitNative",
@@ -20449,7 +22816,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "55cfc9c05853293e",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.addLineItemSmartNative",
@@ -20548,7 +22920,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "5770d4dbaf53b101",
-    "returnsSha": "6f1a1d586199c07b"
+    "returnsSha": "6f1a1d586199c07b",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.addNative",
@@ -20636,7 +23013,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "44de6ce05a129219",
-    "returnsSha": "b462b96a443b48b3"
+    "returnsSha": "b462b96a443b48b3",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.patchManyNative",
@@ -20694,7 +23076,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "aadfb3939912ebd2",
-    "returnsSha": "04471d174c91281a"
+    "returnsSha": "04471d174c91281a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.patchNative",
@@ -20778,7 +23165,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "c1a514c325f48fae",
-    "returnsSha": "f94703565faa1825"
+    "returnsSha": "f94703565faa1825",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.projectPricingStaleness",
@@ -20804,7 +23196,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "5b8d223b21b9e6b5"
+    "returnsSha": "5b8d223b21b9e6b5",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.recalcAutoPricedLinesNative",
@@ -20850,7 +23247,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2d8b46cfe6493f02",
-    "returnsSha": "0272a75f0c4555c5"
+    "returnsSha": "0272a75f0c4555c5",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.recalcNative",
@@ -20891,7 +23293,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "106abb1a9fd7306c",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.removeManyNative",
@@ -20944,7 +23351,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "d01bef1d4633a08f",
-    "returnsSha": "04a71fa88e30fbf8"
+    "returnsSha": "04a71fa88e30fbf8",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.removeNative",
@@ -21007,7 +23419,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "e48752bf058e28f8",
-    "returnsSha": "f94703565faa1825"
+    "returnsSha": "f94703565faa1825",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.reorderNative",
@@ -21050,7 +23467,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "e6c1a2f24c1b92f5",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.unsellLineItemNative",
@@ -21100,7 +23522,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "f94703565faa1825"
+    "returnsSha": "f94703565faa1825",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "lineItemWrites.updateAccessoryPlanNative",
@@ -21151,7 +23578,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "17ee709536d9134f",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationMedia.create",
@@ -21207,7 +23639,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c90339961b6be288",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationMedia.createIfMissing",
@@ -21263,7 +23700,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c90339961b6be288",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationMedia.getById",
@@ -21284,7 +23726,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationMedia.list",
@@ -21305,7 +23752,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationMedia.listByParent",
@@ -21326,7 +23778,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationMedia.remove",
@@ -21347,7 +23804,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationMedia.update",
@@ -21373,7 +23835,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0e893cccca74b293",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.counts",
@@ -21394,7 +23861,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "dd4df906505c9dba"
+    "returnsSha": "dd4df906505c9dba",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.create",
@@ -21475,7 +23947,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d546f3cdb6d07429",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.createIfMissing",
@@ -21556,7 +24033,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d546f3cdb6d07429",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.detail",
@@ -21582,7 +24064,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.getById",
@@ -21603,7 +24090,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.list",
@@ -21624,7 +24116,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.listSimple",
@@ -21645,7 +24142,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.remove",
@@ -21666,7 +24168,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locations.update",
@@ -21692,7 +24199,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a71b2c4e67a5536f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationsWrites.createNative",
@@ -21783,7 +24295,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "04288aa0b7330463",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationsWrites.removeNative",
@@ -21829,7 +24346,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationsWrites.updateNative",
@@ -21920,7 +24442,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "04288aa0b7330463",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "locationsWrites.updateNotesNative",
@@ -21966,7 +24493,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e05d888d7d28595b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceCheckoffWrites.checkOffBulkSession",
@@ -22032,7 +24564,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "830d08fc476ff2bd",
-    "returnsSha": "81a4f303f9cd90de"
+    "returnsSha": "81a4f303f9cd90de",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceCheckoffWrites.checkOffUnit",
@@ -22088,7 +24625,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "44d5572a620b9ed5",
-    "returnsSha": "3af9b5dd9fd8a2f5"
+    "returnsSha": "3af9b5dd9fd8a2f5",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.create",
@@ -22119,7 +24661,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9ae97d6e865bc7af",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.createIfMissing",
@@ -22150,7 +24697,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9ae97d6e865bc7af",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.createManyIfMissing",
@@ -22176,7 +24728,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "08a4c8308b754950",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.getById",
@@ -22197,7 +24754,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.list",
@@ -22218,7 +24780,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37f1eef3978eee9e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.listByAssetIds",
@@ -22239,7 +24806,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8e0b25a9e401c7b2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.listByMaintenanceRecordIds",
@@ -22260,7 +24832,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "584f676ec889760a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.remove",
@@ -22281,7 +24858,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecordAssets.update",
@@ -22307,7 +24889,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dddf7891dc60a147",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.assetsForSelect",
@@ -22328,7 +24915,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.create",
@@ -22449,7 +25041,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a18fa403ff29c7e9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.createIfMissing",
@@ -22570,7 +25167,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a18fa403ff29c7e9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.getById",
@@ -22596,7 +25198,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.list",
@@ -22622,7 +25229,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.recordDetail",
@@ -22648,7 +25260,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.recordsPage",
@@ -22709,7 +25326,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "321ab0537190d30d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.remove",
@@ -22730,7 +25352,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.scrubUserRefs",
@@ -22756,7 +25383,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f497a2e3eac85a90",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceRecords.update",
@@ -22782,7 +25414,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f6f4226248242e73",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceScheduleWorklist.dueWorklist",
@@ -22813,7 +25450,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceWrites.createNative",
@@ -22944,7 +25586,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "462cac2f6d42648c",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceWrites.deleteNative",
@@ -22990,7 +25637,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a87ee2247677f349",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "maintenanceWrites.updateNative",
@@ -23111,7 +25763,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a3812bee85187f47",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "mediaWrites.addNative",
@@ -23167,7 +25824,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "443ad8d5dab4ad22",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "mediaWrites.removeNative",
@@ -23198,7 +25860,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "081810aa35473c23",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "mediaWrites.reorderNative",
@@ -23229,7 +25896,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "60e26f072cf36485",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "mediaWrites.setPrimaryNative",
@@ -23265,7 +25937,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "64c34ba9765452d0",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "members.getByOrgAndUser",
@@ -23291,7 +25968,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f497a2e3eac85a90",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "members.listAll",
@@ -23306,7 +25988,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "members.remove",
@@ -23327,7 +26014,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "members.removeByOrgAndUser",
@@ -23353,7 +26045,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f497a2e3eac85a90",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "members.upsert",
@@ -23394,7 +26091,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c6d9dfb0715c9f4a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessories.create",
@@ -23455,7 +26157,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f5ea8d87d6850d8a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessories.createIfMissing",
@@ -23516,7 +26223,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f5ea8d87d6850d8a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessories.getById",
@@ -23537,7 +26249,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessories.getByModelAndBulkAsset",
@@ -23568,7 +26285,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c7b07851e79e9d86",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessories.listByModelId",
@@ -23594,7 +26316,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aed5bc8d82a01cda",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessories.remove",
@@ -23615,7 +26342,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessories.update",
@@ -23641,7 +26373,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9bf5840ba7c8c1b8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessoriesWrites.addNative",
@@ -23712,7 +26449,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "854613ce14cd367f",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessoriesWrites.removeNative",
@@ -23763,7 +26505,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2c0f63ffd53e1969",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelBulkAccessoriesWrites.updateNative",
@@ -23829,7 +26576,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d5f37056880b318a",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.assignmentsForModel",
@@ -23855,7 +26607,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0f841e086e880d8c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.create",
@@ -23901,7 +26658,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6f20bdc843659a2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.createIfMissing",
@@ -23947,7 +26709,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6f20bdc843659a2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.createManyIfMissing",
@@ -23973,7 +26740,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9f2a400ede23117f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.getById",
@@ -23994,7 +26766,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.getByModelAndCheckItem",
@@ -24025,7 +26802,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7f6eb0171be81e6f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.list",
@@ -24046,7 +26828,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.listByCheckItemId",
@@ -24072,7 +26859,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "33c02c2387a0f356",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.listByModel",
@@ -24098,7 +26890,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0f841e086e880d8c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.listByModelId",
@@ -24124,7 +26921,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0f841e086e880d8c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.remove",
@@ -24145,7 +26947,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.reorderMany",
@@ -24171,7 +26978,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f382b9baa08b000",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelCheckItems.update",
@@ -24197,7 +27009,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2f51d40cf290808b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.create",
@@ -24258,7 +27075,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c646571f9584d7f1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.createIfMissing",
@@ -24319,7 +27141,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c646571f9584d7f1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.getById",
@@ -24340,7 +27167,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.list",
@@ -24361,7 +27193,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.listByParent",
@@ -24382,7 +27219,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.remove",
@@ -24403,7 +27245,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.reorder",
@@ -24429,7 +27276,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "24738d4c480274b8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.setPrimary",
@@ -24455,7 +27307,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5af5b9fed2ccabd6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelMedia.update",
@@ -24481,7 +27338,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6a5a5e3b7d424c07",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.bulkUpdateRates",
@@ -24512,7 +27374,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8d94577cf84fe66f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.counts",
@@ -24533,7 +27400,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.create",
@@ -24714,7 +27586,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "13a52e6ca316f7c5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.createIfMissing",
@@ -24895,7 +27772,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "13a52e6ca316f7c5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.detail",
@@ -24921,7 +27803,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.getById",
@@ -24947,7 +27834,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.list",
@@ -24973,7 +27865,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.remove",
@@ -24994,7 +27891,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "models.update",
@@ -25020,7 +27922,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "90acead2f85af5b6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelWrites.archiveNative",
@@ -25066,7 +27973,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelWrites.bulkUpdateRatesNative",
@@ -25127,7 +28039,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9d00761cc4091de7",
-    "returnsSha": "ca20c8538a3cc095"
+    "returnsSha": "ca20c8538a3cc095",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelWrites.createNative",
@@ -25338,7 +28255,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d1e374ea17ee38da",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "modelWrites.updateNative",
@@ -25549,7 +28471,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d1e374ea17ee38da",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissals.create",
@@ -25590,7 +28517,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7eae82d99ef522f1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissals.createIfMissing",
@@ -25631,7 +28563,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7eae82d99ef522f1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissals.createManyIfMissing",
@@ -25662,7 +28599,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1c241353eb7d4bbd",
-    "returnsSha": "7b8efe998f0f0056"
+    "returnsSha": "7b8efe998f0f0056",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissals.getById",
@@ -25683,7 +28625,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissals.list",
@@ -25704,7 +28651,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissals.remove",
@@ -25725,7 +28677,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissals.update",
@@ -25751,7 +28708,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1c70a5306859236d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissalsWrites.dismissManyNative",
@@ -25782,7 +28744,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "777c02d97926c221",
-    "returnsSha": "7b8efe998f0f0056"
+    "returnsSha": "7b8efe998f0f0056",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissalsWrites.mine",
@@ -25802,7 +28769,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "58b0824194bb057c"
+    "returnsSha": "58b0824194bb057c",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationDismissalsWrites.pruneStaleNative",
@@ -25828,7 +28800,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c76f918cd47930a6",
-    "returnsSha": "fc45f7e77b59ac82"
+    "returnsSha": "fc45f7e77b59ac82",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationEmailLogs.create",
@@ -25869,7 +28846,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2138395053ce6b5e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationEmailLogs.createIfMissing",
@@ -25910,7 +28892,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2138395053ce6b5e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationEmailLogs.getById",
@@ -25931,7 +28918,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationEmailLogs.list",
@@ -25952,7 +28944,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationEmailLogs.remove",
@@ -25973,7 +28970,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "notificationEmailLogs.update",
@@ -25999,7 +29001,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bffe442604527fac",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgExport.childRowsByParentIds",
@@ -26035,7 +29042,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "15869087e39d48e9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgExport.countTable",
@@ -26076,7 +29088,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8c69a67bfab89b9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgExport.exportTablePage",
@@ -26112,7 +29129,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fb041cbdc9a7b31a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgExport.getOrgRow",
@@ -26133,7 +29155,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgExport.listOrgIds",
@@ -26148,7 +29175,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgExport.scanTableFiltered",
@@ -26189,7 +29221,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8c69a67bfab89b9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.createIfMissing",
@@ -26240,7 +29277,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c28eb28d3f55a74f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.getByIcalToken",
@@ -26261,7 +29303,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "220a4e46249e56ca",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.getByOrg",
@@ -26282,7 +29329,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b21345538722cfa9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.reserveAssetTags",
@@ -26313,7 +29365,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c69778ef7b5ad097",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.reserveSubHireOrderNumber",
@@ -26344,7 +29401,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b823cbbd94fb9c79",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.reserveTestTagIds",
@@ -26375,7 +29437,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c69778ef7b5ad097",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.setApiKillSwitch",
@@ -26406,7 +29473,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "038769131214247d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "orgSettings.upsertSettings",
@@ -26447,7 +29519,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c5e90b284aacda49",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "overbooking.bundle",
@@ -26493,7 +29570,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9a14c81b13e70177",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "overbookingBoard.bundle",
@@ -26529,7 +29611,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "933b6ddb45927438",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "overbookingBoard.confirmImpact",
@@ -26560,7 +29647,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "overbookingBoard.counts",
@@ -26596,7 +29688,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "933b6ddb45927438",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "parity.countPage",
@@ -26622,7 +29719,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a48f225371a0c32e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "pendingSSOApprovals.createForProvisioning",
@@ -26683,7 +29785,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "db05956892b92e09",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "pendingSSOApprovals.getByOrgUser",
@@ -26709,7 +29816,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bd03b0d0b0393c05",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "pendingSSOApprovals.list",
@@ -26730,7 +29842,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "pendingSSOApprovals.revertToPending",
@@ -26756,7 +29873,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "pendingSSOApprovals.review",
@@ -26802,7 +29924,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "10cbf57951d691a7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.create",
@@ -26853,7 +29980,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1514bd0097c8769a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.createAtEnd",
@@ -26894,7 +30026,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6e33e8285833baeb",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.createIfMissing",
@@ -26945,7 +30082,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1514bd0097c8769a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.deleteAllForProject",
@@ -26966,7 +30108,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f94703565faa1825",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.deleteCascade",
@@ -26987,7 +30134,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "99133b3981fb1fa5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.getById",
@@ -27008,7 +30160,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.list",
@@ -27029,7 +30186,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.listByProject",
@@ -27055,7 +30217,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.remove",
@@ -27076,7 +30243,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.reorder",
@@ -27107,7 +30279,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1aaef5e812b9cdb9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategories.update",
@@ -27133,7 +30310,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ea066971778ea154",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategoriesWrites.createCategoryNative",
@@ -27196,7 +30378,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "4904f4e732123f2b",
-    "returnsSha": "e2697643f2e08227"
+    "returnsSha": "e2697643f2e08227",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategoriesWrites.deleteCategoryNative",
@@ -27249,7 +30436,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "248d10f18c611aae",
-    "returnsSha": "e6c5251ce4ba73e3"
+    "returnsSha": "e6c5251ce4ba73e3",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategoriesWrites.reorderCategoriesNative",
@@ -27290,7 +30482,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "49e9976c1d49fd65",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCategoriesWrites.updateCategoryNative",
@@ -27353,7 +30550,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "dabb4f36ffb247dc",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectCosts.operationalCosts",
@@ -27384,7 +30586,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "010ea4e1bd410141"
+    "returnsSha": "010ea4e1bd410141",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectDetail.bundle",
@@ -27415,7 +30622,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectEquipment.browserBundle",
@@ -27446,7 +30658,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectEquipment.bundle",
@@ -27472,7 +30689,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.create",
@@ -27548,7 +30770,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "235939ab0dfb43f9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.createAtEnd",
@@ -27614,7 +30841,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e600145b2e865bc4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.createIfMissing",
@@ -27690,7 +30922,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "235939ab0dfb43f9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.deleteCascade",
@@ -27711,7 +30948,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a7510632785c6dfb",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.getById",
@@ -27737,7 +30979,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.listByCategoryId",
@@ -27758,7 +31005,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "99133b3981fb1fa5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.listByProject",
@@ -27789,7 +31041,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.remove",
@@ -27810,7 +31067,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.reorder",
@@ -27841,7 +31103,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1aaef5e812b9cdb9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroups.update",
@@ -27867,7 +31134,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4b9df6370c68d354",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroupsWrites.createGroupNative",
@@ -27960,7 +31232,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "03cef26c41f3f16d",
-    "returnsSha": "e2697643f2e08227"
+    "returnsSha": "e2697643f2e08227",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroupsWrites.deleteGroupNative",
@@ -28013,7 +31290,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "248d10f18c611aae",
-    "returnsSha": "e6c5251ce4ba73e3"
+    "returnsSha": "e6c5251ce4ba73e3",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroupsWrites.moveLineItemNative",
@@ -28076,7 +31358,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "d3b6cbbc53dd3f50",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroupsWrites.moveLineItemsNative",
@@ -28139,7 +31426,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "66c065c152bdfa4f",
-    "returnsSha": "a2ccaaa4d67e8c56"
+    "returnsSha": "a2ccaaa4d67e8c56",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroupsWrites.reorderGroupsNative",
@@ -28180,7 +31472,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "49e9976c1d49fd65",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroupsWrites.updateGroupNative",
@@ -28263,7 +31560,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "199436120346f869",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectGroupsWrites.updateGroupPriceNative",
@@ -28324,7 +31626,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "80d77a6e0365a610",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.create",
@@ -28617,7 +31924,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "overrideReason"
     ],
     "argsSha": "7fc2dd184d79c833",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.createCustomLineItem",
@@ -28658,7 +31970,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5833b14833948d9b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.createIfMissing",
@@ -28951,7 +32268,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "overrideReason"
     ],
     "argsSha": "7fc2dd184d79c833",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.createKitLineItem",
@@ -29017,7 +32339,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "def0a08d9eacf364",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.createLineItem",
@@ -29068,7 +32395,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "745511fe32dea271",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.createMany",
@@ -29094,7 +32426,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4c8923b1558999a6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.getById",
@@ -29120,7 +32457,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.list",
@@ -29146,7 +32488,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listByAssetId",
@@ -29172,7 +32519,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8bf357eea605d847",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listByIds",
@@ -29198,7 +32550,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d37e5fc9f7f8dd0e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listByKitId",
@@ -29224,7 +32581,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5c16b6928f6b011a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listByModelId",
@@ -29250,7 +32612,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ec9e5654f5228328",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listByModelIds",
@@ -29276,7 +32643,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac27e3662e447ed5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listByProject",
@@ -29307,7 +32679,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listByProjectIds",
@@ -29333,7 +32710,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5752f034278d25dc",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.listFlagged",
@@ -29359,7 +32741,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "24ca7148c342d948",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.mergeGroup",
@@ -29405,7 +32792,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e1233937058c361d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.patchLineItem",
@@ -29436,7 +32828,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fc7552acbe81bbf9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.remove",
@@ -29457,7 +32854,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.removeLineItemCascade",
@@ -29478,7 +32880,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.reorderLineItems",
@@ -29509,7 +32916,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aaf0b683ae95206d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.swapLineItemAsset",
@@ -29560,7 +32972,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8087d8100f2b5110",
-    "returnsSha": "79316328861c4cca"
+    "returnsSha": "79316328861c4cca",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItems.update",
@@ -29586,7 +33003,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "16177f31093735e8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.create",
@@ -29707,7 +33129,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e35b1c93f180c263",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.createIfMissing",
@@ -29828,7 +33255,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e35b1c93f180c263",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.getById",
@@ -29849,7 +33281,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.list",
@@ -29870,7 +33307,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.listByLineItem",
@@ -29891,7 +33333,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "67bc59882b5c4834",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.listByLineItemIds",
@@ -29912,7 +33359,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4ce3cc63296a1f6a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.listByOrgAndAsset",
@@ -29938,7 +33390,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b726f9a3bca87faf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.remove",
@@ -29959,7 +33416,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLineItemUnits.update",
@@ -29985,7 +33447,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2ce3f2bd5560f4bb",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLocksRead.currentEntries",
@@ -30016,7 +33483,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "6a4d6f0aa1f19cb8"
+    "returnsSha": "6a4d6f0aa1f19cb8",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLocksRead.listSnapshots",
@@ -30047,7 +33519,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "10dcd4479672ec61"
+    "returnsSha": "10dcd4479672ec61",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLocksRead.snapshotEntries",
@@ -30078,7 +33555,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8027c6b062f56692",
-    "returnsSha": "6a4d6f0aa1f19cb8"
+    "returnsSha": "6a4d6f0aa1f19cb8",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectLocksRead.status",
@@ -30114,7 +33596,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f3456c860a78207",
-    "returnsSha": "9deebb65ff588551"
+    "returnsSha": "9deebb65ff588551",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.applyDiff",
@@ -30150,7 +33637,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "43fe9a40f88dab47",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.create",
@@ -30191,7 +33683,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f9c7b37b91894a1d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.createIfMissing",
@@ -30232,7 +33729,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f9c7b37b91894a1d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.getById",
@@ -30253,7 +33755,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.listByProject",
@@ -30279,7 +33786,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.listByUserId",
@@ -30305,7 +33817,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "94b14e287afbce7c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.remove",
@@ -30326,7 +33843,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagers.update",
@@ -30352,7 +33874,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bc55dbc5b89e5309",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagersWrites.addNative",
@@ -30408,7 +33935,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6ef3c6d6b76316b1",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagersWrites.removeNative",
@@ -30459,7 +33991,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "28a9a45fc9f3e5f6",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectManagersWrites.setNative",
@@ -30510,7 +34047,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aeed34c0cd5ceaed",
-    "returnsSha": "224c2e4c030051bf"
+    "returnsSha": "224c2e4c030051bf",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectMedia.create",
@@ -30566,7 +34108,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7f47307bd175c3e2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectMedia.createIfMissing",
@@ -30622,7 +34169,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7f47307bd175c3e2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectMedia.getById",
@@ -30643,7 +34195,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectMedia.list",
@@ -30664,7 +34221,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectMedia.listByParent",
@@ -30685,7 +34247,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectMedia.remove",
@@ -30706,7 +34273,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectMedia.update",
@@ -30732,7 +34304,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c2f379f9cf28afc7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectNumberSequences.create",
@@ -30773,7 +34350,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9a48c88b13a89f5c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectNumberSequences.createIfMissing",
@@ -30814,7 +34396,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9a48c88b13a89f5c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectNumberSequences.getById",
@@ -30835,7 +34422,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectNumberSequences.getByOrgAndScopeKey",
@@ -30861,7 +34453,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9d4393b2c82dc699",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectNumberSequences.remove",
@@ -30882,7 +34479,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectNumberSequences.reserveNextNumber",
@@ -30918,7 +34520,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ace13c10999089ec",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectNumberSequences.update",
@@ -30944,7 +34551,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8aa5dfc43dcf88c4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.create",
@@ -31210,7 +34822,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0462731e55a03608",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.createIfMissing",
@@ -31476,7 +35093,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0462731e55a03608",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.createWithUniqueNumber",
@@ -31742,7 +35364,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0462731e55a03608",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.getById",
@@ -31768,7 +35395,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.getByOrgAndNumber",
@@ -31794,7 +35426,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c6ddbddd4f0717c5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.list",
@@ -31820,7 +35457,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.listBoard",
@@ -31846,7 +35488,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3ffb2bbf35f7c1b9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.listByIds",
@@ -31872,7 +35519,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6f0a0f7e59cef7f7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.listPage",
@@ -31933,7 +35585,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3c853939a9bde1ee",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.patchProject",
@@ -31964,7 +35621,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "25ac5d3fa52882da",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.remove",
@@ -31985,7 +35647,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projects.update",
@@ -32011,7 +35678,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f8cc3dfb7b58ba82",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.create",
@@ -32202,7 +35874,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7d6e4636a8649560",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.createIfMissing",
@@ -32393,7 +36070,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7d6e4636a8649560",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.getById",
@@ -32414,7 +36096,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.list",
@@ -32435,7 +36122,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.listByProject",
@@ -32461,7 +36153,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.patchService",
@@ -32492,7 +36189,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e7edbf6300b3e145",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.remove",
@@ -32513,7 +36215,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServices.update",
@@ -32539,7 +36246,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "30194c3fab0d5338",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.bulkDeleteServicesNative",
@@ -32592,7 +36304,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "f8c0a774a625c95a",
-    "returnsSha": "bec0cd60d81a5175"
+    "returnsSha": "bec0cd60d81a5175",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.bulkUpdateServiceStatusNative",
@@ -32650,7 +36367,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "bde61e4f154287cc",
-    "returnsSha": "04471d174c91281a"
+    "returnsSha": "04471d174c91281a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.cloneServicesNative",
@@ -32708,7 +36430,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "284ec9d64e3a082c",
-    "returnsSha": "400f378b3746f7c8"
+    "returnsSha": "400f378b3746f7c8",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.convertLineItemToServiceNative",
@@ -32766,7 +36493,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "c11e2197bf58b40c",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.createServiceNative",
@@ -32969,7 +36701,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "f129ba8e7c417052",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.createServiceTemplateNative",
@@ -33065,7 +36802,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cd0060ab63d2156d",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.deleteServiceNative",
@@ -33118,7 +36860,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "248d10f18c611aae",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.deleteServiceTemplateNative",
@@ -33164,7 +36911,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.generateServicesNative",
@@ -33217,7 +36969,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "d3e6c9c5f8632774",
-    "returnsSha": "055fda7228358ed7"
+    "returnsSha": "055fda7228358ed7",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.updateServiceNative",
@@ -33415,7 +37172,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "db55f72e33df7b00",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.updateServiceStatusNative",
@@ -33466,7 +37228,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7bebaa480528fdeb",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectServicesWrites.updateServiceTemplateNative",
@@ -33562,7 +37329,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cd0060ab63d2156d",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.assignees",
@@ -33583,7 +37355,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.create",
@@ -33679,7 +37456,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "117bc381a010e4d8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.createIfMissing",
@@ -33775,7 +37557,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "117bc381a010e4d8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.getById",
@@ -33796,7 +37583,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.listByProject",
@@ -33822,7 +37614,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.listByProjectWithRelations",
@@ -33848,7 +37645,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.myOpenTasks",
@@ -33874,7 +37676,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.remove",
@@ -33895,7 +37702,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.removeMany",
@@ -33921,7 +37733,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d37e5fc9f7f8dd0e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.reorderMany",
@@ -33952,7 +37769,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1aaef5e812b9cdb9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.update",
@@ -33978,7 +37800,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f5f12dfac2a9705",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasks.updateMany",
@@ -34014,7 +37841,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "74b52046b22cdee2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasksWrites.bulkDeleteNative",
@@ -34060,7 +37892,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a12d4885e3521cab",
-    "returnsSha": "bec0cd60d81a5175"
+    "returnsSha": "bec0cd60d81a5175",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasksWrites.bulkUpdateNative",
@@ -34131,7 +37968,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b58cfa35fb401bb7",
-    "returnsSha": "04471d174c91281a"
+    "returnsSha": "04471d174c91281a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasksWrites.createNative",
@@ -34222,7 +38064,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "eca1479a41c3c0d2",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasksWrites.deleteNative",
@@ -34268,7 +38115,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectTasksWrites.updateNative",
@@ -34354,7 +38206,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "477317c8cff57ee2",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectUnlockSessionsWrites.commitNative",
@@ -34405,7 +38262,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "00bb818921febd95",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectUnlockSessionsWrites.discardNative",
@@ -34451,7 +38313,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2d8b46cfe6493f02",
-    "returnsSha": "84a572bce76d46a1"
+    "returnsSha": "84a572bce76d46a1",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectUnlockSessionsWrites.openNative",
@@ -34509,7 +38376,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "0682cb8f16a46ce0",
-    "returnsSha": "49ce3306f6ed0789"
+    "returnsSha": "49ce3306f6ed0789",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.archiveNative",
@@ -34555,7 +38427,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.createNative",
@@ -34841,7 +38718,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b3416182cfd49912",
-    "returnsSha": "556df84788ed578c"
+    "returnsSha": "556df84788ed578c",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.deleteNative",
@@ -34902,7 +38784,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "13577aa320bf3964",
-    "returnsSha": "1c4e097351efb995"
+    "returnsSha": "1c4e097351efb995",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.deleteTemplateNative",
@@ -34943,7 +38830,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "452d85ad43c53ed0",
-    "returnsSha": "296b6c98fce8621a"
+    "returnsSha": "296b6c98fce8621a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.duplicateNative",
@@ -35009,7 +38901,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "472e6e656febadda",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.saveAsTemplateNative",
@@ -35070,7 +38967,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dbbe7c52696293a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.updateNative",
@@ -35126,7 +39028,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c74c200bca1acf46",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.updateNotesNative",
@@ -35182,7 +39089,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7a9e216eb62d27ce",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "projectWrites.updateStatusNative",
@@ -35245,7 +39157,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "justification"
     ],
     "argsSha": "8bf85f2392c84efd",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotes.listForProject",
@@ -35276,7 +39193,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac20f94bd020f7de",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotes.revisionStateForProject",
@@ -35307,7 +39229,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac20f94bd020f7de",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotesWrites.markAcceptedNative",
@@ -35363,7 +39290,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "79e4edbea424c1be",
-    "returnsSha": "370ba6c1bf9c6be0"
+    "returnsSha": "370ba6c1bf9c6be0",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotesWrites.markDeclinedNative",
@@ -35414,7 +39346,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "10b8501f029b9f71",
-    "returnsSha": "370ba6c1bf9c6be0"
+    "returnsSha": "370ba6c1bf9c6be0",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotesWrites.newVersionNative",
@@ -35465,7 +39402,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4713d346359b0765",
-    "returnsSha": "a9efc1b31e93fd3f"
+    "returnsSha": "a9efc1b31e93fd3f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotesWrites.recallNative",
@@ -35516,7 +39458,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "10b8501f029b9f71",
-    "returnsSha": "c76d0325e401c8da"
+    "returnsSha": "c76d0325e401c8da",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotesWrites.repriceFromRevisionNative",
@@ -35572,7 +39519,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3e1f2b02aceadf0c",
-    "returnsSha": "cc64da96694ae5c3"
+    "returnsSha": "cc64da96694ae5c3",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "quotesWrites.sendNative",
@@ -35643,7 +39595,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b39c2c5b21415429",
-    "returnsSha": "ca599837ab6ba347"
+    "returnsSha": "ca599837ab6ba347",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "reservationConflicts.projectConflicts",
@@ -35669,7 +39626,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f94703565faa1825",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "reservationConflicts.swapCandidates",
@@ -35695,7 +39657,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "67bc59882b5c4834",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "returnsLookup.resolve",
@@ -35721,7 +39688,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b98fde57c61e7126",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "returnsWrites.correctReturnConditionNative",
@@ -35787,7 +39759,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0e8f9034c3089b12",
-    "returnsSha": "d9380eab2b995f3f"
+    "returnsSha": "d9380eab2b995f3f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "returnsWrites.returnBatchNative",
@@ -35833,7 +39810,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "91d6502797bc374a",
-    "returnsSha": "10d6212066b92a64"
+    "returnsSha": "10d6212066b92a64",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "returnsWrites.returnBulkNative",
@@ -35899,7 +39881,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f3a8294e61c2e8f2",
-    "returnsSha": "d4b5fc07125b9183"
+    "returnsSha": "d4b5fc07125b9183",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "returnsWrites.returnScanNative",
@@ -35970,7 +39957,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b13fa7243cf83cb7",
-    "returnsSha": "657cb4dd72533ca5"
+    "returnsSha": "657cb4dd72533ca5",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "revenueAllocation.listProjectIdsPage",
@@ -35996,7 +39988,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "831a117645dbee83",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "revenueAllocation.recomputeForProject",
@@ -36032,7 +40029,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a97f8ed1c93aa323",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "roi.fleetInventory",
@@ -36053,7 +40055,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "roi.fleetRevenue",
@@ -36094,7 +40101,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9fb03c9904a33cd9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "roi.getModelRoi",
@@ -36135,7 +40147,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0eebade63cbcda83",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "roi.zeroPricedGroups",
@@ -36161,7 +40178,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cf183cf9692790b5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.create",
@@ -36222,7 +40244,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ebbc75a6e75eee76",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.createForUser",
@@ -36278,7 +40305,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "df076aa644314c49",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.createIfMissing",
@@ -36339,7 +40371,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ebbc75a6e75eee76",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.getById",
@@ -36360,7 +40397,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.list",
@@ -36381,7 +40423,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.remove",
@@ -36402,7 +40449,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.setDefault",
@@ -36443,7 +40495,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "41c3d63279088f2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViews.update",
@@ -36469,7 +40526,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d54160d037be47e1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViewsWrites.createNative",
@@ -36530,7 +40592,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "731e09960d693a0f",
-    "returnsSha": "84923f8b0996be7f"
+    "returnsSha": "84923f8b0996be7f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViewsWrites.removeNative",
@@ -36571,7 +40638,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b765a5c846263ee8",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViewsWrites.setDefaultNative",
@@ -36617,7 +40689,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "510011866c386575",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "savedTableViewsWrites.updateNative",
@@ -36668,7 +40745,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b3cbf692d567be1c",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "scanLookup.resolve",
@@ -36694,7 +40776,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b98fde57c61e7126",
-    "returnsSha": "22c0df0d1cba3d55"
+    "returnsSha": "22c0df0d1cba3d55",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "search.clients",
@@ -36725,7 +40812,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4483af387e9b921c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "search.kits",
@@ -36761,7 +40853,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7c8d329d63b0fd40",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "search.models",
@@ -36792,7 +40889,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4483af387e9b921c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "search.suppliers",
@@ -36823,7 +40925,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4483af387e9b921c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceSchedules.list",
@@ -36844,7 +40951,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceSchedulesWrites.createNative",
@@ -36920,7 +41032,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2b618036d04cfa97",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceSchedulesWrites.deactivateNative",
@@ -36966,7 +41083,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a87ee2247677f349",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceSchedulesWrites.updateNative",
@@ -37037,7 +41159,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fb1c0022378861db",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceTemplates.create",
@@ -37128,7 +41255,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3fc51f5453cbf8d2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceTemplates.createIfMissing",
@@ -37219,7 +41351,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3fc51f5453cbf8d2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceTemplates.getById",
@@ -37240,7 +41377,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceTemplates.list",
@@ -37261,7 +41403,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceTemplates.remove",
@@ -37282,7 +41429,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceTemplates.replaceForOrg",
@@ -37368,7 +41520,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "be9fbde9494f8d60",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "serviceTemplates.update",
@@ -37394,7 +41551,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f9789df04b0d7148",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.create",
@@ -37467,7 +41629,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "allowOrgCreation"
     ],
     "argsSha": "67af682a2841a23b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.createIfMissing",
@@ -37540,7 +41707,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "allowOrgCreation"
     ],
     "argsSha": "67af682a2841a23b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.getById",
@@ -37561,7 +41733,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.getSingleton",
@@ -37576,7 +41753,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.list",
@@ -37591,7 +41773,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.remove",
@@ -37612,7 +41799,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.update",
@@ -37638,7 +41830,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4de4cdb5eb94be85",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "siteSettings.upsertSingleton",
@@ -37669,7 +41866,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "563b74ecc5e0266a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.create",
@@ -37745,7 +41947,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "62f712920e965784",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.createIfMissing",
@@ -37821,7 +42028,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "62f712920e965784",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.deleteWithUngroup",
@@ -37842,7 +42054,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.getById",
@@ -37863,7 +42080,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.list",
@@ -37884,7 +42106,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2339ee4cad94c817",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.patchGroup",
@@ -37915,7 +42142,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dae15d34e174d223",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.remove",
@@ -37936,7 +42168,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireGroups.update",
@@ -37962,7 +42199,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "452bf66d3923484b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireItems.create",
@@ -38058,7 +42300,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5b01cd816d82f430",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireItems.createIfMissing",
@@ -38154,7 +42401,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5b01cd816d82f430",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireItems.getById",
@@ -38175,7 +42427,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireItems.list",
@@ -38196,7 +42453,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2339ee4cad94c817",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireItems.patchItem",
@@ -38227,7 +42489,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2feaec87e48d5f71",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireItems.remove",
@@ -38248,7 +42515,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireItems.update",
@@ -38274,7 +42546,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d734c6355ccaefdd",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireMedia.create",
@@ -38330,7 +42607,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0d681e13f9201cf5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireMedia.createIfMissing",
@@ -38386,7 +42668,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0d681e13f9201cf5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireMedia.getById",
@@ -38407,7 +42694,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireMedia.list",
@@ -38428,7 +42720,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireMedia.listByParent",
@@ -38449,7 +42746,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "37601bdf50518b92",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireMedia.remove",
@@ -38470,7 +42772,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHireMedia.update",
@@ -38496,7 +42803,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c0982850f5bcba8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.create",
@@ -38622,7 +42934,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "27641efa1185d044",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.createIfMissing",
@@ -38748,7 +43065,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "27641efa1185d044",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.deleteCascade",
@@ -38769,7 +43091,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.getById",
@@ -38790,7 +43117,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.list",
@@ -38811,7 +43143,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.listByProject",
@@ -38837,7 +43174,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.patchSubHire",
@@ -38868,7 +43210,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1f0a0229571c7ee2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.remove",
@@ -38889,7 +43236,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHires.update",
@@ -38915,7 +43267,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "433569fe79a3a36c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.addSubHireItemNative",
@@ -39031,7 +43388,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "80a4bae6703d6fc3",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.changeSubHireProjectNative",
@@ -39082,7 +43444,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c697e95a450d993",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.createSubHireGroupNative",
@@ -39183,7 +43550,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "776de68bc2e55a6e",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.createSubHireNative",
@@ -39274,7 +43646,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ac39ae6d7d391ce5",
-    "returnsSha": "c518552dd897c29d"
+    "returnsSha": "c518552dd897c29d",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.deleteSubHireGroupNative",
@@ -39320,7 +43697,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ce39435893af5934",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.deleteSubHireNative",
@@ -39366,7 +43748,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.duplicateSubHireNative",
@@ -39417,7 +43804,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3dc6dc891fc7351a",
-    "returnsSha": "c518552dd897c29d"
+    "returnsSha": "c518552dd897c29d",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.linkSubHireToSupplierOrderNative",
@@ -39468,7 +43860,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c8df4997f847f57",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.removeSubHireItemNative",
@@ -39514,7 +43911,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5aad8329bd9a1acd",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.reorderSubHireItemsNative",
@@ -39560,7 +43962,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7d6803715bf39ab6",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.setItemGroupNative",
@@ -39606,7 +44013,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f991f1dcaf5681dc",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.unlinkSubHireFromSupplierOrderNative",
@@ -39652,7 +44064,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.updateSubHireGroupNative",
@@ -39748,7 +44165,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b2ec9a355e01e772",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.updateSubHireItemNative",
@@ -39859,7 +44281,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "16d5f3b5078d480b",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.updateSubHireNative",
@@ -39950,7 +44377,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "624801367e0719a5",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.updateSubHireOrderPricingNative",
@@ -40011,7 +44443,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "afac40fc290212c7",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.updateSubHirePaymentStatusNative",
@@ -40062,7 +44499,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "530e97c987e591f9",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.updateSubHirePlacementNative",
@@ -40118,7 +44560,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "51db699f60d4c26c",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subHiresWrites.updateSubHireStatusNative",
@@ -40169,7 +44616,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c9ab598006d5c7ae",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.create",
@@ -40255,7 +44707,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8c5dd397bf0e856d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.createIfMissing",
@@ -40341,7 +44798,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8c5dd397bf0e856d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.createManyIfMissing",
@@ -40367,7 +44829,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b2dd1a2c8457d1f5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.getById",
@@ -40388,7 +44855,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.list",
@@ -40409,7 +44881,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b63e4eb7b1a95db3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.listByRecordIds",
@@ -40430,7 +44907,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "158e378b8b21705d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.remove",
@@ -40451,7 +44933,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "subTestRecords.update",
@@ -40477,7 +44964,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7c9ba45a037b8b80",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierModelRates.create",
@@ -40533,7 +45025,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2914d0c2331ca724",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierModelRates.createIfMissing",
@@ -40589,7 +45086,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2914d0c2331ca724",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierModelRates.getByComposite",
@@ -40620,7 +45122,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e9b7ad3d3b73d1db",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierModelRates.getById",
@@ -40641,7 +45148,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierModelRates.listByModel",
@@ -40667,7 +45179,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a1cb053da0924748",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierModelRates.remove",
@@ -40688,7 +45205,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierModelRates.update",
@@ -40714,7 +45236,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9f4b6eb907057121",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItems.create",
@@ -40780,7 +45307,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "34748d932097acc3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItems.createIfMissing",
@@ -40846,7 +45378,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "34748d932097acc3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItems.getById",
@@ -40867,7 +45404,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItems.list",
@@ -40888,7 +45430,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "05d90b8c910b2b07",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItems.listByOrderIds",
@@ -40909,7 +45456,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "df7f5e0c00bdf73d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItems.remove",
@@ -40930,7 +45482,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItems.update",
@@ -40956,7 +45513,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a50f4bdf81edfa08",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItemsWrites.addSupplierOrderItemNative",
@@ -41037,7 +45599,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9a27d600f342d942",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItemsWrites.removeSupplierOrderItemNative",
@@ -41083,7 +45650,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5aad8329bd9a1acd",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItemsWrites.reorderSupplierOrderItemsNative",
@@ -41129,7 +45701,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e5d041de5fb67638",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrderItemsWrites.updateSupplierOrderItemNative",
@@ -41205,7 +45782,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "27d5edd4a664c228",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrders.create",
@@ -41311,7 +45893,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a92491bde550265",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrders.createIfMissing",
@@ -41417,7 +46004,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a92491bde550265",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrders.getById",
@@ -41438,7 +46030,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrders.getDetail",
@@ -41464,7 +46061,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrders.listBySupplier",
@@ -41490,7 +46092,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d3470e2b0b6b7cf6",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrders.remove",
@@ -41511,7 +46118,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrders.update",
@@ -41537,7 +46149,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b158aebcf9e6d50e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrdersWrites.attachInvoiceNative",
@@ -41588,7 +46205,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "712873702fcb53c0",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrdersWrites.createNative",
@@ -41679,7 +46301,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1164fe49b54a3311",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrdersWrites.deleteNative",
@@ -41725,7 +46352,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrdersWrites.removeInvoiceNative",
@@ -41771,7 +46403,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "supplierOrdersWrites.updateNative",
@@ -41837,7 +46474,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f8d1dec5ecaadd94",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.assetsPage",
@@ -41873,7 +46515,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "24342f3930c2270d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.counts",
@@ -41894,7 +46541,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "805a2a7464936505"
+    "returnsSha": "805a2a7464936505",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.create",
@@ -42000,7 +46652,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c6ba4a7fc7f9ba5e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.createIfMissing",
@@ -42106,7 +46763,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c6ba4a7fc7f9ba5e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.detail",
@@ -42132,7 +46794,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
-    "returnsSha": "ca99ce2e2f7d8731"
+    "returnsSha": "ca99ce2e2f7d8731",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.getById",
@@ -42153,7 +46820,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.list",
@@ -42174,7 +46846,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.listPage",
@@ -42225,7 +46902,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d919706925230849",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.remove",
@@ -42246,7 +46928,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.subhiresPage",
@@ -42282,7 +46969,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "24342f3930c2270d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliers.update",
@@ -42308,7 +47000,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "91576999b2e26bf1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliersWrites.createNative",
@@ -42424,7 +47121,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5b57a4e56f8ebfc5",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliersWrites.removeNative",
@@ -42470,7 +47172,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "suppliersWrites.updateNative",
@@ -42586,7 +47293,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5b57a4e56f8ebfc5",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "systemFlags.getFlags",
@@ -42601,7 +47313,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "systemFlags.setWrites",
@@ -42637,7 +47354,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "079931b43fd7fc9f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "tags.getOrgTags",
@@ -42658,7 +47380,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "58b0824194bb057c"
+    "returnsSha": "58b0824194bb057c",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfiles.create",
@@ -42749,7 +47476,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6263dcf3725fbad7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfiles.createIfMissing",
@@ -42840,7 +47572,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6263dcf3725fbad7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfiles.getById",
@@ -42861,7 +47598,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfiles.list",
@@ -42882,7 +47624,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfiles.remove",
@@ -42903,7 +47650,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfiles.resolveForAsset",
@@ -42929,7 +47681,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ba4f18055d643814",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfiles.update",
@@ -42955,7 +47712,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "dedd360ec03d281a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfilesWrites.createNative",
@@ -43046,7 +47808,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0760ebea908334c0",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfilesWrites.deleteNative",
@@ -43092,7 +47859,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "bd2b8a3c81efc86e"
+    "returnsSha": "bd2b8a3c81efc86e",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfilesWrites.duplicateNative",
@@ -43143,7 +47915,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "056ee56786966bea",
-    "returnsSha": "84923f8b0996be7f"
+    "returnsSha": "84923f8b0996be7f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfilesWrites.seedDefaultsNative",
@@ -43189,7 +47966,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7077481b84d38aef",
-    "returnsSha": "055fda7228358ed7"
+    "returnsSha": "055fda7228358ed7",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testProfilesWrites.updateNative",
@@ -43285,7 +48067,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "82029b8c1dc17e4f",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.create",
@@ -43411,7 +48198,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2c3dfd22946ba7bd",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.createIfMissing",
@@ -43537,7 +48329,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2c3dfd22946ba7bd",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.createManyIfMissing",
@@ -43563,7 +48360,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e637e6f856dbe7af",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.dashboardStats",
@@ -43589,7 +48391,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "079787547aece200",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.detail",
@@ -43615,7 +48422,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.getById",
@@ -43636,7 +48448,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.getByOrgTestTagId",
@@ -43662,7 +48479,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3b8efcad4a757955",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.getByTestTagId",
@@ -43688,7 +48510,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3b8efcad4a757955",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.list",
@@ -43709,7 +48536,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.listBlockedForCheckout",
@@ -43740,7 +48572,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "90daf603951a02d2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.listByAssetId",
@@ -43761,7 +48598,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9ffbae1e9e7d2a52",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.listPage",
@@ -43832,7 +48674,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "efaddd474b905212",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.lookup",
@@ -43858,7 +48705,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3b8efcad4a757955",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.remove",
@@ -43879,7 +48731,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.retireMany",
@@ -43910,7 +48767,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8d10e1f2ec50f701",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssets.update",
@@ -43936,7 +48798,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f83598cb5a6061bf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssetsWrites.backfillNative",
@@ -43967,7 +48834,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3a029b11cc797978",
-    "returnsSha": "3e0b0ec403629f27"
+    "returnsSha": "3e0b0ec403629f27",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssetsWrites.createFromBulkNative",
@@ -44053,7 +48925,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ddcdc5e7ecbb9fbf",
-    "returnsSha": "3941415710e14f99"
+    "returnsSha": "3941415710e14f99",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssetsWrites.createNative",
@@ -44169,7 +49046,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "bae690130c9eaf87",
-    "returnsSha": "ecccb781a2bb5997"
+    "returnsSha": "ecccb781a2bb5997",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssetsWrites.deleteNative",
@@ -44200,7 +49082,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssetsWrites.reactivateNative",
@@ -44246,7 +49133,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssetsWrites.retireNative",
@@ -44282,7 +49174,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7f94cc7688b6fe86",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAssetsWrites.updateNative",
@@ -44323,7 +49220,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "45e9f4ce1229ef86",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAuditorTokens.create",
@@ -44394,7 +49296,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e0bf53d7888657c7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAuditorTokens.createIfMissing",
@@ -44465,7 +49372,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e0bf53d7888657c7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAuditorTokens.getById",
@@ -44486,7 +49398,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAuditorTokens.getByTokenHash",
@@ -44507,7 +49424,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ae509fe4bbe41e6f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAuditorTokens.list",
@@ -44528,7 +49450,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAuditorTokens.remove",
@@ -44549,7 +49476,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagAuditorTokens.update",
@@ -44575,7 +49507,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a79cde0f3945df24",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.create",
@@ -44781,7 +49718,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "977db2df1e2ede24",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.createIfMissing",
@@ -44987,7 +49929,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "977db2df1e2ede24",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.getById",
@@ -45008,7 +49955,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.latestForAsset",
@@ -45034,7 +49986,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ba4f18055d643814",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.list",
@@ -45055,7 +50012,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.listByAssetId",
@@ -45076,7 +50038,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "765a2d8617a786ba",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.listByOrgAndAsset",
@@ -45102,7 +50069,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ba4f18055d643814",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.listByTestedById",
@@ -45123,7 +50095,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a62790755fe15fa2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.recordsPage",
@@ -45159,7 +50136,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2e5cbaca081099c2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.remove",
@@ -45180,7 +50162,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecords.update",
@@ -45206,7 +50193,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b82348e73add99b5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "testTagRecordsWrites.createNative",
@@ -45442,7 +50434,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4e72fdcd9b61bb2",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.create",
@@ -45523,7 +50520,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7ed08b6b579c2fbb",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.createIfMissing",
@@ -45604,7 +50606,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7ed08b6b579c2fbb",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.getById",
@@ -45625,7 +50632,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.list",
@@ -45646,7 +50658,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3b83ee450a3cde21",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.mine",
@@ -45666,7 +50683,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "9feacda1d527ddf6"
+    "returnsSha": "9feacda1d527ddf6",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.remove",
@@ -45687,7 +50709,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.update",
@@ -45713,7 +50740,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "32ae1b825148ecb3",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "userNotificationPreferences.upsertMine",
@@ -45759,7 +50791,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e794596905837d93",
-    "returnsSha": "efde83ecf2efd768"
+    "returnsSha": "efde83ecf2efd768",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "users.getById",
@@ -45780,7 +50817,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "users.listAll",
@@ -45795,7 +50837,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "users.listByIds",
@@ -45816,7 +50863,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b67b074b9a2f2e30",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "users.remove",
@@ -45837,7 +50889,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "users.upsert",
@@ -45893,7 +50950,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "345351014e3cda65",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.closeOutIfNotClosed",
@@ -45949,7 +51011,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "48ecf731a1ac4c1f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.closeOutSummary",
@@ -45980,7 +51047,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.create",
@@ -46036,7 +51108,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "df36ea036a758b0e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.createIfMissing",
@@ -46092,7 +51169,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "df36ea036a758b0e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.getById",
@@ -46118,7 +51200,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.getByProject",
@@ -46149,7 +51236,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f75cf9c7cfef7f2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.remove",
@@ -46170,7 +51262,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloses.update",
@@ -46196,7 +51293,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "31a1dfb7c19b7912",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloseWrites.batchCloseOutNative",
@@ -46242,7 +51344,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "274d41f30f524817",
-    "returnsSha": "4bf49c47b17d7273"
+    "returnsSha": "4bf49c47b17d7273",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseCloseWrites.closeOutNative",
@@ -46293,7 +51400,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "946f88fb7143d7aa",
-    "returnsSha": "33aad05551c4e32a"
+    "returnsSha": "33aad05551c4e32a",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDashboardTokens.create",
@@ -46364,7 +51476,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "26ce2d9d2a1741ac",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDashboardTokens.createIfMissing",
@@ -46435,7 +51552,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "26ce2d9d2a1741ac",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDashboardTokens.getById",
@@ -46456,7 +51578,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDashboardTokens.getByTokenHash",
@@ -46477,7 +51604,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ae509fe4bbe41e6f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDashboardTokens.list",
@@ -46498,7 +51630,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDashboardTokens.remove",
@@ -46519,7 +51656,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDashboardTokens.update",
@@ -46545,7 +51687,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0e889bc0dce384ea",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseDetail.bundle",
@@ -46576,7 +51723,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseList.bundle",
@@ -46602,7 +51754,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.bulkForceReturnAssets",
@@ -46638,7 +51795,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "72a72d733fc615c7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.checkInBulkTotals",
@@ -46679,7 +51841,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "01ad5b0ccaa76291",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.checkinItems",
@@ -46720,7 +51887,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ecf761f42d5aadc8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.checkinKit",
@@ -46766,7 +51938,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3216a5d14800acc8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.checkinKitsBatch",
@@ -46807,7 +51984,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f6f467f88987d683",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.checkoutItems",
@@ -46853,7 +52035,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4614fa3ad841db7c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.checkoutKit",
@@ -46894,7 +52081,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b7c6fd5e20eeacdf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.checkoutKitsBatch",
@@ -46935,7 +52127,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "06a488beea0d4e16",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.clearPrepContainer",
@@ -46971,7 +52168,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6cd28f97f9af9d60",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.ensureContainerOnProject",
@@ -47017,7 +52219,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "97792ebc72103f97",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.forceReturnAsset",
@@ -47053,7 +52260,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cfbd113347c3305a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.forceReturnKit",
@@ -47089,7 +52301,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a870ed401c03022f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.forceReturnKitsBatch",
@@ -47125,7 +52342,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "aee84b5c48fab1c1",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.quickAdd",
@@ -47186,7 +52408,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "671958582db5cca9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.reassignKitMemberSerial",
@@ -47217,7 +52444,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e9453390256792ba",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.reassignSerialisedUnit",
@@ -47248,7 +52480,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "57a420d321fb332a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.syncContainersBatch",
@@ -47289,7 +52526,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "eb373a3cedb41cd7",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.undeployItems",
@@ -47330,7 +52572,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6e81f62b2c125d58",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.undeployKit",
@@ -47371,7 +52618,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b7c6fd5e20eeacdf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.undeployKitsBatch",
@@ -47412,7 +52664,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "06a488beea0d4e16",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.undeprepLine",
@@ -47448,7 +52705,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "24823e590fb6188c",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.unreturnItems",
@@ -47489,7 +52751,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6e81f62b2c125d58",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.unreturnKit",
@@ -47530,7 +52797,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b7c6fd5e20eeacdf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseOps.unreturnKitsBatch",
@@ -47571,7 +52843,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "06a488beea0d4e16",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseReturns.bundle",
@@ -47597,7 +52874,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseReturns.unitsForLine",
@@ -47628,7 +52910,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f6295a515acfa67b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.bulkForceReturnAssets",
@@ -47674,7 +52961,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "61df998e624edf07",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.checkInItems",
@@ -47725,7 +53017,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "76d440ba738f1d2e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.checkInKit",
@@ -47781,7 +53078,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cf41e1f769652e0e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.checkInKitsBatch",
@@ -47827,7 +53129,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c54ab5e2485f9084",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.checkOutItems",
@@ -47883,7 +53190,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4b849825f459d976",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.checkOutKit",
@@ -47934,7 +53246,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0f84ac2ebc9ccfdf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.checkOutKitsBatch",
@@ -47985,7 +53302,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "868f4eebad168a71",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.clearPrepContainer",
@@ -48031,7 +53353,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "87e62491b3fe6f29",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.ensureContainerOnProject",
@@ -48087,7 +53414,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5f7520b1830eedaa",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.forceReturnAsset",
@@ -48133,7 +53465,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "3a37dda97d9056f4",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.forceReturnKit",
@@ -48179,7 +53516,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b9d0ee7b53f16f00",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.forceReturnKits",
@@ -48225,7 +53567,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "65d6e06447304b01",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.logAccessoryCheckoutOverride",
@@ -48278,7 +53625,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "skipped"
     ],
     "argsSha": "dbebf4aaaeca9d87",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.quickAddAndCheckOut",
@@ -48344,7 +53696,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "19c695fd76170409",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.reassignKitMemberSerial",
@@ -48400,7 +53757,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5043d2da89f579a0",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.reassignLineItemUnit",
@@ -48456,7 +53818,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9d7808c2fcca69b2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.syncContainersBatch",
@@ -48502,7 +53869,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8a608c4953bc656",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.undeployItems",
@@ -48553,7 +53925,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c7168ad1deb622dd",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.undeployKit",
@@ -48604,7 +53981,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0f84ac2ebc9ccfdf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.undeployKitsBatch",
@@ -48655,7 +54037,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d683cd6c97b0cbef",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.undeprepLine",
@@ -48706,7 +54093,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a460919d7c169ee9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.unreturnItems",
@@ -48757,7 +54149,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c7168ad1deb622dd",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.unreturnKit",
@@ -48808,7 +54205,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "0f84ac2ebc9ccfdf",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "warehouseWrites.unreturnKitsBatch",
@@ -48859,7 +54261,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d683cd6c97b0cbef",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.activeSubscriptions",
@@ -48880,7 +54287,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.claimDelivery",
@@ -48911,7 +54323,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9247d02103ff57f5",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.create",
@@ -49002,7 +54419,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e52f2dee5827ca83",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.createIfMissing",
@@ -49093,7 +54515,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e52f2dee5827ca83",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.deliveries",
@@ -49124,7 +54551,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d8a7ed7dd0c385a8",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.dueDeliveries",
@@ -49150,7 +54582,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "10cb7c07ca2c79ce",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.enqueueDeliveries",
@@ -49171,7 +54608,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "63762cccca3a3158",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.list",
@@ -49192,7 +54634,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.markEndpointDisabled",
@@ -49223,7 +54670,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "cec6b4edcb11366a",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.markFailed",
@@ -49289,7 +54741,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "1c196b9874edb237",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.markSucceeded",
@@ -49330,7 +54787,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8ee129c9e33fc32e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.remove",
@@ -49356,7 +54818,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a4467f3b7f553dc9",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.rotateSecret",
@@ -49392,7 +54859,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ec99faaef1c584bb",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "webhooks.update",
@@ -49423,7 +54895,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "29ab47e4f9fd2f74",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceIntegrations.create",
@@ -49544,7 +55021,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "938288fc01dff846",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceIntegrations.createIfMissing",
@@ -49665,7 +55147,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "938288fc01dff846",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceIntegrations.getById",
@@ -49686,7 +55173,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceIntegrations.list",
@@ -49707,7 +55199,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceIntegrations.patchWooCommerceIntegration",
@@ -49738,7 +55235,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4e5edb6129bbcb15",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceIntegrations.remove",
@@ -49759,7 +55261,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceIntegrations.update",
@@ -49785,7 +55292,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c716767df7ea8ec2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceOrderLogs.create",
@@ -49861,7 +55373,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "260958fe1f617f8b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceOrderLogs.createIfMissing",
@@ -49937,7 +55454,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "260958fe1f617f8b",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceOrderLogs.findCompletedByOrder",
@@ -49963,7 +55485,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "4a46b1902e204ada",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceOrderLogs.getById",
@@ -49984,7 +55511,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceOrderLogs.list",
@@ -50005,7 +55537,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceOrderLogs.remove",
@@ -50026,7 +55563,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8b114161049d5d20",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "wooCommerceOrderLogs.update",
@@ -50052,7 +55594,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6856d65e052c945e",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroIntegrations.createIfMissing",
@@ -50158,7 +55705,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7436621269086f95",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroIntegrations.getByOrgId",
@@ -50179,7 +55731,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroIntegrations.getForOrg",
@@ -50200,7 +55757,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b21345538722cfa9",
-    "returnsSha": "368bbc0701ab1802"
+    "returnsSha": "368bbc0701ab1802",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroIntegrations.patchXeroIntegration",
@@ -50231,7 +55793,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "edfdc4fcd007f27f",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroPush.applyXeroPushResultNative",
@@ -50272,7 +55839,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a228b470d56e441c",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroPush.logXeroPushActivity",
@@ -50333,7 +55905,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5c417b55ccbecaa2",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroPush.markXeroPushFailedNative",
@@ -50369,7 +55946,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fff33bdb156ad1cc",
-    "returnsSha": "8b114161049d5d20"
+    "returnsSha": "8b114161049d5d20",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroPush.resolveCodingForInvoice",
@@ -50395,7 +55977,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "84248e6f6265683d",
-    "returnsSha": "18348a60ffd58fd4"
+    "returnsSha": "18348a60ffd58fd4",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroSyncLogs.create",
@@ -50461,7 +56048,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "b40cc4bd690a2e28",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroSyncLogs.listForInvoice",
@@ -50487,7 +56079,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "84248e6f6265683d",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "xeroSyncLogs.listRecentForOrg",
@@ -50513,7 +56110,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5b680ee1045e20ea",
-    "returnsSha": "74234e98afe7498f"
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   }
 ] as const;
 

@@ -145,3 +145,14 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `xeroIntegrations` | 4 |
 | `xeroPush` | 4 |
 | `xeroSyncLogs` | 3 |
+
+## Deliberately denied (Phase 5 triage, #1001)
+
+Operations annotated `agentAccess: "denied"` in their module's `agentOps`
+export (`convex/lib/agentOps.ts`) — a recorded decision to keep the surface
+closed, not an oversight. Every row here has a written reason; the generator
+fails the build otherwise.
+
+| Operation | Reason |
+|---|---|
+| _(none yet)_ | |

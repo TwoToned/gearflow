@@ -32,7 +32,7 @@ import { projectWriteFields } from "./projects";
 import { updateFields as supplierOrderUpdateFields } from "./supplierOrdersWrites";
 import { itemFields as supplierOrderItemFields } from "./supplierOrderItemsWrites";
 import { quoteSendFields, quoteRecallFields, quoteAcceptFields, quoteDeclineFields } from "./quotesWrites";
-import { invoiceFields } from "./invoicesWrites";
+import { invoiceFields, invoiceIssueFields } from "./invoicesWrites";
 
 import { clientSchema } from "@/lib/validations/client";
 import { clientContactSchema } from "@/lib/validations/client-contact";
@@ -52,7 +52,7 @@ import {
   quoteAcceptSchema,
   quoteDeclineSchema,
 } from "@/lib/validations/quote";
-import { invoiceSchema } from "@/lib/validations/invoice";
+import { invoiceSchema, invoiceIssueSchema } from "@/lib/validations/invoice";
 
 /** Unwrap a Zod schema (through .refine/.default/.optional wrappers) to its object shape keys. */
 function zodKeys(schema: unknown): string[] {
@@ -168,6 +168,8 @@ const PAIRS: Pair[] = [
     // hook converts it, same pattern as every other date field in this codebase
     // (see "Date Handling" in FEATUREDOCS/28-patterns.md); field NAME matches.
   },
+  // #989 — the invoice ISSUE dialog's fields (distinct from create above).
+  { name: "invoiceIssue", zod: invoiceIssueSchema, convex: invoiceIssueFields },
 ];
 
 describe("validation field-set parity (Zod client ↔ Convex server) — R-8.6.1", () => {

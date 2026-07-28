@@ -148,6 +148,41 @@ describe("structureLineItems — Phase 0 baseline", () => {
     expect(result[0].discount).toBe(200);
   });
 
+  // #1012 — the synthetic group row must carry the ENTRY shape too, or a priced
+  // group's discount always prints as dollars even when it was entered as a
+  // percentage (the row is built here, not mapped from a line-item doc).
+  it("carries a Project Group's discountMode onto the synthetic row", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, {
+          quantity: 2, price: 500, discount: 100, discountMode: "%",
+        }),
+      ]),
+    ];
+    const result = structureLineItems([], categories);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].discount).toBe(100);
+    expect(result[0].discountMode).toBe("%");
+    // The row's own gross (unitPrice × quantity × duration) is the base the
+    // renderer derives the percentage from: 500 × 2 × 1 = 1000 → 10%.
+    expect(result[0].unitPrice).toBe(500);
+    expect(result[0].quantity).toBe(2);
+    expect(result[0].duration).toBe(1);
+  });
+
+  it("drops the mode when a Project Group has no discount", () => {
+    const categories: CategoryForStructuring[] = [
+      makeCategory("cat-1", "Lighting", 0, [
+        makeGroup("grp-1", "Lighting Package", 0, { quantity: 1, price: 500, discountMode: "%" }),
+      ]),
+    ];
+    const result = structureLineItems([], categories);
+
+    expect(result[0].discount).toBeNull();
+    expect(result[0].discountMode).toBeNull();
+  });
+
   it("clamps a Project Group's discount at 0 rather than going negative", () => {
     const categories: CategoryForStructuring[] = [
       makeCategory("cat-1", "Lighting", 0, [

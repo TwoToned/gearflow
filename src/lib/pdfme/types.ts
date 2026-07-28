@@ -42,6 +42,15 @@ export interface DocumentLineItem {
   pricingType: string;
   duration: number;
   discount: number | null;
+  /**
+   * #1012 — how the operator ENTERED `discount`: `"%"` off the line's gross, or
+   * a flat `"$"` amount. `discount` itself is always the resolved dollar amount;
+   * this only drives how the Discount column prints it. Absent/null (every row
+   * written before #1012) renders as `"$"`, which is exactly the old behaviour.
+   * The percentage shown is DERIVED from `discount` against the row's own gross
+   * — see `src/lib/discount-mode.ts` for why it isn't stored.
+   */
+  discountMode?: "$" | "%" | null;
   lineTotal: number | null;
   priceBreakdown?: string | null;
   priceOverridden?: boolean;

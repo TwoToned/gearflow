@@ -10,6 +10,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { runTablePlugin, makeLineItem } from "./test-utils";
+import {
+  structureLineItems,
+  type CategoryForStructuring,
+} from "../structure-line-items";
 
 describe("gearflowTable — Project Group rendering", () => {
   it("group parent with childLineItems renders the parent name in bold", async () => {
@@ -437,5 +441,144 @@ describe("gearflowTable — per-item Discount column (quote/invoice)", () => {
     // standalone "-" draw call must be the discount cell's placeholder.
     expect(calls.drawText.some((c) => c.text === "-")).toBe(true);
     expect(calls.drawText.some((c) => c.text.startsWith("-$"))).toBe(false);
+  });
+
+  // #1012 — the column prints the discount the way it was ENTERED.
+  it("renders a percentage when the line was discounted in % mode", async () => {
+    const items = [
+      makeLineItem({
+        id: "li-1",
+        model: { name: "USB Pro DI" },
+        unitPrice: 20,
+        quantity: 5,
+        duration: 2,
+        // 15% of the 200.00 gross.
+        discount: 30,
+        discountMode: "%",
+        lineTotal: 170,
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { documentType: "quote", showPricing: true });
+    expect(calls.drawText.some((c) => c.text === "-15%")).toBe(true);
+    expect(calls.drawText.some((c) => c.text === "-$30.00")).toBe(false);
+  });
+
+  it("falls back to the dollar amount for a pre-#1012 row with no stored mode", async () => {
+    const items = [
+      makeLineItem({ id: "li-1", model: { name: "USB Pro DI" }, unitPrice: 20, quantity: 5, duration: 2, discount: 30, lineTotal: 170 }),
+    ];
+
+    const calls = await runTablePlugin(items, { documentType: "quote", showPricing: true });
+    expect(calls.drawText.some((c) => c.text === "-$30.00")).toBe(true);
+    expect(calls.drawText.some((c) => c.text.endsWith("%"))).toBe(false);
+  });
+
+  it("falls back to the dollar amount when a % row has no gross to measure against", async () => {
+    // A $0-priced line can't express its discount as a percentage — printing
+    // "-Infinity%" / "-0%" would be worse than the amount it actually is.
+    const items = [
+      makeLineItem({ id: "li-1", model: { name: "USB Pro DI" }, unitPrice: 0, quantity: 1, duration: 1, discount: 5, discountMode: "%", lineTotal: 0 }),
+    ];
+
+    const calls = await runTablePlugin(items, { documentType: "quote", showPricing: true });
+    expect(calls.drawText.some((c) => c.text === "-$5.00")).toBe(true);
+  });
+
+  it("renders a kit child's % discount as a percentage too", async () => {
+    const items = [
+      makeLineItem({
+        id: "kit-1",
+        kitId: "k1",
+        model: { name: "Small PA Kit" },
+        unitPrice: 100,
+        lineTotal: 100,
+        childLineItems: [
+          makeLineItem({
+            id: "child-1",
+            isKitChild: true,
+            model: { name: "K10.2" },
+            unitPrice: 50,
+            quantity: 2,
+            duration: 1,
+            discount: 20,
+            discountMode: "%",
+            lineTotal: 80,
+          }),
+        ],
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, {
+      documentType: "quote",
+      showPricing: true,
+      showKitChildren: true,
+    });
+    expect(calls.drawText.some((c) => c.text === "-20%")).toBe(true);
+  });
+});
+
+// CLAUDE.md's PDF rule: a DocumentLineItem shape change needs at least one test
+// that runs the FULL pipeline, not just the plugin in isolation — a plugin-only
+// assertion would pass even if structureLineItems never populated the new field.
+describe("gearflowTable — discount entry mode end-to-end (#1012)", () => {
+  it("a % -discounted Project Group prints as a percentage on a quote", async () => {
+    const categories: CategoryForStructuring[] = [
+      {
+        id: "cat-1",
+        name: "Lighting",
+        sortOrder: 0,
+        groups: [
+          {
+            id: "grp-1",
+            title: "Lighting Package",
+            description: null,
+            sortOrder: 0,
+            quantity: 2,
+            price: 500,
+            // 10% of the 1,000.00 bundle gross.
+            discount: 100,
+            discountMode: "%",
+          },
+        ],
+      },
+    ];
+
+    const structured = structureLineItems([], categories);
+    const calls = await runTablePlugin(structured, { documentType: "quote", showPricing: true });
+
+    expect(calls.drawText.some((c) => c.text === "-10%")).toBe(true);
+    expect(calls.drawText.some((c) => c.text === "-$100.00")).toBe(false);
+    // The printed total still comes from the stored dollar amount — the mode is
+    // display-only, so the percentage and the total agree by construction.
+    expect(calls.drawText.some((c) => c.text === "$900.00")).toBe(true);
+  });
+
+  it("a $ -discounted Project Group still prints the dollar amount", async () => {
+    const categories: CategoryForStructuring[] = [
+      {
+        id: "cat-1",
+        name: "Lighting",
+        sortOrder: 0,
+        groups: [
+          {
+            id: "grp-1",
+            title: "Lighting Package",
+            description: null,
+            sortOrder: 0,
+            quantity: 2,
+            price: 500,
+            discount: 100,
+            discountMode: "$",
+          },
+        ],
+      },
+    ];
+
+    const structured = structureLineItems([], categories);
+    const calls = await runTablePlugin(structured, { documentType: "quote", showPricing: true });
+
+    expect(calls.drawText.some((c) => c.text === "-$100.00")).toBe(true);
+    expect(calls.drawText.some((c) => c.text.endsWith("%"))).toBe(false);
   });
 });

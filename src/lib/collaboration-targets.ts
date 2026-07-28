@@ -36,9 +36,9 @@ export function categoryTarget(categoryId: string): CollabTarget {
 }
 
 /**
- * Stable key for a lock/comment map keyed by target. Equipment views subscribe
- * to all locks on the project once (listLocksForEntity) and look rows up by this
- * key instead of mounting a hook per row.
+ * Stable key for a review-marker/comment map keyed by target. Equipment views
+ * subscribe to all markers on the project once (listReviewMarkersForEntity)
+ * and look rows up by this key instead of mounting a hook per row.
  */
 export function targetKey(target: { targetType?: string | null; targetId?: string | null }): string {
   return `${target.targetType ?? ""}:${target.targetId ?? ""}`;

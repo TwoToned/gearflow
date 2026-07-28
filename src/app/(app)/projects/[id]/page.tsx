@@ -39,7 +39,6 @@ import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
 import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
-import { PresenceAvatarStack } from "@/components/collaboration/presence-avatar-stack";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -317,14 +316,6 @@ export default function ProjectDetailPage({
                         />
                       ))}
                     </div>
-                  )}
-                  {/* Live presence — who else is viewing this project */}
-                  {orgId && !project.isTemplate && (
-                    <PresenceAvatarStack
-                      entityType="project"
-                      entityId={id}
-                      size="sm"
-                    />
                   )}
                 </div>
               </div>

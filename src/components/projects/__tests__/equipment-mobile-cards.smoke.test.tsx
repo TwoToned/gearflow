@@ -14,10 +14,10 @@ beforeAll(() => {
 // is true (below the md breakpoint).
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => true }));
 
-// The row subscribes to comment-counts directly (lock/review-marker come from
-// the lockByTarget/markerByTarget props the caller passes down — see
-// equipment-tab.tsx — not a per-row subscription). Stub the hook so the card
-// renders without a Convex client.
+// The row subscribes to comment-counts directly (review-marker comes from the
+// markerByTarget prop the caller passes down — see equipment-tab.tsx — not a
+// per-row subscription). Stub the hook so the card renders without a Convex
+// client.
 vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: () => undefined }));
 
 // setReviewMarker is now a browser-direct Convex write behind useCollaborationWrites
@@ -30,7 +30,6 @@ vi.mock("@/hooks/use-collaboration-writes", () => ({
 vi.mock("@/server/warehouse", () => ({ getScanLog: vi.fn(async () => ({ logs: [] })) }));
 
 import { LineItemRow, type LineItemData } from "../equipment-rows";
-import { targetKey, lineItemTarget } from "@/lib/collaboration-targets";
 
 const baseItem: LineItemData = {
   id: "li1",
@@ -113,26 +112,13 @@ describe("equipment mobile line-item card (smoke)", () => {
   });
 
   // Regression guard for the per-row-subscription fix (Finding #4,
-  // docs/designs/perf-convex-efficiency-2026-06.md): lock/marker badges must
-  // come from the caller-supplied maps (keyed by target), not a per-row
-  // useAuthedQuery(getLock)/useAuthedQuery(getReviewMarker) call.
-  it("shows the editing-lock and review-marker badges from the lockByTarget/markerByTarget maps", () => {
+  // docs/designs/perf-convex-efficiency-2026-06.md): the marker badge must
+  // come from the caller-supplied map (keyed by target), not a per-row
+  // useAuthedQuery(getReviewMarker) call.
+  it("shows the review-marker badge from the markerByTarget map", () => {
     renderRow({
-      lockByTarget: new Map([
-        [targetKey(lineItemTarget("li1")), { ownerName: "Alice", ownerColor: "#123456", isStale: false }],
-      ]),
       markerByTarget: new Map([["li1", { status: "needs_review", reason: "double-check qty" }]]),
     });
-    expect(screen.getByTitle("Alice is editing")).toBeTruthy();
     expect(screen.getByTitle("Needs review: double-check qty")).toBeTruthy();
-  });
-
-  it("does not show a stale lock as editing", () => {
-    renderRow({
-      lockByTarget: new Map([
-        [targetKey(lineItemTarget("li1")), { ownerName: "Alice", ownerColor: "#123456", isStale: true }],
-      ]),
-    });
-    expect(screen.queryByTitle("Alice is editing")).toBeNull();
   });
 });

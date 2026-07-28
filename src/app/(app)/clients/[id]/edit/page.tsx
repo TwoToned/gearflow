@@ -18,7 +18,6 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import type { ClientFormValues } from "@/lib/validations/client";
-import { EditLockGate } from "@/components/collaboration/edit-lock-gate";
 
 export default function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -84,9 +83,7 @@ function EditClientContent({ params }: { params: Promise<{ id: string }> }) {
           </BreadcrumbList>
         </Breadcrumb>
         <PageHeader title="Edit client" description={client.name} />
-        <EditLockGate entityType="client" entityId={id}>
-          <ClientForm initialData={initialData} />
-        </EditLockGate>
+        <ClientForm initialData={initialData} />
       </div>
     </FadeIn>
   );

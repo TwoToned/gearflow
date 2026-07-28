@@ -2706,50 +2706,6 @@ export default defineSchema({
 
   // ─── Collaboration substrate ───────────────────────────────────────────────
 
-  // Who is currently viewing / editing a collaborative entity.
-  // TTL: expiresAt = lastSeenAt + 45 s. Stale rows are excluded by queries
-  // (not hard-deleted) so clients can let them age out naturally.
-  collaborationPresence: defineTable({
-    orgId: v.string(),
-    userId: v.string(),
-    userName: v.string(),
-    userColor: v.string(),
-    avatarUrl: v.optional(v.string()),
-    entityType: v.string(), // "project" | "asset" | "client"
-    entityId: v.string(),
-    section: v.optional(v.string()),
-    mode: v.union(v.literal("viewing"), v.literal("editing")),
-    activeTargetType: v.optional(v.string()),
-    activeTargetId: v.optional(v.string()),
-    lastSeenAt: v.number(),
-    expiresAt: v.number(),
-  })
-    .index("by_orgId_entityType_entityId", ["orgId", "entityType", "entityId"])
-    .index("by_orgId_userId_entityType_entityId", ["orgId", "userId", "entityType", "entityId"])
-    .index("by_expiresAt", ["expiresAt"]),
-
-  // Record-level edit locks. Prevents two users editing the same target
-  // simultaneously. Atomic acquire; heartbeat extends expiresAt.
-  collaborationLocks: defineTable({
-    orgId: v.string(),
-    entityType: v.string(),
-    entityId: v.string(),
-    targetType: v.string(), // "lineItem" | "section" | "asset" | "client"
-    targetId: v.string(),
-    ownerUserId: v.string(),
-    ownerName: v.string(),
-    ownerColor: v.string(),
-    acquiredAt: v.number(),
-    heartbeatAt: v.number(),
-    expiresAt: v.number(),
-    releasedAt: v.optional(v.number()),
-    status: v.union(v.literal("active"), v.literal("released"), v.literal("expired")),
-    clientSessionId: v.string(),
-  })
-    .index("by_orgId_entityType_entityId_targetType_targetId", ["orgId", "entityType", "entityId", "targetType", "targetId"])
-    .index("by_ownerUserId_status", ["ownerUserId", "status"])
-    .index("by_expiresAt", ["expiresAt"]),
-
   // Comment threads. Each thread belongs to an entity (e.g. project) and
   // optionally a sub-target (e.g. a specific line item).
   commentThreads: defineTable({

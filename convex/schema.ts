@@ -1316,6 +1316,13 @@ export default defineSchema({
     discount: v.optional(v.number()),
     suggestedPrice: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
+    // WS1 (#940) — Xero account-coding override for a priced group's own
+    // invoice line (convex/lib/financeSnapshot.ts's "priced groups bill as
+    // ONE line"). Cascade: this override -> categoryId's category default ->
+    // org default (convex/xeroPush.ts resolveGroupLineCode) -- a group isn't
+    // a model/kit, so it has no level-2 equivalent in the cascade.
+    xeroAccountCode: v.optional(v.string()),
+    xeroTaxType: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

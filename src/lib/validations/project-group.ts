@@ -12,6 +12,8 @@ export const projectGroupSchema = z.object({
   // (src/lib/validations/line-item.ts discountField).
   discount: z.coerce.number().min(0).max(999999.99).optional(),
   sortOrder: z.coerce.number().int().min(0).optional().default(0),
+  xeroAccountCode: z.string().max(50).optional(),
+  xeroTaxType: z.string().max(50).optional(),
 });
 
 export type ProjectGroupFormValues = z.input<typeof projectGroupSchema>;

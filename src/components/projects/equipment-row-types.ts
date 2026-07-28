@@ -73,6 +73,11 @@ export interface GroupData {
   suggestedPrice: unknown;
   sortOrder: number;
   lineItems?: LineItemData[];
+  /** Per-group Xero coding override (WS1 #940 cascade) — a priced group
+   *  bills as its own invoice line (financeSnapshot.ts). See
+   *  convex/xeroPush.ts resolveGroupLineCode. */
+  xeroAccountCode?: string | null;
+  xeroTaxType?: string | null;
 }
 
 export interface SubHireGroupData {

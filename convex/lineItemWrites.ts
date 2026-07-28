@@ -455,7 +455,7 @@ export const removeManyNative = mutation({
   handler: async (ctx, { ids, orgId, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
-    assertBulkSizeOk(ids.length);
+    await assertBulkSizeOk(ctx, ids.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -802,7 +802,7 @@ export const patchManyNative = mutation({
   handler: async (ctx, { ids, orgId, patch, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
-    assertBulkSizeOk(ids.length);
+    await assertBulkSizeOk(ctx, ids.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     const actor = await resolveActor(ctx, suppliedActor);
 
@@ -1793,7 +1793,7 @@ export const reorderNative = mutation({
   handler: async (ctx, { orgId, items, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
-    assertBulkSizeOk(items.length);
+    await assertBulkSizeOk(ctx, items.length);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     for (const it of items) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", it.id)).first();

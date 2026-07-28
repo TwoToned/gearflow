@@ -23,8 +23,8 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 395 | 67 | 158 | 168 | 2 |
-| Mutations | 724 | 264 | 453 | 1 | 6 |
-| **Total** | **1119** | **331** | **611** | **169** | **8** |
+| Mutations | 725 | 264 | 454 | 1 | 6 |
+| **Total** | **1120** | **331** | **612** | **169** | **8** |
 
 <!-- reachability-floor: 331 -->
 
@@ -44,7 +44,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `activityLogWrites` | 2 |
 | `activityLog` | 3 |
 | `apiIdempotency` | 4 |
-| `apiKeys` | 6 |
+| `apiKeys` | 7 |
 | `apiRequestLog` | 3 |
 | `assetAccessories` | 1 |
 | `assetBulkChildren` | 6 |

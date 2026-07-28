@@ -735,7 +735,7 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
   {
     "name": "rvlt_flow.v1.get_project_financials",
     "title": "Get project financials",
-    "description": "Cost/margin breakdown for one project. A `no_financials` key flag will force-redact this regardless of role once Phase 6 ships the settings toggle — until then, visibility follows the acting user's role like everywhere else. Scope required: project:read. Read-only; no idempotencyKey needed. Errors surface in-band as `{ error: { code, category, message, recovery, requiredScope } }` — call `describe_operation` (or `GET /api/v1/operations/{operation}`) for the full code list.",
+    "description": "Cost/margin breakdown for one project. A key created with the `no_financials` flag set (/settings/api-keys) force-redacts this regardless of the acting user's role — otherwise visibility follows their role like everywhere else. Scope required: project:read. Read-only; no idempotencyKey needed. Errors surface in-band as `{ error: { code, category, message, recovery, requiredScope } }` — call `describe_operation` (or `GET /api/v1/operations/{operation}`) for the full code list.",
     "inputSchema": {
       "type": "object",
       "properties": {

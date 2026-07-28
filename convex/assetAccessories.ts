@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 import { collectCapped } from "./lib/pagination";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Serialized assets eligible to become an accessory of `parentAssetId` (Phase 3 —
@@ -12,7 +13,7 @@ import { collectCapped } from "./lib/pagination";
 export const availableSerialized = query({
   args: { orgId: v.string(), parentAssetId: v.string() },
   handler: async (ctx, { orgId, parentAssetId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 5 domain slice (#1001)
     const [{ rows: assets }, { rows: bulkChildren }, models] = await Promise.all([
       collectCapped(ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: candidate set + the parentIds aggregation below both need every org asset — see docs/exceptions.md R-8.3.3
       collectCapped(ctx.db.query("assetBulkChildren").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: parentIds is a reverse aggregation over every org bulk-child row, not a per-id lookup — see docs/exceptions.md R-8.3.3
@@ -38,3 +39,8 @@ export const availableSerialized = query({
       .map((a) => ({ ...a, model: a.modelId ? { name: modelName.get(a.modelId) ?? "" } : null }));
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  availableSerialized: { summary: "Serialized assets eligible to become an accessory of a given parent asset.", danger: "low", mcpTier: 2 },
+};

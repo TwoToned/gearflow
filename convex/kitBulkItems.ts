@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgPermission, requireOrgReadDocFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for KitBulkItem (Convex table "kitBulkItems"). GENERATED — Phase 2/5.
@@ -15,7 +16,7 @@ import { requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "kit", "read"); // Phase 5 domain slice (#1001) — org-scoped via by_organizationId
     return await ctx.db
       .query("kitBulkItems")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large — see docs/exceptions.md R-8.3.3
@@ -26,12 +27,15 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("kitBulkItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    // No orgId arg — doc-fetch shape (mirrors kits.getById).
+    const doc = await ctx.db.query("kitBulkItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "kit"); // Phase 5 domain slice (#1001)
+    return doc;
   },
 });
 
-/** Cross-org GDPR sweep lookup — mirrors assetScanLogs.listByScannedById/testTagRecords.listByTestedById. */
+/** Cross-org GDPR sweep lookup — mirrors assetScanLogs.listByScannedById/testTagRecords.listByTestedById.
+ *  NOT org-scoped by design (see agentOps denial below). */
 export const listByAddedById = query({
   args: { addedById: v.string() },
   handler: async (ctx, { addedById }) => {
@@ -50,7 +54,7 @@ export const listByAddedById = query({
 export const listByKitId = query({
   args: { orgId: v.string(), kitId: v.string() },
   handler: async (ctx, { orgId, kitId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "kit", "read"); // Phase 5 domain slice (#1001) — result is JS-filtered to this orgId below
     const rows = await ctx.db
       .query("kitBulkItems")
       .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
@@ -135,3 +139,14 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all kit bulk-item memberships visible to the caller's org.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one kit bulk-item membership row by id.", danger: "low", mcpTier: 3 },
+  listByKitId: { summary: "List bulk-item members of one kit.", danger: "low", mcpTier: 2 },
+  listByAddedById: {
+    agentAccess: "denied",
+    reason: "Cross-org GDPR-cascade lookup by addedById with no org filter at all — an internal user-delete helper, not a real read surface.",
+  },
+};

@@ -38,6 +38,12 @@
  *  4. **Runtime-probe gate** — lives in `convex/agentRegistryProbe.test.ts`; the
  *     statically extracted `(resource, action)` must match the guard that actually
  *     runs.
+ *  5. **Danger-classification gate** (Phase 4, #1000) — every agent-reachable
+ *     MUTATION must have a `danger: "low"|"medium"|"high"` entry in its module's
+ *     colocated `agentOps` export (`convex/lib/agentOps.ts`). A new agent-writable
+ *     mutation with no classification fails the build the same way an unclassified
+ *     privileged arg does — `high` drives the dispatcher's `confirm:true` +
+ *     idempotency requirement (`src/lib/api/dispatcher.ts`).
  *
  * Usage:
  *   pnpm run api:registry          # regenerate
@@ -49,6 +55,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Project, SyntaxKind, type VariableDeclaration } from "ts-morph";
 import { SELF_RESOURCE } from "../convex/lib/scopes.js";
+import type { AgentOpsAnnotations, AgentOpsDanger } from "../convex/lib/agentOps.js";
 import {
   isPrivilegedArgName,
   policyForArg,
@@ -112,6 +119,11 @@ interface Operation {
    *  re-reads the full validators at build time from the same source. */
   argsSha: string;
   returnsSha: string;
+  /** Phase 4 (#1000) — from the module's colocated `agentOps` export. Populated
+   *  for mutations only; `null` for queries (not yet in scope) and for a mutation
+   *  with no `agentOps` entry (which gate 5 below fails the build on, for an
+   *  agent-reachable one). */
+  danger: AgentOpsDanger | null;
 }
 
 // ─── 1. Static guard classification ─────────────────────────────────────────
@@ -332,6 +344,7 @@ function toOperation(
   fn: RegisteredFn,
   kind: "query" | "mutation",
   guard: GuardFacts,
+  agentOps: AgentOpsAnnotations | undefined,
 ): Operation {
   const argsJson = fn.exportArgs?.() ?? "{}";
   const returnsJson = fn.exportReturns?.() ?? "{}";
@@ -350,6 +363,7 @@ function toOperation(
     privilegedArgs: args.map((a) => a.name).filter(isPrivilegedArgName),
     argsSha: sha(argsJson),
     returnsSha: sha(returnsJson),
+    danger: kind === "mutation" ? (agentOps?.[fnName]?.danger ?? null) : null,
   };
 }
 
@@ -366,6 +380,7 @@ async function collectOperations(): Promise<Operation[]> {
     const moduleName = file.replace(/\.ts$/, "");
     const guards = readModuleGuards(filePath, project);
     const imported: Record<string, unknown> = await import(pathToFileURL(filePath).href);
+    const agentOps = imported.agentOps as AgentOpsAnnotations | undefined;
 
     for (const [fnName, value] of Object.entries(imported)) {
       const registered = asPublicFn(value);
@@ -377,6 +392,7 @@ async function collectOperations(): Promise<Operation[]> {
           registered.fn,
           registered.kind,
           guards.byFn.get(fnName) ?? NO_GUARD,
+          agentOps,
         ),
       );
     }
@@ -404,6 +420,30 @@ function checkPrivilegedArgs(operations: Operation[]): string[] {
       `  It softens a gate (or looks like it does), so it must be classified before it can ship.\n` +
       `  Sites (${sites.length}): ${sites.slice(0, 5).join(", ")}${sites.length > 5 ? ", …" : ""}\n` +
       `  Read docs/designs/api-mcp-reimplementation.md §6, then add a row with the narrowest agentAccess that works.`,
+  );
+}
+
+/** Gate 5 (#1000) — every agent-reachable mutation must carry a `danger` classification. */
+function checkDangerClassification(operations: Operation[]): string[] {
+  const offenders = operations.filter(
+    (o) => o.kind === "mutation" && o.agentReachable && o.danger === null,
+  );
+  if (!offenders.length) return [];
+  const byModule = new Map<string, string[]>();
+  for (const o of offenders) {
+    const fns = byModule.get(o.module) ?? [];
+    fns.push(o.fn);
+    byModule.set(o.module, fns);
+  }
+  return [...byModule.entries()].map(
+    ([module, fns]) =>
+      `Module '${module}' has ${fns.length} agent-reachable mutation(s) with no \`danger\` ` +
+      `classification: ${fns.join(", ")}.\n` +
+      `  Add an \`agentOps: AgentOpsAnnotations\` export to convex/${module}.ts ` +
+      `(see convex/lib/agentOps.ts) classifying each as "low" | "medium" | "high".\n` +
+      `  Read docs/designs/api-mcp-reimplementation.md §9 for the "high" criteria ` +
+      `(stock-affecting, irreversible, lock-softening, delete/archive, financial ` +
+      `issue/void, warehouse movement, bulk destructive).`,
   );
 }
 
@@ -471,6 +511,10 @@ export interface RegistryOperation {
   readonly privilegedArgs: readonly string[];
   readonly argsSha: string;
   readonly returnsSha: string;
+  /** Phase 4 (#1000) — populated for mutations from the module's colocated
+   *  \`agentOps\` export (\`convex/lib/agentOps.ts\`); \`null\` for queries. \`"high"\`
+   *  drives the dispatcher's \`confirm:true\` + idempotency requirement. */
+  readonly danger: "low" | "medium" | "high" | null;
 }
 
 export const API_REGISTRY: readonly RegistryOperation[] = ${JSON.stringify(operations, null, 2)} as const;
@@ -510,6 +554,10 @@ function emitCoverage(operations: Operation[], floor: number): string {
     .map(([m, v]) => `| \`${m}\` | ${v.total} |`)
     .sort();
 
+  const reachableMutations = reachable.filter((o) => o.kind === "mutation");
+  const dangerCount = (tier: AgentOpsDanger) =>
+    reachableMutations.filter((o) => o.danger === tier).length;
+
   return `<!-- GENERATED FILE — DO NOT EDIT. Run \`pnpm run api:registry\`. -->
 ${REGISTRY_ISSUE_HEADER}
 
@@ -527,6 +575,19 @@ The reachability floor above is a CI gate: the agent-reachable count may not dro
 below it. Lowering it is allowed but must be a visible, explained line in a PR
 diff — that is the whole mechanism. Raising it happens naturally as Phase 5
 migrates \`requireOrgRead\` call sites to \`requireOrgReadFor\`.
+
+## Danger classification (Phase 4, #1000)
+
+Every agent-reachable mutation carries a \`low\`/\`medium\`/\`high\` \`danger\` tier from
+its module's colocated \`agentOps\` export. \`high\` requires \`confirm: true\` (and an
+idempotency key, already required of every mutation) at the dispatcher — see
+\`src/lib/api/dispatcher.ts\`.
+
+| Tier | Agent-reachable mutations |
+|---|---|
+| \`high\` | ${dangerCount("high")} |
+| \`medium\` | ${dangerCount("medium")} |
+| \`low\` | ${dangerCount("low")} |
 
 ## Modules with no agent-reachable operation
 
@@ -568,6 +629,13 @@ function runPreWriteGates(operations: Operation[], floor: number | null): void {
   if (privilegedProblems.length) {
     console.error("\n✖ Privileged-argument gate failed:\n");
     for (const problem of privilegedProblems) console.error(`${problem}\n`);
+    process.exit(1);
+  }
+
+  const dangerProblems = checkDangerClassification(operations);
+  if (dangerProblems.length) {
+    console.error("\n✖ Danger-classification gate failed:\n");
+    for (const problem of dangerProblems) console.error(`${problem}\n`);
     process.exit(1);
   }
 

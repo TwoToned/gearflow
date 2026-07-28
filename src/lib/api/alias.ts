@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { dispatch } from "./dispatcher";
+import { withApiVersionHeader } from "./version";
 
 /**
  * Curated typed REST aliases (design §11) — a handful of conventional
@@ -30,7 +31,7 @@ export async function dispatchAlias(
     request.headers.get("authorization"),
     requestId,
   );
-  return NextResponse.json(result.body, { status: result.status });
+  return withApiVersionHeader(NextResponse.json(result.body, { status: result.status }));
 }
 
 /** Reads `?orgId=` isn't needed — the org always comes from the key

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { OPENAPI_DOCUMENT } from "@/lib/api/openapi.generated";
+import { API_VERSION_HEADER, API_VERSION } from "@/lib/api/version";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,6 @@ export const runtime = "nodejs";
  */
 export async function GET() {
   return NextResponse.json(OPENAPI_DOCUMENT, {
-    headers: { "cache-control": "public, max-age=300" },
+    headers: { "cache-control": "public, max-age=300", [API_VERSION_HEADER]: API_VERSION },
   });
 }

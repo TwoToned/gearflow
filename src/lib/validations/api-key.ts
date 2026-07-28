@@ -18,10 +18,3 @@ export const apiKeyCreateSchema = z.object({
 });
 
 export type ApiKeyCreateFormValues = z.input<typeof apiKeyCreateSchema>;
-
-export const apiKeyRotateSchema = z.object({
-  id: z.string().min(1),
-  graceMinutes: z.coerce.number().int().min(0).max(24 * 60).default(60),
-});
-
-export type ApiKeyRotateFormValues = z.input<typeof apiKeyRotateSchema>;

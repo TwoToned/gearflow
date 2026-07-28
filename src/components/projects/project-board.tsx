@@ -15,6 +15,7 @@ import { SearchInput } from "@/components/ui/input";
 import { CanDo } from "@/components/auth/permission-gate";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FlowMascot } from "@/components/ui/flow-mascot";
+import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
 } from "@/components/ui/tooltip";
@@ -205,6 +206,7 @@ function ProjectCard({ project, hue, live, issues, blocking }: { project: AnyPro
       <div className="flex items-start justify-between gap-2">
         <p className="truncate text-[14px] font-semibold text-ink">{project.name}</p>
         <div className="flex shrink-0 items-center gap-1">
+          <ProjectLockGlyph status={project.status as string | null | undefined} />
           {issues && (issues.hasOverbooked || issues.hasReducedStock) && (
             <TooltipProvider><Tooltip>
               <TooltipTrigger className={cn("rounded-full", focusRing, issues.hasOverbooked ? "text-t-out" : "text-blue")}><AlertTriangle className="h-3.5 w-3.5" /></TooltipTrigger>

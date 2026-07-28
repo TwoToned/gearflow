@@ -13,6 +13,16 @@ still be followed — the API or an AI shouldn't be able to bypass project locks
 **Supersedes:** [`archive/api-mcp-agent-access.md`](./archive/api-mcp-agent-access.md)
 **Decisions:** the 12 forks in §0 were settled with the owner on 2026-07-28 and are
 recorded there as the authoritative answers; the rest of this document follows from them.
+**Tracking:** [#995](https://github.com/TwoToned/gearflow/issues/995) — phases 0–8 are
+[#996](https://github.com/TwoToned/gearflow/issues/996) (pattern-prover),
+[#997](https://github.com/TwoToned/gearflow/issues/997) (foundations),
+[#998](https://github.com/TwoToned/gearflow/issues/998) (API core + read bootstrap),
+[#999](https://github.com/TwoToned/gearflow/issues/999) (MCP, bearer),
+[#1000](https://github.com/TwoToned/gearflow/issues/1000) (safety rails),
+[#1001](https://github.com/TwoToned/gearflow/issues/1001) (coverage sweep),
+[#1002](https://github.com/TwoToned/gearflow/issues/1002) (key UX),
+[#1003](https://github.com/TwoToned/gearflow/issues/1003) (MCP OAuth),
+[#1004](https://github.com/TwoToned/gearflow/issues/1004) (polish).
 **Related:** [FEATUREDOCS/56](../../FEATUREDOCS/56-api-mcp.md),
 [54 (Convex data layer)](../../FEATUREDOCS/54-convex-data-layer.md),
 [62 (project lifecycle locks)](../../FEATUREDOCS/62-project-lifecycle-locks.md),

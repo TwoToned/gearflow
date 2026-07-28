@@ -9074,72 +9074,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "8b114161049d5d20"
   },
   {
-    "operation": "collaboration.acquireLock",
-    "module": "collaboration",
-    "fn": "acquireLock",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "clientSessionId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerColor",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerName",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerUserId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "targetId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "targetType",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "a22173fea9805886",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
     "operation": "collaboration.addComment",
     "module": "collaboration",
     "fn": "addComment",
@@ -9193,47 +9127,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "e4d877fa9afe8f30",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
-    "operation": "collaboration.clearPresence",
-    "module": "collaboration",
-    "fn": "clearPresence",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "userId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "fa2edb7199789b91",
     "returnsSha": "74234e98afe7498f"
   },
   {
@@ -9322,47 +9215,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f"
   },
   {
-    "operation": "collaboration.getLock",
-    "module": "collaboration",
-    "fn": "getLock",
-    "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "targetId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "targetType",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "91b5225519116061",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
     "operation": "collaboration.getProjectBlockingSummary",
     "module": "collaboration",
     "fn": "getProjectBlockingSummary",
@@ -9417,123 +9269,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "2fbb77229b52469e",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
-    "operation": "collaboration.heartbeatLock",
-    "module": "collaboration",
-    "fn": "heartbeatLock",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "clientSessionId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "lockId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerUserId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "6ef910ae7be64416",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
-    "operation": "collaboration.heartbeatPresence",
-    "module": "collaboration",
-    "fn": "heartbeatPresence",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "activeTargetId",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "activeTargetType",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "avatarUrl",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "mode",
-        "optional": false,
-        "type": "union"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "section",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "userColor",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "userId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "userName",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "64f353f983bd8dc6",
     "returnsSha": "74234e98afe7498f"
   },
   {
@@ -9625,37 +9360,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f"
   },
   {
-    "operation": "collaboration.listLocksForEntity",
-    "module": "collaboration",
-    "fn": "listLocksForEntity",
-    "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "0adaa27fab584be5",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
     "operation": "collaboration.listOpenBlockingThreads",
     "module": "collaboration",
     "fn": "listOpenBlockingThreads",
@@ -9674,37 +9378,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
-    "operation": "collaboration.listPresence",
-    "module": "collaboration",
-    "fn": "listPresence",
-    "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "0adaa27fab584be5",
     "returnsSha": "74234e98afe7498f"
   },
   {
@@ -9879,47 +9552,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6ffeec833763bdd4",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
-    "operation": "collaboration.releaseLock",
-    "module": "collaboration",
-    "fn": "releaseLock",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "clientSessionId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "lockId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerUserId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "6ef910ae7be64416",
     "returnsSha": "74234e98afe7498f"
   },
   {
@@ -10139,72 +9771,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "d3644603406b073a",
-    "returnsSha": "74234e98afe7498f"
-  },
-  {
-    "operation": "collaboration.takeoverLock",
-    "module": "collaboration",
-    "fn": "takeoverLock",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "clientSessionId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "entityType",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerColor",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerName",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "ownerUserId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "targetId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "targetType",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "a22173fea9805886",
     "returnsSha": "74234e98afe7498f"
   },
   {
@@ -50481,10 +50047,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1124,
-  agentReachable: 291,
-  queries: 397,
-  mutations: 727,
+  total: 1115,
+  agentReachable: 285,
+  queries: 394,
+  mutations: 721,
   agentReachableQueries: 22,
-  agentReachableMutations: 269,
+  agentReachableMutations: 263,
 } as const;

@@ -16240,6 +16240,135 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f"
   },
   {
+    "operation": "financeArtifacts.attachInvoiceArtifact",
+    "module": "financeArtifacts",
+    "fn": "attachInvoiceArtifact",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "invoiceId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "storageId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7514c8a5fd874eab",
+    "returnsSha": "82f81e090dcc6b52"
+  },
+  {
+    "operation": "financeArtifacts.attachQuoteArtifact",
+    "module": "financeArtifacts",
+    "fn": "attachQuoteArtifact",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "quoteId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "storageId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7a7816d7a8c25004",
+    "returnsSha": "82f81e090dcc6b52"
+  },
+  {
+    "operation": "financeArtifacts.invoiceArtifactContext",
+    "module": "financeArtifacts",
+    "fn": "invoiceArtifactContext",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "invoiceId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "84248e6f6265683d",
+    "returnsSha": "74234e98afe7498f"
+  },
+  {
+    "operation": "financeArtifacts.quoteArtifactContext",
+    "module": "financeArtifacts",
+    "fn": "quoteArtifactContext",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "quoteId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6e90c446e495449b",
+    "returnsSha": "74234e98afe7498f"
+  },
+  {
     "operation": "globalSearch.search",
     "module": "globalSearch",
     "fn": "search",
@@ -50337,10 +50466,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1120,
+  total: 1124,
   agentReachable: 291,
-  queries: 395,
-  mutations: 725,
+  queries: 397,
+  mutations: 727,
   agentReachableQueries: 22,
   agentReachableMutations: 269,
 } as const;

@@ -18,21 +18,41 @@ import { getTtReportBuilder } from "./templates";
 import type { TestTagReportType } from "./types";
 
 /**
+ * Options for a project document render (#987).
+ *
+ * Two mutually exclusive modes in practice:
+ * - **artifact** — `stampedDates` supplied, `draftPreview` off. Rendered ONCE at
+ *   send/issue by `src/server/finance-documents.ts`; the bytes are stored and
+ *   every later download streams them back untouched.
+ * - **preview** — `draftPreview` on, no stamped dates. Watermarked, never stored.
+ */
+export interface ProjectPdfOptions {
+  /** Dates frozen on the finance row this render represents — see
+   *  `buildDocumentData`'s `stampedDates`. */
+  stampedDates?: { documentDate?: number; quoteValidUntil?: number };
+  /** Stamp the "DRAFT PREVIEW — NOT SENT" banner on every page. */
+  draftPreview?: boolean;
+}
+
+/**
  * Generate a PDF document for a project.
  *
  * @param projectId - The project to generate a document for
  * @param organizationId - The organization the project belongs to
  * @param docType - The type of document to generate
+ * @param options - Artifact/preview render options (see ProjectPdfOptions)
  * @returns PDF as Uint8Array
  */
 export async function generatePdf(
   projectId: string,
   organizationId: string,
   docType: ProjectDocumentType,
+  options?: ProjectPdfOptions,
 ): Promise<Uint8Array> {
   const layout = DOCUMENT_LAYOUTS[docType];
   const data = await buildDocumentData(projectId, organizationId, docType, undefined, {
     expandProjectGroups: layout.expandProjectGroups,
+    stampedDates: options?.stampedDates,
   });
 
   // Real font metrics for composeDocument's accurate text-wrap measurement
@@ -42,7 +62,9 @@ export async function generatePdf(
   const measureDoc = await PDFDocument.create();
   const fonts = await getHelveticaFonts(measureDoc, pdfLib, new Map());
 
-  const { template, inputs } = composeDocument(docType, data, data.org_document_color, fonts);
+  const { template, inputs } = composeDocument(docType, data, data.org_document_color, fonts, {
+    draftPreview: options?.draftPreview,
+  });
   return renderPdfTemplate(template, inputs);
 }
 

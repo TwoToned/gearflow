@@ -6,6 +6,7 @@ import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import { invoiceSchema, type InvoiceFormValues } from "@/lib/validations/invoice";
 import { getInvoiceNumberConfig } from "@/server/settings";
+import { generateInvoiceArtifact } from "@/server/finance-documents";
 import { datePartsInTimezone } from "@/lib/project-number";
 
 /** Browser-direct INVOICE writes (WS1 #940) — mirrors use-native-client-writes.ts. */
@@ -48,14 +49,25 @@ export function useInvoiceWrites() {
         now: Date.now(),
       });
     },
-    /** Assigns the invoice number — reads the CURRENT invoice-number format
-     *  config (server action, small read-only call, matches
-     *  getProjectNumberConfig's precedent) and allocates in-mutation. */
-    issue: async (id: string, dueDate?: Date): Promise<{ id: string; invoiceNumber: string }> => {
+    /**
+     * Assigns the invoice number — reads the CURRENT invoice-number format
+     * config (server action, small read-only call, matches
+     * getProjectNumberConfig's precedent) and allocates in-mutation. Then
+     * renders and stores the invoice PDF (#987), which is what makes an ISSUED
+     * invoice immutable as a DOCUMENT and not only as a row.
+     *
+     * Same failure contract as sending a quote: a render failure leaves the
+     * invoice issued with `artifactReady: false` and a retry in the finance
+     * panel, never an unissued invoice or a silent gap.
+     */
+    issue: async (
+      id: string,
+      dueDate?: Date,
+    ): Promise<{ id: string; invoiceNumber: string; artifactReady: boolean }> => {
       const org = requireOrg();
       const config = await getInvoiceNumberConfig();
       const now = new Date();
-      return await issueM({
+      const result = await issueM({
         id,
         orgId: org,
         autoNumber: {
@@ -69,6 +81,14 @@ export function useInvoiceWrites() {
         auditId: createId(),
         now: now.getTime(),
       });
+
+      let artifactReady = true;
+      try {
+        await generateInvoiceArtifact(result.id);
+      } catch {
+        artifactReady = false;
+      }
+      return { ...result, artifactReady };
     },
     void: async (id: string, reason: string): Promise<void> => {
       const org = requireOrg();

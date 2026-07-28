@@ -210,7 +210,9 @@ calendar day; and a `DRAFT` v1 inserted for every project with no quote row.
 
 Pre-existing sent quotes get **no artifact** — retro-rendering one from today's
 project state would manufacture a document that was never sent, which is the
-exact defect this program removes.
+exact defect this program removes. Their rows show the retry action rather than a
+download; taking it renders from current state, which is a deliberate,
+user-initiated choice and not something the migration does behind their back.
 
 "Effectively none" is a basis for choosing the simple path, not a licence to skip
 verification. The driver counts first, **halts** on a mismatch against
@@ -219,11 +221,74 @@ verification. The driver counts first, **halts** on a mismatch against
 
 ### Not in Phase A
 
-Immutable stored artifacts and `pdfFileId` wiring (#987), the unified
-status × quote-state lock tier (#988), the real Finance tab with its send and
-invoice-issue dialogs and drift indicator (#989), lock UX (#990), and the
-org-level Finance section (#992). The current UI surface is
-`<ProjectQuoteRail>` — enough to exercise the five verbs, not the designed tab.
+The unified status × quote-state lock tier (#988), the real Finance tab with its
+send and invoice-issue dialogs and drift indicator (#989), lock UX (#990), and
+the org-level Finance section (#992). The current UI surface is
+`<ProjectQuoteRail>` + `<ProjectFinancePanel>` — enough to exercise the five
+verbs and the documents, not the designed tab.
+
+## Immutable documents (#987 — Phase B of #985)
+
+A quote's money was already frozen at send and an invoice's row was already
+immutable once ISSUED — but the **document** was live-rendered on every click,
+so both guarantees stopped at the database boundary. Now the PDF is rendered
+once, at the freeze moment, and the bytes are kept:
+
+```
+sendNative / issueNative  (Convex transaction — the row)
+        └─▶ src/server/finance-documents.ts  (server action — the document)
+              generatePdf() ─▶ uploadToS3() [Convex _storage] ─▶ storageId
+                    └─▶ convex/financeArtifacts.ts attach*Artifact
+                          └─▶ quotes.pdfFileId / invoices.pdfFileId
+```
+
+Chosen over "reconstruct the document from the snapshot on demand" because it is
+the only option that is actually immutable: a reconstruction path re-executes
+~1,400 lines of `build-document-data.ts` plus the composer against a snapshot
+that would have to grow to carry every token, and any future change to that code
+would silently rewrite historical documents. Storing bytes makes the guarantee
+structural rather than disciplinary — the same reasoning as `withValidatedBody`.
+
+### The rules
+
+- **Attach once, never overwrite.** `attachQuoteArtifact` / `attachInvoiceArtifact`
+  return `{ attached: false, pdfFileId }` when one is already there instead of
+  replacing it. That is what makes exposing a retry button safe: a retry racing a
+  slow first attempt loses harmlessly, and the server action bins its orphan
+  upload.
+- **Nothing deletes one.** A recalled, superseded, declined or voided row keeps
+  its artifact — the client may be holding that copy, so destroying ours makes
+  the record worse. The rail badges the state next to the download.
+- **A draft has no artifact**, and the mutations refuse to give it one. Its only
+  document is the watermarked preview, which is never stored.
+- **Dates come from the row.** The render is handed the stamped
+  `quoteDate`/`validUntil` (or an invoice's `issuedAt`), never `now`.
+- **No regeneration path on read.** `/api/finance/{quote,invoice}/…/pdf` streams
+  the stored bytes or 404s. A route that can regenerate is a route that can hand
+  the client a different document under the same name.
+
+### Failure handling
+
+The render runs after the Convex transaction commits, so it can fail on its own.
+A `SENT` quote (or `ISSUED` invoice) with a null `pdfFileId` is therefore a real
+state, and it is never silent: the row renders "Document missing — generate", and the
+retry is only reachable while `pdfFileId` is null. The send/issue itself is never
+rolled back for a render failure — the money is frozen either way.
+
+### Surfaces
+
+| Surface | Behaviour |
+|---|---|
+| Quote revision row | Download (stored artifact) · Preview draft (watermarked) · Document missing — generate. Exactly one of the three, always — the wording covers a failed render and a pre-#987 row alike, neither of which is a state the user should have to guess at. |
+| Invoice row | Same three states, keyed on `issuedAt` instead of `sentAt`. |
+| Header **Documents ▾** | Warehouse artifacts only. "Quote / proposal" and "Invoice" are gone — that dropdown was the rogue path. |
+| `/api/documents/[projectId]?type=quote` | 400 without `preview=1`; with it, requires `invoice:read` and stamps DRAFT PREVIEW — NOT SENT on every page. |
+
+Permissions: `invoice:read` to download or preview, `invoice:publish` to
+generate/retry a quote artifact, `invoice:issue` for an invoice one — the same
+audiences that can send and issue in the first place. Both routes carry explicit
+cross-org tests (`quotes.by_cuid`/`invoices.by_cuid` are GLOBAL indexes,
+R-8.4.3).
 
 ## Numbering (zero engine change)
 
@@ -528,7 +593,11 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | `convex/lib/quoteState.ts` | Derived `EXPIRED`, `PUBLISHED`→`SENT` normalisation, `hasAcceptedQuote`, org-checked quote/project loaders |
 | `convex/lib/quoteDates.ts` / `src/lib/quote-validity.ts` | Validity default + bounds + timezone-correct `validUntil`/expiry (mirrored pair) |
 | `convex/backfillQuoteRevisions.ts` | Forward migration + `verifyQuoteRevisions` |
-| `src/hooks/use-quote-writes.ts` / `src/components/projects/project-quote-rail.tsx` | Client wiring for the five verbs |
+| `src/hooks/use-quote-writes.ts` / `src/components/projects/project-quote-rail.tsx` | Client wiring for the five verbs + the revision row's document action |
+| `convex/financeArtifacts.ts` | Attach-once artifact mutations + the org-checked context queries the download routes authorise against (#987) |
+| `src/server/finance-documents.ts` | `generateQuoteArtifact` / `generateInvoiceArtifact` — render, upload, attach, bin the orphan on a lost race |
+| `src/lib/finance-artifacts.ts` / `src/lib/finance-artifact-response.ts` | Artifact file naming + the shared streaming/org-check half of both routes |
+| `src/app/api/finance/{quote,invoice}/[id]/pdf/route.ts` | Download the stored document — no regeneration path |
 | `convex/invoicesWrites.ts` | `createNative`/`issueNative`/`voidNative`/`deleteDraftNative`/`createCreditNative` |
 | `convex/lib/financeSnapshot.ts` | `buildFinanceLines` — the shared quote/invoice line-breakdown builder |
 | `convex/lib/xeroAccountCascade.ts` | Pure cascade resolver functions |
@@ -572,6 +641,22 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 - `convex/backfillQuoteRevisions.test.ts` — dry-run/apply split, every migration
   step, idempotency, template exclusion, monotonicity, SERVICE-only access, and
   zero un-migrated rows afterwards.
+- `convex/financeArtifacts.test.ts` — 13 tests: attach-once (never overwrites),
+  the sent/issued preconditions, service-only access, and a cross-org case per
+  function including "the quote is mine but the project isn't".
+- `src/server/finance-documents.test.ts` — 11 tests, led by *"a sent quote's PDF
+  is byte-identical on repeat download while the live project changes underneath
+  it"*: the pipeline is re-primed with different bytes between calls and the
+  stored artifact does not move. Plus the invoice equivalent, stamped dates
+  (never `now`), the retry path, and orphan cleanup on a lost attach race.
+- `src/app/api/finance/__tests__/artifact-routes.test.ts` — 15 tests: streams
+  stored bytes and never calls `generatePdf`, cross-org 404s on both routes, a
+  403 when the stored file's org doesn't match, `?type=quote` without `preview=1`
+  is a 400, and preview requires `invoice:read`.
+- `src/lib/pdfme/document-composer.test.ts` / `plugins/gearflow-draft-watermark.test.ts`
+  — the watermark reserves exactly its own height, repeats on every page, drops
+  no line items, is absent from a normal render, and survives the em dash
+  Helvetica can't encode.
 - `convex/projectWrites.test.ts` — the acceptance gate on `CONFIRMED`: blocked
   without an accepted revision, satisfied by one, unsatisfied by a merely-SENT
   one or another org's (IDOR), the admin/PM override with its audited

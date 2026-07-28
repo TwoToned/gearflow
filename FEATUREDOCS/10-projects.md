@@ -713,6 +713,17 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - Uses existing pdfme infrastructure (gearflowPageHeader/Footer plugins)
 - Available via Documents dropdown on project detail page
 
+### Documents ▾ is warehouse-only (#987)
+The project header's **Documents ▾** offers Pull slip, Delivery docket, Return
+sheet, Call sheet and Project timeline — all artifacts of LIVE project state,
+which is correct for them (a packer wants today's list).
+
+"Quote / proposal" and "Invoice" were removed. A client-facing finance document
+is the STORED revision, downloaded from the finance panel
+(`/api/finance/{quote,invoice}/…/pdf`), never a fresh render — two clicks a week
+apart used to produce two different documents under the same name. See
+[FEATUREDOCS/66](./66-finance-quotes-invoices-xero.md) "Immutable documents".
+
 ## Duplicate Model Handling
 Adding a model that already exists as a line item on the project **auto-merges** into the existing line item (increments quantity) by default. When a duplicate is detected, the add dialog presents a choice:
 - **Combine with existing** (default) — merges quantity into the existing line item

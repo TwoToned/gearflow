@@ -13,6 +13,7 @@ import gearflowCrewTable from "./gearflow-crew-table";
 import gearflowCallSheetInfo from "./gearflow-call-sheet-info";
 import gearflowDayHeader from "./gearflow-day-header";
 import gearflowRichText from "./gearflow-rich-text";
+import gearflowDraftWatermark from "./gearflow-draft-watermark";
 import { gearflowDataTable } from "./gearflow-data-table";
 import { gearflowSummaryBox } from "./gearflow-summary-box";
 import { gearflowTextBlock } from "./gearflow-text-block";
@@ -31,6 +32,7 @@ export const gearflowPlugins = {
   gearflowCallSheetInfo,
   gearflowDayHeader,
   gearflowRichText,
+  gearflowDraftWatermark,
   // Custom plugins — reports
   gearflowDataTable,
   gearflowSummaryBox,
@@ -52,6 +54,7 @@ export const gearflowPlugins = {
   rvltFlowCallSheetInfo: gearflowCallSheetInfo,
   rvltFlowDayHeader: gearflowDayHeader,
   rvltFlowRichText: gearflowRichText,
+  rvltFlowDraftWatermark: gearflowDraftWatermark,
   rvltFlowDataTable: gearflowDataTable,
   rvltFlowSummaryBox: gearflowSummaryBox,
   rvltFlowTextBlock: gearflowTextBlock,
@@ -75,3 +78,7 @@ export {
   gearflowSummaryBox,
   gearflowTextBlock,
 };
+// NOTE: gearflowDraftWatermark is deliberately NOT re-exported by name — it is
+// only ever resolved through the registry above (by schema `type`), and an
+// unused named re-export trips the dead-code ratchet (R-4.2). Import it from
+// ./gearflow-draft-watermark directly if you ever need the plugin itself.

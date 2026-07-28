@@ -2137,7 +2137,11 @@ export default defineSchema({
   // `publishedAt`/`publishedById` are the DEPRECATED pre-#986 names, kept
   // declared until `backfillQuoteRevisions.ts` confirms zero remaining rows
   // carry them (schema-validation precedent: FEATUREDOCS/66 `depositPercent`).
-  // `pdfFileId` links the stored immutable artifact — written in Phase B (#987).
+  // `pdfFileId` links the stored immutable artifact (a Convex `_storage` id): the
+  // PDF is rendered ONCE at send and the bytes kept, so re-downloading a sent
+  // revision can never produce a different document from the one the client is
+  // holding (#987). Written once and never overwritten — see
+  // convex/financeArtifacts.ts. A recalled/superseded revision KEEPS its artifact.
   quotes: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -2189,6 +2193,12 @@ export default defineSchema({
   // + reissue, or a CREDIT invoice — never an in-place patch of issued amounts.
   // `paymentStatus` mirrors SubHirePaymentStatus's vocabulary and is written ONLY
   // by the Xero payment-status poll (phase 2), never by the client.
+  //
+  // `pdfFileId` (#987) is the stored immutable artifact rendered at ISSUE time —
+  // the row was already immutable once ISSUED, but until Phase B the DOCUMENT was
+  // re-rendered from live project state on every click, so the guarantee stopped
+  // at the database boundary. Written once, never overwritten
+  // (convex/financeArtifacts.ts).
   invoices: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -2201,6 +2211,7 @@ export default defineSchema({
     issuedAt: v.optional(v.number()),
     issuedById: v.optional(v.string()),
     dueDate: v.optional(v.number()),
+    pdfFileId: v.optional(v.string()),
     // Money snapshot, frozen at create/issue time (never recomputed from live
     // project pricing after issue — R-9.3 "server is the authority", but the
     // authoritative moment is issue, not "whenever read").

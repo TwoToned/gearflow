@@ -57,6 +57,13 @@ export interface TotalsLayoutConfig {
 
 export type LayoutBlock =
   | { kind: "header"; title: string }
+  /**
+   * "DRAFT PREVIEW — NOT SENT" banner (#987). Never part of a stored layout —
+   * `getDocumentLayout(docType, { draftPreview: true })` splices it in for the
+   * preview render only, and `document-composer.ts` repeats it under the header
+   * on EVERY page (a banner on page 1 of a 4-page quote is not a warning).
+   */
+  | { kind: "draftWatermark"; title: string; subtitle: string }
   | { kind: "detailsRow"; client: ClientDetailsConfig; project: ProjectDetailsConfig }
   | { kind: "table"; config: TableLayoutConfig }
   | { kind: "totals"; config: TotalsLayoutConfig }
@@ -247,6 +254,40 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
   },
 };
 
-export function getDocumentLayout(docType: ProjectDocumentType): DocumentLayout {
-  return DOCUMENT_LAYOUTS[docType];
+/** The banner text per doc type. One place, so the composer's height reservation
+ *  and the plugin's render can never disagree about what is being drawn. */
+const DRAFT_PREVIEW_TITLE = "DRAFT PREVIEW — NOT SENT";
+const DRAFT_PREVIEW_SUBTITLE: Partial<Record<ProjectDocumentType, string>> = {
+  quote: "Live pricing, not frozen — this is not the document the client holds. Send the quote to produce that.",
+  invoice: "Live pricing, not frozen — this invoice has not been issued and has no invoice number.",
+};
+
+export interface DocumentLayoutOptions {
+  /**
+   * Stamp the draft-preview watermark (#987). Set ONLY by
+   * `/api/documents/[projectId]?preview=1`; a stored artifact is rendered
+   * without it, which is what makes "the file you downloaded is the file the
+   * client got" checkable by eye as well as by byte.
+   */
+  draftPreview?: boolean;
+}
+
+export function getDocumentLayout(
+  docType: ProjectDocumentType,
+  options?: DocumentLayoutOptions,
+): DocumentLayout {
+  const layout = DOCUMENT_LAYOUTS[docType];
+  if (!options?.draftPreview) return layout;
+
+  const watermark: LayoutBlock = {
+    kind: "draftWatermark",
+    title: DRAFT_PREVIEW_TITLE,
+    subtitle: DRAFT_PREVIEW_SUBTITLE[docType] ?? "This is a preview. It has not been sent to the client.",
+  };
+  // Directly after the header — the composer treats it as page furniture and
+  // repeats both on every page, so ordering here only fixes which comes first.
+  const headerIdx = layout.blocks.findIndex((b) => b.kind === "header");
+  const blocks = [...layout.blocks];
+  blocks.splice(headerIdx + 1, 0, watermark);
+  return { ...layout, blocks };
 }

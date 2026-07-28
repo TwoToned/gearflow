@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 395 | 22 | 155 | 216 | 2 |
-| Mutations | 725 | 269 | 449 | 1 | 6 |
-| **Total** | **1120** | **291** | **604** | **217** | **8** |
+| Queries | 397 | 22 | 157 | 216 | 2 |
+| Mutations | 727 | 269 | 451 | 1 | 6 |
+| **Total** | **1124** | **291** | **608** | **217** | **8** |
 
 <!-- reachability-floor: 291 -->
 
@@ -86,6 +86,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `emails` | 1 |
 | `fileUploads` | 8 |
 | `files` | 4 |
+| `financeArtifacts` | 4 |
 | `globalSearch` | 1 |
 | `groupTemplateItems` | 6 |
 | `groupTemplates` | 6 |

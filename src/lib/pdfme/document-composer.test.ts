@@ -12,7 +12,7 @@ import * as pdfLib from "@pdfme/pdf-lib";
 import { mm2pt } from "@pdfme/common";
 import { composeDocument, calculateItemHeight, type ComposeResult } from "./document-composer";
 import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
-import { CONTENT_WIDTH } from "./template-constants";
+import { CONTENT_WIDTH, SECTION_GAP } from "./template-constants";
 import { makeLineItem, runTablePlugin } from "./plugins/test-utils";
 import { getHelveticaFonts, wrapRichText, type RichTextFonts } from "./plugins/helpers";
 import type { DocumentData, DocumentLineItem, TablePluginConfig } from "./types";
@@ -780,6 +780,66 @@ describe("composeDocument — accurate rich-text pagination (fonts provided)", (
     );
     // Exactly one schema — never split when fonts weren't provided.
     expect(tcEntries).toHaveLength(1);
+  });
+});
+
+describe("composeDocument — draft preview watermark (#987)", () => {
+  const soloItems = () => [
+    makeLineItem({ id: "only-item", status: "CHECKED_OUT", checkedOutQuantity: 1, model: { name: "Solo Item" } }),
+  ];
+
+  it("is absent by default — a STORED artifact must never carry it", () => {
+    for (const docType of PROJECT_DOC_TYPES) {
+      const result = composeDocument(docType, makeData({ line_items: soloItems() }), "#0d4f4f");
+      expect(findAllSchemasOfType(result, "gearflowDraftWatermark")).toHaveLength(0);
+    }
+  });
+
+  it("stamps 'DRAFT PREVIEW — NOT SENT' on the preview render", () => {
+    const result = composeDocument("quote", makeData({ line_items: soloItems() }), "#0d4f4f", undefined, {
+      draftPreview: true,
+    });
+
+    const marks = findAllSchemasOfType(result, "gearflowDraftWatermark");
+    expect(marks).toHaveLength(1);
+    const config = JSON.parse(result.inputs[0][marks[0].schema.name as string]);
+    expect(config.title).toBe("DRAFT PREVIEW — NOT SENT");
+    expect(config.subtitle.length).toBeGreaterThan(0);
+  });
+
+  it("reserves its own height — the block below it starts lower than it would without the banner", () => {
+    const data = makeData({ line_items: soloItems() });
+    const plain = composeDocument("quote", data, "#0d4f4f");
+    const preview = composeDocument("quote", data, "#0d4f4f", undefined, { draftPreview: true });
+
+    const mark = findAllSchemasOfType(preview, "gearflowDraftWatermark")[0].schema;
+    expect(mark.height).toBeGreaterThan(0);
+
+    const firstTableY = (r: ComposeResult) => findAllSchemasOfType(r, "gearflowTable")[0].schema.position.y;
+    // Exactly the banner + its section gap — no more, no less: an unreserved
+    // (or over-reserved) block is the v0.8.1.1 tail-drop class of bug.
+    expect(firstTableY(preview) - firstTableY(plain)).toBeCloseTo((mark.height as number) + SECTION_GAP, 5);
+  });
+
+  it("repeats on EVERY page — a banner on page 1 of a 4-page quote is not a warning", () => {
+    const lineItems = makeLongLineItemList(120);
+    const result = composeDocument("quote", makeData({ line_items: lineItems, total_items: lineItems.length }), "#0d4f4f", undefined, {
+      draftPreview: true,
+    });
+
+    expect(result.template.schemas.length).toBeGreaterThan(1);
+    for (const pageSchemas of result.template.schemas) {
+      expect(pageSchemas.some((s) => s.type === "gearflowDraftWatermark")).toBe(true);
+    }
+  });
+
+  it("still renders every line item — the banner steals space without dropping the tail", () => {
+    const lineItems = makeLongLineItemList(120);
+    const data = makeData({ line_items: lineItems, total_items: lineItems.length });
+    const result = composeDocument("quote", data, "#0d4f4f", undefined, { draftPreview: true });
+
+    const expectedParents = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem).length;
+    assertFullCoverage(result, expectedParents);
   });
 });
 

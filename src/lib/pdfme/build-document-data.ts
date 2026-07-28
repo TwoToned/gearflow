@@ -83,6 +83,17 @@ export async function buildDocumentData(
      * `DOCUMENT_LAYOUTS[docType].expandProjectGroups`.
      */
     expandProjectGroups?: boolean;
+    /**
+     * Dates FROZEN onto the finance row this render represents (#987) — a
+     * quote's stamped `quoteDate`/`validUntil`, or an issued invoice's
+     * `issuedAt`. Absent ⇒ live render (previews and warehouse docs), which
+     * still uses `now`.
+     *
+     * This closes the silent-validity-extension bug: `quote_valid_until` used
+     * to be recomputed from `now` on every render, so merely re-opening an old
+     * quote moved the expiry date the client had been given.
+     */
+    stampedDates?: { documentDate?: number; quoteValidUntil?: number };
   }
 ): Promise<DocumentData> {
   const expandProjectGroups = options?.expandProjectGroups ?? false;
@@ -670,16 +681,21 @@ export async function buildDocumentData(
   const totalNum = Number(serialized.total) || 0;
   const depositNum = Number(serialized.depositPaid) || 0;
   const now = new Date();
-  // #986 — the validity DEFAULT and the day-boundary maths now come from the one
+  // #986/#987 — the validity DEFAULT and the day-boundary maths come from the one
   // shared module (`quote-validity.ts`), resolved in the ORG's timezone rather
-  // than the render host's. This is still computed from `now`, which means a
-  // re-render of an un-sent draft still moves the date — Phase B (#987) is what
-  // makes the PDF read the SENT revision's stamped `validUntil` instead of
-  // recomputing. A sent revision already carries an immutable `validUntil`
-  // (stamped by `quotesWrites.sendNative`); nothing extends it after the fact.
+  // than the render host's. When this render represents a SENT revision, both
+  // dates come from the row (`options.stampedDates`) and NOTHING here recomputes
+  // them — that is what stops re-opening an old quote from silently extending how
+  // long it is valid. The `now`-derived fallback is the DRAFT PREVIEW case, where
+  // no date has been stamped yet because nothing has been sent.
   const quoteValidityDays = resolveQuoteValidityDays(documentSettings?.quoteValidityDays);
   const orgTimezone = typeof orgSettings.timezone === "string" ? orgSettings.timezone : undefined;
-  const quoteValidUntil = new Date(computeValidUntil(now.getTime(), quoteValidityDays, orgTimezone));
+  const stamped = options?.stampedDates;
+  const documentDate = stamped?.documentDate != null ? new Date(stamped.documentDate) : now;
+  const quoteValidUntil =
+    stamped?.quoteValidUntil != null
+      ? new Date(stamped.quoteValidUntil)
+      : new Date(computeValidUntil(documentDate.getTime(), quoteValidityDays, orgTimezone));
 
   // WS1 (#940) — only the invoice doc type renders this; skip the extra
   // Convex round trip for the other 4 doc types.
@@ -749,7 +765,9 @@ export async function buildDocumentData(
     internal_notes: serialized.internalNotes || "",
 
     // Metadata
-    document_date: formatDate(now),
+    // The date PRINTED on the document — a frozen finance row's own date when
+    // this render represents one, `now` otherwise (#987).
+    document_date: formatDate(documentDate),
     invoice_number: invoiceNumber || "",
     document_footer_text: documentSettings?.footerText || "",
     document_footer_second_line: documentSettings?.footerSecondLine || "",

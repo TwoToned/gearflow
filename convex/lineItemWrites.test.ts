@@ -887,6 +887,31 @@ describe("lineItemWrites.reorderNative", () => {
     await member(t, "viewer");
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, { orgId: ORG, items: [], now: NOW })).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // #988 (Phase C) — reorderNative was FEATUREDOCS/62's "deliberately deferred"
+  // gate site; it's now a structural gate like every other line-item write.
+  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "ON_SITE", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 0 });
+      await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, sortOrder: 1 });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, {
+        orgId: ORG, items: [{ id: "l2", sortOrder: 0 }, { id: "l1", sortOrder: 1 }], now: NOW,
+      }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.reorderNative, {
+      orgId: ORG, items: [{ id: "l2", sortOrder: 0 }, { id: "l1", sortOrder: 1 }], now: NOW + 1,
+      justification: "Client requested a change while on site today.",
+    });
+    await t.run(async (ctx) => {
+      const l2 = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "l2")).first();
+      expect(l2?.sortOrder).toBe(0);
+    });
+  });
 });
 
 describe("lineItemWrites.addLineItemSmartNative", () => {

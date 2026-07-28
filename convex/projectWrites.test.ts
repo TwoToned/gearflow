@@ -140,6 +140,161 @@ describe("projectWrites.updateStatusNative", () => {
   });
 });
 
+// #986 (decision 3) — a project may not advance to CONFIRMED until a quote
+// revision has been ACCEPTED. Overridable by the SAME narrow audience that can
+// open a full unlock session (org admins/owners + this project's PMs) with the
+// SAME bounded justification as #792/#793 — no new permission, no second copy of
+// the bounds (R-3.1).
+describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#986)", () => {
+  const toConfirmed = { id: "p1", orgId: ORG, status: "CONFIRMED" as const, actor: ACTOR, auditId: "log1", now: NOW };
+
+  async function seedAcceptedQuote(t: ReturnType<typeof makeT>, status: "ACCEPTED" | "SENT" = "ACCEPTED") {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status,
+        snapshot: null, sentAt: NOW, validUntil: NOW + 30 * 86_400_000,
+      });
+    });
+  }
+
+  test("blocks the move when no quote revision has been accepted", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
+    ).rejects.toThrow(/no accepted quote/i);
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("QUOTED");
+  });
+
+  test("allows the move once a revision is ACCEPTED — no justification needed", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "QUOTED");
+    await seedAcceptedQuote(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed);
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("CONFIRMED");
+  });
+
+  test("a merely SENT (unaccepted) revision does not satisfy the gate", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await seedAcceptedQuote(t, "SENT");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
+    ).rejects.toThrow(/no accepted quote/i);
+  });
+
+  test("another org's accepted quote never satisfies the gate (IDOR guard)", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+    await t.run(async (ctx) => {
+      // Same projectId, different org — `by_projectId` is a GLOBAL index.
+      await ctx.db.insert("quotes", {
+        id: "q_foreign", organizationId: "org_2", projectId: "p1", version: 1, status: "ACCEPTED", snapshot: null,
+      });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, toConfirmed),
+    ).rejects.toThrow(/no accepted quote/i);
+  });
+
+  test("an admin/owner overrides with a bounded justification, which is audited", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "QUOTED");
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, justification: "too short" }),
+    ).rejects.toThrow(/no accepted quote/i);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+      ...toConfirmed,
+      justification: "Client confirmed verbally on site; PO to follow.",
+    });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.status).toBe("CONFIRMED");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.metadata).toEqual({ justification: "Client confirmed verbally on site; PO to follow." });
+    });
+  });
+
+  test("a non-PM member cannot override even with a justification", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "QUOTED");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+        ...toConfirmed,
+        justification: "Client confirmed verbally on site; PO to follow.",
+      }),
+    ).rejects.toThrow(/admins.*owners.*PM/i);
+  });
+
+  test("the project's assigned PM can override", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "QUOTED");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+      ...toConfirmed,
+      justification: "Client confirmed verbally on site; PO to follow.",
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("CONFIRMED");
+  });
+
+  test("moves that don't land on CONFIRMED are ungated, and a no-op re-assert never re-prompts", async () => {
+    const t = makeT();
+    // Seeded AT confirmed with no accepted quote — leaving CONFIRMED, and
+    // re-asserting the SAME status, must both pass ungated.
+    await seedProject(t, "member");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+      ...toConfirmed, status: "PREPPING" as const,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+      ...toConfirmed, status: "PREPPING" as const, auditId: "log2",
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("PREPPING");
+  });
+
+  test("RE-crossing into CONFIRMED is gated again (parity with the snapshot re-crossing rule)", async () => {
+    const t = makeT();
+    await seedProject(t, "owner");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+      ...toConfirmed, status: "PREPPING" as const,
+    });
+    // Coming back needs the gate — pricing may have moved while it was reverted.
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...toConfirmed, auditId: "log2" }),
+    ).rejects.toThrow(/no accepted quote/i);
+  });
+});
+
+// #986 — `projects.revision` is the shared quote/project version counter and is
+// SERVER-OWNED: written only by createNative (seeded to 1) and
+// quotesWrites.newVersionNative, never by a client patch.
+describe("projectWrites — projects.revision is server-owned (#986)", () => {
+  test("updateNative strips a client-supplied revision and refuses to clear it", async () => {
+    const t = makeT();
+    await seedProject(t, "member");
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { revision: 3 });
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
+      id: "p1", orgId: ORG, set: { name: "Renamed", revision: 99 }, clear: ["revision"],
+      actor: ACTOR, auditId: "log9", now: NOW,
+    });
+
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.name).toBe("Renamed");
+    expect(p?.revision).toBe(3); // neither forged nor cleared
+  });
+});
+
 describe("projectWrites.updateNotesNative", () => {
   test("patches a whitelisted notes field + audit; clears on null", async () => {
     const t = makeT();

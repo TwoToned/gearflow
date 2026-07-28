@@ -214,6 +214,20 @@ function calculateRemainingItemHeight(item: DocumentLineItem, config: TableLayou
 export function calculateItemHeight(item: DocumentLineItem, config: TableLayoutConfig): number {
   let heightPt = PARENT_ROW_PT;
 
+  // Sub-hire "via <Supplier>" line — must match gearflow-table.ts's own
+  // unconditional `item.subHireId != null && item.supplierName` check
+  // exactly (fontSize(9) + 1 = 10pt there), or every sub-hire row's real
+  // rendered height silently exceeds what was reserved for it. On a doc
+  // with many sub-hire lines this compounds fast: document-composer.ts
+  // ends up believing more items fit on a page than actually do, the
+  // table's own render-time overflow guard then quietly stops mid-page
+  // with no continuation page ever scheduled — a silent tail-drop that
+  // can lose entire trailing categories, not just one row (the exact class
+  // of bug the #790 redesign's "no tail-drop" guarantee exists to prevent).
+  if (item.subHireId != null && item.supplierName) {
+    heightPt += 9 + 1;
+  }
+
   // Price breakdown (#943) — must match gearflowTable.ts's own `breakdownLabel`
   // check exactly, or an auto-priced line's breakdown text silently drops off
   // the tail of a paginated table (the exact footgun this file's header comment
@@ -749,6 +763,17 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     return false;
   }
 
+  /** A `forceNewPage` block (currently just termsAndConditions) always
+   *  starts fresh rather than sharing whatever's left on the page above it
+   *  — unless it's already the first thing on a page (nothing to break
+   *  away from). "First thing" means nothing beyond the page furniture
+   *  (header, and on a preview render the draft watermark). */
+  function needsForcedPageBreak(block: LayoutBlock): boolean {
+    if (block.kind !== "termsAndConditions" || !block.forceNewPage) return false;
+    const isFreshPage = currentPage.entries.length <= furniture.blocks.length;
+    return !isFreshPage;
+  }
+
   placePageFurniture();
 
   for (const block of bodyBlocks) {
@@ -756,6 +781,8 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     // Optional content blocks (e.g. termsAndConditions with no text set)
     // collapse to zero height and are omitted entirely — no schema, no gap.
     if (height <= 0) continue;
+
+    if (needsForcedPageBreak(block)) startNewPage();
 
     if (currentY + height > maxY && currentPage.entries.length > 0) {
       if (trySplitAcrossPages(block)) continue;
@@ -833,7 +860,10 @@ function buildEntryFields(
 
     case "detailsRow": {
       const clientLines: string[] = [];
-      if (block.client.showClientName && data.client_name) clientLines.push(data.client_name);
+      // Bolded the same way the project column's leading line is — via
+      // gearflowRichText's markdown-lite convention, not a separate
+      // bold-only mechanism.
+      if (block.client.showClientName && data.client_name) clientLines.push(`**${data.client_name}**`);
       if (block.client.showClientContact && data.client_contact) clientLines.push(`Attn: ${data.client_contact}`);
       if (block.client.showClientEmail && data.client_email) clientLines.push(data.client_email);
       if (block.client.showClientAddress && data.client_billing_address) clientLines.push(data.client_billing_address);

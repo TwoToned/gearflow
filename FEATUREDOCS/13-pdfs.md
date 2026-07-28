@@ -464,6 +464,55 @@ quote's 3-line meta block (vs. the usual 2 lines) as a safety margin, mirroring
 the "reserve generously, don't cut it close" lesson from the totals-divider
 fix above.
 
+### Sub-hire row tail-drop, T&Cs forced onto its own page, client name bolded (2026-07-28)
+
+**Critical: sub-hire rows silently under-reserved height, dropping entire
+trailing categories off real quotes.** `calculateItemHeight`
+(`document-composer.ts`, the pagination estimate) had no case for the
+"via `<Supplier>`" line `gearflow-table.ts` unconditionally draws under a
+sub-hire item's description (`item.subHireId != null && item.supplierName`
+— 10pt, `fontSize(9) + 1`). Every sub-hire row's real rendered height
+silently exceeded what was reserved for it. On a quote with many sub-hire
+lines (a normal shape — most of a production's gear is commonly hired in
+from suppliers) this compounds fast: `splitTable`'s `fitItems` believed more
+rows fit on page 1 than actually did, `endIndex` came back `undefined`
+("render everything, nothing more to paginate"), and `gearflow-table.ts`'s
+own render-time overflow guard (`if (currentY - rowContentHeight <
+bottomBoundary) { overflow = true; break; }`) then silently stopped
+mid-page — with **no continuation page ever scheduled for the table**, since
+document-composer.ts never knew there was more to show. Real-world impact:
+a quote reporting ~$8,480 of line items (an entire "Lighting" category tail
+plus a whole other category, ~$14.8k true subtotal vs. ~$6.4k of rows
+actually drawn) with the correct total still showing at the bottom — the
+subtotal is computed independently of `data.line_items`, so it stayed
+correct while the visible table silently lost rows. This is the exact class
+of bug the #790 redesign's "no tail-drop" guarantee — and this file's own
+"PDF Data-Shape Consumers" audit checklist — exists to prevent; it slipped
+through because the sub-hire "via Supplier" line was added to
+`gearflow-table.ts` without a matching case in `calculateItemHeight`.
+Fixed by adding the missing case, byte-identical to `gearflow-table.ts`'s
+own check. Regression coverage: `calculateItemHeight — sub-hire 'via
+Supplier' line (tail-drop regression)` in `document-composer.test.ts` —
+both a direct height-comparison unit test and a full-pipeline test (5
+categories, alternating sub-hire/owned rows, `assertFullCoverage`) that
+would have caught this before it shipped.
+
+**T&Cs always starts on its own page.** `LayoutBlock`'s `termsAndConditions`
+variant gained `forceNewPage?: boolean` (set `true` on the quote's entry in
+`document-layouts.ts`) — the legal boilerplate now always begins on a fresh
+page rather than sharing whatever room happens to be left on the page above
+it (previously it could share the tail of the totals/client-notes page, or
+end up split awkwardly close to the totals block). `computePages`'s
+`needsForcedPageBreak` checks it before the normal fits-or-splits logic;
+it's a no-op when T&Cs is already first on a fresh page (e.g. right after a
+table that already forced its own continuation page), so this never inserts
+an extra blank page.
+
+**Client name bolded, matching the event name.** The details block's client
+column leads with the client's name; `document-composer.ts` now wraps it in
+`**...**` before handing it to `gearflowRichText`, the same convention
+already used to bold the project column's leading line.
+
 ### Quote-specific fixes (#790 Phase 4)
 
 - **No "/day" (or other period) price suffix on the quote.** `TablePluginConfig.hidePricingPeriodSuffix`
@@ -649,3 +698,12 @@ meant `section-renderer.ts` and `gearflow-table.ts` each had their own filter
 + height-estimation logic that had to be kept in sync by hand); the fixed
 single pipeline collapses it to one file (`document-composer.ts`) plus the
 plugin's own top-level filter.
+
+**Real incident, #2 above (2026-07-28):** `gearflow-table.ts` grew a
+sub-hire "via `<Supplier>`" line under a row's description with no matching
+case added to `calculateItemHeight` — real quotes with many sub-hire lines
+silently lost entire trailing categories off the rendered table (subtotal
+stayed correct; the visible rows didn't). See "Sub-hire row tail-drop"
+above. Concrete evidence this checklist is load-bearing, not decorative —
+when a row's drawn height gains a new conditional line, add the matching
+line to `calculateItemHeight` in the same change.

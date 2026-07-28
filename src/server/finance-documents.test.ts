@@ -31,7 +31,7 @@ const generatePdf = vi.fn();
 vi.mock("@/lib/pdfme/generate-pdf", () => ({ generatePdf: (...a: unknown[]) => generatePdf(...a) }));
 
 const uploadToS3 = vi.fn();
-const deleteFromS3 = vi.fn(async () => {});
+const deleteFromS3 = vi.fn(async (_storageKey: string) => {});
 vi.mock("@/lib/storage", () => ({
   uploadToS3: (...a: unknown[]) => uploadToS3(...a),
   deleteFromS3: (...a: unknown[]) => deleteFromS3(...(a as [string])),

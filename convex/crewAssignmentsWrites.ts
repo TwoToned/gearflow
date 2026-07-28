@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -474,3 +475,16 @@ export const generateShiftsNative = mutation({
     return { count };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  bulkDeleteNative: { danger: "high" },
+  bulkStatusNative: { danger: "medium" },
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  // Deletes existing SCHEDULED shifts and regenerates from the assignment's
+  // start/end dates — a derived-data regen, not a delete/archive of the
+  // assignment itself, and idempotent (re-running fixes any bad state).
+  generateShiftsNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+  updateStatusNative: { danger: "medium" },
+};

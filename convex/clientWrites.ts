@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
@@ -296,3 +297,12 @@ export const archiveManyNative = mutation({
     return { archived };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  // Bulk archive — archive category + bulk-destructive.
+  archiveManyNative: { danger: "high" },
+  archiveNative: { danger: "high" },
+  createNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+  updateNotesNative: { danger: "low" },
+};

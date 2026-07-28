@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertRefInOrg, assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -297,3 +298,11 @@ export const deleteNative = mutation({
     return { id };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  // Cascades into assignments, shifts, linked time entries, and
+  // availabilities on top of the member row itself — delete category.
+  deleteNative: { danger: "high" },
+  updateNative: { danger: "medium" },
+};

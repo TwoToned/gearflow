@@ -376,6 +376,25 @@ jobs:
       - name: Client-boundary justification (R-8.1.1)
         run: pnpm run check-client-routes
 
+      # API/MCP contract gates (#997, design §6/§7). One command covers three of
+      # the four: regenerate the registry offline (no deployment, no
+      # CONVEX_DEPLOY_KEY — it reads the Convex validators in-process), then fail
+      # if (a) a new privileged argument has no policy row, (b) the agent-reachable
+      # count dropped below the committed floor, or (c) the committed registry /
+      # coverage table are stale. Gate 4, the runtime probe that checks the
+      # statically-extracted (resource, action) against what the guard actually
+      # enforces, runs in the test job (convex/agentRegistryProbe.test.ts) because
+      # it needs a Convex runtime.
+      #
+      # It also prints docs/api-coverage.md's table on every PR, which is how the
+      # SERVICE-only count stays visible instead of drifting.
+      - name: API registry + coverage + privileged-arg gates (#997)
+        run: pnpm run api:registry:check
+
+      - name: Print API coverage table
+        if: always()
+        run: sed -n '/## Totals/,/reachability-floor/p' docs/api-coverage.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Install gitleaks
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \

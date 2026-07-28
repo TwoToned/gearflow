@@ -275,6 +275,59 @@ automatically; a naive markdown-lite swap would have silently dropped that.
   `plugins/index.ts` per the rebrand-alias convention
   (`rebrand-plugin-aliases.test.ts`).
 
+### Totals-divider redesign, bold gate, per-item Discount column (2026-07-28)
+
+- **Totals divider, take 2.** The first divider-clearance fix (6pt/16pt →
+  reserved height 34mm) still visually read as touching the "Total" text on
+  a real render — the arithmetic left only ~1.6pt of clearance once the
+  divider line's own 1pt stroke width and the bold size-11 text's real
+  ascent (measured via pdf-lib's `font.heightAtSize(11, {descender:
+  false})` ≈ 7.9pt, not a guessed constant) were both accounted for.
+  `gearflowFinancialSummary`'s divider gap is now 8pt above the line + 16pt
+  below it (was 6/10) — ~7.6pt of real clearance, an order of magnitude more
+  margin than the minimum needed. `document-composer.ts`'s `totals` block
+  height estimate is unaffected by this specific change (still `34` — the
+  extra 4pt fit within the existing mm rounding), but see the new
+  itemDiscountTotal case below. `gearflow-financial-summary.test.ts` is the
+  regression guard: it asserts the line sits strictly between the two rows'
+  baselines AND that the Total text's real ascent (not a guess) still can't
+  reach the line — this is the shape of test that should have existed
+  before the first attempt.
+- **Parent-row bold is now gated by `showKitChildren`, matching the
+  children-visibility gate.** Previously a kit/group/accessory parent's
+  description was unconditionally bold whenever it *had* children, even on
+  quote/invoice where those children are hidden (`showKitChildren: false`)
+  — the client saw an unexplained bold row with nothing visibly grouped
+  under it (e.g. an accessory parent bolded for a battery accessory that
+  never renders). `gearflow-table.ts`'s description-cell font is now
+  `isParentWithChildren && config.showKitChildren ? fonts.bold :
+  fonts.regular`. Warehouse docs (`showKitChildren: true`) are unaffected.
+- **Per-item Discount column (quote/invoice).** `projectLineItems.discount`
+  (a flat $ amount, already subtracted into `lineTotal` server-side —
+  `lineTotal = unitPrice × quantity × duration − discount`, see
+  `convex/lineItemWrites.ts`) was already on `DocumentLineItem` but never
+  rendered. `getColumnsForDocType`'s quote/invoice columns gained a
+  `discount` column between Unit Price and Total (`-$X.XX`, or `-` when
+  unset), rendered at all three row tiers (parent/child/grandchild) for
+  column-shape consistency, though children never render there today
+  (`showKitChildren: false`). Purely additive — no pricing math changed,
+  since `lineTotal` already was (and still is) the post-discount figure.
+- **"Item Discounts" transparency rows in the totals block.** Because
+  `lineTotal`/`subtotal` are already net of each line's own discount, simply
+  adding a "Discount" line to the totals block would have double-subtracted
+  it. Instead, `FinancialSummaryConfig.itemDiscountTotal` (summed in
+  `document-composer.ts`'s `computeItemDiscountTotal` from the same
+  structured `data.line_items` the table renders, so it always reconciles
+  with what's visible in the new Discount column) drives two rows drawn
+  **above** the existing net `Subtotal` row, only when the sum is > 0:
+  `Subtotal (before discounts)` (= `subtotal + itemDiscountTotal`) then
+  `Item Discounts` (`-$X.XX`). The pre-existing `Discount (X%)` row is
+  unrelated — it's still the separate project-wide manual discount
+  (`data.discount_percent`/`discount_amount`) applied on top of the net
+  subtotal, unchanged. `estimateBlockHeight`'s `totals` case reserves 44mm
+  instead of 34mm when `computeItemDiscountTotal(data) > 0`, to fit the two
+  extra rows.
+
 ### Quote-specific fixes (#790 Phase 4)
 
 - **No "/day" (or other period) price suffix on the quote.** `TablePluginConfig.hidePricingPeriodSuffix`

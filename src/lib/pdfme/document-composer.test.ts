@@ -386,7 +386,9 @@ describe("composeDocument — quote content audit (#790 Phase 4)", () => {
     return JSON.parse(result.inputs[0][tableSchema.name as string]) as { items: DocumentLineItem[]; config: TablePluginConfig };
   }
 
-  function totalsConfig(result: ComposeResult): { discountAmount: number; discountPercent: number } {
+  function totalsConfig(
+    result: ComposeResult,
+  ): { discountAmount: number; discountPercent: number; itemDiscountTotal: number; subtotal: number } {
     const totalsSchema = result.template.schemas[0].find((s) => s.type === "gearflowFinancialSummary")!;
     return JSON.parse(result.inputs[0][totalsSchema.name as string]);
   }
@@ -459,6 +461,40 @@ describe("composeDocument — quote content audit (#790 Phase 4)", () => {
 
     const tcSchema = pageSchemas.find((s) => (s.name as string).startsWith("termsAndConditions_"))!;
     expect(tcSchema.type).toBe("gearflowRichText");
+  });
+
+  it("the quote table gets a Discount column, and the totals block's itemDiscountTotal sums every visible line's discount", () => {
+    const items = [
+      makeLineItem({ id: "a", status: "CONFIRMED", model: { name: "K10.2" }, unitPrice: 50, discount: 5, lineTotal: 45 }),
+      makeLineItem({ id: "b", status: "CONFIRMED", model: { name: "DM3-D" }, unitPrice: 20, discount: null, lineTotal: 20 }),
+    ];
+    const result = composeDocument("quote", makeData({ line_items: items, subtotal: 65 }), "#0d4f4f");
+
+    const tableSchema = result.template.schemas[0].find((s) => s.type === "gearflowTable")!;
+    const { config } = JSON.parse(result.inputs[0][tableSchema.name as string]) as { config: TablePluginConfig };
+    expect((config as unknown as { showPricing: boolean }).showPricing).toBe(true);
+
+    const totals = totalsConfig(result);
+    expect(totals.itemDiscountTotal).toBe(5);
+    expect(totals.subtotal).toBe(65);
+  });
+
+  it("the totals block reserves extra height when line items carry discounts", () => {
+    const withoutDiscount = composeDocument(
+      "quote",
+      makeData({ line_items: [makeLineItem({ id: "a", status: "CONFIRMED", model: { name: "K10.2" }, discount: null })] }),
+      "#0d4f4f",
+    );
+    const withDiscount = composeDocument(
+      "quote",
+      makeData({ line_items: [makeLineItem({ id: "a", status: "CONFIRMED", model: { name: "K10.2" }, discount: 5 })] }),
+      "#0d4f4f",
+    );
+    const heightOf = (r: ComposeResult) => {
+      const entry = r.template.schemas[0].find((s) => s.type === "gearflowFinancialSummary")!;
+      return entry.height as number;
+    };
+    expect(heightOf(withDiscount)).toBeGreaterThan(heightOf(withoutDiscount));
   });
 });
 

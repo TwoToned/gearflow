@@ -360,3 +360,82 @@ describe("gearflowTable — priceBreakdown rendering (#943)", () => {
     await expect(runTablePlugin(items, { showPricing: true })).resolves.toBeDefined();
   });
 });
+
+describe("gearflowTable — bold gated by showKitChildren (client-facing docs)", () => {
+  it("a group parent is NOT bold when showKitChildren is off (quote/invoice)", async () => {
+    const items = [
+      makeLineItem({
+        id: "group-1",
+        isGroupRow: true,
+        groupTitle: "Small PA Package",
+        quantity: 1,
+        model: { name: "Small PA Package" },
+        childLineItems: [makeLineItem({ id: "child-1", model: { name: "K10.2" } })],
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { documentType: "quote", showKitChildren: false });
+    const parentDraw = calls.drawText.find((c) => c.text === "Small PA Package");
+    expect(parentDraw).toBeDefined();
+    expect(parentDraw?.fontName).toBe("Helvetica");
+    // Its children are correctly hidden too.
+    expect(calls.drawText.some((c) => c.text === "K10.2")).toBe(false);
+  });
+
+  it("an accessory parent is NOT bold when showKitChildren is off, even though its accessory is hidden", async () => {
+    const items = [
+      makeLineItem({
+        id: "parent-1",
+        model: { name: "EW-DX SKM" },
+        childLineItems: [
+          makeLineItem({ id: "acc-1", isKitChild: true, childKind: "ACCESSORY", model: { name: "AA Battery" } }),
+        ],
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { documentType: "quote", showKitChildren: false });
+    const parentDraw = calls.drawText.find((c) => c.text === "EW-DX SKM");
+    expect(parentDraw?.fontName).toBe("Helvetica");
+    expect(calls.drawText.some((c) => c.text === "AA Battery")).toBe(false);
+  });
+
+  it("stays bold when showKitChildren is on (warehouse docs, control)", async () => {
+    const items = [
+      makeLineItem({
+        id: "group-1",
+        isGroupRow: true,
+        groupTitle: "Small PA Package",
+        quantity: 1,
+        model: { name: "Small PA Package" },
+        childLineItems: [makeLineItem({ id: "child-1", model: { name: "K10.2" } })],
+      }),
+    ];
+
+    const calls = await runTablePlugin(items, { showKitChildren: true });
+    const parentDraw = calls.drawText.find((c) => c.text === "Small PA Package");
+    expect(parentDraw?.fontName).toBe("Helvetica-Bold");
+  });
+});
+
+describe("gearflowTable — per-item Discount column (quote/invoice)", () => {
+  it("renders the line's discount as a negative amount", async () => {
+    const items = [
+      makeLineItem({ id: "li-1", model: { name: "USB Pro DI" }, unitPrice: 20, lineTotal: 15, discount: 5 }),
+    ];
+
+    const calls = await runTablePlugin(items, { documentType: "quote", showPricing: true });
+    expect(calls.drawText.some((c) => c.text === "-$5.00")).toBe(true);
+  });
+
+  it("renders '-' when the line has no discount", async () => {
+    const items = [
+      makeLineItem({ id: "li-1", model: { name: "USB Pro DI" }, unitPrice: 20, lineTotal: 20, discount: null }),
+    ];
+
+    const calls = await runTablePlugin(items, { documentType: "quote", showPricing: true });
+    // The description "USB Pro DI" doesn't itself contain a bare "-", so any
+    // standalone "-" draw call must be the discount cell's placeholder.
+    expect(calls.drawText.some((c) => c.text === "-")).toBe(true);
+    expect(calls.drawText.some((c) => c.text.startsWith("-$"))).toBe(false);
+  });
+});

@@ -78,7 +78,8 @@ function getColumnsForDocType(config: TablePluginConfig, totalWidth: number): Co
       return resolveFlexWidths([
         { key: "description", label: "Description", width: 0, flex: 3, align: "left" },
         { key: "qty", label: "Qty", width: 30, align: "center" },
-        { key: "unitPrice", label: config.documentType === "invoice" ? "Rate" : "Unit Price", width: 60, align: "right" },
+        { key: "unitPrice", label: config.documentType === "invoice" ? "Rate" : "Unit Price", width: 55, align: "right" },
+        { key: "discount", label: "Discount", width: 55, align: "right" },
         { key: "total", label: config.documentType === "invoice" ? "Amount" : "Total", width: 60, align: "right" },
       ], totalWidth);
 
@@ -461,7 +462,11 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               ? `[Kit] ${itemName}`
               : itemName;
 
-            const font = isParentWithChildren ? fonts.bold : fonts.regular;
+            // Bold only when this row actually has visible children below
+            // it — otherwise (showKitChildren off, e.g. quote/invoice) a
+            // bold row with nothing under it just reads as an unexplained
+            // random emphasis.
+            const font = isParentWithChildren && config.showKitChildren ? fonts.bold : fonts.regular;
             page.drawText(displayName, {
               x: descX,
               y: textY,
@@ -562,6 +567,20 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               size: fontSize,
               font: fonts.regular,
               color: textColor,
+            });
+            break;
+          }
+
+          case "discount": {
+            if (!config.showPricing) break;
+            const discStr = !isItemized && item.discount ? `-${formatCurrency(item.discount)}` : "-";
+            const discWidth = fonts.regular.widthOfTextAtSize(discStr, fontSize);
+            page.drawText(discStr, {
+              x: colEndX - discWidth - cellPadding,
+              y: textY,
+              size: fontSize,
+              font: fonts.regular,
+              color: item.discount ? textColor : mutedTextColor,
             });
             break;
           }
@@ -804,6 +823,20 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                 break;
               }
 
+              case "discount": {
+                if (!config.showPricing) break;
+                const discStr = child.discount ? `-${formatCurrency(child.discount)}` : "-";
+                const discWidth = fonts.regular.widthOfTextAtSize(discStr, childFontSize);
+                page.drawText(discStr, {
+                  x: colEndX - discWidth - cellPadding,
+                  y: childTextY,
+                  size: childFontSize,
+                  font: fonts.regular,
+                  color: childTextColor,
+                });
+                break;
+              }
+
               case "total": {
                 if (!config.showPricing) break;
                 const totalStr = formatCurrency(child.lineTotal);
@@ -963,6 +996,20 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
                     const pW = fonts.regular.widthOfTextAtSize(pStr, grandchildFontSize);
                     page.drawText(pStr, {
                       x: colEndX - pW - cellPadding,
+                      y: nestedTextY,
+                      size: grandchildFontSize,
+                      font: fonts.regular,
+                      color: grandchildTextColor,
+                    });
+                    break;
+                  }
+
+                  case "discount": {
+                    if (!config.showPricing) break;
+                    const dStr = nested.discount ? `-${formatCurrency(nested.discount)}` : "-";
+                    const dW = fonts.regular.widthOfTextAtSize(dStr, grandchildFontSize);
+                    page.drawText(dStr, {
+                      x: colEndX - dW - cellPadding,
                       y: nestedTextY,
                       size: grandchildFontSize,
                       font: fonts.regular,

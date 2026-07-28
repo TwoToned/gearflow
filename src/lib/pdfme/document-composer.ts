@@ -70,6 +70,20 @@ function isBulk(item: DocumentLineItem): boolean {
 }
 
 /**
+ * Sum of every visible (top-level) line's own `discount` field — matches
+ * exactly what the table's new per-line "Discount" column renders, so the
+ * totals block's "Item Discounts" rollup always reconciles with what the
+ * client can add up themselves off the table above it. `data.line_items`
+ * is already the structured (post `structureLineItems`) array quote/invoice
+ * render, so a collapsed Project Group's dropped children are correctly
+ * excluded — their discount, if any, only counts if it also ended up on
+ * the group's own synthetic row.
+ */
+function computeItemDiscountTotal(data: DocumentData): number {
+  return data.line_items.reduce((sum, li) => sum + (li.discount ?? 0), 0);
+}
+
+/**
  * Filter to parent (non-kit-child, non-container) items, then apply the
  * doc-type status filter. A synthetic Project Group row passes through if
  * ANY attached child passes — otherwise the whole group (and every member)
@@ -313,12 +327,14 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       return ptToMm(TABLE_HEADER_PT) + contentHeight + TABLE_PADDING_BOTTOM_MM;
     }
 
-    case "totals":
-      // 25 (base) + ~9mm for the top padding + wider divider clearance
-      // added in gearflow-financial-summary.ts (issue: totals block sat
-      // right on top of the table, and the Total divider overlapped its
-      // own text).
-      return 34;
+    case "totals": {
+      // 34 (base: top padding + wide divider clearance around Total, see
+      // gearflow-financial-summary.ts) + 2 extra rows (~10mm) when any line
+      // carries its own discount ("Subtotal (before discounts)" + "Item
+      // Discounts", drawn above the existing net Subtotal row).
+      const hasItemDiscounts = computeItemDiscountTotal(data) > 0;
+      return hasItemDiscounts ? 44 : 34;
+    }
 
     case "clientNotes":
       return data.client_notes ? 12 : 4;
@@ -774,6 +790,7 @@ function buildEntryFields(
     case "totals": {
       const config: FinancialSummaryConfig = {
         subtotal: block.config.showSubtotal ? data.subtotal : 0,
+        itemDiscountTotal: block.config.showSubtotal ? computeItemDiscountTotal(data) : 0,
         discountPercent: block.config.showDiscount ? data.discount_percent : 0,
         discountAmount: block.config.showDiscount ? data.discount_amount : 0,
         taxLabel: data.tax_label,

@@ -271,6 +271,12 @@ export interface TablePluginConfig {
 /** Config for financial summary plugin */
 export interface FinancialSummaryConfig {
   subtotal: number;
+  /** Sum of every visible line's own `discount` field (the new per-item
+   *  Discount column). `subtotal` is already net of these — they're baked
+   *  into each line's `lineTotal` — so this is purely informational: shown
+   *  as "Subtotal (before discounts)" + "Item Discounts" ABOVE the existing
+   *  net `subtotal` row, never subtracted a second time. */
+  itemDiscountTotal: number;
   discountPercent: number;
   discountAmount: number;
   taxLabel: string;

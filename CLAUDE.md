@@ -86,6 +86,9 @@ pnpm exec prisma generate  # Regenerate Prisma client (after schema changes)
 pnpm exec prisma migrate dev --name <name>  # Create + apply migration
 pnpm run api:registry       # Regenerate the API/MCP contract registry + coverage table
 pnpm run api:registry:check # Verify it is current (the CI gate)
+pnpm run api:docs           # Regenerate OpenAPI 3.1 + llms.txt
+pnpm run api:mcp            # Regenerate the MCP tool manifest (src/lib/api/mcp-manifest.generated.ts)
+pnpm run mcp:stdio-proxy    # Local stdio↔HTTP bridge to /api/v1/mcp (decision 4, #999)
 ```
 
 ### Worktree Setup
@@ -297,18 +300,23 @@ identity, not a caller-supplied hint.
 ### The API dispatcher (`src/lib/api/dispatcher.ts`) — one call site, closed by default
 
 `POST /api/v1/ops/{operation}` is the ONE route that reaches every agent-reachable
-Convex function (`GET /api/v1/{operations,whoami,openapi.json}` and the curated REST
-aliases in `src/lib/api/alias.ts` all sit on top of it or the same registry). Do not
+Convex function (`GET /api/v1/{operations,whoami,openapi.json}`, the curated REST
+aliases in `src/lib/api/alias.ts`, and the **MCP server** at `/api/v1/mcp`
+(`src/lib/api/mcp/*`, #999) all sit on top of it or the same registry). Do not
 add a second hand-written route that calls Convex directly with an agent token — an
 operation absent from `src/lib/api/registry.generated.ts` (regenerate with
 `pnpm run api:registry`, never hand-edit) is a 404 by construction, and a bespoke
 route would bypass that. If a new curated alias is warranted, add it to
 `src/lib/api/alias.ts` calling `dispatchAlias()`, not a standalone Convex call — the
 point is that REST and the dispatcher cannot drift because one literally calls the
-other. After any change under `src/lib/api/registry.generated.ts`'s inputs (a new
-`*Native` mutation, a guard change, a new read migrated to `requireOrgReadFor`), run
-`pnpm run api:registry && pnpm run api:docs` and commit both — CI gates staleness on
-each independently.
+other. Same rule for a new curated MCP tool: add it to
+`src/lib/api/mcp/curated-tool-defs.ts` (name it, point it at an existing registry
+operation, write the prose) and regenerate — a curated tool never calls Convex or
+`dispatch()` directly, `src/lib/api/mcp/build-server.ts`'s router does that for
+every tool uniformly. After any change under `src/lib/api/registry.generated.ts`'s
+inputs (a new `*Native` mutation, a guard change, a new read migrated to
+`requireOrgReadFor`), run `pnpm run api:registry && pnpm run api:docs && pnpm run
+api:mcp` and commit all three — CI gates staleness on each independently.
 
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved

@@ -397,6 +397,15 @@ jobs:
       - name: API docs (OpenAPI + llms.txt) staleness gate (#998)
         run: pnpm run api:docs:check
 
+      # MCP tool manifest staleness gate (#999, design §7/§12). The explicit
+      # fix for the previous build's "MCP tool-list drift" finding: the
+      # curated tool set, schemas, and descriptions are regenerated from the
+      # SAME registry the step above verified, so a stale manifest — an agent
+      # being told a tool exists that doesn't, or with a schema that no
+      # longer matches what dispatch() accepts — fails CI instead of shipping.
+      - name: MCP tool manifest staleness gate (#999)
+        run: pnpm run api:mcp:check
+
       - name: Print API coverage table
         if: always()
         run: sed -n '/## Totals/,/reachability-floor/p' docs/api-coverage.md >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { dispatch } from "@/lib/api/dispatcher";
 import { toErrorEnvelope } from "@/lib/api/errors";
+import { withApiVersionHeader } from "@/lib/api/version";
 
 /**
  * `POST /api/v1/ops/{operation}` — the universal dispatcher (design §7, §11).
@@ -28,13 +29,13 @@ export async function POST(
     try {
       rawBody = JSON.parse(text);
     } catch {
-      return NextResponse.json(
+      return withApiVersionHeader(NextResponse.json(
         toErrorEnvelope(Object.assign(new Error("Invalid JSON body."), { code: "VALIDATION_FAILED" }), { requestId }),
         { status: 400 },
-      );
+      ));
     }
   }
 
   const result = await dispatch(operation, rawBody, request.headers.get("authorization"), requestId);
-  return NextResponse.json(result.body, { status: result.status });
+  return withApiVersionHeader(NextResponse.json(result.body, { status: result.status }));
 }

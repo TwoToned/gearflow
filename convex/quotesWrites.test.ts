@@ -1,9 +1,12 @@
 // @vitest-environment node
 //
-// convex/quotesWrites.ts — quote publish/supersede. Verifies: server-computed
-// snapshot money (never client-supplied), versioning + supersede-on-republish,
-// the RBAC + lifecycle-lock guards, and cross-tenant IDOR protection on
-// projectId (R-8.4.3 — every doc fetched by global index must be org-checked).
+// convex/quotesWrites.ts — the five quote-revision verbs (#986). Verifies the
+// four server-enforced invariants (one row per revision, one draft, one live
+// document, monotonic revision), supersede-on-SEND-not-on-draft, the recall
+// round trip, derived-EXPIRED behaviour, server-computed snapshot money (never
+// client-supplied), RBAC per verb (incl. recall's narrower audience), and
+// cross-tenant IDOR protection on every mutation (R-8.4.3 — every doc fetched by
+// a global index must be org-checked).
 import { convexTest } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";
@@ -16,6 +19,7 @@ const ORG = "org_1";
 const OTHER = "org_2";
 const USER = "user_1";
 const NOW = 1_700_000_000_000;
+const DAY = 86_400_000;
 const actor = { userId: USER, userName: "Alice" };
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 
@@ -25,17 +29,18 @@ function makeT() {
   return t;
 }
 
-async function seedMember(t: ReturnType<typeof makeT>, role = "owner") {
+async function seedMember(t: ReturnType<typeof makeT>, role = "owner", orgId = ORG, userId = USER) {
   await t.run(async (ctx) => {
-    await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role });
+    await ctx.db.insert("members", { id: `m_${userId}_${orgId}`, organizationId: orgId, userId, role });
   });
 }
 
 async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG, status: Doc<"projects">["status"] = "QUOTING") {
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
-      id: "p1", organizationId: orgId, projectNumber: "P1", name: "Gig",
-      status, isTemplate: false, subtotal: 100, discountAmount: 0, taxAmount: 10, total: 110, taxRate: 10,
+      id: "p1", organizationId: orgId, projectNumber: "RVLT-2026-0087", name: "Gig",
+      status, isTemplate: false, revision: 1,
+      subtotal: 100, discountAmount: 0, taxAmount: 10, total: 110, taxRate: 10,
       createdAt: NOW, updatedAt: NOW,
     });
     await ctx.db.insert("projectLineItems", {
@@ -45,45 +50,133 @@ async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG, status: Doc
   });
 }
 
-const getQuotes = (t: ReturnType<typeof makeT>) => t.run(async (ctx) => ctx.db.query("quotes").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+const getQuotes = (t: ReturnType<typeof makeT>) =>
+  t.run(async (ctx) => ctx.db.query("quotes").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+const getProject = (t: ReturnType<typeof makeT>) =>
+  t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
 
-describe("quotesWrites.publishNative", () => {
-  test("publishes v1 with a server-computed snapshot (never trusts client money)", async () => {
+const sendArgs = (over: Partial<Record<string, unknown>> = {}) => ({
+  id: "q1", organizationId: ORG, projectId: "p1", quoteDate: NOW, actor, auditId: "a1", now: NOW, ...over,
+});
+
+/** Send the current revision, returning the created/updated quote id. */
+async function send(t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) {
+  return await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.sendNative, sendArgs(over) as never);
+}
+
+describe("quotesWrites.sendNative", () => {
+  test("sends v1 with a server-computed snapshot (never trusts client money)", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
 
-    const result = await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.publishNative, {
-      id: "q1", organizationId: ORG, projectId: "p1", notes: "Valid 30 days", actor, auditId: "a1", now: NOW,
-    });
+    const result = await send(t, { notes: "Valid 30 days" });
     expect(result.version).toBe(1);
 
     const quotes = await getQuotes(t);
     expect(quotes).toHaveLength(1);
-    expect(quotes[0]?.status).toBe("PUBLISHED");
+    expect(quotes[0]?.status).toBe("SENT");
+    expect(quotes[0]?.sentById).toBe(USER);
     const snapshot = quotes[0]?.snapshot as { lines: { description: string; lineTotal: number }[]; total: number };
-    expect(snapshot.total).toBe(110); // from the project's OWN recalc-owned total, not client input
+    expect(snapshot.total).toBe(110); // the project's OWN recalc-owned total, not client input
     expect(snapshot.lines.some((l) => l.description === "PA System" && l.lineTotal === 100)).toBe(true);
   });
 
-  test("republishing supersedes the prior PUBLISHED quote and bumps the version", async () => {
+  test("stamps validUntil from quoteDate + validityDays and captures a QUOTE_SENT snapshot", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
 
-    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.publishNative, {
-      id: "q1", organizationId: ORG, projectId: "p1", actor, auditId: "a1", now: NOW,
-    });
-    const second = await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.publishNative, {
-      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
-    });
-    expect(second.version).toBe(2);
+    const result = await send(t, { validityDays: 14 });
+    // End of the 14th day after the quote date (UTC — no org timezone configured).
+    expect(result.validUntil).toBe(Date.UTC(2023, 10, 28, 23, 59, 59, 999));
+
+    const snapshots = await t.run(async (ctx) => ctx.db.query("projectSnapshots").collect());
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.reason).toBe("QUOTE_SENT");
+    expect(snapshots[0]?.revision).toBe(1);
 
     const quotes = await getQuotes(t);
-    const v1 = quotes.find((q) => q.id === "q1");
-    const v2 = quotes.find((q) => q.id === "q2");
-    expect(v1?.status).toBe("SUPERSEDED");
-    expect(v2?.status).toBe("PUBLISHED");
+    expect(quotes[0]?.snapshotId).toBe(snapshots[0]?.id);
+  });
+
+  test("falls back to the org's configured quoteValidityDays", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", {
+        organizationId: ORG,
+        settings: JSON.stringify({ documents: { quoteValidityDays: 7 } }),
+      });
+    });
+
+    const result = await send(t);
+    expect(result.validUntil).toBe(Date.UTC(2023, 10, 21, 23, 59, 59, 999));
+    const quotes = await getQuotes(t);
+    expect(quotes[0]?.validityDays).toBe(7);
+  });
+
+  test("offers QUOTED from ENQUIRY/QUOTING but never applies it itself", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t, ORG, "QUOTING");
+
+    const result = await send(t);
+    expect(result.offerStatusChange).toBe("QUOTED");
+    expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
+  });
+
+  test("re-sending an already-sent revision is rejected — cut a new version instead", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    await expect(send(t, { id: "q2", auditId: "a2", now: NOW + 1 })).rejects.toThrow(/already been sent/i);
+  });
+
+  test("rejects a recipient contact belonging to another client", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(project!._id, { clientId: "c1" });
+      await ctx.db.insert("clientContacts", { id: "ct1", organizationId: ORG, clientId: "c_other", name: "Bob" });
+    });
+
+    await expect(send(t, { recipientContactId: "ct1" })).rejects.toThrow(/client contact not found/i);
+  });
+
+  test("supersedes an ACCEPTED revision too — acceptance doesn't survive a re-quote", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a3", now: NOW + 2,
+    });
+    // v1 is STILL accepted while v2 is only a draft — cutting a draft never
+    // invalidates what the client agreed to.
+    let state = await t
+      .withIdentity(asUser(ORG))
+      .query(api.quotes.revisionStateForProject, { orgId: ORG, projectId: "p1", now: NOW + 2 });
+    expect(state.hasAcceptedQuote).toBe(true);
+
+    await send(t, { id: "ignored", auditId: "a4", now: NOW + 3 });
+
+    // …but once v2 actually goes out, v1 is no longer the deal. The project
+    // needs v2 accepted (or an admin override) before it can confirm again —
+    // the pricing the client agreed to has changed.
+    state = await t
+      .withIdentity(asUser(ORG))
+      .query(api.quotes.revisionStateForProject, { orgId: ORG, projectId: "p1", now: NOW + 3 });
+    expect(state.hasAcceptedQuote).toBe(false);
+    expect((await getQuotes(t)).find((q) => q.id === "q1")?.status).toBe("SUPERSEDED");
   });
 
   test("rejects a cross-org projectId (IDOR guard)", async () => {
@@ -91,32 +184,326 @@ describe("quotesWrites.publishNative", () => {
     await seedMember(t);
     await seedProject(t, OTHER); // project belongs to a DIFFERENT org
 
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.publishNative, {
-        id: "q1", organizationId: ORG, projectId: "p1", actor, auditId: "a1", now: NOW,
-      }),
-    ).rejects.toThrow(/not found in your organization/i);
+    await expect(send(t)).rejects.toThrow(/not found in your organization/i);
   });
 
   test("a viewer is denied (invoice:publish)", async () => {
     const t = makeT();
     await seedMember(t, "viewer");
     await seedProject(t);
-    await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.publishNative, {
-        id: "q1", organizationId: ORG, projectId: "p1", actor, auditId: "a1", now: NOW,
-      }),
-    ).rejects.toThrow(/insufficient permissions/i);
+    await expect(send(t)).rejects.toThrow(/insufficient permissions/i);
   });
 
   test("a FINANCE_LOCKED project (CONFIRMED+) without an open unlock session is rejected", async () => {
     const t = makeT();
     await seedMember(t, "manager");
     await seedProject(t, ORG, "CONFIRMED");
+    await expect(send(t)).rejects.toThrow(/financials.*locked/i);
+  });
+
+  test("mirrors its Zod bounds server-side (notes + validityDays)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+
+    await expect(send(t, { notes: "x".repeat(2001) })).rejects.toThrow(/at most 2000/i);
+    await expect(send(t, { validityDays: 0 })).rejects.toThrow(/at least 1/i);
+    await expect(send(t, { validityDays: 400 })).rejects.toThrow(/at most 365/i);
+    await expect(send(t, { validityDays: 1.5 })).rejects.toThrow(/whole number/i);
+  });
+});
+
+describe("quotesWrites.newVersionNative — monotonicity and the one-draft invariant", () => {
+  test("increments projects.revision and opens a DRAFT, leaving the sent revision alone", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    expect(result.version).toBe(2);
+    expect((await getProject(t))?.revision).toBe(2);
+
+    const quotes = await getQuotes(t);
+    // SUPERSEDE FIRES ON SEND, NOT ON DRAFT — v1 is still the client's document.
+    expect(quotes.find((q) => q.id === "q1")?.status).toBe("SENT");
+    expect(quotes.find((q) => q.id === "q2")?.status).toBe("DRAFT");
+    expect(quotes.find((q) => q.id === "q2")?.snapshot).toBeNull();
+  });
+
+  test("v1 flips to SUPERSEDED only when v2 is actually sent", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    await send(t, { id: "ignored", auditId: "a3", now: NOW + 2 });
+
+    const quotes = await getQuotes(t);
+    expect(quotes.find((q) => q.id === "q1")?.status).toBe("SUPERSEDED");
+    expect(quotes.find((q) => q.id === "q1")?.supersededByQuoteId).toBe("q2");
+    expect(quotes.find((q) => q.id === "q2")?.status).toBe("SENT");
+    // Exactly one row per revision — the send reused the existing v2 draft rather
+    // than inserting a second row at version 2.
+    expect(quotes.filter((q) => q.version === 2)).toHaveLength(1);
+  });
+
+  test("refuses to cut a second draft while one is open", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+
     await expect(
-      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.publishNative, {
-        id: "q1", organizationId: ORG, projectId: "p1", actor, auditId: "a1", now: NOW,
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+        id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW,
       }),
-    ).rejects.toThrow(/financials.*locked/i);
+    ).rejects.toThrow(/hasn't been sent yet/i);
+  });
+
+  test("revision is never decremented or reused — a recalled-then-re-sent revision keeps its number", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Wrong rental window", actor, auditId: "a2", now: NOW + 1,
+    });
+    const resent = await send(t, { auditId: "a3", now: NOW + 2 });
+
+    expect(resent.version).toBe(1);
+    expect((await getProject(t))?.revision).toBe(1);
+    expect(await getQuotes(t)).toHaveLength(1);
+  });
+
+  test("rejects a cross-org projectId (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t, OTHER);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+        id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW,
+      }),
+    ).rejects.toThrow(/not found in your organization/i);
+  });
+});
+
+describe("quotesWrites.recallNative", () => {
+  const recall = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Wrong rental window", actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+
+  test("round trip: SENT → DRAFT, keeping the row and its send history", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    await recall(t);
+    const quotes = await getQuotes(t);
+    expect(quotes[0]?.status).toBe("DRAFT");
+    expect(quotes[0]?.recallReason).toBe("Wrong rental window");
+    expect(quotes[0]?.recalledById).toBe(USER);
+    // Never deleted — the client may already be holding the document.
+    expect(quotes[0]?.sentAt).toBe(NOW);
+  });
+
+  test("restores the revision this send superseded", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    await send(t, { id: "ignored", auditId: "a3", now: NOW + 2 });
+
+    const result = await recall(t, { id: "q2", auditId: "a4", now: NOW + 3 });
+    expect(result.restoredQuoteId).toBe("q1");
+
+    const quotes = await getQuotes(t);
+    expect(quotes.find((q) => q.id === "q1")?.status).toBe("SENT");
+    expect(quotes.find((q) => q.id === "q1")?.supersededByQuoteId).toBeUndefined();
+    expect(quotes.find((q) => q.id === "q2")?.status).toBe("DRAFT");
+  });
+
+  test("a manager can send but CANNOT recall; the project's PM can", async () => {
+    const t = makeT();
+    await seedMember(t, "manager");
+    await seedProject(t);
+    await send(t); // manager sends fine — invoice:publish
+
+    await expect(recall(t)).rejects.toThrow(/admins.*owners.*PM/i);
+
+    // Same manager, now an assigned PM on this project.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER });
+    });
+    await recall(t, { auditId: "a5" });
+    expect((await getQuotes(t))[0]?.status).toBe("DRAFT");
+  });
+
+  test("requires a bounded reason (reuses #793's 10-char floor)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    await expect(recall(t, { reason: "typo" })).rejects.toThrow(/at least 10/i);
+    await expect(recall(t, { reason: "x".repeat(1001) })).rejects.toThrow(/at most 1000/i);
+  });
+
+  test("cannot recall a draft or an accepted revision", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(recall(t, { auditId: "a3" })).rejects.toThrow(/is accepted/i);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+
+    await expect(recall(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
+describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
+  const accept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+  const decline = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markDeclinedNative, {
+      id: "q1", organizationId: ORG, reason: "Too expensive", actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+
+  test("accept records the date + reference and offers CONFIRMED", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    const result = await accept(t, { acceptanceRef: "PO-4821" });
+    expect(result.offerStatusChange).toBe("CONFIRMED");
+    const quotes = await getQuotes(t);
+    expect(quotes[0]?.status).toBe("ACCEPTED");
+    expect(quotes[0]?.acceptanceRef).toBe("PO-4821");
+    expect(quotes[0]?.acceptedById).toBe(USER);
+  });
+
+  test("an EXPIRED revision cannot be accepted without a re-send", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t, { validityDays: 1 });
+
+    // Two days later the SENT row reads EXPIRED — derived, never stored.
+    await expect(accept(t, { now: NOW + 2 * DAY })).rejects.toThrow(/expired/i);
+    expect((await getQuotes(t))[0]?.status).toBe("SENT"); // still SENT on disk
+
+    // Re-sending reopens the window, and acceptance then succeeds.
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Client asked for more time", actor, auditId: "a3", now: NOW + 2 * DAY,
+    });
+    await send(t, { quoteDate: NOW + 2 * DAY, auditId: "a4", now: NOW + 2 * DAY });
+    await accept(t, { auditId: "a5", now: NOW + 2 * DAY + 1 });
+    expect((await getQuotes(t))[0]?.status).toBe("ACCEPTED");
+  });
+
+  test("decline records a bounded reason and offers CANCELLED without forcing it", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    const result = await decline(t);
+    expect(result.offerStatusChange).toBe("CANCELLED");
+    expect((await getQuotes(t))[0]?.status).toBe("DECLINED");
+    expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
+    await expect(decline(t, { reason: "x" })).rejects.toThrow(/at least 3/i);
+  });
+
+  test("a viewer is denied both verbs", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+    await t.run(async (ctx) => {
+      const member = await ctx.db.query("members").first();
+      await ctx.db.patch(member!._id, { role: "viewer" });
+    });
+
+    await expect(accept(t)).rejects.toThrow(/insufficient permissions/i);
+    await expect(decline(t)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("reject another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+
+    await expect(accept(t)).rejects.toThrow(/quote not found/i);
+    await expect(decline(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
+describe("quotes read queries", () => {
+  test("listForProject derives EXPIRED and never leaks another org's rows", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t, { validityDays: 1 });
+    // A same-projectId row planted under another org — `by_projectId` is global.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "foreign", organizationId: OTHER, projectId: "p1", version: 9, status: "SENT", snapshot: null,
+      });
+    });
+
+    const rows = await t
+      .withIdentity(asUser(ORG))
+      .query(api.quotes.listForProject, { orgId: ORG, projectId: "p1", now: NOW + 2 * DAY });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.effectiveStatus).toBe("EXPIRED");
+    expect(rows[0]?.status).toBe("SENT"); // stored value untouched
+  });
+
+  test("revisionStateForProject reports the revision, the draft and the live document", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+
+    const state = await t
+      .withIdentity(asUser(ORG))
+      .query(api.quotes.revisionStateForProject, { orgId: ORG, projectId: "p1", now: NOW + 1 });
+    expect(state.revision).toBe(2);
+    expect(state.draftQuoteId).toBe("q2");
+    expect(state.liveQuote?.id).toBe("q1");
+    expect(state.hasAcceptedQuote).toBe(false);
   });
 });

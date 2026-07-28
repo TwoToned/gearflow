@@ -57,7 +57,7 @@ export function useProjectGroupWrites() {
 
     update: async (
       groupId: string,
-      data: Partial<{ title: string; description: string; quantity: number }>,
+      data: Partial<{ title: string; description: string; quantity: number; xeroAccountCode: string; xeroTaxType: string }>,
     ): Promise<void> => {
       await updateM({
         id: groupId,
@@ -65,6 +65,8 @@ export function useProjectGroupWrites() {
         title: data.title,
         description: data.description,
         quantity: data.quantity,
+        xeroAccountCode: data.xeroAccountCode,
+        xeroTaxType: data.xeroTaxType,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

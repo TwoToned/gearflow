@@ -291,6 +291,21 @@ classified deliberately. `assertBulkSizeOk(ctx, count)` is async and ctx-taking 
 the same reason: the cap (50 agent / 500 human) has to come from the verified
 identity, not a caller-supplied hint.
 
+### ⚠️ Quote status is DERIVED — never branch on the stored column
+A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
+(`validUntil < now && status === "SENT"`) and never stored, and the deprecated
+`PUBLISHED` still appears on any row the #986 backfill hasn't reached. Always go
+through `effectiveQuoteStatus()` / the `effectiveStatus` field the `convex/quotes.ts`
+queries return (`convex/lib/quoteState.ts`) — a `q.status === "SENT"` test silently
+treats expired quotes as live and pre-#986 rows as neither. Same reason `quotes` reads
+go through `listProjectQuotes`/`requireQuoteInOrg`: `by_projectId` is global, so the
+org check has to happen in the loader, not at the call site.
+
+`projects.revision` is the one version counter (project v2 == quote v2 == the snapshot
+taken at v2). It is server-owned — written only by `createNative` and
+`quotesWrites.newVersionNative`, and stripped from client patches the same way
+`PROJECT_MONEY_ANCHORS` are. See FEATUREDOCS/66.
+
 ### Prisma v7
 - Import from `@/generated/prisma/client` (NOT `@/generated/prisma`)
 - After schema changes: `pnpm exec prisma migrate dev` → `pnpm exec prisma generate` → restart dev

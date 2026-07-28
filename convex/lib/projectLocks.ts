@@ -153,7 +153,25 @@ export interface LifecycleGuardResult {
   defaultToZero: boolean;
 }
 
-const JUSTIFICATION_BOUNDS = { min: 10, max: 1000 } as const;
+/** #793's bounds for every "explain why you're overriding this" free-text field.
+ *  EXPORTED so the hard-lock-revert gate and #986's acceptance-gate override read
+ *  the same two numbers instead of hand-copying them (R-3.1) — they were already
+ *  duplicated inline in `projectWrites.updateStatusNative` before #986. */
+export const JUSTIFICATION_BOUNDS = { min: 10, max: 1000 } as const;
+
+/**
+ * Require a bounded justification, throwing `JUSTIFICATION_REQUIRED` with a
+ * caller-supplied explanation of what is being justified. Returns the trimmed
+ * text so the caller can persist exactly what was validated.
+ */
+export function requireJustification(justification: string | null | undefined, message: string): string {
+  const trimmed = justification?.trim();
+  if (!trimmed || trimmed.length < JUSTIFICATION_BOUNDS.min) {
+    throw new ConvexError({ code: "JUSTIFICATION_REQUIRED", message });
+  }
+  assertStrLen(trimmed, "justification", JUSTIFICATION_BOUNDS);
+  return trimmed;
+}
 
 /**
  * The one call every gate site makes (#793's "one shared guard helper... so

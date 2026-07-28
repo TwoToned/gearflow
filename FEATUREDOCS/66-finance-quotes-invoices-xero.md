@@ -1,6 +1,6 @@
 # Finance — Quotes, Invoices, Client Payment Profiles, Xero Integration
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
 WS1 of #934 (#940) — the finance model. **RVLT Flow owns quote + invoice
 generation; Xero owns the ledger, payment collection, and reconciliation.**
@@ -13,16 +13,14 @@ reporting, or email documents to clients — those stay Xero's job.
 ## Architecture
 
 ```
-Project (recalc-owned pricing) → Quote (snapshot, versioned) → PDF
+Project (recalc-owned pricing) → Quote revision (snapshot, versioned) → PDF
                                 → Invoice (Flow-numbered) → InvoiceLine (resolved Xero coding)
                                      → Xero draft invoice (push)
 ```
 
-- **Quote** (`quotes` table) — snapshot-on-publish, versioned. Publishing
-  freezes the project's CURRENT server-computed pricing (never trusts
-  client-supplied money — R-9.3) into an immutable row; republishing
-  supersedes the previous `PUBLISHED` quote (status → `SUPERSEDED`, never
-  overwritten in place) and bumps `version`.
+- **Quote revision** (`quotes` table) — see "Quote revisions (#986)" below.
+  Sending freezes the project's CURRENT server-computed pricing (never trusts
+  client-supplied money — R-9.3) into an immutable row.
 - **Invoice** (`invoices` table) — `kind`: `FULL | DEPOSIT | BALANCE |
   CREDIT`. Created as `DRAFT`; `invoiceNumber` is assigned only at `issueNative`
   (the ONE numbering moment — drafts stay unnumbered). Immutable once
@@ -64,6 +62,168 @@ unchanged) — that pipeline stays presentation-only.
 `depositPaid`/`invoicedTotal` on the **project** are DERIVED in
 `recalcProjectTotals` (summed from this project's `ISSUED` invoices — see
 "Derive, don't hand-type" below), not the invoice-level fields above.
+
+## Quote revisions (#986 — Phase A of #985)
+
+WS1 shipped `quotes.version` as a number bumped inside `publishNative` by
+scanning existing rows: no draft state, no send, no dates, no recall, and a
+`DRAFT` literal nothing ever wrote. #986 replaced that with a real revision
+model. The program-level design is
+[`docs/designs/finance-first-class-version-control.md`](../docs/designs/finance-first-class-version-control.md).
+
+### One counter, three tables
+
+```
+projects.revision : number         ← the authority (starts at 1 on create)
+  quotes.version  = the revision it was cut from   (exactly one quote row per revision)
+  projectSnapshots.revision                        (the frozen entity state for that revision)
+```
+
+Project v2 == Quote v2 == the snapshot taken at v2. There is deliberately **no
+second counter** (R-3.1) and **no quote document number** — a quote is referred
+to everywhere as `<projectNumber> v<version>` (`RVLT-2026-0087 v2`), because the
+project number is already the shared reference with the client.
+`src/lib/project-number.ts` and `src/lib/invoice-number.ts` are untouched.
+
+`projects.revision` is **server-owned**: written only by `createNative` (seeded
+to 1; templates carry none) and `quotesWrites.newVersionNative`, and stripped
+from every generic client patch alongside `PROJECT_MONEY_ANCHORS`
+(`PROJECT_SERVER_OWNED` in `convex/projectWrites.ts`). Absent reads as 1 via
+`projectRevision()` — one coalesce, not one per call site.
+
+### State machine
+
+```
+  v1 DRAFT ─ send ─▶ v1 SENT ─ accept ─▶ v1 ACCEPTED ─▶ project may CONFIRM
+       ▲               │ │ │
+       └─ recall ──────┘ │ └─ decline ─▶ v1 DECLINED
+                         └─ new version ─▶ v2 DRAFT   (v1 → SUPERSEDED on v2's send)
+```
+
+`QuoteStatus`: `DRAFT | SENT | ACCEPTED | DECLINED | SUPERSEDED | EXPIRED`.
+
+**Supersede fires on SEND, not on draft.** v1 stays `SENT` while v2 is a draft,
+so there is always exactly one row representing "what the client currently has",
+and cutting a draft never invalidates it. That is the difference between version
+control and a delete button. **Recall reverses it**: un-sending v2 restores the
+row it superseded to `SENT`, because v1 is then the last thing actually sent.
+
+Supersede applies to an `ACCEPTED` revision as well, which has a consequence
+worth stating outright: **acceptance does not survive a re-quote.** Accept v1,
+then send v2, and `hasAcceptedQuote` goes false — the client agreed to v1's
+price, not v2's, so the project needs v2 accepted (or an admin override) before
+it can advance to `CONFIRMED` again. Cutting the v2 *draft* changes nothing; only
+sending it does. A project that is ALREADY `CONFIRMED` stays confirmed — the gate
+fires on transitions, not continuously.
+
+**`EXPIRED` is derived on read**, never stored — `validUntil < now && SENT`
+(`convex/lib/quoteState.ts` `effectiveQuoteStatus`). No cron, no clock skew, no
+stale row, same precedent as the derived readiness chips below. Consumers MUST
+branch on `effectiveStatus`, not the raw `status` column.
+
+**`PUBLISHED` is deprecated** and normalises to `SENT` on read, so behaviour is
+identical before, during and after the migration. It stays declared in the
+validator until a backfill run confirms zero live rows carry it — strict Convex
+schema validation rejects a push where an existing document has a value the
+validator no longer declares (the `depositPercent` incident below is the
+standing precedent).
+
+### Server-enforced invariants (each has a test)
+
+- Exactly one quote row per `(projectId, revision)` — `by_projectId_version` is
+  the uniqueness guard.
+- At most one `DRAFT`, always at `projects.revision`. Cutting v2 while v1 is
+  still a draft is refused; edit the draft instead.
+- At most one live (`SENT`/`ACCEPTED`) row — the document the client is holding.
+- `projects.revision` is monotonic. Never decremented, never reused — a
+  recalled-then-re-sent revision keeps its number.
+
+### The five verbs (`convex/quotesWrites.ts`)
+
+| Verb | Behaviour |
+|---|---|
+| **Send** (`sendNative`) | Freezes the revision: `buildFinanceLines` money snapshot + a `QUOTE_SENT` `captureProjectSnapshot` at the same revision, stamps `quoteDate`/`validUntil`/recipient, sets `SENT`, supersedes the previous live row, offers `ENQUIRY/QUOTING → QUOTED`. Creates the `DRAFT` row when the revision has none yet. |
+| **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. The artifact is marked recalled and **retained, never deleted** — the client may already hold it. Restores the row this send superseded. |
+| **New version** (`newVersionNative`) | Increments `projects.revision` and inserts a `DRAFT` at the new number. The previous live row is untouched until the new one sends. A draft carries `snapshot: null` — its figures are the project's live totals until it is sent. |
+| **Accept** (`markAcceptedNative`) | `SENT → ACCEPTED` + acceptance date + optional reference (PO number, email subject). An `EXPIRED` revision cannot be accepted without an explicit re-send. Unblocks `CONFIRMED`. |
+| **Decline** (`markDeclinedNative`) | `SENT`/`EXPIRED` → `DECLINED` + bounded reason. Offers `CANCELLED`, never forces it. |
+
+All five take the standard 4-guard browser-direct shape (FEATUREDOCS/54) plus
+org-checked reference loads and `writeActivityLog`. `sendNative` and
+`newVersionNative` keep `assertLifecycleGuard(…, { kind: "financial" })`, so a
+hard-locked project can't emit a quote out of band.
+
+**"Send" does not email anyone.** Flow records the send, freezes pricing and
+(Phase B, #987) stores the PDF for the user to attach to their own mail. The UI
+says so outright — naming a button "Send" in a product that doesn't deliver mail
+is otherwise a trap. This holds the #934 "no client-facing emails" line.
+
+**Money never originates from the client** (R-9.3). `sendNative`'s only client
+inputs are `quoteDate`, `validityDays`, `recipientContactId` and `notes`.
+
+### Permissions (split)
+
+- **Send / new-version / accept / decline** → `invoice:publish`
+  (owner/admin/manager — the existing audience, unchanged).
+- **Recall** → additionally `isHardLockOverrideAllowed` (org admin/owner, or a
+  member of the project's `projectManagers` set). Un-sending a document the
+  client may already be holding is trust-sensitive in a way the other four verbs
+  are not.
+
+No new permission resource is introduced — both checks already existed.
+
+### Acceptance gate on CONFIRMED
+
+`projectWrites.updateStatusNative` refuses a transition landing on `CONFIRMED`
+unless a revision is `ACCEPTED`. Org admins/owners and the project's PMs
+override with a bounded justification, reusing #792's audience and #793's bounds
+(`requireJustification` in `convex/lib/projectLocks.ts` — the bounds were
+already duplicated inline there, so #986 collapsed them to one definition).
+
+Only an actual transition INTO `CONFIRMED` is gated, so re-saving an
+already-confirmed project never re-prompts. A re-crossing IS gated again,
+matching `crossesIntoSnapshotStatus`'s own re-crossing rule — pricing may have
+moved while the project was reverted.
+
+### Validity and expiry
+
+`src/lib/quote-validity.ts` is the SINGLE definition of the default (30 days),
+the bounds (1–365) and the day-boundary maths; `convex/lib/quoteDates.ts` mirrors
+it byte-for-byte (the Convex bundler can't resolve `@/`), pinned by
+`convex/quoteDates.test.ts`. Before #986 the default was hand-copied into
+`document-settings.tsx` and `build-document-data.ts` and the bounds into
+`org-settings.ts` — three copies of two constants.
+
+`validUntil` is the **end of its calendar day in the ORG's timezone**, resolved
+two-pass so it survives DST in both hemispheres and half/quarter-hour offsets. A
+quote must not expire a day early for a PM in another state. It is stamped ONCE,
+at send, and only read back — the pre-#986 PDF computed validity from `now` at
+render time, so re-opening a quote silently extended how long it was valid.
+
+### Backfill
+
+`convex/backfillQuoteRevisions.ts` + `scripts/convex-backfill-quote-revisions.ts`.
+Production has effectively no live quote data, so this is a simple forward
+migration: `revision ← max(quotes.version)` else 1; `PUBLISHED → SENT`;
+`publishedAt/ById → sentAt/ById`; `quoteDate`/`validUntil` derived on the org's
+calendar day; and a `DRAFT` v1 inserted for every project with no quote row.
+
+Pre-existing sent quotes get **no artifact** — retro-rendering one from today's
+project state would manufacture a document that was never sent, which is the
+exact defect this program removes.
+
+"Effectively none" is a basis for choosing the simple path, not a licence to skip
+verification. The driver counts first, **halts** on a mismatch against
+`--expect-quotes` before writing anything, and fails the run unless
+`verifyQuoteRevisions` reads zero un-migrated rows afterwards.
+
+### Not in Phase A
+
+Immutable stored artifacts and `pdfFileId` wiring (#987), the unified
+status × quote-state lock tier (#988), the real Finance tab with its send and
+invoice-issue dialogs and drift indicator (#989), lock UX (#990), and the
+org-level Finance section (#992). The current UI surface is
+`<ProjectQuoteRail>` — enough to exercise the five verbs, not the designed tab.
 
 ## Numbering (zero engine change)
 
@@ -110,10 +270,13 @@ through this engine.
 
 ## Lifecycle locks
 
-Quote publish and invoice create/issue/void go through the shared
+Quote send/new-version and invoice create/issue/void go through the shared
 `assertLifecycleGuard(ctx, project, { kind: "financial" })` (FEATUREDOCS/62)
-— same FINANCE_LOCKED+ gate every other money-touching mutation uses. No new
-project status was added for "ready to invoice" — readiness is derived
+— same FINANCE_LOCKED+ gate every other money-touching mutation uses. Phase C
+(#988) folds quote state into the tier resolution itself (`resolveLockTier`),
+so a sent revision raises the tier and "cut the next revision" becomes the
+sanctioned exit; the gate sites don't change. No new project status was added
+for "ready to invoice" — readiness is derived
 (the payment-profile-driven "deposit not yet invoiced" nudge chips on the
 project's Finance tab), and issuing a BALANCE/FULL invoice offers a UI-chain
 prompt to advance the project to `INVOICED` (the EXISTING project status
@@ -180,6 +343,13 @@ every level:
 (`xeroIntegrations.serviceAccountDefaults[LABOUR|DELIVERY_TRANSPORT|MISC]`) →
 org default. **Tax type**: per-line override → `xeroIntegrations.defaultTaxType`.
 
+**Group** (a priced `projectGroups` row bills as its own invoice line —
+`convex/lib/financeSnapshot.ts` "priced groups bill as ONE line"): group
+override → `projectGroups.categoryId`'s category default → org default. A
+group isn't a model/kit, so it has no level-2 equivalent — reuses
+`resolveEquipmentAccountCode` with `modelOrKitCode: null` rather than a
+bespoke 2-level function (`resolveGroupLineCode` in `convex/xeroPush.ts`).
+
 Resolved server-side at PUSH time (`convex/xeroPush.ts` `resolveCodingForInvoice`
 — one Convex query, all the DB reads through model/kit/category/service-type/
 org-default) and snapshotted onto `invoiceLines` — never re-resolved after
@@ -197,8 +367,12 @@ wires an actual sale line type.
 
 Every level of the cascade above has a write path + form field:
 
-- **Category default** — `categories.xeroAccountCode`, one field on the
-  category create/edit dialog (`src/components/assets/category-manager.tsx`).
+- **Category default** — `categories.xeroAccountCode`, a labelled "Xero
+  coding" section (border-separated, not just a bare field) on the category
+  create/edit dialog (`src/components/assets/category-manager.tsx`) — this
+  dialog has no `SmartFormSection`-style layout the way model/kit forms do,
+  so the field needs its own visual heading to not blend into the plain
+  field list around it.
 - **Model defaults** — `models.xeroRentalAccountCode`/`xeroSaleAccountCode`,
   a "Xero coding" `SmartFormSection` on `src/components/assets/model-form.tsx`
   (rental and sale are independent — a kit-parent line reads `kits.xeroAccountCode`
@@ -212,14 +386,45 @@ Every level of the cascade above has a write path + form field:
   landed — what was missing was the client never sending them
   (`buildLineItemSetClear` in `src/hooks/use-line-item-writes.ts`) and no
   length bound (`assertLineItemFields` in `convex/lineItemWrites.ts`), both
-  now added (R-8.6.2 — defense-in-depth on a blocklist mutation).
+  now added (R-8.6.2 — defense-in-depth on a blocklist mutation). Tucked
+  behind a collapsed-by-default "Advanced: Xero coding" `Accordion` — this
+  dialog is on the everyday line-editing path, unlike category/model/kit
+  forms, so the override stays reachable without cluttering the common case.
 - **Service override** — `projectServices.xeroAccountCode`/`xeroTaxType`, on
-  the `ServiceDialog` in `src/components/projects/services-panel.tsx`.
+  the `ServiceDialog` in `src/components/projects/services-panel.tsx` — same
+  collapsed-by-default `Accordion` treatment, same reasoning.
+- **Group override** — `projectGroups.xeroAccountCode`/`xeroTaxType`, on
+  `EditGroupDialog` (`src/components/projects/edit-group-dialog.tsx`) — same
+  collapsed-by-default `Accordion` treatment (a group's own dialog is also on
+  the everyday project-editing path). This dialog uses local `useState`, not
+  React Hook Form, so the field is wired directly (`value`/`onChange`), not
+  through a `Controller`. Sent as the raw string on every save, never
+  `|| undefined` the way `description` is — an omitted/`undefined` key never
+  reaches the Convex mutation at all (`JSON.stringify` drops `undefined`
+  values), so "clear the override" would otherwise be silently lost instead
+  of patching back to unset; `updateGroupNative`'s own `a.xeroAccountCode ||
+  undefined` does the clear-on-empty-string itself.
 
-All five write paths mirror `categorySchema`/`modelSchema`/etc.'s new
+Kit-parent project lines were the other explicit ask ("show up on kits...
+when they [are] items on a project") — already covered by the line override
+above without any extra work: a kit-parent row (`kitId` set, `isKitChild:
+false`) opens the exact same `EditLineItemDialog` as any other equipment
+line, with no kit-specific code path that would intercept or hide the Xero
+section.
+
+`MappedGroup` (both copies — `src/lib/project-equipment-reconstruct.ts` for
+the client-safe equipment-tab bundle, `src/lib/project-line-item-read.ts` for
+the server-side read path) and `GroupData`
+(`src/components/projects/equipment-row-types.ts`) all needed the two new
+fields threaded through explicitly — both are allowlist mappers over the raw
+`projectGroups` doc, not passthrough spreads, so a new schema field is
+invisible to either read path until added by hand.
+
+All six write paths mirror `categorySchema`/`modelSchema`/etc.'s new
 `.max(50)` bound server-side (`assertCategoryFields`/`assertModelFields`/
-`assertKitFields`/`assertLineItemFields`/`assertServiceFields` — R-8.6.2,
-a browser-direct caller bypassing the client Zod parse can't skip the bound).
+`assertKitFields`/`assertLineItemFields`/`assertServiceFields`/`assertStrLen`
+calls in `updateGroupNative` — R-8.6.2, a browser-direct caller bypassing the
+client Zod parse can't skip the bound).
 
 **Shared UI**: `src/components/settings/xero-coding-fields.tsx` —
 `XeroAccountCodeField`/`XeroTaxTypeField`, both self-gating on `useXeroLinked()`
@@ -231,6 +436,19 @@ coding" section on category/model/kit is itself conditionally rendered on
 `useXeroLinked()` too — a titled section with self-gating-to-null fields
 inside would otherwise show an empty section with no content, which reads as
 broken.
+
+**Codeless accounts are excluded from the picker, not just displayed oddly.**
+`useXeroCodingOptions()` filters `cachedAccounts` down to `!!a.Code` before
+mapping to `ComboboxPicker` options — Xero's Invoices API `AccountCode` field
+takes the short account CODE, never the internal `AccountID` GUID, so an
+account with no code was never a valid selection regardless. This also fixed
+a real bug: the old fallback `a.Code ?? a.AccountID` only triggers on
+null/undefined, not on `Code: ""` (which Xero returns for some accounts with
+no code assigned) — that account's option `value` silently collapsed to
+`""`, the exact sentinel every picker here uses for "nothing selected."
+Every UNSET override field then matched that account by coincidence and
+rendered it as if selected, which read as "every override defaults to the
+first account in the list, and clearing never actually clears."
 
 ### Linked gate
 
@@ -305,7 +523,12 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | File | Purpose |
 |------|---------|
 | `convex/schema.ts` | `quotes`, `invoices`, `invoiceLines`, `xeroIntegrations`, `xeroSyncLogs` tables; Xero coding fields on `categories`/`models`/`kits`/`projectLineItems`/`projectServices`; `clients.paymentProfile`/`profileDepositPercent`/`xeroContactId`/`xeroContactName` |
-| `convex/quotesWrites.ts` | `publishNative` |
+| `convex/quotesWrites.ts` | The five quote verbs: `sendNative`/`recallNative`/`newVersionNative`/`markAcceptedNative`/`markDeclinedNative` |
+| `convex/quotes.ts` | `listForProject` (with derived `effectiveStatus`) / `revisionStateForProject` |
+| `convex/lib/quoteState.ts` | Derived `EXPIRED`, `PUBLISHED`→`SENT` normalisation, `hasAcceptedQuote`, org-checked quote/project loaders |
+| `convex/lib/quoteDates.ts` / `src/lib/quote-validity.ts` | Validity default + bounds + timezone-correct `validUntil`/expiry (mirrored pair) |
+| `convex/backfillQuoteRevisions.ts` | Forward migration + `verifyQuoteRevisions` |
+| `src/hooks/use-quote-writes.ts` / `src/components/projects/project-quote-rail.tsx` | Client wiring for the five verbs |
 | `convex/invoicesWrites.ts` | `createNative`/`issueNative`/`voidNative`/`deleteDraftNative`/`createCreditNative` |
 | `convex/lib/financeSnapshot.ts` | `buildFinanceLines` — the shared quote/invoice line-breakdown builder |
 | `convex/lib/xeroAccountCascade.ts` | Pure cascade resolver functions |
@@ -336,9 +559,23 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 - `src/server/xero.test.ts` — 4 mocked-boundary tests on `pushInvoiceToXero`
   (auto-create-contact idempotency, the failure path).
 - `convex/lib/xeroGate.test.ts` — 4 tests, the linked gate + org-scoping.
-- `convex/quotesWrites.test.ts` / `convex/invoicesWrites.test.ts` — 18 tests,
+- `convex/quotesWrites.test.ts` / `convex/invoicesWrites.test.ts` — 40 tests,
   server-computed money, gapless/namespaced numbering, cross-org IDOR guards,
-  RBAC, lifecycle-lock gating.
+  RBAC, lifecycle-lock gating. #986 added the four revision invariants,
+  supersede-on-send-not-on-draft, the recall round trip (including restoring
+  the superseded predecessor), derived-`EXPIRED` blocking acceptance, and the
+  manager-can-send-but-not-recall / PM-can-recall RBAC split.
+- `convex/quoteDates.test.ts` — pins the `convex/lib` ↔ `src/lib` mirror over a
+  timezone × instant × validity matrix, and asserts `validUntil` lands on the
+  last local instant of its calendar day across DST in both hemispheres, at
+  half/quarter-hour offsets, and over month/year/leap boundaries.
+- `convex/backfillQuoteRevisions.test.ts` — dry-run/apply split, every migration
+  step, idempotency, template exclusion, monotonicity, SERVICE-only access, and
+  zero un-migrated rows afterwards.
+- `convex/projectWrites.test.ts` — the acceptance gate on `CONFIRMED`: blocked
+  without an accepted revision, satisfied by one, unsatisfied by a merely-SENT
+  one or another org's (IDOR), the admin/PM override with its audited
+  justification, and `revision` being un-forgeable and un-clearable.
 - `convex/recalc.test.ts` — 4 new tests for the derived `depositPaid`/
   `invoicedTotal` fields.
 

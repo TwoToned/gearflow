@@ -83,7 +83,16 @@ export const listSnapshots = query({
   returns: v.array(
     v.object({
       id: v.string(),
-      reason: v.union(v.literal("CONFIRMED"), v.literal("COMPLETED"), v.literal("UNLOCK")),
+      // QUOTE_SENT (#986) — a snapshot taken when a quote revision was sent.
+      // These carry `revision`, which the Versions panel uses to label the row
+      // "as of quote v2" rather than by its status transition.
+      reason: v.union(
+        v.literal("CONFIRMED"),
+        v.literal("COMPLETED"),
+        v.literal("UNLOCK"),
+        v.literal("QUOTE_SENT"),
+      ),
+      revision: v.optional(v.number()),
       takenAt: v.number(),
       takenBy: v.string(),
       takenByName: v.optional(v.string()),
@@ -101,6 +110,7 @@ export const listSnapshots = query({
       .map((s) => ({
         id: s.id,
         reason: s.reason,
+        revision: s.revision,
         takenAt: s.takenAt,
         takenBy: s.takenBy,
         takenByName: s.takenByName,

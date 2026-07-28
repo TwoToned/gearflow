@@ -74,6 +74,34 @@ async function resolveEquipmentLineCode(
   };
 }
 
+/** Resolve one GROUP invoice line's account/tax code — a priced group bills
+ *  as its own line (financeSnapshot.ts). A group isn't a model/kit, so its
+ *  cascade skips straight from the line override to its category default:
+ *  group override -> category default -> org default. Reuses
+ *  resolveEquipmentAccountCode with modelOrKitCode: null (level 2 always
+ *  absent) rather than a bespoke 2-level function. */
+async function resolveGroupLineCode(
+  ctx: Ctx,
+  sourceLineItemId: string,
+  orgId: string,
+  orgDefaultCode: string | null,
+  orgDefaultTaxType: string | null,
+): Promise<{ accountCode: string | null; taxType: string | null }> {
+  const group = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", sourceLineItemId)).first();
+  if (!group || group.organizationId !== orgId) return { accountCode: orgDefaultCode, taxType: orgDefaultTaxType };
+
+  let categoryCode: string | null = null;
+  if (group.categoryId) {
+    const category = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", group.categoryId!)).first();
+    categoryCode = category && category.organizationId === orgId ? (category.xeroAccountCode ?? null) : null;
+  }
+
+  return {
+    accountCode: resolveEquipmentAccountCode({ lineOverride: group.xeroAccountCode, modelOrKitCode: null, categoryCode, orgDefaultCode }),
+    taxType: resolveTaxType({ lineOverride: group.xeroTaxType, orgDefaultTaxType }),
+  };
+}
+
 /** Resolve one SERVICE invoice line's account/tax code — same split-out rationale. */
 async function resolveServiceLineCode(
   ctx: Ctx,
@@ -93,7 +121,7 @@ async function resolveServiceLineCode(
 }
 
 /** Dispatch one invoice line to its source-type resolver (or the org default
- *  for GROUP/CUSTOM lines, which have no per-entity coding field). */
+ *  for CUSTOM lines, which have no backing entity to resolve coding from). */
 async function resolveOneLine(
   ctx: Ctx,
   line: { sourceType: string; sourceLineItemId?: string },
@@ -108,8 +136,10 @@ async function resolveOneLine(
   if (line.sourceType === "SERVICE" && line.sourceLineItemId) {
     return resolveServiceLineCode(ctx, line.sourceLineItemId, orgId, serviceDefaults, orgDefaultCode, orgDefaultTaxType);
   }
-  // GROUP / CUSTOM (deposit/balance/credit summary lines, or a group with no
-  // per-entity coding field) — org default only.
+  if (line.sourceType === "GROUP" && line.sourceLineItemId) {
+    return resolveGroupLineCode(ctx, line.sourceLineItemId, orgId, orgDefaultCode, orgDefaultTaxType);
+  }
+  // CUSTOM (deposit/balance/credit summary lines — no backing entity) — org default only.
   return { accountCode: orgDefaultCode, taxType: orgDefaultTaxType };
 }
 

@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+import { assertStrLen } from "./lib/fieldGuards";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -336,6 +337,8 @@ export const updateGroupNative = mutation({
     description: v.optional(v.string()),
     quantity: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
+    xeroAccountCode: v.optional(v.string()),
+    xeroTaxType: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -366,6 +369,8 @@ export const updateGroupNative = mutation({
     if (a.title !== undefined) assertValidTitle(a.title);
     if (a.description !== undefined) assertValidDescription(a.description || undefined);
     if (a.quantity !== undefined) assertValidQuantity(Number(a.quantity));
+    assertStrLen(a.xeroAccountCode, "xeroAccountCode", { max: 50 });
+    assertStrLen(a.xeroTaxType, "xeroTaxType", { max: 50 });
 
     // Patch semantics mirror the server: "" / falsy clears the optional field.
     const patch: Record<string, unknown> = { updatedAt: a.now };
@@ -373,6 +378,8 @@ export const updateGroupNative = mutation({
     if (a.description !== undefined) patch.description = a.description || undefined;
     if (a.quantity !== undefined) patch.quantity = Number(a.quantity);
     if (a.sortOrder !== undefined) patch.sortOrder = Number(a.sortOrder);
+    if (a.xeroAccountCode !== undefined) patch.xeroAccountCode = a.xeroAccountCode || undefined;
+    if (a.xeroTaxType !== undefined) patch.xeroTaxType = a.xeroTaxType || undefined;
     await ctx.db.patch(group._id, patch);
 
     // Audit uses the PRE-patch title (parity with the server action).
@@ -396,7 +403,9 @@ export const updateGroupNative = mutation({
     const providedNonSortOrder =
       a.title !== undefined ||
       a.description !== undefined ||
-      a.quantity !== undefined;
+      a.quantity !== undefined ||
+      a.xeroAccountCode !== undefined ||
+      a.xeroTaxType !== undefined;
     if (providedNonSortOrder) {
       await ctx.db.insert("activityEvents", {
         orgId: a.orgId,

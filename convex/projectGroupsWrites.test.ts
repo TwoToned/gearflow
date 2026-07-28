@@ -200,6 +200,40 @@ describe("projectGroupsWrites.updateGroupNative", () => {
     ).rejects.toThrow(/Group not found/i);
   });
 
+  test("sets a Xero coding override, then clears it back to inherit", async () => {
+    const t = makeT();
+    await seedGroupWithLine(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupNative, {
+      id: "g1", orgId: ORG, xeroAccountCode: "8888-GROUP", xeroTaxType: "ZERORATED", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.xeroAccountCode).toBe("8888-GROUP");
+      expect(g?.xeroTaxType).toBe("ZERORATED");
+    });
+
+    // Sending "" (not omitting the key) clears it back to inherit -- matches
+    // how the edit dialog always sends the raw field value, never `|| undefined`.
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupNative, {
+      id: "g1", orgId: ORG, xeroAccountCode: "", xeroTaxType: "", now: NOW, actor: ACTOR, auditId: "log2",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.xeroAccountCode).toBeUndefined();
+      expect(g?.xeroTaxType).toBeUndefined();
+    });
+  });
+
+  test("rejects an over-length Xero account code (R-8.6.2)", async () => {
+    const t = makeT();
+    await seedGroupWithLine(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.updateGroupNative, {
+        id: "g1", orgId: ORG, xeroAccountCode: "x".repeat(51), now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/xeroAccountCode/i);
+  });
+
   test("viewer denied", async () => {
     const t = makeT();
     await member(t, "viewer");

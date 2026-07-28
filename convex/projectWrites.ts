@@ -22,8 +22,10 @@ import {
   lifecycleAuditMetadata,
   LOCKED_PROJECT_FIELDS,
   requireHardLockOverrideAllowed,
+  requireJustification,
 } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
+import { hasAcceptedQuote } from "./lib/quoteState";
 import { autoCommitOpenSession } from "./projectUnlockSessionsWrites";
 
 /** Forward status transitions that a project's open BLOCKING comments must gate
@@ -156,14 +158,27 @@ export const updateStatusNative = mutation({
     // revert (normal forward move, ungated here).
     if (from !== status && isRevertOutOfHardLock(from, status)) {
       await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
-      const trimmed = justification?.trim();
-      if (!trimmed || trimmed.length < 10) {
-        throw new ConvexError({
-          code: "JUSTIFICATION_REQUIRED",
-          message: "Reverting a completed project's status requires a justification (at least 10 characters).",
-        });
-      }
-      assertStrLen(trimmed, "justification", { max: 1000 });
+      requireJustification(
+        justification,
+        "Reverting a completed project's status requires a justification (at least 10 characters).",
+      );
+    }
+
+    // #986 (decision 3): a project may not advance to CONFIRMED until a quote
+    // revision has been ACCEPTED — confirming a job the client never agreed to
+    // price is the failure the whole revision model exists to prevent. Overridable
+    // by the SAME narrow audience that can open a full unlock session (org
+    // admins/owners + this project's PMs) with the SAME bounded justification, so
+    // there is no new permission and no second copy of the bounds (R-3.1).
+    // Deliberately only on an actual transition INTO CONFIRMED: re-saving a
+    // project that is already CONFIRMED never re-prompts, and a later revision
+    // superseding the accepted one doesn't retroactively invalidate the status.
+    if (from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now))) {
+      await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
+      requireJustification(
+        justification,
+        "This project has no accepted quote. Confirming anyway requires a justification (at least 10 characters).",
+      );
     }
 
     await ctx.db.patch(project._id, { status, updatedAt: now });
@@ -338,10 +353,21 @@ const PROJECT_MONEY_ANCHORS = [
   "depositPaid", "invoicedTotal",
 ] as const;
 
-/** Immutable on a general `updateNative` patch: the money anchors + `isTemplate` (a project
- * is never flipped to a template in place — that's a saveAsTemplate copy). `projectNumber`
- * stays editable (a legit code edit). */
-const PROJECT_UPDATE_IMMUTABLE = [...PROJECT_MONEY_ANCHORS, "isTemplate"] as const;
+/**
+ * SERVER-OWNED project fields that no client patch may set, for the same reason
+ * as `PROJECT_MONEY_ANCHORS` but a different authority. `revision` (#986) is the
+ * shared quote/project version counter — written ONLY by `createNative` (seeded
+ * to 1) and `quotesWrites.newVersionNative`. A client-settable revision would let
+ * a browser caller renumber, skip or rewind versions, which breaks monotonicity
+ * and would silently orphan the quote rows keyed to those numbers.
+ */
+const PROJECT_SERVER_OWNED = ["revision"] as const;
+
+/** Immutable on a general `updateNative` patch: the money anchors + the
+ * server-owned fields + `isTemplate` (a project is never flipped to a template in
+ * place — that's a saveAsTemplate copy). `projectNumber` stays editable (a legit
+ * code edit). */
+const PROJECT_UPDATE_IMMUTABLE = [...PROJECT_MONEY_ANCHORS, ...PROJECT_SERVER_OWNED, "isTemplate"] as const;
 
 const PROJECT_NEVER_CLEAR = new Set<string>([
   "id", "organizationId", "projectNumber", ...PROJECT_UPDATE_IMMUTABLE,
@@ -426,8 +452,9 @@ export const updateNative = mutation({
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    // strip organizationId/id (no cross-tenant reassign) + the recalc-owned money anchors
-    // and isTemplate (no client-forged totals / in-place template flip).
+    // strip organizationId/id (no cross-tenant reassign) + the recalc-owned money anchors,
+    // the server-owned `revision` counter (#986) and isTemplate (no client-forged totals,
+    // no client-renumbered revisions, no in-place template flip).
     const setObj = sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE);
 
     // #791/#792 finance soft-lock: setting or clearing a locked project field
@@ -700,6 +727,11 @@ export const createNative = mutation({
     // status/isTemplate, not money, so it's unaffected by the strip.)
     const insertFields = { ...fields, projectNumber, discountPercent };
     for (const k of PROJECT_MONEY_ANCHORS) delete (insertFields as Record<string, unknown>)[k];
+    for (const k of PROJECT_SERVER_OWNED) delete (insertFields as Record<string, unknown>)[k];
+    // #986 — every real project starts at revision 1 (its first quote is v1).
+    // Templates carry no revision at all: they're never quoted, and a duplicate
+    // made from one starts its own count at 1 rather than inheriting a number.
+    if (!fields.isTemplate) (insertFields as Record<string, unknown>).revision = 1;
 
     await ctx.db.insert("projects", insertFields);
     await bumpProjectCounters(ctx, fields.organizationId, null, insertFields);

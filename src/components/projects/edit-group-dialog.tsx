@@ -28,6 +28,9 @@ import { formatCurrency } from "@/lib/formatters";
 import { useEditLock } from "@/hooks/use-collaboration";
 import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
 import { COLLAB_TARGET_TYPES } from "@/lib/collaboration-targets";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { XeroAccountCodeField, XeroTaxTypeField } from "@/components/settings/xero-coding-fields";
+import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { GroupData } from "./equipment-rows";
 
@@ -35,6 +38,8 @@ export interface EditGroupFormValues {
   title: string;
   description?: string;
   quantity: number;
+  xeroAccountCode?: string;
+  xeroTaxType?: string;
 }
 
 interface EditGroupDialogProps {
@@ -93,6 +98,9 @@ function EditGroupDialogBody({
   const [price, setPrice] = useState(priceVal != null ? String(priceVal) : "");
   const [discount, setDiscount] = useState(discountVal != null ? String(discountVal) : "");
   const [discountMode, setDiscountMode] = useState<DiscountMode>("$");
+  const [xeroAccountCode, setXeroAccountCode] = useState(group.xeroAccountCode ?? "");
+  const [xeroTaxType, setXeroTaxType] = useState(group.xeroTaxType ?? "");
+  const xeroLinked = useXeroLinked();
 
   function handleSave() {
     if (!title.trim() || formDisabled) return;
@@ -105,6 +113,14 @@ function EditGroupDialogBody({
         title: title.trim(),
         description: description.trim() || undefined,
         quantity: parseInt(quantity) || 1,
+        // NOT `|| undefined` (unlike description above): an omitted/undefined
+        // key never reaches the Convex mutation at all (JSON.stringify drops
+        // `undefined` values), so "clear the override" would be silently lost
+        // instead of patching back to unset. Always send the raw string —
+        // updateGroupNative's `a.xeroAccountCode || undefined` does the
+        // clear-on-empty itself, the way it's meant to work.
+        xeroAccountCode,
+        xeroTaxType,
       },
       resolvedPrice,
       resolvedDiscount,
@@ -178,6 +194,20 @@ function EditGroupDialogBody({
           onModeChange={setDiscountMode}
           disabled={formDisabled}
         />
+        {xeroLinked && (
+          <Accordion type="single" collapsible>
+            <AccordionItem value="xero-coding" className="border-line">
+              <AccordionTrigger>Advanced: Xero coding</AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-4 pt-1">
+                  <p className="text-caption text-muted">Overrides the category default for this group&apos;s invoice line only.</p>
+                  <XeroAccountCodeField value={xeroAccountCode} onChange={setXeroAccountCode} label="Account" placeholder="Inherit default" />
+                  <XeroTaxTypeField value={xeroTaxType} onChange={setXeroTaxType} label="Tax type" placeholder="Use org default" />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        )}
       </div>
       <DialogFooter>
         <Button variant="line" onClick={onClose}>

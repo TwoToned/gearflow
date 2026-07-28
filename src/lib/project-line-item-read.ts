@@ -349,6 +349,8 @@ export type MappedGroup = Omit<
   | "discount"
   | "suggestedPrice"
   | "sortOrder"
+  | "xeroAccountCode"
+  | "xeroTaxType"
   | "createdAt"
   | "updatedAt"
 > & {
@@ -359,6 +361,8 @@ export type MappedGroup = Omit<
   discount: number | null;
   suggestedPrice: number | null;
   sortOrder: number;
+  xeroAccountCode: string | null;
+  xeroTaxType: string | null;
   createdAt: Date | null;
   updatedAt: Date | null;
 };
@@ -376,6 +380,8 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     discount: d.discount ?? null,
     suggestedPrice: d.suggestedPrice ?? null,
     sortOrder: d.sortOrder ?? 0,
+    xeroAccountCode: d.xeroAccountCode ?? null,
+    xeroTaxType: d.xeroTaxType ?? null,
     createdAt: msToDate(d.createdAt),
     updatedAt: msToDate(d.updatedAt),
   };

@@ -298,7 +298,9 @@ export const createProjectWithUniqueNumber = internalMutation({
       )
       .unique();
     if (clash) return { created: false, id: clash.id };
-    await ctx.db.insert("projects", args);
+    // #986 — a real project starts at revision 1 (its first quote is v1), same as
+    // projectWrites.createNative. Templates carry no revision at all.
+    await ctx.db.insert("projects", args.isTemplate ? args : { ...args, revision: 1 });
     await bumpCountersForTable(ctx, "projects", null, args);
     return { created: true, id: args.id };
   },

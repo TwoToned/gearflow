@@ -53,4 +53,16 @@ crons.daily(
   {},
 );
 
+// API/MCP per-key request log retention (Phase 2, #998, design §11 — T-P2
+// proposed 30 days). Ages out apiRequestLog rows older than the retention
+// window; bounded per tick (apiRequestLog.purgeOlderThan caps at 2000 rows), so
+// a large backlog just takes a few extra days to fully drain rather than
+// blowing one mutation's read/time limits.
+crons.daily(
+  "api-request-log-retention",
+  { hourUTC: 23, minuteUTC: 0 },
+  internal.apiRequestLog.purgeOlderThan,
+  {},
+);
+
 export default crons;

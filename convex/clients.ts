@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { resolveClientContactDisplay } from "./lib/clientContactCore";
 import * as enums from "./lib/validators";
@@ -18,7 +18,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "client"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("clients")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -30,7 +30,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "client"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });
@@ -129,7 +129,7 @@ export const projectCounts = query({
 export const detail = query({
   args: { orgId: v.string(), id: v.string() },
   handler: async (ctx, { orgId, id }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "client"); // Phase 2 read bootstrap (#998)
 
     const client = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!client || client.organizationId !== orgId) return null;

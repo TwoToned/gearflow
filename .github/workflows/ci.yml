@@ -391,6 +391,12 @@ jobs:
       - name: API registry + coverage + privileged-arg gates (#997)
         run: pnpm run api:registry:check
 
+      # OpenAPI 3.1 + llms.txt staleness gate (#998, design §11). Regenerated
+      # from the SAME registry the step above just verified is current, so this
+      # can only drift if someone edits the committed output by hand.
+      - name: API docs (OpenAPI + llms.txt) staleness gate (#998)
+        run: pnpm run api:docs:check
+
       - name: Print API coverage table
         if: always()
         run: sed -n '/## Totals/,/reachability-floor/p' docs/api-coverage.md >> "$GITHUB_STEP_SUMMARY"

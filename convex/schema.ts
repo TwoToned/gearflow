@@ -247,6 +247,30 @@ export default defineSchema({
     .index("by_org_key", ["organizationId", "key"])
     .index("by_apiKeyId", ["apiKeyId"]),
 
+  // Per-key API/MCP request log (Phase 2, #998, design §11 observability). EVERY
+  // dispatcher call (query or mutation, success or error) writes one row here —
+  // unlike apiIdempotency, which only ever sees claimed writes. Args are
+  // PII-redacted before they reach this table (src/lib/api/request-log-redact.ts,
+  // R-8.12.4/docs/pii-inventory.md) — this table stores what a key OWNER is
+  // allowed to see about their own key's traffic, not a raw request capture.
+  // Retention: 30 days (T-P2, proposed), aged out by the daily
+  // "api-request-log-retention" cron (convex/crons.ts).
+  apiRequestLog: defineTable({
+    organizationId: v.string(),
+    apiKeyId: v.string(),
+    ts: v.number(),
+    operation: v.string(),
+    kind: v.union(v.literal("query"), v.literal("mutation")),
+    status: v.union(v.literal("success"), v.literal("error")),
+    errorCode: v.optional(v.string()),
+    missingScope: v.optional(v.string()),
+    latencyMs: v.number(),
+    requestId: v.optional(v.string()),
+    argsRedacted: v.optional(v.any()),
+  })
+    .index("by_apiKeyId_ts", ["apiKeyId", "ts"])
+    .index("by_organizationId_ts", ["organizationId", "ts"]),
+
   // StoredFile — the org-association for a Convex-storage file (the byte store is
   // Convex `_storage`). The /api/files proxy authorises a serve by looking up this
   // record's org (replacing the old S3 org-prefixed-key path auth). organizationId

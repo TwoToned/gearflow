@@ -166,13 +166,17 @@ describe("scope ∩ RBAC — neither half can be widened by the other", () => {
 
 describe("resource-less read guards fail closed for agents", () => {
   test("a query still on requireOrgRead is INVISIBLE to an agent, even with `*`", async () => {
-    // `projects.list` is one of the ~215 reads still on the resource-less guard.
-    // A `*` key on an OWNER is the widest possible agent, and it still can't see it.
+    // `locations.list` is one of the reads still on the resource-less guard
+    // (#998's read bootstrap migrated ~45 others — assets/models/categories/
+    // projects/lineItems/groups/availability/overbooking/clients/crew/
+    // warehouse/maintenance/kits/bulkAssets — but locations wasn't one of
+    // them). A `*` key on an OWNER is the widest possible agent, and it still
+    // can't see it.
     const t = makeT();
     await seed(t, "owner", ["*"]);
 
     await expect(
-      t.withIdentity(asAgent).query(api.projects.list, { orgId: ORG }),
+      t.withIdentity(asAgent).query(api.locations.list, { orgId: ORG }),
     ).rejects.toThrow(/not available to API keys/i);
   });
 
@@ -182,7 +186,7 @@ describe("resource-less read guards fail closed for agents", () => {
     await seed(t, "owner", ["*"]);
 
     await expect(
-      t.withIdentity(asUser).query(api.projects.list, { orgId: ORG }),
+      t.withIdentity(asUser).query(api.locations.list, { orgId: ORG }),
     ).resolves.toBeTruthy();
   });
 
@@ -191,7 +195,7 @@ describe("resource-less read guards fail closed for agents", () => {
     await seed(t, "owner", ["*"]);
 
     await expect(
-      t.withIdentity(asAgent).query(api.projects.getById, { id: "p1" }),
+      t.withIdentity(asAgent).query(api.locations.getById, { id: "loc1" }),
     ).rejects.toThrow(/not available to API keys/i);
   });
 });

@@ -737,6 +737,124 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f"
   },
   {
+    "operation": "apiRequestLog.logRequest",
+    "module": "apiRequestLog",
+    "fn": "logRequest",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apiKeyId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "argsRedacted",
+        "optional": true,
+        "type": "any"
+      },
+      {
+        "name": "errorCode",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "latencyMs",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "missingScope",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "operation",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "requestId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "ts",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "9d13e309fcb4e5c1",
+    "returnsSha": "bcde375ebd4cbacf"
+  },
+  {
+    "operation": "apiRequestLog.recentForKey",
+    "module": "apiRequestLog",
+    "fn": "recentForKey",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apiKeyId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "limit",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "2c91b83427c5c69d",
+    "returnsSha": "74234e98afe7498f"
+  },
+  {
+    "operation": "apiRequestLog.spendReadLimit",
+    "module": "apiRequestLog",
+    "fn": "spendReadLimit",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apiKeyId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "408c1cf19dbb0dbb",
+    "returnsSha": "bcde375ebd4cbacf"
+  },
+  {
     "operation": "assetAccessories.availableSerialized",
     "module": "assetAccessories",
     "fn": "availableSerialized",
@@ -1947,11 +2065,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -1968,11 +2091,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -2015,11 +2143,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "assets",
     "fn": "listByModel",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "asset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelId",
@@ -3152,11 +3285,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "availability",
     "fn": "assetBookings",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "assetId",
@@ -3188,11 +3326,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "availability",
     "fn": "calendarData",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "endMs",
@@ -3219,11 +3362,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "availability",
     "fn": "kitBookings",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "endMs",
@@ -3255,11 +3403,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "availability",
     "fn": "modelBookings",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "endMs",
@@ -3784,11 +3937,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -3805,11 +3963,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "bulkAssets",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "bulkAsset",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -4532,11 +4695,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "categories",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -4553,11 +4721,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "categories",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -8454,11 +8627,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "clients",
     "fn": "detail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -8480,11 +8658,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "clients",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -8501,11 +8684,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "clients",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -10838,11 +11026,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -10880,11 +11073,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -10901,11 +11099,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -11071,11 +11274,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAssignments",
     "fn": "projectCrew",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -11977,11 +12185,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAvailability",
     "fn": "conflicts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "crewMemberId",
@@ -12018,11 +12231,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAvailability",
     "fn": "memberAvailability",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "crewMemberId",
@@ -12054,11 +12272,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewAvailability",
     "fn": "plannerData",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "endMs",
@@ -12737,11 +12960,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewMembers",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -12758,11 +12986,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "crewMembers",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -19124,11 +19357,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -19145,11 +19383,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "kits",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -22758,11 +23001,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceRecords",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -22779,11 +23027,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceRecords",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -22960,11 +23213,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "maintenanceScheduleWorklist",
     "fn": "dueWorklist",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "nowMs",
@@ -25068,11 +25326,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "models",
     "fn": "detail",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -25089,11 +25352,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "models",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -25110,11 +25378,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "models",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -26605,11 +26878,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "overbooking",
     "fn": "bundle",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "modelIds",
@@ -27864,11 +28142,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectGroups",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -27906,11 +28189,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectGroups",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -29237,11 +29525,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -29258,11 +29551,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -29409,11 +29707,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projectLineItems",
     "fn": "listByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -31870,11 +32173,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projects",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -31917,11 +32225,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projects",
     "fn": "list",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -31990,11 +32303,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "projects",
     "fn": "listPage",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -35700,11 +36018,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "reservationConflicts",
     "fn": "projectConflicts",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "projectId",
@@ -35721,11 +36044,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "reservationConflicts",
     "fn": "swapCandidates",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "lineItemId",
@@ -46139,11 +46467,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "warehouseCloses",
     "fn": "getById",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "id",
@@ -46160,11 +46493,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "warehouseCloses",
     "fn": "getByProject",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -46613,11 +46951,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "warehouseList",
     "fn": "bundle",
     "kind": "query",
-    "guard": "orgRead",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "orgId",
@@ -50549,10 +50892,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1124,
-  agentReachable: 291,
-  queries: 397,
-  mutations: 727,
-  agentReachableQueries: 22,
+  total: 1127,
+  agentReachable: 336,
+  queries: 398,
+  mutations: 729,
+  agentReachableQueries: 67,
   agentReachableMutations: 269,
 } as const;

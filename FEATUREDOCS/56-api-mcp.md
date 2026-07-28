@@ -2,12 +2,15 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
-> **STATUS 2026-07-28 — reinstatement underway. Phases 0 + 1 have landed
-> (#996, #997): the agent identity, the scope intersection, the limits, the
-> idempotency ledger, the error envelope and the contract registry all exist and
-> are gated in CI. There is still no general request surface — that is Phase 2
-> (#998). The only route today is the deliberately throwaway Phase-0 prover,
-> `POST /api/v1/probe/line-items`.**
+> **STATUS 2026-07-28 — reinstatement underway. Phases 0, 1 + 2 have landed
+> (#996, #997, #998): there is now a real, curl-verifiable HTTP API —
+> `POST /api/v1/ops/{operation}` (the universal dispatcher), `GET
+> /api/v1/operations{,/[operation]}`, `GET /api/v1/whoami`, `GET
+> /api/v1/openapi.json`, `GET /llms.txt`, and a handful of curated REST
+> aliases (`/api/v1/{projects,assets,clients}[/{id}]`,
+> `POST /api/v1/projects/{id}/line-items`). The Phase-0 throwaway prover
+> (`POST /api/v1/probe/line-items`) is gone — Phase 2 replaced it wholesale.
+> Next up: Phase 3 (#999), MCP over bearer keys.**
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:
@@ -45,10 +48,9 @@ preview→confirm token binding:
 [`docs/designs/archive/api-mcp-agent-access.md`](../docs/designs/archive/api-mcp-agent-access.md).
 Don't rediscover those the hard way twice.
 
-## What exists today (phases 0 + 1, landed 2026-07-28)
+## What exists today (phases 0-2, landed 2026-07-28)
 
-Everything below is built, tested and CI-gated. Nothing here is a request
-surface — an operator cannot yet make a general API call.
+Everything below is built, tested and CI-gated.
 
 ### The agent identity (`convex/lib/auth.ts`)
 
@@ -82,10 +84,15 @@ with `src/lib/api-key.ts`: the Convex copy is the load-bearing one, because it
 runs in-transaction and cannot be dodged by calling Convex directly.
 
 **Reads fail closed.** `requireOrgRead`/`requireOrgReadDoc` carry no resource, so
-they reject agents outright rather than admit them unscoped (decision 2). 216
-queries are invisible to the API until Phase 5 migrates them to
-`requireOrgReadFor`. That is deliberate: an unmigrated read is invisible, not
-unscoped, and the migration is one argument per call site.
+they reject agents outright rather than admit them unscoped (decision 2). Phase 2
+(#998) migrated a ~45-query **read bootstrap** to `requireOrgReadFor`/
+`requireOrgReadDocFor` — assets, models, categories, projects, line items,
+groups, availability, overbookings, clients, crew + assignments, warehouse
+status, maintenance, kits, bulk assets — chosen to fully back the curated MCP
+tool set Phase 3 will build. The remaining unmigrated reads stay invisible
+(not unscoped) until Phase 5's coverage sweep; migrating one is a one-argument
+change at the call site (`requireOrgRead(ctx, orgId)` →
+`requireOrgReadFor(ctx, orgId, "<resource>")`).
 
 ### Contract registry (`scripts/generate-api-registry.mts`)
 
@@ -96,8 +103,9 @@ the `(resource, action)` pair are *derived* from the guard the function calls �
 the flag cannot drift, because changing it requires changing the guard.
 
 Live numbers are in [`docs/api-coverage.md`](../docs/api-coverage.md), regenerated
-on every PR. At the time of writing: 1,113 public operations, 287 agent-reachable,
-602 SERVICE-only, 216 fail-closed org-reads, 8 unclassified.
+on every PR. At the time of writing: 1,127 public operations, 336 agent-reachable
+(67 queries + 269 mutations) — up from 291 pre-#998, the +45 being the read
+bootstrap.
 
 Four CI gates, each proved to fail on a deliberately-introduced violation in
 `src/lib/api/registry.test.ts`:
@@ -118,6 +126,61 @@ test that kills the ledger mid-flight and shows the retry still writes exactly o
 row. The error envelope maps the `ConvexError` codes the guards already throw;
 `MISSING_SCOPE` stays distinct from `FORBIDDEN`, because they lead to different
 recoveries and only one of them is the operator's to fix.
+
+## What Phase 2 built (#998)
+
+**The universal dispatcher** (`src/lib/api/dispatcher.ts`, `POST
+/api/v1/ops/{operation}`) — one route, closed by default: an operation absent
+from the registry OR not `agentReachable` is a 404, never a 403 (a SERVICE-only
+op does not "exist" for a key). Per call: bearer key → agent token
+(agent-auth.ts, unchanged since Phase 0) → registry lookup → rate limit (a read
+spends one `agentRead` token via a service-authenticated mutation, since a
+Convex query can't self-limit; a write's `agentWrite` token is spent inside the
+transaction, unchanged) → business-field validation → arg normalization →
+idempotency claim/run/complete around a write → the Convex call, under the
+freshly-minted agent token → error mapping + the per-key request log, always.
+Authorization is deliberately not a step here — every gate lives inside the
+Convex transaction; the dispatcher cannot grant what Convex would refuse.
+
+**The arg normalizer** (`src/lib/api/arg-normalizer.ts`) — the 7-rule table
+from the design doc, plus the one thing it left implicit: `auditId` is always
+server-minted, but a bare `id` is only minted on a CREATE-shaped mutation
+(`create*`/`add*`) — everywhere else it names an EXISTING row the caller is
+pointing at, so overwriting it would silently target (or fail to find) the
+wrong row.
+
+**Validation parity** (`src/lib/validations/registry.ts`) — the Zod↔Convex
+pairing table promoted out of `convex/validationDrift.test.ts`
+(R-3.1), plus a best-effort `OPERATION_VALIDATION_PAIR` map from `<module>.<fn>`
+to a pair, so the dispatcher can run the SAME schema the UI hooks run before
+the Convex call. Not exhaustive — an operation absent from the map falls back
+to the in-Convex `fieldGuards`/`moneyGuards` backstop, same enforcement, a
+less specific message.
+
+**The per-key request log** (`convex/apiRequestLog.ts`, `apiRequestLog`
+table) — every dispatcher call, success or error, PII-redacted
+(`src/lib/api/request-log-redact.ts`, R-8.12.4) before it's stored. 30-day
+retention (T-P2), aged out by the daily `api-request-log-retention` cron.
+
+**OpenAPI 3.1 + llms.txt** (`scripts/generate-api-docs.mts`) — generated from
+the SAME registry the operation dispatcher reads, so they can't drift from
+what `/ops/{operation}` actually does. `GET /api/v1/openapi.json` is the one
+deliberately UNAUTHENTICATED `/api/v1` route (it's a schema, not org data);
+`GET /llms.txt` is a static `public/llms.txt` file, not a route. Both
+staleness-gated in CI (`pnpm run api:docs:check`), right after the registry
+gate.
+
+**Curated REST aliases** (`src/lib/api/alias.ts`) — `GET
+/api/v1/{projects,assets,clients}`, `GET .../{id}`, `POST
+/api/v1/projects/{id}/line-items`. Each is a few lines that name an operation
+and merge the path param into `args`, then call the SAME `dispatch()` the
+generic route uses — REST and the dispatcher cannot drift because one calls
+the other. Not a generator: an alias is a hand-picked ergonomic shortcut,
+`/ops/{operation}` already covers every agent-reachable operation.
+
+**`GET /api/v1/whoami`** — org, acting user, LIVE effective permissions
+(re-read from the `members` mirror every call, never the token's cached role
+claim — a demotion lands on the next request), scopes, and rate/bulk limits.
 
 ## What Phase 0 proved (#996)
 

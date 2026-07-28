@@ -16,7 +16,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * org-scoped audit record (which line item a checked-out unit's history moved to
  * after a merge) with no sensitivity beyond ordinary project data, so `list` uses
  * `requireOrgPermission(ctx, orgId, "project", "read")` and `getById` uses
- * `requireOrgReadDocFor(ctx, doc, "project")` — the same bar as any other
+ * `requireOrgReadDocFor(ctx, doc, "project")` — the same bar as every other
  * project-scoped read. Lookups use the cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 

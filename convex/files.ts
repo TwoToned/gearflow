@@ -91,7 +91,7 @@ export const deleteFile = mutation({
 /**
  * Agent-op annotations (Phase 5, #1001). `getServeInfo` widened — now org-
  * checked via the `storedFiles` doc before returning its (short-lived) serve
- * URL, same as any other in-org document read. The three mutations
+ * URL, same as every other in-org document read. The three mutations
  * (generateUploadUrl/register/deleteFile) are untouched — mutations are out of
  * this triage's scope and stay requireService-only.
  */

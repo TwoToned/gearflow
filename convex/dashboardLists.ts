@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead, getAuthContext } from "./lib/auth";
+import { requireOrgReadFor, getAuthContext, isMemberAuth } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * BROWSER-facing native replacements for the bounded project/thread dashboard
@@ -10,7 +11,8 @@ import { requireOrgRead, getAuthContext } from "./lib/auth";
  * EQUIPMENT line items per candidate (≤8 / ≤24 projects), and attaches the client
  * — reactive, no counter needed. Dates stay epoch-ms (the client wraps with
  * `new Date()`); `now` is client-passed (queries can't read the clock). Gated on
- * requireOrgRead (org-scoping — matches the server actions' getOrgContext).
+ * requireOrgReadFor(ctx, orgId, "project") (org-scoping — matches the server
+ * actions' getOrgContext; Phase 5 domain slice, #1001).
  */
 
 const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED"]);
@@ -63,7 +65,7 @@ function projectTile(p: ProjectDoc, counts: Map<string, number>, clients: Map<st
 export const upcoming = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     // Range-scan only FUTURE projects (rentalStartDate >= now) via the composite
     // index, ordered by rentalStartDate asc — stop once we have 8 matches. Replaces
     // a reactive whole-org-projects .collect() that re-read all history on any
@@ -93,9 +95,9 @@ export const upcoming = query({
 export const home = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") throw new ConvexError("Unauthorized: user token required.");
+    if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
     // Only THIS user's projects, not the whole org tables: directly-managed
@@ -150,9 +152,9 @@ export const home = query({
 export const blocking = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") throw new ConvexError("Unauthorized: user token required.");
+    if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
     const threads = await ctx.db
@@ -205,3 +207,10 @@ export const blocking = query({
     return surfaced.sort((a, b) => b.createdAt - a.createdAt);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  upcoming: { summary: "List the org's upcoming projects (next 8 by rental start date).", danger: "low", mcpTier: 2 },
+  home: { summary: "The caller's personal dashboard project list (managed or PM-assigned).", danger: "low", mcpTier: 2 },
+  blocking: { summary: "Blocking comment threads relevant to the caller (as PM or mentioned).", danger: "low", mcpTier: 2 },
+};

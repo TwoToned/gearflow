@@ -125,6 +125,7 @@ export const invoiceArtifactContext = query({
       status: invoice.status,
       pdfFileId: invoice.pdfFileId ?? null,
       issuedAt: invoice.issuedAt ?? null,
+      invoiceDate: invoice.invoiceDate ?? null,
       dueDate: invoice.dueDate ?? null,
     };
   },

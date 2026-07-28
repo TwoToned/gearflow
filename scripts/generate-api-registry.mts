@@ -82,14 +82,27 @@ interface ArgDescriptor {
   type: string;
 }
 
+interface ScopePair {
+  resource: string;
+  action: string;
+}
+
 interface Operation {
   operation: string;
   module: string;
   fn: string;
   kind: "query" | "mutation";
   guard: GuardKind;
+  /** The single enforced pair, or null when the handler gates conditionally on
+   *  more than one (see `scopePairs`). */
   resource: string | null;
   action: string | null;
+  /** EVERY (resource, action) the handler can enforce. Usually one; more when the
+   *  guard is conditional — `collaboration.createThread` demands
+   *  `project:manage_line_items` for a blocking comment and `project:read`
+   *  otherwise. Publishing only the first would tell an operator to grant a scope
+   *  that isn't what their call actually needs. */
+  scopePairs: ScopePair[];
   agentReachable: boolean;
   args: ArgDescriptor[];
   privilegedArgs: string[];
@@ -104,7 +117,7 @@ interface Operation {
 
 interface ModuleGuards {
   /** exported fn name -> guard facts */
-  byFn: Map<string, { guard: GuardKind; resource: string | null; action: string | null }>;
+  byFn: Map<string, GuardFacts>;
 }
 
 const GUARD_PATTERNS: Array<{
@@ -142,25 +155,55 @@ const GUARD_PATTERNS: Array<{
  * `requireService` is service-only regardless of what else it calls, since that
  * guard throws for every non-service caller.
  */
-function classifyBody(body: string): {
+interface GuardFacts {
   guard: GuardKind;
   resource: string | null;
   action: string | null;
-} {
+  scopePairs: ScopePair[];
+}
+
+function classifyBody(body: string): GuardFacts {
   if (/requireService\s*\(/.test(body)) {
-    return { guard: "service", resource: null, action: null };
+    return { guard: "service", resource: null, action: null, scopePairs: [] };
   }
   for (const pattern of GUARD_PATTERNS) {
     if (pattern.kind === "service") continue;
-    const match = pattern.re.exec(body);
-    if (!match) continue;
+    // ALL matches, not just the first. A handler can gate conditionally — see the
+    // ScopePair doc comment — and reporting only the first pair would publish a
+    // scope requirement that is wrong for the other branch. The runtime probe
+    // (convex/agentRegistryProbe.test.ts) is what caught this.
+    const matches = [...body.matchAll(new RegExp(pattern.re, "g"))];
+    if (!matches.length) continue;
+
+    const pairs: ScopePair[] = [];
+    for (const match of matches) {
+      const resource = pattern.resourceGroup ? match[pattern.resourceGroup] : null;
+      const action = pattern.actionGroup
+        ? match[pattern.actionGroup]
+        : pattern.kind === "orgReadFor"
+          ? "read"
+          : null;
+      if (!resource || !action) continue;
+      if (pairs.some((p) => p.resource === resource && p.action === action)) continue;
+      pairs.push({ resource, action });
+    }
+
+    const first = matches[0];
     return {
       guard: pattern.kind,
-      resource: pattern.resourceGroup ? (match[pattern.resourceGroup] ?? null) : null,
-      action: pattern.actionGroup ? (match[pattern.actionGroup] ?? null) : null,
+      // A single pair is the overwhelmingly common case and stays first-class for
+      // the docs; a conditional guard reports null here and forces consumers to
+      // read `scopePairs` rather than silently trusting one branch.
+      resource: pairs.length === 1 ? pairs[0].resource : null,
+      action: pairs.length === 1 ? pairs[0].action : null,
+      scopePairs: pairs.length
+        ? pairs
+        : pattern.actionGroup && first[pattern.actionGroup]
+          ? [{ resource: "self", action: first[pattern.actionGroup] }]
+          : [],
     };
   }
-  return { guard: "none", resource: null, action: null };
+  return { guard: "none", resource: null, action: null, scopePairs: [] };
 }
 
 /**
@@ -172,7 +215,7 @@ function classifyBody(body: string): {
  */
 function readModuleGuards(filePath: string, project: Project): ModuleGuards {
   const source = project.addSourceFileAtPath(filePath);
-  const byFn = new Map<string, { guard: GuardKind; resource: string | null; action: string | null }>();
+  const byFn = new Map<string, GuardFacts>();
 
   // Module-local helper bodies, for the one-level inline pass.
   const localBodies = new Map<string, string>();
@@ -272,10 +315,11 @@ async function collectOperations(): Promise<Operation[]> {
       const argsJson = fn.exportArgs?.() ?? "{}";
       const returnsJson = fn.exportReturns?.() ?? "{}";
       const args = describeArgs(argsJson);
-      const guard = guards.byFn.get(fnName) ?? {
-        guard: "none" as GuardKind,
+      const guard: GuardFacts = guards.byFn.get(fnName) ?? {
+        guard: "none",
         resource: null,
         action: null,
+        scopePairs: [],
       };
 
       operations.push({
@@ -286,6 +330,7 @@ async function collectOperations(): Promise<Operation[]> {
         guard: guard.guard,
         resource: guard.resource,
         action: guard.action,
+        scopePairs: guard.scopePairs,
         // Reachability is a property of the GUARD, not of a list someone
         // maintains: anything service-gated throws for an agent token, and
         // anything using the resource-less read guard fails closed (decision 2).
@@ -376,6 +421,12 @@ export interface RegistryOperation {
   readonly guard: "service" | "orgPermission" | "orgReadFor" | "orgRead" | "self" | "none";
   readonly resource: string | null;
   readonly action: string | null;
+  /** Every (resource, action) the handler can enforce. One entry for the common
+   *  case; more when the guard is conditional, in which case the singular
+   *  resource/action fields are null so a consumer cannot silently trust one
+   *  branch. Example: collaboration.createThread demands
+   *  project:manage_line_items for a blocking comment and project:read otherwise. */
+  readonly scopePairs: readonly { readonly resource: string; readonly action: string }[];
   readonly agentReachable: boolean;
   readonly args: readonly { readonly name: string; readonly optional: boolean; readonly type: string }[];
   readonly privilegedArgs: readonly string[];

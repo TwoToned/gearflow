@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 393 | 20 | 154 | 215 | 4 |
-| Mutations | 720 | 258 | 448 | 1 | 13 |
-| **Total** | **1113** | **278** | **602** | **216** | **17** |
+| Queries | 393 | 22 | 154 | 215 | 2 |
+| Mutations | 720 | 265 | 448 | 1 | 6 |
+| **Total** | **1113** | **287** | **602** | **216** | **8** |
 
-<!-- reachability-floor: 278 -->
+<!-- reachability-floor: 287 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -108,7 +108,6 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `modelCheckItems` | 13 |
 | `modelMedia` | 9 |
 | `models` | 9 |
-| `notificationDismissalsWrites` | 3 |
 | `notificationDismissals` | 7 |
 | `notificationEmailLogs` | 6 |
 | `orgExport` | 6 |
@@ -129,7 +128,6 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `reservationConflicts` | 2 |
 | `returnsLookup` | 1 |
 | `roi` | 4 |
-| `savedTableViewsWrites` | 4 |
 | `savedTableViews` | 8 |
 | `scanLookup` | 1 |
 | `search` | 4 |
@@ -151,7 +149,6 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `testTagAssets` | 16 |
 | `testTagAuditorTokens` | 7 |
 | `testTagRecords` | 11 |
-| `userNotificationPreferences` | 8 |
 | `users` | 5 |
 | `warehouseDashboardTokens` | 7 |
 | `warehouseList` | 1 |

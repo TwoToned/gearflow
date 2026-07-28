@@ -27,6 +27,12 @@ export interface RegistryOperation {
   readonly guard: "service" | "orgPermission" | "orgReadFor" | "orgRead" | "self" | "none";
   readonly resource: string | null;
   readonly action: string | null;
+  /** Every (resource, action) the handler can enforce. One entry for the common
+   *  case; more when the guard is conditional, in which case the singular
+   *  resource/action fields are null so a consumer cannot silently trust one
+   *  branch. Example: collaboration.createThread demands
+   *  project:manage_line_items for a blocking comment and project:read otherwise. */
+  readonly scopePairs: readonly { readonly resource: string; readonly action: string }[];
   readonly agentReachable: boolean;
   readonly args: readonly { readonly name: string; readonly optional: boolean; readonly type: string }[];
   readonly privilegedArgs: readonly string[];
@@ -43,6 +49,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -108,6 +115,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -193,6 +201,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -228,6 +237,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -318,6 +328,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -338,6 +349,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -383,6 +395,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -418,6 +431,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -443,6 +457,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -468,6 +483,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -553,6 +569,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -638,6 +655,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -658,6 +676,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -678,6 +697,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -703,6 +723,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -723,6 +744,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -748,6 +770,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -813,6 +841,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -863,6 +897,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -908,6 +948,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -953,6 +999,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1018,6 +1065,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1083,6 +1131,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1103,6 +1152,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1128,6 +1178,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1148,6 +1199,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1173,6 +1225,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -1198,6 +1256,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1258,6 +1317,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1318,6 +1378,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1338,6 +1399,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1358,6 +1420,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1378,6 +1441,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1398,6 +1462,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1423,6 +1488,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1448,6 +1514,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1478,6 +1545,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1513,6 +1581,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1673,6 +1742,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1833,6 +1903,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1853,6 +1924,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1878,6 +1950,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1898,6 +1971,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1918,6 +1992,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1943,6 +2018,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1968,6 +2044,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -1993,6 +2070,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2018,6 +2096,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2043,6 +2122,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2143,6 +2223,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2173,6 +2254,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2193,6 +2275,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2213,6 +2296,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2238,6 +2322,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2308,6 +2393,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2378,6 +2464,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2398,6 +2485,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2418,6 +2506,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2443,6 +2532,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2468,6 +2558,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2493,6 +2584,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2513,6 +2605,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2533,6 +2626,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -2558,6 +2652,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -2598,6 +2698,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -2633,6 +2739,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -2673,6 +2785,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -2708,6 +2826,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -2878,6 +3002,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -2918,6 +3048,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -2968,6 +3104,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "asset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -3013,6 +3155,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3048,6 +3191,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3078,6 +3222,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3113,6 +3258,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3148,6 +3294,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3173,6 +3320,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3203,6 +3351,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3233,6 +3382,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3268,6 +3418,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3298,6 +3449,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3328,6 +3480,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3353,6 +3506,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3438,6 +3592,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3523,6 +3678,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3548,6 +3704,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3573,6 +3730,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3593,6 +3751,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3613,6 +3772,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3638,6 +3798,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3663,6 +3824,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3688,6 +3850,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3758,6 +3921,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3788,6 +3952,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3808,6 +3973,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -3833,6 +3999,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "bulkAsset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -3863,6 +4035,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "bulkAsset",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -3948,6 +4126,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "bulkAsset",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -3988,6 +4172,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "bulkAsset",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -4073,6 +4263,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4098,6 +4289,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4118,6 +4310,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4188,6 +4381,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4258,6 +4452,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4283,6 +4478,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4303,6 +4499,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4323,6 +4520,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4343,6 +4541,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4368,6 +4567,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -4443,6 +4648,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -4483,6 +4694,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -4558,6 +4775,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4608,6 +4826,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4658,6 +4877,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4678,6 +4898,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4698,6 +4919,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4718,6 +4940,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4738,6 +4961,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4758,6 +4982,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4793,6 +5018,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4818,6 +5044,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4853,6 +5080,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -4888,6 +5116,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -4948,6 +5182,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -4996,8 +5236,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "moveSubHireGroupToCategory",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "manage_line_items",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5046,8 +5296,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "reorderMixedGroupsInCategory",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "manage_line_items",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5088,6 +5348,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5168,6 +5429,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5248,6 +5510,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5268,6 +5531,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5288,6 +5552,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5318,6 +5583,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5338,6 +5604,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5363,6 +5630,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5413,6 +5686,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5463,6 +5742,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5513,6 +5798,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5593,6 +5884,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5633,6 +5930,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5678,6 +5981,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5723,6 +6032,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5753,6 +6068,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5783,6 +6104,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "checkItem",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -5863,6 +6190,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5903,6 +6231,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5943,6 +6272,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -5978,6 +6308,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6013,6 +6344,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6073,6 +6405,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6108,6 +6441,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6143,6 +6477,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6178,6 +6513,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6278,6 +6614,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6378,6 +6715,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6398,6 +6736,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6418,6 +6757,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6438,6 +6778,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6463,6 +6804,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6483,6 +6825,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6508,6 +6851,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -6568,6 +6917,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -6643,6 +6998,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -6723,6 +7084,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -6803,6 +7170,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "scan",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "scan"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -6863,6 +7236,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6933,6 +7307,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -6988,6 +7363,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7063,6 +7439,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7138,6 +7515,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7163,6 +7541,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7183,6 +7562,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7208,6 +7588,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7228,6 +7609,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7248,6 +7630,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7273,6 +7656,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -7348,6 +7737,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -7393,6 +7788,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -7423,6 +7824,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -7453,6 +7860,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -7523,6 +7936,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7578,6 +7992,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7633,6 +8048,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7653,6 +8069,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7673,6 +8090,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7693,6 +8111,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7713,6 +8132,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7738,6 +8158,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7858,6 +8279,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -7978,6 +8400,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8003,6 +8426,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8023,6 +8447,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8043,6 +8468,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8093,6 +8519,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8113,6 +8540,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8133,6 +8561,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8158,6 +8587,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8193,6 +8628,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8233,6 +8674,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8373,6 +8820,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8418,6 +8871,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "client",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8463,6 +8922,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8518,6 +8978,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8563,6 +9024,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8623,6 +9090,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8673,6 +9146,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8706,8 +9185,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "createThread",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "manage_line_items",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8783,6 +9272,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8823,6 +9313,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8848,6 +9339,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -8878,6 +9370,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8913,6 +9411,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -8983,6 +9487,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9018,6 +9523,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9043,6 +9549,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9068,6 +9575,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9098,6 +9606,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9118,6 +9627,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9148,6 +9658,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9178,6 +9689,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9208,6 +9720,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9248,6 +9761,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9318,6 +9832,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9353,6 +9873,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9393,6 +9919,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9433,6 +9965,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9503,6 +10041,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9548,6 +10092,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9608,6 +10158,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9633,6 +10189,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9653,6 +10215,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9673,6 +10236,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -9693,6 +10262,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9728,6 +10298,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -9878,6 +10449,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10028,6 +10600,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10053,6 +10626,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10163,6 +10737,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10183,6 +10758,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10208,6 +10784,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10228,6 +10805,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10248,6 +10826,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10268,6 +10847,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10293,6 +10873,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10318,6 +10899,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10363,6 +10945,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10393,6 +10976,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10433,6 +11017,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10458,6 +11043,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10483,6 +11069,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10503,6 +11090,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -10528,6 +11116,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -10568,6 +11162,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -10613,6 +11213,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -10745,6 +11351,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -10792,6 +11404,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -10817,6 +11435,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -10939,6 +11563,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -10984,6 +11614,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11059,6 +11690,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11134,6 +11766,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11154,6 +11787,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11174,6 +11808,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11194,6 +11829,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11214,6 +11850,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11239,6 +11876,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11264,6 +11902,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11304,6 +11943,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11339,6 +11979,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11369,6 +12010,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -11449,6 +12096,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -11484,6 +12137,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11509,6 +12163,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11529,6 +12184,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11549,6 +12205,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11569,6 +12226,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11594,6 +12252,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11619,6 +12278,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11789,6 +12449,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11959,6 +12620,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11979,6 +12641,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -11999,6 +12662,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12019,6 +12683,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12039,6 +12704,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12099,6 +12765,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12129,6 +12796,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12149,6 +12817,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12169,6 +12838,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12194,6 +12864,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12259,6 +12930,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12324,6 +12996,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12344,6 +13017,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12364,6 +13038,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12384,6 +13059,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12404,6 +13080,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12429,6 +13106,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12454,6 +13132,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -12499,6 +13183,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -12584,6 +13274,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -12664,6 +13360,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12724,6 +13421,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12784,6 +13482,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12804,6 +13503,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12824,6 +13524,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12844,6 +13545,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12874,6 +13576,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12894,6 +13597,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12914,6 +13618,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12939,6 +13644,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -12974,6 +13680,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13009,6 +13716,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13029,6 +13737,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13049,6 +13758,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13069,6 +13779,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13094,6 +13805,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13144,6 +13856,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13239,6 +13952,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13334,6 +14048,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13354,6 +14069,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13379,6 +14095,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13399,6 +14116,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13419,6 +14137,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13454,6 +14173,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13484,6 +14204,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13504,6 +14225,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13529,6 +14251,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -13554,6 +14277,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -13594,6 +14323,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -13634,6 +14369,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -13714,6 +14455,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -13754,6 +14501,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -13799,6 +14552,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -13839,6 +14598,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -13919,6 +14684,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -14099,6 +14870,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -14139,6 +14916,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "crew",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -14189,6 +14972,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14269,6 +15053,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14349,6 +15134,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14369,6 +15155,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14389,6 +15176,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14409,6 +15197,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14439,6 +15228,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14464,6 +15254,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "orgSettings",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -14549,6 +15345,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "orgSettings",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -14589,6 +15391,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "orgSettings",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -14664,6 +15472,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14684,6 +15493,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14719,6 +15529,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14739,6 +15550,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14764,6 +15576,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14794,6 +15607,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14814,6 +15628,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14834,6 +15649,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14859,6 +15675,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14884,6 +15701,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14914,6 +15732,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14949,6 +15768,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -14974,6 +15799,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -14994,6 +15820,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [],
     "privilegedArgs": [],
@@ -15008,6 +15835,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15028,6 +15856,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15068,6 +15897,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15148,6 +15978,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15228,6 +16059,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15248,6 +16080,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15268,6 +16101,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15288,6 +16122,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15308,6 +16143,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15328,6 +16164,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15353,6 +16190,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15378,6 +16216,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15428,6 +16267,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15478,6 +16318,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15498,6 +16339,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15518,6 +16360,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15538,6 +16381,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15563,6 +16407,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15608,6 +16453,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15653,6 +16499,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15673,6 +16520,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15693,6 +16541,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15713,6 +16562,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -15738,6 +16588,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -15808,6 +16664,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -15848,6 +16710,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -15903,6 +16771,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -15958,6 +16832,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16038,6 +16918,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16063,6 +16944,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16083,6 +16965,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16108,6 +16991,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16133,6 +17017,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "invoice",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16183,6 +17073,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "invoice",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16253,6 +17149,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "invoice",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16293,6 +17195,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "invoice",
     "action": "issue",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "issue"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16343,6 +17251,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "invoice",
     "action": "void",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "void"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16388,6 +17302,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16413,6 +17328,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16453,6 +17374,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -16498,6 +17425,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16563,6 +17491,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16628,6 +17557,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16648,6 +17578,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16668,6 +17599,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16688,6 +17620,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16713,6 +17646,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16733,6 +17667,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16758,6 +17693,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16783,6 +17719,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16828,6 +17765,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16873,6 +17811,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16893,6 +17832,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16923,6 +17863,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16943,6 +17884,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16968,6 +17910,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -16993,6 +17936,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17013,6 +17957,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17038,6 +17983,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17063,6 +18009,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -17088,6 +18040,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17148,6 +18101,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17208,6 +18162,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17228,6 +18183,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17248,6 +18204,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17268,6 +18225,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17288,6 +18246,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17313,6 +18272,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17338,6 +18298,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17393,6 +18354,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17443,6 +18405,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17483,6 +18446,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17513,6 +18477,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17538,6 +18503,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17558,6 +18524,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17578,6 +18545,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17723,6 +18691,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17868,6 +18837,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17893,6 +18863,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17923,6 +18894,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17948,6 +18920,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17968,6 +18941,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -17988,6 +18962,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18013,6 +18988,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18083,6 +19059,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18103,6 +19080,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18138,6 +19116,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18173,6 +19152,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18198,6 +19178,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18258,6 +19239,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18318,6 +19300,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18343,6 +19326,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18363,6 +19347,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18383,6 +19368,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18403,6 +19389,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18428,6 +19415,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18448,6 +19436,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -18473,6 +19462,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18533,6 +19528,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18578,6 +19579,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18618,6 +19625,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18773,6 +19786,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18813,6 +19832,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18858,6 +19883,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18903,6 +19934,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18948,6 +19985,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "kit",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -18993,6 +20036,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -19053,6 +20097,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -19113,6 +20158,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -19133,6 +20179,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -19153,6 +20200,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -19173,6 +20221,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -19198,6 +20247,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19265,6 +20320,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19365,8 +20426,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "addLineItemSmartNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "manage_line_items",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19454,8 +20525,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "addNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "manage_line_items",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19534,6 +20615,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19586,6 +20673,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19664,6 +20757,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -19689,6 +20783,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19729,6 +20829,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19764,6 +20870,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19811,6 +20923,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19868,6 +20986,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19896,8 +21020,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "fn": "unsellLineItemNative",
     "kind": "mutation",
     "guard": "orgPermission",
-    "resource": "project",
-    "action": "manage_line_items",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      },
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19938,6 +21072,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -19983,6 +21123,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20038,6 +21179,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20093,6 +21235,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20113,6 +21256,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20133,6 +21277,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20153,6 +21298,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20173,6 +21319,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20198,6 +21345,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20218,6 +21366,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20298,6 +21447,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20378,6 +21528,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20403,6 +21554,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20423,6 +21575,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20443,6 +21596,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20463,6 +21617,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20483,6 +21638,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20508,6 +21664,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "location",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -20593,6 +21755,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "location",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -20633,6 +21801,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "location",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -20718,6 +21892,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "location",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -20758,6 +21938,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -20818,6 +22004,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -20868,6 +22060,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20898,6 +22091,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20928,6 +22122,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20953,6 +22148,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20973,6 +22169,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -20993,6 +22190,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21013,6 +22211,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21033,6 +22232,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21053,6 +22253,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21078,6 +22279,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21098,6 +22300,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21218,6 +22421,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21338,6 +22542,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21358,6 +22563,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21378,6 +22584,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21403,6 +22610,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21463,6 +22671,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21483,6 +22692,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21508,6 +22718,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21533,6 +22744,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21558,6 +22770,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -21683,6 +22901,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -21723,6 +22947,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -21838,6 +23068,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21893,6 +23124,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21923,6 +23155,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21953,6 +23186,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -21988,6 +23222,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22013,6 +23248,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [],
     "privilegedArgs": [],
@@ -22027,6 +23263,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22047,6 +23284,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22072,6 +23310,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22112,6 +23351,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22172,6 +23412,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22232,6 +23473,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22252,6 +23494,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22282,6 +23525,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22307,6 +23551,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22327,6 +23572,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22352,6 +23598,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -22417,6 +23669,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -22462,6 +23720,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -22522,6 +23786,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22547,6 +23812,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22592,6 +23858,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22637,6 +23904,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22662,6 +23930,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22682,6 +23951,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22712,6 +23982,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22732,6 +24003,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22757,6 +24029,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22782,6 +24055,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22807,6 +24081,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22827,6 +24102,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22852,6 +24128,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22877,6 +24154,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22937,6 +24215,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -22997,6 +24276,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23017,6 +24297,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23037,6 +24318,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23057,6 +24339,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23077,6 +24360,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23102,6 +24386,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23127,6 +24412,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23152,6 +24438,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23182,6 +24469,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23202,6 +24490,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23382,6 +24671,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23562,6 +24852,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23582,6 +24873,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23602,6 +24894,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23622,6 +24915,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23642,6 +24936,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -23667,6 +24962,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -23707,6 +25008,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -23762,6 +25069,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -23967,6 +25280,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "model",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -24172,6 +25491,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24212,6 +25532,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24252,6 +25573,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24282,6 +25604,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24302,6 +25625,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24322,6 +25646,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24342,6 +25667,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24364,10 +25690,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "notificationDismissalsWrites",
     "fn": "dismissManyNative",
     "kind": "mutation",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "items",
@@ -24389,10 +25721,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "notificationDismissalsWrites",
     "fn": "mine",
     "kind": "query",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
@@ -24403,10 +25741,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "notificationDismissalsWrites",
     "fn": "pruneStaleNative",
     "kind": "mutation",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "activeKeys",
@@ -24426,6 +25770,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24466,6 +25811,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24506,6 +25852,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24526,6 +25873,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24546,6 +25894,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24566,6 +25915,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24591,6 +25941,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24626,6 +25977,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24666,6 +26018,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24701,6 +26054,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24721,6 +26075,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [],
     "privilegedArgs": [],
@@ -24735,6 +26090,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24775,6 +26131,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24825,6 +26182,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24845,6 +26203,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24865,6 +26224,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24895,6 +26255,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24925,6 +26286,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24955,6 +26317,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -24985,6 +26348,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25025,6 +26389,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25065,6 +26430,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25095,6 +26466,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25120,6 +26497,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25150,6 +26533,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25175,6 +26559,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25235,6 +26620,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25260,6 +26646,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25280,6 +26667,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25305,6 +26693,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25350,6 +26739,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25400,6 +26790,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25440,6 +26831,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25490,6 +26882,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25510,6 +26903,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25530,6 +26924,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25550,6 +26945,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25570,6 +26966,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25595,6 +26992,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25615,6 +27013,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25645,6 +27044,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25670,6 +27070,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25727,6 +27133,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25774,6 +27186,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25809,6 +27227,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25866,6 +27290,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25891,6 +27321,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25916,6 +27352,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -25941,6 +27383,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -25966,6 +27409,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26041,6 +27485,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26106,6 +27551,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26181,6 +27627,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26201,6 +27648,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26221,6 +27669,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26241,6 +27690,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26266,6 +27716,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26286,6 +27737,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26316,6 +27768,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -26341,6 +27794,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -26423,6 +27882,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -26470,6 +27935,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -26527,6 +27998,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -26584,6 +28061,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -26619,6 +28102,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -26686,6 +28175,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -26736,6 +28231,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27028,6 +28524,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27068,6 +28565,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27360,6 +28858,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27425,6 +28924,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27475,6 +28975,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27500,6 +29001,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27520,6 +29022,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27540,6 +29043,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27565,6 +29069,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27590,6 +29095,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27615,6 +29121,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27640,6 +29147,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27665,6 +29173,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27690,6 +29199,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27715,6 +29225,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27740,6 +29251,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27785,6 +29297,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27815,6 +29328,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27835,6 +29349,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27855,6 +29370,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27885,6 +29401,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -27930,6 +29452,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -27955,6 +29478,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28075,6 +29599,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28195,6 +29720,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28215,6 +29741,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28235,6 +29762,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28255,6 +29783,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28275,6 +29804,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28300,6 +29830,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28320,6 +29851,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28345,6 +29877,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -28370,6 +29908,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -28395,6 +29939,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -28420,6 +29970,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -28445,6 +30001,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28480,6 +30037,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28520,6 +30078,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28560,6 +30119,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28580,6 +30140,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28605,6 +30166,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28630,6 +30192,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28650,6 +30213,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28675,6 +30239,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -28725,6 +30295,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -28770,6 +30346,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -28815,6 +30397,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28870,6 +30453,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28925,6 +30509,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28945,6 +30530,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28965,6 +30551,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -28985,6 +30572,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29005,6 +30593,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29030,6 +30619,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29070,6 +30660,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29110,6 +30701,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29130,6 +30722,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29155,6 +30748,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29175,6 +30769,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29210,6 +30805,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29235,6 +30831,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29500,6 +31097,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -29765,6 +31363,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30030,6 +31629,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30050,6 +31650,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "none",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30075,6 +31676,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30095,6 +31697,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30120,6 +31723,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30145,6 +31749,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30200,6 +31805,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30230,6 +31836,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30250,6 +31857,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30275,6 +31883,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30465,6 +32074,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30655,6 +32265,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30675,6 +32286,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30695,6 +32307,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30720,6 +32333,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30750,6 +32364,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30770,6 +32385,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -30795,6 +32411,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -30835,6 +32457,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -30880,6 +32508,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -30925,6 +32559,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -30970,6 +32610,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31167,6 +32813,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "orgSettings",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31257,6 +32909,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31304,6 +32962,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "orgSettings",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31344,6 +33008,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31384,6 +33054,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31576,6 +33252,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31621,6 +33303,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "orgSettings",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "orgSettings",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -31711,6 +33399,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -31731,6 +33420,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -31826,6 +33516,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -31921,6 +33612,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -31941,6 +33633,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -31966,6 +33659,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -31991,6 +33685,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -32016,6 +33711,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -32036,6 +33732,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -32061,6 +33758,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -32091,6 +33789,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -32116,6 +33815,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -32151,6 +33851,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32191,6 +33897,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32256,6 +33968,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32341,6 +34059,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32381,6 +34105,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32461,6 +34191,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32506,6 +34242,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32546,6 +34288,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32598,6 +34346,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32638,6 +34392,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32918,6 +34678,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -32973,6 +34739,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33008,6 +34780,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33068,6 +34846,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33123,6 +34907,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33173,6 +34963,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33223,6 +35019,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33280,6 +35082,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33305,6 +35108,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "invoice",
     "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33355,6 +35164,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33375,6 +35185,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33395,6 +35206,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33420,6 +35232,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33480,6 +35298,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33520,6 +35344,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33580,6 +35410,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33645,6 +35481,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33670,6 +35507,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "manage_line_items",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "manage_line_items"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -33700,6 +35543,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33720,6 +35564,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33760,6 +35605,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33800,6 +35646,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33825,6 +35672,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33885,6 +35733,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -33940,6 +35789,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34000,6 +35850,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34020,6 +35871,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34040,6 +35892,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34060,6 +35913,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34100,6 +35954,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34122,10 +35977,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "savedTableViewsWrites",
     "fn": "createNative",
     "kind": "mutation",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "actor",
@@ -34177,10 +36038,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "savedTableViewsWrites",
     "fn": "removeNative",
     "kind": "mutation",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "actor",
@@ -34212,10 +36079,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "savedTableViewsWrites",
     "fn": "setDefaultNative",
     "kind": "mutation",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "actor",
@@ -34252,10 +36125,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "savedTableViewsWrites",
     "fn": "updateNative",
     "kind": "mutation",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "actor",
@@ -34300,6 +36179,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34325,6 +36205,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34355,6 +36236,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34390,6 +36272,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34420,6 +36303,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34450,6 +36334,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34470,6 +36355,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -34540,6 +36431,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -34580,6 +36477,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "maintenance",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -34645,6 +36548,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34735,6 +36639,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34825,6 +36730,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34845,6 +36751,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34865,6 +36772,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34885,6 +36793,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34970,6 +36879,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -34995,6 +36905,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35067,6 +36978,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35139,6 +37051,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35159,6 +37072,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [],
     "privilegedArgs": [],
@@ -35173,6 +37087,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [],
     "privilegedArgs": [],
@@ -35187,6 +37102,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35207,6 +37123,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35232,6 +37149,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35262,6 +37180,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35337,6 +37256,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35412,6 +37332,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35432,6 +37353,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35452,6 +37374,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35472,6 +37395,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35502,6 +37426,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35522,6 +37447,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35547,6 +37473,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35642,6 +37569,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35737,6 +37665,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35757,6 +37686,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35777,6 +37707,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35807,6 +37738,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35827,6 +37759,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35852,6 +37785,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35907,6 +37841,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35962,6 +37897,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -35982,6 +37918,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36002,6 +37939,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36022,6 +37960,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36042,6 +37981,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36067,6 +38007,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36192,6 +38133,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36317,6 +38259,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36337,6 +38280,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36357,6 +38301,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36377,6 +38322,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36402,6 +38348,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36432,6 +38379,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36452,6 +38400,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -36477,6 +38426,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36587,6 +38542,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36632,6 +38593,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36727,6 +38694,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36812,6 +38785,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36852,6 +38831,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36892,6 +38877,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36937,6 +38928,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -36982,6 +38979,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37022,6 +39025,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37062,6 +39071,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37102,6 +39117,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37142,6 +39163,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37232,6 +39259,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37337,6 +39370,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37422,6 +39461,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37477,6 +39522,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37522,6 +39573,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37572,6 +39629,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "subHire",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "subHire",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -37617,6 +39680,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37702,6 +39766,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37787,6 +39852,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37812,6 +39878,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37832,6 +39899,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37852,6 +39920,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37872,6 +39941,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37892,6 +39962,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37917,6 +39988,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -37972,6 +40044,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38027,6 +40100,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38057,6 +40131,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38077,6 +40152,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38102,6 +40178,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38122,6 +40199,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38147,6 +40225,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38212,6 +40291,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38277,6 +40357,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38297,6 +40378,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38317,6 +40399,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38337,6 +40420,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38357,6 +40441,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38382,6 +40467,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -38457,6 +40548,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -38497,6 +40594,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -38537,6 +40640,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -38607,6 +40716,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38712,6 +40822,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38817,6 +40928,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38837,6 +40949,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38862,6 +40975,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38887,6 +41001,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38907,6 +41022,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -38932,6 +41048,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -38977,6 +41099,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -39062,6 +41190,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -39102,6 +41236,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -39142,6 +41282,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -39202,6 +41348,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39237,6 +41384,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39257,6 +41405,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39362,6 +41511,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39467,6 +41617,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39492,6 +41643,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39512,6 +41664,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39532,6 +41685,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39582,6 +41736,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39602,6 +41757,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39637,6 +41793,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39662,6 +41819,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -39772,6 +41935,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -39812,6 +41981,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "supplier",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -39922,6 +42097,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [],
     "privilegedArgs": [],
@@ -39936,6 +42112,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39971,6 +42148,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -39991,6 +42169,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40081,6 +42260,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40171,6 +42351,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40191,6 +42372,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40211,6 +42393,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40231,6 +42414,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40256,6 +42440,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40281,6 +42466,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -40366,6 +42557,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -40406,6 +42603,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -40451,6 +42654,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -40491,6 +42700,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -40581,6 +42796,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40706,6 +42922,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40831,6 +43048,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40856,6 +43074,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40881,6 +43100,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40906,6 +43126,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40926,6 +43147,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40951,6 +43173,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40976,6 +43199,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -40996,6 +43220,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41026,6 +43251,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41046,6 +43272,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41116,6 +43343,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41141,6 +43369,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41161,6 +43390,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41191,6 +43421,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41216,6 +43447,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -41241,6 +43478,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -41321,6 +43564,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -41431,6 +43680,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "delete"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -41456,6 +43711,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -41496,6 +43757,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -41526,6 +43793,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -41561,6 +43834,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41631,6 +43905,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41701,6 +43976,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41721,6 +43997,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41741,6 +44018,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41761,6 +44039,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41781,6 +44060,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -41806,6 +44086,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42011,6 +44292,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42216,6 +44498,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42236,6 +44519,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42261,6 +44545,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42281,6 +44566,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42301,6 +44587,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42326,6 +44613,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42346,6 +44634,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42381,6 +44670,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42401,6 +44691,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42426,6 +44717,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "testTag",
     "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -42656,6 +44953,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42736,6 +45034,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42816,6 +45115,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42836,6 +45136,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42853,10 +45154,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "userNotificationPreferences",
     "fn": "mine",
     "kind": "query",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
     "args": [],
     "privilegedArgs": [],
     "argsSha": "5151b7eb8536aa97",
@@ -42870,6 +45177,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42890,6 +45198,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42912,10 +45221,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "userNotificationPreferences",
     "fn": "upsertMine",
     "kind": "mutation",
-    "guard": "none",
+    "guard": "self",
     "resource": null,
     "action": null,
-    "agentReachable": false,
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
     "args": [
       {
         "name": "actor",
@@ -42955,6 +45270,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -42975,6 +45291,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [],
     "privilegedArgs": [],
@@ -42989,6 +45306,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43009,6 +45327,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43029,6 +45348,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43084,6 +45404,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43139,6 +45460,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "close",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "close"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -43164,6 +45491,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43219,6 +45547,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43274,6 +45603,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43294,6 +45624,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43319,6 +45650,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43339,6 +45671,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43364,6 +45697,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "close",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "close"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -43404,6 +45743,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "close",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "close"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -43449,6 +45794,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43519,6 +45865,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43589,6 +45936,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43609,6 +45957,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43629,6 +45978,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43649,6 +45999,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43669,6 +46020,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43694,6 +46046,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "project",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -43719,6 +46077,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43739,6 +46098,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43774,6 +46134,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43814,6 +46175,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43854,6 +46216,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43899,6 +46262,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43939,6 +46303,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -43984,6 +46349,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44024,6 +46390,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44064,6 +46431,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44099,6 +46467,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44144,6 +46513,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44179,6 +46549,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44214,6 +46585,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44249,6 +46621,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44309,6 +46682,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44339,6 +46713,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44369,6 +46744,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44409,6 +46785,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44449,6 +46826,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44489,6 +46867,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44529,6 +46908,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44564,6 +46944,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44604,6 +46985,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44644,6 +47026,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -44684,6 +47067,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44704,6 +47093,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44729,6 +47124,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44769,6 +47170,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44814,6 +47221,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44864,6 +47277,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44904,6 +47323,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44954,6 +47379,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -44999,6 +47430,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45044,6 +47481,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45084,6 +47527,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45134,6 +47583,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45174,6 +47629,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45214,6 +47675,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45254,6 +47721,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45301,6 +47774,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45361,6 +47840,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45411,6 +47896,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45461,6 +47952,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45501,6 +47998,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45546,6 +48049,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45591,6 +48100,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45636,6 +48151,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45681,6 +48202,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45726,6 +48253,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45771,6 +48304,12 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgPermission",
     "resource": "warehouse",
     "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
     "agentReachable": true,
     "args": [
       {
@@ -45816,6 +48355,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -45836,6 +48376,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -45866,6 +48407,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -45956,6 +48498,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46046,6 +48589,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46076,6 +48620,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46101,6 +48646,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46121,6 +48667,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46141,6 +48688,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46171,6 +48719,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46236,6 +48785,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46276,6 +48826,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46301,6 +48852,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46336,6 +48888,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46366,6 +48919,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46486,6 +49040,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46606,6 +49161,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46626,6 +49182,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46646,6 +49203,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46676,6 +49234,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46696,6 +49255,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46721,6 +49281,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46796,6 +49357,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46871,6 +49433,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46896,6 +49459,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46916,6 +49480,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46936,6 +49501,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46956,6 +49522,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -46981,6 +49548,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47086,6 +49654,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47106,6 +49675,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "orgRead",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47126,6 +49696,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47156,6 +49727,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47196,6 +49768,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47256,6 +49829,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47291,6 +49865,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47316,6 +49891,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47381,6 +49957,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47406,6 +49983,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "guard": "service",
     "resource": null,
     "action": null,
+    "scopePairs": [],
     "agentReachable": false,
     "args": [
       {
@@ -47436,9 +50014,9 @@ export const AGENT_REACHABLE_OPERATIONS: readonly RegistryOperation[] =
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
   total: 1113,
-  agentReachable: 278,
+  agentReachable: 287,
   queries: 393,
   mutations: 720,
-  agentReachableQueries: 20,
-  agentReachableMutations: 258,
+  agentReachableQueries: 22,
+  agentReachableMutations: 265,
 } as const;

@@ -454,7 +454,6 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
   const headerHeight = headerBlock ? estimateBlockHeight(headerBlock, data, ctx) : 0;
   const continuationContentHeight = maxY - MARGIN - (headerBlock ? headerHeight + SECTION_GAP : 0);
   const tableHeaderMm = ptToMm(TABLE_HEADER_PT);
-  const groupHeaderMm = ptToMm(GROUP_HEADER_PT);
 
   const pages: Page[] = [];
   let currentPage: Page = { entries: [] };
@@ -505,23 +504,16 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     // heightToParentIdx[i] maps a height-array entry to a parent-item index,
     // or -1 for a group header (not a startIndex-addressable item).
     const heightToParentIdx: number[] = [];
-    const entryGroupKey: string[] = [];
     let parentIdx = 0;
     for (const groupKey of groupOrder) {
       if (groupKey !== ungrouped && config.showGroupHeaders) {
         heightToParentIdx.push(-1);
-        entryGroupKey.push(groupKey);
       }
       for (let gi = 0; gi < groups.get(groupKey)!.length; gi++) {
         heightToParentIdx.push(parentIdx);
-        entryGroupKey.push(groupKey);
         parentIdx++;
       }
     }
-    const groupHeaderIdx = new Map<string, number>();
-    heightToParentIdx.forEach((pi, i) => {
-      if (pi === -1) groupHeaderIdx.set(entryGroupKey[i], i);
-    });
 
     const getItemAt = (idx: number): DocumentLineItem | null => {
       if (idx >= heightToParentIdx.length) return null;
@@ -610,12 +602,11 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
     while (remainingIdx < itemHeights.length) {
       startNewPage();
 
-      let pageContent = continuationContentHeight - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
-      if (config.showGroupHeaders && remainingIdx < entryGroupKey.length) {
-        const firstGroupOnPage = entryGroupKey[remainingIdx];
-        const headerPos = groupHeaderIdx.get(firstGroupOnPage);
-        if (headerPos !== undefined && headerPos < remainingIdx) pageContent -= groupHeaderMm;
-      }
+      // No extra reservation for a group header repeating on this
+      // continuation page — gearflow-table.ts only draws a group's header
+      // where it *starts* (2026-07-28), never again on pages that merely
+      // continue it.
+      const pageContent = continuationContentHeight - tableHeaderMm - TABLE_PADDING_BOTTOM_MM;
 
       const fit = fitItems(remainingIdx, pageContent, pendingSubIndex);
       const pageItems = fit.count;
@@ -640,12 +631,8 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
 
       let tableHeight = continuationContentHeight;
       if (isLastPage) {
+        // Same no-repeat-header accounting as the pageContent budget above.
         let actualMm = tableHeaderMm + TABLE_PADDING_BOTTOM_MM;
-        if (config.showGroupHeaders && remainingIdx < entryGroupKey.length) {
-          const grp = entryGroupKey[remainingIdx];
-          const hPos = groupHeaderIdx.get(grp);
-          if (hPos !== undefined && hPos < remainingIdx) actualMm += groupHeaderMm;
-        }
         for (let i = remainingIdx; i < remainingIdx + pageItems && i < itemHeights.length; i++) {
           let h = itemHeights[i];
           if (i === remainingIdx && pendingSubIndex > 0) {

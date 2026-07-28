@@ -703,18 +703,17 @@ export async function buildDocumentLineItemData(projectId: string, organizationI
   // groups nested under a real category above): its own synthetic row never
   // renders, its members aren't recognized as excluded-from-flat-listing,
   // and the whole group prints as disconnected flat line items on quotes/
-  // invoices instead of collapsing — see FEATUREDOCS/13-pdfs.md. `name: ""`
-  // buckets them under each doc's normal "no header" fallback
-  // (`groupName || prepContainer || ungroupedKey` in gearflow-table.ts /
-  // document-composer.ts) rather than a spurious "Uncategorized" section
-  // title on a client-facing document.
+  // invoices instead of collapsing — see FEATUREDOCS/13-pdfs.md. `name:
+  // "Uncategorized"` gives it a real section header (2026-07-28) — a blank
+  // name used to bucket it under each doc's silent "no header" fallback,
+  // which visually merged it into whatever category printed above it.
   const uncategorizedGroups = mappedGroups
     .filter((g) => !g.categoryId)
     .sort((a, b) => a.sortOrder - b.sortOrder);
   if (uncategorizedGroups.length > 0) {
     categories.push({
       id: "__uncategorized__",
-      name: "",
+      name: "Uncategorized",
       sortOrder: Number.MAX_SAFE_INTEGER,
       groups: uncategorizedGroups,
     });

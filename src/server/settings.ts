@@ -23,6 +23,8 @@ import {
   DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
 } from "@/lib/invoice-number";
 import { orgDocumentSettingsSchema } from "@/lib/validations/org-settings";
+import { DEFAULT_QUOTE_VALIDITY_DAYS } from "@/lib/quote-validity";
+import { DEFAULT_PAYMENT_TERMS_DAYS } from "@/lib/invoice-terms";
 import type { OrgSettings, TestTagSettings } from "@/lib/org-settings-types";
 
 export async function getOrganization() {
@@ -126,6 +128,27 @@ export async function getInvoiceNumberConfig(): Promise<{
     format: format && hasIncrementToken(format) ? format : DEFAULT_INVOICE_NUMBER_FORMAT,
     reset: settings.invoiceNumberIncrementReset || DEFAULT_INVOICE_NUMBER_INCREMENT_RESET,
     padding: settings.invoiceNumberIncrementPadding ?? DEFAULT_INVOICE_NUMBER_INCREMENT_PADDING,
+    timezone: settings.timezone,
+  };
+}
+
+/**
+ * The document-date defaults the Finance tab's send/issue dialogs preview
+ * before submitting (#989) — quote validity and invoice payment terms, plus
+ * the org's timezone so a client-side preview of the resolved date agrees with
+ * what the mutation actually stamps. Read-only; the mutations re-resolve the
+ * same config server-side rather than trusting this round trip (R-9.3).
+ */
+export async function getDocumentDatesConfig(): Promise<{
+  quoteValidityDays: number;
+  paymentTermsDays: number;
+  timezone?: string;
+}> {
+  const { organizationId } = await getOrgContext();
+  const settings = (await readOrgSettingsBlob(organizationId)) as OrgSettings;
+  return {
+    quoteValidityDays: settings.documents?.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS,
+    paymentTermsDays: settings.documents?.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS,
     timezone: settings.timezone,
   };
 }

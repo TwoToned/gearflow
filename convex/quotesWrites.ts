@@ -9,9 +9,10 @@ import { writeActivityLog } from "./lib/audit";
 import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { assertClientContactBelongsToClient, assertRefInOrg } from "./lib/orgRef";
 import { assertLifecycleGuard, requireHardLockOverrideAllowed } from "./lib/projectLocks";
-import { captureProjectSnapshot } from "./lib/projectSnapshots";
+import { captureProjectSnapshot, restoreProjectSnapshot } from "./lib/projectSnapshots";
 import { buildFinanceLines } from "./lib/financeSnapshot";
-import { resolveOrgQuoteConfig } from "./lib/orgSettings";
+import { recalcProjectTotals } from "./lib/recalc";
+import { resolveOrgDefaultTaxRate, resolveOrgQuoteConfig } from "./lib/orgSettings";
 import { computeValidUntil, startOfDayInTimezone, QUOTE_VALIDITY_BOUNDS } from "./lib/quoteDates";
 import {
   effectiveQuoteStatus,
@@ -514,6 +515,134 @@ export const newVersionNative = mutation({
     });
 
     return { id, version: next };
+  },
+});
+
+/**
+ * REPRICE FROM REVISION — "Use vN's pricing for v(N+1)" (#989 §8.1), the
+ * forward-only equivalent of "Restore" every version-history pattern studied
+ * offers and this program deliberately doesn't (rewriting a SENT quote in place
+ * would falsify the record of what a client was given — the whole point of
+ * Phase B). Composes `newVersionNative`'s "cut the next draft" behaviour with
+ * `restoreProjectSnapshot({ scope: "FINANCIAL" })` in ONE transaction, so the
+ * new draft is born already priced like an earlier revision instead of a
+ * two-step "create then somehow copy the numbers over" dance a user would
+ * otherwise have to do by hand.
+ *
+ * Structure is untouched — same gear, same quantities, same dates.
+ * `restoreProjectSnapshot`'s FINANCIAL scope patches ONLY the locked money
+ * fields (`LOCKED_PROJECT_FIELDS`/`LOCKED_GROUP_FIELDS`/`LOCKED_LINE_ITEM_FIELDS`)
+ * and resets anything added since the source revision to $0/unset rather than
+ * deleting it — exactly the same "added while pricing was locked" state
+ * `UnpricedBadge` exists for. The confirm dialog states that count and any
+ * rental-window drift BEFORE calling this — computed client-side from data the
+ * revision viewer already has (the diff against current), not returned here.
+ *
+ * ONE audit entry for the whole operation, not one per line (the design doc is
+ * explicit about this) — `restoreProjectSnapshot`'s per-entity writes are an
+ * implementation detail, not N separate user actions.
+ */
+export const repriceFromRevisionNative = mutation({
+  returns: v.object({ id: v.string(), version: v.number(), sourceVersion: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    /** The revision whose money fields the new draft is seeded with — any past
+     *  revision that was actually sent (has a `snapshotId`), not necessarily the
+     *  one immediately prior. */
+    sourceQuoteId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, projectId, sourceQuoteId, actor: suppliedActor, auditId, now }) => {
+    const actor = await guardQuoteWrite(ctx, organizationId, suppliedActor);
+
+    await assertRefInOrg(ctx, "projects", projectId, organizationId);
+    const project = await requireProjectInOrg(ctx, projectId, organizationId);
+    if (project.isTemplate) {
+      throw new ConvexError({ code: "TEMPLATE_QUOTE", message: "Templates don't have quotes." });
+    }
+    // Same sanctioned bypass as `newVersionNative` — cutting the next version IS
+    // the unlock (decision 2), so gating this against the revision it's about to
+    // move past would make the exit unreachable.
+    await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
+
+    const sourceQuote = await requireQuoteInOrg(ctx, sourceQuoteId, organizationId);
+    if (sourceQuote.projectId !== projectId) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "That revision doesn't belong to this project." });
+    }
+    if (!sourceQuote.snapshotId) {
+      throw new ConvexError({
+        code: "QUOTE_NO_SNAPSHOT",
+        message: `Quote v${sourceQuote.version} has no stored pricing snapshot to reprice from (never sent, or sent before version history).`,
+      });
+    }
+
+    const revision = projectRevision(project);
+    const current = await findQuoteAtRevision(ctx, organizationId, projectId, revision);
+    if (!current || effectiveQuoteStatus(current, now) === "DRAFT") {
+      throw new ConvexError({
+        code: "QUOTE_DRAFT_OPEN",
+        message: `Quote v${revision} hasn't been sent yet — edit that draft instead of repricing into a new one.`,
+      });
+    }
+
+    const next = revision + 1;
+    if (await findQuoteAtRevision(ctx, organizationId, projectId, next)) {
+      throw new ConvexError({
+        code: "QUOTE_VERSION_CONFLICT",
+        message: `Quote v${next} already exists for this project.`,
+      });
+    }
+    const dup = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (dup) throw new ConvexError({ code: "DUPLICATE", message: "Quote already exists" });
+
+    await ctx.db.patch(project._id, { revision: next, updatedAt: now });
+    await ctx.db.insert("quotes", {
+      id,
+      organizationId,
+      projectId,
+      version: next,
+      status: "DRAFT",
+      snapshot: null,
+      createdById: actor.userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Structure stays exactly as it is now; only the locked money fields move to
+    // match the source revision's frozen values.
+    const { conflicts } = await restoreProjectSnapshot(ctx, {
+      orgId: organizationId,
+      project,
+      snapshotId: sourceQuote.snapshotId,
+      scope: "FINANCIAL",
+      now,
+    });
+
+    const taxRate = await resolveOrgDefaultTaxRate(ctx, organizationId);
+    await recalcProjectTotals(ctx, projectId, organizationId, taxRate, now);
+
+    const label = quoteLabel(project.projectNumber, next);
+    const sourceLabel = quoteLabel(project.projectNumber, sourceQuote.version);
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "CREATE",
+      entityType: "quote",
+      entityId: id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Started quote ${label} using ${sourceLabel}'s pricing`,
+      details: { version: next, sourceVersion: sourceQuote.version, previousVersion: revision, conflicts },
+      projectId,
+      createdAt: now,
+    });
+
+    return { id, version: next, sourceVersion: sourceQuote.version };
   },
 });
 

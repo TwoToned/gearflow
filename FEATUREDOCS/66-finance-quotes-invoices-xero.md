@@ -221,11 +221,10 @@ verification. The driver counts first, **halts** on a mismatch against
 
 ### Not in Phase A
 
-The unified status × quote-state lock tier (#988), the real Finance tab with its
-send and invoice-issue dialogs and drift indicator (#989), lock UX (#990), and
-the org-level Finance section (#992). The current UI surface is
-`<ProjectQuoteRail>` + `<ProjectFinancePanel>` — enough to exercise the five
-verbs and the documents, not the designed tab.
+The unified status × quote-state lock tier (shipped — #988), the real Finance
+tab with its send and invoice-issue dialogs and drift indicator (shipped —
+#989, see "The Finance tab" below), lock UX (#990), and the org-level Finance
+section (#992) remained.
 
 ## Immutable documents (#987 — Phase B of #985)
 
@@ -289,6 +288,105 @@ generate/retry a quote artifact, `invoice:issue` for an invoice one — the same
 audiences that can send and issue in the first place. Both routes carry explicit
 cross-org tests (`quotes.by_cuid`/`invoices.by_cuid` are GLOBAL indexes,
 R-8.4.3).
+
+## The Finance tab (#989 — Phase D of #985)
+
+The structured workflow that replaces "press the Documents button and hope."
+`Finance` is now a top-level project tab (`Equipment · Labour & logistics ·
+Finance · Tasks · Notes · Files`) — the old `Financials` tab's content
+(`StalePricingBanner`, the unlock banner, `FinancialSummary`, `ProjectCostsPanel`)
+moved in wholesale rather than being duplicated; only the tab's `value`/label
+changed (`financials` → `finance`). Full UI/UX spec:
+[`docs/designs/finance-workflow-ux.md`](../docs/designs/finance-workflow-ux.md).
+
+### Send dialog (`src/components/projects/finance/send-quote-dialog.tsx`)
+
+Replaces the bare "Send quote" button that used to call `quoteWrites.send(projectId)`
+with no data at all. Captures quote date (defaults today), valid-for days
+(defaults from `OrgDocumentSettings.quoteValidityDays`), a recipient — the
+client's contacts via `useClientContacts` fed into the Radix `combobox-picker.tsx`
+(**never** a Base UI popup — it would inherit the modal Dialog's
+`pointer-events: none` body lock and swallow every click, CLAUDE.md) — and
+notes. **No monetary input** (R-9.3): the read-only summary renders the
+project's own recalc-owned `subtotal`/`taxAmount`/`total`. Does not close on
+success — it becomes the handover state (Download PDF / Copy summary for email
+/ Done), with a passive, non-forcing offer to advance the project's status
+when `sendNative` returns `offerStatusChange`. Footer states outright that Flow
+doesn't email the client (decision 7, #934).
+
+### Invoice issue dialog (`src/components/projects/finance/issue-invoice-dialog.tsx`)
+
+Same treatment on **issue** (draft creation stays one click): invoice date, due
+date (defaults to invoice date + the new `OrgDocumentSettings.paymentTermsDays`,
+default 14 — `src/lib/invoice-terms.ts` / `convex/lib/invoiceDates.ts`, mirrored
+like `quote-validity.ts`/`quoteDates.ts`), notes, and a read-only amount
+summary. **This closes a live bug**: `issueNative` always accepted a `dueDate`
+argument, but the panel called `invoiceWrites.issue(id)` with none at all, so
+every invoice issued before #989 has no due date. `invoices.invoiceDate` is a
+new field (distinct from the `issuedAt` system timestamp) so a re-opened
+invoice's printed date never depends on `issuedAt` alone.
+
+### Revision viewer + reprice-from-revision
+
+`src/components/projects/finance/quote-revision-viewer-dialog.tsx` reuses the
+existing snapshot/diff plumbing (`convex/projectLocksRead.ts`'s
+`snapshotEntries`/`currentEntries`, `src/lib/project-snapshot-diff.ts`) that
+`ProjectVersionsPanel` already exercises for whole-project snapshots — scoped to
+one quote revision, with a two-item compare (`vs previous` / `vs the job now`,
+D5 of the UX doc — not an arbitrary-pair matrix).
+
+**"Use vN's pricing for v(N+1)"** (`convex/quotesWrites.ts`
+`repriceFromRevisionNative`, `src/components/projects/finance/reprice-from-revision-dialog.tsx`)
+is the forward-only equivalent of "Restore" that every version-history pattern
+studied offers and this program deliberately doesn't — rewriting a SENT quote
+in place would falsify the record of what a client was given. It composes
+`newVersionNative`'s "cut the next draft" behaviour with
+`restoreProjectSnapshot({ scope: "FINANCIAL" })` (already used by the unlock-
+session FINANCIAL discard) in ONE transaction, writing **one** audit entry for
+the whole operation. Structure (gear, quantities, dates) is untouched — only
+the locked money fields move. The confirm dialog discloses, before running: how
+many items added since the source revision have no price in it (they'll be
+unpriced), and whether the rental window has moved since (shown only when it
+actually has).
+
+### Drift indicator (`src/components/projects/finance/quote-drift-indicator.tsx`)
+
+"This job no longer matches the document the client is holding" — nearly free
+to build, because `diffSnapshotEntries` already compares a sent revision's
+frozen snapshot against current live state; this buckets the resulting rows by
+kind (`src/lib/quote-drift.ts`) for a one-line summary. Renders nothing on an
+untouched project (zero-noise). Deliberately distinct from
+`StalePricingBanner`, which answers a different question ("stored prices no
+longer match what current dates would derive" → offers Recalculate) — both can
+be true at once and are not merged.
+
+### Lock strip (`src/components/projects/finance/quote-lock-strip.tsx`)
+
+Always mounted at the top of the Finance tab, reading the single
+`useProjectLockStatus` subscription (now also surfacing `reason`/`revision`/
+`quoteState`, extended from #988's `projectLocksRead.status`) so the tab
+explains itself — "Pricing locked — quote v2 is with the client" vs. "this job
+is confirmed" — instead of a bare "locked". The other five lock-legibility
+surfaces (header chip, `<LockedField>`, `<GatedAction>`, list/board glyphs) are
+Phase E (#990) — out of scope here; `lock-copy.ts` stays a single local
+function until Phase E has a second caller to generalise it for.
+
+### `window.confirm` is gone from the finance surface
+
+The invoice panel's "Advance this project's status to INVOICED?" prompt (and
+its quote-send equivalent, offered but never forced) are both Radix `Dialog`s
+now — CLAUDE.md's "no `AlertDialog` — use `Dialog`" convention, DESIGN.md.
+
+### `quoteStatusIntent()` (`src/lib/status-colors.ts`)
+
+`DRAFT → neutral, SENT → info, ACCEPTED → primary, DECLINED → error,
+EXPIRED/RECALLED → warning`; `SUPERSEDED` renders no pill at all (plain muted
+text — a dead revision doesn't earn a filled shape). `Badge` gained `info`/
+`primary` variants so SENT/ACCEPTED render in the SAME solid-red-is-live
+vocabulary DESIGN.md defines, rather than being lossily mapped onto the
+pre-existing ok/warn/overbooked set. Expiry is colour **and** words — "Valid
+until 25 Aug (3 days left)" in warn inside `QUOTE_EXPIRING_SOON_DAYS`, "Expired
+2 days ago" in the error tone past it — never colour alone (a11y).
 
 ## Numbering (zero engine change)
 
@@ -593,7 +691,16 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | `convex/lib/quoteState.ts` | Derived `EXPIRED`, `PUBLISHED`→`SENT` normalisation, `hasAcceptedQuote`, org-checked quote/project loaders |
 | `convex/lib/quoteDates.ts` / `src/lib/quote-validity.ts` | Validity default + bounds + timezone-correct `validUntil`/expiry (mirrored pair) |
 | `convex/backfillQuoteRevisions.ts` | Forward migration + `verifyQuoteRevisions` |
-| `src/hooks/use-quote-writes.ts` / `src/components/projects/project-quote-rail.tsx` | Client wiring for the five verbs + the revision row's document action |
+| `src/hooks/use-quote-writes.ts` / `src/components/projects/project-quote-rail.tsx` | Client wiring for the five verbs + `repriceFromRevision` + the revision row's document action |
+| `src/components/projects/finance/send-quote-dialog.tsx` | Quote date/validity/recipient/notes, no money — the send handover state (#989) |
+| `src/components/projects/finance/issue-invoice-dialog.tsx` | Invoice date/due date/notes at issue — closes the missing-due-date bug (#989) |
+| `src/components/projects/finance/accept-quote-dialog.tsx` | Acceptance date + optional reference, instead of a bare click (#989) |
+| `src/components/projects/finance/quote-revision-viewer-dialog.tsx` | Read-only "as of v N" view + vs-previous/vs-current diff (#989) |
+| `src/components/projects/finance/reprice-from-revision-dialog.tsx` | "Use vN's pricing for v(N+1)" confirm dialog (#989 §8.1) |
+| `src/components/projects/finance/quote-drift-indicator.tsx` / `src/lib/quote-drift.ts` | "Job no longer matches the sent document" summary + banner (#989) |
+| `src/components/projects/finance/quote-lock-strip.tsx` | The Finance tab's always-mounted lock explanation (#989) |
+| `convex/quotesWrites.ts` `repriceFromRevisionNative` | Composes `newVersionNative` + `restoreProjectSnapshot(FINANCIAL)` in one transaction, one audit entry (#989) |
+| `src/lib/invoice-terms.ts` / `convex/lib/invoiceDates.ts` | Payment-terms default + bounds + `computeDueDate` (mirrored pair, #989) |
 | `convex/financeArtifacts.ts` | Attach-once artifact mutations + the org-checked context queries the download routes authorise against (#987) |
 | `src/server/finance-documents.ts` | `generateQuoteArtifact` / `generateInvoiceArtifact` — render, upload, attach, bin the orphan on a lost race |
 | `src/lib/finance-artifacts.ts` / `src/lib/finance-artifact-response.ts` | Artifact file naming + the shared streaming/org-check half of both routes |
@@ -663,6 +770,22 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
   justification, and `revision` being un-forgeable and un-clearable.
 - `convex/recalc.test.ts` — 4 new tests for the derived `depositPaid`/
   `invoicedTotal` fields.
+- `convex/quotesWrites.test.ts` (#989) — `repriceFromRevisionNative`: seeds the
+  next draft with an earlier revision's money fields leaving structure
+  untouched, exactly one audit entry, rejects a source quote from another
+  project / with no stored snapshot / while the current revision is still an
+  open draft, RBAC and cross-org IDOR.
+- `convex/invoicesWrites.test.ts` (#989) — regression: `invoiceDate`/`dueDate`
+  are always stamped even when the caller supplies neither (the bug this
+  closes), an explicit override wins, and the org's configured
+  `paymentTermsDays` is respected.
+- `convex/invoiceDates.test.ts` — pins the `convex/lib` ↔ `src/lib`
+  `paymentTermsDays` mirror and the `computeDueDate` contract.
+- `src/components/projects/finance/__tests__/send-quote-dialog.smoke.test.tsx`
+  — jsdom smoke test that actually **opens** the send dialog and its recipient
+  `combobox-picker.tsx` inside the Radix modal `Dialog` (the standing
+  Radix/Base-UI-in-modal regression class), and asserts no monetary input
+  exists anywhere in the form.
 
 ## Deferred (not built in this PR)
 

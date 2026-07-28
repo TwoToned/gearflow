@@ -36,7 +36,7 @@ import {
   quoteAcceptFields,
   quoteDeclineFields,
 } from "../../../convex/quotesWrites";
-import { invoiceFields } from "../../../convex/invoicesWrites";
+import { invoiceFields, invoiceIssueFields } from "../../../convex/invoicesWrites";
 
 import { clientSchema } from "./client";
 import { clientContactSchema } from "./client-contact";
@@ -51,7 +51,7 @@ import { supplierSchema } from "./supplier";
 import { subTestRecordSchema } from "./test-tag";
 import { supplierOrderUpdateSchema, supplierOrderItemSchema } from "./supplier-order";
 import { quoteSendSchema, quoteRecallSchema, quoteAcceptSchema, quoteDeclineSchema } from "./quote";
-import { invoiceSchema } from "./invoice";
+import { invoiceSchema, invoiceIssueSchema } from "./invoice";
 
 /** Unwrap a Zod schema (through .refine/.default/.optional wrappers) to its object shape keys. */
 export function zodKeys(schema: unknown): string[] {
@@ -167,6 +167,8 @@ export const VALIDATION_PAIRS: ValidationPair[] = [
     // hook converts it, same pattern as every other date field in this codebase
     // (see "Date Handling" in FEATUREDOCS/28-patterns.md); field NAME matches.
   },
+  // #989 — the invoice ISSUE dialog's fields (distinct from create above).
+  { name: "invoiceIssue", zod: invoiceIssueSchema, convex: invoiceIssueFields },
 ];
 
 export const VALIDATION_PAIR_BY_NAME: Readonly<Record<string, ValidationPair>> = Object.fromEntries(

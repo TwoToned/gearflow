@@ -135,7 +135,7 @@ export function drawWrappedText(
 
 // ─── Rich Text (simple markdown) ──────────────────────────────────────────
 
-export type RichSpan = { text: string; style: "regular" | "bold" | "italic" };
+type RichSpan = { text: string; style: "regular" | "bold" | "italic" };
 export type RichLine = { spans: RichSpan[]; bullet: boolean };
 
 /**

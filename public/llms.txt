@@ -12,7 +12,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (336 agent-reachable)
+## Operations (330 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -191,17 +191,11 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `availability.modelBookings` (query, scope: project:read)
 - `categorySlotsWrites.createCategoryAndPlaceGroup` (mutation, scope: project:manage_line_items)
 - `categorySlotsWrites.moveProjectGroupToCategory` (mutation, scope: project:manage_line_items)
-- `collaboration.acquireLock` (mutation, scope: project:read)
 - `collaboration.addComment` (mutation, scope: project:read)
-- `collaboration.clearPresence` (mutation, scope: project:read)
-- `collaboration.heartbeatLock` (mutation, scope: project:read)
-- `collaboration.heartbeatPresence` (mutation, scope: project:read)
-- `collaboration.releaseLock` (mutation, scope: project:read)
 - `collaboration.reopenThread` (mutation, scope: project:manage_line_items)
 - `collaboration.resolveThread` (mutation, scope: project:manage_line_items)
 - `collaboration.setReviewMarker` (mutation, scope: project:read)
 - `collaboration.setThreadBlocking` (mutation, scope: project:manage_line_items)
-- `collaboration.takeoverLock` (mutation, scope: project:read)
 - `equipmentTab.bundle` (query, scope: project:read)
 - `groupTemplatesWrites.applyNative` (mutation, scope: project:manage_line_items)
 - `groupTemplatesWrites.deleteTemplateNative` (mutation, scope: project:manage_line_items)

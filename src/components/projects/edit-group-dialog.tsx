@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/formatters";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -60,6 +61,10 @@ interface EditGroupDialogProps {
     /** #1012 — how `discount` was entered; persisted for document display. */
     discountMode: DiscountMode | undefined,
   ) => void;
+  /** #990 — money fields render read-only via `<LockedField>` when true. */
+  locked?: boolean;
+  lockReason?: string;
+  onUnlockExit?: () => void;
 }
 
 export function EditGroupDialog(props: EditGroupDialogProps) {
@@ -77,6 +82,9 @@ function EditGroupDialogBody({
   isPending,
   onClose,
   onSubmit,
+  locked,
+  lockReason,
+  onUnlockExit,
 }: EditGroupDialogProps & { group: GroupData }) {
   const priceVal = group.price != null ? Number(group.price) : null;
   const discountVal = group.discount != null ? Number(group.discount) : null;
@@ -161,15 +169,17 @@ function EditGroupDialogBody({
         </div>
         <div className="space-y-2">
           <Label>Price</Label>
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            placeholder="Leave blank for no price"
-          />
-          {group.suggestedPrice != null && (
+          <LockedField locked={!!locked} reason={lockReason ?? "Pricing is locked."} exitLabel={onUnlockExit ? "Unlock financials" : undefined} onExit={onUnlockExit}>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="Leave blank for no price"
+            />
+          </LockedField>
+          {!locked && group.suggestedPrice != null && (
             <button
               type="button"
               className="text-xs text-fg-3 hover:text-fg transition-colors"
@@ -179,12 +189,14 @@ function EditGroupDialogBody({
             </button>
           )}
         </div>
-        <DiscountField
-          value={discount}
-          onValueChange={setDiscount}
-          mode={discountMode}
-          onModeChange={setDiscountMode}
-        />
+        <LockedField locked={!!locked} reason={lockReason ?? "Pricing is locked."} exitLabel={onUnlockExit ? "Unlock financials" : undefined} onExit={onUnlockExit}>
+          <DiscountField
+            value={discount}
+            onValueChange={setDiscount}
+            mode={discountMode}
+            onModeChange={setDiscountMode}
+          />
+        </LockedField>
         {xeroLinked && (
           <Accordion type="single" collapsible>
             <AccordionItem value="xero-coding" className="border-line">

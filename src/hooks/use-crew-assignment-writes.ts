@@ -70,13 +70,15 @@ export function useCrewAssignmentWrites() {
       const org = requireOrg();
       return await statusM({ id, orgId: org, status: status as AssignStatus, now: Date.now(), actor: actor(), auditId: createId() });
     },
-    remove: async (id: string): Promise<{ id: string }> => {
+    /** `justification` (#990) — forwarded to `deleteNative`/`bulkDeleteNative`,
+     *  required once the project is ON_SITE+ with no open unlock session. */
+    remove: async (id: string, justification?: string): Promise<{ id: string }> => {
       const org = requireOrg();
-      return await deleteM({ id, orgId: org, now: Date.now(), actor: actor(), auditId: createId() });
+      return await deleteM({ id, orgId: org, now: Date.now(), actor: actor(), auditId: createId(), justification });
     },
-    bulkDelete: async (ids: string[]): Promise<{ deleted: number; skipped: number }> => {
+    bulkDelete: async (ids: string[], justification?: string): Promise<{ deleted: number; skipped: number }> => {
       const org = requireOrg();
-      return await bulkDeleteM({ orgId: org, ids, now: Date.now(), actor: actor(), auditId: createId() });
+      return await bulkDeleteM({ orgId: org, ids, now: Date.now(), actor: actor(), auditId: createId(), justification });
     },
     bulkStatus: async (ids: string[], status: string): Promise<{ updated: number; skipped: number }> => {
       const org = requireOrg();

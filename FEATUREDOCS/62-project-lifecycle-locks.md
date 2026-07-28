@@ -231,18 +231,103 @@ crossing back into CONFIRMED/COMPLETED always snapshots).
   advanced underneath a stale client). One shared hook + dialog so every
   gated surface prompts identically — not a per-form one-off.
 - **`src/components/projects/unpriced-badge.tsx`** — the amber "Unpriced"
-  badge for a $0-defaulted add.
+  badge for a $0-defaulted add. Mounted on Equipment tab rows (#990).
+- **`src/lib/lock-copy.ts`**, **`project-lock-chip.tsx`**,
+  **`project-lock-strip.tsx`**, **`project-lock-glyph.tsx`**,
+  **`src/components/ui/locked-field.tsx`**, **`gated-button.tsx`** — the six
+  lock-legibility surfaces (#990, Phase E) — see below.
 - **`src/lib/native-writes.ts`** — `FINANCIALS_LOCKED` / `JUSTIFICATION_REQUIRED`
   / `PROJECT_LOCKED` / `SESSION_ALREADY_OPEN` / `NO_OPEN_SESSION` /
   `FORBIDDEN_HARD_LOCK_OVERRIDE` mapped to `UserFacingError` toasts.
 
-**Wiring status:** the Financials tab's lock banner/button and the Versions
-panel are fully wired into the project detail page. `useJustifiedMutation` +
-`JustificationDialog` are built and smoke-tested but not yet threaded through
-every individual equipment/group/service/crew form's call site — each of
-those still needs its `justification` arg wired through the hook. Tracked as
-follow-up, not silently dropped (mirrors the #790 PR's "deliberately deferred"
-convention).
+## Making the lock legible (#990, Phase E)
+
+#791/#793 shipped one FINANCIALS_LOCKED/JUSTIFICATION_REQUIRED toast; #988
+(Phase C) closed every deferred gate site so the toast was never lying. #990
+is the client half: a lock has to be visible *before* you try, explain
+itself, and offer the exit — not a surprise after a failed save. Six
+surfaces, one shared source per surface (POLICY.md R-3.1):
+
+1. **`src/lib/lock-copy.ts`** — the ONE copy module (`resolveLockCopy`,
+   `formatLockElapsed`, `scrollToLockStrip`). Every surface below renders a
+   `LockCopy` from this, so the header chip, the strip, a `<LockedField>`
+   tooltip and a `<GatedButton>` tooltip can never say something different
+   about the same state. Formula: `[state] — [consequence]. [the exit].`
+2. **`src/components/projects/project-lock-chip.tsx`** — the always-mounted
+   header chip beside the project status (`page.tsx`'s identity row). Null
+   for OPEN with no session — absence already reads as "editing normally".
+3. **`src/components/projects/project-lock-strip.tsx`** — the shared strip,
+   mounted ONCE at `id="lock-strip"` above the tabs (not inside Finance),
+   replacing Phase D's Finance-tab-only `QuoteLockStrip`. Renders
+   `<UnlockSessionBanner>` while a session is open; otherwise the
+   `resolveLockCopy` line plus the exit that matches `reason` — "Create
+   quote v(N+1)" + "Recall" for `QUOTE_SENT` (reusing `project-quote-rail.tsx`'s
+   exported `<ReasonDialog>` rather than a second recall dialog), or the
+   existing unlock-session flow for `STATUS`.
+4. **`src/components/ui/locked-field.tsx`** — the field-level wrapper. Uses a
+   native `<fieldset disabled>` around the child rather than cloning
+   `disabled`/`readOnly` onto it: a fieldset cascades to every descendant
+   form control (works for a single `<Input>` or a composite block — a
+   checkbox + a select + an input), and every registry control's own
+   `disabled:` Tailwind classes apply automatically since they read real
+   `:disabled` state. Wired into `price-edit-dialog.tsx`,
+   `edit-line-item-dialog.tsx`, `edit-group-dialog.tsx`,
+   `add-service-dialog.tsx`, `services-panel.tsx`'s real add/edit-service
+   form (charge/discount/cost — the fields `updateServiceNative`'s
+   `moneyChanged` check actually gates), `bulk-edit-line-items-dialog.tsx`,
+   `crew-panel.tsx`'s rate/rateType/estimatedHours, and the project edit
+   form's discount field (`project-wizard.tsx`; `taxRate` is likewise
+   locked but has no UI field to wrap — org-default only). Sub-hire group
+   pricing (`price-edit-dialog.tsx`'s other mode) is deliberately NOT
+   wrapped — `subHiresWrites.ts#updateGroup` never calls
+   `assertLifecycleGuard`, so locking it in the UI would be a lie the
+   server doesn't back up (§7.3 "server parity, non-negotiable").
+5. **`src/components/ui/gated-button.tsx`** — the action-level wrapper:
+   `aria-disabled` (never `disabled`, which kills the tooltip) + its own
+   `TooltipProvider` + a no-op handler, keyboard-focusable. Applied to the
+   Equipment tab's and Services panel's primary "Add ▾" triggers at
+   HARD_LOCKED — every path out of either menu is server-rejected at that
+   tier with no per-edit escape, so the menu itself is gated instead of
+   opening onto three dead ends.
+6. **`src/components/projects/project-lock-glyph.tsx`** — the list/board/
+   dashboard glyph (`project-table.tsx`, `project-board.tsx`,
+   `dashboard/page.tsx`'s Upcoming list). Derived from `status` alone via
+   the SAME `lockTierForStatus` the server resolves from — no second row
+   query. Deliberately status-only: it does NOT detect the `QUOTE_SENT`
+   case (an OPEN-status project with a sent quote), because that needs each
+   row's current-revision quote state, which `projects.listPage`/
+   `listBoard` don't carry and a per-row lookup would reintroduce the
+   per-project-loop cost #942 flagged. A coverage gap, not a wrong answer —
+   the header chip and lock strip both resolve it correctly once opened.
+
+**Justify tier (surface 5 of the issue) — partially wired.** `remove`/
+`bulkDelete` now forward `justification` end-to-end and are routed through
+`useJustifiedMutation` for line items (single + bulk), groups (single),
+services (single + bulk), and crew assignments (single + bulk) — the
+highest-risk, most common ON_SITE+ structural edits. `add`/`update`/status
+call sites are NOT yet threaded (they either don't touch a JUSTIFY-gated
+field or the justification arg still needs plumbing through each write hook
++ dialog). Tracked as follow-up, not silently dropped (mirrors the #790 PR's
+"deliberately deferred" convention). One known limitation: `useJustifiedMutation`'s
+"catch the server's `JUSTIFICATION_REQUIRED` as a fallback" path only fires
+if the raw `ConvexError` reaches it — the write hooks all pipe errors through
+`mapNativeWriteError` first, which converts it to a `UserFacingError` (a
+different class) before it gets there. The PRE-check (`tier === "JUSTIFY" &&
+!hasOpenSession`, evaluated before the mutation ever fires) is what carries
+the real UX; the fallback is a defensive backstop for a stale client racing
+a status change mid-session, and doesn't currently trigger through this
+integration.
+
+**`UnpricedBadge`** is now mounted on the Equipment tab's `GroupRow`/
+`LineItemRow` (`equipment-rows.tsx`) — a `$0`/unset price under a locked tier
+(kit children excluded, not independently priced). Not yet mounted on
+Services/Crew rows.
+
+**Unlock session diff (§7.2).** `projectLocksRead.status`'s `openSession` now
+carries `snapshotId`; `unlock-session-banner.tsx`'s Save & relock and Discard
+both open a confirm step first, rendering `<SnapshotDiffSummary>` (factored
+out of `project-versions-panel.tsx` — one diff renderer for both, POLICY.md
+R-3.1) against that session's UNLOCK snapshot before committing.
 
 ## Server enforcement (R-9.3 / R-8.4.2)
 

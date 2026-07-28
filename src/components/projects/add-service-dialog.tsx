@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
@@ -50,6 +51,14 @@ interface AddServiceDialogProps {
   onGroupCreated?: (group: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** #990 — true once the project's tier is locked and no unlock session is
+   *  open. A new service still gets ADDED (structural writes pass ungated at
+   *  FINANCE_LOCKED), but the server force-zeros its price
+   *  (`assertLifecycleGuard`'s `defaultToZero`) — so this field is shown
+   *  read-only rather than accepting a value the server will silently drop. */
+  locked?: boolean;
+  lockReason?: string;
+  onUnlockExit?: () => void;
 }
 
 export function AddServiceDialog({
@@ -58,6 +67,9 @@ export function AddServiceDialog({
   onGroupCreated,
   open,
   onOpenChange,
+  locked,
+  lockReason,
+  onUnlockExit,
 }: AddServiceDialogProps) {
 
   const lineItemWrites = useLineItemWrites();
@@ -166,13 +178,20 @@ export function AddServiceDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="svc-unitPrice">Unit price ($)</Label>
-              <Input
-                id="svc-unitPrice"
-                type="number"
-                step="0.01"
-                min={0}
-                {...form.register("unitPrice")}
-              />
+              <LockedField
+                locked={!!locked}
+                reason={lockReason ?? "This service will be added at $0 — pricing is locked."}
+                exitLabel={onUnlockExit ? "Unlock financials" : undefined}
+                onExit={onUnlockExit}
+              >
+                <Input
+                  id="svc-unitPrice"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  {...form.register("unitPrice")}
+                />
+              </LockedField>
             </div>
           </div>
 

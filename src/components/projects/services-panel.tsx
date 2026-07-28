@@ -74,10 +74,16 @@ import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 import { Button } from "@/components/ui/button";
+import { GatedButton } from "@/components/ui/gated-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LockedField } from "@/components/ui/locked-field";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
+import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
+import { JustificationDialog } from "./justification-dialog";
 import {
   Dialog,
   DialogContent,
@@ -229,6 +235,20 @@ export function ServicesPanel({
 
   const svcWrites = useProjectServiceWrites();
 
+  // #990 — prompts for a reason at ON_SITE+ with no open unlock session.
+  const [panelLockNow] = useState(() => Date.now());
+  const panelLockStatus = useProjectLockStatus(projectId, orgId, panelLockNow);
+  const justifiedRemoveService = useJustifiedMutation(
+    (args: { id: string; justification?: string }) => svcWrites.remove(args.id, args.justification),
+    panelLockStatus,
+  );
+  const justifiedBulkRemoveServices = useJustifiedMutation(
+    (args: { ids: string[]; justification?: string }) => svcWrites.bulkDelete(args.ids, args.justification),
+    panelLockStatus,
+  );
+  const panelHardLocked = !panelLockStatus.loading && panelLockStatus.tier === "HARD_LOCKED" && !panelLockStatus.hasOpenSession;
+  const panelLockReason = resolveLockCopy(panelLockStatus, panelLockNow).oneLiner;
+
   const invalidateAll = () => {
     refreshProjectServices(projectId);
     refreshProjectServicesSummary(projectId);
@@ -237,7 +257,7 @@ export function ServicesPanel({
   };
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => svcWrites.remove(id),
+    mutationFn: (id: string) => justifiedRemoveService.run({ id }),
     onSuccess: () => {
       toast.success("Service deleted");
       setDeleteTarget(null);
@@ -265,7 +285,7 @@ export function ServicesPanel({
     allServiceIds.length > 0 && selectedServiceIds.length === allServiceIds.length;
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => svcWrites.bulkDelete(ids),
+    mutationFn: (ids: string[]) => justifiedBulkRemoveServices.run({ ids }),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       toast.success(`Deleted ${r.deleted} service${r.deleted === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -344,54 +364,70 @@ export function ServicesPanel({
         <div className="flex items-center justify-between gap-2">
           <CanDo resource="project" action="update">
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Quick Add */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="h-4 w-4" />
-                    Add service
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Service type</DropdownMenuLabel>
-                  </DropdownMenuGroup>
-                  {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map((type) => {
-                    const Icon = SERVICE_TYPE_ICONS[type];
-                    return (
-                      <DropdownMenuItem key={type} onClick={() => openCreate(type)}>
-                        <Icon className="mr-2 h-4 w-4" />
-                        {SERVICE_TYPE_LABELS[type]}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                  {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuGroup>
-                        <DropdownMenuLabel>Templates</DropdownMenuLabel>
-                      </DropdownMenuGroup>
-                      {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).map((t) => {
-                        const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
-                        return (
-                          <DropdownMenuItem
-                            key={t.id as string}
-                            onClick={() => {
-                              setEditingService(null);
-                              setPreselectedType(t.type as ServiceType);
-                              setDialogOpen(true);
-                            }}
-                          >
-                            <Icon className="mr-2 h-4 w-4" />
-                            {t.title as string}
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {/* Quick Add — gated wholesale at HARD_LOCKED (#990 surface 4),
+                  same reasoning as the Equipment tab's Add ▾ menu: every path
+                  out of it is server-rejected at this tier. */}
+              {panelHardLocked ? (
+                <GatedButton
+                  size="sm"
+                  gated
+                  reason={panelLockReason}
+                  exitLabel="Open full unlock session"
+                  onExit={scrollToLockStrip}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add service
+                  <ChevronDown className="h-3 w-3" />
+                </GatedButton>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm">
+                      <Plus className="h-4 w-4" />
+                      Add service
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Service type</DropdownMenuLabel>
+                    </DropdownMenuGroup>
+                    {(Object.keys(SERVICE_TYPE_LABELS) as ServiceType[]).map((type) => {
+                      const Icon = SERVICE_TYPE_ICONS[type];
+                      return (
+                        <DropdownMenuItem key={type} onClick={() => openCreate(type)}>
+                          <Icon className="mr-2 h-4 w-4" />
+                          {SERVICE_TYPE_LABELS[type]}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                    {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup>
+                          <DropdownMenuLabel>Templates</DropdownMenuLabel>
+                        </DropdownMenuGroup>
+                        {(templates as unknown as Record<string, unknown>[]).filter((t) => t.isActive).map((t) => {
+                          const Icon = SERVICE_TYPE_ICONS[t.type as ServiceType];
+                          return (
+                            <DropdownMenuItem
+                              key={t.id as string}
+                              onClick={() => {
+                                setEditingService(null);
+                                setPreselectedType(t.type as ServiceType);
+                                setDialogOpen(true);
+                              }}
+                            >
+                              <Icon className="mr-2 h-4 w-4" />
+                              {t.title as string}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
               {/* Generate / Regenerate */}
               {hasProjectDates && (
@@ -599,6 +635,10 @@ export function ServicesPanel({
           pending={bulkDeleteMut.isPending}
           onConfirm={() => bulkDeleteMut.mutate(selectedServiceIds)}
         />
+
+        {/* #990 — justification prompts backing deleteMutation/bulkDeleteMut above. */}
+        <JustificationDialog {...justifiedRemoveService.dialogProps} />
+        <JustificationDialog {...justifiedBulkRemoveServices.dialogProps} />
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
@@ -1446,6 +1486,18 @@ function ServiceDialog({
   const svcWrites = useProjectServiceWrites();
   const xeroLinked = useXeroLinked();
 
+  // #990 — unitPrice/discount/costTotal are the fields `updateServiceNative`'s
+  // `moneyChanged` check gates as "financial" (an unchanged resend is
+  // "structural" and passes even locked — see convex/projectServicesWrites.ts);
+  // a new service's price fields are force-zeroed the same way
+  // (`createServiceNative`'s `guard.defaultToZero`). `chargeRateOverride` is
+  // NOT in that gate today, so it's deliberately left editable here too —
+  // wrapping it would be a UI lie the server doesn't back up.
+  const [svcLockNow] = useState(() => Date.now());
+  const svcLockStatus = useProjectLockStatus(open ? projectId : undefined, orgId, svcLockNow);
+  const svcMoneyLocked = !svcLockStatus.loading && svcLockStatus.tier !== "OPEN" && !svcLockStatus.hasOpenSession;
+  const svcLockReason = resolveLockCopy(svcLockStatus, svcLockNow).oneLiner;
+
   const matchingTemplate = preselectedType
     ? templates.find((t) => t.type === preselectedType && t.isActive)
     : null;
@@ -2052,13 +2104,15 @@ function ServiceDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label>Rate ($)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    {...form.register("unitPrice")}
-                    placeholder={crewChargeTotalPreview > 0 ? formatCurrency(crewChargeTotalPreview) : "0.00"}
-                  />
-                  {!form.watch("unitPrice") && crewChargeTotalPreview > 0 && (
+                  <LockedField locked={svcMoneyLocked} reason={svcLockReason} exitLabel="Unlock financials" onExit={scrollToLockStrip}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...form.register("unitPrice")}
+                      placeholder={crewChargeTotalPreview > 0 ? formatCurrency(crewChargeTotalPreview) : "0.00"}
+                    />
+                  </LockedField>
+                  {!svcMoneyLocked && !form.watch("unitPrice") && crewChargeTotalPreview > 0 && (
                     <p className="text-[11px] text-faint">
                       Auto from crew: {formatCurrency(crewChargeTotalPreview)}.{" "}
                       <button
@@ -2073,12 +2127,14 @@ function ServiceDialog({
                 </div>
                 <div className="space-y-1.5">
                   <Label>Discount ($)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    {...form.register("discount")}
-                    placeholder="0.00"
-                  />
+                  <LockedField locked={svcMoneyLocked} reason={svcLockReason} exitLabel="Unlock financials" onExit={scrollToLockStrip}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      {...form.register("discount")}
+                      placeholder="0.00"
+                    />
+                  </LockedField>
                 </div>
               </div>
               {watchCrew.length > 0 && (
@@ -2118,12 +2174,14 @@ function ServiceDialog({
                 ) : (
                   <div className="space-y-1.5">
                     <Label>Total cost</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...form.register("costTotal")}
-                      placeholder="0.00"
-                    />
+                    <LockedField locked={svcMoneyLocked} reason={svcLockReason} exitLabel="Unlock financials" onExit={scrollToLockStrip}>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        {...form.register("costTotal")}
+                        placeholder="0.00"
+                      />
+                    </LockedField>
                     <p className="text-[11px] text-faint">
                       What this service costs you (transport, materials, etc). Assign crew above to auto-calculate labour cost instead.
                     </p>

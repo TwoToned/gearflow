@@ -32,6 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LockedField } from "@/components/ui/locked-field";
 import {
   DiscountField,
   discountEntryValue,
@@ -74,9 +75,15 @@ interface PriceEditDialogProps {
   target: PriceEditTarget | null;
   onClose: () => void;
   onInvalidate: () => void;
+  /** #990 — true once the project's tier is locked and no unlock session is
+   *  open (the same `defaultToZero` condition the server force-zeros new
+   *  money fields under). Money inputs render read-only via `<LockedField>`. */
+  locked?: boolean;
+  lockReason?: string;
+  onUnlockExit?: () => void;
 }
 
-export function PriceEditDialog({ target, onClose, onInvalidate }: PriceEditDialogProps) {
+export function PriceEditDialog({ target, onClose, onInvalidate, locked, lockReason, onUnlockExit }: PriceEditDialogProps) {
   return (
     <Dialog open={target != null} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-sm">
@@ -86,6 +93,9 @@ export function PriceEditDialog({ target, onClose, onInvalidate }: PriceEditDial
             target={target}
             onClose={onClose}
             onInvalidate={onInvalidate}
+            locked={!!locked}
+            lockReason={lockReason ?? "Pricing is locked."}
+            onUnlockExit={onUnlockExit}
           />
         )}
       </DialogContent>
@@ -97,10 +107,16 @@ function PriceEditDialogBody({
   target,
   onClose,
   onInvalidate,
+  locked,
+  lockReason,
+  onUnlockExit,
 }: {
   target: PriceEditTarget;
   onClose: () => void;
   onInvalidate: () => void;
+  locked: boolean;
+  lockReason: string;
+  onUnlockExit?: () => void;
 }) {
 
   // Project-mode state
@@ -194,29 +210,38 @@ function PriceEditDialogBody({
           <>
             <div className="space-y-1.5">
               <Label htmlFor="price-edit-input">Group price ($)</Label>
-              <Input
-                id="price-edit-input"
-                type="number"
-                step="0.01"
-                min="0"
-                value={priceInput}
-                onChange={(e) => setPriceInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSubmit();
-                }}
-                autoFocus
-              />
+              <LockedField locked={locked} reason={lockReason} exitLabel={onUnlockExit ? "Unlock financials" : undefined} onExit={onUnlockExit}>
+                <Input
+                  id="price-edit-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={priceInput}
+                  onChange={(e) => setPriceInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSubmit();
+                  }}
+                  autoFocus
+                />
+              </LockedField>
             </div>
-            <DiscountField
-              id="price-edit-discount"
-              value={discountInput}
-              onValueChange={setDiscountInput}
-              mode={discountMode}
-              onModeChange={setDiscountMode}
-            />
+            <LockedField locked={locked} reason={lockReason} exitLabel={onUnlockExit ? "Unlock financials" : undefined} onExit={onUnlockExit}>
+              <DiscountField
+                id="price-edit-discount"
+                value={discountInput}
+                onValueChange={setDiscountInput}
+                mode={discountMode}
+                onModeChange={setDiscountMode}
+              />
+            </LockedField>
           </>
         ) : (
           <>
+            {/* Sub-hire charge/cost are NOT wrapped in `<LockedField>` — unlike
+                a project group's price, `subHiresWrites.ts#updateGroup` doesn't
+                call `assertLifecycleGuard` at all, so the server never actually
+                gates this edit. Rendering it locked would be a UI lie
+                (finance-workflow-ux.md §7.3 "server parity, non-negotiable"). */}
             <div className="space-y-1.5">
               <Label htmlFor="charge-input">Charge to client ($)</Label>
               <Input

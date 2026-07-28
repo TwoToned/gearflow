@@ -33,7 +33,8 @@ import { ServicesPanel } from "@/components/projects/services-panel";
 import { TasksPanel } from "@/components/projects/tasks-panel";
 import { FinancialSummary } from "@/components/projects/financial-summary";
 import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
-import { QuoteLockStrip } from "@/components/projects/finance/quote-lock-strip";
+import { ProjectLockStrip } from "@/components/projects/project-lock-strip";
+import { ProjectLockChip } from "@/components/projects/project-lock-chip";
 import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
@@ -80,7 +81,6 @@ import { useCanDo } from "@/lib/use-permissions";
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
-import { UnlockSessionBanner } from "@/components/projects/unlock-session-banner";
 import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
 import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
 
@@ -151,8 +151,11 @@ export default function ProjectDetailPage({
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
   // #957 lifecycle lock — reactive tier/session status, the unlock-session
-  // open action, and the Versions panel.
-  const lockStatus = useProjectLockStatus(id, orgId);
+  // open action, and the Versions panel. `lockNow` is frozen at mount (like
+  // `project-quote-rail.tsx`'s own `now`) — it only drives derived display
+  // (elapsed-session timers, EXPIRED resolution), not query identity.
+  const [lockNow] = useState(() => Date.now());
+  const lockStatus = useProjectLockStatus(id, orgId, lockNow);
   const unlockSession = useUnlockSession(id, orgId);
   const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
   const [unlockPending, setUnlockPending] = useState(false);
@@ -287,6 +290,9 @@ export default function ProjectDetailPage({
                     />
                   )}
                   {!project.isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
+                  {/* #990 (Phase E) surface 1 — always-mounted header chip, the
+                      same `lockStatus` subscription the strip below renders from. */}
+                  {!project.isTemplate && <ProjectLockChip status={lockStatus} now={lockNow} />}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
@@ -480,6 +486,20 @@ export default function ProjectDetailPage({
           {/* Reservation conflict banner — hides itself when clean */}
           {!project.isTemplate && <ProjectConflictsBanner projectId={id} />}
 
+          {/* #990 (Phase E) surface 2 — the shared lock strip, mounted ONCE at
+              the top of the project detail (not inside a tab). Replaces the
+              Finance-tab-only `QuoteLockStrip` (Phase D) + the inline
+              locked-banner block that used to live only in the Finance tab. */}
+          {!project.isTemplate && orgId && (
+            <ProjectLockStrip
+              projectId={id}
+              orgId={orgId}
+              status={lockStatus}
+              now={lockNow}
+              onOpenUnlock={() => setUnlockDialogOpen(true)}
+            />
+          )}
+
           {/* ── 2-Column Layout ────────────────────────────────────── */}
           <DetailLayout>
             {/* Main content */}
@@ -552,11 +572,13 @@ export default function ProjectDetailPage({
                 {/* Finance Tab (#989) — top-level tab: quote revisions + send
                     dialog, invoices + issue dialog, financial summary +
                     operational P&L. Retired the standalone "Financials" tab —
-                    this is that content, not a duplicate of it. */}
+                    this is that content, not a duplicate of it. The lock
+                    strip/banner used to live here (Phase D's `QuoteLockStrip`)
+                    but is now the page-level `<ProjectLockStrip>` (#990) above
+                    the tabs — visible from every tab, not just this one. */}
                 {!project.isTemplate && (
                   <TabsContent value="finance">
                     <div className="space-y-6 pt-4">
-                      <QuoteLockStrip projectId={project.id} orgId={orgId} />
                       <StalePricingBanner projectId={project.id} orgId={orgId} />
                       <BillingSummaryRow
                         projectId={project.id}
@@ -566,36 +588,6 @@ export default function ProjectDetailPage({
                         billingWeeksOverride={project.billingWeeksOverride as number | null}
                         billingDaysOverride={project.billingDaysOverride as number | null}
                       />
-                      {lockStatus.openSession && orgId && (
-                        <UnlockSessionBanner
-                          projectId={id}
-                          orgId={orgId}
-                          session={{
-                            scope: lockStatus.openSession.scope,
-                            justification: lockStatus.openSession.justification,
-                            openedByName: lockStatus.openSession.openedByName,
-                          }}
-                        />
-                      )}
-                      {!lockStatus.openSession && lockStatus.tier !== "OPEN" && (
-                        <div className="flex items-center justify-between rounded-[var(--radius)] border-2 border-line bg-paper-2 px-4 py-3">
-                          <p className="text-sm text-ink-2">
-                            {lockStatus.tier === "HARD_LOCKED"
-                              ? "This project is completed and hard-locked."
-                              : "This project's financials are locked."}
-                          </p>
-                          <CanDo resource="project" action="update">
-                            <Button
-                              variant="line"
-                              size="sm"
-                              onClick={() => setUnlockDialogOpen(true)}
-                              disabled={lockStatus.tier === "HARD_LOCKED" && !lockStatus.canOverrideHardLock}
-                            >
-                              {lockStatus.tier === "HARD_LOCKED" ? "Open full unlock session" : "Unlock financials"}
-                            </Button>
-                          </CanDo>
-                        </div>
-                      )}
                       {(() => {
                         // Compute group pricing stats from categories
                         const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)

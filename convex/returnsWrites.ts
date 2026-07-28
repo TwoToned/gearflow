@@ -13,6 +13,7 @@ import { bumpProjectCounters } from "./lib/counters";
 import { checkinItemsCore } from "./warehouseOps";
 import { syncLineItemRollup, assetStatusFromReturnCondition } from "./lib/fulfillment";
 import { distributeReturn, type CheckInItem } from "./lib/bulkCheckin";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Org-wide returns-station writes (issue #944 WS5) — the project-less scan/batch
@@ -442,3 +443,14 @@ export const correctReturnConditionNative = mutation({
     return { updated: true };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ *  All four are warehouse movements — physical gear changing hands (or, for the
+ *  post-hoc correction, its recorded condition/asset status) — so all lean high
+ *  per §9 rather than the "ordinary recoverable update" default. */
+export const agentOps: AgentOpsAnnotations = {
+  correctReturnConditionNative: { danger: "high" },
+  returnBatchNative: { danger: "high" },
+  returnBulkNative: { danger: "high" },
+  returnScanNative: { danger: "high" },
+};

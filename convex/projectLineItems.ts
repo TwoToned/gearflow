@@ -12,6 +12,7 @@ import { nextOrdinal } from "./lib/lineItemUnits";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { getProjectWindow } from "./lib/projectWindow";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectLineItem (Convex table "projectLineItems"). GENERATED — Phase 2/5.
@@ -1008,3 +1009,11 @@ export const listByKitId = query({
       .filter((r) => r.organizationId === orgId);
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ *  Reassigns which asset backs a line item, but only onto a free, compatible,
+ *  non-retired asset (the double-booking OCC guard above) and is trivially
+ *  reversible (swap back) — medium rather than the stock-affecting-default high. */
+export const agentOps: AgentOpsAnnotations = {
+  swapLineItemAsset: { danger: "medium" },
+};

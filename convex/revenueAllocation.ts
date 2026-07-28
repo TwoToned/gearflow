@@ -5,6 +5,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { applyProjectAllocation } from "./lib/allocation";
 import { deriveBillingSummary } from "./lib/billingDerivation";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Recompute a project's revenue allocation on its own.
@@ -85,3 +86,10 @@ export const listProjectIdsPage = query({
     };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ *  Pure recompute of an already-existing allocation from the project's current
+ *  groups/lines — no new financial commitment. */
+export const agentOps: AgentOpsAnnotations = {
+  recomputeForProject: { danger: "low" },
+};

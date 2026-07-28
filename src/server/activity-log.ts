@@ -13,7 +13,7 @@ import { type ActivityLogFilters, startMs, endMs } from "@/lib/activity-log-filt
  */
 export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
   const { organizationId } = await getOrgContext();
-  const { entityType, entityId, action, userId, search, startDate, endDate } = filters;
+  const { entityType, entityId, action, userId, search, startDate, endDate, agentAuthored } = filters;
 
   const convex = await getConvexClient();
   const items: Array<{
@@ -33,6 +33,7 @@ export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
     search,
     startDateMs: startMs(startDate),
     endDateMs: endMs(endDate),
+    agentAuthored,
   });
 
   const escape = (s: string) => {

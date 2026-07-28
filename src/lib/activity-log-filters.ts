@@ -18,6 +18,9 @@ export interface ActivityLogFilters {
   endDate?: string | Date;
   sort?: string;
   order?: "asc" | "desc";
+  /** Phase 4 (#1000): `true` shows only API-key-authored rows, `false` only
+   *  human-authored, omitted shows both. See `convex/activityLog.ts` `isAgentAuthored`. */
+  agentAuthored?: boolean;
 }
 
 /** Filter date → epoch ms. */

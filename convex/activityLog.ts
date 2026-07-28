@@ -48,7 +48,25 @@ const filterArgs = {
   search: v.optional(v.string()),
   startDateMs: v.optional(v.number()),
   endDateMs: v.optional(v.number()),
+  // Phase 4 (#1000, decision 1): filter to (or exclude) entries an API key
+  // caused — `true` shows only agent-authored rows (the reviewable set an
+  // operator checks after granting write access), `false` shows only
+  // human-authored rows, omitted shows both.
+  agentAuthored: v.optional(v.boolean()),
 };
+
+/** `writeActivityLog` (convex/lib/audit.ts) stamps `metadata.actorType` +
+ *  `metadata.apiKeyId` onto every row an agent token caused — this is the read
+ *  side of that stamp, so the log can badge/filter agent-authored entries as a
+ *  reviewable set (Phase 4, #1000) without a schema change or a new index. */
+export function isAgentAuthored(row: { metadata?: unknown }): boolean {
+  const metadata = row.metadata;
+  return (
+    typeof metadata === "object" &&
+    metadata !== null &&
+    (metadata as Record<string, unknown>).actorType === "apiKey"
+  );
+}
 
 /** Apply the same predicates Prisma's `where` did, in JS over the scanned window. */
 function applyFilters(
@@ -63,6 +81,7 @@ function applyFilters(
     search?: string;
     startDateMs?: number;
     endDateMs?: number;
+    agentAuthored?: boolean;
   },
 ): LogDoc[] {
   const search = f.search?.toLowerCase();
@@ -74,6 +93,7 @@ function applyFilters(
     if (f.projectId && r.projectId !== f.projectId) return false;
     if (f.assetId && r.assetId !== f.assetId) return false;
     if (search && !r.summary.toLowerCase().includes(search)) return false;
+    if (f.agentAuthored != null && isAgentAuthored(r) !== f.agentAuthored) return false;
     const ts = r.createdAt ?? 0;
     if (f.startDateMs != null && ts < f.startDateMs) return false;
     if (f.endDateMs != null && ts > f.endDateMs) return false;

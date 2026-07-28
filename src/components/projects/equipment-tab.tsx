@@ -1675,8 +1675,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         categoryId={renameCategoryId}
         initialValue={renameCategoryValue}
         isPending={renameCategoryMut.isPending}
-        projectId={projectId}
-        orgId={orgId}
         onClose={() => setRenameCategoryId(null)}
         onSubmit={(id, name) => renameCategoryMut.mutate({ id, name })}
       />
@@ -1940,8 +1938,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       <EditGroupDialog
         group={editGroupData}
         isPending={updateGroupMut.isPending}
-        projectId={projectId}
-        orgId={orgId}
         onClose={() => setEditGroupData(null)}
         onSubmit={(groupId, values, price, discount, discountMode) => {
           updateGroupMut.mutate({ groupId, data: values });

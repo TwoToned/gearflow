@@ -24,8 +24,6 @@ import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { useEditLock } from "@/hooks/use-collaboration";
-import { LockedEditorOverlay } from "@/components/collaboration/locked-editor-overlay";
 import { AlertTriangle } from "lucide-react";
 
 import {
@@ -148,18 +146,6 @@ function EditLineItemDialogBody({
   onSubmit,
   onMove,
 }: EditLineItemDialogProps & { item: LineItemData }) {
-  // Edit lock — acquire while this dialog body is mounted. Released on unmount.
-  const { lockState, isLocked, isStale, takeover } = useEditLock({
-    entityType: "project",
-    entityId: projectId,
-    targetType: "lineItem",
-    targetId: item.id,
-    active: true,
-    enabled: !!orgId,
-  });
-
-  // Disable the whole form when another user holds an active lock
-  const formDisabled = isLocked;
   const xeroLinked = useXeroLinked();
 
   const initialDiscount = initialDiscountEntry(item);
@@ -273,24 +259,15 @@ function EditLineItemDialogBody({
         <DialogTitle>Edit Item</DialogTitle>
       </DialogHeader>
 
-      {/* Collaboration lock overlay — shown when another user holds the lock */}
-      {(isLocked || isStale) && (
-        <LockedEditorOverlay
-          lockState={lockState}
-          onTakeover={isStale ? () => void takeover() : undefined}
-          className="mb-2"
-        />
-      )}
-
       <form
         onSubmit={form.handleSubmit(handleSave)}
-        className={`space-y-6 ${formDisabled ? "pointer-events-none opacity-60" : ""}`}
+        className="space-y-6"
       >
         {/* Item */}
         <section className="space-y-4">
           <SectionTitle title="Item" hint="Description and how much of it." />
           <Field label="Description" htmlFor="edit-description">
-            <Input id="edit-description" {...form.register("description")} disabled={formDisabled} />
+            <Input id="edit-description" {...form.register("description")} />
           </Field>
           <Field label="Quantity" htmlFor="edit-quantity">
             <Input
@@ -298,7 +275,6 @@ function EditLineItemDialogBody({
               type="number"
               min={1}
               {...form.register("quantity")}
-              disabled={formDisabled}
             />
           </Field>
 
@@ -350,7 +326,6 @@ function EditLineItemDialogBody({
               min={0}
               placeholder="Enter price"
               {...form.register("unitPrice")}
-              disabled={formDisabled}
             />
           </Field>
           <Controller
@@ -363,7 +338,6 @@ function EditLineItemDialogBody({
                 onValueChange={field.onChange}
                 mode={discountMode}
                 onModeChange={setDiscountMode}
-                disabled={formDisabled}
               />
             )}
           />
@@ -415,7 +389,7 @@ function EditLineItemDialogBody({
           )}
 
           <Field label="Notes" htmlFor="edit-notes">
-            <Textarea id="edit-notes" {...form.register("notes")} rows={2} disabled={formDisabled} />
+            <Textarea id="edit-notes" {...form.register("notes")} rows={2} />
           </Field>
 
           <label className="flex cursor-pointer items-center gap-2.5">
@@ -427,7 +401,6 @@ function EditLineItemDialogBody({
                   id="edit-isOptional"
                   checked={field.value ?? false}
                   onCheckedChange={field.onChange}
-                  disabled={formDisabled}
                 />
               )}
             />
@@ -435,7 +408,7 @@ function EditLineItemDialogBody({
           </label>
         </section>
 
-        {!formDisabled && isOverbooked && (
+        {isOverbooked && (
           <div className="space-y-2 rounded-[var(--r)] border-l-[3px] border-t-out bg-out-soft px-3 py-2.5">
             <p className="flex items-start gap-1.5 text-caption font-medium text-t-out">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -472,7 +445,7 @@ function EditLineItemDialogBody({
           <Button
             type="submit"
             loading={isPending}
-            disabled={formDisabled || (isOverbooked && !overbookConfirmed)}
+            disabled={isOverbooked && !overbookConfirmed}
           >
             Save
           </Button>

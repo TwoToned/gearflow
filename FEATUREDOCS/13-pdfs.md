@@ -107,6 +107,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 | `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |
 | `gearflowCallSheetInfo` | 2-column info block: PM/client/equipment (left), venue/schedule (right) |
 | `gearflowDayHeader` | Day separator with accent bar, date label, phase badges, crew count |
+| `gearflowRichText` | Markdown-lite text block (`**bold**`, `*italic*`, `- `/`* ` bullets, word-wrapped to the box width) — replaces the pdfme built-in `text` type for every free-text/paragraph block in the 5 project document layouts: client+project details columns, client notes, total-items note, quote-validity note, terms & conditions. |
 
 **Report Plugins:**
 | Plugin | Purpose |
@@ -117,7 +118,7 @@ of importing `@pdfme/generator` directly. `no-restricted-imports` in
 
 ### Plugin Architecture
 - Plugins receive `value` as JSON string, parse it, draw directly via pdf-lib
-- `helpers.ts`: coordinate conversion (mm→pt, Y-flip), font caching (Helvetica/Bold/Courier), color parsing, text wrapping, formatCurrency/formatDate
+- `helpers.ts`: coordinate conversion (mm→pt, Y-flip), font caching (Helvetica/Bold/Courier), color parsing, plain text wrapping (`drawWrappedText`), markdown-lite rich text (`parseRichText`/`drawRichText`/`measureRichTextHeight`/`wrapRichText`/`drawWrappedRichLines`), formatCurrency/formatDate
 - `ui` and `propPanel` are stubs (no template designer of any kind — see below)
 
 ### Derived Billing Breakdown on Line Items (#943)
@@ -179,8 +180,8 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 
 | Type | Blocks | `expandProjectGroups` | Status filter |
 |------|--------|------------------------|----------------|
-| `quote` | header, client+project details, table (no "/day" price suffix), totals, client notes, T&Cs (omitted if unset), quote-validity note (real computed date) | false (collapse groups) | none |
-| `invoice` | header, client+project details (+ tax ID, payment terms), table (no badges), totals (+ deposit/balance), client notes | false | none |
+| `quote` | header, client+project details, table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset), quote-validity note (real computed date) | false (collapse groups) | none |
+| `invoice` | header, client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no badges, no kit/accessory children), totals (+ deposit/balance), client notes | false | none |
 | `packing-list` | header, client+project details, table (checkboxes, per-unit, asset tags, categories), total-items note | true (expand groups) | none |
 | `return-sheet` | header, client+project details, table (checkboxes, condition columns, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT`, `RETURNED` |
 | `delivery-docket` | header, client+project details (+ site contact), table (checkboxes, row numbers, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT` |
@@ -206,6 +207,73 @@ card at `/settings/branding` ("Branding & documents").
 `build-document-data.ts` computes 4 `DocumentData` fields from these settings each
 time a document is built: `document_footer_text`, `document_footer_second_line`,
 `quote_terms_and_conditions`, `quote_valid_until`.
+
+### Quote/invoice layout refinements (2026-07-27)
+
+- **Header: doc title inline with the logo, not below it.** In `logo` mode,
+  `gearflowPageHeader` used to draw the "QUOTE"/"TAX INVOICE" title + doc
+  number/date at the same Y as the org name (i.e. below the logo image). It
+  now pins the title/meta to the top of the header block (level with the
+  logo), independent of the logo's height, and the gap between the logo and
+  the org address block below it grew from 8pt to 16pt (`gearflow-page-header.ts`).
+- **Details block: no more redundant "Date:" line.** `ProjectDetailsConfig.showDocumentDate`
+  now defaults to `false` — the document date already appears in the header
+  meta (next to the doc number) on every doc type, so repeating it in the
+  client+project details block was redundant. Applies to all 5 doc types.
+- **Totals block: more separation from the table, divider no longer overlaps
+  the Total text.** `gearflowFinancialSummary` adds 10pt of top padding
+  before its first row, and its "Total" divider line now clears both the row
+  above and the bold Total text below it (previously the line sat close
+  enough to the text baseline to visually strike through "Total"/the amount).
+  `document-composer.ts`'s `totals` block height estimate grew from 25mm to
+  34mm to match.
+- **Quote/invoice table: top-level line items only.** `clientFacingTable`
+  (`document-layouts.ts`) sets `showBadges: false` and `showKitChildren: false`
+  for both quote and invoice — the client sees line items, groups, and their
+  descriptions/notes, not internal warehouse badges (OVERBOOKED/REDUCED STOCK)
+  or exploded kit/accessory sub-rows (e.g. a battery accessory as its own
+  line under a wireless mic). `showKitChildren` now gates all three
+  parent-with-children kinds uniformly — kit children, Project Group members,
+  **and** accessories (previously accessories always rendered regardless of
+  the flag) — in both `gearflow-table.ts`'s render and `document-composer.ts`'s
+  `calculateItemHeight`. Warehouse docs (packing-list/return-sheet/delivery-docket)
+  are unaffected — they keep `showKitChildren: true` via `defaultTable`, so
+  packers still see every kit member and accessory.
+
+### Markdown-lite text blocks + bold event name (2026-07-27)
+
+Every free-text/paragraph block in the 5 project document layouts — client
+notes, terms & conditions, total-items note, quote-validity note, and the
+client+project details columns — now renders through the new
+`gearflowRichText` plugin instead of pdfme's built-in `text` type
+(`document-composer.ts`'s `buildEntryFields`). It reuses the same
+markdown-lite convention `gearflowTable` already applies to line-item notes
+(`**bold**`, `*italic*`, `- `/`* ` bullets — `parseRichText`/`drawRichText`,
+`helpers.ts`), so org-authored terms & conditions and client notes can now
+use that formatting, and word-wraps to the box width (`wrapRichText`/
+`drawWrappedRichLines`, new exports) so a long paragraph or address wraps
+instead of running off the page edge — the built-in `text` type wrapped
+automatically; a naive markdown-lite swap would have silently dropped that.
+
+- **Event name is bold.** The details block's project column leads with the
+  project/event name; `document-composer.ts` wraps it in `**...**` before
+  handing it to `gearflowRichText` — no separate bold-only rendering path,
+  just the same markdown convention every other field can now use.
+- **`drawRichText` (gearflowTable's existing call, unwrapped) is unchanged
+  behaviourally** — it's now a thin wrapper around the shared
+  `drawWrappedRichLines(page, parseRichText(text), opts)`, so the table's
+  notes-column height math (`measureRichTextHeight`, literal-newline-count
+  based) and its existing tests are unaffected. Only the new
+  `gearflowRichText` plugin calls the wrapping variant.
+- **Pagination height estimates for these blocks remain the pre-existing
+  literal-newline-count heuristics** (`estimateBlockHeight` in
+  `document-composer.ts`) — they were never wrap-aware even when the
+  built-in `text` type did the wrapping, so this isn't a new gap. A very
+  long single-line T&Cs paragraph could still under-reserve height; tracked
+  as a pre-existing limitation, not introduced here.
+- Registered as both `gearflowRichText` and `rvltFlowRichText` in
+  `plugins/index.ts` per the rebrand-alias convention
+  (`rebrand-plugin-aliases.test.ts`).
 
 ### Quote-specific fixes (#790 Phase 4)
 
@@ -361,6 +429,7 @@ Three additional behaviours layer onto expand mode:
 - **Helvetica only** — no Unicode symbols (use ASCII: `-` not `—`, `|` not `•`)
 - Checkboxes rendered as `View` boxes with borders; checked state uses rotated lines
 - Line item notes shown as subtitles
+- Markdown-lite formatting (`**bold**`, `*italic*`, `- `/`* ` bullets — `parseRichText`/`drawRichText` in `helpers.ts`) works anywhere text flows through `gearflowTable` (item/group notes) or `gearflowRichText` (client notes, terms & conditions, details columns, system notes). No other markdown syntax (links, headings, tables) is supported.
 - Badges: red "OVERBOOKED", purple "REDUCED STOCK"
 - Pull slip: per-unit checkboxes for qty > 1 items, ticked for already-deployed units
 - Per-unit rows (`showPerUnitCheckboxes`): a qty > 1 line expands to one row per assigned unit ("Unit 1 — TTP00042", …) instead of collapsing tags to "tag, tag +N". On for `packing-list`, `return-sheet`, and `delivery-docket` — a single literal in each doc type's `DOCUMENT_LAYOUTS` entry (there is exactly one default source now, not two that have to be kept in sync).

@@ -102,12 +102,10 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
     expect(ids).not.toContain("acc-truecon");
   });
 
-  it("renders the accessory rows indented under the parent", async () => {
+  it("renders the accessory rows indented under the parent when showKitChildren is on (warehouse docs)", async () => {
     const parent = lightWithAccessories();
-    const calls = await runTablePlugin([parent], { showKitChildren: false });
+    const calls = await runTablePlugin([parent], { showKitChildren: true });
     const texts = calls.drawText.map((c) => c.text).join("\n");
-    // Parent renders, AND accessories render even though showKitChildren is off
-    // (accessories are inseparable from their parent).
     expect(texts).toMatch(/LED Par/);
     expect(texts).toMatch(/Safety Clamp/);
     expect(texts).toMatch(/TrueCon Tail/);
@@ -118,9 +116,19 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
     expect(clampX).toBeGreaterThan(parentX);
   });
 
-  it("renders the accessories of a GROUPED accessory parent (group member)", async () => {
+  it("hides accessory rows when showKitChildren is off (client-facing quote/invoice)", async () => {
+    const parent = lightWithAccessories();
+    const calls = await runTablePlugin([parent], { showKitChildren: false });
+    const texts = calls.drawText.map((c) => c.text).join("\n");
+    // Parent still renders — only its exploded children are suppressed.
+    expect(texts).toMatch(/LED Par/);
+    expect(texts).not.toMatch(/Safety Clamp/);
+    expect(texts).not.toMatch(/TrueCon Tail/);
+  });
+
+  it("renders the accessories of a GROUPED accessory parent (group member) when showKitChildren is on", async () => {
     const group = groupWithAccessoryMember();
-    const calls = await runTablePlugin([group], { showKitChildren: false });
+    const calls = await runTablePlugin([group], { showKitChildren: true });
     const texts = calls.drawText.map((c) => c.text).join("\n");
     expect(texts).toMatch(/Wireless Michael/); // group header
     expect(texts).toMatch(/IMX6A Headset/); // the accessory parent (group member)

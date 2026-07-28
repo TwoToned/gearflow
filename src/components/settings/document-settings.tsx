@@ -107,11 +107,11 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
           id="termsAndConditions"
           value={termsAndConditions}
           onChange={(e) => setTermsAndConditions(e.target.value)}
-          placeholder="Shown as a block on quotes. Plain text — no tokens."
+          placeholder="Shown as a block on quotes. No tokens — supports **bold**, *italic*, and '- ' bullets."
           maxLength={4000}
           rows={5}
         />
-        <p className="text-xs text-fg-3">Shown on quotes only.</p>
+        <p className="text-xs text-fg-3">Shown on quotes only. Supports **bold**, *italic*, and &quot;- &quot; bullet lines.</p>
       </div>
 
       <div className="space-y-2 sm:max-w-xs">

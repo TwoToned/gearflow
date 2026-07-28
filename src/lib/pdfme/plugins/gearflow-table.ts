@@ -698,12 +698,16 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
       }
 
       // === Kit children / Group members / Accessories ===
-      // Same indented-children rendering for kit parents (when showKitChildren
-      // is on), synthetic Project Group rows whose members were attached as
-      // childLineItems by structureLineItems(), and serialised assets with
-      // permanent accessories. Accessories are inseparable from their parent,
-      // so they always render (not gated by showKitChildren).
-      if ((isKit && config.showKitChildren) || isGroupParent || isAccessoryParent) {
+      // Same indented-children rendering for kit parents, synthetic Project
+      // Group rows whose members were attached as childLineItems by
+      // structureLineItems(), and serialised assets with permanent
+      // accessories — all gated by the single `showKitChildren` knob.
+      // Warehouse docs (packing-list/return-sheet/delivery-docket) leave it
+      // on, so accessories still always render there (they're inseparable
+      // from their parent for packing purposes). Client-facing docs
+      // (quote/invoice) turn it off to keep the client's view to top-level
+      // line items — see document-layouts.ts's `clientFacingTable`.
+      if ((isKit || isGroupParent || isAccessoryParent) && config.showKitChildren) {
         let children = item.childLineItems || [];
 
         // Filter children by deployment status for return sheet / delivery docket

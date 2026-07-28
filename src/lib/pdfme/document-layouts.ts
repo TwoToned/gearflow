@@ -93,7 +93,10 @@ const defaultProjectDetails: ProjectDetailsConfig = {
   showEventDates: true,
   showPaymentTerms: false,
   showSiteContact: false,
-  showDocumentDate: true,
+  // The document date already appears in the header meta (next to the doc
+  // number) on every doc type — repeating it in the details block was
+  // redundant.
+  showDocumentDate: false,
 };
 
 const defaultTable: TableLayoutConfig = {
@@ -124,6 +127,20 @@ const defaultTotals: TotalsLayoutConfig = {
  *  T&T reports and the timeline use their own single-purpose builders. */
 export type ProjectDocumentType = Exclude<DocumentType, "call-sheet">;
 
+/**
+ * Client-facing docs (quote, invoice) show top-level line items, groups, and
+ * their descriptions/notes only — no exploded kit/accessory children (the
+ * client doesn't need "AA Battery x4" under "Wireless Mic x2"), and no
+ * internal warehouse badges like OVERBOOKED / REDUCED STOCK. Warehouse docs
+ * (packing-list, return-sheet, delivery-docket) keep `defaultTable`'s
+ * `showKitChildren: true` unchanged — packers still need every component.
+ */
+const clientFacingTable: TableLayoutConfig = {
+  ...defaultTable,
+  showBadges: false,
+  showKitChildren: false,
+};
+
 export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
   quote: {
     expandProjectGroups: false,
@@ -131,7 +148,7 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
     blocks: [
       { kind: "header", title: "QUOTE" },
       { kind: "detailsRow", client: defaultClientDetails, project: defaultProjectDetails },
-      { kind: "table", config: { ...defaultTable, hidePricingPeriodSuffix: true } },
+      { kind: "table", config: { ...clientFacingTable, hidePricingPeriodSuffix: true } },
       { kind: "totals", config: defaultTotals },
       { kind: "clientNotes" },
       { kind: "termsAndConditions" },
@@ -149,7 +166,7 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
         client: { ...defaultClientDetails, showClientTaxId: true },
         project: { ...defaultProjectDetails, showPaymentTerms: true, showInvoiceNumber: true },
       },
-      { kind: "table", config: { ...defaultTable, showBadges: false } },
+      { kind: "table", config: clientFacingTable },
       { kind: "totals", config: { ...defaultTotals, showDeposit: true, showBalance: true } },
       { kind: "clientNotes" },
     ],

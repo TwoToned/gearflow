@@ -207,7 +207,12 @@ export function calculateItemHeight(item: DocumentLineItem, config: TableLayoutC
     heightPt += item.quantity * PER_UNIT_ROW_PT;
   }
 
-  if ((isKit && config.showKitChildren) || isGroupParent || isAccessoryParent) {
+  // Mirrors gearflow-table.ts's rendering gate exactly — all three
+  // parent-with-children kinds (kit, group, accessory) are gated by the
+  // same `showKitChildren` flag, or this height reservation silently
+  // diverges from what actually gets drawn (tail-drop on quote/invoice,
+  // wasted whitespace on warehouse docs).
+  if ((isKit || isGroupParent || isAccessoryParent) && config.showKitChildren) {
     const children = item.childLineItems || [];
     for (const child of children) {
       heightPt += CHILD_ROW_PT;
@@ -309,7 +314,11 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
     }
 
     case "totals":
-      return 25;
+      // 25 (base) + ~9mm for the top padding + wider divider clearance
+      // added in gearflow-financial-summary.ts (issue: totals block sat
+      // right on top of the table, and the Total divider overlapped its
+      // own text).
+      return 34;
 
     case "clientNotes":
       return data.client_notes ? 12 : 4;
@@ -662,7 +671,10 @@ function buildEntryFields(
       if (block.client.showClientAddress && data.client_billing_address) clientLines.push(data.client_billing_address);
       if (block.client.showClientTaxId && data.client_tax_id) clientLines.push(`ABN: ${data.client_tax_id}`);
 
-      const projectLines: string[] = [data.project_name];
+      // The event/project name leads the column — bolded via the shared
+      // markdown-lite renderer (gearflowRichText) rather than a separate
+      // bold-only mechanism.
+      const projectLines: string[] = [`**${data.project_name}**`];
       if (block.project.showVenue && data.venue_name) projectLines.push(`Venue: ${data.venue_name}`);
       if (block.project.showRentalDates && data.rental_start && data.rental_start !== "-") {
         const end = data.rental_end && data.rental_end !== "-" ? ` - ${data.rental_end}` : "";
@@ -693,7 +705,7 @@ function buildEntryFields(
         {
           schema: {
             name: `${name}_client`,
-            type: "text",
+            type: "gearflowRichText",
             content: "",
             position: { x: MARGIN, y },
             width: colWidth,
@@ -706,7 +718,7 @@ function buildEntryFields(
         {
           schema: {
             name: `${name}_project`,
-            type: "text",
+            type: "gearflowRichText",
             content: "",
             position: { x: MARGIN + CONTENT_WIDTH / 2 + 4, y },
             width: colWidth,
@@ -784,7 +796,7 @@ function buildEntryFields(
         {
           schema: {
             name,
-            type: "text",
+            type: "gearflowRichText",
             content: "",
             position: { x: MARGIN, y },
             width: CONTENT_WIDTH,
@@ -801,7 +813,7 @@ function buildEntryFields(
         {
           schema: {
             name,
-            type: "text",
+            type: "gearflowRichText",
             content: "",
             position: { x: MARGIN, y },
             width: CONTENT_WIDTH,
@@ -818,7 +830,7 @@ function buildEntryFields(
         {
           schema: {
             name,
-            type: "text",
+            type: "gearflowRichText",
             content: "",
             position: { x: MARGIN, y },
             width: CONTENT_WIDTH,
@@ -830,12 +842,15 @@ function buildEntryFields(
         },
       ];
 
+    // Org-authored free text (`/settings/branding`'s "Documents" card) —
+    // markdown-lite friendly, same convention as line-item notes: `**bold**`,
+    // `*italic*`, `- `/`* ` bullets (gearflowRichText / parseRichText).
     case "termsAndConditions":
       return [
         {
           schema: {
             name,
-            type: "text",
+            type: "gearflowRichText",
             content: "",
             position: { x: MARGIN, y },
             width: CONTENT_WIDTH,

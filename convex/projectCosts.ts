@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, getAuthContext, isAgentNoFinancials } from "./lib/auth";
 
 /**
  * Operational P&L for a project (Phase 3 browser-direct — replaces the
@@ -54,6 +54,13 @@ export const operationalCosts = query({
   returns: v.object(costsShape),
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgPermission(ctx, orgId, "project", "read");
+
+    // Decision 6 (#1002) — a `noFinancials` agent key never sees cost/margin,
+    // regardless of the acting user's role. Checked AFTER the RBAC gate (so a
+    // key without project:read still gets FORBIDDEN, not a quiet zero) and
+    // BEFORE any computation, so nothing costed is ever assembled for it.
+    const auth = await getAuthContext(ctx);
+    if (await isAgentNoFinancials(ctx, auth)) return EMPTY;
 
     const project = await ctx.db
       .query("projects")

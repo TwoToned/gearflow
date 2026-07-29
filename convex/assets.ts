@@ -1,9 +1,10 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for Asset (Convex table "assets"). GENERATED — Phase 2/5.
@@ -61,7 +62,7 @@ export const listPage = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "asset"); // Phase 5 domain slice (#1001)
     const isActive = a.isActive ?? true;
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
@@ -135,7 +136,7 @@ export const listPage = query({
 export const listGallery = query({
   args: { orgId: v.string(), search: v.optional(v.string()) },
   handler: async (ctx, { orgId, search }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 5 domain slice (#1001)
     const [rows, models, categories, locations] = await Promise.all([
       ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: "browse everything" gallery view, Option A (perf design) — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog/config map (list enrichment) — see docs/exceptions.md R-8.3.3
@@ -176,7 +177,7 @@ export const listGallery = query({
 export const registryPhotos = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 5 domain slice (#1001)
     type Photo = { url: string | null; thumbnailUrl: string | null };
     const resolveFile = async (fileId: string): Promise<Photo> => {
       const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).unique();
@@ -223,7 +224,7 @@ export const getById = query({
 export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {
-    await requireOrgRead(ctx, organizationId);
+    await requireOrgReadFor(ctx, organizationId, "asset"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("assets")
       .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", organizationId).eq("assetTag", assetTag))
@@ -251,7 +252,7 @@ export const listByModel = query({
 export const listByModelIds = query({
   args: { orgId: v.string(), modelIds: v.array(v.string()) },
   handler: async (ctx, { orgId, modelIds }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 5 domain slice (#1001)
     const unique = [...new Set(modelIds)];
     if (unique.length > 1000) throw new ConvexError("assets.listByModelIds: too many modelIds (max 1000)");
     const groups = await Promise.all(
@@ -270,7 +271,7 @@ export const listByModelIds = query({
 export const listByIds = query({
   args: { orgId: v.string(), ids: v.array(v.string()) },
   handler: async (ctx, { orgId, ids }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 5 domain slice (#1001)
     // Dedupe + cap: this is user-callable, so an unbounded id array would fan out
     // arbitrarily many point-reads. 1000 is comfortable headroom over any real
     // detail composite's member count.
@@ -626,8 +627,22 @@ export const bulkAddTags = mutation({
 export const listByParentAssetId = query({
   args: { parentAssetId: v.string(), orgId: v.string() },
   handler: async (ctx, { parentAssetId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "asset"); // Phase 5 domain slice (#1001)
     return (await ctx.db.query("assets").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", parentAssetId)).collect())
       .filter((r) => r.organizationId === orgId);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all assets visible to the caller's org.", danger: "low", mcpTier: 1 },
+  listPage: { summary: "Filtered, sorted, paginated asset list with model/category/location joins.", danger: "low", mcpTier: 2 },
+  listGallery: { summary: "Browse an org's whole active asset catalogue (unpaginated, joined + searchable).", danger: "low", mcpTier: 3 },
+  registryPhotos: { summary: "Primary-photo URL maps for assets and models in an org.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one asset by id.", danger: "low", mcpTier: 1 },
+  getByAssetTag: { summary: "Look up an asset by its human-readable asset tag.", danger: "low", mcpTier: 1 },
+  listByModel: { summary: "List an org's assets belonging to one model.", danger: "low", mcpTier: 2 },
+  listByModelIds: { summary: "Batch asset lookup across many models in one call.", danger: "low", mcpTier: 3 },
+  listByIds: { summary: "Batch point-read assets by id, scoped to one org.", danger: "low", mcpTier: 3 },
+  listByParentAssetId: { summary: "List child assets attached to a parent asset.", danger: "low", mcpTier: 2 },
+};

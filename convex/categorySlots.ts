@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for CategorySlot (Convex table "categorySlots"). GENERATED — Phase 2/5.
@@ -272,3 +273,21 @@ export const upsertSlotForSubHireGroup = mutation({
     }
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+// Triage: `categorySlots` rows have NO `organizationId` column (see
+// `reorderSlots`'s comment above), and none of these read queries take an org
+// argument either — org-scoping only exists one hop away, on the parent
+// `projectCategories`/`projectGroups`/`subHireGroups` row, which none of these
+// queries fetch or check. Widening any of them to `requireOrgPermission` would
+// need a new org-derivation step (fetch the parent, verify its org, filter),
+// which is out of scope for a mechanical guard swap — and semantically this
+// table is project/quote category-slot layout, not the "model" resource this
+// domain slice covers. Left service-only; revisit under a projects-domain
+// slice that can do the parent-org derivation properly.
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: "No organizationId column and no orgId arg; org-scoping needs a parent projectCategory lookup not done here — revisit under a projects-domain slice." },
+  getById: { agentAccess: "denied", reason: "No organizationId column and no orgId arg; a single slot has no org to check against without an extra parent lookup — revisit under a projects-domain slice." },
+  listByProjectGroupId: { agentAccess: "denied", reason: "No organizationId column and no orgId arg; org-scoping needs a parent projectGroup lookup not done here — revisit under a projects-domain slice." },
+  listBySubHireGroupId: { agentAccess: "denied", reason: "No organizationId column and no orgId arg; org-scoping needs a parent subHireGroup lookup not done here — revisit under a projects-domain slice." },
+};

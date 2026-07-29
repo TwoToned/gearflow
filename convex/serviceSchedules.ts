@@ -1,6 +1,11 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List service schedules (model + cadence maintenance templates) for the org.", danger: "low", mcpTier: 2 },
+};
 
 /**
  * Browser-facing reads for ServiceSchedule (WS6 #945). Writes live in
@@ -13,7 +18,7 @@ import { requireOrgRead } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "maintenance");
     const schedules = await ctx.db
       .query("serviceSchedules")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small admin-created catalog table — see docs/exceptions.md R-8.3.3

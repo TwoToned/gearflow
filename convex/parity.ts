@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Migration parity helper — a generic, paginated table count.
@@ -26,3 +27,10 @@ export const countPage = query({
     };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  countPage: {
+    agentAccess: "denied",
+    reason: "Internal migration-parity diagnostic tool, not an application read surface.",
+  },
+};

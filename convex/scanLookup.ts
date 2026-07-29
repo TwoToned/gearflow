@@ -1,13 +1,17 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  resolve: { summary: "Resolve a scanned barcode/tag to its asset/kit/bulk-asset/test-tag navigation target.", danger: "low", mcpTier: 2 },
+};
 
 /**
  * Resolve a scanned barcode/tag value to a navigation target (Phase 3 — replaces the
- * `scanLookup` server action). Browser-callable (`requireOrgRead`; service tokens
- * short-circuit allow, so the `scan_lookup` agent tool works via CONVEX_READS). Checks,
- * in order: serialized asset → kit → bulk asset → test&tag item (by testTagId). Cheap
- * point-reads on org-scoped indexes.
+ * `scanLookup` server action). Browser-callable and agent-reachable (`requireOrgReadFor`,
+ * resource "warehouse"). Checks, in order: serialized asset → kit → bulk asset →
+ * test&tag item (by testTagId). Cheap point-reads on org-scoped indexes.
  */
 const SAFE_TAG = /^[A-Za-z0-9\-_.:/ ]+$/;
 
@@ -15,7 +19,7 @@ export const resolve = query({
   args: { orgId: v.string(), value: v.string() },
   returns: v.object({ url: v.union(v.string(), v.null()), label: v.union(v.string(), v.null()) }),
   handler: async (ctx, { orgId, value }): Promise<{ url: string | null; label: string | null }> => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "warehouse");
 
     const tag = value.trim();
     if (!tag || tag.length > 128 || !SAFE_TAG.test(tag)) {

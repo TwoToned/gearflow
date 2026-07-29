@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for Model (Convex table "models"). GENERATED — Phase 2/5.
@@ -45,7 +46,7 @@ export const getById = query({
 export const counts = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     type Entry = { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null };
     const out: Record<string, Entry> = {};
     const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
@@ -400,3 +401,11 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List models visible to the caller's org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get a single model by id.", danger: "low", mcpTier: 1 },
+  counts: { summary: "Per-model active asset/bulk-asset counts and primary photo for the caller's org.", danger: "low", mcpTier: 2 },
+  detail: { summary: "Model detail composite: model + category + active assets/bulk assets + media gallery + bulk accessories.", danger: "low", mcpTier: 1 },
+};

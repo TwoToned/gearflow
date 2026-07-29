@@ -1,7 +1,13 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor, requireOrgReadDocFor } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List service templates (maintenance job templates) for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single service template by id.", danger: "low", mcpTier: 3 },
+};
 
 /**
  * Thin CRUD for ServiceTemplate (Convex table "serviceTemplates"). GENERATED — Phase 2/5.
@@ -16,7 +22,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "maintenance");
     return await ctx.db
       .query("serviceTemplates")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org template set — see docs/exceptions.md R-8.3.3
@@ -27,8 +33,9 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("serviceTemplates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("serviceTemplates").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "maintenance");
+    return doc;
   },
 });
 

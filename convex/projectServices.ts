@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectService (Convex table "projectServices"). GENERATED — Phase 2/5.
@@ -16,7 +17,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     return await ctx.db
       .query("projectServices")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -28,7 +29,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "project");
     return doc;
   },
 });
@@ -36,7 +37,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("projectServices")
@@ -249,3 +250,10 @@ export const patchService = mutation({
     return doc._id;
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all services (crew calls, deliveries, etc.) for an org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get one project service by id.", danger: "low", mcpTier: 1 },
+  listByProject: { summary: "List services belonging to one project.", danger: "low", mcpTier: 1 },
+};

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectManager (Convex table "projectManagers"). GENERATED — Phase 2/5.
@@ -16,7 +17,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectManagers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "project");
     return doc;
   },
 });
@@ -24,7 +25,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("projectManagers")
@@ -36,7 +37,7 @@ export const listByProject = query({
 export const listByUserId = query({
   args: { userId: v.string(), orgId: v.string() },
   handler: async (ctx, { userId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     // by_userId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("projectManagers")
@@ -147,3 +148,10 @@ export const applyDiff = mutation({
     }
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  getById: { summary: "Get one project-manager assignment by id.", danger: "low", mcpTier: 2 },
+  listByProject: { summary: "List the managers assigned to one project.", danger: "low", mcpTier: 1 },
+  listByUserId: { summary: "List the projects one user is assigned as manager on.", danger: "low", mcpTier: 2 },
+};

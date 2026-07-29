@@ -1,7 +1,14 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List test profiles (visual/electrical test templates) for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single test profile by id.", danger: "low", mcpTier: 3 },
+  resolveForAsset: { summary: "Resolve the best-match test profile for a test & tag asset via the asset/model/org-default cascade.", danger: "low", mcpTier: 2 },
+};
 
 /**
  * Thin CRUD for TestProfile (Convex table "testProfiles"). GENERATED — Phase 2/5.
@@ -16,7 +23,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "testTag");
     return await ctx.db
       .query("testProfiles")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -28,7 +35,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "testTag");
     return doc;
   },
 });
@@ -43,7 +50,7 @@ export const getById = query({
 export const resolveForAsset = query({
   args: { orgId: v.string(), testTagAssetId: v.string() },
   handler: async (ctx, { orgId, testTagAssetId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "testTag");
     const orgProfile = async (id: string) => {
       const p = await ctx.db.query("testProfiles").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       return p && p.organizationId === orgId ? p : null;

@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgPermission } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectLineItemUnit (Convex table "projectLineItemUnits"). GENERATED — Phase 2/5.
@@ -16,7 +17,9 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    // Widened (Phase 5 domain slice, #1001): a plain org-scoped read (by_organizationId),
+    // no special sensitivity beyond ordinary fulfillment/serial data.
+    await requireOrgPermission(ctx, orgId, "project", "read");
     return await ctx.db
       .query("projectLineItemUnits")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
@@ -27,6 +30,9 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
+    // NOT widened: point-read by GLOBAL by_cuid index with no `orgId` arg to check
+    // the result against. Widening as-is would let any agent read another org's
+    // unit row by guessing/enumerating its cuid — see agentOps below.
     await requireService(ctx);
     return await ctx.db.query("projectLineItemUnits").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
   },
@@ -41,7 +47,9 @@ export const getById = query({
 export const listByOrgAndAsset = query({
   args: { orgId: v.string(), assetId: v.string() },
   handler: async (ctx, { orgId, assetId }) => {
-    await requireService(ctx);
+    // Widened (Phase 5 domain slice, #1001): org-scoped via the composite index
+    // itself (organizationId is a leading index key, not a post-hoc JS filter).
+    await requireOrgPermission(ctx, orgId, "project", "read");
     return await ctx.db
       .query("projectLineItemUnits")
       .withIndex("by_organizationId_assetId_status", (q) => q.eq("organizationId", orgId).eq("assetId", assetId))
@@ -52,6 +60,10 @@ export const listByOrgAndAsset = query({
 export const listByLineItem = query({
   args: { lineItemId: v.string() },
   handler: async (ctx, { lineItemId }) => {
+    // NOT widened: `by_lineItemId` is a GLOBAL index and this query takes no
+    // `orgId` arg at all — there is nothing to check a caller-supplied
+    // `lineItemId` against, so any agent could read another org's units by
+    // guessing a foreign lineItemId. See agentOps below.
     await requireService(ctx);
     return await ctx.db
       .query("projectLineItemUnits")
@@ -70,6 +82,9 @@ export const listByLineItem = query({
 export const listByLineItemIds = query({
   args: { lineItemIds: v.array(v.string()) },
   handler: async (ctx, { lineItemIds }) => {
+    // NOT widened: same gap as listByLineItem — no `orgId` arg, `by_lineItemId`
+    // is global, so there's no way to check the caller's org against the ids
+    // supplied. See agentOps below.
     await requireService(ctx);
     const out = [];
     for (const lineItemId of lineItemIds) {
@@ -192,3 +207,12 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all project line item units (fulfillment/serial rows) for an org.", danger: "low", mcpTier: 2 },
+  listByOrgAndAsset: { summary: "List an asset's line-item units within an org, for double-booking checks.", danger: "low", mcpTier: 3 },
+  getById: { agentAccess: "denied", reason: "Point-read by global by_cuid with no orgId arg to verify the result against — would let an agent read another org's unit by guessing its cuid." },
+  listByLineItem: { agentAccess: "denied", reason: "by_lineItemId is a global index and the query takes no orgId arg, so a caller-supplied lineItemId can't be checked against the caller's org." },
+  listByLineItemIds: { agentAccess: "denied", reason: "Same gap as listByLineItem: no orgId arg to check the (global, cross-org) lineItemIds against." },
+};

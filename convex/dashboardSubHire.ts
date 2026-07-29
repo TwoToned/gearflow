@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * BROWSER-facing native replacement for getSubHireDashboardStats (Phase 3). The
@@ -12,7 +13,7 @@ import { requireOrgRead } from "./lib/auth";
 export const bundle = query({
   args: { orgId: v.string(), now: v.number(), monthStart: v.number() },
   handler: async (ctx, { orgId, now, monthStart }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "subHire");
     const subHires = await ctx.db
       .query("subHires")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment)
@@ -33,3 +34,7 @@ export const bundle = query({
     return { activeSubHires, monthlySubHireCost, overdueReturns };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  bundle: { summary: "Sub-hire dashboard stats: active count, monthly cost, overdue returns.", danger: "low", mcpTier: 2 },
+};

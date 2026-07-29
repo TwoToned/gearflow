@@ -1,8 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 const round = (n: number): number => Math.round(n * 100) / 100;
 
@@ -123,7 +124,7 @@ export function computeSupplierSpend(
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier");
     return await ctx.db
       .query("suppliers")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -135,7 +136,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "supplier");
     return doc;
   },
 });
@@ -164,7 +165,7 @@ export const listPage = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "supplier");
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
     const sortBy = a.sortBy ?? "name";
@@ -200,7 +201,7 @@ export const counts = query({
   args: { orgId: v.string() },
   returns: v.record(v.string(), v.object({ assets: v.number(), orders: v.number() })),
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier");
     const out: Record<string, { assets: number; orders: number }> = {};
     const ensure = (id: string) => (out[id] ??= { assets: 0, orders: 0 });
 
@@ -227,7 +228,7 @@ export const counts = query({
 export const assetsPage = query({
   args: { orgId: v.string(), supplierId: v.string(), page: v.number(), pageSize: v.number() },
   handler: async (ctx, { orgId, supplierId, page, pageSize }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier");
     const filtered = (await ctx.db.query("assets").withIndex("by_supplierId", (q) => q.eq("supplierId", supplierId)).collect())
       .filter((a) => a.organizationId === orgId && a.isActive !== false)
       .sort((a, b) => a.assetTag.localeCompare(b.assetTag));
@@ -278,7 +279,7 @@ function mapSubHireRow(
 export const subhiresPage = query({
   args: { orgId: v.string(), supplierId: v.string(), page: v.number(), pageSize: v.number() },
   handler: async (ctx, { orgId, supplierId, page, pageSize }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier");
     const matching = (
       await ctx.db
         .query("subHires")
@@ -344,7 +345,7 @@ export const detail = query({
     }),
   }),
   handler: async (ctx, { orgId, id }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier");
     const doc = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc || doc.organizationId !== orgId) throw new ConvexError("Supplier not found");
 
@@ -494,3 +495,13 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all suppliers for the org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get a supplier by id.", danger: "low", mcpTier: 1 },
+  listPage: { summary: "Paginated, filtered/sorted supplier list.", danger: "low", mcpTier: 2 },
+  counts: { summary: "Asset + order counts per supplier for the org.", danger: "low", mcpTier: 2 },
+  assetsPage: { summary: "Paginated assets belonging to a supplier.", danger: "low", mcpTier: 2 },
+  subhiresPage: { summary: "Paginated sub-hires against a supplier.", danger: "low", mcpTier: 2 },
+  detail: { summary: "Supplier detail with counts and spend rollups.", danger: "low", mcpTier: 1 },
+};

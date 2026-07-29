@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for SiteSettings (Convex table "siteSettings"). GENERATED — Phase 2/5.
@@ -168,3 +169,12 @@ export const upsertSingleton = mutation({
     return (await ctx.db.get(_id))!;
   },
 });
+
+const siteSettingsDenyReason =
+  "Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this.";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: siteSettingsDenyReason },
+  getById: { agentAccess: "denied", reason: siteSettingsDenyReason },
+  getSingleton: { agentAccess: "denied", reason: siteSettingsDenyReason },
+};

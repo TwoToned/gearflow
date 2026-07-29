@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -13,8 +14,9 @@ import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
  *     passes, so these can't be counters. `now` is passed (minute-bucketed by the
  *     client) so the subscription is stable yet refreshes each minute.
  *
- * Gated on requireOrgRead (org-scoping — matches getDashboardStats' getOrgContext;
- * the dashboard is visible to every org member).
+ * Gated on requireOrgReadFor(ctx, orgId, "project") (org-scoping — matches
+ * getDashboardStats' getOrgContext; the dashboard is visible to every org member;
+ * Phase 5 domain slice, #1001).
  */
 
 const RETURN_TERMINAL = new Set(["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]);
@@ -28,7 +30,7 @@ const MIN_TS = -8_640_000_000_000_000;
 export const bundle = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
 
     // `countersReady` = the SHARDED counters have been seeded (row.shardsSeededAt),
     // NOT mere row existence — a legacy pre-migration row exists but its shards are
@@ -126,3 +128,8 @@ export const bundle = query({
     };
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  bundle: { summary: "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns).", danger: "low", mcpTier: 2 },
+};

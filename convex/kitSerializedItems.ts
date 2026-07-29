@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for KitSerializedItem (Convex table "kitSerializedItems"). GENERATED — Phase 2/5.
@@ -137,8 +138,13 @@ export const remove = mutation({
 export const getByAssetId = query({
   args: { assetId: v.string(), orgId: v.string() },
   handler: async (ctx, { assetId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     return (await ctx.db.query("kitSerializedItems").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).collect())
       .find((r) => r.organizationId === orgId) ?? null;
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  getByAssetId: { summary: "Look up which kit (if any) an asset is currently a serialized member of.", danger: "low", mcpTier: 2 },
+};

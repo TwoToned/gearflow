@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * BROWSER-facing native replacement for getRecentActivity (Phase 3): the recent
@@ -11,7 +12,7 @@ import { requireOrgRead } from "./lib/auth";
  * scan-log collect. User names resolve from the Convex `users` mirror (no Prisma
  * join). Returns the same `{ logs, testRecords, maintenanceRecords }` shape the
  * page's buildActivityTimeline consumes (thin DTOs of the read fields). Gated on
- * requireOrgRead.
+ * requireOrgReadFor(ctx, orgId, "project") (Phase 5 domain slice, #1001).
  */
 
 async function userNames(ctx: QueryCtx, ids: string[]): Promise<Map<string, { id: string; name: string }>> {
@@ -39,7 +40,7 @@ async function modelNames(ctx: QueryCtx, ids: string[]): Promise<Map<string, { n
 export const bundle = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
 
     // ── newest 10 scan logs (bounded via composite index) ──
     const scanLogs = await ctx.db
@@ -150,3 +151,8 @@ export const bundle = query({
     };
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  bundle: { summary: "Recent org activity feed: scan logs, test/tag records, maintenance records.", danger: "low", mcpTier: 3 },
+};

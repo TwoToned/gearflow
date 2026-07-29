@@ -1,12 +1,14 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Org-wide tag autocomplete — the distinct union of the `tags` arrays across every
  * taggable entity (model / asset / bulkAsset / kit / location / category /
- * maintenance / project / client). Browser-callable (`requireOrgRead`; service tokens
- * short-circuit allow) — replaces the `getOrgTags` server action. Called ONE-SHOT
+ * maintenance / project / client). Browser-callable (`requireOrgReadFor(ctx, orgId,
+ * "orgSettings")`, Phase 5 #1001; service tokens short-circuit allow) — replaces
+ * the `getOrgTags` server action. Called ONE-SHOT
  * (autocomplete, no liveness requirement — `useOrgTags` fetches on mount/org-change),
  * so the 9 org-scoped scans are acceptable; do NOT wire this as a reactive subscription.
  */
@@ -14,7 +16,7 @@ export const getOrgTags = query({
   args: { orgId: v.string() },
   returns: v.array(v.string()),
   handler: async (ctx, { orgId }): Promise<string[]> => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "orgSettings"); // Phase 5 domain slice (#1001) — org-wide tag catalog is a config concept, not any single entity resource
 
     const byOrg = (table: "models" | "assets" | "bulkAssets" | "kits" | "locations" | "categories" | "maintenanceRecords" | "projects" | "clients") =>
       ctx.db
@@ -44,3 +46,7 @@ export const getOrgTags = query({
     return Array.from(all).sort();
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  getOrgTags: { summary: "List the distinct set of tags used anywhere in the org (autocomplete).", danger: "low", mcpTier: 2 },
+};

@@ -1,9 +1,10 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { resolveClientContactDisplay } from "./lib/clientContactCore";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for Client (Convex table "clients"). GENERATED — Phase 2/5.
@@ -14,6 +15,14 @@ import * as enums from "./lib/validators";
  * accept the service token OR a user token scoped to the same org. Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List clients for the org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get a single client by id.", danger: "low", mcpTier: 1 },
+  listPage: { summary: "Paginated/searchable/sortable client list.", danger: "low", mcpTier: 2 },
+  projectCounts: { summary: "Project count per client id for the org.", danger: "low", mcpTier: 2 },
+  detail: { summary: "Client detail composite: client + recent projects + media + contacts.", danger: "low", mcpTier: 2 },
+};
 
 export const list = query({
   args: { orgId: v.string() },
@@ -54,7 +63,7 @@ export const listPage = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "client"); // Phase 2 read bootstrap (#998)
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
     const sortBy = a.sortBy ?? "name";
@@ -105,7 +114,7 @@ export const projectCounts = query({
   args: { orgId: v.string() },
   returns: v.record(v.string(), v.number()),
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "client"); // Phase 2 read bootstrap (#998)
     const projects = await ctx.db
       .query("projects")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — per-org tallies need the full set — see docs/exceptions.md R-8.3.3

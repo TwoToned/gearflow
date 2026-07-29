@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor, requireOrgReadDocFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for NotificationEmailLog (Convex table "notificationEmailLogs"). GENERATED — Phase 2/5.
@@ -15,7 +16,7 @@ import { requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "orgSettings"); // Phase 5 domain slice (#1001) — sent-email audit trail is org config/observability, no separate resource fits
     return await ctx.db
       .query("notificationEmailLogs")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
@@ -26,8 +27,9 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("notificationEmailLogs").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("notificationEmailLogs").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "orgSettings"); // Phase 5 domain slice (#1001)
+    return doc;
   },
 });
 
@@ -92,3 +94,15 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). Widened per triage — rows store
+ * `userId` (not a raw email address) + `notificationKey` + `sentAt`, no
+ * greater PII exposure than what's already visible via `members`. FLAG FOR A
+ * SECOND LOOK: this is a delivery-timing audit trail (who got notified, when)
+ * — if a future `notificationKey` embeds something more sensitive, revisit.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List the org's sent-notification-email audit trail.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one sent-notification-email log entry by id.", danger: "low", mcpTier: 3 },
+};

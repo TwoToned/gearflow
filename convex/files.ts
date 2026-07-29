@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadDocFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Convex file storage (replaces the self-hosted Garage/S3 box). The bytes live in
@@ -50,11 +51,11 @@ export const register = mutation({
 export const getServeInfo = query({
   args: { storageId: v.string() },
   handler: async (ctx, { storageId }) => {
-    await requireService(ctx);
     const rec = await ctx.db
       .query("storedFiles")
       .withIndex("by_storageId", (q) => q.eq("storageId", storageId))
       .unique();
+    await requireOrgReadDocFor(ctx, rec, "document"); // Phase 5 domain slice (#1001)
     if (!rec) return null;
     const url = await ctx.storage.getUrl(storageId as Id<"_storage">);
     if (!url) return null; // bytes gone
@@ -86,3 +87,14 @@ export const deleteFile = mutation({
     }
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). `getServeInfo` widened — now org-
+ * checked via the `storedFiles` doc before returning its (short-lived) serve
+ * URL, same as every other in-org document read. The three mutations
+ * (generateUploadUrl/register/deleteFile) are untouched — mutations are out of
+ * this triage's scope and stay requireService-only.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  getServeInfo: { summary: "Get a short-lived download URL + metadata for one of the org's stored files.", danger: "low", mcpTier: 3 },
+};

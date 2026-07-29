@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Model ROI reporting, read off the allocation the recalc pass already wrote.
@@ -144,7 +145,7 @@ export const getModelRoi = query({
     to: v.optional(v.number()),
   },
   handler: async (ctx, { orgId, modelId, statuses, from, to }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "reports");
     const counted = countableStatuses(statuses);
 
     // `by_cuid` is a global index. Without the org check, a caller authorised for
@@ -220,7 +221,7 @@ export const fleetRevenue = query({
     rollupBudget: v.optional(v.number()),
   },
   handler: async (ctx, { orgId, statuses, from, to, rollupBudget }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "reports");
     const counted = countableStatuses(statuses);
     const budget = Math.max(1, Math.min(ROLLUP_READ_BUDGET, rollupBudget ?? ROLLUP_READ_BUDGET));
 
@@ -336,7 +337,7 @@ export const zeroPricedGroups = query({
     statuses: v.array(v.string()),
   },
   handler: async (ctx, { orgId, statuses }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "reports");
     const counted = countableStatuses(statuses);
 
     const scanned = await ctx.db
@@ -408,7 +409,7 @@ export const zeroPricedGroups = query({
 export const fleetInventory = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "reports");
 
     const [models, assets, bulk] = await Promise.all([
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).take(MODEL_CAP),
@@ -454,3 +455,10 @@ export const fleetInventory = query({
     };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  getModelRoi: { summary: "ROI (revenue vs fleet capital) for one model.", danger: "low", mcpTier: 2 },
+  fleetRevenue: { summary: "Fleet revenue by model over a window.", danger: "low", mcpTier: 2 },
+  zeroPricedGroups: { summary: "Project groups carrying gear with no flat price (data-quality signal).", danger: "low", mcpTier: 3 },
+  fleetInventory: { summary: "Per-model unit counts and fleet capital cost.", danger: "low", mcpTier: 2 },
+};

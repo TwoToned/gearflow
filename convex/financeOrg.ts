@@ -4,6 +4,7 @@ import { requireOrgReadFor } from "./lib/auth";
 import { effectiveQuoteStatus } from "./lib/quoteState";
 import { QUOTE_EXPIRING_SOON_DAYS, daysUntilValidUntil } from "./lib/quoteDates";
 import type { Doc } from "./_generated/dataModel";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * The org-level Finance section (#992, Phase F) — "what's chaseable across
@@ -384,3 +385,13 @@ export const counts = query({
     };
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  bundle: {
+    summary: "The org's chaseable finance rows: quotes out, expiring, never sent, confirmed-uninvoiced, deposit due, outstanding.",
+    danger: "low",
+    mcpTier: 2,
+  },
+  counts: { summary: "Cheap counts for the six financeOrg.bundle sections, for a dashboard chip.", danger: "low", mcpTier: 3 },
+};

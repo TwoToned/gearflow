@@ -25,7 +25,14 @@ const prismaMock = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
-import { createApiKey, revokeApiKey, setOrgApiKillSwitch, listApiKeys } from "@/server/api-keys";
+import {
+  createApiKey,
+  revokeApiKey,
+  setOrgApiKillSwitch,
+  listApiKeys,
+  rotateApiKey,
+  getApiKeyRequestLog,
+} from "@/server/api-keys";
 import { logActivity } from "@/lib/activity-log";
 
 beforeEach(() => {
@@ -63,6 +70,24 @@ describe("createApiKey", () => {
 
   it("requires a name", async () => {
     await expect(createApiKey({ name: "  ", scopes: [] })).rejects.toThrow(/name is required/i);
+  });
+
+  it("passes noFinancials through to the create mutation and the audit row (decision 6)", async () => {
+    const res = await createApiKey({ name: "Finance bot", scopes: ["invoice:read"], noFinancials: true });
+
+    const createArg = convexMock.mutation.mock.calls[0][1] as Record<string, unknown>;
+    expect(createArg.noFinancials).toBe(true);
+    expect(res.key.noFinancials).toBe(true);
+    expect(logActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ noFinancials: true }) }),
+    );
+  });
+
+  it("defaults noFinancials to false when omitted", async () => {
+    const res = await createApiKey({ name: "Agent", scopes: [] });
+    const createArg = convexMock.mutation.mock.calls[0][1] as Record<string, unknown>;
+    expect(createArg.noFinancials).toBe(false);
+    expect(res.key.noFinancials).toBe(false);
   });
 });
 
@@ -117,5 +142,61 @@ describe("listApiKeys", () => {
     expect(res.keys[0]).not.toHaveProperty("tokenHash");
     expect(res.keys[0]).not.toHaveProperty("token");
     expect(res.apiKillSwitchAt).toBeNull();
+  });
+});
+
+describe("rotateApiKey", () => {
+  it("mints a new secret, sends a grace-window expiry, and returns the raw token once", async () => {
+    convexMock.mutation.mockResolvedValue({ id: "key_1", name: "Agent", prefix: "gf_live_ab" });
+
+    const res = await rotateApiKey("key_1", 30);
+
+    expect(res.token).toBe("gf_live_SECRET");
+    const rotateArg = convexMock.mutation.mock.calls[0][1] as Record<string, unknown>;
+    expect(rotateArg.id).toBe("key_1");
+    expect(rotateArg.orgId).toBe("org_1");
+    expect(rotateArg.tokenHash).toBe("hash_of_secret");
+    expect(typeof rotateArg.previousTokenHashExpiresAt).toBe("number");
+    expect(res.graceMinutes).toBe(30);
+    expect(logActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "update", entityType: "apiKey" }));
+  });
+
+  it("clamps an over-cap grace window to 24h", async () => {
+    convexMock.mutation.mockResolvedValue({ id: "key_1", name: "Agent", prefix: "gf_live_ab" });
+
+    const res = await rotateApiKey("key_1", 10_000);
+    expect(res.graceMinutes).toBe(24 * 60);
+    const overCapArg = convexMock.mutation.mock.calls[0][1] as Record<string, unknown>;
+    expect(overCapArg.previousTokenHashExpiresAt as number).toBeLessThanOrEqual(Date.now() + 24 * 60 * 60_000 + 1000);
+  });
+
+  it("defaults to a 60-minute grace window when omitted", async () => {
+    convexMock.mutation.mockResolvedValue({ id: "key_1", name: "Agent", prefix: "gf_live_ab" });
+    const res = await rotateApiKey("key_1");
+    expect(res.graceMinutes).toBe(60);
+  });
+
+  it("throws when the Convex mutation rejects (key not in this org)", async () => {
+    convexMock.mutation.mockRejectedValue(new Error("apiKey not found"));
+    await expect(rotateApiKey("nope")).rejects.toThrow(/not found/i);
+  });
+});
+
+describe("getApiKeyRequestLog", () => {
+  it("returns the log only when the key belongs to the caller's org", async () => {
+    convexMock.query.mockImplementation((_ref: unknown, args: Record<string, unknown>) => {
+      if (args && "apiKeyId" in args && !("orgId" in args)) {
+        return Promise.resolve([{ ts: 1, operation: "assets.list", kind: "query", status: "success", latencyMs: 12 }]);
+      }
+      return Promise.resolve([{ id: "key_1" }]);
+    });
+
+    const res = await getApiKeyRequestLog("key_1", 50);
+    expect(res.entries).toHaveLength(1);
+  });
+
+  it("rejects a key id that doesn't belong to this org (R-8.4.3)", async () => {
+    convexMock.query.mockResolvedValue([{ id: "some_other_key" }]);
+    await expect(getApiKeyRequestLog("key_1")).rejects.toThrow(/not found/i);
   });
 });

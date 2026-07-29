@@ -47,6 +47,7 @@ function li(over: Partial<MappedLineItem>): MappedLineItem {
     lineTotal: null,
     priceBreakdown: null,
     priceOverridden: false,
+    pricedUnderLock: false,
     overrideReason: null,
     sortOrder: 0,
     groupName: null,

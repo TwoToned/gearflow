@@ -1119,7 +1119,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               )}
                               {isExpanded && childItems.map((item) => (
                                 <LineItemRow
-                                  moneyLocked={moneyLocked}
                                   key={item.id}
                                   item={item}
                                   indent="ml-12"
@@ -1155,7 +1154,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         return (
                           <React.Fragment key={group.id}>
                             <GroupRow
-                              moneyLocked={moneyLocked}
                               group={group}
                               isExpanded={isExpanded}
                               indented
@@ -1216,7 +1214,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             )}
                             {isExpanded && groupItems.map((item, itemIndex) => (
                               <LineItemRow
-                                moneyLocked={moneyLocked}
                                 key={item.id}
                                 item={item}
                                 indent="ml-12"
@@ -1259,7 +1256,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       {/* Standalone line items in category */}
                       {standaloneItems.map((item, itemIndex) => (
                         <LineItemRow
-                          moneyLocked={moneyLocked}
                           key={item.id}
                           item={item}
                           indent="ml-3"
@@ -1317,7 +1313,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                   const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                   return uncatVisible.map((item, itemIndex) => (
                   <LineItemRow
-                    moneyLocked={moneyLocked}
                     key={item.id}
                     item={item}
                     indent=""
@@ -1364,7 +1359,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                   return (
                     <React.Fragment key={`pg-${group.id}`}>
                       <GroupRow
-                        moneyLocked={moneyLocked}
                         group={group}
                         isExpanded={isExpanded}
                         orgId={orgId}
@@ -1418,7 +1412,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       )}
                       {isExpanded && groupItems.map((item: LineItemData, itemIndex) => (
                         <LineItemRow
-                          moneyLocked={moneyLocked}
                           key={item.id}
                           item={item}
                           indent="ml-12"
@@ -1496,7 +1489,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       )}
                       {isExpanded && childItems.map((item) => (
                         <LineItemRow
-                          moneyLocked={moneyLocked}
                           key={item.id}
                           item={item}
                           indent="ml-8"

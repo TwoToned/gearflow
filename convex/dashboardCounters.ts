@@ -1,10 +1,11 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { setCounter, addToCounter, readCounter } from "./lib/shardedCounter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Denormalised dashboard stat counters (Phase 3). One `dashboardCounters` row per
@@ -130,8 +131,9 @@ export const reconcile = mutation({
  * (convex/lib/counters.ts); this catches any residual drift (a missed write site, a
  * clamp) and creates the row for a brand-new org on first view. Because it's
  * throttled to a long window (client passes ~1h) a populated row is a cheap no-op —
- * no whole-org scan on the hot path. Gated on requireOrgRead so an org member can
- * only refresh their own org's counters. `now` is passed (Convex mutations can't
+ * no whole-org scan on the hot path. Gated on requireOrgReadFor(ctx, orgId, "project")
+ * so an org member (or scoped agent) can only refresh their own org's counters.
+ * `now` is passed (Convex mutations can't
  * read the clock).
  */
 export const reconcileIfStale = mutation({
@@ -139,7 +141,7 @@ export const reconcileIfStale = mutation({
   handler: async (ctx, { orgId, now, maxAgeMs }) => {
     await assertWritesEnabled(ctx, "dashboard"); // browser-direct kill-switch
     await enforceBrowserWriteLimit(ctx); // per-user browser-direct budget
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const existing = await ctx.db
       .query("dashboardCounters")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
@@ -184,7 +186,7 @@ export const bump = mutation({
 export const getByOrg = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const row = await ctx.db
       .query("dashboardCounters")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
@@ -196,3 +198,9 @@ export const getByOrg = query({
     return { organizationId: orgId, ...values, updatedAt: row.updatedAt };
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  reconcileIfStale: { summary: "Refresh an org's dashboard counters if the cached values are stale.", danger: "low", mcpTier: 3 },
+  getByOrg: { summary: "Read an org's live dashboard counters (assets, projects, crew).", danger: "low", mcpTier: 2 },
+};

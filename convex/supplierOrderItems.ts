@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for SupplierOrderItem (Convex table "supplierOrderItems"). GENERATED — Phase 2/5.
@@ -126,3 +127,21 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  list: {
+    agentAccess: "denied",
+    reason:
+      "supplierOrderItems has no organizationId column and this query takes only an orderId (no orgId to verify) — a PARENT_JOIN table read that can't be safely org-scoped without a signature change; revisit alongside a supplierOrders-joined variant.",
+  },
+  getById: {
+    agentAccess: "denied",
+    reason:
+      "Doc has no organizationId field (parent-join table), so requireOrgReadDocFor can't check it against the caller's org; would need to resolve the parent order's org first.",
+  },
+  listByOrderIds: {
+    agentAccess: "denied",
+    reason:
+      "Same parent-join shape as list/getById — no organizationId column and no orgId argument to verify against.",
+  },
+};

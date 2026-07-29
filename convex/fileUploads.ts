@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor, requireOrgReadDocFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for FileUpload (Convex table "fileUploads"). GENERATED — Phase 2/5.
@@ -15,7 +16,7 @@ import { requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "document"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("fileUploads")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
@@ -26,8 +27,9 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "document"); // Phase 5 domain slice (#1001)
+    return doc;
   },
 });
 
@@ -162,3 +164,21 @@ export const isReferencedByMedia = query({
     return false;
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). `list`/`getById` widened — they
+ * return file metadata/pointers (name/size/mimeType/storageKey/url), org-
+ * checked. `getByThumbnailUrl` and `isReferencedByMedia` stay denied: both are
+ * documented cross-org lookups with no orgId argument to check the caller
+ * against (structurally the same "no org to scope by" issue as
+ * `orgSettings.getByIcalToken`).
+ */
+const fileUploadsCrossOrgDenyReason =
+  "Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment).";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List the org's uploaded-file records (metadata, not bytes).", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one uploaded-file record by id.", danger: "low", mcpTier: 3 },
+  getByThumbnailUrl: { agentAccess: "denied", reason: fileUploadsCrossOrgDenyReason },
+  isReferencedByMedia: { agentAccess: "denied", reason: fileUploadsCrossOrgDenyReason },
+};

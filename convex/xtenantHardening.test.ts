@@ -106,6 +106,86 @@ describe("read-leak org filter — agent identity (R-8.4.3, #998)", () => {
   });
 });
 
+describe("Phase 5 (#1001) sweep — previously-unguarded reads, now fixed", () => {
+  // These three had NO org check at all before this sweep (not merely
+  // resource-less — genuinely open). Each is a real bug the migration pass
+  // surfaced and fixed, not a hypothetical.
+
+  test("projects.getByOrgAndNumber no longer lets org A read org B's project by number", async () => {
+    const t = makeT(); await member(t, A);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "pB", organizationId: B, projectNumber: "P-100", name: "Rival Co gig",
+        status: "QUOTED", isTemplate: false, createdAt: 0, updatedAt: 0,
+      });
+    });
+    // Asking under A's own orgId for a number that only exists in B correctly
+    // finds nothing (org-scoped index lookup), rather than the pre-fix
+    // behaviour of no guard at all (which happened to still org-scope via the
+    // index args, but any caller — including a non-member/anonymous identity
+    // — could invoke it; the guard is the fix, not the filter).
+    const row = await t.withIdentity(asA).query(api.projects.getByOrgAndNumber, {
+      organizationId: A,
+      projectNumber: "P-100",
+    });
+    expect(row).toBeNull();
+    // And a caller in no org at all is now rejected outright instead of silently
+    // running an unauthenticated lookup.
+    await expect(
+      t.query(api.projects.getByOrgAndNumber, { organizationId: B, projectNumber: "P-100" }),
+    ).rejects.toThrow(/authentication required/i);
+  });
+
+  test("serviceTemplates.getById now org-checks the fetched doc instead of returning it unconditionally", async () => {
+    const t = makeT(); await member(t, A);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("serviceTemplates", {
+        id: "st-B", organizationId: B, type: "DELIVERY", title: "Rival's template",
+      });
+    });
+    await expect(
+      t.withIdentity(asA).query(api.serviceTemplates.getById, { id: "st-B" }),
+    ).rejects.toThrow(/organization mismatch/i);
+  });
+
+  test("checkRecords.getById now org-checks the fetched doc instead of returning it unconditionally", async () => {
+    const t = makeT(); await member(t, A);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("checkRecords", {
+        id: "cr-B", organizationId: B, context: "PREP", assetId: "a1", checkItemId: "ci1",
+        checkItemLabelSnapshot: "Visual inspection", checkItemTypeSnapshot: "PASS_FAIL",
+        result: "PASS", performedById: "victim",
+      });
+    });
+    await expect(
+      t.withIdentity(asA).query(api.checkRecords.getById, { id: "cr-B" }),
+    ).rejects.toThrow(/organization mismatch/i);
+  });
+});
+
+describe("Phase 5 (#1001) sweep — personal-scope reads now admit agent tokens", () => {
+  // crew.myCrewMemberId used `auth.kind !== "user"` to gate a self-scoped read,
+  // which silently excluded agent tokens even though an agent carries a real
+  // userId (the acting user). Fixed to use isMemberAuth — this proves an agent
+  // now gets the same answer a user would, not null.
+  const KEY = "key_1";
+  const asAgentA = { subject: USER, orgId: A, akid: KEY };
+
+  test("crew.myCrewMemberId resolves for an agent token acting as a linked user", async () => {
+    const t = makeT();
+    await member(t, A);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("apiKeys", {
+        id: KEY, organizationId: A, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h",
+        scopes: JSON.stringify(["crew:read"]), isActive: true, actingUserId: USER, createdById: USER,
+      });
+      await ctx.db.insert("crewMembers", { id: "cm1", organizationId: A, userId: USER, firstName: "Alice", lastName: "Smith" });
+    });
+    const result = await t.withIdentity(asAgentA).query(api.crew.myCrewMemberId, { orgId: A });
+    expect(result).toBe("cm1");
+  });
+});
+
 describe("create dup-guard", () => {
   test("clientWrites.createNative rejects a colliding cuid (idempotency + cross-org DoS guard)", async () => {
     const t = makeT(); await member(t, A);

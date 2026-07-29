@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Platform-global SINGLETON flags — the browser-direct mutation kill-switch
@@ -43,3 +44,10 @@ export const setWrites = mutation({
     return (await ctx.db.get(_id))!;
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  getFlags: {
+    agentAccess: "denied",
+    reason: "This IS the platform-global browser-mutation write-kill-switch; an agent must never be able to inspect (let alone influence timing around) its own kill switch. Also platform-global, not org-scoped, so no Resource fits.",
+  },
+};

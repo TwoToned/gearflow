@@ -1,8 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgPermission, requireOrgReadDocFor } from "./lib/auth";
 import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for AssetScanLog (Convex table "assetScanLogs"). GENERATED — Phase 2/5.
@@ -17,7 +18,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "read"); // Phase 5 domain slice (#1001) — org-scoped via by_organizationId
     // r9.8-ok: sole caller (getScanLog's no-filter fallback) needs the org's full
     // set to sort by scannedAt desc and slice an arbitrary page number (not a
     // forward-only cursor) — capped, not a bare collect — see docs/exceptions.md R-8.3.3
@@ -31,8 +32,11 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("assetScanLogs").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    // No orgId arg — this is a doc-fetch shape (mirrors assets.getById), so the org
+    // check is against the fetched doc + the caller's own token org, not a param.
+    const doc = await ctx.db.query("assetScanLogs").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "asset"); // Phase 5 domain slice (#1001)
+    return doc;
   },
 });
 
@@ -40,7 +44,7 @@ export const getById = query({
 export const listByProject = query({
   args: { orgId: v.string(), projectId: v.string() },
   handler: async (ctx, { orgId, projectId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "read"); // Phase 5 domain slice (#1001) — result is JS-filtered to this orgId below
     const rows = await ctx.db
       .query("assetScanLogs")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
@@ -57,7 +61,7 @@ export const listByProject = query({
 export const listByKitId = query({
   args: { orgId: v.string(), kitId: v.string() },
   handler: async (ctx, { orgId, kitId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "read"); // Phase 5 domain slice (#1001) — result is JS-filtered to this orgId below
     const rows = await ctx.db
       .query("assetScanLogs")
       .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
@@ -70,7 +74,7 @@ export const listByKitId = query({
 export const listByOrgAndAsset = query({
   args: { orgId: v.string(), assetId: v.string() },
   handler: async (ctx, { orgId, assetId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "read"); // Phase 5 domain slice (#1001) — result is JS-filtered to this orgId below
     const rows = await ctx.db
       .query("assetScanLogs")
       .withIndex("by_assetId", (q) => q.eq("assetId", assetId))
@@ -79,7 +83,7 @@ export const listByOrgAndAsset = query({
   },
 });
 
-/** List scan logs for a user (for user-delete cascade). */
+/** List scan logs for a user (for user-delete cascade). NOT org-scoped by design (see agentOps denial below). */
 export const listByScannedById = query({
   args: { scannedById: v.string() },
   handler: async (ctx, { scannedById }) => {
@@ -170,3 +174,16 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List an org's asset scan-log history.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one scan-log entry by id.", danger: "low", mcpTier: 3 },
+  listByProject: { summary: "List scan-log entries for one project.", danger: "low", mcpTier: 3 },
+  listByKitId: { summary: "List scan-log entries for one kit.", danger: "low", mcpTier: 3 },
+  listByOrgAndAsset: { summary: "List scan-log entries for one asset.", danger: "low", mcpTier: 3 },
+  listByScannedById: {
+    agentAccess: "denied",
+    reason: "Cross-org GDPR-cascade lookup by scannedById with no org filter at all (not org-scoped even in JS) — an internal user-delete helper, not a real read surface.",
+  },
+};

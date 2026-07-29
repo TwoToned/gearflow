@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgPermission } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectMedia (Convex table "projectMedia"). GENERATED — Phase 2/5.
@@ -16,7 +17,10 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    // Widened (Phase 5 domain slice, #1001): org-scoped read of media METADATA
+    // (fileId/type/displayName/sortOrder), no special sensitivity — org-scoped via
+    // by_organizationId. Actual file bytes are gated separately by files.ts/storage.
+    await requireOrgPermission(ctx, orgId, "project", "read");
     return await ctx.db
       .query("projectMedia")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — org-wide primary-media map — see docs/exceptions.md R-8.3.3
@@ -27,6 +31,8 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
+    // NOT widened: point-read by GLOBAL by_cuid index with no orgId arg to check
+    // the result against. See agentOps below.
     await requireService(ctx);
     return await ctx.db.query("projectMedia").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
   },
@@ -35,6 +41,10 @@ export const getById = query({
 export const listByParent = query({
   args: { parentId: v.string() },
   handler: async (ctx, { parentId }) => {
+    // NOT widened: `by_projectId` is a GLOBAL index and this query takes no orgId
+    // arg at all — there is nothing to check a caller-supplied parentId against,
+    // so any agent could read another org's media by guessing a foreign
+    // projectId. See agentOps below.
     await requireService(ctx);
     return await ctx.db
       .query("projectMedia")
@@ -113,3 +123,10 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all project media metadata rows for an org.", danger: "low", mcpTier: 3 },
+  getById: { agentAccess: "denied", reason: "Point-read by global by_cuid with no orgId arg to verify the result against — would let an agent read another org's media row by guessing its cuid." },
+  listByParent: { agentAccess: "denied", reason: "by_projectId is a global index and the query takes no orgId arg, so a caller-supplied parentId can't be checked against the caller's org." },
+};

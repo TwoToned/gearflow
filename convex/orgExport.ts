@@ -16,6 +16,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { TableNames } from "./_generated/dataModel";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 // Loose query-builder type: the generic table name is a runtime string, so the
 // per-table index/field names can't be statically checked. We cast at the call
@@ -149,3 +150,15 @@ export const countTable = query({
     return { count: res.page.length, isDone: res.isDone, continueCursor: res.continueCursor };
   },
 });
+
+const orgExportDenyReason =
+  "Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4).";
+
+export const agentOps: AgentOpsAnnotations = {
+  exportTablePage: { agentAccess: "denied", reason: orgExportDenyReason },
+  scanTableFiltered: { agentAccess: "denied", reason: orgExportDenyReason },
+  childRowsByParentIds: { agentAccess: "denied", reason: orgExportDenyReason },
+  getOrgRow: { agentAccess: "denied", reason: orgExportDenyReason },
+  listOrgIds: { agentAccess: "denied", reason: orgExportDenyReason },
+  countTable: { agentAccess: "denied", reason: orgExportDenyReason },
+};

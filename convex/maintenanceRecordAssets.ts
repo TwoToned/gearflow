@@ -1,6 +1,22 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadDocFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+// maintenanceRecordAssets is a parent-scoped join table (no `organizationId`
+// column of its own). `list`/`getById` are single-parent lookups, so they widen
+// by fetching the parent `maintenanceRecords` doc and org-checking THAT via
+// requireOrgReadDocFor before returning the join rows (R-8.4.3 pattern for a
+// non-org foreign key). `listByMaintenanceRecordIds`/`listByAssetIds` fan out
+// across MANY caller-supplied parent ids with no per-id org filter — widening
+// those would need a redesign (verify-and-filter per id) that's out of scope
+// for this pass, so they stay denied.
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List the asset links for one maintenance record.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get a single maintenance-record/asset link row by id.", danger: "low", mcpTier: 3 },
+  listByMaintenanceRecordIds: { agentAccess: "denied", reason: "Batch join across caller-supplied maintenanceRecordIds with no per-id org check — would need a verify-and-filter redesign to scope safely." },
+  listByAssetIds: { agentAccess: "denied", reason: "Batch join across caller-supplied assetIds with no per-id org check — would need a verify-and-filter redesign to scope safely." },
+};
 
 /**
  * Thin CRUD for MaintenanceRecordAsset (Convex table "maintenanceRecordAssets"). GENERATED — Phase 2/5.
@@ -15,7 +31,9 @@ import { requireService } from "./lib/auth";
 export const list = query({
   args: { maintenanceRecordId: v.string() },
   handler: async (ctx, { maintenanceRecordId }) => {
-    await requireService(ctx);
+    const parent = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", maintenanceRecordId)).unique();
+    await requireOrgReadDocFor(ctx, parent, "maintenance");
+    if (!parent) return [];
     return await ctx.db
       .query("maintenanceRecordAssets")
       .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", maintenanceRecordId))
@@ -26,8 +44,16 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("maintenanceRecordAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const parent = doc
+      ? await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", doc.maintenanceRecordId)).unique()
+      : null;
+    await requireOrgReadDocFor(ctx, parent, "maintenance");
+    // Orphaned join row (parent missing) falls through requireOrgReadDocFor's
+    // "nothing to leak" null-doc branch regardless of the caller's org — guard
+    // it explicitly so an orphan is never handed back unscoped.
+    if (doc && !parent) return null;
+    return doc;
   },
 });
 

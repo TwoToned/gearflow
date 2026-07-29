@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Convex mirror of the Better-Auth `member` table (source of truth stays in
@@ -24,7 +25,7 @@ import { requireService } from "./lib/auth";
 export const getByOrgAndUser = query({
   args: { organizationId: v.string(), userId: v.string() },
   handler: async (ctx, { organizationId, userId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, organizationId, "orgMembers"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("members")
       .withIndex("by_org_user", (q) =>
@@ -113,3 +114,11 @@ export const removeByOrgAndUser = mutation({
     for (const row of rows) await ctx.db.delete(row._id);
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  getByOrgAndUser: { summary: "Get one member's role within the org.", danger: "low", mcpTier: 2 },
+  listAll: {
+    agentAccess: "denied",
+    reason: "Full cross-tenant dump of every org's membership rows (no orgId argument to scope by); an auth-mirror reconcile utility, not an org-scoped read — would leak other orgs' membership/roles (R-8.4.3).",
+  },
+};

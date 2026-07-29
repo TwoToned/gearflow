@@ -2,9 +2,18 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List maintenance records for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single maintenance record by id.", danger: "low", mcpTier: 2 },
+  recordsPage: { summary: "Paginated, filtered, sorted maintenance record list with linked-asset enrichment.", danger: "low", mcpTier: 1 },
+  recordDetail: { summary: "Single maintenance record with linked assets and reported/assigned user names.", danger: "low", mcpTier: 2 },
+  assetsForSelect: { summary: "Active-asset picker list for the maintenance form.", danger: "low", mcpTier: 3 },
+};
 
 /**
  * Thin CRUD for MaintenanceRecord (Convex table "maintenanceRecords"). GENERATED — Phase 2/5.
@@ -337,7 +346,7 @@ export const recordsPage = query({
     sortOrder: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireOrgRead(ctx, args.orgId);
+    await requireOrgReadFor(ctx, args.orgId, "maintenance");
     const page = args.page ?? 1;
     const pageSize = args.pageSize ?? 25;
     const dir: "asc" | "desc" = args.sortOrder === "desc" ? "desc" : "asc";
@@ -465,7 +474,7 @@ function statusFilterFails(r: Doc<"maintenanceRecords">, status: string): boolea
 export const recordDetail = query({
   args: { orgId: v.string(), id: v.string() },
   handler: async (ctx, { orgId, id }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "maintenance");
     const record = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!record || record.organizationId !== orgId) return null;
 
@@ -509,7 +518,7 @@ export const recordDetail = query({
 export const assetsForSelect = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "maintenance");
     const assets = (
       await ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect() // r9.8-ok: picker: scans the org set for candidates — accepted, revisit with a narrower index if large
     )

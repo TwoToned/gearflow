@@ -1,8 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService, isCallerManagerPlus, redactFields } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, isCallerManagerPlus, redactFields } from "./lib/auth";
 import { crewRoleUsage } from "./lib/crewRoleUsage";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for CrewRole (Convex table "crewRoles"). GENERATED — Phase 2/5.
@@ -14,10 +15,17 @@ import * as enums from "./lib/validators";
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List crew roles for the org (includes rate fields).", danger: "low", mcpTier: 2 },
+  listForSettings: { summary: "Crew roles for the settings admin table, rate fields redacted below manager+.", danger: "low", mcpTier: 2 },
+  usage: { summary: "Usage counts (crew/assignments/services) for a crew role, for the archive-with-usage-guard pre-check.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get a single crew role by id.", danger: "low", mcpTier: 2 },
+};
+
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     return await ctx.db
       .query("crewRoles")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
@@ -39,7 +47,7 @@ export const list = query({
 export const listForSettings = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const rows = await ctx.db
       .query("crewRoles")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
@@ -59,7 +67,7 @@ export const listForSettings = query({
 export const usage = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     return await crewRoleUsage(ctx, id, orgId);
   },
 });
@@ -68,7 +76,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewRoles").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
     return doc;
   },
 });

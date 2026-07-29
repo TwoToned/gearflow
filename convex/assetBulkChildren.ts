@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for AssetBulkChild (Convex table "assetBulkChildren"). GENERATED — Phase 2/5.
@@ -102,8 +103,13 @@ export const remove = mutation({
 export const listByParentAssetId = query({
   args: { parentAssetId: v.string(), orgId: v.string() },
   handler: async (ctx, { parentAssetId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "bulkAsset"); // Phase 5 domain slice (#1001)
     return (await ctx.db.query("assetBulkChildren").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", parentAssetId)).collect())
       .filter((r) => r.organizationId === orgId);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  listByParentAssetId: { summary: "List bulk-asset accessory children attached to a parent asset.", danger: "low", mcpTier: 2 },
+};

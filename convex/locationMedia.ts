@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgPermission, requireOrgReadDocFor } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for LocationMedia (Convex table "locationMedia"). GENERATED — Phase 2/5.
@@ -16,7 +17,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgPermission(ctx, orgId, "location", "read"); // Phase 5 domain slice (#1001) — org-scoped via by_organizationId
     return await ctx.db
       .query("locationMedia")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: aggregation — org-wide primary-media map
@@ -27,15 +28,23 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("locationMedia").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    // No orgId arg — doc-fetch shape (mirrors locations.getById).
+    const doc = await ctx.db.query("locationMedia").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "location"); // Phase 5 domain slice (#1001)
+    return doc;
   },
 });
 
 export const listByParent = query({
   args: { parentId: v.string() },
   handler: async (ctx, { parentId }) => {
-    await requireService(ctx);
+    // No orgId arg either — org-check against the parent LOCATION (by_locationId is
+    // a global index). Deliberately NOT requireOrgReadDocFor's "doc not found ->
+    // nothing to leak" shortcut: what's protected is the MEDIA ROWS under parentId,
+    // not the parent doc itself, so an orphaned/missing parent must not silently
+    // allow a cross-org read of leftover rows through.
+    const parent = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", parentId)).unique();
+    await requireOrgPermission(ctx, parent?.organizationId ?? "", "location", "read"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("locationMedia")
       .withIndex("by_locationId", (q) => q.eq("locationId", parentId))
@@ -113,3 +122,10 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all location media rows visible to the caller's org.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one location media row by id.", danger: "low", mcpTier: 3 },
+  listByParent: { summary: "List media rows attached to one location.", danger: "low", mcpTier: 3 },
+};

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ClientContact (Convex table "clientContacts"). GENERATED — mirrors
@@ -13,6 +14,10 @@ import { requireService, requireOrgRead } from "./lib/auth";
  * `detail` query embeds contacts directly). Lookups use the cuid (`id`) via
  * by_cuid. See FEATUREDOCS/54.
  */
+
+export const agentOps: AgentOpsAnnotations = {
+  forClient: { summary: "List a client's contacts for the org.", danger: "low", mcpTier: 2 },
+};
 
 export const getById = query({
   args: { id: v.string() },
@@ -145,7 +150,7 @@ export const listByClientId = query({
 export const forClient = query({
   args: { clientId: v.string(), orgId: v.string() },
   handler: async (ctx, { clientId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "client"); // Phase 2 read bootstrap (#998)
     const rows = await ctx.db
       .query("clientContacts")
       .withIndex("by_clientId", (q) => q.eq("clientId", clientId))

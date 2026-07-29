@@ -2,10 +2,11 @@ import { v, ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgPermission, requireService, resolveActor } from "./lib/auth";
+import { requireOrgReadFor, requireOrgPermission, requireService, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { getUserColor } from "./lib/collaborationColors";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Convex collaboration substrate — comment threads, review markers, and
@@ -20,8 +21,8 @@ import { getUserColor } from "./lib/collaborationColors";
  * still calls these via the server action until Coolify ships) is unaffected —
  * backward-compatible expand-contract (colour args relaxed to optional, nothing
  * removed). Only the internal logActivityEvent helper (called by other server
- * mutations) stays SERVICE-gated. Queries use org-scoped user reads:
- * requireOrgRead(ctx, orgId).
+ * mutations) stays SERVICE-gated. Queries use org-scoped, agent-reachable reads:
+ * requireOrgReadFor(ctx, orgId, "project").
  */
 
 // ─── Activity logging helper (internal) ───────────────────────────────────────
@@ -73,7 +74,7 @@ export const listThreads = query({
     targetId: v.optional(v.string()),
   },
   handler: async (ctx, { orgId, entityType, entityId, targetType, targetId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     if (targetId) {
       return await ctx.db
         .query("commentThreads")
@@ -372,7 +373,7 @@ export const reopenThread = mutation({
 export const listComments = query({
   args: { orgId: v.string(), threadId: v.string() },
   handler: async (ctx, { orgId, threadId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const thread = await ctx.db.get(threadId as unknown as Id<"commentThreads">);
     if (!thread || thread.orgId !== orgId) return [];
     const rows = await ctx.db
@@ -388,7 +389,7 @@ export const listComments = query({
 export const getReviewMarker = query({
   args: { orgId: v.string(), entityId: v.string(), targetId: v.string() },
   handler: async (ctx, { orgId, entityId, targetId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("reviewMarkers")
       .withIndex("by_orgId_targetId", (q) => q.eq("orgId", orgId).eq("targetId", targetId))
@@ -400,7 +401,7 @@ export const getReviewMarker = query({
 export const listReviewMarkersForEntity = query({
   args: { orgId: v.string(), entityType: v.string(), entityId: v.string() },
   handler: async (ctx, { orgId, entityType, entityId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("reviewMarkers")
       .withIndex("by_orgId_entityId", (q) => q.eq("orgId", orgId).eq("entityId", entityId))
@@ -533,7 +534,7 @@ export const listActivityEvents = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { orgId, entityType, entityId, limit }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const rows = await ctx.db
       .query("activityEvents")
       .withIndex("by_orgId_entityId_createdAt", (q) =>
@@ -553,7 +554,7 @@ export const listThreadCommentCounts = query({
     entityId: v.string(),
   },
   handler: async (ctx, { orgId, entityType, entityId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const threads = await ctx.db
       .query("commentThreads")
       .withIndex("by_orgId_entityId", (q) => q.eq("orgId", orgId).eq("entityId", entityId))
@@ -586,7 +587,7 @@ export const listThreadCommentCounts = query({
 export const getProjectBlockingSummary = query({
   args: { orgId: v.string(), projectId: v.string() },
   handler: async (ctx, { orgId, projectId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const threads = await ctx.db
       .query("commentThreads")
       .withIndex("by_orgId_projectId", (q) => q.eq("orgId", orgId).eq("projectId", projectId))
@@ -618,7 +619,7 @@ export const getProjectBlockingSummary = query({
 export const listBlockingForProjects = query({
   args: { orgId: v.string(), projectIds: v.array(v.string()) },
   handler: async (ctx, { orgId, projectIds }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const wanted = new Set(projectIds);
     const blocking = await ctx.db
       .query("commentThreads")
@@ -645,7 +646,7 @@ export const listBlockingForProjects = query({
 export const listOpenBlockingThreads = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const blocking = await ctx.db
       .query("commentThreads")
       .withIndex("by_orgId_isBlocking_status", (q) =>
@@ -674,3 +675,16 @@ export const listOpenBlockingThreads = query({
     return out;
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  listThreads: { summary: "List comment threads on a project entity or line item/group target.", danger: "low", mcpTier: 2 },
+  listComments: { summary: "List comments in a thread.", danger: "low", mcpTier: 2 },
+  getReviewMarker: { summary: "Get the review marker for one target on an entity.", danger: "low", mcpTier: 3 },
+  listReviewMarkersForEntity: { summary: "List review markers across an entity's targets.", danger: "low", mcpTier: 3 },
+  listActivityEvents: { summary: "List recent collaboration activity events for an entity.", danger: "low", mcpTier: 3 },
+  listThreadCommentCounts: { summary: "Open/total/blocking comment counts per target on an entity.", danger: "low", mcpTier: 3 },
+  getProjectBlockingSummary: { summary: "Summarise open blocking comment threads on one project.", danger: "low", mcpTier: 2 },
+  listBlockingForProjects: { summary: "Open blocking comment counts across many projects.", danger: "low", mcpTier: 3 },
+  listOpenBlockingThreads: { summary: "List all open blocking comment threads in the org.", danger: "low", mcpTier: 2 },
+};

@@ -1,6 +1,17 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+// Every query here returns the raw doc, which includes the PLAINTEXT `token`
+// field (not just `tokenHash`) — the auditor-portal credential. None of these
+// are safe to widen; an agent reading any of them would exfiltrate a live,
+// unauthenticated-portal-granting secret.
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: "Returns the plaintext auditor-portal `token` field, not just metadata — sensitive token material." },
+  getById: { agentAccess: "denied", reason: "Returns the plaintext auditor-portal `token` field, not just metadata — sensitive token material." },
+  getByTokenHash: { agentAccess: "denied", reason: "Returns the plaintext auditor-portal `token` field, not just metadata — sensitive token material." },
+};
 
 /**
  * Thin CRUD for TestTagAuditorToken (Convex table "testTagAuditorTokens"). GENERATED — Phase 2/5.

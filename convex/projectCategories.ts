@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectCategory (Convex table "projectCategories"). GENERATED — Phase 2/5.
@@ -16,7 +17,7 @@ import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     return await ctx.db
       .query("projectCategories")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -28,7 +29,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "project");
     return doc;
   },
 });
@@ -36,7 +37,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("projectCategories")
@@ -258,3 +259,10 @@ export const deleteAllForProject = mutation({
     return await deleteAllForProjectCore(ctx, projectId);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all project categories for an org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get one project category by id.", danger: "low", mcpTier: 2 },
+  listByProject: { summary: "List categories belonging to one project.", danger: "low", mcpTier: 1 },
+};

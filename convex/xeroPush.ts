@@ -1,8 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
 import { writeActivityLog } from "./lib/audit";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import {
   resolveEquipmentAccountCode,
   resolveModelOrKitAccountCode,
@@ -153,7 +154,7 @@ export const resolveCodingForInvoice = query({
     varianceNote: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, { invoiceId, orgId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "invoice"); // Phase 5 domain slice (#1001)
 
     const invoice = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", invoiceId)).first();
     if (!invoice || invoice.organizationId !== orgId) {
@@ -268,3 +269,13 @@ export const logXeroPushActivity = mutation({
     });
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). `resolveCodingForInvoice` widened —
+ * returns only account codes / tax types / a variance note, no credentials.
+ * The three mutations are untouched (out of this triage's scope; still
+ * requireService-only).
+ */
+export const agentOps: AgentOpsAnnotations = {
+  resolveCodingForInvoice: { summary: "Resolve Xero account/tax coding for one invoice's lines (push preview).", danger: "low", mcpTier: 3 },
+};

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for KitCheckItem (Convex table "kitCheckItems"). GENERATED — Phase 2/5.
@@ -15,7 +16,7 @@ import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("kitCheckItems")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -27,7 +28,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("kitCheckItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "kit"); // Phase 5 domain slice (#1001)
     return doc;
   },
 });
@@ -36,7 +37,7 @@ export const getById = query({
 export const listByKitId = query({
   args: { orgId: v.string(), kitId: v.string() },
   handler: async (ctx, { orgId, kitId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const rows = await ctx.db
       .query("kitCheckItems")
       .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
@@ -53,7 +54,7 @@ export const listByKitId = query({
 export const assignmentsForKit = query({
   args: { orgId: v.string(), kitId: v.string() },
   handler: async (ctx, { orgId, kitId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const rows = (await ctx.db.query("kitCheckItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect())
       .filter((r) => r.organizationId === orgId)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
@@ -71,7 +72,7 @@ export const assignmentsForKit = query({
 export const listByCheckItemId = query({
   args: { orgId: v.string(), checkItemId: v.string() },
   handler: async (ctx, { orgId, checkItemId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const rows = await ctx.db
       .query("kitCheckItems")
       .withIndex("by_checkItemId", (q) => q.eq("checkItemId", checkItemId))
@@ -84,7 +85,7 @@ export const listByCheckItemId = query({
 export const getByKitAndCheckItem = query({
   args: { orgId: v.string(), kitId: v.string(), checkItemId: v.string() },
   handler: async (ctx, { orgId, kitId, checkItemId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const rows = await ctx.db
       .query("kitCheckItems")
       .withIndex("by_kitId_checkItemId", (q) => q.eq("kitId", kitId).eq("checkItemId", checkItemId))
@@ -177,3 +178,13 @@ export const reorderMany = mutation({
     }
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all kit check-item assignments visible to the caller's org.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one kit check-item assignment by id.", danger: "low", mcpTier: 3 },
+  listByKitId: { summary: "List check-item assignments for one kit.", danger: "low", mcpTier: 2 },
+  assignmentsForKit: { summary: "Enriched, ordered check-item assignments for one kit (with the nested check-item doc).", danger: "low", mcpTier: 2 },
+  listByCheckItemId: { summary: "List which kits a check item is assigned to.", danger: "low", mcpTier: 3 },
+  getByKitAndCheckItem: { summary: "Get one kit's assignment for a specific check item.", danger: "low", mcpTier: 3 },
+};

@@ -1,14 +1,16 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Phase 7 — native reactive search over the `searchIndex`es added in schema.ts.
  *
  * These replace the "load the whole org table into the browser, then JS-filter"
  * pattern behind the searchable pickers/tables. Each query:
- *   - is org-scoped (`requireOrgRead`, browser-callable with a user token, same
- *     as the `list` queries the pickers already subscribe to),
+ *   - is org-scoped (`requireOrgReadFor(ctx, orgId, <resource>)`, Phase 5 #1001;
+ *     browser-callable with a user token, same as the `list` queries the
+ *     pickers already subscribe to),
  *   - returns a BOUNDED result set (never a whole-table `.collect()`), keeping it
  *     within Convex read limits on large tenants,
  *   - is reactive — a new matching row appears without a refetch.
@@ -36,7 +38,7 @@ function clampLimit(limit: number | undefined): number {
 export const models = query({
   args: { orgId: v.string(), query: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { orgId, query: term, limit }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 5 domain slice (#1001)
     const take = clampLimit(limit);
     const q = term.trim();
     if (!q) {
@@ -82,7 +84,7 @@ export const kits = query({
     includePrep: v.optional(v.boolean()),
   },
   handler: async (ctx, { orgId, query: term, limit, includePrep }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const take = clampLimit(limit);
     const q = term.trim();
     if (!q) {
@@ -130,7 +132,7 @@ export const kits = query({
 export const clients = query({
   args: { orgId: v.string(), query: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { orgId, query: term, limit }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "client"); // Phase 5 domain slice (#1001)
     const take = clampLimit(limit);
     const q = term.trim();
     if (!q) {
@@ -152,7 +154,7 @@ export const clients = query({
 export const suppliers = query({
   args: { orgId: v.string(), query: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { orgId, query: term, limit }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "supplier"); // Phase 5 domain slice (#1001)
     const take = clampLimit(limit);
     const q = term.trim();
     if (!q) {
@@ -170,6 +172,13 @@ export const suppliers = query({
       .take(take);
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  models: { summary: "Bounded name/manufacturer search over the org's models (picker autocomplete).", danger: "low", mcpTier: 2 },
+  kits: { summary: "Bounded name/tag search over the org's kits (picker autocomplete).", danger: "low", mcpTier: 2 },
+  clients: { summary: "Bounded name search over the org's clients (picker autocomplete).", danger: "low", mcpTier: 2 },
+  suppliers: { summary: "Bounded name search over the org's suppliers (picker autocomplete).", danger: "low", mcpTier: 2 },
+};
 
 // NOTE: `projects` and `assets` search queries were removed (2026-07-07). Neither had
 // a single-select picker to consume them: the app never picks a project (projects are

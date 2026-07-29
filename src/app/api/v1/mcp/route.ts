@@ -5,6 +5,7 @@ import { toErrorEnvelope, statusForError } from "@/lib/api/errors";
 import { buildMcpServer } from "@/lib/api/mcp/build-server";
 import { API_VERSION, API_VERSION_HEADER } from "@/lib/api/version";
 import { protectedResourceMetadataUrl } from "@/lib/api/oauth/metadata";
+import { withCors, corsPreflight } from "@/lib/api/cors";
 
 /**
  * `/api/v1/mcp` — streamable HTTP MCP over the SAME dispatcher REST uses
@@ -27,7 +28,7 @@ export const runtime = "nodejs";
 
 function versioned(response: Response): Response {
   response.headers.set(API_VERSION_HEADER, API_VERSION);
-  return response;
+  return withCors(response);
 }
 
 /** RFC 9728 §5.1: a 401 on a protected resource SHOULD carry a `WWW-Authenticate`
@@ -72,3 +73,4 @@ async function handle(request: NextRequest): Promise<Response> {
 export const POST = handle;
 export const GET = handle;
 export const DELETE = handle;
+export const OPTIONS = corsPreflight;

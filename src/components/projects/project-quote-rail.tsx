@@ -11,6 +11,7 @@ import {
   History,
   Lock,
   Pencil,
+  RotateCcw,
   Send,
   Trash2,
   Undo2,
@@ -106,6 +107,7 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   const [reasonTarget, setReasonTarget] = useState<ReasonTarget | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [acceptTarget, setAcceptTarget] = useState<QuoteRevisionDoc | null>(null);
+  const [unacceptTarget, setUnacceptTarget] = useState<QuoteRevisionDoc | null>(null);
   const [viewerTarget, setViewerTarget] = useState<QuoteRevisionDoc | null>(null);
   const [repriceTarget, setRepriceTarget] = useState<QuoteRevisionDoc | null>(null);
   const [deleteDraftTarget, setDeleteDraftTarget] = useState<QuoteRevisionDoc | null>(null);
@@ -169,6 +171,7 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         projectId={projectId}
         now={now}
         onAccept={setAcceptTarget}
+        onUnaccept={setUnacceptTarget}
         onDecline={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
         onRecall={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
         onView={setViewerTarget}
@@ -180,6 +183,8 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
       <UnacceptedLiveQuoteNotice liveQuote={liveQuote} hasAcceptedQuote={hasAcceptedQuote} />
 
       <ReasonDialog target={reasonTarget} onClose={() => setReasonTarget(null)} />
+
+      <UnacceptDialog target={unacceptTarget} onClose={() => setUnacceptTarget(null)} />
 
       <DeleteDraftDialog target={deleteDraftTarget} onClose={() => setDeleteDraftTarget(null)} />
 
@@ -309,6 +314,7 @@ function QuoteRevisionList({
   projectId,
   now,
   onAccept,
+  onUnaccept,
   onDecline,
   onRecall,
   onView,
@@ -325,6 +331,7 @@ function QuoteRevisionList({
   projectId: string;
   now: number;
   onAccept: (quote: QuoteRevisionDoc) => void;
+  onUnaccept: (quote: QuoteRevisionDoc) => void;
   onDecline: (quote: QuoteRevisionDoc) => void;
   onRecall: (quote: QuoteRevisionDoc) => void;
   onView: (quote: QuoteRevisionDoc) => void;
@@ -344,6 +351,7 @@ function QuoteRevisionList({
             quote={quote}
             projectId={projectId}
             onAccept={() => onAccept(quote)}
+            onUnaccept={() => onUnaccept(quote)}
             onDecline={() => onDecline(quote)}
             onRecall={() => onRecall(quote)}
             onView={() => onView(quote)}
@@ -486,23 +494,30 @@ function quoteRowFlags(quote: QuoteRevisionDoc) {
 function StandardQuoteActions({
   flags,
   onAccept,
+  onUnaccept,
   onDecline,
   onRecall,
   onDeleteDraft,
 }: {
   flags: ReturnType<typeof quoteRowFlags>;
   onAccept: () => void;
+  onUnaccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
   onDeleteDraft: () => void;
 }) {
-  const { isSent, isHeldByClient, isProtected, isNeverSentDraft } = flags;
+  const { isSent, isAccepted, isHeldByClient, isProtected, isNeverSentDraft } = flags;
   return (
     <CanDo resource="invoice" action="publish">
       <div className="flex items-center gap-1.5">
         {isSent && (
           <Button type="button" variant="line" size="sm" onClick={onAccept}>
             <CheckCircle2 className="h-3.5 w-3.5" /> Mark accepted
+          </Button>
+        )}
+        {isAccepted && (
+          <Button type="button" variant="line" size="sm" onClick={onUnaccept}>
+            <RotateCcw className="h-3.5 w-3.5" /> Unapprove
           </Button>
         )}
         {isHeldByClient && (
@@ -584,6 +599,7 @@ function QuoteRevisionRow({
   quote,
   projectId,
   onAccept,
+  onUnaccept,
   onDecline,
   onRecall,
   onView,
@@ -595,6 +611,7 @@ function QuoteRevisionRow({
   quote: QuoteRevisionDoc;
   projectId: string;
   onAccept: () => void;
+  onUnaccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
   onView: () => void;
@@ -615,6 +632,7 @@ function QuoteRevisionRow({
         <StandardQuoteActions
           flags={flags}
           onAccept={onAccept}
+          onUnaccept={onUnaccept}
           onDecline={onDecline}
           onRecall={onRecall}
           onDeleteDraft={onDeleteDraft}
@@ -784,6 +802,56 @@ function DeleteDraftDialog({ target, onClose }: { target: QuoteRevisionDoc | nul
           </Button>
           <Button type="button" loading={pending} onClick={() => void confirm()}>
             Delete draft
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Unapprove (#1032) — the reverse of "Mark accepted". A plain confirm, no
+ *  reason field: unlike Recall/Decline, this reverses the SAME action Accept
+ *  just took rather than recording a separate business decision, so there's
+ *  nothing new to justify. Clears the acceptance fields and the `protected`
+ *  flag Accept auto-set, in one step (server-side, `unacceptNative`). Real
+ *  `Dialog`, not a bare click — this is still a high-danger reversal (CLAUDE.md
+ *  §"Danger classification"), so it gets the same "are you sure" beat as
+ *  `DeleteDraftDialog`. */
+function UnacceptDialog({ target, onClose }: { target: QuoteRevisionDoc | null; onClose: () => void }) {
+  const quoteWrites = useQuoteWrites();
+  const [pending, setPending] = useState(false);
+
+  async function confirm() {
+    if (!target) return;
+    setPending(true);
+    try {
+      await quoteWrites.unaccept(target.id);
+      toast.success(`Unapproved v${target.version} — it's back to sent`);
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to unapprove");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!target} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Unapprove v{target?.version}</DialogTitle>
+          <DialogDescription>
+            Reverses the acceptance — this revision goes back to sent, and the project loses its
+            confirm-eligibility on this quote until it&rsquo;s re-accepted. The document already sent to
+            the client is unaffected.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="line" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="button" loading={pending} onClick={() => void confirm()}>
+            Unapprove
           </Button>
         </DialogFooter>
       </DialogContent>

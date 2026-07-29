@@ -7,11 +7,15 @@ import { generateQuoteArtifact } from "@/server/finance-documents";
 import { api } from "../../convex/_generated/api";
 import {
   quoteAcceptSchema,
+  quoteCorrectSchema,
   quoteDeclineSchema,
+  quoteDeleteRecalledSchema,
   quoteRecallSchema,
   quoteSendSchema,
   type QuoteAcceptValues,
+  type QuoteCorrectValues,
   type QuoteDeclineValues,
+  type QuoteDeleteRecalledValues,
   type QuoteRecallValues,
   type QuoteSendValues,
 } from "@/lib/validations/quote";
@@ -38,6 +42,10 @@ export function useQuoteWrites() {
   const acceptM = useMutation(api.quotesWrites.markAcceptedNative);
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
   const repriceFromRevisionM = useMutation(api.quotesWrites.repriceFromRevisionNative);
+  const deleteDraftM = useMutation(api.quotesWrites.deleteDraftNative);
+  const deleteRecalledM = useMutation(api.quotesWrites.deleteRecalledNative);
+  const setProtectedM = useMutation(api.quotesWrites.setQuoteProtectedNative);
+  const correctM = useMutation(api.quotesWrites.correctQuoteNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -170,6 +178,80 @@ export function useQuoteWrites() {
         organizationId: org,
         projectId,
         sourceQuoteId,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Undo a fat-fingered "new version" (#1028) — only reachable for a DRAFT
+     *  that has never been sent; the server rejects anything with send history
+     *  (that's `deleteRecalled` below). Rolls `projects.revision` back. */
+    deleteDraft: async (quoteId: string): Promise<{ id: string; deletedVersion: number; revision: number }> => {
+      const org = requireOrg();
+      return await deleteDraftM({
+        id: quoteId,
+        organizationId: org,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Recall-then-delete (#1029) — the one path that PERMANENTLY erases a
+     *  document a client may already hold, including its stored PDF bytes.
+     *  Owner-only server-side; `confirmLabel` must match the revision's label
+     *  EXACTLY (server-validated, not just client UX). */
+    deleteRecalled: async (
+      quoteId: string,
+      data: QuoteDeleteRecalledValues,
+    ): Promise<{ id: string; deletedVersion: number; revision: number }> => {
+      const org = requireOrg();
+      const parsed = quoteDeleteRecalledSchema.parse(data);
+      return await deleteRecalledM({
+        id: quoteId,
+        organizationId: org,
+        confirmLabel: parsed.confirmLabel,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Protect/unprotect (#1030) — owner-only soft lock independent of quote
+     *  status. While protected, Recall and Correction both refuse. */
+    setProtected: async (
+      quoteId: string,
+      protect: boolean,
+    ): Promise<{ id: string; version: number; protected: boolean }> => {
+      const org = requireOrg();
+      return await setProtectedM({
+        id: quoteId,
+        organizationId: org,
+        protect,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Correction (#1031) — an audited fix to the date PRINTED on a SENT/
+     *  ACCEPTED revision. No version bump, no price change, `sentAt` (the
+     *  system's true send record) is never touched. Owner-only, blocked while
+     *  protected. Clears the attached artifact so the next document render is
+     *  forced fresh — call `generateQuoteArtifact` after this the same way
+     *  `send` does, once the reissue watermark exists to render onto it. */
+    correct: async (
+      quoteId: string,
+      data: QuoteCorrectValues,
+    ): Promise<{ id: string; version: number; quoteDate: number; validUntil: number }> => {
+      const org = requireOrg();
+      const parsed = quoteCorrectSchema.parse(data);
+      return await correctM({
+        id: quoteId,
+        organizationId: org,
+        quoteDate: parsed.quoteDate.getTime(),
+        validityDays: parsed.validityDays,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),

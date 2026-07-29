@@ -226,8 +226,46 @@ revision. Design: `docs/designs/quote-version-management-extensions.md`.
   of the way) and the "REISSUED — corrects vN sent X, edited by Y on Z"
   watermark, which needs a new `LayoutBlock` kind in the PDF pipeline
   (`document-layouts.ts`/`document-composer.ts`, CLAUDE.md's standing 3-consumer
-  audit) plus a client dialog. Convex-side plumbing only, landed first because
-  every other piece of this program was also Convex-only.
+  audit). The client dialog now exists (`correct-quote-dialog.tsx`) and calls
+  `correctQuoteNative` directly; it does not yet re-trigger
+  `generateQuoteArtifact` the way `send` does, since without the watermark a
+  reissued document would look identical to the original — wiring that call
+  in is gated on the watermark landing.
+
+### UI (`src/components/projects/project-quote-rail.tsx`)
+
+The five #1026-follow-up actions are row-level, keyed off each revision's
+`effectiveStatus`/`sentAt`/`protected` — no header-level buttons, so a job with
+several revisions shows the right action per row rather than one ambiguous
+control. `useIsOwner()` (`src/lib/use-permissions.ts`) is the CLIENT-side half
+of `requireQuoteOwnerOnly` — hides rather than disables, so a non-owner never
+sees a button that would only 403 — while the server re-checks unconditionally
+regardless of what the UI shows.
+
+- **Delete draft** — `invoice:publish` audience (`CanDo`, same as every other
+  verb), shown only on a `DRAFT` row with no send history. Plain confirm
+  dialog, no typed input.
+- **Delete permanently** — owner-only, shown only on a `DRAFT` row WITH send
+  history (i.e. sitting there because of a prior Recall) and not `protected`.
+  `DeleteRecalledDialog`'s confirm button stays disabled until the typed input
+  matches the revision's label character-for-character — client-side UX only,
+  `deleteRecalledNative` re-validates the exact match server-side.
+- **Protect / Unprotect** — owner-only, shown on `SENT`/`ACCEPTED` rows. A
+  direct toggle button, no dialog (there's no reason field to collect either
+  direction).
+- **Correct date** — owner-only, shown on `SENT`/`ACCEPTED` rows that aren't
+  protected. `CorrectQuoteDialog` mirrors `AcceptQuoteDialog`'s date-input
+  pattern.
+- **Recall** — gained one more condition: hidden while `protected: true`
+  (existing `CanDo`-gated button, just extended).
+
+`QuoteRevisionRow`'s conditions are split into `StandardQuoteActions` (the
+`invoice:publish` cluster) and `OwnerOnlyQuoteActions` (protect/correct/
+delete-permanently), sharing one `quoteRowFlags()` helper — kept the row's own
+cyclomatic complexity down without duplicating the status-derivation logic
+(R-3.1). jsdom smoke tests: `correct-quote-dialog.smoke.test.tsx`,
+`delete-recalled-dialog.smoke.test.tsx` (CLAUDE.md's standing "new overlay UI
+needs a render-it smoke test" rule).
 
 ### Acceptance gate on CONFIRMED
 

@@ -13,8 +13,10 @@ events and receive a signed HTTP POST when they happen, rather than polling
 `list_projects` on a timer.
 
 The event contract is the part that is **expensive to change later** — consumers build
-against it. So v1 ships four events, versioned, with room to add more without breaking
-anyone.
+against it. So v1 shipped four domain events, versioned, with room to add more without
+breaking anyone. Phase 8 (#1004) added four `api.*` lifecycle events, for the same
+reason: an agent operator watching its OWN key needs to react to it going dark, not
+just poll `whoami`.
 
 ## The events (v1)
 
@@ -24,6 +26,10 @@ anyone.
 | `line_item.added` | Gear is added to a project | `{ projectId, lineItemId, modelId, quantity, type }` |
 | `warehouse.checked_out` | Gear physically leaves the warehouse | `{ projectId, lineItemIds, assetIds, count }` |
 | `maintenance.created` | A maintenance record is opened | `{ maintenanceId, assetId, issue, status }` |
+| `api_key.created` | A new agent-accessible API key is minted | `{ apiKeyId, name, scopes, actingUserId, noFinancials }` |
+| `api_key.revoked` | A key is revoked (or superseded by rotation) | `{ apiKeyId, name }` |
+| `api.rate_limited` | An API/MCP call is rejected for exceeding its per-key rate limit | `{ apiKeyId, operation }` |
+| `api.kill_switch_toggled` | The org-wide API kill switch flips on or off | `{ enabled, apiKillSwitchAt }` |
 
 Naming rule: `<noun>.<past_tense_verb>`. The noun matches the API's read vocabulary
 (`project`, `line_item`, `warehouse`, `maintenance`) so a consumer can correlate an

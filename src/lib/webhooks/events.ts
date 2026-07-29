@@ -15,6 +15,16 @@ export const WEBHOOK_EVENTS = [
   "line_item.added",
   "warehouse.checked_out",
   "maintenance.created",
+  // Phase 8 (#1004) — API-lifecycle events. An operator running an MCP/API
+  // consumer needs to know about the KEY, not just the data it moves: a new
+  // key minted, a key revoked out from under a running client, a client
+  // getting throttled, or the org kill switch flipping. Added because an
+  // agent polling `list_projects` on a timer literally asked for webhooks in
+  // the first place (see the module doc above).
+  "api_key.created",
+  "api_key.revoked",
+  "api.rate_limited",
+  "api.kill_switch_toggled",
 ] as const;
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
@@ -28,6 +38,10 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEvent, string> = {
   "line_item.added": "Gear was added to a project.",
   "warehouse.checked_out": "Gear physically left the warehouse.",
   "maintenance.created": "A maintenance record was opened.",
+  "api_key.created": "A new agent-accessible API key was minted for this org.",
+  "api_key.revoked": "An API key was revoked (or superseded by a rotation) and can no longer authenticate.",
+  "api.rate_limited": "An API/MCP call was rejected for exceeding its per-key rate limit.",
+  "api.kill_switch_toggled": "The org-wide API kill switch was flipped on or off.",
 };
 
 export function isWebhookEvent(value: unknown): value is WebhookEvent {

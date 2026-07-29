@@ -10,6 +10,7 @@ import { logActivity } from "@/lib/activity-log";
 import { generateApiKey, assertScopesWithinActor } from "@/lib/api-key";
 import { getAmbientActor } from "@/lib/request-actor";
 import { readOrgSettings, setApiKillSwitchConvex } from "@/lib/org-settings-read";
+import { emitWebhookEvent } from "@/lib/webhooks/emit";
 
 // ApiKey is a Convex domain now (the Postgres `api_key` table is frozen). The
 // Better-Auth `member` (acting-user membership) + `organization` (kill switch) reads
@@ -137,6 +138,15 @@ export async function createApiKey(input: {
     metadata: { scopes, actingUserId, noFinancials },
   });
 
+  // Best-effort, fires after the key is live — never blocks issuing it.
+  void emitWebhookEvent(organizationId, "api_key.created", {
+    apiKeyId: created.id,
+    name,
+    scopes,
+    actingUserId,
+    noFinancials,
+  });
+
   // `token` is the only time the raw secret is ever exposed.
   return serialize({ token: raw, key: created });
 }
@@ -171,6 +181,10 @@ export async function revokeApiKey(id: string) {
     summary: `Revoked API key "${key.name}"`,
   });
 
+  // Best-effort — an operator's own webhook consumer wants to know its OTHER
+  // keys just lost one sibling, e.g. to reconcile a fleet of agent workers.
+  void emitWebhookEvent(organizationId, "api_key.revoked", { apiKeyId: id, name: key.name });
+
   return serialize({ success: true });
 }
 
@@ -198,6 +212,10 @@ export async function setOrgApiKillSwitch(enabled: boolean) {
       ? "Enabled org-wide API kill switch (all keys disabled)"
       : "Disabled org-wide API kill switch (keys re-enabled)",
   });
+
+  // Best-effort — the one event an operator's monitoring absolutely cannot
+  // miss: every one of their keys just went dark (or came back).
+  void emitWebhookEvent(organizationId, "api.kill_switch_toggled", { enabled, apiKillSwitchAt });
 
   return serialize({ apiKillSwitchAt });
 }

@@ -338,6 +338,27 @@ export default defineSchema({
     .index("by_apiKeyId_ts", ["apiKeyId", "ts"])
     .index("by_organizationId_ts", ["organizationId", "ts"]),
 
+  // MiraKey — Mira (the in-app assistant, Phase 8 #1004) is the first
+  // first-party MCP consumer: it answers a user's question by calling the
+  // SAME curated dispatch()/MCP surface an external agent does, so it needs
+  // its own `apiKeys` row per (org, user) to act as. Unlike a human-managed
+  // key, the raw secret can't be a one-time-reveal-then-forget (Mira must
+  // reuse it on every question), so it's encrypted at rest with the same
+  // vault already trusted for round-tripping third-party secrets
+  // (src/lib/crypto/secret-vault.ts, e.g. Xero OAuth tokens) — never sent to
+  // the browser, decrypted only by src/server/mira.ts. One row per
+  // (organizationId, userId): Mira always acts AS the asking user (never a
+  // fixed "system" identity), so its effective permissions are exactly that
+  // user's own live RBAC, same as every other agent token.
+  miraKeys: defineTable({
+    organizationId: v.string(),
+    userId: v.string(),
+    apiKeyId: v.string(),
+    encryptedToken: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_organizationId_userId", ["organizationId", "userId"]),
+
   // StoredFile — the org-association for a Convex-storage file (the byte store is
   // Convex `_storage`). The /api/files proxy authorises a serve by looking up this
   // record's org (replacing the old S3 org-prefixed-key path auth). organizationId

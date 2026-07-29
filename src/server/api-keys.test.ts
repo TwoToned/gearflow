@@ -25,6 +25,9 @@ const prismaMock = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
+const emitWebhookEvent = vi.hoisted(() => vi.fn(async () => ({ enqueued: 0 })));
+vi.mock("@/lib/webhooks/emit", () => ({ emitWebhookEvent }));
+
 import {
   createApiKey,
   revokeApiKey,
@@ -89,6 +92,17 @@ describe("createApiKey", () => {
     expect(createArg.noFinancials).toBe(false);
     expect(res.key.noFinancials).toBe(false);
   });
+
+  it("fires the api_key.created webhook event with the minted key's id (#1004)", async () => {
+    const res = await createApiKey({ name: "Agent", scopes: ["project:read"] });
+    expect(emitWebhookEvent).toHaveBeenCalledWith("org_1", "api_key.created", {
+      apiKeyId: res.key.id,
+      name: "Agent",
+      scopes: ["project:read"],
+      actingUserId: "user_1",
+      noFinancials: false,
+    });
+  });
 });
 
 describe("revokeApiKey", () => {
@@ -105,6 +119,18 @@ describe("revokeApiKey", () => {
   it("throws when the Convex mutation rejects (key not in this org)", async () => {
     convexMock.mutation.mockRejectedValue(new Error("apiKey not found"));
     await expect(revokeApiKey("nope")).rejects.toThrow(/not found/i);
+  });
+
+  it("fires the api_key.revoked webhook event (#1004)", async () => {
+    convexMock.mutation.mockResolvedValue({ id: "key_1", name: "Agent" });
+    await revokeApiKey("key_1");
+    expect(emitWebhookEvent).toHaveBeenCalledWith("org_1", "api_key.revoked", { apiKeyId: "key_1", name: "Agent" });
+  });
+
+  it("does NOT fire api_key.revoked when the mutation rejects", async () => {
+    convexMock.mutation.mockRejectedValue(new Error("apiKey not found"));
+    await expect(revokeApiKey("nope")).rejects.toThrow();
+    expect(emitWebhookEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -123,6 +149,23 @@ describe("setOrgApiKillSwitch", () => {
       expect.anything(),
       expect.objectContaining({ organizationId: "org_1", enabled: false }),
     );
+  });
+
+  it("fires the api.kill_switch_toggled webhook event on every flip (#1004)", async () => {
+    const now = Date.now();
+    convexMock.mutation.mockResolvedValue({ apiKillSwitchAt: now });
+    await setOrgApiKillSwitch(true);
+    expect(emitWebhookEvent).toHaveBeenLastCalledWith("org_1", "api.kill_switch_toggled", {
+      enabled: true,
+      apiKillSwitchAt: new Date(now),
+    });
+
+    convexMock.mutation.mockResolvedValue({ apiKillSwitchAt: null });
+    await setOrgApiKillSwitch(false);
+    expect(emitWebhookEvent).toHaveBeenLastCalledWith("org_1", "api.kill_switch_toggled", {
+      enabled: false,
+      apiKillSwitchAt: null,
+    });
   });
 });
 

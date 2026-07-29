@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 400 | 286 | 112 | 1 | 1 |
-| Mutations | 731 | 266 | 459 | 0 | 6 |
-| **Total** | **1131** | **552** | **571** | **1** | **7** |
+| Queries | 401 | 286 | 113 | 1 | 1 |
+| Mutations | 732 | 266 | 460 | 0 | 6 |
+| **Total** | **1133** | **552** | **573** | **1** | **7** |
 
 <!-- reachability-floor: 552 -->
 
@@ -73,6 +73,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `financeArtifacts` | 4 |
 | `globalSearch` | 1 |
 | `mediaWrites` | 4 |
+| `miraKeys` | 2 |
 | `notificationDismissals` | 7 |
 | `oauthAuthorizationCodes` | 2 |
 | `oauthClients` | 3 |

@@ -166,12 +166,18 @@ export const EXCLUDED = {
   // hop, redeemed within a single HTTP round trip and expiring in ~120s) —
   // same "restoring a dead short-lived credential has no value" rationale as
   // apiIdempotency, so excluded rather than added to FILTER_TABLES.
+  // miraKeys (Phase 8, #1004) holds an ENCRYPTED bearer secret per (org, user) —
+  // Mira's own internal apiKeys binding. Exporting it would move an encrypted
+  // credential outside the vault's own org/key context; restoring it into a
+  // fresh org would let stale ciphertext authenticate against a key row that no
+  // longer matches it. Re-provisions itself lazily on next use either way.
   ephemeral: [
     "activityEvents",
     "userNotificationPreferences",
     "apiIdempotency",
     "apiRequestLog",
     "oauthAuthorizationCodes",
+    "miraKeys",
   ],
 } as const;
 
@@ -210,7 +216,8 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // Project-locks removal: -2 — collaborationLocks, collaborationPresence dropped from schema.
 // #1003: +2 — oauthClients (EXCLUDED/platform, global DCR registry), oauthAuthorizationCodes
 // (EXCLUDED/ephemeral, the one-shot authorization_code hop).
-export const EXPECTED_TABLE_COUNT = 111;
+// #1004: +1 — miraKeys (EXCLUDED/ephemeral, Mira's own encrypted-at-rest apiKeys binding).
+export const EXPECTED_TABLE_COUNT = 112;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

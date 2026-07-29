@@ -2,8 +2,8 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-29 (review quarterly — POLICY.md R-5.5)_
 
-> **STATUS 2026-07-29 — reinstatement underway. Phases 0-7 have landed (#996,
-> #997, #998, #999, #1000, #1001, #1002, #1003): there is now a real,
+> **STATUS 2026-07-29 — reinstatement complete. Phases 0-8 have landed (#996,
+> #997, #998, #999, #1000, #1001, #1002, #1003, #1004): there is now a real,
 > curl-verifiable HTTP API — `POST /api/v1/ops/{operation}` (the universal
 > dispatcher), `GET /api/v1/operations{,/[operation]}`, `GET
 > /api/v1/whoami`, `GET /api/v1/openapi.json`, `GET /llms.txt`, a handful
@@ -48,8 +48,32 @@
 > lifecycle locks, kill switch, `no_financials`, the request log,
 > `revertAgentWindow`) applies unchanged. This is the phase that unlocks
 > claude.ai + desktop connectors for non-technical staff — no admin
-> involvement, no pasted bearer header. Next up: Phase 8 (#1004), polish +
-> external readiness.**
+> involvement, no pasted bearer header.
+> **Phase 8 (#1004) has also landed** — polish + external readiness, not new
+> architecture: (1) four `api.*` webhook lifecycle events —
+> `api_key.created`, `api_key.revoked`, `api.rate_limited`,
+> `api.kill_switch_toggled` (`src/lib/webhooks/events.ts`, wired from
+> `src/server/api-keys.ts` + `src/lib/api/dispatcher.ts`); (2) stability
+> tiers HARDENED, not just declared — every `RegistryOperation` now carries
+> `stability: "stable" | "tracks-app"` (`scripts/generate-api-registry.mts`,
+> derived from the SAME curated-tool-defs table the MCP manifest already
+> used), surfaced in the OpenAPI description, and a new CI gate
+> (`checkStableContractRegression`, backed by the committed, ratcheting
+> `src/lib/api/stable-contract.generated.ts`) fails the build if a stable
+> operation loses a field, disappears, or gets silently demoted — proved by
+> a deliberate-violation test the same way every other registry gate is
+> (`src/lib/api/registry.test.ts` gate 6); every success envelope also now
+> carries an in-band `warnings: string[]` (empty today — the channel exists
+> before anything needs it); (3) an interim API docs page at `/docs/api`
+> (public, `#959`'s Docusaurus site doesn't exist yet — move this content
+> there wholesale once it does) with SDK snippets (curl/TypeScript/Python)
+> DERIVED from the registry at render time (`src/lib/api/sdk-snippets.ts`),
+> never hand-written; (4) **Mira wired as the first first-party MCP
+> consumer** — see [FEATUREDOCS/68](./68-mira-assistant.md) for the full
+> design (per-user key provisioning, the deterministic question router, page
+> context). Third-party developer access (OAuth apps for other orgs, a
+> marketplace) remains explicitly out of scope (decision 5) until its own
+> program.**
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:

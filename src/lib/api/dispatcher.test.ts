@@ -41,6 +41,11 @@ vi.mock("../convex-client", () => ({
   getConvexClient: async () => idempotencyClient,
 }));
 
+const emitWebhookEvent = vi.fn(async () => ({ enqueued: 0 }));
+vi.mock("../webhooks/emit", () => ({
+  emitWebhookEvent: (...args: unknown[]) => emitWebhookEvent(...(args as [])),
+}));
+
 const { dispatch } = await import("./dispatcher");
 const { getFunctionName } = await import("convex/server");
 
@@ -111,6 +116,22 @@ describe("dispatch — reads", () => {
     const result = await dispatch("assets.list", { args: { orgId: "org_A" } }, auth(), "req_4");
     expect(result.status).toBe(429);
     expect(mockClient.query).not.toHaveBeenCalled();
+  });
+
+  test("a rate-limit rejection fires the api.rate_limited webhook event (#1004)", async () => {
+    const { ConvexError } = await import("convex/values");
+    spendAgentReadLimit.mockRejectedValueOnce(new ConvexError({ kind: "RateLimited", retryAfter: 5000 }));
+    await dispatch("assets.list", { args: { orgId: "org_A" } }, auth(), "req_4b");
+    expect(emitWebhookEvent).toHaveBeenCalledWith("org_A", "api.rate_limited", {
+      apiKeyId: "key_1",
+      operation: "assets.list",
+    });
+  });
+
+  test("an ordinary error does NOT fire api.rate_limited", async () => {
+    mockClient.query.mockRejectedValueOnce(new Error("boom"));
+    await dispatch("assets.list", { args: { orgId: "org_A" } }, auth(), "req_4c");
+    expect(emitWebhookEvent).not.toHaveBeenCalled();
   });
 });
 

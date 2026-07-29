@@ -148,7 +148,11 @@ export const EXCLUDED = {
   // Platform/global, not per-org restore state.
   // systemFlags is a platform-global singleton (the browser-write kill-switch) —
   // operational state, not per-org domain data.
-  platform: ["siteSettings", "sentEmails", "organizations", "systemFlags"],
+  // oauthClients (Phase 7, #1003) is a global registry of dynamically-
+  // registered MCP OAuth clients (RFC 7591) — no `organizationId` column at
+  // all, same posture as Better Auth's own client/session tables: platform
+  // infrastructure a single org export cannot meaningfully restore or scope.
+  platform: ["siteSettings", "sentEmails", "organizations", "systemFlags", "oauthClients"],
   // Ephemeral / live-only presence + preferences — no restore value.
   // apiIdempotency is the API/MCP replay ledger: short-lived dedup rows whose
   // `result` blobs are cached copies of data the real tables already hold.
@@ -157,6 +161,11 @@ export const EXCLUDED = {
   // apiRequestLog is the API/MCP per-key request log (#998): observability rows
   // (ts/operation/status/latency + redacted args) with a 30-day retention cron,
   // not domain data — same exclusion rationale as apiIdempotency.
+  // oauthAuthorizationCodes (Phase 7, #1003) has an `organizationId` column
+  // but no `by_organizationId` index (it's the one-shot authorization_code
+  // hop, redeemed within a single HTTP round trip and expiring in ~120s) —
+  // same "restoring a dead short-lived credential has no value" rationale as
+  // apiIdempotency, so excluded rather than added to FILTER_TABLES.
   // miraKeys (Phase 8, #1004) holds an ENCRYPTED bearer secret per (org, user) —
   // Mira's own internal apiKeys binding. Exporting it would move an encrypted
   // credential outside the vault's own org/key context; restoring it into a
@@ -167,6 +176,7 @@ export const EXCLUDED = {
     "userNotificationPreferences",
     "apiIdempotency",
     "apiRequestLog",
+    "oauthAuthorizationCodes",
     "miraKeys",
   ],
 } as const;
@@ -204,8 +214,10 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #997: +1 — apiIdempotency (EXCLUDED/ephemeral, the API replay ledger).
 // #998: +1 — apiRequestLog (EXCLUDED/ephemeral, the API request log).
 // Project-locks removal: -2 — collaborationLocks, collaborationPresence dropped from schema.
+// #1003: +2 — oauthClients (EXCLUDED/platform, global DCR registry), oauthAuthorizationCodes
+// (EXCLUDED/ephemeral, the one-shot authorization_code hop).
 // #1004: +1 — miraKeys (EXCLUDED/ephemeral, Mira's own encrypted-at-rest apiKeys binding).
-export const EXPECTED_TABLE_COUNT = 110;
+export const EXPECTED_TABLE_COUNT = 112;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

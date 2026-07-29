@@ -723,10 +723,67 @@ Agent" producing a copy-paste MCP config, "Test connection" echoing the org name
 per-key request log, rotation with a grace window, kill switch, the `no_financials` toggle.
 Target time-to-hello-world < 5 min.
 
-**Phase 7 — MCP OAuth 2.1 (decision 9).** Authorization-server metadata, dynamic client
-registration, consent screen, token exchange → an agent token. Purely an auth adapter in
-front of the Phase 3 dispatcher, so no rework. Unlocks claude.ai + desktop connectors for
-non-technical staff.
+**Phase 7 — MCP OAuth 2.1 (decision 9). LANDED 2026-07-29 (#1003).** Authorization-server
+metadata, dynamic client registration, consent screen, token exchange → an agent token.
+Purely an auth adapter in front of the Phase 3 dispatcher, so no rework. Unlocks claude.ai +
+desktop connectors for non-technical staff.
+
+### Phase 7 findings (2026-07-29) — what building the OAuth adapter actually showed
+
+Required by #1003's acceptance criteria. Recorded here rather than quietly absorbed, same
+convention as the earlier phases' findings.
+
+**1. An OAuth-issued access token is literally an `apiKeys` row — no second credential
+table.** The token-exchange endpoint mints a fresh `apiKeys` row per authorization
+(`origin: "oauth"`, `oauthClientId` set) using the SAME raw-secret/SHA-256-hash shape
+`generateApiKey()` already used; the resulting bearer string flows through
+`getApiKeyActorContext` → `mintAgentToken` completely unchanged. This is what makes
+"OAuth is a pure adapter" literally true rather than aspirational: `requireAgentScope`,
+the kill switch, `no_financials`, the request log, and `revertAgentWindow` all apply to
+an OAuth grant with zero new code, because Convex cannot tell the two origins apart.
+
+**2. Refresh needed exactly one new field pair, not a second grant model.** `apiKeys`
+gained `refreshTokenHash`/`refreshTokenExpiresAt` (OAuth-origin rows only) and one new
+mutation, `rotateOAuthTokens` — a close cousin of the existing manual-key `rotate`, except
+single-use with NO grace window (OAuth 2.1's refresh-token-rotation guidance: a replayed
+refresh token must fail, not keep working for an hour). Convex's own transactional
+isolation is what makes single-use safe under a concurrent replay — the loser of the race
+re-reads the already-rotated hash and rejects, no extra locking required (proved in
+`convex/apiKeysOAuth.test.ts`).
+
+**3. The authorization code itself follows the identical single-use pattern as the
+idempotency ledger** — insert a hashed code, `redeem` patches `usedAt` inside one
+transaction, a concurrent second redemption of the same code loses the race the same way
+(`convex/oauthAuthorizationCodes.test.ts`). No new concurrency primitive was needed either.
+
+**4. Scope narrowing at consent time reuses `permissionsCore` directly, not a derived
+snapshot.** `narrowScopesToRole` (`src/lib/api/oauth/rbac-scopes.ts`) walks
+`RESOURCES`/`rolePermissions` — the same table `hasPermission`/`requireOrgPermission`
+read — to expand a requested `*`/`resource:*` scope down to the concrete `resource:action`
+set the consenting user's role actually holds. There is no parallel "what can a role
+grant" vocabulary to drift from the real RBAC table.
+
+**5. The consent screen's hardest real bug wasn't in the OAuth code at all — it was that
+`callbackUrl` was being SET by `src/middleware.ts` on every login redirect but never READ
+by the login page.** Every previous flow that hit this path (an expired session on any
+deep link) silently landed on `/dashboard` instead of back where it came from; it just
+never mattered enough to notice before an OAuth authorization request — which carries
+`client_id`/`code_challenge`/`state` in its query string — needed to survive a login round
+trip intact. Fixed at the root (middleware now preserves the full path+query, the login
+page now reads and honors `callbackUrl` for both the password and SSO paths, with an
+open-redirect guard restricting it to a same-origin relative path) rather than special-
+cased for `/oauth/authorize` alone, since the bug wasn't OAuth-specific.
+
+**6. `/oauth/authorize` needed no bespoke session-gating logic.** It's a plain Next.js page
+route outside the `/api/v1/*`/`.well-known` bearer-exempt list, so `src/middleware.ts`'s
+existing cookie check already redirects an unauthenticated visitor to login first — "gated
+on an existing Better Auth session" fell out of routing, not a new auth check.
+
+**7. RFC 7009 revocation (`/api/v1/oauth/revoke`) was added beyond the acceptance
+criteria's explicit list, cheaply, because it was almost free.** Revoking an OAuth grant by
+raw token (rather than requiring the settings-UI's key id) reuses the existing
+`apiKeys.revoke` mutation once the presented token is hashed and matched to its owning
+client — no new revocation state, just a lookup.
 
 **Phase 8 — polish + external readiness.** Webhook `api.*` events; SDK snippets; docs-site
 page; Mira wired as a first-party consumer (`MiraContextProvider` already exists); the

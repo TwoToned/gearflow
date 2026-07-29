@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 398 | 286 | 110 | 1 | 1 |
-| Mutations | 731 | 267 | 455 | 0 | 9 |
-| **Total** | **1129** | **553** | **565** | **1** | **10** |
+| Queries | 401 | 286 | 113 | 1 | 1 |
+| Mutations | 732 | 266 | 460 | 0 | 6 |
+| **Total** | **1133** | **552** | **573** | **1** | **7** |
 
-<!-- reachability-floor: 553 -->
+<!-- reachability-floor: 552 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,7 +42,7 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 88 |
+| `high` | 87 |
 | `medium` | 141 |
 | `low` | 38 |
 
@@ -56,7 +56,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 |---|---|
 | `activityLogWrites` | 2 |
 | `apiIdempotency` | 4 |
-| `apiKeys` | 7 |
+| `apiKeys` | 10 |
 | `apiRequestLog` | 3 |
 | `availabilityCheck` | 1 |
 | `backfillClientContacts` | 1 |
@@ -75,6 +75,8 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `mediaWrites` | 4 |
 | `miraKeys` | 2 |
 | `notificationDismissals` | 7 |
+| `oauthAuthorizationCodes` | 2 |
+| `oauthClients` | 3 |
 | `orgExport` | 6 |
 | `orgSettings` | 8 |
 | `parity` | 1 |
@@ -102,8 +104,11 @@ fails the build otherwise.
 
 | Operation | Reason |
 |---|---|
+| `apiKeys.getByRefreshTokenHash` | The API key management surface itself must not be self-servable by an API key (privilege escalation risk). |
 | `apiKeys.getByTokenHash` | The API key management surface itself must not be self-servable by an API key (privilege escalation risk). |
 | `apiKeys.list` | The API key management surface itself must not be self-servable by an API key (privilege escalation risk). |
+| `apiKeys.mintOAuthGrant` | The API key management surface itself must not be self-servable by an API key (privilege escalation risk). |
+| `apiKeys.rotateOAuthTokens` | The API key management surface itself must not be self-servable by an API key (privilege escalation risk). |
 | `assetScanLogs.listByScannedById` | Cross-org GDPR-cascade lookup by scannedById with no org filter at all (not org-scoped even in JS) — an internal user-delete helper, not a real read surface. |
 | `categorySlots.getById` | No organizationId column and no orgId arg; a single slot has no org to check against without an extra parent lookup — revisit under a projects-domain slice. |
 | `categorySlots.list` | No organizationId column and no orgId arg; org-scoping needs a parent projectCategory lookup not done here — revisit under a projects-domain slice. |
@@ -126,6 +131,11 @@ fails the build otherwise.
 | `modelBulkAccessories.getById` | No orgId/organizationId arg; fetched by a global by_cuid index with no org check to swap in without a parent-derivation step — revisit. |
 | `modelMedia.getById` | No orgId arg; fetched by a global by_cuid index with no org check to swap in without a parent-derivation step — revisit. |
 | `modelMedia.listByParent` | No orgId arg; modelId is a global foreign key with no org check to swap in without fetching the parent model first — revisit. |
+| `oauthAuthorizationCodes.create` | OAuth authorization-code exchange is trusted-backend infrastructure, not agent-reachable. |
+| `oauthAuthorizationCodes.redeem` | OAuth authorization-code exchange is trusted-backend infrastructure, not agent-reachable. |
+| `oauthClients.getById` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
+| `oauthClients.listByIds` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
+| `oauthClients.register` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
 | `orgExport.childRowsByParentIds` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |
 | `orgExport.countTable` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |
 | `orgExport.exportTablePage` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |

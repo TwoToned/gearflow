@@ -221,12 +221,66 @@ export default defineSchema({
     // so a consumer can roll over without a hard cutover.
     previousTokenHash: v.optional(v.string()),
     previousTokenHashExpiresAt: v.optional(v.number()),
+    // Phase 7 (#1003) additions ↓ — OAuth 2.1 is a pure auth ADAPTER in front of
+    // this same table (docs/designs/api-mcp-reimplementation.md §14 Phase 7): an
+    // OAuth-issued access token is just another `apiKeys` row's raw secret, so it
+    // flows through getApiKeyActorContext/mintAgentToken completely unchanged.
+    // `origin` absent = "manual" (every pre-Phase-7 row; no backfill needed).
+    origin: v.optional(v.union(v.literal("manual"), v.literal("oauth"))),
+    // The `oauthClients` row this grant was issued to (origin:"oauth" only) —
+    // lets the settings UI show which connected app a grant belongs to.
+    oauthClientId: v.optional(v.string()),
+    // The OAuth refresh token's hash (origin:"oauth" only). Rotated on every
+    // successful refresh (single-use, same posture as previousTokenHash's grace
+    // window but WITHOUT a grace — a used refresh token is dead immediately,
+    // per OAuth 2.1's refresh-token-rotation guidance).
+    refreshTokenHash: v.optional(v.string()),
+    refreshTokenExpiresAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_tokenHash", ["tokenHash"])
     .index("by_previousTokenHash", ["previousTokenHash"])
-    .index("by_actingUserId", ["actingUserId"]),
+    .index("by_actingUserId", ["actingUserId"])
+    .index("by_refreshTokenHash", ["refreshTokenHash"]),
+
+  // OAuthClient — a dynamically-registered MCP client (RFC 7591). Same-org-staff
+  // only (design §17): there is no per-org scoping on the client row itself
+  // because this is a single-org app (organizationLimit: 1) — the grant an
+  // authorization produces (an `apiKeys` row) is what carries `organizationId`.
+  oauthClients: defineTable({
+    id: v.string(), // the public client_id
+    clientName: v.optional(v.string()),
+    // Absent = a public client (PKCE-only, token_endpoint_auth_method "none") —
+    // the expected shape for claude.ai/desktop connectors. Present = confidential
+    // client; PKCE is STILL required either way (OAuth 2.1, no exceptions).
+    clientSecretHash: v.optional(v.string()),
+    tokenEndpointAuthMethod: v.union(v.literal("none"), v.literal("client_secret_basic")),
+    redirectUris: v.array(v.string()),
+    softwareId: v.optional(v.string()),
+    softwareVersion: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_cuid", ["id"]),
+
+  // OAuthAuthorizationCode — a short-lived, single-use authorization_code grant
+  // (design §14 Phase 7). `codeHash` is the credential (like apiKeys.tokenHash);
+  // `usedAt` presence makes redemption single-use even under concurrent replay
+  // (the redeeming mutation is one Convex transaction — a second concurrent
+  // attempt re-reads post-commit and sees `usedAt` already set).
+  oauthAuthorizationCodes: defineTable({
+    codeHash: v.string(),
+    clientId: v.string(),
+    redirectUri: v.string(),
+    codeChallenge: v.string(),
+    codeChallengeMethod: v.literal("S256"), // OAuth 2.1: "plain" is never accepted
+    scopes: v.string(), // JSON string[] — already narrowed to the consenting user's live RBAC
+    userId: v.string(), // the consenting user — becomes the grant's actingUserId
+    organizationId: v.string(),
+    resource: v.optional(v.string()), // RFC 8707 resource indicator, if the client sent one
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_codeHash", ["codeHash"]),
 
   // ApiIdempotency — the API/MCP write-replay ledger
   // (docs/designs/api-mcp-reimplementation.md §9). Three-step per write:

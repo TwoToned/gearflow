@@ -18583,6 +18583,78 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain."
   },
   {
+    "operation": "financeOrg.bundle",
+    "module": "financeOrg",
+    "fn": "bundle",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "summary": "The org's chaseable finance rows: quotes out, expiring, never sent, confirmed-uninvoiced, deposit due, outstanding.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "financeOrg.counts",
+    "module": "financeOrg",
+    "fn": "counts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "summary": "Cheap counts for the six financeOrg.bundle sections, for a dashboard chip.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "globalSearch.search",
     "module": "globalSearch",
     "fn": "search",
@@ -57338,10 +57410,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1121,
-  agentReachable: 550,
-  queries: 395,
+  total: 1123,
+  agentReachable: 552,
+  queries: 397,
   mutations: 726,
-  agentReachableQueries: 284,
+  agentReachableQueries: 286,
   agentReachableMutations: 266,
 } as const;

@@ -42,7 +42,7 @@ import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useActiveOrganization } from "@/lib/auth-client";
 
@@ -138,8 +138,16 @@ export default function ProjectDetailPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+
+  // #992 (Phase F) — org Finance section rows deep-link here via `?tab=finance`.
+  // Uncontrolled `Tabs` (no onValueChange wiring needed elsewhere), so this only
+  // needs to seed the initial tab on mount.
+  const VALID_TABS = ["equipment", "labour", "finance", "tasks", "notes", "files"] as const;
+  const requestedTab = searchParams.get("tab");
+  const initialTab = (VALID_TABS as readonly string[]).includes(requestedTab ?? "") ? requestedTab! : "equipment";
 
   const [dupMode, setDupMode] = useState<"duplicate" | "template" | null>(null);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
@@ -504,7 +512,7 @@ export default function ProjectDetailPage({
           <DetailLayout>
             {/* Main content */}
             <DetailMain>
-              <Tabs defaultValue="equipment">
+              <Tabs defaultValue={initialTab}>
                 {/* Tab selector + the active tab's primary action share one row.
                     The Equipment tab portals its "Add ▾" menu into the right-hand
                     slot (mirrors how the services panel places its action inline

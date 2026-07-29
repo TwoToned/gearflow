@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const publicRoutes = ["/login", "/register", "/api/auth", "/api/platform-name", "/api/registration-policy", "/invite", "/two-factor", "/onboarding", "/pending-approval", "/api/integrations/woocommerce/webhook", "/api/integrations/xero/callback"];
+// "/docs/api" (Phase 8, #1004): the agent API reference, public for the same
+// reason /api/v1/openapi.json and /llms.txt already are — a prospective
+// integrator reads it before they have an account or a key.
+const publicRoutes = ["/login", "/register", "/api/auth", "/api/platform-name", "/api/registration-policy", "/invite", "/two-factor", "/onboarding", "/pending-approval", "/api/integrations/woocommerce/webhook", "/api/integrations/xero/callback", "/docs/api"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

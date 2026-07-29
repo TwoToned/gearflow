@@ -36,7 +36,7 @@ import {
   isBreakdownStale,
   type PriceBreakdown,
 } from "./lib/billingDerivation";
-import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS } from "./lib/projectLocks";
+import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS, pricedUnderLockOnInsert } from "./lib/projectLocks";
 import {
   adjustModelSaleStock,
   sellSerializedAssetForSale,
@@ -545,6 +545,9 @@ const LINE_IMMUTABLE_ON_PATCH = [
   "allocatedRevenue", "allocationBasis",
   "subHireId", "subHireItemId", "subHireGroupId", "supplierOrderId",
   "createdAt",
+  // Server-derived (see schema comment) — only assertLifecycleGuard's defaultToZero
+  // path and the explicit-money-edit clear below may ever set this.
+  "pricedUnderLock",
 ] as const;
 
 const LINE_NEVER_CLEAR = new Set<string>(["id", "organizationId", ...LINE_IMMUTABLE_ON_PATCH]);
@@ -718,6 +721,13 @@ export const patchNative = mutation({
       newModelId: (effModelId as string | undefined) ?? null,
       currentQty, newQty,
     });
+
+    // A deliberate `unitPrice` edit reaching here means the FINANCIAL guard already
+    // passed (open tier or open unlock session) — clear any stale "priced under lock"
+    // flag so the Unpriced badge stops pointing at a cause that's no longer true.
+    // Scoped to `unitPrice` itself (not the whole `touchesMoney` set) so a
+    // duration-only change on an otherwise-still-$0 line doesn't silently clear it.
+    if ("unitPrice" in setObj || clear.includes("unitPrice")) setObj.pricedUnderLock = false;
 
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setObj);
@@ -1257,6 +1267,7 @@ export const addCustomNative = mutation({
       isCustomItem: true,
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
+      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
       sortOrder,
       createdAt: now,
       updatedAt: now,
@@ -1500,6 +1511,7 @@ export const addNative = mutation({
       projectId,
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
+      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
       accessoryPlan,
       status: "CONFIRMED",
       sortOrder,
@@ -1756,6 +1768,7 @@ export const addKitNative = mutation({
     await createKitLineItemCore(ctx, {
       id, organizationId, projectId, kitId, unitPrice: effectiveUnitPrice, discount: effectiveDiscount,
       discountMode: effectiveDiscountMode, pricingMode, groupName, categoryId, groupId, now,
+      pricedUnderLock: guard.defaultToZero,
     });
 
     // Parity with the deleted addKitLineItem: when the client can't resolve the kit
@@ -2124,6 +2137,10 @@ export const addLineItemSmartNative = mutation({
           lineTotal: newLineTotal ?? undefined,
           groupName: fields.groupName || existing.groupName || undefined,
           notes: mergedNotes || undefined,
+          // A real client-supplied price wins the merge -> that's a deliberate
+          // price, clear any stale lock-artifact flag. Otherwise (qty-only merge,
+          // or the merge itself ran under lock) leave the existing row's flag as-is.
+          pricedUnderLock: mergeUnitPriceInput != null ? false : existing.pricedUnderLock,
           updatedAt: now,
         } as Record<string, unknown>);
         await ctx.db.patch(existing._id, mergeSet);
@@ -2246,6 +2263,7 @@ export const addLineItemSmartNative = mutation({
       discount: insertDiscount ?? undefined,
       discountMode: insertDiscountMode,
       lineTotal: lineTotal ?? undefined,
+      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
       priceBreakdown: autoPriceBreakdown,
       groupName: fields.groupName || undefined,
       notes: fields.notes || undefined,

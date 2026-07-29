@@ -24,6 +24,12 @@ export interface LineItemData {
   type?: string;
   priceBreakdown?: string | null;
   priceOverridden?: boolean;
+  /** True when `unitPrice`/`discount` were forced to $0/unset by the server's
+   *  `defaultToZero` (added or reset while the project was locked, no unlock session
+   *  open) — the actual cause `<UnpricedBadge>` reads, instead of inferring it from
+   *  "currently locked + currently $0" (which false-positives on a row that's been
+   *  $0 since before any lock ever existed). */
+  pricedUnderLock?: boolean;
   // `isSubhire` removed (Wave 2). Use `subHireId != null` to detect sub-hire items.
   isCustomItem?: boolean;
   isKitChild?: boolean;
@@ -76,6 +82,8 @@ export interface GroupData {
   discountMode?: string | null;
   suggestedPrice: unknown;
   sortOrder: number;
+  /** Mirrors `LineItemData.pricedUnderLock` — see that field's comment. */
+  pricedUnderLock?: boolean;
   lineItems?: LineItemData[];
   /** Per-group Xero coding override (WS1 #940 cascade) — a priced group
    *  bills as its own invoice line (financeSnapshot.ts). See

@@ -13,6 +13,7 @@ import { nextOrdinal } from "./lib/lineItemUnits";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { getProjectWindow } from "./lib/projectWindow";
+import { pricedUnderLockOnInsert } from "./lib/projectLocks";
 
 /**
  * Thin CRUD for ProjectLineItem (Convex table "projectLineItems"). GENERATED — Phase 2/5.
@@ -635,6 +636,12 @@ export async function createKitLineItemCore(
     groupName?: string;
     categoryId?: string;
     groupId?: string;
+    /** True when the caller's `unitPrice`/`discount` above were already forced to
+     *  $0/unset by `guard.defaultToZero` — recorded on the parent line so the
+     *  Unpriced badge points at the real cause (see schema comment on
+     *  `pricedUnderLock`). Omitted (the service-only `createKitLineItem` path,
+     *  which has no lock guard of its own) leaves the row unflagged. */
+    pricedUnderLock?: boolean;
     now: number;
   },
 ): Promise<{ id: string }> {
@@ -655,6 +662,7 @@ export async function createKitLineItemCore(
       discountMode: a.unitPrice != null && a.discount != null ? a.discountMode : undefined,
       lineTotal: kitLineTotal, sortOrder: sort++, pricingMode: a.pricingMode,
       groupName: a.groupName, categoryId: a.categoryId, groupId: a.groupId, status: "CONFIRMED",
+      pricedUnderLock: pricedUnderLockOnInsert(a.pricedUnderLock),
       createdAt: a.now, updatedAt: a.now,
     });
 

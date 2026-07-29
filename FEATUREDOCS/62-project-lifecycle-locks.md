@@ -231,7 +231,9 @@ crossing back into CONFIRMED/COMPLETED always snapshots).
   advanced underneath a stale client). One shared hook + dialog so every
   gated surface prompts identically — not a per-form one-off.
 - **`src/components/projects/unpriced-badge.tsx`** — the amber "Unpriced"
-  badge for a $0-defaulted add. Mounted on Equipment tab rows (#990).
+  badge for a $0-defaulted add. Mounted on Equipment tab rows (#990). Reads
+  `group.pricedUnderLock` / `item.pricedUnderLock` — a stored field, not an
+  inference from "currently locked" (see below).
 - **`src/lib/lock-copy.ts`**, **`project-lock-chip.tsx`**,
   **`project-lock-strip.tsx`**, **`project-lock-glyph.tsx`**,
   **`src/components/ui/locked-field.tsx`**, **`gated-button.tsx`** — the six
@@ -319,9 +321,44 @@ a status change mid-session, and doesn't currently trigger through this
 integration.
 
 **`UnpricedBadge`** is now mounted on the Equipment tab's `GroupRow`/
-`LineItemRow` (`equipment-rows.tsx`) — a `$0`/unset price under a locked tier
-(kit children excluded, not independently priced). Not yet mounted on
-Services/Crew rows.
+`LineItemRow` (`equipment-rows.tsx`) — kit children excluded, not
+independently priced. Not yet mounted on Services/Crew rows.
+
+**`pricedUnderLock` (bug fix, follow-up to #990).** The badge originally
+rendered on `moneyLocked && price === 0` — i.e. it INFERRED "this was
+`defaultToZero`'d" from "the project happens to be locked right now AND this
+row happens to be $0", with no memory of when or why the row became $0. That
+false-positives hard: a row that's been $0 since long before any lock ever
+existed (no catalog `dailyRate`/`weeklyRate` configured, a sub-hire kit
+pending supplier confirmation, or any other legitimately-unpriced reason)
+starts showing "Added after the quote was confirmed — price it deliberately"
+the moment the project LATER becomes locked, which is simply false for that
+row.
+
+Fixed by storing the actual cause instead of inferring it:
+`projectLineItems.pricedUnderLock` / `projectGroups.pricedUnderLock`
+(`convex/schema.ts`, both `v.optional(v.boolean())`) are set `true` at the
+exact moment `assertLifecycleGuard`'s `defaultToZero` forces a row's price to
+$0/unset — every insert path (`addNative`, `addCustomNative`,
+`addLineItemSmartNative`, `addKitNative` → `createKitLineItemCore`,
+`projectGroupsWrites.createNative`) via the shared
+`pricedUnderLockOnInsert(defaultToZero)` helper
+(`convex/lib/projectLocks.ts`), and the FINANCIAL-scope
+`restoreProjectSnapshot`'s "added during the session, not in the snapshot →
+reset to $0" branch (`convex/lib/projectSnapshots.ts`) — the same
+not-deliberately-priced state by construction. It's cleared back to `false`
+the moment a human deliberately sets a real price: `patchNative`'s `unitPrice`
+edit, `updateGroupPriceNative` (always — reaching it means the FINANCIAL
+guard already passed), a line-item merge that keeps a real client-supplied
+price, and a FINANCIAL-scope snapshot restore that lands a real historical
+price from the snapshot. `pricedUnderLock` is listed in
+`LINE_IMMUTABLE_ON_PATCH` — server-derived only, never client-settable.
+
+The badge condition is now simply `item.pricedUnderLock` / `group.pricedUnderLock`
+— no `moneyLocked` check needed (a `defaultToZero`'d row stays flagged for
+review even after the project is later unlocked, until someone actually prices
+it). This also let `moneyLocked` be dropped entirely from `GroupRow`'s and
+`LineItemRow`'s props — it had no other reader.
 
 **Unlock session diff (§7.2).** `projectLocksRead.status`'s `openSession` now
 carries `snapshotId`; `unlock-session-banner.tsx`'s Save & relock and Discard

@@ -196,6 +196,16 @@ export function shouldDefaultToZero(tier: LockTier, openSession: Doc<"projectUnl
   return tier !== "OPEN" && openSession == null;
 }
 
+/** The `pricedUnderLock` field value for a fresh group/line-item insert —
+ *  `true` when `defaultToZero` forced this row's price to $0/unset, `undefined`
+ *  (absent, Convex's "false") otherwise. ONE helper so every insert site
+ *  derives the same value instead of re-deriving `defaultToZero || undefined`
+ *  inline at each call site (R-3.1) — also keeps that branch out of each
+ *  insert mutation's own cyclomatic-complexity count (R-3.6 ratchet). */
+export function pricedUnderLockOnInsert(defaultToZero: boolean | undefined): true | undefined {
+  return defaultToZero || undefined;
+}
+
 // ─── The shared guard (#793's `assertLifecycleGuard`) ────────────────────────
 
 export type LifecycleGuardKind = "financial" | "structural";

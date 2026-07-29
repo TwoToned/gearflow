@@ -312,6 +312,45 @@ describe("quotesWrites.recallNative", () => {
     expect(quotes[0]?.sentAt).toBe(NOW);
   });
 
+  test("unlinks (never discards) the attached artifact, forcing the next send through a real render (#1027)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    // Simulate the server action having attached a rendered PDF at send time.
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1" });
+    });
+
+    await recall(t);
+    const [recalled] = await getQuotes(t);
+    expect(recalled?.pdfFileId).toBeFalsy();
+    expect(recalled?.recalledPdfFileIds).toEqual(["storage_v1"]);
+
+    // Resend the same revision (e.g. after fixing notes/discount) — the guard
+    // in attachQuoteArtifact only refuses when pdfFileId is already set, so a
+    // fresh render can now actually attach instead of being silently skipped.
+    await send(t, { auditId: "a3", now: NOW + 2, notes: "Corrected notes" });
+    const afterResend = await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      return quote!;
+    });
+    // sendNative itself never attaches (that's attachQuoteArtifact's job) —
+    // this confirms the guard is unblocked, not bypassed: pdfFileId is still
+    // unset after the resend, ready for a real render to attach fresh bytes.
+    expect(afterResend.pdfFileId).toBeFalsy();
+
+    // Recalling a second time preserves BOTH prior artifacts, never overwriting.
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1_corrected" });
+    });
+    await recall(t, { auditId: "a4", now: NOW + 3 });
+    const [recalledAgain] = await getQuotes(t);
+    expect(recalledAgain?.recalledPdfFileIds).toEqual(["storage_v1", "storage_v1_corrected"]);
+  });
+
   test("restores the revision this send superseded", async () => {
     const t = makeT();
     await seedMember(t);

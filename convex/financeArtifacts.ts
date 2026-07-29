@@ -31,9 +31,13 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  *   makes the retry path (for a send whose render failed) safe to expose: it
  *   physically cannot rewrite history, so a retry racing a first attempt loses
  *   harmlessly instead of swapping the client's document.
- * - Nothing deletes one. A recalled or superseded revision KEEPS its artifact —
- *   the client may be holding that copy, so destroying ours makes the record
- *   worse, not better.
+ * - Nothing deletes one. A SUPERSEDED revision (a different row) KEEPS its
+ *   artifact untouched — the client may be holding that copy, so destroying
+ *   ours makes the record worse, not better. Recalling the SAME revision is the
+ *   one case that unlinks `pdfFileId` (`quotesWrites.recallNative` moves it to
+ *   `recalledPdfFileIds` rather than dropping it) — on purpose, so a resend is
+ *   forced through a fresh render instead of this guard silently keeping the
+ *   pre-recall bytes attached (#1027).
  *
  * SERVICE-gated (the Next.js server is the only caller, exactly like
  * `convex/files.ts`): rendering needs Node, and authorisation — `invoice:read`

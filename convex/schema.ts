@@ -2186,8 +2186,10 @@ export default defineSchema({
   // `pdfFileId` links the stored immutable artifact (a Convex `_storage` id): the
   // PDF is rendered ONCE at send and the bytes kept, so re-downloading a sent
   // revision can never produce a different document from the one the client is
-  // holding (#987). Written once and never overwritten — see
-  // convex/financeArtifacts.ts. A recalled/superseded revision KEEPS its artifact.
+  // holding (#987). Written once and never overwritten while attached — see
+  // convex/financeArtifacts.ts. A SUPERSEDED revision (a different row) KEEPS its
+  // artifact untouched. Recalling the SAME revision is the one case that moves
+  // `pdfFileId` — see `recalledPdfFileIds` below.
   quotes: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -2196,6 +2198,13 @@ export default defineSchema({
     status: enums.QuoteStatus,
     snapshot: v.any(),
     pdfFileId: v.optional(v.string()),
+    // Recall clears `pdfFileId` (so the next send is forced through a real
+    // render instead of hitting the "already attached" guard) but never
+    // discards the bytes: whatever was attached at recall time is pushed here
+    // first. Never read by the download route today — it exists so a
+    // pre-recall artifact a client may already hold is never truly lost, in
+    // the same spirit as "nothing deletes one" above. #1027/#1031.
+    recalledPdfFileIds: v.optional(v.array(v.string())),
     snapshotId: v.optional(v.string()),
     // Send (the freeze moment)
     quoteDate: v.optional(v.number()),

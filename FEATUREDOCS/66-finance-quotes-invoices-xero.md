@@ -143,7 +143,7 @@ standing precedent).
 | Verb | Behaviour |
 |---|---|
 | **Send** (`sendNative`) | Freezes the revision: `buildFinanceLines` money snapshot + a `QUOTE_SENT` `captureProjectSnapshot` at the same revision, stamps `quoteDate`/`validUntil`/recipient, sets `SENT`, supersedes the previous live row, offers `ENQUIRY/QUOTING → QUOTED`. Creates the `DRAFT` row when the revision has none yet. |
-| **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. The artifact is marked recalled and **retained, never deleted** — the client may already hold it. Restores the row this send superseded. |
+| **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. Restores the row this send superseded. The attached artifact is **retained, never deleted** — moved to `recalledPdfFileIds` and unlinked from `pdfFileId`, so a resend of the same revision is forced through a real render instead of `attachQuoteArtifact`'s "already attached" guard silently keeping the pre-recall bytes (#1027). |
 | **New version** (`newVersionNative`) | Increments `projects.revision` and inserts a `DRAFT` at the new number. The previous live row is untouched until the new one sends. A draft carries `snapshot: null` — its figures are the project's live totals until it is sent. |
 | **Accept** (`markAcceptedNative`) | `SENT → ACCEPTED` + acceptance date + optional reference (PO number, email subject). An `EXPIRED` revision cannot be accepted without an explicit re-send. Unblocks `CONFIRMED`. |
 | **Decline** (`markDeclinedNative`) | `SENT`/`EXPIRED` → `DECLINED` + bounded reason. Offers `CANCELLED`, never forces it. |
@@ -256,9 +256,13 @@ structural rather than disciplinary — the same reasoning as `withValidatedBody
   replacing it. That is what makes exposing a retry button safe: a retry racing a
   slow first attempt loses harmlessly, and the server action bins its orphan
   upload.
-- **Nothing deletes one.** A recalled, superseded, declined or voided row keeps
-  its artifact — the client may be holding that copy, so destroying ours makes
-  the record worse. The rail badges the state next to the download.
+- **Nothing deletes one.** A superseded, declined or voided row keeps its
+  artifact on `pdfFileId` untouched — the client may be holding that copy, so
+  destroying ours makes the record worse. The rail badges the state next to the
+  download. **Recalling** the *same* revision is the one case that unlinks
+  `pdfFileId` (moved to `recalledPdfFileIds`, never dropped) — deliberately, so
+  a resend forces a fresh render rather than the attach guard silently keeping
+  pre-recall bytes attached under a since-corrected revision (#1027).
 - **A draft has no artifact**, and the mutations refuse to give it one. Its only
   document is the watermarked preview, which is never stored.
 - **Dates come from the row.** The render is handed the stamped

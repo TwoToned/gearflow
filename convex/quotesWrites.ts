@@ -357,9 +357,14 @@ export const sendNative = mutation({
 
 /**
  * RECALL — un-send, for the pre-client typo fix. `SENT → DRAFT` on the same
- * revision (the number is never reused or skipped). The stored artifact is marked
- * recalled and RETAINED, never deleted: the client may already be holding it, so
- * destroying our copy would make the record worse, not better.
+ * revision (the number is never reused or skipped). The stored artifact is
+ * RETAINED, never deleted — the client may already be holding it, so destroying
+ * our copy would make the record worse, not better — but it IS unlinked from
+ * `pdfFileId` (moved to `recalledPdfFileIds`) so the next send is forced through
+ * a real render instead of `attachQuoteArtifact`'s "already attached" guard
+ * silently handing back the pre-recall bytes (#1027 — confirmed live bug: notes/
+ * discount edited after a recall didn't show up in the "regenerated" PDF because
+ * nothing cleared this field across the recall→resend cycle).
  *
  * Restores whatever this send superseded back to `SENT` — after recalling v2, the
  * last thing actually sent is v1, and the model must say so.
@@ -388,11 +393,20 @@ export const recallNative = mutation({
     const label = quoteLabel(project.projectNumber, quote.version);
     assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "EXPIRED"], label, "recall");
 
+    // Unlink (never discard) the attached artifact so a resend is forced
+    // through a real render (#1027) instead of attachQuoteArtifact's
+    // "already attached" guard silently keeping the pre-recall bytes.
+    const recalledPdfFileIds = quote.pdfFileId
+      ? [...(quote.recalledPdfFileIds ?? []), quote.pdfFileId]
+      : quote.recalledPdfFileIds;
+
     await ctx.db.patch(quote._id, {
       status: "DRAFT",
       recalledAt: now,
       recalledById: actor.userId,
       recallReason: trimmed,
+      pdfFileId: undefined,
+      recalledPdfFileIds,
       updatedAt: now,
     });
 

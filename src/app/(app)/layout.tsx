@@ -6,6 +6,7 @@ import { DynamicFavicon } from "@/components/layout/dynamic-favicon";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { BrandingProvider } from "@/components/providers/branding-provider";
 import MiraContextProvider from "@/components/providers/mira-context-provider";
+import { MiraLauncher } from "@/components/mira/mira-launcher";
 import { getSession } from "@/lib/auth-server";
 import { getTheOrg } from "@/lib/single-org";
 import { OrgActivator } from "@/components/providers/org-activator";
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       >
         <BrandingProvider>
           <MiraContextProvider>
+            <MiraLauncher />
             <OrgActivator />
             <PostHogIdentify />
             <DynamicFavicon />

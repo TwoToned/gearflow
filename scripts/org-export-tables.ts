@@ -157,11 +157,17 @@ export const EXCLUDED = {
   // apiRequestLog is the API/MCP per-key request log (#998): observability rows
   // (ts/operation/status/latency + redacted args) with a 30-day retention cron,
   // not domain data — same exclusion rationale as apiIdempotency.
+  // miraKeys (Phase 8, #1004) holds an ENCRYPTED bearer secret per (org, user) —
+  // Mira's own internal apiKeys binding. Exporting it would move an encrypted
+  // credential outside the vault's own org/key context; restoring it into a
+  // fresh org would let stale ciphertext authenticate against a key row that no
+  // longer matches it. Re-provisions itself lazily on next use either way.
   ephemeral: [
     "activityEvents",
     "userNotificationPreferences",
     "apiIdempotency",
     "apiRequestLog",
+    "miraKeys",
   ],
 } as const;
 
@@ -198,7 +204,8 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #997: +1 — apiIdempotency (EXCLUDED/ephemeral, the API replay ledger).
 // #998: +1 — apiRequestLog (EXCLUDED/ephemeral, the API request log).
 // Project-locks removal: -2 — collaborationLocks, collaborationPresence dropped from schema.
-export const EXPECTED_TABLE_COUNT = 109;
+// #1004: +1 — miraKeys (EXCLUDED/ephemeral, Mira's own encrypted-at-rest apiKeys binding).
+export const EXPECTED_TABLE_COUNT = 110;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

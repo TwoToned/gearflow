@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import type { Doc } from "./_generated/dataModel";
 
 /**
  * ApiKey (agent-accessible API/MCP access keys) — Convex-native domain (Phase-1
@@ -68,6 +69,11 @@ const writeArgs = {
   revokedAt: v.optional(v.number()),
   createdAt: v.optional(v.number()),
   noFinancials: v.optional(v.boolean()),
+  // Phase 7 (#1003) — OAuth-issued grants only; absent on every manually-minted key.
+  origin: v.optional(v.union(v.literal("manual"), v.literal("oauth"))),
+  oauthClientId: v.optional(v.string()),
+  refreshTokenHash: v.optional(v.string()),
+  refreshTokenExpiresAt: v.optional(v.number()),
 };
 
 export const create = mutation({
@@ -158,10 +164,112 @@ export const touchLastUsed = mutation({
   },
 });
 
+/**
+ * OAuth token-exchange support (Phase 7, #1003). `mintOAuthGrant` creates a NEW
+ * `apiKeys` row per authorization-code redemption (`origin: "oauth"`) — each
+ * authorization is its own individually-revocable grant, same posture as a
+ * manually-minted key. Duplicate guards mirror `create`.
+ */
+export const mintOAuthGrant = mutation({
+  args: writeArgs,
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    if (args.origin !== "oauth") throw new ConvexError("mintOAuthGrant requires origin: \"oauth\"");
+    const dupId = await ctx.db.query("apiKeys").withIndex("by_cuid", (q) => q.eq("id", args.id)).first();
+    if (dupId) throw new ConvexError("apiKey id collision: " + args.id);
+    const dupHash = await ctx.db.query("apiKeys").withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash)).first();
+    if (dupHash) throw new ConvexError("apiKey tokenHash collision");
+    if (args.refreshTokenHash) {
+      const dupRefresh = await ctx.db
+        .query("apiKeys")
+        .withIndex("by_refreshTokenHash", (q) => q.eq("refreshTokenHash", args.refreshTokenHash))
+        .first();
+      if (dupRefresh) throw new ConvexError("apiKey refreshTokenHash collision");
+    }
+    return await ctx.db.insert("apiKeys", args);
+  },
+});
+
+/** Look up a live OAuth grant by its refresh token's hash (the refresh_token
+ *  grant's credential lookup — the by_tokenHash equivalent for refreshing). */
+export const getByRefreshTokenHash = query({
+  args: { refreshTokenHash: v.string() },
+  handler: async (ctx, { refreshTokenHash }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("apiKeys")
+      .withIndex("by_refreshTokenHash", (q) => q.eq("refreshTokenHash", refreshTokenHash))
+      .unique();
+  },
+});
+
+/** Every check a `rotateOAuthTokens` call must pass before it may rotate —
+ *  split out so the handler itself stays under the complexity ratchet (R-3.6).
+ *  An `asserts` predicate so the caller can keep using `doc` narrowed to
+ *  non-null afterward. */
+function assertOAuthGrantRotatable(
+  doc: Doc<"apiKeys"> | null,
+  args: { organizationId: string; presentedRefreshTokenHash: string },
+): asserts doc is Doc<"apiKeys"> {
+  const isLiveOAuthGrant =
+    doc != null && doc.organizationId === args.organizationId && doc.origin === "oauth" && doc.isActive !== false && doc.revokedAt == null;
+  if (!isLiveOAuthGrant) {
+    throw new ConvexError({ code: "INVALID_GRANT", message: "OAuth grant not found or revoked." });
+  }
+  if (doc.refreshTokenHash !== args.presentedRefreshTokenHash) {
+    throw new ConvexError({ code: "INVALID_GRANT", message: "Refresh token does not match the live grant." });
+  }
+  if (!doc.refreshTokenExpiresAt || doc.refreshTokenExpiresAt <= Date.now()) {
+    throw new ConvexError({ code: "INVALID_GRANT", message: "Refresh token has expired." });
+  }
+}
+
+/**
+ * Rotate an OAuth grant's access + refresh token pair (the `refresh_token`
+ * grant). Re-verifies the presented refresh token's hash, the grant's
+ * liveness (active/not revoked/org match) and the refresh token's own expiry
+ * INSIDE this transaction — Convex's OCC means a concurrent replay of the same
+ * (now-superseded) refresh token loses the retry race and sees the rotated
+ * hash, so a stolen-and-replayed refresh token can succeed at most once
+ * (single-use rotation, no grace window, unlike the manual-key `rotate`
+ * mutation above).
+ */
+export const rotateOAuthTokens = mutation({
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    presentedRefreshTokenHash: v.string(),
+    tokenHash: v.string(),
+    prefix: v.string(),
+    accessTokenExpiresAt: v.number(),
+    refreshTokenHash: v.string(),
+    refreshTokenExpiresAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("apiKeys").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
+    assertOAuthGrantRotatable(doc, args);
+    const dupHash = await ctx.db.query("apiKeys").withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash)).first();
+    if (dupHash) throw new ConvexError("apiKey tokenHash collision");
+    await ctx.db.patch(doc._id, {
+      tokenHash: args.tokenHash,
+      prefix: args.prefix,
+      expiresAt: args.accessTokenExpiresAt,
+      refreshTokenHash: args.refreshTokenHash,
+      refreshTokenExpiresAt: args.refreshTokenExpiresAt,
+      lastRotatedAt: Date.now(),
+    });
+    return { id: doc.id, name: doc.name, scopes: doc.scopes ?? "[]" };
+  },
+});
+
 const apiKeysDenyReason =
   "The API key management surface itself must not be self-servable by an API key (privilege escalation risk).";
 
 export const agentOps: AgentOpsAnnotations = {
   list: { agentAccess: "denied", reason: apiKeysDenyReason },
   getByTokenHash: { agentAccess: "denied", reason: apiKeysDenyReason },
+  mintOAuthGrant: { agentAccess: "denied", reason: apiKeysDenyReason },
+  getByRefreshTokenHash: { agentAccess: "denied", reason: apiKeysDenyReason },
+  rotateOAuthTokens: { agentAccess: "denied", reason: apiKeysDenyReason },
 };

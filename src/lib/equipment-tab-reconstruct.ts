@@ -308,6 +308,7 @@ function buildGroupData(
     discount: g.discount,
     suggestedPrice: g.suggestedPrice,
     sortOrder: g.sortOrder,
+    pricedUnderLock: g.pricedUnderLock,
     lineItems: attachScope(lineItemsByGroupId.get(g.id) ?? [], ctx),
   };
 }

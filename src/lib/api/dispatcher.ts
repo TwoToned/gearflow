@@ -10,6 +10,7 @@ import { getConvexClient } from "../convex-client";
 import { VALIDATION_PAIR_BY_NAME, OPERATION_VALIDATION_PAIR } from "../validations/registry";
 import { hasScope as scopeGrants } from "../../../convex/lib/scopes";
 import { isPrivilegedArgName, policyForArg, type PrivilegedArgPolicy } from "./privileged-args";
+import { emitWebhookEvent } from "../webhooks/emit";
 
 /**
  * The universal dispatcher (design §7, §8, §9, §11) — the single implementation
@@ -53,7 +54,18 @@ import { isPrivilegedArgName, policyForArg, type PrivilegedArgPolicy } from "./p
 
 export interface DispatchResult {
   status: number;
-  body: { data: unknown; requestId: string | null; replayed?: boolean } | ApiErrorEnvelope;
+  body:
+    | {
+        data: unknown;
+        requestId: string | null;
+        replayed?: boolean;
+        /** Design §13 versioning mechanics: the in-band deprecation channel —
+         *  the only one an autonomous agent reliably consumes, alongside the
+         *  `X-RVLT-Flow-API-Version` header (version.ts). Always present;
+         *  empty today because no operation is deprecated yet. */
+        warnings: string[];
+      }
+    | ApiErrorEnvelope;
 }
 
 const envelopeSchema = z.object({
@@ -224,7 +236,7 @@ interface ExecuteResult {
 async function executeRead(agent: AgentRequestContext, convexFn: unknown, normalized: Record<string, unknown>, requestId: string | null): Promise<ExecuteResult> {
   await spendAgentReadLimit(agent.key.id);
   const data = await agent.client.query(convexFn as never, normalized as never);
-  return { responseBody: { data, requestId }, responseStatus: 200 };
+  return { responseBody: { data, requestId, warnings: [] }, responseStatus: 200 };
 }
 
 /** Run the write, wrapped in the idempotency claim/run/complete cycle. */
@@ -239,7 +251,7 @@ async function executeWrite(
   const { data, replayed } = await runIdempotent(agent, operationName, normalized, idempotencyKey, () =>
     agent.client.mutation(convexFn as never, normalized as never),
   );
-  return { responseBody: { data, requestId, replayed }, responseStatus: replayed ? 200 : 201 };
+  return { responseBody: { data, requestId, replayed, warnings: [] }, responseStatus: replayed ? 200 : 201 };
 }
 
 function buildNormalizeContext(operationName: string, op: RegistryOperation, agent: AgentRequestContext, envelope: Envelope, startedAt: number) {
@@ -396,6 +408,18 @@ export async function dispatch(
     missingScope = extracted.error.requiredScope ?? undefined;
     responseBody = extracted;
     responseStatus = statusForError(err);
+  }
+
+  // Best-effort, fire-and-forget — mirrors every other emit() call site in the
+  // app (see src/server/warehouse.ts). Only the rate-limit rejection itself
+  // (not every error) is webhook-worthy: it is the one failure an operator's
+  // monitoring can't infer from their own client logs alone (a throttled agent
+  // just silently backs off), unlike a validation or not-found error.
+  if (errorCode === "RateLimited") {
+    void emitWebhookEvent(agent.key.organizationId, "api.rate_limited", {
+      apiKeyId: agent.key.id,
+      operation: operationName,
+    });
   }
 
   await logApiRequest({

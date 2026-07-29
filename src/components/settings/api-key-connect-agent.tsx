@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Bot, Check, Copy, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -95,6 +96,12 @@ export function ConnectAgentCard({
         description="Mint a read-only key and get a ready-to-paste MCP config in one step. Use the explicit Create key form below for write access or other presets."
       >
         <div className="sm:col-span-2 space-y-4">
+          <p className="text-xs text-fg-3">
+            Full API reference, SDK snippets, and webhook events:{" "}
+            <Link href="/docs/api" className="underline">
+              /docs/api
+            </Link>
+          </p>
           {connected ? (
             <ConnectedAgentPanel
               connected={connected}

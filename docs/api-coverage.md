@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 397 | 286 | 109 | 1 | 1 |
-| Mutations | 730 | 267 | 454 | 0 | 9 |
-| **Total** | **1127** | **553** | **563** | **1** | **10** |
+| Queries | 398 | 286 | 110 | 1 | 1 |
+| Mutations | 727 | 266 | 455 | 0 | 6 |
+| **Total** | **1125** | **552** | **565** | **1** | **7** |
 
-<!-- reachability-floor: 553 -->
+<!-- reachability-floor: 552 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,7 +42,7 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 88 |
+| `high` | 87 |
 | `medium` | 141 |
 | `low` | 38 |
 
@@ -73,6 +73,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `financeArtifacts` | 4 |
 | `globalSearch` | 1 |
 | `mediaWrites` | 4 |
+| `miraKeys` | 2 |
 | `notificationDismissals` | 7 |
 | `orgExport` | 6 |
 | `orgSettings` | 8 |

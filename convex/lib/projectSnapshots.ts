@@ -228,16 +228,19 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
         const { _id: _dropId, _creationTime: _dropTime, id: _dropCuid, organizationId: _dropOrg, ...rest } = data as Record<string, unknown> & { id: string; organizationId: string };
         await ctx.db.replace(g._id, { ...rest, id: g.id, organizationId: orgId, updatedAt: now } as typeof g);
       } else {
-        const patch: Record<string, unknown> = { updatedAt: now };
+        // Restoring a real historical price is a deliberate act — not a lock artifact.
+        const patch: Record<string, unknown> = { updatedAt: now, pricedUnderLock: false };
         for (const f of LOCKED_GROUP_FIELDS) patch[f] = data[f];
         await ctx.db.patch(g._id, patch);
       }
     } else {
-      // Added during the session.
+      // Added during the session, absent from the snapshot: same "not deliberately
+      // priced" state `assertLifecycleGuard`'s `defaultToZero` produces on a locked
+      // insert — flag it so the Unpriced badge points at the real cause.
       if (scope === "FULL") {
         await ctx.db.delete(g._id);
       } else {
-        await ctx.db.patch(g._id, { price: undefined, discount: undefined, updatedAt: now });
+        await ctx.db.patch(g._id, { price: undefined, discount: undefined, pricedUnderLock: true, updatedAt: now });
       }
     }
   }
@@ -267,12 +270,15 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
         }
         await ctx.db.patch(li._id, patch);
       } else {
-        const patch: Record<string, unknown> = { updatedAt: now };
+        // Restoring a real historical price is a deliberate act — not a lock artifact.
+        const patch: Record<string, unknown> = { updatedAt: now, pricedUnderLock: false };
         for (const f of LOCKED_LINE_ITEM_FIELDS) patch[f] = data[f];
         await ctx.db.patch(li._id, patch);
       }
     } else {
-      // Added during the session.
+      // Added during the session, absent from the snapshot: same "not deliberately
+      // priced" state `assertLifecycleGuard`'s `defaultToZero` produces on a locked
+      // insert — flag it so the Unpriced badge points at the real cause.
       if (scope === "FULL") {
         if (isWarehouseBacked(li as unknown as Record<string, unknown>)) {
           conflicts.push(`Line item "${li.description ?? li.id}" was added during the session and references live warehouse stock — review and remove manually.`);
@@ -280,7 +286,7 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
           await ctx.db.delete(li._id);
         }
       } else {
-        await ctx.db.patch(li._id, { unitPrice: 0, discount: undefined, updatedAt: now });
+        await ctx.db.patch(li._id, { unitPrice: 0, discount: undefined, pricedUnderLock: true, updatedAt: now });
       }
     }
   }

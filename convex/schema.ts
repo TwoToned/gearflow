@@ -284,6 +284,27 @@ export default defineSchema({
     .index("by_apiKeyId_ts", ["apiKeyId", "ts"])
     .index("by_organizationId_ts", ["organizationId", "ts"]),
 
+  // MiraKey — Mira (the in-app assistant, Phase 8 #1004) is the first
+  // first-party MCP consumer: it answers a user's question by calling the
+  // SAME curated dispatch()/MCP surface an external agent does, so it needs
+  // its own `apiKeys` row per (org, user) to act as. Unlike a human-managed
+  // key, the raw secret can't be a one-time-reveal-then-forget (Mira must
+  // reuse it on every question), so it's encrypted at rest with the same
+  // vault already trusted for round-tripping third-party secrets
+  // (src/lib/crypto/secret-vault.ts, e.g. Xero OAuth tokens) — never sent to
+  // the browser, decrypted only by src/server/mira.ts. One row per
+  // (organizationId, userId): Mira always acts AS the asking user (never a
+  // fixed "system" identity), so its effective permissions are exactly that
+  // user's own live RBAC, same as every other agent token.
+  miraKeys: defineTable({
+    organizationId: v.string(),
+    userId: v.string(),
+    apiKeyId: v.string(),
+    encryptedToken: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_organizationId_userId", ["organizationId", "userId"]),
+
   // StoredFile — the org-association for a Convex-storage file (the byte store is
   // Convex `_storage`). The /api/files proxy authorises a serve by looking up this
   // record's org (replacing the old S3 org-prefixed-key path auth). organizationId
@@ -1223,6 +1244,16 @@ export default defineSchema({
     allocationBasis: v.optional(enums.AllocationBasis),
     priceBreakdown: v.optional(v.string()),
     priceOverridden: v.optional(v.boolean()),
+    // True exactly when this row's unitPrice/discount were forced to $0/unset by
+    // `assertLifecycleGuard`'s `defaultToZero` (an insert, merge, or snapshot-restore
+    // while the project was locked with no unlock session open) — the actual CAUSE the
+    // `<UnpricedBadge>` tooltip claims, instead of inferring it from "currently locked +
+    // currently $0" (which false-positives on a row that's been $0 since before any lock
+    // ever existed, e.g. no catalog rate configured). Cleared to `false` the moment a
+    // deliberate financial write (patchNative/patchManyNative touching money, a merge
+    // that keeps a real client price, or a FINANCIAL-scope snapshot restore) sets a real
+    // price — server-only, never client-settable (LINE_IMMUTABLE_ON_PATCH).
+    pricedUnderLock: v.optional(v.boolean()),
     overrideReason: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
     groupName: v.optional(v.string()),
@@ -1402,6 +1433,11 @@ export default defineSchema({
     discountMode: v.optional(enums.DiscountMode),
     suggestedPrice: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
+    // Mirrors projectLineItems.pricedUnderLock — true when this group's own `price`/
+    // `discount` were forced to $0/unset by `guard.defaultToZero` at create time (or a
+    // FINANCIAL-scope snapshot restore), not a deliberate free group. See that field's
+    // comment for the full rationale.
+    pricedUnderLock: v.optional(v.boolean()),
     // WS1 (#940) — Xero account-coding override for a priced group's own
     // invoice line (convex/lib/financeSnapshot.ts's "priced groups bill as
     // ONE line"). Cascade: this override -> categoryId's category default ->

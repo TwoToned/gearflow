@@ -175,6 +175,7 @@ import type * as maintenanceScheduleWorklist from "../maintenanceScheduleWorklis
 import type * as maintenanceWrites from "../maintenanceWrites.js";
 import type * as mediaWrites from "../mediaWrites.js";
 import type * as members from "../members.js";
+import type * as miraKeys from "../miraKeys.js";
 import type * as modelBulkAccessories from "../modelBulkAccessories.js";
 import type * as modelBulkAccessoriesWrites from "../modelBulkAccessoriesWrites.js";
 import type * as modelCheckItems from "../modelCheckItems.js";
@@ -442,6 +443,7 @@ declare const fullApi: ApiFromModules<{
   maintenanceWrites: typeof maintenanceWrites;
   mediaWrites: typeof mediaWrites;
   members: typeof members;
+  miraKeys: typeof miraKeys;
   modelBulkAccessories: typeof modelBulkAccessories;
   modelBulkAccessoriesWrites: typeof modelBulkAccessoriesWrites;
   modelCheckItems: typeof modelCheckItems;

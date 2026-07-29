@@ -318,7 +318,6 @@ export function GroupRow({
   onMoveDown,
   canMoveUp,
   canMoveDown,
-  moneyLocked,
 }: {
   group: GroupData;
   isExpanded: boolean;
@@ -327,11 +326,6 @@ export function GroupRow({
   projectId?: string;
   /** Open / blocking comment counts for this group's thread target. */
   commentBadge?: { open: number; blocking: number };
-  /** #990 — true once the project's tier is locked and no unlock session is
-   *  open; a $0/unset price under this condition is the `defaultToZero`
-   *  server behaviour, not a deliberately free group, so it earns the
-   *  `<UnpricedBadge>`. */
-  moneyLocked?: boolean;
   /** 8H — render the Cost column cell. Project groups don't have a
    *  separate cost concept, so the cell renders an em-dash. */
   showCostColumn?: boolean;
@@ -484,7 +478,7 @@ export function GroupRow({
         {discountVal > 0 && (
           <p className="text-micro text-ok">-{formatCurrency(discountVal)} disc.</p>
         )}
-        {moneyLocked && (priceVal == null || priceVal === 0) && (
+        {group.pricedUnderLock && (
           <div className="mt-0.5 flex justify-end">
             <UnpricedBadge />
           </div>
@@ -970,7 +964,6 @@ export function LineItemRow({
   onMoveDown,
   canMoveUp,
   canMoveDown,
-  moneyLocked,
 }: {
   item: LineItemData;
   indent: string;
@@ -1005,8 +998,6 @@ export function LineItemRow({
   onRemove: () => void;
   /** Multi-select: row click handler (not firing for grip handle clicks) */
   onClick?: (e: React.MouseEvent) => void;
-  /** #990 — see `GroupRow`'s doc on the same prop. */
-  moneyLocked?: boolean;
 } & MoveControls) {
   const desc = describeRow(item);
   const hasChildren = desc.hasChildren;
@@ -1486,10 +1477,12 @@ export function LineItemRow({
         {item.discount != null && Number(item.discount) > 0 && (
           <p className="text-micro text-ok">-{formatCurrency(Number(item.discount))} disc.</p>
         )}
-        {/* #990 — a $0/unset price under a locked tier is `defaultToZero`'s
-            server behaviour, not a deliberately free line. Kit children are
-            excluded — they're not independently priced by design. */}
-        {moneyLocked && !item.isKitChild && (item.unitPrice == null || Number(item.unitPrice) === 0) && (
+        {/* #990 — `pricedUnderLock` is the server's actual record of a
+            `defaultToZero` reset, not an inference from "currently locked +
+            currently $0" (which false-positives on a row that's been $0 since
+            before any lock ever existed). Kit children are excluded — they're
+            not independently priced by design. */}
+        {item.pricedUnderLock && !item.isKitChild && (
           <div className="mt-0.5 flex justify-end">
             <UnpricedBadge />
           </div>

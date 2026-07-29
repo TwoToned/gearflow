@@ -22,7 +22,7 @@ import { formatMiraAnswer } from "@/lib/mira/format-answer";
  * Mira acts AS the asking user, via a per-(org, user) `apiKeys` row it
  * provisions itself on first use (`miraKeys` table, convex/miraKeys.ts) —
  * never a fixed "system" identity, so its effective permissions are exactly
- * that user's own live RBAC, same as any other agent token. The
+ * that user's own live RBAC, identical to every other agent token. The
  * `read_only_agent` preset (the same one "Connect an AI Agent" uses) is
  * reused rather than inventing a new scope set (R-3.1).
  *

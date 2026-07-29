@@ -40,6 +40,7 @@ export function useQuoteWrites() {
   const recallM = useMutation(api.quotesWrites.recallNative);
   const newVersionM = useMutation(api.quotesWrites.newVersionNative);
   const acceptM = useMutation(api.quotesWrites.markAcceptedNative);
+  const unacceptM = useMutation(api.quotesWrites.unacceptNative);
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
   const repriceFromRevisionM = useMutation(api.quotesWrites.repriceFromRevisionNative);
   const deleteDraftM = useMutation(api.quotesWrites.deleteDraftNative);
@@ -143,6 +144,22 @@ export function useQuoteWrites() {
         organizationId: org,
         acceptedAt: parsed.acceptedAt?.getTime(),
         acceptanceRef: parsed.acceptanceRef || undefined,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Unapprove (#1032) — the reverse of `markAccepted`: `ACCEPTED → SENT`,
+     *  clearing the acceptance fields and the protected flag Accept auto-set,
+     *  in one step. Same `invoice:publish` audience as accept itself; no
+     *  reason is collected (it undoes the same action, not a separate
+     *  business decision the way recall/decline are). */
+    unaccept: async (quoteId: string): Promise<{ id: string; version: number }> => {
+      const org = requireOrg();
+      return await unacceptM({
+        id: quoteId,
+        organizationId: org,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),

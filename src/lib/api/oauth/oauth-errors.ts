@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCors } from "@/lib/api/cors";
 
 /**
  * The STANDARD OAuth 2.1 error vocabulary (RFC 6749 §5.2 / §4.1.2.1) — deliberately
@@ -29,9 +30,11 @@ const STATUS_FOR_CODE: Record<OAuthErrorCode, number> = {
   server_error: 500,
 };
 
-export function oauthErrorResponse(code: OAuthErrorCode, description?: string): NextResponse {
-  return NextResponse.json(
-    { error: code, ...(description ? { error_description: description } : {}) },
-    { status: STATUS_FOR_CODE[code], headers: { "Cache-Control": "no-store", Pragma: "no-cache" } },
+export function oauthErrorResponse(code: OAuthErrorCode, description?: string): Response {
+  return withCors(
+    NextResponse.json(
+      { error: code, ...(description ? { error_description: description } : {}) },
+      { status: STATUS_FOR_CODE[code], headers: { "Cache-Control": "no-store", Pragma: "no-cache" } },
+    ),
   );
 }

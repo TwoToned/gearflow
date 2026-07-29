@@ -5,6 +5,7 @@ import { redeemAuthorizationCode } from "@/lib/api/oauth/authorization-code";
 import { verifyPkce } from "@/lib/api/oauth/pkce";
 import { mintOAuthGrant, refreshOAuthGrant, RefreshGrantError } from "@/lib/api/oauth/grant";
 import { authenticateClientRequest, type OAuthClientRecord } from "@/lib/api/oauth/client-registration";
+import { withCors, corsPreflight } from "@/lib/api/cors";
 
 export const runtime = "nodejs";
 
@@ -44,7 +45,7 @@ async function handleAuthorizationCode(form: URLSearchParams, client: OAuthClien
     clientName: client.clientName ?? client.id,
     scopes: redeemed.scopes,
   });
-  return Response.json(tokens, { status: 200, headers: { "Cache-Control": "no-store", Pragma: "no-cache" } });
+  return withCors(Response.json(tokens, { status: 200, headers: { "Cache-Control": "no-store", Pragma: "no-cache" } }));
 }
 
 async function handleRefreshToken(form: URLSearchParams) {
@@ -52,7 +53,7 @@ async function handleRefreshToken(form: URLSearchParams) {
   if (!refreshToken) return oauthErrorResponse("invalid_request", "`refresh_token` is required.");
   try {
     const tokens = await refreshOAuthGrant(refreshToken);
-    return Response.json(tokens, { status: 200, headers: { "Cache-Control": "no-store", Pragma: "no-cache" } });
+    return withCors(Response.json(tokens, { status: 200, headers: { "Cache-Control": "no-store", Pragma: "no-cache" } }));
   } catch (err) {
     if (err instanceof RefreshGrantError) return oauthErrorResponse("invalid_grant", err.message);
     throw err;
@@ -77,3 +78,5 @@ export async function POST(request: NextRequest) {
   if (grantType === "authorization_code") return handleAuthorizationCode(form, auth.client);
   return handleRefreshToken(form);
 }
+
+export const OPTIONS = corsPreflight;

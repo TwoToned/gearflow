@@ -4,6 +4,7 @@ import {
   registerOauthClient,
   ClientRegistrationError,
 } from "@/lib/api/oauth/client-registration";
+import { withCors, corsPreflight } from "@/lib/api/cors";
 
 export const runtime = "nodejs";
 
@@ -11,24 +12,27 @@ export const runtime = "nodejs";
  * RFC 7591 Dynamic Client Registration — `POST /api/v1/oauth/register`
  * (Phase 7, #1003). Deliberately unauthenticated (a client has no credential
  * yet — that's what this endpoint issues), same posture as the token
- * endpoint. Public per `src/middleware.ts`'s bearer-exempt list.
+ * endpoint. Public per `src/middleware.ts`'s bearer-exempt list. CORS-open:
+ * browser-based MCP clients self-register from the page that's connecting.
  */
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "invalid_client_metadata", error_description: "Invalid JSON body." }, { status: 400 });
+    return withCors(NextResponse.json({ error: "invalid_client_metadata", error_description: "Invalid JSON body." }, { status: 400 }));
   }
 
   try {
     const validated = validateRegistrationRequest(body);
     const result = await registerOauthClient(validated);
-    return NextResponse.json(result, { status: 201 });
+    return withCors(NextResponse.json(result, { status: 201 }));
   } catch (err) {
     if (err instanceof ClientRegistrationError) {
-      return NextResponse.json({ error: "invalid_client_metadata", error_description: err.message }, { status: 400 });
+      return withCors(NextResponse.json({ error: "invalid_client_metadata", error_description: err.message }, { status: 400 }));
     }
-    return NextResponse.json({ error: "invalid_client_metadata", error_description: "Registration failed." }, { status: 400 });
+    return withCors(NextResponse.json({ error: "invalid_client_metadata", error_description: "Registration failed." }, { status: 400 }));
   }
 }
+
+export const OPTIONS = corsPreflight;

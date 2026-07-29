@@ -20,8 +20,11 @@ type ConvexApiKey = {
   actingUserId: string; expiresAt?: number; lastUsedAt?: number;
   lastRotatedAt?: number; revokedAt?: number; createdAt?: number;
   noFinancials?: boolean;
+  // Phase 7 (#1003) — OAuth-issued grants only; absent on every manually-minted key.
+  origin?: "manual" | "oauth";
+  oauthClientId?: string;
 };
-function toKeyRow(k: ConvexApiKey) {
+function toKeyRow(k: ConvexApiKey, clientNameById: Record<string, string>) {
   const d = (n: number | undefined | null) => (n != null ? new Date(n) : null);
   return {
     id: k.id, name: k.name, prefix: k.prefix,
@@ -29,6 +32,8 @@ function toKeyRow(k: ConvexApiKey) {
     isActive: k.isActive ?? true,
     actingUserId: k.actingUserId,
     noFinancials: k.noFinancials ?? false,
+    origin: k.origin ?? "manual",
+    oauthClientName: k.oauthClientId ? clientNameById[k.oauthClientId] ?? k.oauthClientId : null,
     expiresAt: d(k.expiresAt),
     lastUsedAt: d(k.lastUsedAt),
     lastRotatedAt: d(k.lastRotatedAt),
@@ -42,15 +47,25 @@ function toKeyRow(k: ConvexApiKey) {
  * Creating/revoking a key and flipping the org kill switch are org-settings writes;
  * listing is an org-scoped read. The raw secret is returned exactly ONCE, at
  * creation — only its SHA-256 hash is ever stored.
+ *
+ * OAuth grants (#1003) are `apiKeys` rows too (`origin: "oauth"`) — they're
+ * listed, revoked and kill-switched through the EXACT same code below as a
+ * manually-minted key. This function's only OAuth-specific job is resolving
+ * `oauthClientId` -> a display name for the "Connected app" column.
  */
 
-/** List this org's API keys (never returns a secret — only the display prefix). */
+/** List this org's API keys AND OAuth grants (never returns a secret — only
+ *  the display prefix). */
 export async function listApiKeys() {
   const { organizationId } = await getOrgContext();
-  const rawKeys = await (await getConvexClient()).query(api.apiKeys.list, {
+  const convex = await getConvexClient();
+  const rawKeys = await convex.query(api.apiKeys.list, {
     orgId: organizationId,
   });
-  const keys = rawKeys.map(toKeyRow); // strips tokenHash — never leaves the backend
+  const clientIds = [...new Set(rawKeys.map((k) => k.oauthClientId).filter((id): id is string => !!id))];
+  const clients = clientIds.length ? await convex.query(api.oauthClients.listByIds, { ids: clientIds }) : [];
+  const clientNameById = Object.fromEntries(clients.map((c) => [c.id, c.clientName ?? c.id]));
+  const keys = rawKeys.map((k) => toKeyRow(k, clientNameById)); // strips tokenHash/refreshTokenHash — never leaves the backend
   const { apiKillSwitchAt } = await readOrgSettings(organizationId);
   return serialize({ keys, apiKillSwitchAt });
 }
@@ -120,10 +135,10 @@ export async function createApiKey(input: {
     createdAt: now,
     noFinancials,
   });
-  const created = toKeyRow({
-    id, name, prefix, scopes: JSON.stringify(scopes), isActive: true,
-    actingUserId, expiresAt: expiresAtMs, createdAt: now, noFinancials,
-  });
+  const created = toKeyRow(
+    { id, name, prefix, scopes: JSON.stringify(scopes), isActive: true, actingUserId, expiresAt: expiresAtMs, createdAt: now, noFinancials },
+    {},
+  );
 
   await logActivity({
     organizationId,

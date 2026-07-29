@@ -40,6 +40,8 @@ const existingKey = {
   isActive: true,
   actingUserId: "user_1",
   noFinancials: false,
+  origin: "manual" as const,
+  oauthClientName: null,
   expiresAt: null,
   lastUsedAt: null,
   lastRotatedAt: null,
@@ -166,5 +168,27 @@ describe("ApiKeysSettingsPage smoke", () => {
 
     fireEvent.click(firstButton(/disable all api access/i));
     await waitFor(() => expect(screen.getByText("Disable API access for this org?")).toBeTruthy());
+  });
+
+  it("an OAuth-issued grant (#1003) shows an OAuth badge + connected-app name, and hides Rotate", async () => {
+    const oauthKey = {
+      ...existingKey,
+      id: "key_oauth_1",
+      name: "OAuth: claude.ai",
+      prefix: "gf_oauth_ab",
+      origin: "oauth" as const,
+      oauthClientName: "claude.ai",
+    };
+    mocks.listApiKeys.mockResolvedValue({ keys: [oauthKey], apiKillSwitchAt: null });
+
+    render(<ApiKeysSettingsPage />);
+    await waitFor(() => expect(screen.getAllByText("OAuth: claude.ai").length).toBeGreaterThan(0));
+
+    expect(screen.getAllByText(/connected app: claude\.ai/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("OAuth").length).toBeGreaterThan(0);
+    // Revoke stays available (same apiKeys row, same revoke path); Rotate does
+    // not — an OAuth grant rotates via the client's own refresh_token flow.
+    expect(screen.queryByRole("button", { name: /rotate oauth: claude\.ai/i })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /revoke oauth: claude\.ai/i }).length).toBeGreaterThan(0);
   });
 });

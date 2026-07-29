@@ -1,7 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -23,19 +23,24 @@ import {
   quoteLabel,
   requireProjectInOrg,
   requireQuoteInOrg,
+  requireQuoteOwnerOnly,
   type EffectiveQuoteStatus,
 } from "./lib/quoteState";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Quote revision mutations (#986 — Phase A of the finance version-control
- * program). Five verbs over ONE shared counter, `projects.revision`:
+ * program). Five verbs over ONE shared counter, `projects.revision`, plus
+ * `deleteDraftNative` (#1028), which undoes a "new version" rather than
+ * advancing the state machine:
  *
  * ```
  *   v1 DRAFT ─ send ─▶ v1 SENT ─ accept ─▶ v1 ACCEPTED ─▶ project may CONFIRM
  *        ▲               │ │ │
  *        └─ recall ──────┘ │ └─ decline ─▶ v1 DECLINED
  *                          └─ new version ─▶ v2 DRAFT  (v1 → SUPERSEDED on v2's send)
+ *                                 │
+ *                            delete draft ─▶ v1 SENT again (v2's number freed)
  * ```
  *
  * Properties this file exists to guarantee, each with a test in
@@ -46,8 +51,12 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * - **At most one `DRAFT`**, always at `projects.revision`.
  * - **At most one live (`SENT`/`ACCEPTED`) row** — the document the client is
  *   currently holding.
- * - **`projects.revision` is monotonic** — never decremented, never reused. A
- *   recalled-then-re-sent revision keeps its number.
+ * - **`projects.revision` is monotonic for any revision that was ever SENT** —
+ *   never decremented, never reused. A recalled-then-re-sent revision keeps its
+ *   number. The one deliberate exception: `deleteDraftNative` rolls the counter
+ *   back when the discarded draft was never sent — nobody outside the company
+ *   ever saw it, so there is no history to protect and no reason to leave a
+ *   permanent gap in the version list.
  * - **Supersede fires on SEND, not on draft.** v1 stays `SENT` while v2 is a
  *   draft, so cutting a draft never invalidates the client's document. That is
  *   the difference between version control and a delete button.
@@ -357,9 +366,14 @@ export const sendNative = mutation({
 
 /**
  * RECALL — un-send, for the pre-client typo fix. `SENT → DRAFT` on the same
- * revision (the number is never reused or skipped). The stored artifact is marked
- * recalled and RETAINED, never deleted: the client may already be holding it, so
- * destroying our copy would make the record worse, not better.
+ * revision (the number is never reused or skipped). The stored artifact is
+ * RETAINED, never deleted — the client may already be holding it, so destroying
+ * our copy would make the record worse, not better — but it IS unlinked from
+ * `pdfFileId` (moved to `recalledPdfFileIds`) so the next send is forced through
+ * a real render instead of `attachQuoteArtifact`'s "already attached" guard
+ * silently handing back the pre-recall bytes (#1027 — confirmed live bug: notes/
+ * discount edited after a recall didn't show up in the "regenerated" PDF because
+ * nothing cleared this field across the recall→resend cycle).
  *
  * Restores whatever this send superseded back to `SENT` — after recalling v2, the
  * last thing actually sent is v1, and the model must say so.
@@ -387,12 +401,27 @@ export const recallNative = mutation({
 
     const label = quoteLabel(project.projectNumber, quote.version);
     assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "EXPIRED"], label, "recall");
+    if (quote.protected) {
+      throw new ConvexError({
+        code: "QUOTE_PROTECTED",
+        message: `${label} is protected — an owner must unprotect it before it can be recalled.`,
+      });
+    }
+
+    // Unlink (never discard) the attached artifact so a resend is forced
+    // through a real render (#1027) instead of attachQuoteArtifact's
+    // "already attached" guard silently keeping the pre-recall bytes.
+    const recalledPdfFileIds = quote.pdfFileId
+      ? [...(quote.recalledPdfFileIds ?? []), quote.pdfFileId]
+      : quote.recalledPdfFileIds;
 
     await ctx.db.patch(quote._id, {
       status: "DRAFT",
       recalledAt: now,
       recalledById: actor.userId,
       recallReason: trimmed,
+      pdfFileId: undefined,
+      recalledPdfFileIds,
       updatedAt: now,
     });
 
@@ -516,6 +545,208 @@ export const newVersionNative = mutation({
     });
 
     return { id, version: next };
+  },
+});
+
+/** Everything `deleteRecalledNative` must confirm before it starts writing —
+ *  split out so the handler reads as a straight line (R-3.6, same reasoning as
+ *  `prepareSend`). Order matters: state, then never-sent, then protected, then
+ *  the typed confirmation last — so a caller fixing one rejection at a time
+ *  sees the real blocker first rather than a confirmation prompt for an action
+ *  that was never going to be allowed anyway. */
+function assertRecalledDeletable(
+  quote: Doc<"quotes">,
+  label: string,
+  confirmLabel: string,
+  now: number,
+): void {
+  assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["DRAFT"], label, "delete");
+  if (quote.sentAt == null && quote.publishedAt == null) {
+    throw new ConvexError({
+      code: "QUOTE_NEVER_SENT",
+      message: `${label} was never sent — use the ordinary draft delete instead.`,
+    });
+  }
+  if (quote.protected) {
+    throw new ConvexError({
+      code: "QUOTE_PROTECTED",
+      message: `${label} is protected — an owner must unprotect it before it can be deleted.`,
+    });
+  }
+  if (confirmLabel !== label) {
+    throw new ConvexError({
+      code: "CONFIRMATION_MISMATCH",
+      message: `Type "${label}" exactly to confirm — this permanently deletes a document the client may already hold.`,
+    });
+  }
+}
+
+/** Shared by `deleteDraftNative` and `deleteRecalledNative` (R-3.1): the revision
+ *  a project should fall back to once `excludeQuoteId` is gone — the highest
+ *  revision, among what's left, that was ever actually sent, or `1` if none was. */
+async function computeRevisionRollback(
+  ctx: MutationCtx,
+  organizationId: string,
+  projectId: string,
+  excludeQuoteId: string,
+): Promise<number> {
+  const others = (await listProjectQuotes(ctx, organizationId, projectId)).filter((q) => q.id !== excludeQuoteId);
+  const everSentVersions = others
+    .filter((q) => q.sentAt != null || q.publishedAt != null)
+    .map((q) => q.version);
+  return everSentVersions.length > 0 ? Math.max(...everSentVersions) : 1;
+}
+
+/**
+ * DELETE DRAFT (#1028) — undo a fat-fingered "new version". Only reachable for a
+ * `DRAFT` that has **never** been sent (`sentAt`/`publishedAt` both unset) —
+ * nobody outside the company has ever seen it, so nothing is lost. Anything that
+ * was ever sent (including a recalled quote sitting in `DRAFT` right now) must go
+ * through the separate recall-then-delete flow (#1029), which carries its own,
+ * stricter safeguards.
+ *
+ * `projects.revision` **rolls back** to the highest revision this project ever
+ * actually sent (or `1` if none was) — the one deliberate exception to "never
+ * decremented, never reused": that invariant is about *sent* revisions, not a
+ * number a draft merely reserved and discarded. The next "new version" reuses
+ * the freed number, so a discarded draft never leaves a permanent gap.
+ */
+export const deleteDraftNative = mutation({
+  returns: v.object({ id: v.string(), deletedVersion: v.number(), revision: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, actor: suppliedActor, auditId, now }) => {
+    const actor = await guardQuoteWrite(ctx, organizationId, suppliedActor);
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+    await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
+
+    const label = quoteLabel(project.projectNumber, quote.version);
+    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["DRAFT"], label, "delete");
+    if (quote.sentAt != null || quote.publishedAt != null) {
+      throw new ConvexError({
+        code: "QUOTE_EVER_SENT",
+        message: `${label} was sent at some point — recall it first, then delete, so the audit trail records what happened.`,
+      });
+    }
+
+    const rollbackTo = await computeRevisionRollback(ctx, organizationId, project.id, quote.id);
+
+    await ctx.db.delete(quote._id);
+    if (rollbackTo !== projectRevision(project)) {
+      await ctx.db.patch(project._id, { revision: rollbackTo, updatedAt: now });
+    }
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "DELETE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Deleted draft ${label}`,
+      details: { version: quote.version, rolledBackTo: rollbackTo },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, deletedVersion: quote.version, revision: rollbackTo };
+  },
+});
+
+/**
+ * RECALL-THEN-DELETE (#1029) — the one deliberate reversal of the earlier
+ * program-wide rule that a sent quote's document is never truly deleted. This
+ * is a two-step flow BY DESIGN: `recallNative` un-sends first (its own audience
+ * and reason requirement apply there), and only once the row is sitting in
+ * `DRAFT` with send history does this mutation become reachable at all — there
+ * is no path that skips the recall.
+ *
+ * **Owner-only** (`requireQuoteOwnerOnly` — stricter than Recall's own
+ * admin/owner/PM audience), **blocked while `protected: true`** (an owner must
+ * explicitly unprotect first — protection is the stronger guarantee), and
+ * requires a server-validated typed confirmation: `confirmLabel` must match the
+ * revision's label EXACTLY, mirroring the client's typed-confirmation dialog so
+ * a caller hitting this mutation directly (bypassing the UI) can't skip the
+ * "type the version to confirm" step (R-8.6.4's browser-direct write bar).
+ *
+ * Unlike every other delete/recall path in this file, this one ACTUALLY erases
+ * the storage bytes (`pdfFileId` and every entry in `recalledPdfFileIds`) —
+ * not just unlinks them — because the whole point is a genuine, accepted-risk
+ * full erase of a document a client may already hold. The audit log entry is
+ * written FIRST and deliberately over-detailed (project, version, label, prior
+ * artifact ids, who, when) because it is the only record left once this
+ * returns.
+ */
+export const deleteRecalledNative = mutation({
+  returns: v.object({ id: v.string(), deletedVersion: v.number(), revision: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    /** Must exactly match the revision's label, e.g. "RVLT-2026-0087 v2". */
+    confirmLabel: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, confirmLabel, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "quote");
+    await enforceBrowserWriteLimit(ctx);
+    const actor = await resolveActor(ctx, suppliedActor);
+    await requireQuoteOwnerOnly(ctx, organizationId, actor.userId, "permanently delete a sent quote");
+
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+    const label = quoteLabel(project.projectNumber, quote.version);
+    assertRecalledDeletable(quote, label, confirmLabel, now);
+
+    const rollbackTo = await computeRevisionRollback(ctx, organizationId, project.id, quote.id);
+    const erasedArtifactIds = [...(quote.pdfFileId ? [quote.pdfFileId] : []), ...(quote.recalledPdfFileIds ?? [])];
+
+    // Audit FIRST — this is the only record left once the row and its
+    // artifacts are gone.
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "DELETE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Permanently deleted previously-sent quote ${label} (recall-then-delete)`,
+      details: {
+        version: quote.version,
+        rolledBackTo: rollbackTo,
+        wasSentAt: quote.sentAt ?? quote.publishedAt,
+        erasedArtifactCount: erasedArtifactIds.length,
+      },
+      metadata: { erasedArtifactIds },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    for (const storageId of erasedArtifactIds) {
+      try {
+        await ctx.storage.delete(storageId as Id<"_storage">);
+      } catch {
+        // Already gone — this is a genuine erase, not a retry-safe attach, so
+        // a missing blob is not an error condition (deleteFile in files.ts is
+        // idempotent the same way).
+      }
+    }
+
+    await ctx.db.delete(quote._id);
+    if (rollbackTo !== projectRevision(project)) {
+      await ctx.db.patch(project._id, { revision: rollbackTo, updatedAt: now });
+    }
+
+    return { id: quote.id, deletedVersion: quote.version, revision: rollbackTo };
   },
 });
 
@@ -683,6 +914,12 @@ export const markAcceptedNative = mutation({
       acceptedAt: stampedAcceptedAt,
       acceptedById: actor.userId,
       acceptanceRef: acceptanceRef?.trim() || undefined,
+      // #1030 — a client has committed to these exact numbers; protect the
+      // revision by default. An owner can still explicitly unprotect if a
+      // genuine correction is later needed (setQuoteProtectedNative).
+      protected: true,
+      protectedAt: now,
+      protectedById: actor.userId,
       updatedAt: now,
     });
 
@@ -764,6 +1001,167 @@ export const markDeclinedNative = mutation({
 });
 
 /**
+ * PROTECT (#1030) — a soft lock independent of quote status. Owner-only
+ * (`requireQuoteOwnerOnly` — stricter than Recall's admin/owner/PM audience,
+ * see that helper's docstring): while `protected: true`, Recall refuses
+ * (checked in `recallNative` above), and recall-then-delete (#1029) / Correction
+ * (#1031) will refuse the same way once built. New Version is deliberately
+ * unaffected — it never touches the protected row, only opens a fresh draft at
+ * the next number.
+ *
+ * Reachable on any revision, not just `SENT`/`ACCEPTED` — an owner may want to
+ * pre-protect a draft they're about to send, and un-protecting is always safe
+ * to allow regardless of state.
+ */
+export const setQuoteProtectedNative = mutation({
+  returns: v.object({ id: v.string(), version: v.number(), protected: v.boolean() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    protect: v.boolean(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, protect, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "quote");
+    await enforceBrowserWriteLimit(ctx);
+    const actor = await resolveActor(ctx, suppliedActor);
+    await requireQuoteOwnerOnly(ctx, organizationId, actor.userId, protect ? "protect a quote" : "unprotect a quote");
+
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+    const label = quoteLabel(project.projectNumber, quote.version);
+
+    await ctx.db.patch(quote._id, {
+      protected: protect,
+      protectedAt: protect ? now : undefined,
+      protectedById: protect ? actor.userId : undefined,
+      updatedAt: now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "UPDATE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `${protect ? "Protected" : "Unprotected"} quote ${label}`,
+      details: { version: quote.version, protected: protect },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, version: quote.version, protected: protect };
+  },
+});
+
+/**
+ * CORRECTION (#1031) — an audited in-place fix to a `SENT`/`ACCEPTED`
+ * revision's `quoteDate`/`validUntil`, no version bump, no price change. This
+ * is deliberately narrower than it might sound: it does NOT touch `sentAt`
+ * (the system's true record of when the send actually happened — only the
+ * date PRINTED ON THE DOCUMENT is correctable), and it does NOT touch
+ * `snapshot`/pricing/structure at all — that's what New Version is for.
+ *
+ * Same shape as the recall path for the attached artifact: `pdfFileId` is
+ * unlinked (pushed onto `recalledPdfFileIds`, never discarded) so the next
+ * render is forced fresh rather than serving the pre-correction bytes. The PDF
+ * itself isn't re-rendered here — that's the Node-side server action's job
+ * (`generateQuoteArtifact`, `src/server/finance-documents.ts`), same division
+ * of labour `sendNative` already has with its own auto-render step. The
+ * "REISSUED — corrects vN sent X, edited by Y on Z" watermark on the reissued
+ * PDF is separate follow-up work in the PDF pipeline (`document-layouts.ts` /
+ * `document-composer.ts`), not built by this mutation.
+ *
+ * Owner-only (`requireQuoteOwnerOnly`) and blocked while `protected: true` —
+ * same bar as recall-then-delete: this mutates a document a client may
+ * already hold, so it gets the higher of the two audiences discussed for it
+ * rather than Recall's narrower one.
+ */
+export const correctQuoteNative = mutation({
+  returns: v.object({ id: v.string(), version: v.number(), quoteDate: v.number(), validUntil: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    /** The corrected date to print on the document. */
+    quoteDate: v.number(),
+    /** Defaults to the revision's own `validityDays`, then the org default. */
+    validityDays: v.optional(v.number()),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, quoteDate, validityDays, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "quote");
+    await enforceBrowserWriteLimit(ctx);
+    const actor = await resolveActor(ctx, suppliedActor);
+    await requireQuoteOwnerOnly(ctx, organizationId, actor.userId, "correct a sent quote's date");
+
+    assertNumRange(quoteDate, "quoteDate", DATE_BOUNDS);
+    assertNumRange(validityDays, "validityDays", { ...QUOTE_VALIDITY_BOUNDS, integer: true });
+
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+    const label = quoteLabel(project.projectNumber, quote.version);
+    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "ACCEPTED"], label, "correct");
+    if (quote.protected) {
+      throw new ConvexError({
+        code: "QUOTE_PROTECTED",
+        message: `${label} is protected — an owner must unprotect it before it can be corrected.`,
+      });
+    }
+
+    const config = await resolveOrgQuoteConfig(ctx, organizationId);
+    const days = validityDays ?? quote.validityDays ?? config.quoteValidityDays;
+    const stampedQuoteDate = startOfDayInTimezone(quoteDate, config.timezone);
+    const newValidUntil = computeValidUntil(stampedQuoteDate, days, config.timezone);
+
+    // Same unlink-not-discard shape as recall (#1027): forces the next render
+    // through a real render instead of attachQuoteArtifact's guard silently
+    // keeping the pre-correction bytes attached under a since-corrected date.
+    const recalledPdfFileIds = quote.pdfFileId
+      ? [...(quote.recalledPdfFileIds ?? []), quote.pdfFileId]
+      : quote.recalledPdfFileIds;
+
+    await ctx.db.patch(quote._id, {
+      quoteDate: stampedQuoteDate,
+      validUntil: newValidUntil,
+      validityDays: days,
+      pdfFileId: undefined,
+      recalledPdfFileIds,
+      correctedAt: now,
+      correctedById: actor.userId,
+      updatedAt: now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "UPDATE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Corrected quote ${label}'s date`,
+      details: {
+        version: quote.version,
+        previousQuoteDate: quote.quoteDate ?? null,
+        newQuoteDate: stampedQuoteDate,
+        previousValidUntil: quote.validUntil ?? null,
+        newValidUntil,
+      },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, version: quote.version, quoteDate: stampedQuoteDate, validUntil: newValidUntil };
+  },
+});
+
+/**
  * The client-supplied field sets, exported for the Zod↔Convex parity test
  * (`convex/validationDrift.test.ts`, R-8.6.1) — each one pairs with the
  * correspondingly-named schema in `src/lib/validations/quote.ts`. Dates are
@@ -794,6 +1192,16 @@ export const agentOps: AgentOpsAnnotations = {
   // supersedes) — the classification tracks §9's stated categories.
   markAcceptedNative: { danger: "high" },
   markDeclinedNative: { danger: "high" },
+  // Delete/archive is unconditionally high per the CLAUDE.md danger rubric even
+  // though the blast radius here is small (a never-sent draft only) — deletion
+  // is irreversible, so the dispatcher's confirm:true gate applies regardless.
+  deleteDraftNative: { danger: "high" },
+  // Genuinely irreversible — the one mutation in this file that deletes
+  // storage bytes a client may already hold, not just unlinks/preserves them.
+  deleteRecalledNative: { danger: "high" },
+  // Mutates dates on a document a client may already hold, forcing a re-render
+  // under the same revision number — same risk class as recall/send.
+  correctQuoteNative: { danger: "high" },
   // Cuts a fresh DRAFT at the next revision — the prior SENT/ACCEPTED quote the
   // client is holding is left untouched until that draft is itself sent.
   newVersionNative: { danger: "medium" },
@@ -802,4 +1210,8 @@ export const agentOps: AgentOpsAnnotations = {
   // newVersionNative — only its money fields are seeded from a past snapshot.
   repriceFromRevisionNative: { danger: "medium" },
   sendNative: { danger: "high" },
+  // Unprotecting is lock-softening (CLAUDE.md's high rubric) — it reopens
+  // Recall/Correction on a revision a client may hold. Classified high for
+  // both directions of the boolean rather than splitting the mutation.
+  setQuoteProtectedNative: { danger: "high" },
 };

@@ -46,3 +46,19 @@ export function useIsManagerPlus(): boolean {
   if (isLoading) return false;
   return isManagerPlusRole(role);
 }
+
+/**
+ * Strictly org OWNER — the client-side half of `requireQuoteOwnerOnly`
+ * (`convex/lib/quoteState.ts`). A handful of quote actions (protect,
+ * recall-then-delete, correct) are owner-only because they touch a document a
+ * client may already hold, and `hasPermission`'s "owner always passes" safety
+ * net makes a resource/action `CanDo` check unusable for expressing "owner
+ * only" — admins/managers can hold the same `invoice:publish` grant. This is
+ * UX gating only; the server re-checks unconditionally. While loading, treat
+ * as NOT owner (safe default — don't flash owner-only buttons).
+ */
+export function useIsOwner(): boolean {
+  const { role, isLoading } = useCurrentRole();
+  if (isLoading) return false;
+  return role === "owner";
+}

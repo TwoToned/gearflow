@@ -291,6 +291,131 @@ describe("quotesWrites.newVersionNative — monotonicity and the one-draft invar
   });
 });
 
+describe("quotesWrites.deleteDraftNative", () => {
+  const del = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.deleteDraftNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+
+  test("deletes a v1 draft that was never sent — nothing to roll back to but 1", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    // Simulate a v1 draft row existing (e.g. from backfill) without ever sending it.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    const result = await del(t);
+    expect(result.deletedVersion).toBe(1);
+    expect(result.revision).toBe(1);
+    expect(await getQuotes(t)).toHaveLength(0);
+    expect((await getProject(t))?.revision).toBe(1);
+  });
+
+  test("deletes a fat-fingered v2 draft — rolls the counter back to v1, which stays SENT", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    expect((await getProject(t))?.revision).toBe(2);
+
+    const result = await del(t, { id: "q2", auditId: "a3", now: NOW + 2 });
+    expect(result.deletedVersion).toBe(2);
+    expect(result.revision).toBe(1);
+
+    const quotes = await getQuotes(t);
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]?.id).toBe("q1");
+    expect(quotes[0]?.status).toBe("SENT");
+    expect((await getProject(t))?.revision).toBe(1);
+
+    // The freed number is reusable — a fresh "new version" becomes v2 again.
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q3", organizationId: ORG, projectId: "p1", actor, auditId: "a4", now: NOW + 3,
+    });
+    expect((await getProject(t))?.revision).toBe(2);
+  });
+
+  test("rolls back to the highest EVER-sent revision, not just the immediately preceding one", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 sent
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    await send(t, { id: "ignored", auditId: "a3", now: NOW + 2 }); // v2 sent, supersedes v1
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q3", organizationId: ORG, projectId: "p1", actor, auditId: "a4", now: NOW + 3,
+    });
+    expect((await getProject(t))?.revision).toBe(3);
+
+    const result = await del(t, { id: "q3", auditId: "a5", now: NOW + 4 });
+    expect(result.revision).toBe(2); // not 1 — v2 is the highest revision that was ever sent
+    expect((await getProject(t))?.revision).toBe(2);
+    expect((await getQuotes(t)).find((q) => q.id === "q2")?.status).toBe("SENT");
+  });
+
+  test("refuses to delete a quote that was ever sent, even if currently recalled back to DRAFT", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Wrong rental window", actor, auditId: "a2", now: NOW + 1,
+    });
+    expect((await getQuotes(t))[0]?.status).toBe("DRAFT"); // recalled — currently a draft
+
+    await expect(del(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/was sent at some point.*recall/i);
+    expect(await getQuotes(t)).toHaveLength(1); // untouched
+  });
+
+  test("refuses to delete a SENT or ACCEPTED quote directly", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    await expect(del(t, { auditId: "a2" })).rejects.toThrow(/is sent/i);
+  });
+
+  test("a viewer is denied (invoice:publish)", async () => {
+    const t = makeT();
+    await seedMember(t, "viewer");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(del(t)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: OTHER, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(del(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
 describe("quotesWrites.recallNative", () => {
   const recall = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
     t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
@@ -310,6 +435,45 @@ describe("quotesWrites.recallNative", () => {
     expect(quotes[0]?.recalledById).toBe(USER);
     // Never deleted — the client may already be holding the document.
     expect(quotes[0]?.sentAt).toBe(NOW);
+  });
+
+  test("unlinks (never discards) the attached artifact, forcing the next send through a real render (#1027)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    // Simulate the server action having attached a rendered PDF at send time.
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1" });
+    });
+
+    await recall(t);
+    const [recalled] = await getQuotes(t);
+    expect(recalled?.pdfFileId).toBeFalsy();
+    expect(recalled?.recalledPdfFileIds).toEqual(["storage_v1"]);
+
+    // Resend the same revision (e.g. after fixing notes/discount) — the guard
+    // in attachQuoteArtifact only refuses when pdfFileId is already set, so a
+    // fresh render can now actually attach instead of being silently skipped.
+    await send(t, { auditId: "a3", now: NOW + 2, notes: "Corrected notes" });
+    const afterResend = await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      return quote!;
+    });
+    // sendNative itself never attaches (that's attachQuoteArtifact's job) —
+    // this confirms the guard is unblocked, not bypassed: pdfFileId is still
+    // unset after the resend, ready for a real render to attach fresh bytes.
+    expect(afterResend.pdfFileId).toBeFalsy();
+
+    // Recalling a second time preserves BOTH prior artifacts, never overwriting.
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1_corrected" });
+    });
+    await recall(t, { auditId: "a4", now: NOW + 3 });
+    const [recalledAgain] = await getQuotes(t);
+    expect(recalledAgain?.recalledPdfFileIds).toEqual(["storage_v1", "storage_v1_corrected"]);
   });
 
   test("restores the revision this send superseded", async () => {
@@ -380,6 +544,351 @@ describe("quotesWrites.recallNative", () => {
     });
 
     await expect(recall(t)).rejects.toThrow(/quote not found/i);
+  });
+
+  test("refuses to recall a protected quote (#1030)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(recall(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/protected/i);
+    expect((await getQuotes(t))[0]?.status).toBe("SENT"); // untouched
+
+    // Unprotecting clears the way again.
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a4", now: NOW + 3,
+    });
+    await recall(t, { auditId: "a5", now: NOW + 4 });
+    expect((await getQuotes(t))[0]?.status).toBe("DRAFT");
+  });
+});
+
+describe("quotesWrites.setQuoteProtectedNative", () => {
+  test("an owner can protect and unprotect", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    const on = await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+    });
+    expect(on.protected).toBe(true);
+    let [quote] = await getQuotes(t);
+    expect(quote?.protected).toBe(true);
+    expect(quote?.protectedById).toBe(USER);
+
+    const off = await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a3", now: NOW + 2,
+    });
+    expect(off.protected).toBe(false);
+    [quote] = await getQuotes(t);
+    expect(quote?.protected).toBe(false);
+    expect(quote?.protectedById).toBeFalsy();
+  });
+
+  test("an admin — even though admin passes isHardLockOverrideAllowed — is NOT owner-only", async () => {
+    const t = makeT();
+    await seedMember(t, "admin");
+    await seedProject(t);
+    await send(t);
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+        id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/only an org owner/i);
+  });
+
+  test("a manager is denied", async () => {
+    const t = makeT();
+    await seedMember(t, "manager");
+    await seedProject(t);
+    await send(t);
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+        id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/only an org owner/i);
+  });
+
+  test("accepting a quote auto-protects it", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
+    });
+
+    const [quote] = await getQuotes(t);
+    expect(quote?.status).toBe("ACCEPTED");
+    expect(quote?.protected).toBe(true);
+    expect(quote?.protectedById).toBe(USER);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+        id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/quote not found/i);
+  });
+});
+
+describe("quotesWrites.deleteRecalledNative — recall-then-delete, the one full-erase path (#1029)", () => {
+  const recallThenDeleteSetup = async (t: ReturnType<typeof makeT>) => {
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Client requested full removal", actor, auditId: "a2", now: NOW + 1,
+    });
+  };
+
+  const del = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.deleteRecalledNative, {
+      id: "q1", organizationId: ORG, confirmLabel: "RVLT-2026-0087 v1", actor, auditId: "a3", now: NOW + 2, ...over,
+    } as never);
+
+  test("an owner can permanently erase a recalled, previously-sent quote with the exact typed label", async () => {
+    const t = makeT();
+    await recallThenDeleteSetup(t);
+
+    const result = await del(t);
+    expect(result.deletedVersion).toBe(1);
+    expect(result.revision).toBe(1); // nothing else was ever sent — falls back to 1
+    expect(await getQuotes(t)).toHaveLength(0);
+    expect((await getProject(t))?.revision).toBe(1);
+  });
+
+  test("rejects a confirmLabel that doesn't match exactly — no silent 'close enough'", async () => {
+    const t = makeT();
+    await recallThenDeleteSetup(t);
+
+    await expect(del(t, { confirmLabel: "RVLT-2026-0087 V1" })).rejects.toThrow(/type.*exactly/i);
+    await expect(del(t, { confirmLabel: "RVLT-2026-0087 v1 " })).rejects.toThrow(/type.*exactly/i);
+    expect(await getQuotes(t)).toHaveLength(1); // untouched by the failed attempts
+  });
+
+  test("refuses a quote that hasn't been recalled yet (still SENT)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    await expect(del(t, { auditId: "a2", now: NOW + 1 })).rejects.toThrow(/is sent/i);
+    expect(await getQuotes(t)).toHaveLength(1);
+  });
+
+  test("refuses a never-sent draft — that's deleteDraftNative's job", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(
+      del(t, { confirmLabel: "RVLT-2026-0087 v1", auditId: "a2", now: NOW + 1 }),
+    ).rejects.toThrow(/never sent/i);
+  });
+
+  test("refuses while protected — an owner must unprotect first", async () => {
+    const t = makeT();
+    await recallThenDeleteSetup(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: true, actor, auditId: "a3", now: NOW + 2,
+    });
+
+    await expect(del(t, { auditId: "a4", now: NOW + 3 })).rejects.toThrow(/protected/i);
+    expect(await getQuotes(t)).toHaveLength(1);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a5", now: NOW + 4,
+    });
+    await del(t, { auditId: "a6", now: NOW + 5 });
+    expect(await getQuotes(t)).toHaveLength(0);
+  });
+
+  test("an admin — passes isHardLockOverrideAllowed, but is NOT owner-only — is denied", async () => {
+    const t = makeT();
+    await seedMember(t, "admin");
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Client requested full removal", actor, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(del(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/only an org owner/i);
+    expect(await getQuotes(t)).toHaveLength(1);
+  });
+
+  test("rolls back to the highest-ever-sent OTHER revision, not necessarily 1", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t); // v1 sent
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    await send(t, { id: "ignored", auditId: "a3", now: NOW + 2 }); // v2 sent, supersedes v1
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q2", organizationId: ORG, reason: "Client requested full removal", actor, auditId: "a4", now: NOW + 3,
+    });
+
+    const result = await del(t, { id: "q2", confirmLabel: "RVLT-2026-0087 v2", auditId: "a5", now: NOW + 4 });
+    expect(result.revision).toBe(1); // v1 is the highest-ever-sent revision left
+    expect((await getProject(t))?.revision).toBe(1);
+    expect((await getQuotes(t)).find((q) => q.id === "q1")?.status).toBe("SENT"); // recall already restored it
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: OTHER, reason: "Client requested full removal",
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(del(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/quote not found/i);
+  });
+});
+
+describe("quotesWrites.correctQuoteNative — audited in-place date fix, no version bump (#1031)", () => {
+  const correct = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.correctQuoteNative, {
+      id: "q1", organizationId: ORG, quoteDate: NOW + 5 * DAY, actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+
+  test("corrects quoteDate/validUntil, preserves the original validityDays, unlinks the artifact, never touches sentAt", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t, { validityDays: 14 }); // sentAt = NOW, quoteDate = NOW, validUntil = NOW + 14d EOD
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1" });
+    });
+
+    const result = await correct(t);
+    // Same validityDays (14) re-anchored to the new quoteDate (NOW + 5d).
+    expect(result.quoteDate).toBe(Date.UTC(2023, 10, 19)); // NOW + 5 days, start of day UTC
+    expect(result.validUntil).toBe(Date.UTC(2023, 11, 3, 23, 59, 59, 999)); // Nov 19 + 14 days = Dec 3, end of day
+
+    const [quote] = await getQuotes(t);
+    expect(quote?.validityDays).toBe(14);
+    expect(quote?.sentAt).toBe(NOW); // untouched — system truth of when it was actually sent
+    expect(quote?.correctedAt).toBe(NOW + 1);
+    expect(quote?.correctedById).toBe(USER);
+    expect(quote?.pdfFileId).toBeFalsy();
+    expect(quote?.recalledPdfFileIds).toEqual(["storage_v1"]);
+  });
+
+  test("an explicit validityDays overrides the revision's original one", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t, { validityDays: 14 });
+
+    const result = await correct(t, { validityDays: 7 });
+    expect(result.validUntil).toBe(Date.UTC(2023, 10, 26, 23, 59, 59, 999)); // Nov 19 + 7 days = Nov 26, end of day
+
+    expect((await getQuotes(t))[0]?.validityDays).toBe(7);
+  });
+
+  test("works on an ACCEPTED revision too, but is blocked once protect auto-fires (#1030)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
+    });
+
+    // ACCEPTED auto-protects (#1030) — correction is blocked until unprotected.
+    await expect(correct(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/protected/i);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a4", now: NOW + 3,
+    });
+    const result = await correct(t, { auditId: "a5", now: NOW + 4 });
+    expect(result.version).toBe(1);
+    expect((await getQuotes(t))[0]?.status).toBe("ACCEPTED"); // status itself is untouched
+  });
+
+  test("refuses a DRAFT revision", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(correct(t)).rejects.toThrow(/hasn't been sent yet/i);
+  });
+
+  test("validates quoteDate and validityDays bounds server-side", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    await expect(correct(t, { validityDays: 0 })).rejects.toThrow(/at least 1/i);
+    await expect(correct(t, { validityDays: 400 })).rejects.toThrow(/at most 365/i);
+  });
+
+  test("a manager (passes invoice:publish) is NOT owner-only", async () => {
+    const t = makeT();
+    await seedMember(t, "manager");
+    await seedProject(t);
+    await send(t);
+
+    await expect(correct(t)).rejects.toThrow(/only an org owner/i);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+
+    await expect(correct(t)).rejects.toThrow(/quote not found/i);
   });
 });
 

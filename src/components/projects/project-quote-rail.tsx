@@ -2,7 +2,21 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Download, Eye, FileText, History, Send, Undo2, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Eye,
+  FileText,
+  History,
+  Lock,
+  Pencil,
+  Send,
+  Trash2,
+  Undo2,
+  Unlock,
+  XCircle,
+} from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
@@ -12,13 +26,16 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { quoteStatusIntent } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
+import { useIsOwner } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
+import { CorrectQuoteDialog } from "@/components/projects/finance/correct-quote-dialog";
+import { DeleteRecalledDialog } from "@/components/projects/finance/delete-recalled-dialog";
 import { QuoteRevisionViewerDialog } from "@/components/projects/finance/quote-revision-viewer-dialog";
 import { RepriceFromRevisionDialog } from "@/components/projects/finance/reprice-from-revision-dialog";
 import { QuoteDriftIndicator } from "@/components/projects/finance/quote-drift-indicator";
@@ -44,13 +61,24 @@ interface QuoteRevisionDoc {
    *  `PUBLISHED` on a row the backfill hasn't reached. */
   effectiveStatus: string;
   sentAt?: number;
+  /** DEPRECATED pre-#986 name — a row only the backfill hasn't reached yet
+   *  can carry this instead of `sentAt`. Checked alongside it wherever "was
+   *  this ever sent" matters (deleteDraft vs. deleteRecalled eligibility),
+   *  mirroring `convex/quotesWrites.ts`'s own check. */
+  publishedAt?: number;
+  quoteDate?: number;
   validUntil?: number;
+  validityDays?: number;
   snapshot?: unknown;
   snapshotId?: string | null;
   /** The STORED document for this revision (#987) — the bytes the client was
    *  given. Null on a never-sent draft, and on a sent revision whose render
    *  failed (which is what the retry action is for). */
   pdfFileId?: string;
+  /** Soft lock (#1030) — while true, Recall/Correction/recall-then-delete all
+   *  refuse server-side; the row hides those actions rather than offering a
+   *  button that will just error. */
+  protected?: boolean;
 }
 
 type ReasonVerb = "recall" | "decline";
@@ -80,6 +108,9 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   const [acceptTarget, setAcceptTarget] = useState<QuoteRevisionDoc | null>(null);
   const [viewerTarget, setViewerTarget] = useState<QuoteRevisionDoc | null>(null);
   const [repriceTarget, setRepriceTarget] = useState<QuoteRevisionDoc | null>(null);
+  const [deleteDraftTarget, setDeleteDraftTarget] = useState<QuoteRevisionDoc | null>(null);
+  const [deleteRecalledTarget, setDeleteRecalledTarget] = useState<QuoteRevisionDoc | null>(null);
+  const [correctTarget, setCorrectTarget] = useState<QuoteRevisionDoc | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   const quotes = useAuthedQuery(api.quotes.listForProject, orgId ? { orgId, projectId, now } : "skip");
@@ -141,11 +172,36 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         onDecline={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
         onRecall={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
         onView={setViewerTarget}
+        onDeleteDraft={setDeleteDraftTarget}
+        onDeleteRecalled={setDeleteRecalledTarget}
+        onCorrect={setCorrectTarget}
       />
 
       <UnacceptedLiveQuoteNotice liveQuote={liveQuote} hasAcceptedQuote={hasAcceptedQuote} />
 
       <ReasonDialog target={reasonTarget} onClose={() => setReasonTarget(null)} />
+
+      <DeleteDraftDialog target={deleteDraftTarget} onClose={() => setDeleteDraftTarget(null)} />
+
+      {deleteRecalledTarget && (
+        <DeleteRecalledDialog
+          open={!!deleteRecalledTarget}
+          onOpenChange={(open) => !open && setDeleteRecalledTarget(null)}
+          quoteId={deleteRecalledTarget.id}
+          label={`${projectNumber} v${deleteRecalledTarget.version}`}
+        />
+      )}
+
+      {correctTarget && (
+        <CorrectQuoteDialog
+          open={!!correctTarget}
+          onOpenChange={(open) => !open && setCorrectTarget(null)}
+          quoteId={correctTarget.id}
+          version={correctTarget.version}
+          currentQuoteDate={correctTarget.quoteDate}
+          currentValidityDays={correctTarget.validityDays}
+        />
+      )}
 
       <SendQuoteDialog
         open={sendOpen}
@@ -256,6 +312,9 @@ function QuoteRevisionList({
   onDecline,
   onRecall,
   onView,
+  onDeleteDraft,
+  onDeleteRecalled,
+  onCorrect,
 }: {
   quotes: QuoteRevisionDoc[];
   visibleQuotes: QuoteRevisionDoc[];
@@ -269,6 +328,9 @@ function QuoteRevisionList({
   onDecline: (quote: QuoteRevisionDoc) => void;
   onRecall: (quote: QuoteRevisionDoc) => void;
   onView: (quote: QuoteRevisionDoc) => void;
+  onDeleteDraft: (quote: QuoteRevisionDoc) => void;
+  onDeleteRecalled: (quote: QuoteRevisionDoc) => void;
+  onCorrect: (quote: QuoteRevisionDoc) => void;
 }) {
   if (quotes.length === 0) {
     return <p className="t-micro text-fg-4">No quote yet — sending creates v{revision}.</p>;
@@ -285,6 +347,9 @@ function QuoteRevisionList({
             onDecline={() => onDecline(quote)}
             onRecall={() => onRecall(quote)}
             onView={() => onView(quote)}
+            onDeleteDraft={() => onDeleteDraft(quote)}
+            onDeleteRecalled={() => onDeleteRecalled(quote)}
+            onCorrect={() => onCorrect(quote)}
             now={now}
           />
         ))}
@@ -397,6 +462,124 @@ function QuoteRailTargetDialogs({
  * number of its own (decision 5); it is referred to everywhere as
  * `<projectNumber> v<version>`, and the project number is already on the page.
  */
+/** Derived booleans shared by `QuoteRevisionRow` and its two action clusters —
+ *  computed once so the split-out components read as pure props, not a second
+ *  copy of the same status checks (R-3.1). */
+function quoteRowFlags(quote: QuoteRevisionDoc) {
+  const isSent = quote.effectiveStatus === "SENT";
+  const isAccepted = quote.effectiveStatus === "ACCEPTED";
+  // A sent-or-expired revision is the one the client is holding: it can be
+  // recalled or declined. Only a still-valid one can be accepted.
+  const isHeldByClient = isSent || quote.effectiveStatus === "EXPIRED";
+  const isProtected = !!quote.protected;
+  const everSent = quote.sentAt != null || quote.publishedAt != null;
+  // A DRAFT with send history is sitting here because of a Recall (#1027) —
+  // it needs the stricter recall-then-delete flow (#1029), not the ordinary
+  // never-sent draft delete (#1028).
+  const isRecalledDraft = quote.effectiveStatus === "DRAFT" && everSent;
+  const isNeverSentDraft = quote.effectiveStatus === "DRAFT" && !everSent;
+  return { isSent, isAccepted, isHeldByClient, isProtected, isRecalledDraft, isNeverSentDraft };
+}
+
+/** The `invoice:publish` cluster — accept/decline/recall/delete-draft. Same
+ *  audience every other verb in this file already used before #1026. */
+function StandardQuoteActions({
+  flags,
+  onAccept,
+  onDecline,
+  onRecall,
+  onDeleteDraft,
+}: {
+  flags: ReturnType<typeof quoteRowFlags>;
+  onAccept: () => void;
+  onDecline: () => void;
+  onRecall: () => void;
+  onDeleteDraft: () => void;
+}) {
+  const { isSent, isHeldByClient, isProtected, isNeverSentDraft } = flags;
+  return (
+    <CanDo resource="invoice" action="publish">
+      <div className="flex items-center gap-1.5">
+        {isSent && (
+          <Button type="button" variant="line" size="sm" onClick={onAccept}>
+            <CheckCircle2 className="h-3.5 w-3.5" /> Mark accepted
+          </Button>
+        )}
+        {isHeldByClient && (
+          <Button type="button" variant="line" size="sm" onClick={onDecline}>
+            <XCircle className="h-3.5 w-3.5" /> Declined
+          </Button>
+        )}
+        {isHeldByClient && !isProtected && (
+          <Button type="button" variant="line" size="sm" onClick={onRecall}>
+            <Undo2 className="h-3.5 w-3.5" /> Recall
+          </Button>
+        )}
+        {isNeverSentDraft && (
+          <Button type="button" variant="line" size="sm" onClick={onDeleteDraft}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete draft
+          </Button>
+        )}
+      </div>
+    </CanDo>
+  );
+}
+
+/** The owner-only cluster (#1026 follow-up program) — protect/unprotect,
+ *  correct-date, recall-then-delete. `requireQuoteOwnerOnly` server-side is
+ *  the real gate; `useIsOwner` here is UX only (hide, don't just disable, so
+ *  a non-owner isn't shown a button that will only ever 403). */
+function OwnerOnlyQuoteActions({
+  quote,
+  flags,
+  onDeleteRecalled,
+  onCorrect,
+}: {
+  quote: QuoteRevisionDoc;
+  flags: ReturnType<typeof quoteRowFlags>;
+  onDeleteRecalled: () => void;
+  onCorrect: () => void;
+}) {
+  const isOwner = useIsOwner();
+  const quoteWrites = useQuoteWrites();
+  const protectMutation = useServerMutation({
+    mutationFn: (next: boolean) => quoteWrites.setProtected(quote.id, next),
+    onSuccess: (r) => toast.success(r.protected ? `Protected v${quote.version}` : `Unprotected v${quote.version}`),
+    onError: (e) => toast.error(e.message),
+  });
+  if (!isOwner) return null;
+
+  const { isSent, isAccepted, isProtected, isRecalledDraft } = flags;
+  return (
+    <>
+      {(isSent || isAccepted) && (
+        <div className="flex items-center gap-1.5">
+          {!isProtected && (
+            <Button type="button" variant="line" size="sm" onClick={onCorrect}>
+              <Pencil className="h-3.5 w-3.5" /> Correct date
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="line"
+            size="sm"
+            loading={protectMutation.isPending}
+            onClick={() => protectMutation.mutate(!isProtected)}
+          >
+            {isProtected ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            {isProtected ? "Unprotect" : "Protect"}
+          </Button>
+        </div>
+      )}
+      {isRecalledDraft && !isProtected && (
+        <Button type="button" variant="line" size="sm" onClick={onDeleteRecalled}>
+          <Trash2 className="h-3.5 w-3.5" /> Delete permanently
+        </Button>
+      )}
+    </>
+  );
+}
+
 function QuoteRevisionRow({
   quote,
   projectId,
@@ -404,6 +587,9 @@ function QuoteRevisionRow({
   onDecline,
   onRecall,
   onView,
+  onDeleteDraft,
+  onDeleteRecalled,
+  onCorrect,
   now,
 }: {
   quote: QuoteRevisionDoc;
@@ -412,12 +598,12 @@ function QuoteRevisionRow({
   onDecline: () => void;
   onRecall: () => void;
   onView: () => void;
+  onDeleteDraft: () => void;
+  onDeleteRecalled: () => void;
+  onCorrect: () => void;
   now: number;
 }) {
-  const isSent = quote.effectiveStatus === "SENT";
-  // A sent-or-expired revision is the one the client is holding: it can be
-  // recalled or declined. Only a still-valid one can be accepted.
-  const isHeldByClient = isSent || quote.effectiveStatus === "EXPIRED";
+  const flags = quoteRowFlags(quote);
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
@@ -426,25 +612,14 @@ function QuoteRevisionRow({
       </button>
       <div className="flex flex-wrap items-center gap-1.5">
         <QuoteDocumentAction quote={quote} projectId={projectId} />
-        <CanDo resource="invoice" action="publish">
-          <div className="flex items-center gap-1.5">
-            {isSent && (
-              <Button type="button" variant="line" size="sm" onClick={onAccept}>
-                <CheckCircle2 className="h-3.5 w-3.5" /> Mark accepted
-              </Button>
-            )}
-            {isHeldByClient && (
-              <Button type="button" variant="line" size="sm" onClick={onDecline}>
-                <XCircle className="h-3.5 w-3.5" /> Declined
-              </Button>
-            )}
-            {isHeldByClient && (
-              <Button type="button" variant="line" size="sm" onClick={onRecall}>
-                <Undo2 className="h-3.5 w-3.5" /> Recall
-              </Button>
-            )}
-          </div>
-        </CanDo>
+        <StandardQuoteActions
+          flags={flags}
+          onAccept={onAccept}
+          onDecline={onDecline}
+          onRecall={onRecall}
+          onDeleteDraft={onDeleteDraft}
+        />
+        <OwnerOnlyQuoteActions quote={quote} flags={flags} onDeleteRecalled={onDeleteRecalled} onCorrect={onCorrect} />
       </div>
     </li>
   );
@@ -562,6 +737,58 @@ function intentToBadgeStatus(intent: ReturnType<typeof quoteStatusIntent>): "ok"
     default:
       return "neutral";
   }
+}
+
+/** Delete a never-sent draft (#1028) — a plain confirm, no text field, since
+ *  nothing outside the company has ever seen this revision. Still a real
+ *  `Dialog` rather than `window.confirm` (CLAUDE.md — no `AlertDialog`
+ *  anywhere in this codebase). Recall-then-delete (#1029) is a different,
+ *  stricter dialog (`DeleteRecalledDialog`) — this one never fires for a
+ *  revision that was ever sent; the server rejects it too if the row somehow
+ *  changed underneath the click. */
+function DeleteDraftDialog({ target, onClose }: { target: QuoteRevisionDoc | null; onClose: () => void }) {
+  const quoteWrites = useQuoteWrites();
+  const [pending, setPending] = useState(false);
+
+  async function confirm() {
+    if (!target) return;
+    setPending(true);
+    try {
+      const result = await quoteWrites.deleteDraft(target.id);
+      toast.success(
+        result.revision === target.version
+          ? `Deleted v${target.version}`
+          : `Deleted v${target.version} — back to v${result.revision}`,
+      );
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!target} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Delete draft v{target?.version}</DialogTitle>
+          <DialogDescription>
+            Nobody outside the company has seen this draft. Deleting it frees the version number for the
+            next one.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="line" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="button" loading={pending} onClick={() => void confirm()}>
+            Delete draft
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 /** Recall and decline both take a bounded reason, so both route through ONE

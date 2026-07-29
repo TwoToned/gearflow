@@ -62,7 +62,21 @@ export const quoteDeclineSchema = quoteBaseSchema
   .pick({ reason: true })
   .extend({ reason: z.string().min(3).max(1000) });
 
+/** Correct (#1031) — fixes the date PRINTED on an already-sent revision, no
+ *  version bump. Unlike Send, `quoteDate` is REQUIRED here: there is no
+ *  "today" default for a correction — the user is deliberately picking a
+ *  specific date to replace the wrong one. */
+export const quoteCorrectSchema = quoteBaseSchema
+  .pick({ validityDays: true })
+  .extend({ quoteDate: z.coerce.date() });
+
+/** Recall-then-delete (#1029) — the server does the real check (exact match
+ *  against the revision's label); this only guards against submitting empty. */
+export const quoteDeleteRecalledSchema = z.object({ confirmLabel: z.string().min(1) });
+
 export type QuoteSendValues = z.input<typeof quoteSendSchema>;
 export type QuoteRecallValues = z.input<typeof quoteRecallSchema>;
 export type QuoteAcceptValues = z.input<typeof quoteAcceptSchema>;
 export type QuoteDeclineValues = z.input<typeof quoteDeclineSchema>;
+export type QuoteCorrectValues = z.input<typeof quoteCorrectSchema>;
+export type QuoteDeleteRecalledValues = z.input<typeof quoteDeleteRecalledSchema>;

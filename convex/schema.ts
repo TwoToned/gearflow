@@ -2276,8 +2276,10 @@ export default defineSchema({
   // `pdfFileId` links the stored immutable artifact (a Convex `_storage` id): the
   // PDF is rendered ONCE at send and the bytes kept, so re-downloading a sent
   // revision can never produce a different document from the one the client is
-  // holding (#987). Written once and never overwritten — see
-  // convex/financeArtifacts.ts. A recalled/superseded revision KEEPS its artifact.
+  // holding (#987). Written once and never overwritten while attached — see
+  // convex/financeArtifacts.ts. A SUPERSEDED revision (a different row) KEEPS its
+  // artifact untouched. Recalling the SAME revision is the one case that moves
+  // `pdfFileId` — see `recalledPdfFileIds` below.
   quotes: defineTable({
     id: v.string(),
     organizationId: v.string(),
@@ -2286,6 +2288,13 @@ export default defineSchema({
     status: enums.QuoteStatus,
     snapshot: v.any(),
     pdfFileId: v.optional(v.string()),
+    // Recall clears `pdfFileId` (so the next send is forced through a real
+    // render instead of hitting the "already attached" guard) but never
+    // discards the bytes: whatever was attached at recall time is pushed here
+    // first. Never read by the download route today — it exists so a
+    // pre-recall artifact a client may already hold is never truly lost, in
+    // the same spirit as "nothing deletes one" above. #1027/#1031.
+    recalledPdfFileIds: v.optional(v.array(v.string())),
     snapshotId: v.optional(v.string()),
     // Send (the freeze moment)
     quoteDate: v.optional(v.number()),
@@ -2307,6 +2316,22 @@ export default defineSchema({
     recalledById: v.optional(v.string()),
     recallReason: v.optional(v.string()),
     supersededByQuoteId: v.optional(v.string()),
+    // Protect (#1030) — a soft lock independent of status. Owner-only to set/
+    // unset (stricter than Recall's audience — see requireQuoteOwnerOnly).
+    // While true: Recall, Correction and recall-then-delete all refuse. Set
+    // automatically the moment a revision reaches ACCEPTED; an owner can still
+    // explicitly unprotect if a genuine correction is later needed.
+    protected: v.optional(v.boolean()),
+    protectedAt: v.optional(v.number()),
+    protectedById: v.optional(v.string()),
+    // Correction (#1031) — an audited in-place fix to quoteDate/validUntil on a
+    // SENT/ACCEPTED revision, no version bump, no price change. `sentAt` is
+    // deliberately NEVER rewritten here (it is the system's true record of when
+    // the send actually happened); these two mark the most recent correction so
+    // the reissued PDF can print "REISSUED — corrects vN sent <sentAt>, edited
+    // by <correctedById> on <correctedAt>" without re-deriving it.
+    correctedAt: v.optional(v.number()),
+    correctedById: v.optional(v.string()),
     // DEPRECATED (pre-#986) — backfilled into sentAt/sentById.
     publishedAt: v.optional(v.number()),
     publishedById: v.optional(v.string()),

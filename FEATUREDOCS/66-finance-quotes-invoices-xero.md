@@ -143,7 +143,7 @@ standing precedent).
 | Verb | Behaviour |
 |---|---|
 | **Send** (`sendNative`) | Freezes the revision: `buildFinanceLines` money snapshot + a `QUOTE_SENT` `captureProjectSnapshot` at the same revision, stamps `quoteDate`/`validUntil`/recipient, sets `SENT`, supersedes the previous live row, offers `ENQUIRY/QUOTING → QUOTED`. Creates the `DRAFT` row when the revision has none yet. |
-| **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. The artifact is marked recalled and **retained, never deleted** — the client may already hold it. Restores the row this send superseded. |
+| **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. Restores the row this send superseded. The attached artifact is **retained, never deleted** — moved to `recalledPdfFileIds` and unlinked from `pdfFileId`, so a resend of the same revision is forced through a real render instead of `attachQuoteArtifact`'s "already attached" guard silently keeping the pre-recall bytes (#1027). |
 | **New version** (`newVersionNative`) | Increments `projects.revision` and inserts a `DRAFT` at the new number. The previous live row is untouched until the new one sends. A draft carries `snapshot: null` — its figures are the project's live totals until it is sent. |
 | **Accept** (`markAcceptedNative`) | `SENT → ACCEPTED` + acceptance date + optional reference (PO number, email subject). An `EXPIRED` revision cannot be accepted without an explicit re-send. Unblocks `CONFIRMED`. |
 | **Decline** (`markDeclinedNative`) | `SENT`/`EXPIRED` → `DECLINED` + bounded reason. Offers `CANCELLED`, never forces it. |
@@ -171,6 +171,98 @@ inputs are `quoteDate`, `validityDays`, `recipientContactId` and `notes`.
   are not.
 
 No new permission resource is introduced — both checks already existed.
+
+### Delete and Protect (#1026 follow-up program — extends, doesn't modify, the five verbs above)
+
+Two more mutations sit alongside the five verbs, covering operational gaps found
+using the model: undoing a mistaken action, and locking down an accepted
+revision. Design: `docs/designs/quote-version-management-extensions.md`.
+
+- **`deleteDraftNative`** (#1028) — deletes a `DRAFT` that has **never** been
+  sent (`sentAt`/`publishedAt` both unset). Rolls `projects.revision` back to
+  the highest revision that was ever actually sent (or `1` if none was) — the
+  one deliberate exception to "never decremented, never reused": that
+  invariant protects *sent* revisions, not a number a discarded draft merely
+  reserved. Same `invoice:publish` audience as Send/New version. Refuses
+  anything that was ever sent, even a quote currently `DRAFT` via Recall —
+  that needs the (separate, stricter) recall-then-delete flow, #1029.
+- **`setQuoteProtectedNative`** (#1030) — a soft lock independent of quote
+  status. **Owner-only** (`requireQuoteOwnerOnly` in `convex/lib/quoteState.ts`
+  — stricter than Recall's audience; a resource/action permission check can't
+  express "owner only" because `hasPermission` always passes owners regardless
+  of the resource, so this is a direct role check). While `protected: true`,
+  Recall refuses (`QUOTE_PROTECTED`); Correction (not yet built) will refuse
+  the same way. New Version is unaffected — it never touches the protected
+  row. **Auto-set on Accept**: a client has committed to those exact numbers,
+  so `markAcceptedNative` protects the revision by default; an owner can still
+  explicitly unprotect if a genuine correction is later needed.
+- **`deleteRecalledNative`** (#1029) — the one deliberate reversal of "a sent
+  quote's document is never truly deleted" (reversal recorded, not silent, in
+  the design doc). A two-step flow BY DESIGN: only reachable once Recall has
+  already put the row in `DRAFT` with send history — there's no path that
+  skips it. **Owner-only**, **blocked while `protected: true`**, and requires
+  a server-validated typed confirmation (`confirmLabel` must match the
+  revision's label EXACTLY — R-8.6.4, mirrors the client dialog so a direct
+  mutation call can't skip the "type the version to confirm" step). Unlike
+  every other path in this file, it actually calls `ctx.storage.delete` on
+  `pdfFileId` and every entry in `recalledPdfFileIds` — a genuine, accepted-
+  risk erase, not an unlink. The audit log entry is written BEFORE the delete
+  and carries the erased artifact ids, since it is the only record left once
+  this returns.
+- **`correctQuoteNative`** (#1031) — an audited in-place fix to a
+  `SENT`/`ACCEPTED` revision's `quoteDate`/`validUntil`. No version bump, no
+  price/structure change. **Never touches `sentAt`** — that stays the system's
+  true record of when the send actually happened; only the date PRINTED ON
+  THE DOCUMENT is correctable. Same unlink-not-discard shape as Recall for the
+  attached artifact (pushed onto `recalledPdfFileIds`), so the next render is
+  forced fresh. **Owner-only**, **blocked while `protected: true`** — same bar
+  as recall-then-delete, since this too mutates a document a client may
+  already hold.
+
+  **Deliberately no reissue watermark.** `correctedAt`/`correctedById` are
+  recorded on the row and in the activity log alongside the old/new date
+  values, but the reissued PDF itself carries no visible marker distinguishing
+  it from the original — a corrected document reads exactly like any other
+  sent quote. `use-quote-writes.ts`'s `correct()` calls `generateQuoteArtifact`
+  immediately after the mutation, same `artifactReady`-never-throws shape as
+  `send` (a render failure doesn't undo the already-committed date fix; the
+  existing "Document missing — generate" retry affordance covers it, since
+  `pdfFileId` is genuinely null in that state).
+
+### UI (`src/components/projects/project-quote-rail.tsx`)
+
+The five #1026-follow-up actions are row-level, keyed off each revision's
+`effectiveStatus`/`sentAt`/`protected` — no header-level buttons, so a job with
+several revisions shows the right action per row rather than one ambiguous
+control. `useIsOwner()` (`src/lib/use-permissions.ts`) is the CLIENT-side half
+of `requireQuoteOwnerOnly` — hides rather than disables, so a non-owner never
+sees a button that would only 403 — while the server re-checks unconditionally
+regardless of what the UI shows.
+
+- **Delete draft** — `invoice:publish` audience (`CanDo`, same as every other
+  verb), shown only on a `DRAFT` row with no send history. Plain confirm
+  dialog, no typed input.
+- **Delete permanently** — owner-only, shown only on a `DRAFT` row WITH send
+  history (i.e. sitting there because of a prior Recall) and not `protected`.
+  `DeleteRecalledDialog`'s confirm button stays disabled until the typed input
+  matches the revision's label character-for-character — client-side UX only,
+  `deleteRecalledNative` re-validates the exact match server-side.
+- **Protect / Unprotect** — owner-only, shown on `SENT`/`ACCEPTED` rows. A
+  direct toggle button, no dialog (there's no reason field to collect either
+  direction).
+- **Correct date** — owner-only, shown on `SENT`/`ACCEPTED` rows that aren't
+  protected. `CorrectQuoteDialog` mirrors `AcceptQuoteDialog`'s date-input
+  pattern.
+- **Recall** — gained one more condition: hidden while `protected: true`
+  (existing `CanDo`-gated button, just extended).
+
+`QuoteRevisionRow`'s conditions are split into `StandardQuoteActions` (the
+`invoice:publish` cluster) and `OwnerOnlyQuoteActions` (protect/correct/
+delete-permanently), sharing one `quoteRowFlags()` helper — kept the row's own
+cyclomatic complexity down without duplicating the status-derivation logic
+(R-3.1). jsdom smoke tests: `correct-quote-dialog.smoke.test.tsx`,
+`delete-recalled-dialog.smoke.test.tsx` (CLAUDE.md's standing "new overlay UI
+needs a render-it smoke test" rule).
 
 ### Acceptance gate on CONFIRMED
 
@@ -256,9 +348,13 @@ structural rather than disciplinary — the same reasoning as `withValidatedBody
   replacing it. That is what makes exposing a retry button safe: a retry racing a
   slow first attempt loses harmlessly, and the server action bins its orphan
   upload.
-- **Nothing deletes one.** A recalled, superseded, declined or voided row keeps
-  its artifact — the client may be holding that copy, so destroying ours makes
-  the record worse. The rail badges the state next to the download.
+- **Nothing deletes one.** A superseded, declined or voided row keeps its
+  artifact on `pdfFileId` untouched — the client may be holding that copy, so
+  destroying ours makes the record worse. The rail badges the state next to the
+  download. **Recalling** the *same* revision is the one case that unlinks
+  `pdfFileId` (moved to `recalledPdfFileIds`, never dropped) — deliberately, so
+  a resend forces a fresh render rather than the attach guard silently keeping
+  pre-recall bytes attached under a since-corrected revision (#1027).
 - **A draft has no artifact**, and the mutations refuse to give it one. Its only
   document is the watermarked preview, which is never stored.
 - **Dates come from the row.** The render is handed the stamped

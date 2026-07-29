@@ -12,7 +12,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (552 agent-reachable)
+## Operations (553 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -187,6 +187,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `invoicesWrites.voidNative` (mutation, scope: invoice:void)
 - `quotes.listForProject` (query, scope: invoice:read)
 - `quotes.revisionStateForProject` (query, scope: invoice:read)
+- `quotesWrites.deleteDraftNative` (mutation, scope: invoice:publish)
 - `quotesWrites.markAcceptedNative` (mutation, scope: invoice:publish)
 - `quotesWrites.markDeclinedNative` (mutation, scope: invoice:publish)
 - `quotesWrites.newVersionNative` (mutation, scope: invoice:publish)

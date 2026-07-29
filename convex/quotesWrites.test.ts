@@ -291,6 +291,131 @@ describe("quotesWrites.newVersionNative — monotonicity and the one-draft invar
   });
 });
 
+describe("quotesWrites.deleteDraftNative", () => {
+  const del = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.deleteDraftNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+
+  test("deletes a v1 draft that was never sent — nothing to roll back to but 1", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    // Simulate a v1 draft row existing (e.g. from backfill) without ever sending it.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    const result = await del(t);
+    expect(result.deletedVersion).toBe(1);
+    expect(result.revision).toBe(1);
+    expect(await getQuotes(t)).toHaveLength(0);
+    expect((await getProject(t))?.revision).toBe(1);
+  });
+
+  test("deletes a fat-fingered v2 draft — rolls the counter back to v1, which stays SENT", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    expect((await getProject(t))?.revision).toBe(2);
+
+    const result = await del(t, { id: "q2", auditId: "a3", now: NOW + 2 });
+    expect(result.deletedVersion).toBe(2);
+    expect(result.revision).toBe(1);
+
+    const quotes = await getQuotes(t);
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]?.id).toBe("q1");
+    expect(quotes[0]?.status).toBe("SENT");
+    expect((await getProject(t))?.revision).toBe(1);
+
+    // The freed number is reusable — a fresh "new version" becomes v2 again.
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q3", organizationId: ORG, projectId: "p1", actor, auditId: "a4", now: NOW + 3,
+    });
+    expect((await getProject(t))?.revision).toBe(2);
+  });
+
+  test("rolls back to the highest EVER-sent revision, not just the immediately preceding one", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 sent
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    await send(t, { id: "ignored", auditId: "a3", now: NOW + 2 }); // v2 sent, supersedes v1
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q3", organizationId: ORG, projectId: "p1", actor, auditId: "a4", now: NOW + 3,
+    });
+    expect((await getProject(t))?.revision).toBe(3);
+
+    const result = await del(t, { id: "q3", auditId: "a5", now: NOW + 4 });
+    expect(result.revision).toBe(2); // not 1 — v2 is the highest revision that was ever sent
+    expect((await getProject(t))?.revision).toBe(2);
+    expect((await getQuotes(t)).find((q) => q.id === "q2")?.status).toBe("SENT");
+  });
+
+  test("refuses to delete a quote that was ever sent, even if currently recalled back to DRAFT", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Wrong rental window", actor, auditId: "a2", now: NOW + 1,
+    });
+    expect((await getQuotes(t))[0]?.status).toBe("DRAFT"); // recalled — currently a draft
+
+    await expect(del(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/was sent at some point.*recall/i);
+    expect(await getQuotes(t)).toHaveLength(1); // untouched
+  });
+
+  test("refuses to delete a SENT or ACCEPTED quote directly", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    await expect(del(t, { auditId: "a2" })).rejects.toThrow(/is sent/i);
+  });
+
+  test("a viewer is denied (invoice:publish)", async () => {
+    const t = makeT();
+    await seedMember(t, "viewer");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(del(t)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: OTHER, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(del(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
 describe("quotesWrites.recallNative", () => {
   const recall = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
     t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {

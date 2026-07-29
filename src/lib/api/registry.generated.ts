@@ -40276,6 +40276,57 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "quotesWrites.deleteDraftNative",
+    "module": "quotesWrites",
+    "fn": "deleteDraftNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5cb77faf3d5db168",
+    "returnsSha": "1adb051b6395d240",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "quotesWrites.markAcceptedNative",
     "module": "quotesWrites",
     "fn": "markAcceptedNative",
@@ -57410,10 +57461,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1123,
-  agentReachable: 552,
+  total: 1124,
+  agentReachable: 553,
   queries: 397,
-  mutations: 726,
+  mutations: 727,
   agentReachableQueries: 286,
-  agentReachableMutations: 266,
+  agentReachableMutations: 267,
 } as const;

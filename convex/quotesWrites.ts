@@ -29,13 +29,17 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Quote revision mutations (#986 — Phase A of the finance version-control
- * program). Five verbs over ONE shared counter, `projects.revision`:
+ * program). Five verbs over ONE shared counter, `projects.revision`, plus
+ * `deleteDraftNative` (#1028), which undoes a "new version" rather than
+ * advancing the state machine:
  *
  * ```
  *   v1 DRAFT ─ send ─▶ v1 SENT ─ accept ─▶ v1 ACCEPTED ─▶ project may CONFIRM
  *        ▲               │ │ │
  *        └─ recall ──────┘ │ └─ decline ─▶ v1 DECLINED
  *                          └─ new version ─▶ v2 DRAFT  (v1 → SUPERSEDED on v2's send)
+ *                                 │
+ *                            delete draft ─▶ v1 SENT again (v2's number freed)
  * ```
  *
  * Properties this file exists to guarantee, each with a test in
@@ -46,8 +50,12 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * - **At most one `DRAFT`**, always at `projects.revision`.
  * - **At most one live (`SENT`/`ACCEPTED`) row** — the document the client is
  *   currently holding.
- * - **`projects.revision` is monotonic** — never decremented, never reused. A
- *   recalled-then-re-sent revision keeps its number.
+ * - **`projects.revision` is monotonic for any revision that was ever SENT** —
+ *   never decremented, never reused. A recalled-then-re-sent revision keeps its
+ *   number. The one deliberate exception: `deleteDraftNative` rolls the counter
+ *   back when the discarded draft was never sent — nobody outside the company
+ *   ever saw it, so there is no history to protect and no reason to leave a
+ *   permanent gap in the version list.
  * - **Supersede fires on SEND, not on draft.** v1 stays `SENT` while v2 is a
  *   draft, so cutting a draft never invalidates the client's document. That is
  *   the difference between version control and a delete button.
@@ -534,6 +542,73 @@ export const newVersionNative = mutation({
 });
 
 /**
+ * DELETE DRAFT (#1028) — undo a fat-fingered "new version". Only reachable for a
+ * `DRAFT` that has **never** been sent (`sentAt`/`publishedAt` both unset) —
+ * nobody outside the company has ever seen it, so nothing is lost. Anything that
+ * was ever sent (including a recalled quote sitting in `DRAFT` right now) must go
+ * through the separate recall-then-delete flow (#1029), which carries its own,
+ * stricter safeguards.
+ *
+ * `projects.revision` **rolls back** to the highest revision this project ever
+ * actually sent (or `1` if none was) — the one deliberate exception to "never
+ * decremented, never reused": that invariant is about *sent* revisions, not a
+ * number a draft merely reserved and discarded. The next "new version" reuses
+ * the freed number, so a discarded draft never leaves a permanent gap.
+ */
+export const deleteDraftNative = mutation({
+  returns: v.object({ id: v.string(), deletedVersion: v.number(), revision: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, actor: suppliedActor, auditId, now }) => {
+    const actor = await guardQuoteWrite(ctx, organizationId, suppliedActor);
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+    await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
+
+    const label = quoteLabel(project.projectNumber, quote.version);
+    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["DRAFT"], label, "delete");
+    if (quote.sentAt != null || quote.publishedAt != null) {
+      throw new ConvexError({
+        code: "QUOTE_EVER_SENT",
+        message: `${label} was sent at some point — recall it first, then delete, so the audit trail records what happened.`,
+      });
+    }
+
+    const others = (await listProjectQuotes(ctx, organizationId, project.id)).filter((q) => q.id !== quote.id);
+    const everSentVersions = others
+      .filter((q) => q.sentAt != null || q.publishedAt != null)
+      .map((q) => q.version);
+    const rollbackTo = everSentVersions.length > 0 ? Math.max(...everSentVersions) : 1;
+
+    await ctx.db.delete(quote._id);
+    if (rollbackTo !== projectRevision(project)) {
+      await ctx.db.patch(project._id, { revision: rollbackTo, updatedAt: now });
+    }
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "DELETE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Deleted draft ${label}`,
+      details: { version: quote.version, rolledBackTo: rollbackTo },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, deletedVersion: quote.version, revision: rollbackTo };
+  },
+});
+
+/**
  * REPRICE FROM REVISION — "Use vN's pricing for v(N+1)" (#989 §8.1), the
  * forward-only equivalent of "Restore" every version-history pattern studied
  * offers and this program deliberately doesn't (rewriting a SENT quote in place
@@ -808,6 +883,10 @@ export const agentOps: AgentOpsAnnotations = {
   // supersedes) — the classification tracks §9's stated categories.
   markAcceptedNative: { danger: "high" },
   markDeclinedNative: { danger: "high" },
+  // Delete/archive is unconditionally high per the CLAUDE.md danger rubric even
+  // though the blast radius here is small (a never-sent draft only) — deletion
+  // is irreversible, so the dispatcher's confirm:true gate applies regardless.
+  deleteDraftNative: { danger: "high" },
   // Cuts a fresh DRAFT at the next revision — the prior SENT/ACCEPTED quote the
   // client is holding is left untouched until that draft is itself sent.
   newVersionNative: { danger: "medium" },

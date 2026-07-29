@@ -1,9 +1,9 @@
 # 56 — Agent-Accessible API + MCP
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-29 (review quarterly — POLICY.md R-5.5)_
 
-> **STATUS 2026-07-28 — reinstatement underway. Phases 0-6 have landed (#996,
-> #997, #998, #999, #1000, #1001, #1002): there is now a real,
+> **STATUS 2026-07-29 — reinstatement underway. Phases 0-7 have landed (#996,
+> #997, #998, #999, #1000, #1001, #1002, #1003): there is now a real,
 > curl-verifiable HTTP API — `POST /api/v1/ops/{operation}` (the universal
 > dispatcher), `GET /api/v1/operations{,/[operation]}`, `GET
 > /api/v1/whoami`, `GET /api/v1/openapi.json`, `GET /llms.txt`, a handful
@@ -36,7 +36,20 @@
 > management, scope presets, rotation, the org kill switch, the per-key
 > request log, and a "Connect an AI Agent" one-screen MCP flow), landed
 > ahead of Phase 4 in numeric order at the tracking issue's request.
-> Next up: Phase 7 (#1003), MCP OAuth 2.1.**
+> **Phase 7 (#1003) has landed** — MCP OAuth 2.1: authorization-server +
+> protected-resource metadata (`/.well-known/oauth-*`), RFC 7591 dynamic
+> client registration (`POST /api/v1/oauth/register`), a session-gated
+> consent screen (`/oauth/authorize`) that narrows requested scopes to the
+> consenting user's LIVE RBAC, a token endpoint (`POST /api/v1/oauth/token`)
+> for the `authorization_code`+PKCE and `refresh_token` grants, and RFC 7009
+> revocation (`POST /api/v1/oauth/revoke`). An OAuth grant is a plain
+> `apiKeys` row (`origin: "oauth"`) — a pure auth adapter in front of the
+> Phase 3 dispatcher exactly as designed, so every gate (RBAC, scopes,
+> lifecycle locks, kill switch, `no_financials`, the request log,
+> `revertAgentWindow`) applies unchanged. This is the phase that unlocks
+> claude.ai + desktop connectors for non-technical staff — no admin
+> involvement, no pasted bearer header. Next up: Phase 8 (#1004), polish +
+> external readiness.**
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:
@@ -476,6 +489,114 @@ so the reachable-mutations count barely moved (264 → 265 — one mutation,
 fix as the reads). The Zod validation registry (`src/lib/validations/registry.ts`)
 therefore needed no new entries this phase — extending it is Phase 4/6
 territory, once writes actually go wide.
+
+## What Phase 7 built (#1003)
+
+**Discovery metadata** — `GET /.well-known/oauth-authorization-server`
+(`src/app/.well-known/oauth-authorization-server/route.ts`, RFC 8414) and
+`GET /.well-known/oauth-protected-resource`
+(`src/app/.well-known/oauth-protected-resource/route.ts`, RFC 9728, per the
+MCP authorization spec) — both built from one shared source
+(`src/lib/api/oauth/metadata.ts`) so the issuer/scope vocabulary can't
+disagree between the two documents. Both are deliberately unauthenticated
+(same posture as `GET /api/v1/openapi.json`) and public per
+`src/middleware.ts`'s exemption list. `/api/v1/mcp`'s existing 401 response
+now also carries a `WWW-Authenticate: Bearer resource_metadata="..."` header
+(RFC 9728 §5.1) so an MCP OAuth client can discover the authorization server
+without hardcoding anything — bearer-key clients (Phase 3) simply ignore it.
+
+**Dynamic client registration** (RFC 7591) — `POST /api/v1/oauth/register`
+(`src/lib/api/oauth/client-registration.ts`). No admin step: a client posts
+its `redirect_uris` (must be `https://`, or a loopback URI for native/CLI
+clients — `isAllowedRedirectUri`) and gets back a `client_id` (public clients)
+or a `client_id`+`client_secret` (confidential clients requesting
+`client_secret_basic`). Storage is a new Convex table, `oauthClients`
+(`convex/oauthClients.ts`) — `requireService`-gated, `agentAccess: "denied"`
+same posture as `apiKeys.list`.
+
+**Consent screen** — `GET /oauth/authorize`
+(`src/app/oauth/authorize/page.tsx` + `src/server/oauth-authorize.ts`). A
+plain Next.js page route, deliberately outside the `/api/v1/*`/`.well-known`
+bearer-exempt list, so `src/middleware.ts`'s existing session-cookie check
+gates it for free — "gated on an existing Better Auth session" needed no new
+auth logic. Requested scopes (the `scope` query param) are narrowed to the
+consenting user's LIVE role via `narrowScopesToRole`
+(`src/lib/api/oauth/rbac-scopes.ts`), which reads `permissionsCore`'s
+`RESOURCES`/`rolePermissions` directly — the same table `hasPermission`
+reads, so there is no parallel "what can a role grant" vocabulary to drift.
+`describeScope` renders each narrowed scope in plain language
+("View assets", "Manage line items on projects"). Approve/Deny are native
+Next.js Server Actions bound to a plain `<form>` (`approveOauthAuthorization`/
+`denyOauthAuthorization`) — NOT `useServerMutation`, because completing the
+flow means a real top-level browser navigation back to the client's
+(possibly cross-origin) `redirect_uri`, not a fetch. PKCE (S256) is required
+on every request; `redirect_uri` is checked for an EXACT match against the
+client's registered list before anything is trusted, including before
+rendering an error (an unverified `redirect_uri` is never followed).
+
+**Token endpoint** — `POST /api/v1/oauth/token`
+(`src/app/api/v1/oauth/token/route.ts`), standard
+`application/x-www-form-urlencoded` body (RFC 6749 §4.1.3) — the documented
+`withValidatedBody` exception, since that helper is JSON-only. Two grant
+types, no implicit flow ever:
+- `authorization_code` — redeems the one-time code
+  (`convex/oauthAuthorizationCodes.ts`'s `redeem`, single-use inside one
+  Convex transaction — a concurrent replay loses the race), then checks
+  `client_id`/`redirect_uri`/PKCE (`verifyPkce`, `src/lib/api/oauth/pkce.ts`)
+  AFTER redemption so a mismatched replay can't probe validity repeatedly,
+  then mints a grant.
+- `refresh_token` — rotates both tokens via `apiKeys.rotateOAuthTokens`, a
+  close cousin of the manual-key `rotate` mutation except single-use with NO
+  grace window (a replayed refresh token must fail immediately, per OAuth
+  2.1's rotation guidance) — proved under a genuine concurrent race in
+  `convex/apiKeysOAuth.test.ts`.
+
+**An OAuth grant IS an `apiKeys` row** (`origin: "oauth"`, `oauthClientId` set;
+new `refreshTokenHash`/`refreshTokenExpiresAt` fields, OAuth-origin only) —
+minted by `src/lib/api/oauth/grant.ts`'s `mintOAuthGrant` using the exact same
+raw-secret/SHA-256-hash shape `generateApiKey()` already used. The resulting
+bearer string flows through `getApiKeyActorContext` → `mintAgentToken`
+completely unchanged, which is what makes "OAuth is a pure auth adapter"
+literally true: RBAC, scopes, lifecycle locks, the org kill switch,
+`no_financials`, the per-key request log, and `revertAgentWindow` all apply
+to an OAuth grant with zero new code, because Convex cannot tell the two
+origins apart. Access tokens are short-lived (1 hour); refresh tokens last 30
+days and rotate on every use.
+
+**Revocation** (RFC 7009) — `POST /api/v1/oauth/revoke`
+(`src/app/api/v1/oauth/revoke/route.ts`). Per §2.2 of that RFC, an
+unknown/foreign-client/already-revoked token is not an error — the endpoint
+always returns 200, so it can never be used to probe whether a token string
+is valid. Reuses the existing `apiKeys.revoke` mutation once the presented
+token is hashed and matched to its owning client.
+
+**Grant management** — `/settings/api-keys` lists OAuth grants alongside
+manually-minted keys (same table, same list/revoke/kill-switch code path),
+with an "OAuth" badge and a "Connected app: `<client name>`" line
+(`src/server/api-keys.ts`'s `listApiKeys` resolves `oauthClientId` → a
+display name via `oauthClients.listByIds`). Rotate is hidden for OAuth-origin
+rows — rotation happens automatically via the client's own `refresh_token`
+flow, and a manual rotation there would mint an access token the client never
+asked for.
+
+**A real pre-existing bug found and fixed along the way** — `callbackUrl`
+was being SET by `src/middleware.ts` on every unauthenticated redirect to
+`/login` (and referenced by the invite-flow page) but never actually READ by
+the login page; every affected deep link silently landed on `/dashboard`
+after signing in. It just never mattered enough to notice before an OAuth
+authorization request — which carries `client_id`/`code_challenge`/`state`
+in its query string — needed to survive a login round trip intact. Fixed at
+the root: middleware now preserves the FULL path+query (not just the
+pathname) in `callbackUrl`, and the login page reads + honors it for both
+the password and SSO sign-in paths, guarded against open redirects (only a
+same-origin relative path is ever followed).
+
+**Org export coverage** (`scripts/org-export-tables.ts`) — the two new
+tables are classified: `oauthClients` is `EXCLUDED/platform` (a global DCR
+registry, no `organizationId` column, same posture as Better Auth's own
+tables); `oauthAuthorizationCodes` is `EXCLUDED/ephemeral` (a ~120s one-shot
+credential, same "restoring a dead short-lived row has no value" rationale
+as `apiIdempotency`).
 
 ## What shipped before removal (for scale/scope reference)
 

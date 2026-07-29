@@ -340,6 +340,23 @@ inputs (a new `*Native` mutation, a guard change, a new read migrated to
 `requireOrgReadFor`), run `pnpm run api:registry && pnpm run api:docs && pnpm run
 api:mcp` and commit all three — CI gates staleness on each independently.
 
+### MCP OAuth 2.1 (`src/lib/api/oauth/*`, #1003) — a pure adapter, not a second auth system
+An OAuth-issued access token IS an `apiKeys` row (`origin: "oauth"`) — the token endpoint
+(`src/app/api/v1/oauth/token/route.ts`) mints one with `mintOAuthGrant`
+(`src/lib/api/oauth/grant.ts`) using the same raw-secret/SHA-256-hash shape
+`generateApiKey()` uses, so it authenticates through `getApiKeyActorContext` →
+`mintAgentToken` completely unchanged. **Never add a second token-verification path for
+OAuth tokens** — if it needs to reach the dispatcher, it goes through the identical bearer
+flow every manually-minted key does. The consent screen (`/oauth/authorize`,
+`src/server/oauth-authorize.ts`) narrows the requested `scope` to the consenting user's
+LIVE role via `narrowScopesToRole` (`src/lib/api/oauth/rbac-scopes.ts`), which reads
+`permissionsCore`'s `RESOURCES`/`rolePermissions` directly — do not add a parallel
+"scope grantable by role" table. Refresh-token rotation (`apiKeys.rotateOAuthTokens`) and
+authorization-code redemption (`oauthAuthorizationCodes.redeem`) are both single-use with
+NO grace window, verified inside one Convex transaction so a concurrent replay of the
+same (now-superseded) credential always loses the race — do not add a grace window to
+either, unlike the manual-key `rotate` mutation's deliberate one.
+
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved
 flat dollar amount** — recalc, allocation, invoicing and `lineTotal` read that

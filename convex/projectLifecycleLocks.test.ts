@@ -130,10 +130,13 @@ describe("#791 $0 default on add — lineItemWrites.addCustomNative", () => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
       expect(li?.unitPrice).toBe(0);
       expect(li?.discount).toBeUndefined();
+      // The Unpriced badge's real signal (bug fix, follow-up to #990): stored at
+      // insert time, not inferred later from "currently locked + currently $0".
+      expect(li?.pricedUnderLock).toBe(true);
     });
   });
 
-  test("unlocked (OPEN tier): the client's price is kept", async () => {
+  test("unlocked (OPEN tier): the client's price is kept, and pricedUnderLock is never set", async () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "QUOTED");
@@ -143,10 +146,11 @@ describe("#791 $0 default on add — lineItemWrites.addCustomNative", () => {
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
       expect(Number(li?.unitPrice)).toBe(500);
+      expect(li?.pricedUnderLock).toBeFalsy();
     });
   });
 
-  test("inside an open session, auto-pricing resumes (the client's price is kept)", async () => {
+  test("inside an open session, auto-pricing resumes (the client's price is kept), pricedUnderLock stays unset", async () => {
     const t = makeT();
     await member(t, "member");
     await project(t, "CONFIRMED");
@@ -159,6 +163,142 @@ describe("#791 $0 default on add — lineItemWrites.addCustomNative", () => {
     await t.run(async (ctx) => {
       const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
       expect(Number(li?.unitPrice)).toBe(500);
+      expect(li?.pricedUnderLock).toBeFalsy();
+    });
+  });
+});
+
+describe("pricedUnderLock — the Unpriced badge's real cause, not an inference (bug fix)", () => {
+  test("a line item that's been $0 since BEFORE any lock existed does NOT retroactively earn the badge once the project locks", async () => {
+    const t = makeT();
+    await member(t, "member");
+    // OPEN-tier project — a deliberate $0 line (e.g. no catalog rate, or a
+    // genuinely free item) added with nothing locked yet.
+    await project(t, "QUOTED");
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Freebie", quantity: 1, unitPrice: 0 },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.unitPrice).toBe(0);
+      expect(li?.pricedUnderLock).toBeFalsy();
+    });
+    // The project later locks (e.g. quote sent, status advances) — the row's
+    // OWN pricedUnderLock is untouched by that transition; only a write to
+    // the row itself can ever set it.
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { status: "CONFIRMED" });
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.pricedUnderLock).toBeFalsy();
+    });
+  });
+
+  test("patchNative's unitPrice edit clears a stale pricedUnderLock once a human deliberately prices the row", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED");
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.pricedUnderLock).toBe(true);
+    });
+    const { sessionId } = await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
+      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW + 1,
+    });
+    expect(sessionId).toBeTruthy();
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+      id: "li1", orgId: ORG, entityName: "Extra cable", allowOverbook: false,
+      set: { unitPrice: 120, updatedAt: NOW + 2 }, clear: [], actor: ACTOR, auditId: "log2", now: NOW + 2,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(Number(li?.unitPrice)).toBe(120);
+      expect(li?.pricedUnderLock).toBe(false);
+    });
+  });
+
+  test("a browser-direct caller cannot set pricedUnderLock via patchNative's set object", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED");
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Cable", quantity: 1, unitPrice: 50 },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+      id: "li1", orgId: ORG, entityName: "Cable", allowOverbook: false,
+      // duration is a locked field but NOT unitPrice, so this stays a
+      // "structural"-ish touch — pricedUnderLock must not flip just because
+      // a caller stuffs it into `set`.
+      set: { notes: "updated", pricedUnderLock: true, updatedAt: NOW + 1 } as Record<string, unknown>,
+      clear: [], actor: ACTOR, auditId: "log2", now: NOW + 1,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(li?.notes).toBe("updated");
+      expect(li?.pricedUnderLock).toBeFalsy();
+    });
+  });
+
+  test("a locked group create defaults price to $0 and sets pricedUnderLock; updateGroupPriceNative clears it", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED");
+    await t.withIdentity(asUser()).mutation(api.projectGroupsWrites.createGroupNative, {
+      id: "g1", orgId: ORG, projectId: "p1", title: "Wireless Mic Kit",
+      price: 1400, discount: 210, discountMode: "$",
+      now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(g?.price).toBeUndefined();
+      expect(g?.pricedUnderLock).toBe(true);
+    });
+    const { sessionId } = await t.withIdentity(asUser()).mutation(api.projectUnlockSessionsWrites.openNative, {
+      projectId: "p1", orgId: ORG, scope: "FINANCIAL", justification: JUSTIFICATION, actor: ACTOR, auditId: "openlog", now: NOW + 1,
+    });
+    expect(sessionId).toBeTruthy();
+    // A deliberate discountMode toggle (the exact user report this fix covers) —
+    // re-setting price/discount through the group's own price mutation must
+    // clear the flag; a group's OWN price edit never touches sibling line items.
+    await t.withIdentity(asUser()).mutation(api.projectGroupsWrites.updateGroupPriceNative, {
+      id: "g1", orgId: ORG, price: 1400, discount: 15, discountMode: "%",
+      now: NOW + 2, actor: ACTOR, auditId: "log2",
+    });
+    await t.run(async (ctx) => {
+      const g = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first();
+      expect(Number(g?.price)).toBe(1400);
+      expect(g?.discountMode).toBe("%");
+      expect(g?.pricedUnderLock).toBe(false);
+    });
+  });
+
+  test("addKitNative under lock flags the kit PARENT line, not its (already-excluded) member children", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "CONFIRMED");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "TTP00001", name: "RF Kit 1", status: "AVAILABLE" });
+    });
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addKitNative, {
+      id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1",
+      unitPrice: 400, pricingMode: "KIT_PRICE", kitLabel: "TTP00001 - RF Kit 1",
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const parent = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kl1")).first();
+      expect(parent?.unitPrice).toBe(0);
+      expect(parent?.pricedUnderLock).toBe(true);
     });
   });
 });

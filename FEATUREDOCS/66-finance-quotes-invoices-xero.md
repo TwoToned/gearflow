@@ -223,8 +223,9 @@ verification. The driver counts first, **halts** on a mismatch against
 
 The unified status × quote-state lock tier (shipped — #988), the real Finance
 tab with its send and invoice-issue dialogs and drift indicator (shipped —
-#989, see "The Finance tab" below), lock UX (#990), and the org-level Finance
-section (#992) remained.
+#989, see "The Finance tab" below), lock UX (shipped — #990), and the
+org-level Finance section (shipped — #992, see "Org-level Finance section"
+below) remained.
 
 ## Immutable documents (#987 — Phase B of #985)
 
@@ -387,6 +388,66 @@ vocabulary DESIGN.md defines, rather than being lossily mapped onto the
 pre-existing ok/warn/overbooked set. Expiry is colour **and** words — "Valid
 until 25 Aug (3 days left)" in warn inside `QUOTE_EXPIRING_SOON_DAYS`, "Expired
 2 days ago" in the error tone past it — never colour alone (a11y).
+
+## Org-level Finance section (#992 — Phase F of #985)
+
+Every finance surface up to this point is per-project — there was no way to ask
+"which quotes are sitting unanswered", "what expires this week", or "which
+confirmed jobs never got invoiced" without opening projects one at a time. A
+`/finance` nav item (sidebar, `invoice` resource, green hue) renders six
+bounded sections in `convex/financeOrg.ts`'s single `bundle` query:
+
+| Section | Definition |
+|---|---|
+| Quotes out | `effectiveStatus === "SENT"`, oldest (longest outstanding) first |
+| Expiring | `SENT`/`EXPIRED` with `validUntil` inside `QUOTE_EXPIRING_SOON_DAYS` (7, `convex/lib/quoteDates.ts` — the SAME threshold the per-project Finance tab uses, R-3.1), including already-expired |
+| Never sent | `DRAFT` revisions on active (non-template, non-`CANCELLED`) projects |
+| Confirmed but uninvoiced | Project status `CONFIRMED` or later (excluding `CANCELLED`) with zero `ISSUED` invoices |
+| Deposit due | Same CONFIRMED-or-later candidate set, client `paymentProfile === "DEPOSIT_BALANCE"`, no `ISSUED` `DEPOSIT` invoice — the per-project nudge chip (`project-finance-panel.tsx`) lifted to org scope |
+| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — reflects issuance, not confirmed payment (the UI says so explicitly); full payment truth needs the Xero payment-status poll, still deferred (see "Deferred" below) |
+
+### Perf — bounded, not a per-project loop (the #942 lesson)
+
+`computeFinanceBundle` (shared by `bundle` and the cheap `counts` query, same
+split as `overbookingBoard.ts`) does a small, fixed number of reads: a capped
+`organizationId_status` index scan per raw quote status (`SENT`, the legacy
+`PUBLISHED`, `DRAFT`), one capped scan per CONFIRMED-or-later project status
+(same idiom as `dashboardStats.ts`'s `OPEN_MAINTENANCE_STATUSES` loop), one
+capped `ISSUED`-invoice scan that feeds Outstanding, Confirmed-uninvoiced AND
+Deposit-due simultaneously, then a referenced-only fan-out for any project/
+client not already in scope. `SECTION_CAP` (200, exported for tests) is a
+defensive ceiling, not the boundedness mechanism itself — each bucket is
+bounded by *business state* (a row leaves the moment it's accepted/invoiced/
+paid), the same reasoning `overbookingBoard.ts`'s date range provides for its
+sections. `capped: boolean` in the response (and the dashboard/test-visible
+`SECTION_CAP` export) is the signal if an org ever does exceed it.
+`quotes.by_organizationId_status`, `invoices.by_organizationId_status` and
+`projects.by_organizationId_status` all already existed on `main` before this
+phase — no new indexes were needed.
+
+### Deep links, not a second data model
+
+Every row links to `/projects/{id}?tab=finance` — the project detail page
+(`src/app/(app)/projects/[id]/page.tsx`) now seeds its `Tabs` from a `?tab=`
+search param (falling back to `equipment`) purely so this screen has somewhere
+to land; it's uncontrolled otherwise; no new tab-sync machinery. The page
+itself renders nothing but what the aggregation returns — no client name
+resolution, no dollar computation, nothing recomputed from `buildFinanceLines`
+(R-9.3/R-3.1).
+
+### Dashboard chips reuse the aggregation, not the logic
+
+`useNativeOrgFinanceCounts` (`src/hooks/use-native-dashboard.ts`, mirroring
+`useNativeOverbookingCounts`) backs two `NeedsAttention` chips ("N quotes
+expiring", "N quotes out") that link to `/finance` — decision 9's "dashboard
+chips link here rather than duplicating the logic."
+
+### Filters — client shipped, PM and date-range deferred
+
+The Finance page filters by client name (client-side, over the already-bounded
+result set). PM and date-range were scoped out — see "Deferred" below — rather
+than shipping a filter that shows raw ids or misrepresents which date it's
+filtering on.
 
 ## Numbering (zero engine change)
 
@@ -722,6 +783,9 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | `src/components/clients/xero-contact-card.tsx` | The actual per-client search/link/unlink UI, embedded by the above |
 | `src/components/ui/combobox-picker.tsx` | Searchable, scrollable account/tax-type pickers on Settings → Xero |
 | `src/components/settings/xero-coding-fields.tsx` | `XeroAccountCodeField`/`XeroTaxTypeField` — shared, self-gating cascade override fields used on category/model/kit/line/service forms |
+| `convex/financeOrg.ts` | The org-level Finance section's one aggregation query (`bundle`/`counts`, #992) — six bounded sections, no per-project loop |
+| `src/hooks/use-native-org-finance.ts` / `useNativeOrgFinanceCounts` (`use-native-dashboard.ts`) | Client wiring for the page subscription + the cheap dashboard-chip counts (#992) |
+| `src/app/(app)/finance/page.tsx` | The `/finance` page — six sections, client-name filter, deep links to `?tab=finance` (#992) |
 
 ## Testing
 
@@ -786,6 +850,18 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
   `combobox-picker.tsx` inside the Radix modal `Dialog` (the standing
   Radix/Base-UI-in-modal regression class), and asserts no monetary input
   exists anywhere in the form.
+- `convex/financeOrg.test.ts` (#992) — 11 tests: every section's true-positive
+  row against deliberate noise (an ACCEPTED quote absent from Quotes
+  out/Expiring, a DRAFT on a CANCELLED project absent from Never sent, a PAID
+  invoice absent from Outstanding, a client with an already-issued deposit
+  absent from Deposit due); cross-org IDOR (a caller never sees another org's
+  rows, and a token/orgId mismatch rejects); `counts` mirrors `bundle`'s
+  section lengths; and the boundedness regression guard — a fixture with
+  `SECTION_CAP + 25` SENT quotes asserts the result stays capped and
+  `capped: true`, not a full collect.
+- `src/app/(app)/finance/__tests__/finance-page.smoke.test.tsx` — jsdom smoke
+  test rendering every section (populated and empty/zero-noise states) and the
+  client-name filter, per CLAUDE.md's overlay-UI convention.
 
 ## Deferred (not built in this PR)
 
@@ -808,3 +884,9 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
   not the deprecated broad scope. (2) the OAuth callback route's post-exchange
   redirect must be built from `env.NEXT_PUBLIC_APP_URL`, never `request.url`
   — see "Connection (OAuth2)" above.
+- **`/finance`'s PM and date-range filters (#992).** Client-name filtering
+  shipped; PM and date-range did not. PM needs a display-name resolution for
+  `projectManagerId` that doesn't exist anywhere in the app yet (see
+  "Org-level Finance section" above); date-range was left out because the six
+  sections don't share one meaningful date field (validity vs. rental end vs.
+  due date) and a single control would misrepresent at least one section.

@@ -11,6 +11,7 @@ import {
   useNativeActivity,
   useNativeMyOpenTasks,
   useNativeOverbookingCounts,
+  useNativeOrgFinanceCounts,
 } from "@/hooks/use-native-dashboard";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
@@ -23,6 +24,7 @@ import {
   UserCheck,
   Plus,
   Boxes,
+  Send,
 } from "lucide-react";
 import {
   FadeIn,
@@ -74,6 +76,7 @@ export default function DashboardPage() {
   const activity = useNativeActivity(orgId) as any;
   const subHireStats = useNativeSubHireStats(orgId);
   const overbookingCounts = useNativeOverbookingCounts(orgId);
+  const orgFinanceCounts = useNativeOrgFinanceCounts(orgId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myHome = useNativeHome(orgId) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -184,11 +187,16 @@ export default function DashboardPage() {
             blockers={myBlockers ?? []}
             subHireOverdue={subHireStats?.overdueReturns ?? 0}
             overbookingCounts={overbookingCounts}
+            orgFinanceCounts={orgFinanceCounts}
           />
           {/* WS3 #942 — the Overbookings & Gaps board's three chips (hard
               overbookings / pencilled collisions / sale stock to procure)
               render inside NeedsAttention above, backed by the cheap
-              overbookingBoard.counts query (not the full board subscription). */}
+              overbookingBoard.counts query (not the full board subscription).
+              #992 (Phase F) — the org Finance section's "quotes out" and
+              "expiring" chips follow the same pattern via financeOrg.counts;
+              they link to /finance rather than duplicating the aggregation
+              logic (R-3.1). */}
         </div>
       </FadeIn>
 
@@ -308,7 +316,7 @@ function DeployTile({ deployed, total, util, loading }: { deployed: number; tota
   );
 }
 
-function NeedsAttention({ stats, loading, blockers, subHireOverdue, overbookingCounts }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number; overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number } }) {
+function NeedsAttention({ stats, loading, blockers, subHireOverdue, overbookingCounts, orgFinanceCounts }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number; overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number }; orgFinanceCounts?: { quotesOutCount: number; expiringCount: number; neverSentCount: number; confirmedUninvoicedCount: number; depositDueCount: number; outstandingCount: number } }) {
   if (loading) return <div className="flex gap-2"><Skeleton className="h-8 w-36 rounded-full" /><Skeleton className="h-8 w-28 rounded-full" /></div>;
   const chips = [
     blockers.length > 0 && { href: `/projects/${blockers[0].projectId}`, label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: ShieldAlert },
@@ -325,6 +333,12 @@ function NeedsAttention({ stats, loading, blockers, subHireOverdue, overbookingC
     // above so the two never double-count the same schedule-generated cycle).
     (stats?.modelsDueForService ?? 0) > 0 && { href: "/maintenance/due", label: `${stats?.modelsDueForService} model${(stats?.modelsDueForService ?? 0) > 1 ? "s" : ""} due for service`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
     (stats?.pendingCrewOffers ?? 0) > 0 && { href: "/crew", label: `${stats?.pendingCrewOffers} crew offer${(stats?.pendingCrewOffers ?? 0) > 1 ? "s" : ""} pending`, cls: "bg-blue-soft text-blue hover:bg-blue-soft/70", Icon: UserCheck },
+    // #992 (Phase F) — org Finance section chips, backed by the cheap
+    // financeOrg.counts query. Link to /finance rather than duplicating the
+    // aggregation logic here (R-3.1, decision 9). Expiring is the urgent one
+    // (amber); quotes out is informational, not yet a problem.
+    (orgFinanceCounts?.expiringCount ?? 0) > 0 && { href: "/finance", label: `${orgFinanceCounts?.expiringCount} quote${(orgFinanceCounts?.expiringCount ?? 0) > 1 ? "s" : ""} expiring`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: AlertTriangle },
+    (orgFinanceCounts?.quotesOutCount ?? 0) > 0 && { href: "/finance", label: `${orgFinanceCounts?.quotesOutCount} quote${(orgFinanceCounts?.quotesOutCount ?? 0) > 1 ? "s" : ""} out`, cls: "bg-blue-soft text-blue hover:bg-blue-soft/70", Icon: Send },
   ].filter(Boolean) as { href: string; label: string; cls: string; Icon: LucideIcon }[];
 
   if (chips.length === 0) {

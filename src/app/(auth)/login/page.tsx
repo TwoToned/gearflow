@@ -1,8 +1,8 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn, organization, authClient } from "@/lib/auth-client";
 import { getTheOrgId, getTheOrgInfo, getSingleOrgSSOInfo } from "@/server/public-org";
@@ -14,18 +14,38 @@ import { toast } from "sonner";
 import { Loader2, Fingerprint, ArrowLeft } from "lucide-react";
 import { AuthShell, HandNudge } from "../auth-playful";
 
-async function handlePostLogin(router: ReturnType<typeof useRouter>) {
+/** `callbackUrl` comes from `src/middleware.ts`'s login redirect (or a manual
+ *  deep link like the invite flow) — only ever trust it as a SAME-ORIGIN
+ *  relative path ("/foo", never "//evil.com" or an absolute URL), so this can
+ *  never become an open redirect. Anything else falls back to "/dashboard". */
+function safeCallbackUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  if (!raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
+}
+
+async function handlePostLogin(router: ReturnType<typeof useRouter>, callbackUrl: string | null) {
   const orgData = await getTheOrgId();
   if (!orgData) {
     router.push("/onboarding");
     return;
   }
   await organization.setActive({ organizationId: orgData.id });
-  router.push("/dashboard");
+  router.push(callbackUrl ?? "/dashboard");
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
   const { name: platformName } = usePlatformBranding();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -65,7 +85,7 @@ export default function LoginPage() {
         if (matchingProvider) {
           await authClient.signIn.sso({
             providerId: matchingProvider.providerId,
-            callbackURL: "/dashboard",
+            callbackURL: callbackUrl ?? "/dashboard",
             loginHint: email,
           });
           return;
@@ -90,7 +110,7 @@ export default function LoginPage() {
         toast.error(result.error.message || "Invalid credentials");
         return;
       }
-      await handlePostLogin(router);
+      await handlePostLogin(router, callbackUrl);
     } catch {
       toast.error("Something went wrong");
     } finally {
@@ -107,7 +127,7 @@ export default function LoginPage() {
         setPasskeyLoading(false);
         return;
       }
-      await handlePostLogin(router);
+      await handlePostLogin(router, callbackUrl);
     } catch {
       toast.error("Passkey sign-in failed or was cancelled");
       setPasskeyLoading(false);

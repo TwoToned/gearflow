@@ -35,6 +35,26 @@ describe("middleware — session redirect gating", () => {
     expect(redirectsToLogin(middleware(req("/api/v1/whoami")))).toBe(false);
     expect(redirectsToLogin(middleware(req("/api/v1/operations")))).toBe(false);
   });
+
+  it("lets MCP OAuth discovery + machine endpoints through without a login redirect (#1003)", () => {
+    expect(redirectsToLogin(middleware(req("/.well-known/oauth-authorization-server")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/.well-known/oauth-protected-resource")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/api/v1/oauth/register")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/api/v1/oauth/token")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/api/v1/oauth/revoke")))).toBe(false);
+  });
+
+  it("STILL gates /oauth/authorize (the consent screen) on a session — it is NOT a public/bearer route (#1003)", () => {
+    expect(redirectsToLogin(middleware(req("/oauth/authorize?client_id=abc")))).toBe(true);
+  });
+
+  it("preserves the full query string in callbackUrl, not just the pathname (#1003)", () => {
+    const res = middleware(req("/oauth/authorize?client_id=abc&code_challenge=xyz&code_challenge_method=S256"));
+    const location = res.headers.get("location");
+    expect(location).toContain("callbackUrl=");
+    const decoded = decodeURIComponent(new URL(location!).searchParams.get("callbackUrl") ?? "");
+    expect(decoded).toBe("/oauth/authorize?client_id=abc&code_challenge=xyz&code_challenge_method=S256");
+  });
 });
 
 describe("middleware — x-request-id correlation (R-8.9.5)", () => {

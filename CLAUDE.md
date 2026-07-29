@@ -340,6 +340,28 @@ inputs (a new `*Native` mutation, a guard change, a new read migrated to
 `requireOrgReadFor`), run `pnpm run api:registry && pnpm run api:docs && pnpm run
 api:mcp` and commit all three — CI gates staleness on each independently.
 
+**Stability tiers are derived, never declared** (Phase 8, #1004): an operation is
+`stability: "stable"` iff it's wrapped by a curated MCP tool
+(`src/lib/api/mcp/curated-tool-defs.ts`) — the same table `pnpm run api:mcp`
+already reads — so adding a curated tool automatically promotes its operation to
+the additive-only tier, nothing else to edit. `src/lib/api/stable-contract.generated.ts`
+is a ratcheting baseline (like the reachability floor in `docs/api-coverage.md`):
+`pnpm run api:registry` refuses to run at all if a stable operation would lose a
+field, disappear, or get demoted — that's gate 6 in `scripts/generate-api-registry.mts`,
+proved with a deliberate-violation test in `src/lib/api/registry.test.ts`. A real
+breaking change to a stable operation needs a `/v2`, not an edit to that file.
+
+### Mira (in-app assistant) — a first-party MCP consumer, not a special case
+Mira answers a question by calling `dispatch()` — the SAME function REST/MCP use —
+never a separate code path (`src/server/mira.ts`). It acts as the asking user via a
+per-(org, user) `apiKeys` row it provisions itself (`miraKeys` table, secret
+encrypted with `src/lib/crypto/secret-vault.ts`, the same vault trusted for Xero
+tokens), using the `read_only_agent` preset — never a fixed "system" identity, so a
+member can never get more access through Mira than their own role already grants.
+The question → operation mapping (`src/lib/mira/intent-router.ts`) is a small
+deterministic router today, not an LLM — see FEATUREDOCS/68 before wiring a new
+Mira route or swapping in a real model.
+
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved
 flat dollar amount** — recalc, allocation, invoicing and `lineTotal` read that

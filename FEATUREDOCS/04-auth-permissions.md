@@ -1,6 +1,6 @@
 # Authentication, Single-Org & Permissions
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-29 (review quarterly — POLICY.md R-5.5)_
 
 ## Single-Org Architecture
 
@@ -96,6 +96,19 @@ Actions per resource: `create, read, update, delete` (varies by resource)
 const { organizationId, userId } = await getOrgContext();
 await requirePermission("asset", "create"); // throws if denied
 ```
+
+## Agent (API/MCP) auth kind
+
+A third identity kind sits alongside `service`/`user`: `agent` — a short-lived JWT
+minted per API/MCP request from an org's `apiKeys` row (`convex/lib/auth.ts`'s
+`getAuthContext`). It behaves **exactly like `user` everywhere** (same member-row
+RBAC, same `resolveActor` subject pinning, same kill switch) plus a scope
+intersection (`requireAgentScope` — the key's granted scopes ∩ the acting user's live
+role) and its own rate-limit bucket. `requireService()` still rejects it, which is
+what makes the ~600 SERVICE-only functions structurally unreachable from the API. Full
+design, the token-minting invariants, and the scope vocabulary: **FEATUREDOCS/56**
+(Agent-Accessible API + MCP). Mira, the in-app assistant, is the first first-party
+consumer of this same identity kind — **FEATUREDOCS/68**.
 
 ## User Customisation & Auth Methods
 

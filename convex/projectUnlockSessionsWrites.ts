@@ -11,6 +11,8 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { getOpenUnlockSession, requireHardLockOverrideAllowed } from "./lib/projectLocks";
 import { captureProjectSnapshot, restoreProjectSnapshot } from "./lib/projectSnapshots";
+import { assertUnlockSessionAllowed } from "./lib/agentArgs";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native PROJECT-UNLOCK-SESSION write mutations (#957 Phase B/D — #791's FINANCIAL
@@ -60,6 +62,10 @@ export const openNative = mutation({
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "project", "update");
+    // §6 privileged capability: the one true HARD_LOCKED/FINANCE_LOCKED escape
+    // hatch, so an agent needs the explicit scope regardless of which scope
+    // (FINANCIAL/FULL) it's opening — denied by default (no preset grants it).
+    await assertUnlockSessionAllowed(ctx);
     const actor = await resolveActor(ctx, a.actor);
 
     const project = await requireProjectInOrg(ctx, a.projectId, a.orgId);
@@ -263,3 +269,12 @@ export async function autoCommitOpenSession(
     createdAt: now,
   });
 }
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  // All three: the one true HARD_LOCKED/FINANCE_LOCKED escape hatch, from open
+  // through its two closing transitions.
+  commitNative: { danger: "high" },
+  discardNative: { danger: "high" },
+  openNative: { danger: "high" },
+};

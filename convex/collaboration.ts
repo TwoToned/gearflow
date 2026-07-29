@@ -678,6 +678,15 @@ export const listOpenBlockingThreads = query({
 
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
+  // Phase 4 (#1000) danger classification for the mutations in this module —
+  // comment/thread lifecycle is low-stakes; setThreadBlocking gates OTHER
+  // writes (prep/send-out) project-wide, so it's medium rather than low.
+  addComment: { danger: "low" },
+  createThread: { danger: "low" },
+  reopenThread: { danger: "low" },
+  resolveThread: { danger: "low" },
+  setReviewMarker: { danger: "low" },
+  setThreadBlocking: { danger: "medium" },
   listThreads: { summary: "List comment threads on a project entity or line item/group target.", danger: "low", mcpTier: 2 },
   listComments: { summary: "List comments in a thread.", danger: "low", mcpTier: 2 },
   getReviewMarker: { summary: "Get the review marker for one target on an entity.", danger: "low", mcpTier: 3 },

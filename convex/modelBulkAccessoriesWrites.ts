@@ -6,6 +6,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { AccessoryInclusion } from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native MODEL-BULK-ACCESSORY write mutations (Phase 3 browser-direct — replaces the
@@ -213,3 +214,9 @@ export const removeNative = mutation({
     return { ok: true };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  addNative: { danger: "medium" },
+  removeNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+};

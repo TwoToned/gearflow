@@ -29,6 +29,7 @@ export function useActivityLogs(filters: ActivityLogFilters = {}) {
     endDate,
     sort = "createdAt",
     order = "desc",
+    agentAuthored,
   } = filters;
 
   const data = useAuthedQuery(
@@ -49,6 +50,7 @@ export function useActivityLogs(filters: ActivityLogFilters = {}) {
           search,
           startDateMs: startMs(startDate),
           endDateMs: endMs(endDate),
+          agentAuthored,
         }
       : "skip",
   );

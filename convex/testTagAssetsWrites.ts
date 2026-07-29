@@ -10,6 +10,7 @@ import { backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native TEST-TAG-ASSET write mutations (Phase 3 browser-direct — replaces
@@ -296,3 +297,20 @@ export const backfillNative = mutation({
     return await backfillTestTagAssetsCore(ctx, orgId, now);
   },
 });
+
+// See docs/designs/api-mcp-reimplementation.md §9 for the classification rubric.
+// retire/delete are `high` by rule (archive/delete — deleteNative additionally
+// cascades record+subtest deletion for a RETIRED asset). backfillNative is an
+// idempotent reconciliation job that can retire tags in bulk to match reality —
+// `medium`, not `high`, since it's a system-driven sync rather than a targeted
+// destructive action, but real enough not to be `low`. The rest are ordinary,
+// recoverable create/update ops.
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  createFromBulkNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+  retireNative: { danger: "high" }, // archive
+  deleteNative: { danger: "high" }, // permanent delete + cascades records/subtests
+  reactivateNative: { danger: "medium" },
+  backfillNative: { danger: "medium" },
+};

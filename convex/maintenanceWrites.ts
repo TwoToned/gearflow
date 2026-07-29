@@ -3,6 +3,8 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { assertEmitSideEffectsAgentTrue } from "./lib/agentArgs";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -275,6 +277,7 @@ export const createNative = mutation({
     await assertWritesEnabled(ctx, "maintenance");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "maintenance", "create");
+    await assertEmitSideEffectsAgentTrue(ctx, a.emitSideEffects);
     const actor = await resolveActor(ctx, a.actor);
     assertMaintenanceFields(a);
 
@@ -571,3 +574,10 @@ export const deleteNative = mutation({
     return { id: a.id };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  updateNative: { danger: "medium" },
+};

@@ -1012,6 +1012,10 @@ export const listByKitId = query({
 
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
+  // Phase 4 (#1000) — swaps which physical asset backs a line item. Stock-
+  // affecting but the double-booking OCC guard only allows swapping onto a
+  // free, compatible, non-retired asset, and it's trivially reversible.
+  swapLineItemAsset: { danger: "medium" },
   list: { summary: "List all project line items for an org.", danger: "low", mcpTier: 2 },
   listFlagged: { summary: "List flagged (faulty/overdue tag) line items for an org, oldest first.", danger: "low", mcpTier: 3 },
   getById: { summary: "Get one project line item by id.", danger: "low", mcpTier: 1 },

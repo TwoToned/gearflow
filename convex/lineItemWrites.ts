@@ -6,7 +6,8 @@ import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
-import { assertOverbookAllowed } from "./lib/agentArgs";
+import { assertOverbookAllowed, assertEmitSideEffectsAgentTrue } from "./lib/agentArgs";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { assertDiscountMode, assertLineMoneyFields } from "./lib/moneyGuards";
 import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
@@ -354,6 +355,7 @@ export const removeNative = mutation({
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
+    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
     const actor = await resolveActor(ctx, suppliedActor);
 
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -590,6 +592,7 @@ export const patchNative = mutation({
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     // §6 privileged arg: softening the availability check needs its own scope.
     await assertOverbookAllowed(ctx, allowOverbook);
+    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
     const actor = await resolveActor(ctx, suppliedActor);
 
     const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1212,6 +1215,7 @@ export const addCustomNative = mutation({
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
+    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
     const actor = await resolveActor(ctx, suppliedActor);
     const project = await requireLineProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org
 
@@ -1968,6 +1972,7 @@ export const addLineItemSmartNative = mutation({
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     // §6 privileged arg: softening the availability check needs its own scope.
     await assertOverbookAllowed(ctx, allowOverbook);
+    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
     const actor = await resolveActor(ctx, suppliedActor);
 
     // Client-supplied projectId: prove it's the caller's org before reading/sweeping its
@@ -2403,3 +2408,23 @@ export const unsellLineItemNative = mutation({
     return { projectId: line.projectId };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  addCustomNative: { danger: "medium" },
+  addKitNative: { danger: "medium" },
+  addLineItemSmartNative: { danger: "medium" },
+  addNative: { danger: "medium" },
+  patchManyNative: { danger: "medium" },
+  patchNative: { danger: "medium" },
+  recalcAutoPricedLinesNative: { danger: "low" },
+  recalcNative: { danger: "low" },
+  // Delete = high (§9): irreversible from the API's point of view even though the
+  // app has an undo path elsewhere — the classification tracks the design's
+  // stated categories, not case-by-case recoverability nuance.
+  removeManyNative: { danger: "high" },
+  removeNative: { danger: "high" },
+  reorderNative: { danger: "low" },
+  unsellLineItemNative: { danger: "medium" },
+  updateAccessoryPlanNative: { danger: "medium" },
+};

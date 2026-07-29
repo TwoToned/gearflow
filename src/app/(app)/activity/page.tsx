@@ -12,6 +12,7 @@ import { exportActivityLogCSV } from "@/server/activity-log";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Badge } from "@/components/ui/badge";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
@@ -52,6 +53,19 @@ const actionLabels: Record<string, string> = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLog = Record<string, any>;
 
+/** Read-side of `writeActivityLog`'s agent stamp (`convex/lib/audit.ts`) — mirrors
+ *  `convex/activityLog.ts`'s `isAgentAuthored` (Phase 4, #1000, decision 1), kept
+ *  as a small local check rather than importing the Convex module into a client
+ *  component. */
+function isAgentAuthored(row: AnyLog): boolean {
+  return typeof row.metadata === "object" && row.metadata !== null && row.metadata.actorType === "apiKey";
+}
+
+const actorFilterOptions = [
+  { value: "agent", label: "Agent" },
+  { value: "human", label: "Human" },
+];
+
 function useActivityColumns(): ColumnDef<AnyLog>[] {
   return [
     {
@@ -78,6 +92,25 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       cell: (row) => (
         <span className="text-sm">{row.user?.name || row.userName || "\u2014"}</span>
       ),
+    },
+    {
+      id: "actor",
+      header: "Actor",
+      filterable: true,
+      filterType: "enum",
+      sortable: false,
+      responsiveHide: "md",
+      mobile: "meta",
+      filterOptions: actorFilterOptions,
+      // Agent-authored badge/filter (Phase 4, #1000, decision 1) \u2014 an operator
+      // reviews agent-caused writes (especially agent-supplied justifications)
+      // as a filterable set rather than having them buried in metadata.
+      cell: (row) =>
+        isAgentAuthored(row) ? (
+          <Badge status="info">Agent</Badge>
+        ) : (
+          <span className="text-sm text-fg-3">Human</span>
+        ),
     },
     {
       id: "action",
@@ -141,11 +174,18 @@ function ActivityLogContent() {
   const [search, setSearch] = useState("");
   const [isExporting, setIsExporting] = useState(false);
 
+  // A single selected value narrows to that actor kind; none or both selected
+  // (the "show everything" states) leave the filter undefined.
+  const actorSelection = Array.isArray(filters.actor) ? filters.actor : [];
+  const agentAuthored =
+    actorSelection.length === 1 ? actorSelection[0] === "agent" : undefined;
+
   const queryFilters = {
     search: search || undefined,
     entityType: Array.isArray(filters.entityType) ? filters.entityType[0] : urlEntityType,
     entityId: urlEntityId,
     action: Array.isArray(filters.action) ? filters.action[0] : undefined,
+    agentAuthored,
     page,
     pageSize,
     sort: sortBy || "createdAt",
@@ -167,6 +207,7 @@ function ActivityLogContent() {
         entityType: Array.isArray(filters.entityType) ? filters.entityType[0] : urlEntityType,
         entityId: urlEntityId,
         action: Array.isArray(filters.action) ? filters.action[0] : undefined,
+        agentAuthored,
       });
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);

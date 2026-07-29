@@ -659,10 +659,57 @@ loop), and manual testing stayed comfortably under both `agentRead` (600/min) an
 numbers are conservative rather than tight" — genuine production volume, once it
 exists, is a better input than a manually-driven session count.
 
-**Phase 4 — safety rails (gates writes going wide).** `danger` classification pass across
-all 272 writes; `confirm` + idempotency enforcement; the agent bulk cap; `no_financials`
-enforcement; the agent-justified activity-log badge/filter; bulk-revert tooling
-(`revertAgentWindow`). Until this lands, agent write scopes stay off in every preset.
+**Phase 4 — safety rails (gates writes going wide). LANDED 2026-07-28 (#1000).** `danger`
+classification pass across all 264 agent-reachable writes; `confirm` + idempotency
+enforcement; the agent bulk cap; `no_financials` enforcement; the agent-justified
+activity-log badge/filter; bulk-revert tooling (`revertAgentWindow`).
+
+### Phase 4 findings (2026-07-28) — what building the safety rails actually showed
+
+**1. `agentOps` (§7's planned annotation) landed in Phase 4, not Phase 5 as originally
+sequenced.** The issue (#1000) pulled the `danger` field forward because the confirmation
+gate needs it NOW, not once the fuller `summary`/`mcpTier` annotation exists. So
+`convex/lib/agentOps.ts` today carries only `{ danger }` — `summary`/`mcpTier` (and
+migrating `curated-tool-defs.ts` onto it) stay Phase 5 scope, unchanged.
+
+**2. The §6 privileged-arg danger tiers turned out to be the right mechanism for
+per-CALL escalation, not just per-argument documentation.** A `medium`-classified
+operation (e.g. `lineItemWrites.patchNative`) that ALSO supplies a non-empty
+`justification` (policy `danger:"high"`) needs `confirm:true` for THAT call without
+reclassifying the operation for every call that doesn't touch a lock. The dispatcher takes
+the max of the operation's own `danger` and any present, active privileged arg's policy
+`danger` — one mechanism, reusing a field (`privileged-args.ts`'s per-arg `danger`) that
+already existed for exactly this purpose and hadn't been wired up yet.
+
+**3. `warehouse:check_out`/`check_in` needed no NEW gate beyond classification.** The
+design flagged these as needing "their own scope + confirm + idempotency," but they
+already sit behind ordinary `requireOrgPermission(warehouse, check_in/check_out)` RBAC —
+classifying the warehouse-movement mutations `danger:"high"` (which most of them
+genuinely are) gets the confirm+idempotency requirement for free, with no new scope
+vocabulary. A handful of container-bookkeeping helpers in the same file
+(`ensureContainerOnProject`, `syncContainersBatch`) turned out NOT to move physical stock
+on reading the body, so they're `medium`, not `high` — reading the handler mattered more
+than pattern-matching the function name.
+
+**4. `revertAgentWindow`'s honest scope is narrower than "reverse anything an agent
+did."** Only the physical-movement actions (`CHECK_OUT`→`undeployItems`/`undeployKit`,
+`CHECK_IN`→`unreturnItems`/`unreturnKit`) have a lossless mechanical inverse callable from
+the existing core helpers. Creates/updates/deletes/archives/financial writes have no
+generic "undo" primitive in this codebase, so they're reported in `skipped` with a reason
+rather than silently dropped or (worse) faked. The activity-log agent-authored filter
+(built in this same phase) is the intended complement — an operator reviews what
+`revertAgentWindow` couldn't touch and hand-fixes it.
+
+**5. `no_financials` enforcement needed a genuine judgment call per field, not a blanket
+rule.** A model's `dailyRate`/`weeklyRate`/`defaultRentalPrice` are SELL prices an agent
+needs to operate (quote, book); only `replacementCost`/`defaultPurchasePrice` are true
+internal cost. Redacting the sell rates too would have made the flag useless for its
+stated purpose ("visibility follows the acting user's role... except never see cost").
+`projectCosts.operationalCosts` (wired by Phase 6 as the flag's first call site) is the
+one query where this distinction collapses — its entire payload IS the P&L — so it
+returns the all-zero `EMPTY` shape rather than a validator-breaking partial object; this
+phase's extension to `models.*`/`crewAssignments.*` uses field-level `redactFields`
+instead, since those reads mix cost fields alongside genuinely operational ones.
 
 **Phase 5 — coverage sweep (the long pole).** Per domain, in agent-value order: migrate the
 remaining `requireOrgRead` → `requireOrgReadFor`, triage the 152 SERVICE-only queries

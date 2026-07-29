@@ -11,6 +11,7 @@ import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native ASSET write mutations (Phase 5 — Convex becomes the domain layer, not just
@@ -665,3 +666,16 @@ export const bulkTagNative = mutation({
     return { count };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  archiveNative: { danger: "high" },
+  bulkTagNative: { danger: "medium" },
+  // Bulk-changes status/condition/location across N assets at once — can move
+  // many assets' availability at scale (§9 bulk-destructive), unlike bulkTagNative.
+  bulkUpdateNative: { danger: "high" },
+  createManyNative: { danger: "medium" },
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  updateNative: { danger: "medium" },
+  updateNotesNative: { danger: "low" },
+};

@@ -255,3 +255,55 @@ describe("gate 4: runtime probe", () => {
     expect(probe).toMatch(/static \(resource, action\) extraction matches runtime enforcement/);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// GATE 5 — danger classification (Phase 4, #1000)
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("gate 5: danger classification", () => {
+  test("every agent-reachable mutation in the committed registry has a danger tier", () => {
+    const unclassified = API_REGISTRY.filter((o) => o.kind === "mutation" && o.agentReachable && o.danger === null);
+    expect(unclassified.map((o) => o.operation)).toEqual([]);
+  });
+
+  test("DELIBERATE VIOLATION: a new agent-reachable mutation with no agentOps entry fails the build", () => {
+    const dir = mkdtempSync(join(tmpdir(), "api-registry-gate5-"));
+    try {
+      for (const path of ["convex", "src", "scripts", "package.json", "tsconfig.json"]) {
+        cpSync(join(ROOT, path), join(dir, path), { recursive: true });
+      }
+      mkdirSync(join(dir, "docs"), { recursive: true });
+      execFileSync("ln", ["-s", join(ROOT, "node_modules"), join(dir, "node_modules")]);
+
+      // The violation: an agent-reachable mutation with no colocated `agentOps` export at all.
+      writeFileSync(
+        join(dir, "convex/zzGate5Probe.ts"),
+        [
+          'import { v } from "convex/values";',
+          'import { mutation } from "./_generated/server";',
+          'import { requireOrgPermission } from "./lib/auth";',
+          "",
+          "export const probeUnclassified = mutation({",
+          "  args: { orgId: v.string(), note: v.string() },",
+          "  handler: async (ctx, { orgId }) => {",
+          '    await requireOrgPermission(ctx, orgId, "project", "update");',
+          "    return null;",
+          "  },",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      const result = runGenerator([], {
+        cwd: dir,
+        generator: join(dir, "scripts/generate-api-registry.mts"),
+      });
+      expect(result.ok, "the danger-classification gate should have FAILED").toBe(false);
+      expect(result.output).toMatch(/zzGate5Probe/);
+      expect(result.output).toMatch(/probeUnclassified/);
+      expect(result.output).toMatch(/danger.*classification/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 180_000);
+});

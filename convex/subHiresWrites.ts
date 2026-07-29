@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { recalcSubHireTotals, upsertSupplierModelRate } from "./lib/subHireTotals";
@@ -1289,3 +1290,35 @@ export const duplicateSubHireNative = mutation({
     return { id: a.id, orderNumber };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  addSubHireItemNative: { danger: "medium" },
+  // Deletes the OLD project's linked lines unconditionally (unlike deleteSubHireNative,
+  // it does NOT guard against a CHECKED_OUT line before doing so) and regenerates the
+  // NEW project's lines — a warehouse-movement-adjacent structural rewrite across two
+  // projects' documents.
+  changeSubHireProjectNative: { danger: "high" },
+  createSubHireGroupNative: { danger: "medium" },
+  createSubHireNative: { danger: "medium" },
+  deleteSubHireGroupNative: { danger: "high" },
+  deleteSubHireNative: { danger: "high" },
+  duplicateSubHireNative: { danger: "medium" },
+  linkSubHireToSupplierOrderNative: { danger: "medium" },
+  removeSubHireItemNative: { danger: "high" },
+  reorderSubHireItemsNative: { danger: "low" },
+  // Reassigns an item's group — trivially reversible, no money change.
+  setItemGroupNative: { danger: "low" },
+  unlinkSubHireFromSupplierOrderNative: { danger: "medium" },
+  updateSubHireGroupNative: { danger: "medium" },
+  updateSubHireItemNative: { danger: "medium" },
+  updateSubHireNative: { danger: "medium" },
+  updateSubHireOrderPricingNative: { danger: "medium" },
+  // Payment-status change — recoverable, not a void/issue action (rubric example).
+  updateSubHirePaymentStatusNative: { danger: "medium" },
+  // Placement (target category/group) reassignment — trivially reversible.
+  updateSubHirePlacementNative: { danger: "low" },
+  // RETURNED/CANCELLED are terminal (VALID_TRANSITIONS has no way out) and CONFIRMED
+  // commits the order against a project — same lock-lifecycle-sensitive shape as
+  // projectWrites.updateStatusNative.
+  updateSubHireStatusNative: { danger: "high" },
+};

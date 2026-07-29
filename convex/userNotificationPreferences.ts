@@ -4,6 +4,7 @@ import { getAuthContext, isMemberAuth, requireSelfScope, requireService, resolve
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import {
   resolvePreferenceValues,
   type NotificationPreferenceValues,
@@ -226,3 +227,11 @@ export const upsertMine = mutation({
     return { ok: true };
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * Personal-scope (self:write) preference row — no domain effect.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  upsertMine: { danger: "low" },
+};

@@ -298,6 +298,21 @@ describe("agent limits", () => {
     ).rejects.toThrow(/exceeds the 50-item limit/i);
   });
 
+  // #1000 acceptance criteria: "Agent bulk call of 51 items rejected; 50 accepted".
+  test("…exactly 50 is accepted for an agent", async () => {
+    const t = makeT();
+    await seed(t, "manager", ["*"]);
+
+    // 50 non-existent ids is a no-op write — the point is it clears the cap,
+    // not that any row actually existed to delete.
+    await expect(
+      t.withIdentity(asAgent).mutation(api.lineItemWrites.removeManyNative, {
+        ids: Array.from({ length: 50 }, (_, i) => `li${i}`),
+        orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW,
+      }),
+    ).resolves.toBeDefined();
+  });
+
   test("…and accepted for the browser at the same size", async () => {
     const t = makeT();
     await seed(t, "manager", ["*"]);

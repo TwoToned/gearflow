@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native CROSS-TYPE CATEGORY-SLOT write mutations (Phase 3 browser-direct —
@@ -648,3 +649,13 @@ export const createCategoryAndPlaceGroup = mutation({
     };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  // Revenue-affecting placement moves (recalc-coupled) — recoverable, ordinary edits.
+  createCategoryAndPlaceGroup: { danger: "medium" },
+  moveProjectGroupToCategory: { danger: "medium" },
+  moveSubHireGroupToCategory: { danger: "medium" },
+  // Display-order only — no recalc, no revenue effect.
+  reorderMixedGroupsInCategory: { danger: "low" },
+};

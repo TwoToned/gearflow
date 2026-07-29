@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -203,3 +204,11 @@ export const archiveNative = mutation({
     return { id: a.id, isActive: a.isActive, usage };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  // Toggles isActive (archive/restore) — archive/lifecycle category is high
+  // by rule regardless of this particular toggle's non-destructiveness.
+  archiveNative: { danger: "high" },
+  createNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+};

@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -294,3 +295,14 @@ export const reorderNative = mutation({
     return { ok: true };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  addNative: { danger: "medium" },
+  // Delete/archive category is high by rule (tracks the design's stated
+  // categories, not this row's actual low blast-radius as a contact record).
+  removeNative: { danger: "high" },
+  reorderNative: { danger: "low" },
+  // Exclusive primary-contact toggle — trivially reversible, gates nothing else.
+  setPrimaryNative: { danger: "low" },
+  updateNative: { danger: "medium" },
+};

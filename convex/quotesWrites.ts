@@ -25,6 +25,7 @@ import {
   requireQuoteInOrg,
   type EffectiveQuoteStatus,
 } from "./lib/quoteState";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Quote revision mutations (#986 — Phase A of the finance version-control
@@ -784,3 +785,21 @@ export const quoteAcceptFields = {
   acceptanceRef: v.optional(v.string()),
 };
 export const quoteDeclineFields = { reason: v.string() };
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  // Client-facing, hard-to-silently-undo state changes on the document the
+  // client is holding — the send/accept/decline/recall quartet is high even
+  // though each has an in-app "undo" path (recall un-sends, a new version
+  // supersedes) — the classification tracks §9's stated categories.
+  markAcceptedNative: { danger: "high" },
+  markDeclinedNative: { danger: "high" },
+  // Cuts a fresh DRAFT at the next revision — the prior SENT/ACCEPTED quote the
+  // client is holding is left untouched until that draft is itself sent.
+  newVersionNative: { danger: "medium" },
+  recallNative: { danger: "high" },
+  // Same "opens a new DRAFT, doesn't touch the sent/locked revision" shape as
+  // newVersionNative — only its money fields are seeded from a past snapshot.
+  repriceFromRevisionNative: { danger: "medium" },
+  sendNative: { danger: "high" },
+};

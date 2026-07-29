@@ -162,4 +162,12 @@ describe("envelope shape", () => {
     expect(KNOWN_ERROR_CODES).toContain("FORBIDDEN");
     expect([...KNOWN_ERROR_CODES]).toEqual([...KNOWN_ERROR_CODES].sort());
   });
+
+  // Phase 4 (#1000)
+  test("CONFIRMATION_REQUIRED is registered and retryable (re-send with confirm:true)", () => {
+    expect(KNOWN_ERROR_CODES).toContain("CONFIRMATION_REQUIRED");
+    const confirmation = toErrorEnvelope(Object.assign(new Error("m"), { code: "CONFIRMATION_REQUIRED" }));
+    expect(confirmation.error.retryable).toBe(true); // re-send the SAME call with confirm:true
+    expect(confirmation.error.recovery?.action).toBe("confirm_with_human");
+  });
 });

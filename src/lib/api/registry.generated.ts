@@ -70,6 +70,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "agentAuthored",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "assetId",
         "optional": true,
         "type": "string"
@@ -116,7 +121,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "ff720184a010feab",
+    "argsSha": "8c8bd2fdfbab6718",
     "returnsSha": "74234e98afe7498f",
     "summary": "Raw activity log rows for CSV export, org-scoped and filtered.",
     "danger": "low",
@@ -144,6 +149,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "action",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "agentAuthored",
+        "optional": true,
+        "type": "boolean"
       },
       {
         "name": "assetId",
@@ -212,7 +222,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a65e64bf7c108c99",
+    "argsSha": "072b11831e4dedc7",
     "returnsSha": "74234e98afe7498f",
     "summary": "Filtered, sorted, paginated org activity log.",
     "danger": "low",
@@ -384,6 +394,62 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f",
     "summary": null,
     "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "agentRevert.revertAgentWindow",
+    "module": "agentRevert",
+    "fn": "revertAgentWindow",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_in",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_in"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "apiKeyId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "fromMs",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "toMs",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "34da1f96b642b073",
+    "returnsSha": "4bb2027f320164f1",
+    "summary": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -1129,7 +1195,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "fece3759efa04e28",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -1190,7 +1256,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "8f33321fb3e9c4f6",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -1246,7 +1312,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "2ae99bf194334f48",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -1302,7 +1368,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "397c878570c1e344",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3316,7 +3382,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3362,7 +3428,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f48b87367d1c1ef9",
     "returnsSha": "ca20c8538a3cc095",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3413,7 +3479,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d85d3ef2efb376fe",
     "returnsSha": "ca20c8538a3cc095",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3459,7 +3525,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "1598801cf159e539",
     "returnsSha": "b67b074b9a2f2e30",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3640,7 +3706,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "514a9d8fd6de5e82",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3691,7 +3757,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3752,7 +3818,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a7a1a60bd7b8e40b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -3808,7 +3874,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "59fd782b8d5b533f",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -4940,7 +5006,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7f94cc7688b6fe86",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -5036,7 +5102,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "43c7e7d3f5942d77",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -5087,7 +5153,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -5183,7 +5249,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "43c7e7d3f5942d77",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -5643,7 +5709,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d10581b967f8b455",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -5694,7 +5760,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -5780,7 +5846,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d10581b967f8b455",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6247,7 +6313,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d91d7a97c4bf69e8",
     "returnsSha": "23df8b9b6473ed03",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6308,7 +6374,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3fea7c7062c98d32",
     "returnsSha": "efda0e408ef31eef",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6373,7 +6439,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3fea7c7062c98d32",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6428,7 +6494,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "bf6185a8a2f45559",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6816,7 +6882,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "746ccab02d4cabfd",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6877,7 +6943,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c74781ae4bd29260",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6938,7 +7004,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "76001b97d57fd6d4",
     "returnsSha": "bfb38c6e5b5b2178",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -7029,7 +7095,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "1d9e9bda6e5f752a",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -7080,7 +7146,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -7136,7 +7202,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "4ce52d0989c9e5bc",
     "returnsSha": "296b6c98fce8621a",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -7192,7 +7258,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "676d3f3f12b00cc7",
     "returnsSha": "296b6c98fce8621a",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -7233,7 +7299,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e204246f9f0b916b",
     "returnsSha": "296b6c98fce8621a",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -7274,7 +7340,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "87ea7c7af3fb93a1",
     "returnsSha": "296b6c98fce8621a",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -7365,7 +7431,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "1d9e9bda6e5f752a",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -8192,7 +8258,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "1eece84fe4a2f1dc",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -8278,7 +8344,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6b8c55185904c193",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -8369,7 +8435,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f80e811b78902046",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -8460,7 +8526,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "debd19969f492b7f",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -8531,7 +8597,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ceb2bfa94ca72f52",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -9092,7 +9158,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7adffadb40ad08ce",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -9148,7 +9214,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "4b0a52c5484c48f6",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -9189,7 +9255,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "13f6781d41d354d2",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -9230,7 +9296,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "66efcfd61e2e9496",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -9311,7 +9377,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "337f72e993aa5151",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -10118,7 +10184,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5878020390254e44",
     "returnsSha": "13431994f56592f3",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -10169,7 +10235,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -10320,7 +10386,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "cde5156c25c201f6",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -10376,7 +10442,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0960873b9e1b300b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -10432,7 +10498,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "59fd782b8d5b533f",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -10605,7 +10671,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e4d877fa9afe8f30",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -10695,7 +10761,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3298a6eace07e75d",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -11181,7 +11247,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6f7dc650f00e56bf",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -11232,7 +11298,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "399eca2fce05e25b",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -11313,7 +11379,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e2ae3c2ff377c135",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -11369,7 +11435,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d3644603406b073a",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -12545,7 +12611,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "171d09f36dccd4bc",
     "returnsSha": "bec0cd60d81a5175",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -12608,7 +12674,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7074dcef8d9702c8",
     "returnsSha": "04471d174c91281a",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -12751,7 +12817,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6f51443bf2cc1131",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -12809,7 +12875,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "248d10f18c611aae",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -12852,7 +12918,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7eed1de1dd291c44",
     "returnsSha": "ca20c8538a3cc095",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -12985,7 +13051,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7a201d50e6aa3d30",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -13041,7 +13107,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "dfc17f4b6ae38865",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -13608,7 +13674,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "289dfc5248e97474",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -13654,7 +13720,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f583d63368f39d78",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -14895,7 +14961,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c7db02cb8d3fcd48",
     "returnsSha": "d6539bdf8ff6b3b8",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -14991,7 +15057,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c26563b6fc713a02",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -15082,7 +15148,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "da1fe3f93d58d352",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16215,7 +16281,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6c012673b4cd07b8",
     "returnsSha": "ca20c8538a3cc095",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16266,7 +16332,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3c0af6f70d4b6ebb",
     "returnsSha": "5e36bfe745c39ad2",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16357,7 +16423,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "16a4e485dfd99476",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16408,7 +16474,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16464,7 +16530,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c70ce80453590576",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16515,7 +16581,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6c012673b4cd07b8",
     "returnsSha": "ca20c8538a3cc095",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16606,7 +16672,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "16a4e485dfd99476",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16797,7 +16863,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "eac49e0c780f8a15",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16848,7 +16914,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -16909,7 +16975,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c74c200bca1acf46",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -17332,7 +17398,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "72fe6fbe6e55dfbd",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -17383,7 +17449,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -17469,7 +17535,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0b65692d8e3690fa",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19137,7 +19203,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d6aec6b55214bdbb",
     "returnsSha": "d6a34739b6044ec4",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19188,7 +19254,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5ffc9e0d344be248",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19254,7 +19320,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a2e51ead7805a582",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19320,7 +19386,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3d6064993c47c1fd",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19411,7 +19477,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f9c4cff03ed5c8cd",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19611,7 +19677,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "74726414256d01f1",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19692,7 +19758,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "fddc6cb9441d58ba",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19743,7 +19809,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19814,7 +19880,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "eeb89046dcd145de",
     "returnsSha": "4fa32762aba93eee",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19870,7 +19936,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "9a1efd90fa9e1974",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -19957,7 +20023,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "1c67abe6a28f9ace",
     "returnsSha": "56974b7ca9592fe8",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -20013,7 +20079,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7f1874cb71fadde3",
     "returnsSha": "56974b7ca9592fe8",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -22516,7 +22582,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "df2a1d03ebe110e1",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -22572,7 +22638,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3115fdc177d66122",
     "returnsSha": "b67b074b9a2f2e30",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -22623,7 +22689,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -22789,7 +22855,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "1e6682d20e8207cf",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -22840,7 +22906,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -22896,7 +22962,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b533cedf00676c4d",
     "returnsSha": "fb15bfca86e8fa3a",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -22952,7 +23018,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "8f3b5dd539109736",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23008,7 +23074,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "46d50bfedd7e00da",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23064,7 +23130,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "59fd782b8d5b533f",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23393,7 +23459,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "9398503fdb975de4",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23511,7 +23577,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "55cfc9c05853293e",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23615,7 +23681,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5770d4dbaf53b101",
     "returnsSha": "6f1a1d586199c07b",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23708,7 +23774,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "44de6ce05a129219",
     "returnsSha": "b462b96a443b48b3",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23771,7 +23837,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "aadfb3939912ebd2",
     "returnsSha": "04471d174c91281a",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23860,7 +23926,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c1a514c325f48fae",
     "returnsSha": "f94703565faa1825",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23942,7 +24008,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "2d8b46cfe6493f02",
     "returnsSha": "0272a75f0c4555c5",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -23988,7 +24054,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "106abb1a9fd7306c",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -24046,7 +24112,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d01bef1d4633a08f",
     "returnsSha": "04a71fa88e30fbf8",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -24114,7 +24180,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e48752bf058e28f8",
     "returnsSha": "f94703565faa1825",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -24162,7 +24228,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e6c1a2f24c1b92f5",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -24217,7 +24283,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "f94703565faa1825",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -24273,7 +24339,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "17ee709536d9134f",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -25030,7 +25096,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "04288aa0b7330463",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -25081,7 +25147,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -25177,7 +25243,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "04288aa0b7330463",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -25228,7 +25294,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e05d888d7d28595b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -25299,7 +25365,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "830d08fc476ff2bd",
     "returnsSha": "81a4f303f9cd90de",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -25360,7 +25426,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "44d5572a620b9ed5",
     "returnsSha": "3af9b5dd9fd8a2f5",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -26346,7 +26412,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "462cac2f6d42648c",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -26397,7 +26463,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a87ee2247677f349",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -26523,7 +26589,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a3812bee85187f47",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -27224,7 +27290,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "854613ce14cd367f",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -27280,7 +27346,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "2c0f63ffd53e1969",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -27351,7 +27417,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d5f37056880b318a",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -28793,7 +28859,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -28859,7 +28925,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "9d00761cc4091de7",
     "returnsSha": "ca20c8538a3cc095",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -29075,7 +29141,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d1e374ea17ee38da",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -29291,7 +29357,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d1e374ea17ee38da",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -29564,7 +29630,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "777c02d97926c221",
     "returnsSha": "7b8efe998f0f0056",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -29620,7 +29686,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c76f918cd47930a6",
     "returnsSha": "fc45f7e77b59ac82",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -31223,7 +31289,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "4904f4e732123f2b",
     "returnsSha": "e2697643f2e08227",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -31281,7 +31347,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "248d10f18c611aae",
     "returnsSha": "e6c5251ce4ba73e3",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -31327,7 +31393,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "49e9976c1d49fd65",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -31395,7 +31461,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "dabb4f36ffb247dc",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32077,7 +32143,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "03cef26c41f3f16d",
     "returnsSha": "e2697643f2e08227",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32135,7 +32201,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "248d10f18c611aae",
     "returnsSha": "e6c5251ce4ba73e3",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32203,7 +32269,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d3b6cbbc53dd3f50",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32271,7 +32337,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "66c065c152bdfa4f",
     "returnsSha": "a2ccaaa4d67e8c56",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32317,7 +32383,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "49e9976c1d49fd65",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32405,7 +32471,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "199436120346f869",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32471,7 +32537,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "80d77a6e0365a610",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -33852,7 +33918,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "8087d8100f2b5110",
     "returnsSha": "79316328861c4cca",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -34840,7 +34906,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6ef3c6d6b76316b1",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -34896,7 +34962,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "28a9a45fc9f3e5f6",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -34952,7 +35018,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "aeed34c0cd5ceaed",
     "returnsSha": "224c2e4c030051bf",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37244,7 +37310,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f8c0a774a625c95a",
     "returnsSha": "bec0cd60d81a5175",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37307,7 +37373,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "bde61e4f154287cc",
     "returnsSha": "04471d174c91281a",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37370,7 +37436,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "284ec9d64e3a082c",
     "returnsSha": "400f378b3746f7c8",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37433,7 +37499,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c11e2197bf58b40c",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37641,7 +37707,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f129ba8e7c417052",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37742,7 +37808,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "cd0060ab63d2156d",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37800,7 +37866,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "248d10f18c611aae",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37851,7 +37917,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -37909,7 +37975,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d3e6c9c5f8632774",
     "returnsSha": "055fda7228358ed7",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -38112,7 +38178,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "db55f72e33df7b00",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -38168,7 +38234,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7bebaa480528fdeb",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -38269,7 +38335,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "cd0060ab63d2156d",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -38857,7 +38923,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a12d4885e3521cab",
     "returnsSha": "bec0cd60d81a5175",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -38933,7 +38999,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b58cfa35fb401bb7",
     "returnsSha": "04471d174c91281a",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39029,7 +39095,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "eca1479a41c3c0d2",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39080,7 +39146,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39171,7 +39237,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "477317c8cff57ee2",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39227,7 +39293,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "00bb818921febd95",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39278,7 +39344,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "2d8b46cfe6493f02",
     "returnsSha": "84a572bce76d46a1",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39341,7 +39407,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0682cb8f16a46ce0",
     "returnsSha": "49ce3306f6ed0789",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39392,7 +39458,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ff70d04281ed505b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39683,7 +39749,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b3416182cfd49912",
     "returnsSha": "556df84788ed578c",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39749,7 +39815,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "13577aa320bf3964",
     "returnsSha": "1c4e097351efb995",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39795,7 +39861,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "452d85ad43c53ed0",
     "returnsSha": "296b6c98fce8621a",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39866,7 +39932,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "472e6e656febadda",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39932,7 +39998,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "dbbe7c52696293a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -39993,7 +40059,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c74c200bca1acf46",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40054,7 +40120,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7a9e216eb62d27ce",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40122,7 +40188,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "8bf85f2392c84efd",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40265,7 +40331,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "79e4edbea424c1be",
     "returnsSha": "370ba6c1bf9c6be0",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40321,7 +40387,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "10b8501f029b9f71",
     "returnsSha": "370ba6c1bf9c6be0",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40377,7 +40443,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "4713d346359b0765",
     "returnsSha": "a9efc1b31e93fd3f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40433,7 +40499,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "10b8501f029b9f71",
     "returnsSha": "c76d0325e401c8da",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40494,7 +40560,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3e1f2b02aceadf0c",
     "returnsSha": "cc64da96694ae5c3",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40570,7 +40636,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b39c2c5b21415429",
     "returnsSha": "ca599837ab6ba347",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40739,7 +40805,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0e8f9034c3089b12",
     "returnsSha": "d9380eab2b995f3f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40790,7 +40856,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "91d6502797bc374a",
     "returnsSha": "10d6212066b92a64",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40861,7 +40927,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f3a8294e61c2e8f2",
     "returnsSha": "d4b5fc07125b9183",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -40937,7 +41003,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b13fa7243cf83cb7",
     "returnsSha": "657cb4dd72533ca5",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -41009,7 +41075,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a97f8ed1c93aa323",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -41602,7 +41668,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "731e09960d693a0f",
     "returnsSha": "84923f8b0996be7f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -41648,7 +41714,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b765a5c846263ee8",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -41699,7 +41765,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "510011866c386575",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -41755,7 +41821,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b3cbf692d567be1c",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -42072,7 +42138,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "2b618036d04cfa97",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -42123,7 +42189,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a87ee2247677f349",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -42199,7 +42265,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "fb1c0022378861db",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44463,7 +44529,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "80a4bae6703d6fc3",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44519,7 +44585,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6c697e95a450d993",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44625,7 +44691,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "776de68bc2e55a6e",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44721,7 +44787,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ac39ae6d7d391ce5",
     "returnsSha": "c518552dd897c29d",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44772,7 +44838,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ce39435893af5934",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44823,7 +44889,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44879,7 +44945,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3dc6dc891fc7351a",
     "returnsSha": "c518552dd897c29d",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44935,7 +45001,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6c8df4997f847f57",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44986,7 +45052,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5aad8329bd9a1acd",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45037,7 +45103,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7d6803715bf39ab6",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45088,7 +45154,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f991f1dcaf5681dc",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45139,7 +45205,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45240,7 +45306,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b2ec9a355e01e772",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45356,7 +45422,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "16d5f3b5078d480b",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45452,7 +45518,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "624801367e0719a5",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45518,7 +45584,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "afac40fc290212c7",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45574,7 +45640,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "530e97c987e591f9",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45635,7 +45701,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "51db699f60d4c26c",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -45691,7 +45757,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c9ab598006d5c7ae",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -46699,7 +46765,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "9a27d600f342d942",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -46750,7 +46816,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5aad8329bd9a1acd",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -46801,7 +46867,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e5d041de5fb67638",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -46882,7 +46948,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "27d5edd4a664c228",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -47320,7 +47386,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "712873702fcb53c0",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -47416,7 +47482,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "1164fe49b54a3311",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -47467,7 +47533,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -47518,7 +47584,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -47589,7 +47655,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f8d1dec5ecaadd94",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -48271,7 +48337,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5b57a4e56f8ebfc5",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -48322,7 +48388,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -48443,7 +48509,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5b57a4e56f8ebfc5",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -48978,7 +49044,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0760ebea908334c0",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -49029,7 +49095,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "bd2b8a3c81efc86e",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -49085,7 +49151,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "056ee56786966bea",
     "returnsSha": "84923f8b0996be7f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -49136,7 +49202,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7077481b84d38aef",
     "returnsSha": "055fda7228358ed7",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -49237,7 +49303,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "82029b8c1dc17e4f",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -50024,7 +50090,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "3e0b0ec403629f27",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -50115,7 +50181,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "ddcdc5e7ecbb9fbf",
     "returnsSha": "3941415710e14f99",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -50236,7 +50302,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "bae690130c9eaf87",
     "returnsSha": "ecccb781a2bb5997",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -50272,7 +50338,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -50323,7 +50389,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "39474d96b96cd2a8",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -50364,7 +50430,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "7f94cc7688b6fe86",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -50410,7 +50476,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "45e9f4ce1229ef86",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -51634,7 +51700,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a4e72fdcd9b61bb2",
     "returnsSha": "8b114161049d5d20",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -51991,7 +52057,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "e794596905837d93",
     "returnsSha": "efde83ecf2efd768",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -52544,7 +52610,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "274d41f30f524817",
     "returnsSha": "4bf49c47b17d7273",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -52600,7 +52666,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "946f88fb7143d7aa",
     "returnsSha": "33aad05551c4e32a",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54161,7 +54227,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "61df998e624edf07",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54217,7 +54283,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "76d440ba738f1d2e",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54278,7 +54344,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "cf41e1f769652e0e",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54329,7 +54395,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c54ab5e2485f9084",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54390,7 +54456,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "4b849825f459d976",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54446,7 +54512,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0f84ac2ebc9ccfdf",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54502,7 +54568,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "868f4eebad168a71",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54553,7 +54619,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "87e62491b3fe6f29",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54614,7 +54680,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5f7520b1830eedaa",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54665,7 +54731,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a37dda97d9056f4",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54716,7 +54782,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "b9d0ee7b53f16f00",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54767,7 +54833,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "65d6e06447304b01",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54825,7 +54891,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "dbebf4aaaeca9d87",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54896,7 +54962,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "19c695fd76170409",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -54957,7 +55023,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "5043d2da89f579a0",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55018,7 +55084,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "9d7808c2fcca69b2",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55069,7 +55135,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c8a608c4953bc656",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55125,7 +55191,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c7168ad1deb622dd",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55181,7 +55247,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0f84ac2ebc9ccfdf",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55237,7 +55303,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d683cd6c97b0cbef",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55293,7 +55359,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a460919d7c169ee9",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55349,7 +55415,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "c7168ad1deb622dd",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55405,7 +55471,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "0f84ac2ebc9ccfdf",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -55461,7 +55527,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "d683cd6c97b0cbef",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
-    "danger": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -57344,10 +57410,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1122,
-  agentReachable: 551,
+  total: 1123,
+  agentReachable: 552,
   queries: 397,
-  mutations: 725,
+  mutations: 726,
   agentReachableQueries: 286,
-  agentReachableMutations: 265,
+  agentReachableMutations: 266,
 } as const;

@@ -6,6 +6,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
@@ -178,3 +179,13 @@ export const reportIssueNative = mutation({
     return { id: a.recordId };
   },
 });
+
+/**
+ * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
+ * Creates a maintenance record and flips the reported asset's status
+ * (AVAILABLE/CHECKED_OUT -> IN_MAINTENANCE/LOST) — an ordinary, recoverable
+ * report-an-issue create, not a warehouse movement or irreversible action.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  reportIssueNative: { danger: "medium" },
+};

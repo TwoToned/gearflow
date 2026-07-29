@@ -220,7 +220,6 @@ const CODE_SPECS: Record<string, CodeSpec> = {
       hint: "Show the summary to a human, then re-send the identical call with `confirm: true`.",
     },
   },
-
   // ── validation ────────────────────────────────────────────────────────────
   INVALID_NUMBER: {
     category: "validation",

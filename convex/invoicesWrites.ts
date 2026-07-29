@@ -16,6 +16,7 @@ import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
 import { computeDueDate } from "./lib/invoiceDates";
 import { startOfDayInTimezone } from "./lib/quoteDates";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Invoice write mutations (WS1 #940) — browser-direct, standard 4-guard shape.
@@ -494,3 +495,19 @@ export const createCreditNative = mutation({
 function round(v: number): number {
   return Math.round(v * 100) / 100;
 }
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  // Creates a DRAFT credit note (negates an ISSUED invoice) — real but
+  // recoverable while it stays a draft, same tier as createNative.
+  createCreditNative: { danger: "medium" },
+  createNative: { danger: "medium" },
+  // Delete = high (§9) even though it's scoped to DRAFT-only invoices —
+  // deletion is deletion.
+  deleteDraftNative: { danger: "high" },
+  // Financial issue (§9) — assigns the invoice number and moves DRAFT → ISSUED,
+  // the immutable-once-issued moment.
+  issueNative: { danger: "high" },
+  // Financial void (§9).
+  voidNative: { danger: "high" },
+};

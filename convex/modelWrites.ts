@@ -10,6 +10,7 @@ import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testt
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native MODEL write mutations (Phase 3 browser-direct — replaces createModel/
@@ -327,3 +328,15 @@ export const bulkUpdateRatesNative = mutation({
     return { count };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  // Delete/archive tier (§9) — also cascade-DELETES every asset + bulkAsset of
+  // this model (not just a soft archive of the model itself), so it's high on
+  // both grounds.
+  archiveNative: { danger: "high" },
+  // Rate metadata only (dailyRate/weeklyRate/monthlyRate/salePrice) — no
+  // status/availability change at scale, so medium per the bulk-rate carve-out.
+  bulkUpdateRatesNative: { danger: "medium" },
+  createNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+};

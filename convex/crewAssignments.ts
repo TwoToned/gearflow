@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -17,6 +17,25 @@ import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewCon
  * accept the service token OR a user token scoped to the same org. Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
+
+/** Phase 4 (#1000, decision 6): what the org pays this assignment/its crew
+ *  member — cost data, distinct from client-facing service pricing. */
+const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
+const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
+const ROLE_RATE_FIELDS = ["defaultRate"] as const;
+
+/** `projectCrew`'s enriched row nests cost fields inside `crewMember`/`crewRole`
+ *  too, so a top-level-only `redactFields` would miss them. */
+function redactAssignmentCost<
+  T extends { crewMember?: Record<string, unknown> | null; crewRole?: Record<string, unknown> | null },
+>(row: T): T {
+  const stripped = redactFields(row as unknown as Record<string, unknown>, ASSIGNMENT_COST_FIELDS);
+  return {
+    ...stripped,
+    crewMember: row.crewMember ? redactFields(row.crewMember, MEMBER_RATE_FIELDS) : row.crewMember,
+    crewRole: row.crewRole ? redactFields(row.crewRole, ROLE_RATE_FIELDS) : row.crewRole,
+  } as T;
+}
 
 // ── Pure scheduling helpers ported from src/lib/crew-scheduling-read.ts (epoch-ms). ──
 const PHASE_RANK: Record<string, number> = { BUMP_IN: 0, EVENT: 1, BUMP_OUT: 2, DELIVERY: 3, PICKUP: 4, SETUP: 5, REHEARSAL: 6, FULL_DURATION: 7 };
@@ -102,7 +121,8 @@ export const projectCrew = query({
         confirmedBy,
       });
     }
-    return out;
+    const auth = await getAuthContext(ctx);
+    return (await isAgentNoFinancials(ctx, auth)) ? out.map(redactAssignmentCost) : out;
   },
 });
 
@@ -275,10 +295,13 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const rows = await ctx.db
       .query("crewAssignments")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
+    const auth = await getAuthContext(ctx);
+    if (!(await isAgentNoFinancials(ctx, auth))) return rows;
+    return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
   },
 });
 
@@ -287,7 +310,9 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
-    return doc;
+    const auth = await getAuthContext(ctx);
+    if (!doc || !(await isAgentNoFinancials(ctx, auth))) return doc;
+    return redactFields(doc, ASSIGNMENT_COST_FIELDS);
   },
 });
 
@@ -296,10 +321,13 @@ export const listByProject = query({
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
-    return (await ctx.db
+    const rows = (await ctx.db
       .query("crewAssignments")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect()).filter((r) => r.organizationId === orgId);
+    const auth = await getAuthContext(ctx);
+    if (!(await isAgentNoFinancials(ctx, auth))) return rows;
+    return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
   },
 });
 

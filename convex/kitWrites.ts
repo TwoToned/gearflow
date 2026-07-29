@@ -13,6 +13,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native KIT write mutations (Phase 5) — same shape as convex/assetWrites.ts:
@@ -476,3 +477,16 @@ export const removeBulkItemNative = mutation({
     return { bulkAssetId: member.bulkAssetId };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  addBulkItemNative: { danger: "medium" },
+  addSerializedItemsNative: { danger: "medium" },
+  // Retire tier (§9 delete/archive) — releases every member back to AVAILABLE.
+  archiveNative: { danger: "high" },
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  removeBulkItemNative: { danger: "medium" },
+  removeSerializedItemNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+  updateNotesNative: { danger: "low" },
+};

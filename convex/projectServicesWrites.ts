@@ -4,6 +4,7 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertFinite } from "./lib/moneyGuards";
@@ -1542,3 +1543,18 @@ export const deleteServiceTemplateNative = mutation({
     return { id: a.id };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  bulkDeleteServicesNative: { danger: "high" }, // cascade-deletes N services (+ crew assignments/shifts/time entries)
+  bulkUpdateServiceStatusNative: { danger: "medium" },
+  cloneServicesNative: { danger: "medium" },
+  convertLineItemToServiceNative: { danger: "medium" },
+  createServiceNative: { danger: "medium" },
+  createServiceTemplateNative: { danger: "medium" },
+  deleteServiceNative: { danger: "high" }, // full cascade delete: line item, crew assignments, shifts, time entries
+  deleteServiceTemplateNative: { danger: "high" }, // delete/archive tier (§9) even though a template is recreatable
+  generateServicesNative: { danger: "medium" },
+  updateServiceNative: { danger: "medium" },
+  updateServiceStatusNative: { danger: "medium" },
+  updateServiceTemplateNative: { danger: "medium" },
+};

@@ -6,6 +6,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native CREW-AVAILABILITY write mutations (Phase 3 browser-direct — replaces
@@ -99,3 +100,12 @@ export const removeNative = mutation({
     return { ok: true };
   },
 });
+
+// See docs/designs/api-mcp-reimplementation.md §9 for the classification rubric.
+// A crew member's own availability/time-off block is closer to a personal
+// schedule entry than a business record — trivially reversible (add mirrors
+// remove) and gates nothing else in the system. `low`.
+export const agentOps: AgentOpsAnnotations = {
+  addNative: { danger: "low" },
+  removeNative: { danger: "low" },
+};

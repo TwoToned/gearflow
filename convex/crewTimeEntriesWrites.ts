@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -287,3 +288,18 @@ export const disputeNative = mutation({
     return { id: a.id };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  // Stamps approvedById/approvedAt, moving hours into the state that feeds
+  // payroll/billing exports, with no un-approve path in this module —
+  // financial-adjacent and effectively one-way from the API's point of view.
+  approveNative: { danger: "high" },
+  createManyNative: { danger: "medium" },
+  createNative: { danger: "medium" },
+  deleteNative: { danger: "high" },
+  // Just flags a SUBMITTED/APPROVED entry back for review — reversible via
+  // submitNative/approveNative, no data destroyed.
+  disputeNative: { danger: "low" },
+  submitNative: { danger: "medium" },
+  updateNative: { danger: "medium" },
+};

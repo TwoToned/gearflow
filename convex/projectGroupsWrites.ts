@@ -11,6 +11,7 @@ import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -793,3 +794,15 @@ export const moveLineItemsNative = mutation({
     return { moved, skipped };
   },
 });
+
+/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
+export const agentOps: AgentOpsAnnotations = {
+  createGroupNative: { danger: "medium" },
+  // Delete = high (§9), even though its lines are only unlinked, not deleted.
+  deleteGroupNative: { danger: "high" },
+  moveLineItemNative: { danger: "medium" },
+  moveLineItemsNative: { danger: "medium" },
+  reorderGroupsNative: { danger: "low" },
+  updateGroupNative: { danger: "medium" },
+  updateGroupPriceNative: { danger: "medium" },
+};

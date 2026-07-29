@@ -7,6 +7,7 @@ import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProjectDetail, refreshProjectDetail } from "@/hooks/use-project-detail";
+import { useMiraPageContext } from "@/hooks/use-mira-page-context";
 import { useProjectServicesSummary } from "@/hooks/use-project-services";
 import { useProjectLabourCost } from "@/hooks/use-project-crew";
 import {
@@ -141,6 +142,9 @@ export default function ProjectDetailPage({
   const searchParams = useSearchParams();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  // Phase 8 (#1004): tells Mira what the user is looking at, so a question
+  // asked here is routed to THIS project without having to name it.
+  useMiraPageContext({ entityType: "project", entityId: id });
 
   // #992 (Phase F) — org Finance section rows deep-link here via `?tab=finance`.
   // Uncontrolled `Tabs` (no onValueChange wiring needed elsewhere), so this only

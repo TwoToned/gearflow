@@ -307,3 +307,88 @@ describe("gate 5: danger classification", () => {
     }
   }, 180_000);
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// GATE 6 — stable-contract additive-only (#1004, design §13 decision 12)
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("gate 6: stable-contract additive-only", () => {
+  test("every field in the committed stable contract is still present in the live registry", async () => {
+    const { STABLE_CONTRACT } = await import("./stable-contract.generated");
+    for (const [operationName, baseline] of Object.entries(STABLE_CONTRACT)) {
+      const op = API_REGISTRY_BY_OPERATION.get(operationName);
+      expect(op, `stable operation '${operationName}' must still exist`).toBeDefined();
+      expect(op?.agentReachable, `'${operationName}' must still be agent-reachable`).toBe(true);
+      expect(op?.stability, `'${operationName}' must still be stable`).toBe("stable");
+      const currentFields = new Set(op?.args.map((a) => a.name));
+      for (const field of baseline.fields) {
+        expect(currentFields.has(field), `'${operationName}' must not have lost field '${field}'`).toBe(true);
+      }
+    }
+  });
+
+  test("DELIBERATE VIOLATION: a stable operation that lost a field fails the build", () => {
+    const dir = mkdtempSync(join(tmpdir(), "api-registry-gate6-"));
+    try {
+      for (const path of ["convex", "src", "scripts", "package.json", "tsconfig.json"]) {
+        cpSync(join(ROOT, path), join(dir, path), { recursive: true });
+      }
+      mkdirSync(join(dir, "docs"), { recursive: true });
+      execFileSync("ln", ["-s", join(ROOT, "node_modules"), join(dir, "node_modules")]);
+
+      // A curated-tool-shaped query, agent-reachable and (once wired into
+      // curated-tool-defs.ts below) "stable" — but its CURRENT args are just
+      // {orgId, keep}, missing the "dropped" field the seeded baseline below
+      // claims it used to have.
+      writeFileSync(
+        join(dir, "convex/zzGate6Probe.ts"),
+        [
+          'import { v } from "convex/values";',
+          'import { query } from "./_generated/server";',
+          'import { requireOrgPermission } from "./lib/auth";',
+          "",
+          "export const probe = query({",
+          "  args: { orgId: v.string(), keep: v.string() },",
+          "  handler: async (ctx, { orgId }) => {",
+          '    await requireOrgPermission(ctx, orgId, "project", "read");',
+          "    return null;",
+          "  },",
+          "});",
+          "",
+        ].join("\n"),
+      );
+
+      // Wire the probe into the curated-tool identity table so the generator
+      // classifies it "stable" (the ONE stability boundary — see
+      // scripts/generate-api-registry.mts's STABLE_OPERATIONS).
+      const curatedPath = join(dir, "src/lib/api/mcp/curated-tool-defs.ts");
+      const curated = readFileSync(curatedPath, "utf8");
+      writeFileSync(
+        curatedPath,
+        curated.replace(
+          /\n\];\s*$/,
+          '\n  { name: "zz_gate6_probe", title: "Gate 6 probe", operation: "zzGate6Probe.probe", summary: "test fixture" },\n];\n',
+        ),
+      );
+
+      // Seed a "previously committed" stable contract claiming a field
+      // ("dropped") that the probe above no longer has — simulating the real
+      // regression this gate exists to catch.
+      writeFileSync(
+        join(dir, "src/lib/api/stable-contract.generated.ts"),
+        'export const STABLE_CONTRACT = { "zzGate6Probe.probe": { reachable: true, fields: ["orgId", "keep", "dropped"] } };\n',
+      );
+
+      const result = runGenerator([], {
+        cwd: dir,
+        generator: join(dir, "scripts/generate-api-registry.mts"),
+      });
+      expect(result.ok, "the stable-contract gate should have FAILED").toBe(false);
+      expect(result.output).toMatch(/zzGate6Probe\.probe/);
+      expect(result.output).toMatch(/dropped/);
+      expect(result.output).toMatch(/stable-contract gate failed/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 180_000);
+});

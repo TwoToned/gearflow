@@ -1,6 +1,6 @@
 # 57 — Webhooks
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-29 (review quarterly — POLICY.md R-5.5)_
 
 Outbound, signed HTTP events so an agent or integration can **react** instead of polling.
 
@@ -15,10 +15,19 @@ Driver: an agent using the API asked for events after polling `list_projects` on
 | `line_item.added` | Gear is added to a project | `projectId, lineItemId, modelId, quantity, type, description` |
 | `warehouse.checked_out` | Gear physically leaves the warehouse | `projectId, lineItemIds, assetIds, count` |
 | `maintenance.created` | A maintenance record is opened | `maintenanceId, title, assetIds, status, type` |
+| `api_key.created` | A new agent-accessible API key is minted (Phase 8, #1004) | `apiKeyId, name, scopes, actingUserId, noFinancials` |
+| `api_key.revoked` | A key is revoked (or superseded by rotation) | `apiKeyId, name` |
+| `api.rate_limited` | An API/MCP call is rejected for exceeding its per-key rate limit | `apiKeyId, operation` |
+| `api.kill_switch_toggled` | The org-wide API kill switch flips on or off | `enabled, apiKillSwitchAt` |
 
 Names are `<noun>.<past_tense_verb>`, and the noun matches the API's read vocabulary so a
 consumer can correlate an event with a `get_project` / `get_asset` call. The catalogue is
 declared once in `src/lib/webhooks/events.ts` and served by `webhooks.getWebhookEvents`.
+The `api.*` events are emitted from `src/server/api-keys.ts` (create/revoke/kill-switch)
+and `src/lib/api/dispatcher.ts` (rate-limit rejections) — fire-and-forget, same as every
+other `emitWebhookEvent` call site. Mira's own internal key provisioning
+(FEATUREDOCS/68) deliberately does **not** fire `api_key.created` — that event is for
+keys an operator consciously created, not first-party plumbing.
 
 ## Envelope and signing
 

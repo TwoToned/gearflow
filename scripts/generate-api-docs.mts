@@ -32,13 +32,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { API_REGISTRY, type RegistryOperation } from "../src/lib/api/registry.generated.js";
 import { argsObjectSchema, type JsonSchema } from "../src/lib/api/json-schema.js";
+import { API_BASE_URL } from "../src/lib/api/version.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const OPENAPI_OUT = join(ROOT, "src/lib/api/openapi.generated.ts");
 const LLMS_OUT = join(ROOT, "src/lib/api/llms-txt.generated.ts");
 const LLMS_PUBLIC_OUT = join(ROOT, "public/llms.txt");
 
-const BASE_URL = "https://flow.rvlt.app";
+const BASE_URL = API_BASE_URL;
 
 function reachableOps(): RegistryOperation[] {
   return API_REGISTRY.filter((op) => op.agentReachable);
@@ -59,14 +60,19 @@ function operationPath(op: RegistryOperation): JsonSchema {
     bodyRequired.push("idempotencyKey");
   }
 
+  const scopeNote =
+    op.scopePairs.length > 0 ? `Requires scope: ${op.scopePairs.map((p) => `${p.resource}:${p.action}`).join(" or ")}.` : undefined;
+  const stabilityNote =
+    op.stability === "stable"
+      ? "Stability: stable — one of the additive-only /v1 curated operations (design §13 decision 12); fields are only ever added, never removed."
+      : "Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.";
+
   return {
     post: {
       operationId: op.operation,
       summary: `${op.operation} (${op.kind})`,
-      description:
-        op.scopePairs.length > 0
-          ? `Requires scope: ${op.scopePairs.map((p) => `${p.resource}:${p.action}`).join(" or ")}.`
-          : undefined,
+      description: [scopeNote, stabilityNote].filter(Boolean).join(" "),
+      "x-stability": op.stability,
       tags: op.resource ? [op.resource] : undefined,
       requestBody: {
         required: true,
@@ -151,6 +157,14 @@ function buildOpenApiDocument(ops: RegistryOperation[]): JsonSchema {
             data: {},
             requestId: { type: ["string", "null"] },
             replayed: { type: "boolean" },
+            warnings: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Design §13 versioning mechanics: the in-band deprecation channel — the only one an autonomous " +
+                "agent reliably consumes. Empty today (nothing is deprecated yet); always present so a future " +
+                "deprecation notice needs no response-shape change.",
+            },
           },
         },
         ErrorEnvelope: {

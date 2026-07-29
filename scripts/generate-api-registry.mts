@@ -60,11 +60,25 @@ import {
   isPrivilegedArgName,
   policyForArg,
 } from "../src/lib/api/privileged-args.js";
+import { CURATED_TOOL_DEFS } from "../src/lib/api/mcp/curated-tool-defs.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const CONVEX_DIR = join(ROOT, "convex");
 const REGISTRY_OUT = join(ROOT, "src/lib/api/registry.generated.ts");
 const COVERAGE_OUT = join(ROOT, "docs/api-coverage.md");
+const STABLE_CONTRACT_OUT = join(ROOT, "src/lib/api/stable-contract.generated.ts");
+
+/**
+ * Design §13 decision 12's "the ~25 curated operations": every operation a
+ * curated MCP tool wraps 1:1 (`whoami` has none). This is the ONE stability
+ * boundary, read from the same hand-authored identity table
+ * `generate-mcp-manifest.mts` already treats as ground truth for its own
+ * `stability` field (R-3.1) — a new curated tool is stable the moment it's
+ * added here, no separate list to keep in sync.
+ */
+const STABLE_OPERATIONS = new Set(
+  CURATED_TOOL_DEFS.map((def) => def.operation).filter((op): op is string => op !== null),
+);
 
 /** Convex modules that register no user-facing functions. */
 const SKIP_FILES = new Set([
@@ -127,6 +141,11 @@ interface Operation {
   mcpTier: 1 | 2 | 3 | null;
   agentAccess: "denied" | null;
   deniedReason: string | null;
+  /** Design §13 compatibility policy (decision 12). "stable" is additive-only
+   *  within /v1 — a stable operation may gain args, never lose one or
+   *  disappear (enforced by gate 6, checkStableContractRegression below).
+   *  "tracks-app" follows ordinary Convex refactors directly. */
+  stability: "stable" | "tracks-app";
 }
 
 // ─── 1. Static guard classification ─────────────────────────────────────────
@@ -389,6 +408,7 @@ function toOperation(
     privilegedArgs: args.map((a) => a.name).filter(isPrivilegedArgName),
     argsSha: sha(argsJson),
     returnsSha: sha(returnsJson),
+    stability: STABLE_OPERATIONS.has(`${moduleName}.${fnName}`) ? "stable" : "tracks-app",
     ...annotationFields(annotation),
   };
 }
@@ -499,6 +519,86 @@ function checkDangerClassification(operations: Operation[]): string[] {
 }
 
 /**
+ * Gate 6 (#1004, design §13 decision 12) — a `stability: "stable"` operation
+ * is an additive-only promise: it may gain args, but it can never lose one,
+ * disappear, stop being agent-reachable, or quietly demote to
+ * `"tracks-app"` — any of those would silently break an existing
+ * integration built against the ~25 curated operations. Checked against
+ * `STABLE_CONTRACT_OUT`, the previously committed snapshot (empty/absent on
+ * the very first run, which is vacuously fine).
+ */
+interface StableContractEntry {
+  reachable: boolean;
+  fields: readonly string[];
+}
+
+async function readExistingStableContract(): Promise<Record<string, StableContractEntry>> {
+  try {
+    const mod = (await import(pathToFileURL(STABLE_CONTRACT_OUT).href)) as {
+      STABLE_CONTRACT?: Record<string, StableContractEntry>;
+    };
+    return mod.STABLE_CONTRACT ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function checkStableContractRegression(
+  existing: Record<string, StableContractEntry>,
+  operations: Operation[],
+): string[] {
+  const byOperation = new Map(operations.map((o) => [o.operation, o]));
+  const problems: string[] = [];
+
+  for (const [operationName, baseline] of Object.entries(existing)) {
+    const current = byOperation.get(operationName);
+    if (!current) {
+      problems.push(
+        `Stable operation '${operationName}' has disappeared from the registry.\n` +
+          `  It is part of the additive-only /v1 contract (design §13 decision 12) — removing it is a breaking change and needs a /v2.`,
+      );
+      continue;
+    }
+    if (!current.agentReachable || current.stability !== "stable") {
+      problems.push(
+        `Stable operation '${operationName}' is no longer agent-reachable / stable (guard: ${current.guard}, stability: ${current.stability}).\n` +
+          `  A stable operation cannot be silently demoted — that breaks existing integrations built against it.`,
+      );
+      continue;
+    }
+    const currentFields = new Set(current.args.map((a) => a.name));
+    const missing = baseline.fields.filter((f) => !currentFields.has(f));
+    if (missing.length) {
+      problems.push(
+        `Stable operation '${operationName}' lost field(s): ${missing.join(", ")}.\n` +
+          `  Additive-only within /v1 (design §13 decision 12) — a stable operation's fields may only be ADDED, never removed. A breaking change needs a /v2.`,
+      );
+    }
+  }
+  return problems;
+}
+
+function emitStableContract(operations: Operation[]): string {
+  const stable = operations.filter((o) => o.stability === "stable");
+  const entries: Record<string, StableContractEntry> = {};
+  for (const op of stable) {
+    entries[op.operation] = { reachable: op.agentReachable, fields: op.args.map((a) => a.name).sort() };
+  }
+  return `${BANNER}
+/**
+ * Gate 6's ratcheting baseline (#1004, design §13 decision 12): every
+ * operation currently in the additive-only "stable" tier, with its arg
+ * field names. Regenerating always reflects the CURRENT stable surface —
+ * the gate itself (checkStableContractRegression in
+ * scripts/generate-api-registry.mts) is what stops a regenerate from ever
+ * silently committing a shrinking diff, by refusing to run in the first
+ * place. Never hand-edit this file to make a shrinking diff pass.
+ */
+export const STABLE_CONTRACT: Record<string, { reachable: boolean; fields: readonly string[] }> = ${JSON.stringify(entries, null, 2)} as const;
+`;
+}
+
+/**
  * Gate 3 — the agent-reachable count may only drop deliberately.
  *
  * The floor lives in the committed coverage doc, so lowering it is a visible diff
@@ -569,6 +669,12 @@ export interface RegistryOperation {
   readonly mcpTier: 1 | 2 | 3 | null;
   readonly agentAccess: "denied" | null;
   readonly deniedReason: string | null;
+  /** Design §13 compatibility policy (decision 12). "stable" is
+   *  additive-only within /v1 — a stable operation may gain args, never lose
+   *  one or disappear (gate 6 in scripts/generate-api-registry.mts checks
+   *  this against src/lib/api/stable-contract.generated.ts). "tracks-app"
+   *  follows ordinary Convex refactors directly. */
+  readonly stability: "stable" | "tracks-app";
 }
 
 export const API_REGISTRY: readonly RegistryOperation[] = ${JSON.stringify(operations, null, 2)} as const;
@@ -691,39 +797,38 @@ convention:
 
 // ─── 5. Main ────────────────────────────────────────────────────────────────
 
-/** Gates 1 + 3, which both run before anything is written. Exits the process on
- *  failure — a gate that merely warned would be a comment. */
-function runPreWriteGates(operations: Operation[], floor: number | null): void {
-  const privilegedProblems = checkPrivilegedArgs(operations);
-  if (privilegedProblems.length) {
-    console.error("\n✖ Privileged-argument gate failed:\n");
-    for (const problem of privilegedProblems) console.error(`${problem}\n`);
-    process.exit(1);
-  }
-
-  const agentOpsProblems = checkAgentOpsAnnotations(operations);
-  if (agentOpsProblems.length) {
-    console.error("\n✖ agentOps annotation gate failed:\n");
-    for (const problem of agentOpsProblems) console.error(`${problem}\n`);
-    process.exit(1);
-  }
-
-  const dangerProblems = checkDangerClassification(operations);
-  if (dangerProblems.length) {
-    console.error("\n✖ Danger-classification gate failed:\n");
-    for (const problem of dangerProblems) console.error(`${problem}\n`);
-    process.exit(1);
-  }
-
+/** Gate 3 as a `string[]`-returning check, matching every other gate's shape
+ *  (split out so `runPreWriteGates` can fail all of them uniformly). */
+function checkReachabilityFloor(operations: Operation[], floor: number | null): string[] {
   const reachableCount = operations.filter((o) => o.agentReachable).length;
-  if (floor != null && reachableCount < floor) {
-    console.error(
-      `\n✖ Reachability gate failed: ${reachableCount} agent-reachable operations, ` +
-        `floor is ${floor}.\n  Something narrowed the agent surface. If that was ` +
-        `deliberate, lower the floor in docs/api-coverage.md in the same PR and say why.\n`,
-    );
-    process.exit(1);
-  }
+  if (floor == null || reachableCount >= floor) return [];
+  return [
+    `${reachableCount} agent-reachable operations, floor is ${floor}.\n` +
+      `  Something narrowed the agent surface. If that was deliberate, lower the floor ` +
+      `in docs/api-coverage.md in the same PR and say why.`,
+  ];
+}
+
+/** Print a gate's problems (if any) and exit — the shared shape every gate in
+ *  `runPreWriteGates` fails with. */
+function failGate(label: string, problems: string[]): void {
+  if (!problems.length) return;
+  console.error(`\n✖ ${label} gate failed:\n`);
+  for (const problem of problems) console.error(`${problem}\n`);
+  process.exit(1);
+}
+
+/** Gates 1, 3, 5, 6 (agentOps annotations are a gate too, unnumbered above),
+ *  which all run before anything is written. Exits the process on the first
+ *  failure — a gate that merely warned would be a comment. */
+async function runPreWriteGates(operations: Operation[], floor: number | null): Promise<void> {
+  failGate("Privileged-argument", checkPrivilegedArgs(operations));
+  failGate("agentOps annotation", checkAgentOpsAnnotations(operations));
+  failGate("Danger-classification", checkDangerClassification(operations));
+  failGate("Reachability", checkReachabilityFloor(operations, floor));
+
+  const existingStableContract = await readExistingStableContract();
+  failGate("Stable-contract", checkStableContractRegression(existingStableContract, operations));
 }
 
 /** Gate 2. Regenerate in memory and compare; a stale committed output fails. */
@@ -753,7 +858,7 @@ async function main(): Promise<void> {
   const operations = await collectOperations();
   const floor = readReachabilityFloor();
 
-  runPreWriteGates(operations, floor);
+  await runPreWriteGates(operations, floor);
 
   const reachableCount = operations.filter((o) => o.agentReachable).length;
   // Ratchet: regenerating raises the floor to whatever we just measured, so the
@@ -762,6 +867,7 @@ async function main(): Promise<void> {
   const outputs = [
     [REGISTRY_OUT, emitRegistry(operations)],
     [COVERAGE_OUT, emitCoverage(operations, Math.max(floor ?? 0, reachableCount))],
+    [STABLE_CONTRACT_OUT, emitStableContract(operations)],
   ] as const;
 
   if (check) {

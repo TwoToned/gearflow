@@ -670,13 +670,33 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "oauthClientId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
       },
       {
+        "name": "origin",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "prefix",
         "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "refreshTokenExpiresAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "refreshTokenHash",
+        "optional": true,
         "type": "string"
       },
       {
@@ -696,7 +716,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b1623ad4916734ca",
+    "argsSha": "979f1aa7b9d224cc",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
     "danger": null,
@@ -766,13 +786,33 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "oauthClientId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "organizationId",
         "optional": false,
         "type": "string"
       },
       {
+        "name": "origin",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "prefix",
         "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "refreshTokenExpiresAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "refreshTokenHash",
+        "optional": true,
         "type": "string"
       },
       {
@@ -792,13 +832,39 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b1623ad4916734ca",
+    "argsSha": "979f1aa7b9d224cc",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
     "danger": null,
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
+  },
+  {
+    "operation": "apiKeys.getByRefreshTokenHash",
+    "module": "apiKeys",
+    "fn": "getByRefreshTokenHash",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "refreshTokenHash",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "39a1f98837ddfde1",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "The API key management surface itself must not be self-servable by an API key (privilege escalation risk)."
   },
   {
     "operation": "apiKeys.getByTokenHash",
@@ -845,6 +911,122 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "The API key management surface itself must not be self-servable by an API key (privilege escalation risk)."
+  },
+  {
+    "operation": "apiKeys.mintOAuthGrant",
+    "module": "apiKeys",
+    "fn": "mintOAuthGrant",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actingUserId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "createdAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "createdById",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "expiresAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "isActive",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "lastRotatedAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "lastUsedAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "name",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "noFinancials",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "oauthClientId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "origin",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "prefix",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "refreshTokenExpiresAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "refreshTokenHash",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "revokedAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "scopes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "tokenHash",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "979f1aa7b9d224cc",
     "returnsSha": "74234e98afe7498f",
     "summary": null,
     "danger": null,
@@ -928,6 +1110,67 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
+  },
+  {
+    "operation": "apiKeys.rotateOAuthTokens",
+    "module": "apiKeys",
+    "fn": "rotateOAuthTokens",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "accessTokenExpiresAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "prefix",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "presentedRefreshTokenHash",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "refreshTokenExpiresAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "refreshTokenHash",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "tokenHash",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "95b0862f37fb0153",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "The API key management surface itself must not be self-servable by an API key (privilege escalation risk)."
   },
   {
     "operation": "apiKeys.touchLastUsed",
@@ -29903,6 +30146,226 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "oauthAuthorizationCodes.create",
+    "module": "oauthAuthorizationCodes",
+    "fn": "create",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "clientId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "codeChallenge",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "codeChallengeMethod",
+        "optional": false,
+        "type": "literal"
+      },
+      {
+        "name": "codeHash",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "createdAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "expiresAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "redirectUri",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "resource",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "scopes",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8bf5a38069fe4167",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "OAuth authorization-code exchange is trusted-backend infrastructure, not agent-reachable."
+  },
+  {
+    "operation": "oauthAuthorizationCodes.redeem",
+    "module": "oauthAuthorizationCodes",
+    "fn": "redeem",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "codeHash",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "24953c5e16802e9d",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "OAuth authorization-code exchange is trusted-backend infrastructure, not agent-reachable."
+  },
+  {
+    "operation": "oauthClients.getById",
+    "module": "oauthClients",
+    "fn": "getById",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b114161049d5d20",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list)."
+  },
+  {
+    "operation": "oauthClients.listByIds",
+    "module": "oauthClients",
+    "fn": "listByIds",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b67b074b9a2f2e30",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list)."
+  },
+  {
+    "operation": "oauthClients.register",
+    "module": "oauthClients",
+    "fn": "register",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "clientName",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "clientSecretHash",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "createdAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "redirectUris",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "softwareId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "softwareVersion",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "tokenEndpointAuthMethod",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "597c9bdbbf6a62b6",
+    "returnsSha": "74234e98afe7498f",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list)."
+  },
+  {
     "operation": "orgExport.childRowsByParentIds",
     "module": "orgExport",
     "fn": "childRowsByParentIds",
@@ -57410,10 +57873,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1123,
+  total: 1131,
   agentReachable: 552,
-  queries: 397,
-  mutations: 726,
+  queries: 400,
+  mutations: 731,
   agentReachableQueries: 286,
   agentReachableMutations: 266,
 } as const;

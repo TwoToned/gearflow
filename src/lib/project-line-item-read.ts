@@ -103,6 +103,7 @@ export type MappedLineItem = Omit<
   | "lineTotal"
   | "priceBreakdown"
   | "priceOverridden"
+  | "pricedUnderLock"
   | "overrideReason"
   | "sortOrder"
   | "groupName"
@@ -159,6 +160,10 @@ export type MappedLineItem = Omit<
   lineTotal: number | null;
   priceBreakdown: string | null;
   priceOverridden: boolean;
+  /** True when `unitPrice`/`discount` were forced to $0/unset by `defaultToZero`
+   *  (added or reset while the project was locked, no unlock session open) rather
+   *  than a deliberate free line — the Unpriced badge's real signal. */
+  pricedUnderLock: boolean;
   overrideReason: string | null;
   sortOrder: number;
   groupName: string | null;
@@ -220,6 +225,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,
+    pricedUnderLock: d.pricedUnderLock ?? false,
     overrideReason: d.overrideReason ?? null,
     sortOrder: d.sortOrder ?? 0,
     groupName: d.groupName ?? null,
@@ -363,6 +369,7 @@ export type MappedGroup = Omit<
   | "discountMode"
   | "suggestedPrice"
   | "sortOrder"
+  | "pricedUnderLock"
   | "xeroAccountCode"
   | "xeroTaxType"
   | "createdAt"
@@ -377,6 +384,8 @@ export type MappedGroup = Omit<
   discountMode: "$" | "%" | null;
   suggestedPrice: number | null;
   sortOrder: number;
+  /** Mirrors `MappedLineItem.pricedUnderLock` — see that field's comment. */
+  pricedUnderLock: boolean;
   xeroAccountCode: string | null;
   xeroTaxType: string | null;
   createdAt: Date | null;
@@ -397,6 +406,7 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     discountMode: orNull(d.discountMode),
     suggestedPrice: orNull(d.suggestedPrice),
     sortOrder: d.sortOrder ?? 0,
+    pricedUnderLock: d.pricedUnderLock ?? false,
     xeroAccountCode: orNull(d.xeroAccountCode),
     xeroTaxType: orNull(d.xeroTaxType),
     createdAt: msToDate(d.createdAt),

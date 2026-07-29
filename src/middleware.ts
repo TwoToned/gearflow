@@ -38,6 +38,12 @@ export function middleware(request: NextRequest) {
   //   cookie. Without this exemption every unauthenticated call 302s to /login
   //   instead of getting a 401 JSON envelope — silently breaking every non-browser
   //   client (curl, MCP, a script) that doesn't follow redirects.
+  //   NOTE: `/api/v1/oauth/*` is covered by this same prefix, which is correct —
+  //   register/token/revoke are machine-to-machine OAuth endpoints with no
+  //   session of their own (#1003). `/oauth/authorize` (no `/api` prefix) is
+  //   NOT covered — that's the consent screen, deliberately session-gated below.
+  // - MCP OAuth discovery metadata (#1003): /.well-known/oauth-* — unauthenticated
+  //   by design, same posture as /api/v1/openapi.json.
   if (
     pathname.startsWith("/api/calendar/") ||
     (pathname.startsWith("/api/crew/calendar/") &&
@@ -48,7 +54,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/auditor/") ||
     pathname.startsWith("/api/auditor/") ||
     pathname.startsWith("/api/cron/") ||
-    pathname.startsWith("/api/v1/")
+    pathname.startsWith("/api/v1/") ||
+    pathname.startsWith("/.well-known/oauth-")
   ) {
     return withRequestId(NextResponse.next({ request: forwardedRequest }), requestId);
   }
@@ -60,7 +67,11 @@ export function middleware(request: NextRequest) {
 
   if (!sessionToken) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("callbackUrl", pathname);
+    // Preserve the FULL path+query (not just pathname) so a deep link with its
+    // own params — e.g. /oauth/authorize?client_id=...&code_challenge=...
+    // (#1003) — survives the login round trip instead of losing the OAuth
+    // request entirely.
+    loginUrl.searchParams.set("callbackUrl", pathname + request.nextUrl.search);
     return withRequestId(NextResponse.redirect(loginUrl), requestId);
   }
 

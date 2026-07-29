@@ -4,6 +4,7 @@ import { parseBearerToken, authenticateAgentRequest, type AgentRequestContext } 
 import { toErrorEnvelope, statusForError } from "@/lib/api/errors";
 import { buildMcpServer } from "@/lib/api/mcp/build-server";
 import { API_VERSION, API_VERSION_HEADER } from "@/lib/api/version";
+import { protectedResourceMetadataUrl } from "@/lib/api/oauth/metadata";
 
 /**
  * `/api/v1/mcp` — streamable HTTP MCP over the SAME dispatcher REST uses
@@ -29,23 +30,37 @@ function versioned(response: Response): Response {
   return response;
 }
 
+/** RFC 9728 §5.1: a 401 on a protected resource SHOULD carry a `WWW-Authenticate`
+ *  header pointing at its protected-resource metadata, so an MCP OAuth client
+ *  (#1003) can discover the authorization server without hardcoding anything.
+ *  Bearer-key clients (Phase 3) simply ignore this header — unaffected. */
+function unauthorized(response: Response): Response {
+  if (response.status === 401) {
+    response.headers.set(
+      "WWW-Authenticate",
+      `Bearer resource_metadata="${protectedResourceMetadataUrl()}"`,
+    );
+  }
+  return response;
+}
+
 async function handle(request: NextRequest): Promise<Response> {
   const requestId = request.headers.get("x-request-id");
   const rawToken = parseBearerToken(request.headers.get("authorization"));
   if (!rawToken) {
-    return versioned(
+    return unauthorized(versioned(
       NextResponse.json(
         toErrorEnvelope(Object.assign(new Error("Missing bearer token."), { code: "MISSING_CREDENTIALS" }), { requestId }),
         { status: 401 },
       ),
-    );
+    ));
   }
 
   let agent: AgentRequestContext;
   try {
     agent = await authenticateAgentRequest(rawToken);
   } catch (err) {
-    return versioned(NextResponse.json(toErrorEnvelope(err, { requestId }), { status: statusForError(err) }));
+    return unauthorized(versioned(NextResponse.json(toErrorEnvelope(err, { requestId }), { status: statusForError(err) })));
   }
 
   const server = buildMcpServer({ agent, authorizationHeader: request.headers.get("authorization"), requestId });

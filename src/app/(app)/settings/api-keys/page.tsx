@@ -39,6 +39,11 @@ export interface ApiKeyRow {
   isActive: boolean;
   actingUserId: string;
   noFinancials: boolean;
+  /** Phase 7 (#1003) — "oauth" for a claude.ai/desktop-connector grant, "manual"
+   *  for a hand-minted key. Both are the SAME `apiKeys` row shape, listed and
+   *  revoked identically — this only changes what the row's badge/label shows. */
+  origin: "manual" | "oauth";
+  oauthClientName: string | null;
   expiresAt: Date | string | null;
   lastUsedAt: Date | string | null;
   lastRotatedAt: Date | string | null;
@@ -259,8 +264,12 @@ function buildApiKeyColumns({
       mobile: "title",
       cell: (key) => (
         <div>
-          <span className="font-medium">{key.name}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium">{key.name}</span>
+            {key.origin === "oauth" && <Badge status="neutral">OAuth</Badge>}
+          </div>
           <p className="mt-0.5 font-mono text-xs text-fg-3">{key.prefix}…</p>
+          {key.oauthClientName && <p className="mt-0.5 text-xs text-fg-3">Connected app: {key.oauthClientName}</p>}
         </div>
       ),
     },
@@ -340,11 +349,16 @@ function KeyRowActions({
       </Button>
       {!keyRow.revokedAt && (
         <>
-          <RotateKeyButton
-            keyId={keyRow.id}
-            keyName={keyRow.name}
-            onRotated={(token) => onRotated(keyRow.name, token)}
-          />
+          {/* OAuth grants rotate automatically via the client's refresh_token
+           *  flow — manual rotation here would mint a NEW access token the
+           *  client never asked for and doesn't know to use (#1003). */}
+          {keyRow.origin === "manual" && (
+            <RotateKeyButton
+              keyId={keyRow.id}
+              keyName={keyRow.name}
+              onRotated={(token) => onRotated(keyRow.name, token)}
+            />
+          )}
           <Button
             variant="ghost"
             size="sm"

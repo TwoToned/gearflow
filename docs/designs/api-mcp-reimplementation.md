@@ -503,8 +503,10 @@ The Convex guards already throw `ConvexError` with stable codes — `PROJECT_LOC
 - `GET /api/v1/openapi.json`, `GET /llms.txt`.
 
 Cross-cutting: `runtime = "nodejs"` (AsyncLocalStorage + node:crypto), bearer-only auth so
-CSRF is structurally N/A (no cookie path — R-8.11.1), deny-by-default CORS with no
-credentials, `x-request-id` propagated from the existing middleware, per-key request log.
+CSRF is structurally N/A (no cookie path — R-8.11.1), CORS open (`Access-Control-Allow-Origin:
+"*"`, no credentials — required for browser-based MCP/OAuth clients to reach this surface at
+all; see FEATUREDOCS/56's 2026-07-29 fix), `x-request-id` propagated from the existing
+middleware, per-key request log.
 Webhooks already exist (FEATUREDOCS/58) and need only the `api.*` event additions.
 
 ## 12. MCP surface (`/api/v1/mcp`) — phase two, thin by design

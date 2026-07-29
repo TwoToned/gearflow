@@ -558,6 +558,23 @@ on every request; `redirect_uri` is checked for an EXACT match against the
 client's registered list before anything is trusted, including before
 rendering an error (an unverified `redirect_uri` is never followed).
 
+**CORS (fixed 2026-07-29)** — Phase 7 shipped OAuth discovery/registration/token
+endpoints and `/api/v1/mcp` with no `Access-Control-*` headers anywhere in the
+stack (`next.config.ts`'s global `headers()` doesn't set any either). Bearer-only
+auth meant this was believed CSRF-safe by construction (no cookie path,
+R-8.11.1), but it also meant a browser-based MCP client — including claude.ai's
+own connector flow, the client `oauth-errors.ts` names as a target — could
+complete the OAuth consent screen (a top-level navigation, unaffected by CORS)
+and then have its `fetch()` calls to `/api/v1/mcp` and the OAuth endpoints
+silently blocked by the browser's CORS preflight, surfacing as a generic
+"couldn't connect to the server" with no server-side error to debug from. Fixed
+by `src/lib/api/cors.ts` (`withCors`/`corsPreflight`, `Access-Control-Allow-Origin:
+"*"`, no `Allow-Credentials`) wired into `/api/v1/mcp`, both `.well-known/oauth-*`
+routes, and `/api/v1/oauth/{register,token,revoke}` — a wildcard origin doesn't
+reintroduce the CSRF risk the bearer-only design avoided, since a foreign page
+still can't read another origin's `Authorization` header, only present one it
+already holds.
+
 **Token endpoint** — `POST /api/v1/oauth/token`
 (`src/app/api/v1/oauth/token/route.ts`), standard
 `application/x-www-form-urlencoded` body (RFC 6749 §4.1.3) — the documented

@@ -8,7 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
-import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+import { assertLifecycleGuard, lifecycleAuditMetadata, pricedUnderLockOnInsert } from "./lib/projectLocks";
 import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -300,6 +300,10 @@ export const createGroupNative = mutation({
       price: a.price != null ? a.price : undefined,
       discount: a.discount != null ? a.discount : undefined,
       discountMode: a.discount != null ? a.discountMode : undefined,
+      // Record the ACTUAL cause of a $0/unset price at create time, so the
+      // Unpriced badge stops inferring it from "currently locked" (see the
+      // schema comment on `pricedUnderLock`).
+      pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
       suggestedPrice: 0,
       sortOrder,
       createdAt: a.now,
@@ -470,7 +474,11 @@ export const updateGroupPriceNative = mutation({
     if (!priceProject) throw new ConvexError("Project not found");
     const guard = await assertLifecycleGuard(ctx, priceProject, { kind: "financial" });
 
-    const patch: Record<string, unknown> = { price: a.price, updatedAt: a.now };
+    // Reaching here means the "financial" guard passed — a deliberate price set (open
+    // tier or open unlock session), never `defaultToZero`. Clears any stale
+    // `pricedUnderLock` from an earlier locked add — the price is no longer a
+    // lock artifact once a human has explicitly set it.
+    const patch: Record<string, unknown> = { price: a.price, pricedUnderLock: false, updatedAt: a.now };
     if (a.discount !== undefined) {
       patch.discount = a.discount;
       // #1012: the mode is written with the amount it describes — a discount set

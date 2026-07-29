@@ -40693,6 +40693,57 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "quotesWrites.setQuoteProtectedNative",
+    "module": "quotesWrites",
+    "fn": "setQuoteProtectedNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "protect",
+        "optional": false,
+        "type": "boolean"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "cedb99276e36d0dd",
+    "returnsSha": "8e94bf6bb97aa82e",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "reservationConflicts.projectConflicts",
     "module": "reservationConflicts",
     "fn": "projectConflicts",
@@ -57461,10 +57512,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1124,
+  total: 1125,
   agentReachable: 553,
   queries: 397,
-  mutations: 727,
+  mutations: 728,
   agentReachableQueries: 286,
   agentReachableMutations: 267,
 } as const;

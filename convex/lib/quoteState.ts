@@ -198,3 +198,31 @@ export async function currentRevisionQuoteStatus(
 export function quoteLabel(projectNumber: string, version: number): string {
   return `${projectNumber} v${version}`;
 }
+
+/**
+ * Strictly org OWNER — one tier above `isHardLockOverrideAllowed`
+ * (`projectLocks.ts`, which also admits admins and the project's assigned
+ * PM(s)). Reserved for the handful of quote actions where "a document a client
+ * may already hold" is being permanently erased or protected from further
+ * tampering (#1029/#1030): mutating something the client can no longer be
+ * shown a corrected copy of deserves a strictly narrower audience than undoing
+ * a lock. `hasPermission`'s "owner always passes" safety net (`permissionsCore.ts`)
+ * makes a resource/action check unusable here — admins/managers can hold the
+ * same `invoice:publish` grant, so only a direct role check is actually owner-only.
+ */
+export async function requireQuoteOwnerOnly(
+  ctx: MutationCtx,
+  orgId: string,
+  userId: string,
+  action: string,
+): Promise<void> {
+  const member = await ctx.db
+    .query("members")
+    .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId))
+    .first();
+  if (member?.role === "owner") return;
+  throw new ConvexError({
+    code: "FORBIDDEN_OWNER_ONLY",
+    message: `Only an org owner can ${action} — this touches a document a client may already hold.`,
+  });
+}

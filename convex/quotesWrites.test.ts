@@ -545,6 +545,110 @@ describe("quotesWrites.recallNative", () => {
 
     await expect(recall(t)).rejects.toThrow(/quote not found/i);
   });
+
+  test("refuses to recall a protected quote (#1030)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(recall(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/protected/i);
+    expect((await getQuotes(t))[0]?.status).toBe("SENT"); // untouched
+
+    // Unprotecting clears the way again.
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a4", now: NOW + 3,
+    });
+    await recall(t, { auditId: "a5", now: NOW + 4 });
+    expect((await getQuotes(t))[0]?.status).toBe("DRAFT");
+  });
+});
+
+describe("quotesWrites.setQuoteProtectedNative", () => {
+  test("an owner can protect and unprotect", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    const on = await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+    });
+    expect(on.protected).toBe(true);
+    let [quote] = await getQuotes(t);
+    expect(quote?.protected).toBe(true);
+    expect(quote?.protectedById).toBe(USER);
+
+    const off = await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a3", now: NOW + 2,
+    });
+    expect(off.protected).toBe(false);
+    [quote] = await getQuotes(t);
+    expect(quote?.protected).toBe(false);
+    expect(quote?.protectedById).toBeFalsy();
+  });
+
+  test("an admin — even though admin passes isHardLockOverrideAllowed — is NOT owner-only", async () => {
+    const t = makeT();
+    await seedMember(t, "admin");
+    await seedProject(t);
+    await send(t);
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+        id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/only an org owner/i);
+  });
+
+  test("a manager is denied", async () => {
+    const t = makeT();
+    await seedMember(t, "manager");
+    await seedProject(t);
+    await send(t);
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+        id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/only an org owner/i);
+  });
+
+  test("accepting a quote auto-protects it", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
+    });
+
+    const [quote] = await getQuotes(t);
+    expect(quote?.status).toBe("ACCEPTED");
+    expect(quote?.protected).toBe(true);
+    expect(quote?.protectedById).toBe(USER);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+        id: "q1", organizationId: ORG, protect: true, actor, auditId: "a2", now: NOW + 1,
+      }),
+    ).rejects.toThrow(/quote not found/i);
+  });
 });
 
 describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {

@@ -2226,6 +2226,14 @@ export default defineSchema({
     recalledById: v.optional(v.string()),
     recallReason: v.optional(v.string()),
     supersededByQuoteId: v.optional(v.string()),
+    // Protect (#1030) — a soft lock independent of status. Owner-only to set/
+    // unset (stricter than Recall's audience — see requireQuoteOwnerOnly).
+    // While true: Recall, Correction and recall-then-delete all refuse. Set
+    // automatically the moment a revision reaches ACCEPTED; an owner can still
+    // explicitly unprotect if a genuine correction is later needed.
+    protected: v.optional(v.boolean()),
+    protectedAt: v.optional(v.number()),
+    protectedById: v.optional(v.string()),
     // DEPRECATED (pre-#986) — backfilled into sentAt/sentById.
     publishedAt: v.optional(v.number()),
     publishedById: v.optional(v.string()),

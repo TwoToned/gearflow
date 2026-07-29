@@ -23,6 +23,7 @@ import {
   quoteLabel,
   requireProjectInOrg,
   requireQuoteInOrg,
+  requireQuoteOwnerOnly,
   type EffectiveQuoteStatus,
 } from "./lib/quoteState";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -400,6 +401,12 @@ export const recallNative = mutation({
 
     const label = quoteLabel(project.projectNumber, quote.version);
     assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "EXPIRED"], label, "recall");
+    if (quote.protected) {
+      throw new ConvexError({
+        code: "QUOTE_PROTECTED",
+        message: `${label} is protected — an owner must unprotect it before it can be recalled.`,
+      });
+    }
 
     // Unlink (never discard) the attached artifact so a resend is forced
     // through a real render (#1027) instead of attachQuoteArtifact's
@@ -772,6 +779,12 @@ export const markAcceptedNative = mutation({
       acceptedAt: stampedAcceptedAt,
       acceptedById: actor.userId,
       acceptanceRef: acceptanceRef?.trim() || undefined,
+      // #1030 — a client has committed to these exact numbers; protect the
+      // revision by default. An owner can still explicitly unprotect if a
+      // genuine correction is later needed (setQuoteProtectedNative).
+      protected: true,
+      protectedAt: now,
+      protectedById: actor.userId,
       updatedAt: now,
     });
 
@@ -853,6 +866,64 @@ export const markDeclinedNative = mutation({
 });
 
 /**
+ * PROTECT (#1030) — a soft lock independent of quote status. Owner-only
+ * (`requireQuoteOwnerOnly` — stricter than Recall's admin/owner/PM audience,
+ * see that helper's docstring): while `protected: true`, Recall refuses
+ * (checked in `recallNative` above), and recall-then-delete (#1029) / Correction
+ * (#1031) will refuse the same way once built. New Version is deliberately
+ * unaffected — it never touches the protected row, only opens a fresh draft at
+ * the next number.
+ *
+ * Reachable on any revision, not just `SENT`/`ACCEPTED` — an owner may want to
+ * pre-protect a draft they're about to send, and un-protecting is always safe
+ * to allow regardless of state.
+ */
+export const setQuoteProtectedNative = mutation({
+  returns: v.object({ id: v.string(), version: v.number(), protected: v.boolean() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    protect: v.boolean(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, protect, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "quote");
+    await enforceBrowserWriteLimit(ctx);
+    const actor = await resolveActor(ctx, suppliedActor);
+    await requireQuoteOwnerOnly(ctx, organizationId, actor.userId, protect ? "protect a quote" : "unprotect a quote");
+
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+    const label = quoteLabel(project.projectNumber, quote.version);
+
+    await ctx.db.patch(quote._id, {
+      protected: protect,
+      protectedAt: protect ? now : undefined,
+      protectedById: protect ? actor.userId : undefined,
+      updatedAt: now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "UPDATE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `${protect ? "Protected" : "Unprotected"} quote ${label}`,
+      details: { version: quote.version, protected: protect },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, version: quote.version, protected: protect };
+  },
+});
+
+/**
  * The client-supplied field sets, exported for the Zod↔Convex parity test
  * (`convex/validationDrift.test.ts`, R-8.6.1) — each one pairs with the
  * correspondingly-named schema in `src/lib/validations/quote.ts`. Dates are
@@ -895,4 +966,8 @@ export const agentOps: AgentOpsAnnotations = {
   // newVersionNative — only its money fields are seeded from a past snapshot.
   repriceFromRevisionNative: { danger: "medium" },
   sendNative: { danger: "high" },
+  // Unprotecting is lock-softening (CLAUDE.md's high rubric) — it reopens
+  // Recall/Correction on a revision a client may hold. Classified high for
+  // both directions of the boolean rather than splitting the mutation.
+  setQuoteProtectedNative: { danger: "high" },
 };

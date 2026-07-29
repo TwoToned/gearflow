@@ -172,6 +172,32 @@ inputs are `quoteDate`, `validityDays`, `recipientContactId` and `notes`.
 
 No new permission resource is introduced — both checks already existed.
 
+### Delete and Protect (#1026 follow-up program — extends, doesn't modify, the five verbs above)
+
+Two more mutations sit alongside the five verbs, covering operational gaps found
+using the model: undoing a mistaken action, and locking down an accepted
+revision. Design: `docs/designs/quote-version-management-extensions.md`.
+
+- **`deleteDraftNative`** (#1028) — deletes a `DRAFT` that has **never** been
+  sent (`sentAt`/`publishedAt` both unset). Rolls `projects.revision` back to
+  the highest revision that was ever actually sent (or `1` if none was) — the
+  one deliberate exception to "never decremented, never reused": that
+  invariant protects *sent* revisions, not a number a discarded draft merely
+  reserved. Same `invoice:publish` audience as Send/New version. Refuses
+  anything that was ever sent, even a quote currently `DRAFT` via Recall —
+  that needs the (separate, stricter) recall-then-delete flow, #1029.
+- **`setQuoteProtectedNative`** (#1030) — a soft lock independent of quote
+  status. **Owner-only** (`requireQuoteOwnerOnly` in `convex/lib/quoteState.ts`
+  — stricter than Recall's audience; a resource/action permission check can't
+  express "owner only" because `hasPermission` always passes owners regardless
+  of the resource, so this is a direct role check). While `protected: true`,
+  Recall refuses (`QUOTE_PROTECTED`); Correction and recall-then-delete will
+  refuse the same way once built. New Version is unaffected — it never touches
+  the protected row. **Auto-set on Accept**: a client has committed to those
+  exact numbers, so `markAcceptedNative` protects the revision by default; an
+  owner can still explicitly unprotect if a genuine correction is later
+  needed.
+
 ### Acceptance gate on CONFIRMED
 
 `projectWrites.updateStatusNative` refuses a transition landing on `CONFIRMED`

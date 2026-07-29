@@ -1223,6 +1223,16 @@ export default defineSchema({
     allocationBasis: v.optional(enums.AllocationBasis),
     priceBreakdown: v.optional(v.string()),
     priceOverridden: v.optional(v.boolean()),
+    // True exactly when this row's unitPrice/discount were forced to $0/unset by
+    // `assertLifecycleGuard`'s `defaultToZero` (an insert, merge, or snapshot-restore
+    // while the project was locked with no unlock session open) — the actual CAUSE the
+    // `<UnpricedBadge>` tooltip claims, instead of inferring it from "currently locked +
+    // currently $0" (which false-positives on a row that's been $0 since before any lock
+    // ever existed, e.g. no catalog rate configured). Cleared to `false` the moment a
+    // deliberate financial write (patchNative/patchManyNative touching money, a merge
+    // that keeps a real client price, or a FINANCIAL-scope snapshot restore) sets a real
+    // price — server-only, never client-settable (LINE_IMMUTABLE_ON_PATCH).
+    pricedUnderLock: v.optional(v.boolean()),
     overrideReason: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
     groupName: v.optional(v.string()),
@@ -1402,6 +1412,11 @@ export default defineSchema({
     discountMode: v.optional(enums.DiscountMode),
     suggestedPrice: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
+    // Mirrors projectLineItems.pricedUnderLock — true when this group's own `price`/
+    // `discount` were forced to $0/unset by `guard.defaultToZero` at create time (or a
+    // FINANCIAL-scope snapshot restore), not a deliberate free group. See that field's
+    // comment for the full rationale.
+    pricedUnderLock: v.optional(v.boolean()),
     // WS1 (#940) — Xero account-coding override for a priced group's own
     // invoice line (convex/lib/financeSnapshot.ts's "priced groups bill as
     // ONE line"). Cascade: this override -> categoryId's category default ->

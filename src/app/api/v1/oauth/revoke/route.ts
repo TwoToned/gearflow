@@ -5,6 +5,7 @@ import { hashApiKey } from "@/lib/api-key";
 import { oauthErrorResponse } from "@/lib/api/oauth/oauth-errors";
 import { parseFormBody } from "@/lib/api/oauth/form-body";
 import { authenticateClientRequest } from "@/lib/api/oauth/client-registration";
+import { withCors, corsPreflight } from "@/lib/api/cors";
 
 export const runtime = "nodejs";
 
@@ -28,8 +29,10 @@ export async function POST(request: NextRequest) {
   }
 
   await revokeIfOwnedByClient(token, auth.client.id);
-  return new Response(null, { status: 200, headers: { "Cache-Control": "no-store", Pragma: "no-cache" } });
+  return withCors(new Response(null, { status: 200, headers: { "Cache-Control": "no-store", Pragma: "no-cache" } }));
 }
+
+export const OPTIONS = corsPreflight;
 
 /** Only a grant this same client was issued (origin "oauth" + matching
  *  oauthClientId) may be revoked here — a raw bearer/manual key hash

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 import { createId } from "@paralleldrive/cuid2";
 import { getConvexClient } from "../../convex-client";
 import { api } from "../../../../convex/_generated/api";
@@ -66,10 +66,22 @@ export function validateRegistrationRequest(body: unknown): {
   };
 }
 
-/** SHA-256 hex — same fast-digest posture as `hashApiKey` (src/lib/api-key.ts):
- *  the client secret is a high-entropy CSPRNG value, never a human password. */
+/**
+ * Salted scrypt, NOT the fast SHA-256 digest `hashApiKey` (src/lib/api-key.ts)
+ * uses. Those two look identical at a glance (both hash a CSPRNG secret) but
+ * differ in the one property that matters: `hashApiKey`'s output is looked up
+ * BY EQUALITY as a Convex index key on every bearer request, so it must stay a
+ * deterministic, unsalted, fast digest — a slow KDF there would tax every API
+ * call. `clientSecretHash` is never looked up; the client is already resolved
+ * by `client_id` before this ever runs, so a salted, deliberately slow hash
+ * costs nothing extra structurally and is strictly better defense-in-depth
+ * for a credential that authenticates a caller as a whole registered client.
+ * Format: `<salt-hex>:<derived-key-hex>`.
+ */
 function hashClientSecret(raw: string): string {
-  return createHash("sha256").update(raw).digest("hex");
+  const salt = randomBytes(16);
+  const derived = scryptSync(raw, salt, 64);
+  return `${salt.toString("hex")}:${derived.toString("hex")}`;
 }
 
 /** Register a new OAuth client. Returns the raw `client_secret` exactly ONCE
@@ -113,15 +125,16 @@ export async function registerOauthClient(
 }
 
 /** Verify a presented `client_secret` against a confidential client's stored
- *  hash. `hashClientSecret` is a fast digest (same posture as `hashApiKey` —
- *  the secret is CSPRNG-generated, never a human password), but the hash
- *  COMPARISON still uses `timingSafeEqual` per the acceptance criteria's
- *  "constant-time secret comparison." */
+ *  `<salt-hex>:<derived-key-hex>` hash (constant-time comparison, per the
+ *  acceptance criteria's "constant-time secret comparison"). */
 function verifyClientSecret(presented: string, storedHash: string): boolean {
-  const presentedHash = Buffer.from(hashClientSecret(presented));
-  const stored = Buffer.from(storedHash);
-  if (presentedHash.length !== stored.length) return false;
-  return timingSafeEqual(presentedHash, stored);
+  const sepIndex = storedHash.indexOf(":");
+  if (sepIndex < 0) return false;
+  const salt = Buffer.from(storedHash.slice(0, sepIndex), "hex");
+  const expected = Buffer.from(storedHash.slice(sepIndex + 1), "hex");
+  const actual = scryptSync(presented, salt, expected.length || 64);
+  if (actual.length !== expected.length) return false;
+  return timingSafeEqual(actual, expected);
 }
 
 export interface OAuthClientRecord {

@@ -41,6 +41,25 @@ export type AuthorizeContextResult =
   | { ok: true; data: AuthorizeContext }
   | { ok: false; message: string };
 
+/** The ONLY query params `/oauth/authorize` reads. Fixed, not derived from the
+ *  request — copying into `single` below by an allowlisted, statically-known
+ *  key (never `rawParams`' own key) is what makes this immune to a
+ *  prototype-pollution-shaped property write from a crafted query string. */
+const AUTHORIZE_QUERY_KEYS = [
+  "response_type",
+  "client_id",
+  "redirect_uri",
+  "scope",
+  "state",
+  "code_challenge",
+  "code_challenge_method",
+  "resource",
+] as const;
+
+function firstValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 /** Validate the incoming `/oauth/authorize` request and compute what the
  *  consent screen should show. Every failure here is a "show an error page,
  *  do NOT redirect" case (`redirect_uri` isn't trustworthy yet at this point —
@@ -49,7 +68,7 @@ export async function loadAuthorizeContext(
   rawParams: Record<string, string | string[] | undefined>,
 ): Promise<AuthorizeContextResult> {
   const single: Record<string, string | undefined> = {};
-  for (const [k, v] of Object.entries(rawParams)) single[k] = Array.isArray(v) ? v[0] : v;
+  for (const key of AUTHORIZE_QUERY_KEYS) single[key] = firstValue(rawParams[key]);
 
   const parsed = authorizeQuerySchema.safeParse(single);
   if (!parsed.success) {

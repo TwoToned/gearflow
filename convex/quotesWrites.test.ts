@@ -783,6 +783,115 @@ describe("quotesWrites.deleteRecalledNative — recall-then-delete, the one full
   });
 });
 
+describe("quotesWrites.correctQuoteNative — audited in-place date fix, no version bump (#1031)", () => {
+  const correct = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.correctQuoteNative, {
+      id: "q1", organizationId: ORG, quoteDate: NOW + 5 * DAY, actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+
+  test("corrects quoteDate/validUntil, preserves the original validityDays, unlinks the artifact, never touches sentAt", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t, { validityDays: 14 }); // sentAt = NOW, quoteDate = NOW, validUntil = NOW + 14d EOD
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1" });
+    });
+
+    const result = await correct(t);
+    // Same validityDays (14) re-anchored to the new quoteDate (NOW + 5d).
+    expect(result.quoteDate).toBe(Date.UTC(2023, 10, 19)); // NOW + 5 days, start of day UTC
+    expect(result.validUntil).toBe(Date.UTC(2023, 11, 3, 23, 59, 59, 999)); // Nov 19 + 14 days = Dec 3, end of day
+
+    const [quote] = await getQuotes(t);
+    expect(quote?.validityDays).toBe(14);
+    expect(quote?.sentAt).toBe(NOW); // untouched — system truth of when it was actually sent
+    expect(quote?.correctedAt).toBe(NOW + 1);
+    expect(quote?.correctedById).toBe(USER);
+    expect(quote?.pdfFileId).toBeFalsy();
+    expect(quote?.recalledPdfFileIds).toEqual(["storage_v1"]);
+  });
+
+  test("an explicit validityDays overrides the revision's original one", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t, { validityDays: 14 });
+
+    const result = await correct(t, { validityDays: 7 });
+    expect(result.validUntil).toBe(Date.UTC(2023, 10, 26, 23, 59, 59, 999)); // Nov 19 + 7 days = Nov 26, end of day
+
+    expect((await getQuotes(t))[0]?.validityDays).toBe(7);
+  });
+
+  test("works on an ACCEPTED revision too, but is blocked once protect auto-fires (#1030)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1,
+    });
+
+    // ACCEPTED auto-protects (#1030) — correction is blocked until unprotected.
+    await expect(correct(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/protected/i);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a4", now: NOW + 3,
+    });
+    const result = await correct(t, { auditId: "a5", now: NOW + 4 });
+    expect(result.version).toBe(1);
+    expect((await getQuotes(t))[0]?.status).toBe("ACCEPTED"); // status itself is untouched
+  });
+
+  test("refuses a DRAFT revision", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(correct(t)).rejects.toThrow(/hasn't been sent yet/i);
+  });
+
+  test("validates quoteDate and validityDays bounds server-side", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    await expect(correct(t, { validityDays: 0 })).rejects.toThrow(/at least 1/i);
+    await expect(correct(t, { validityDays: 400 })).rejects.toThrow(/at most 365/i);
+  });
+
+  test("a manager (passes invoice:publish) is NOT owner-only", async () => {
+    const t = makeT();
+    await seedMember(t, "manager");
+    await seedProject(t);
+    await send(t);
+
+    await expect(correct(t)).rejects.toThrow(/only an org owner/i);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+
+    await expect(correct(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
 describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
   const accept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
     t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {

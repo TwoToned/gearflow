@@ -40276,6 +40276,62 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "quotesWrites.correctQuoteNative",
+    "module": "quotesWrites",
+    "fn": "correctQuoteNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "quoteDate",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "validityDays",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5709100822b5fd04",
+    "returnsSha": "2e1b045ea93a9d48",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "quotesWrites.deleteDraftNative",
     "module": "quotesWrites",
     "fn": "deleteDraftNative",
@@ -57563,10 +57619,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1126,
+  total: 1127,
   agentReachable: 553,
   queries: 397,
-  mutations: 729,
+  mutations: 730,
   agentReachableQueries: 286,
   agentReachableMutations: 267,
 } as const;

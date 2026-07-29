@@ -1059,6 +1059,109 @@ export const setQuoteProtectedNative = mutation({
 });
 
 /**
+ * CORRECTION (#1031) — an audited in-place fix to a `SENT`/`ACCEPTED`
+ * revision's `quoteDate`/`validUntil`, no version bump, no price change. This
+ * is deliberately narrower than it might sound: it does NOT touch `sentAt`
+ * (the system's true record of when the send actually happened — only the
+ * date PRINTED ON THE DOCUMENT is correctable), and it does NOT touch
+ * `snapshot`/pricing/structure at all — that's what New Version is for.
+ *
+ * Same shape as the recall path for the attached artifact: `pdfFileId` is
+ * unlinked (pushed onto `recalledPdfFileIds`, never discarded) so the next
+ * render is forced fresh rather than serving the pre-correction bytes. The PDF
+ * itself isn't re-rendered here — that's the Node-side server action's job
+ * (`generateQuoteArtifact`, `src/server/finance-documents.ts`), same division
+ * of labour `sendNative` already has with its own auto-render step. The
+ * "REISSUED — corrects vN sent X, edited by Y on Z" watermark on the reissued
+ * PDF is separate follow-up work in the PDF pipeline (`document-layouts.ts` /
+ * `document-composer.ts`), not built by this mutation.
+ *
+ * Owner-only (`requireQuoteOwnerOnly`) and blocked while `protected: true` —
+ * same bar as recall-then-delete: this mutates a document a client may
+ * already hold, so it gets the higher of the two audiences discussed for it
+ * rather than Recall's narrower one.
+ */
+export const correctQuoteNative = mutation({
+  returns: v.object({ id: v.string(), version: v.number(), quoteDate: v.number(), validUntil: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    /** The corrected date to print on the document. */
+    quoteDate: v.number(),
+    /** Defaults to the revision's own `validityDays`, then the org default. */
+    validityDays: v.optional(v.number()),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, quoteDate, validityDays, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "quote");
+    await enforceBrowserWriteLimit(ctx);
+    const actor = await resolveActor(ctx, suppliedActor);
+    await requireQuoteOwnerOnly(ctx, organizationId, actor.userId, "correct a sent quote's date");
+
+    assertNumRange(quoteDate, "quoteDate", DATE_BOUNDS);
+    assertNumRange(validityDays, "validityDays", { ...QUOTE_VALIDITY_BOUNDS, integer: true });
+
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+    const label = quoteLabel(project.projectNumber, quote.version);
+    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["SENT", "ACCEPTED"], label, "correct");
+    if (quote.protected) {
+      throw new ConvexError({
+        code: "QUOTE_PROTECTED",
+        message: `${label} is protected — an owner must unprotect it before it can be corrected.`,
+      });
+    }
+
+    const config = await resolveOrgQuoteConfig(ctx, organizationId);
+    const days = validityDays ?? quote.validityDays ?? config.quoteValidityDays;
+    const stampedQuoteDate = startOfDayInTimezone(quoteDate, config.timezone);
+    const newValidUntil = computeValidUntil(stampedQuoteDate, days, config.timezone);
+
+    // Same unlink-not-discard shape as recall (#1027): forces the next render
+    // through a real render instead of attachQuoteArtifact's guard silently
+    // keeping the pre-correction bytes attached under a since-corrected date.
+    const recalledPdfFileIds = quote.pdfFileId
+      ? [...(quote.recalledPdfFileIds ?? []), quote.pdfFileId]
+      : quote.recalledPdfFileIds;
+
+    await ctx.db.patch(quote._id, {
+      quoteDate: stampedQuoteDate,
+      validUntil: newValidUntil,
+      validityDays: days,
+      pdfFileId: undefined,
+      recalledPdfFileIds,
+      correctedAt: now,
+      correctedById: actor.userId,
+      updatedAt: now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "UPDATE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Corrected quote ${label}'s date`,
+      details: {
+        version: quote.version,
+        previousQuoteDate: quote.quoteDate ?? null,
+        newQuoteDate: stampedQuoteDate,
+        previousValidUntil: quote.validUntil ?? null,
+        newValidUntil,
+      },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, version: quote.version, quoteDate: stampedQuoteDate, validUntil: newValidUntil };
+  },
+});
+
+/**
  * The client-supplied field sets, exported for the Zod↔Convex parity test
  * (`convex/validationDrift.test.ts`, R-8.6.1) — each one pairs with the
  * correspondingly-named schema in `src/lib/validations/quote.ts`. Dates are
@@ -1096,6 +1199,9 @@ export const agentOps: AgentOpsAnnotations = {
   // Genuinely irreversible — the one mutation in this file that deletes
   // storage bytes a client may already hold, not just unlinks/preserves them.
   deleteRecalledNative: { danger: "high" },
+  // Mutates dates on a document a client may already hold, forcing a re-render
+  // under the same revision number — same risk class as recall/send.
+  correctQuoteNative: { danger: "high" },
   // Cuts a fresh DRAFT at the next revision — the prior SENT/ACCEPTED quote the
   // client is holding is left untouched until that draft is itself sent.
   newVersionNative: { danger: "medium" },

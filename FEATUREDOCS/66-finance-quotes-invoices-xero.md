@@ -209,6 +209,25 @@ revision. Design: `docs/designs/quote-version-management-extensions.md`.
   risk erase, not an unlink. The audit log entry is written BEFORE the delete
   and carries the erased artifact ids, since it is the only record left once
   this returns.
+- **`correctQuoteNative`** (#1031) — an audited in-place fix to a
+  `SENT`/`ACCEPTED` revision's `quoteDate`/`validUntil`. No version bump, no
+  price/structure change. **Never touches `sentAt`** — that stays the system's
+  true record of when the send actually happened; only the date PRINTED ON
+  THE DOCUMENT is correctable. Same unlink-not-discard shape as Recall for the
+  attached artifact (pushed onto `recalledPdfFileIds`), so the next render is
+  forced fresh. **Owner-only**, **blocked while `protected: true`** — same bar
+  as recall-then-delete, since this too mutates a document a client may
+  already hold. Stamps `correctedAt`/`correctedById` for the eventual reissued
+  PDF's watermark to reference.
+
+  **Not yet built by this mutation:** the actual PDF re-render (that's the
+  Node-side `generateQuoteArtifact` server action's job, unchanged — clearing
+  `pdfFileId` here is what lets its existing "already attached" guard get out
+  of the way) and the "REISSUED — corrects vN sent X, edited by Y on Z"
+  watermark, which needs a new `LayoutBlock` kind in the PDF pipeline
+  (`document-layouts.ts`/`document-composer.ts`, CLAUDE.md's standing 3-consumer
+  audit) plus a client dialog. Convex-side plumbing only, landed first because
+  every other piece of this program was also Convex-only.
 
 ### Acceptance gate on CONFIRMED
 

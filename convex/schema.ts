@@ -2234,6 +2234,14 @@ export default defineSchema({
     protected: v.optional(v.boolean()),
     protectedAt: v.optional(v.number()),
     protectedById: v.optional(v.string()),
+    // Correction (#1031) — an audited in-place fix to quoteDate/validUntil on a
+    // SENT/ACCEPTED revision, no version bump, no price change. `sentAt` is
+    // deliberately NEVER rewritten here (it is the system's true record of when
+    // the send actually happened); these two mark the most recent correction so
+    // the reissued PDF can print "REISSUED — corrects vN sent <sentAt>, edited
+    // by <correctedById> on <correctedAt>" without re-deriving it.
+    correctedAt: v.optional(v.number()),
+    correctedById: v.optional(v.string()),
     // DEPRECATED (pre-#986) — backfilled into sentAt/sentById.
     publishedAt: v.optional(v.number()),
     publishedById: v.optional(v.string()),

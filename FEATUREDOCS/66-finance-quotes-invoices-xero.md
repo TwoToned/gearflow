@@ -95,7 +95,7 @@ from every generic client patch alongside `PROJECT_MONEY_ANCHORS`
 
 ```
   v1 DRAFT ─ send ─▶ v1 SENT ─ accept ─▶ v1 ACCEPTED ─▶ project may CONFIRM
-       ▲               │ │ │
+       ▲               │ │ │  ◀── unaccept ──┘
        └─ recall ──────┘ │ └─ decline ─▶ v1 DECLINED
                          └─ new version ─▶ v2 DRAFT   (v1 → SUPERSEDED on v2's send)
 ```
@@ -107,6 +107,18 @@ so there is always exactly one row representing "what the client currently has",
 and cutting a draft never invalidates it. That is the difference between version
 control and a delete button. **Recall reverses it**: un-sending v2 restores the
 row it superseded to `SENT`, because v1 is then the last thing actually sent.
+
+**Unaccept reverses Accept** (`unacceptNative`, #1032): `ACCEPTED → SENT`,
+clearing the acceptance fields and the `protected` flag Accept auto-set, in one
+step. For the "accepted too soon" case that Recall can't reach (Recall only
+lands on `SENT`/`EXPIRED`) — a client verbally agreed then asked to change
+something, or a PM clicked the wrong row. Same `invoice:publish` audience as
+Accept itself (not the narrower owner-only bar Protect/Correct use — this
+undoes the very action that audience just took, not a separate "mutate a
+document a client may hold" decision), and reachable even while `protected:
+true` for the same reason. Does not touch project status: `hasAcceptedQuote`
+simply reads false again, same as when a new version supersedes an accepted
+revision (below).
 
 Supersede applies to an `ACCEPTED` revision as well, which has a consequence
 worth stating outright: **acceptance does not survive a re-quote.** Accept v1,
@@ -163,7 +175,7 @@ inputs are `quoteDate`, `validityDays`, `recipientContactId` and `notes`.
 
 ### Permissions (split)
 
-- **Send / new-version / accept / decline** → `invoice:publish`
+- **Send / new-version / accept / decline / unaccept** → `invoice:publish`
   (owner/admin/manager — the existing audience, unchanged).
 - **Recall** → additionally `isHardLockOverrideAllowed` (org admin/owner, or a
   member of the project's `projectManagers` set). Un-sending a document the
@@ -228,6 +240,14 @@ revision. Design: `docs/designs/quote-version-management-extensions.md`.
   `send` (a render failure doesn't undo the already-committed date fix; the
   existing "Document missing — generate" retry affordance covers it, since
   `pdfFileId` is genuinely null in that state).
+- **`unacceptNative`** (#1032) — `ACCEPTED → SENT`, the reverse of Accept.
+  Clears `acceptedAt`/`acceptedById`/`acceptanceRef` and the `protected` flag
+  Accept auto-set, all in one step — no separate unprotect required, since
+  protection only exists here because of the acceptance being undone. Same
+  `invoice:publish` audience as Accept (not owner-only), no reason collected
+  (it reverses the same action, not a new business decision the way Recall/
+  Decline are). Never touches project status — see "acceptance does not
+  survive a re-quote" above; the same logic applies here.
 
 ### UI (`src/components/projects/project-quote-rail.tsx`)
 
@@ -255,6 +275,10 @@ regardless of what the UI shows.
   pattern.
 - **Recall** — gained one more condition: hidden while `protected: true`
   (existing `CanDo`-gated button, just extended).
+- **Unapprove** (#1032) — `invoice:publish` audience, shown only on an
+  `ACCEPTED` row (regardless of `protected`, since it clears that flag itself).
+  Plain confirm dialog, no reason field — `UnacceptDialog` in
+  `project-quote-rail.tsx`, same "are you sure" shape as `DeleteDraftDialog`.
 
 `QuoteRevisionRow`'s conditions are split into `StandardQuoteActions` (the
 `invoice:publish` cluster) and `OwnerOnlyQuoteActions` (protect/correct/

@@ -977,6 +977,100 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
   });
 });
 
+describe("quotesWrites.unacceptNative — the reverse of Accept (#1032)", () => {
+  const accept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+  const unaccept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.unacceptNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a3", now: NOW + 2, ...over,
+    } as never);
+
+  test("ACCEPTED → SENT, clearing acceptance fields and the auto-set protected flag", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await accept(t, { acceptanceRef: "PO-4821" });
+    expect((await getQuotes(t))[0]?.protected).toBe(true); // auto-set by accept
+
+    const result = await unaccept(t);
+    expect(result.version).toBe(1);
+    const quote = (await getQuotes(t))[0];
+    expect(quote?.status).toBe("SENT");
+    expect(quote?.acceptedAt).toBeUndefined();
+    expect(quote?.acceptedById).toBeUndefined();
+    expect(quote?.acceptanceRef).toBeUndefined();
+    expect(quote?.protected).toBe(false);
+  });
+
+  test("does not touch the project's status — an already-CONFIRMED project stays CONFIRMED", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await accept(t);
+    await t.run(async (ctx) => {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(project!._id, { status: "CONFIRMED" });
+    });
+
+    await unaccept(t);
+    expect((await getProject(t))?.status).toBe("CONFIRMED");
+  });
+
+  test("refuses a SENT (never-accepted) revision", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    await expect(unaccept(t)).rejects.toThrow(/hasn't been sent yet|is sent\./i);
+  });
+
+  test("a manager (not owner) can unaccept — same invoice:publish audience as accept itself", async () => {
+    const t = makeT();
+    await seedMember(t, "manager");
+    await seedProject(t);
+    await send(t);
+    await accept(t);
+
+    const result = await unaccept(t);
+    expect(result.version).toBe(1);
+  });
+
+  test("a viewer is denied (invoice:publish)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+    await accept(t);
+    await t.run(async (ctx) => {
+      const member = await ctx.db.query("members").first();
+      await ctx.db.patch(member!._id, { role: "viewer" });
+    });
+
+    await expect(unaccept(t)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.markAcceptedNative, {
+      id: "q1", organizationId: OTHER, actor: { userId: "user_2", userName: "Bob" }, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(unaccept(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
 describe("quotes read queries", () => {
   test("listForProject derives EXPIRED and never leaks another org's rows", async () => {
     const t = makeT();

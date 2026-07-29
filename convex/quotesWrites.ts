@@ -32,11 +32,12 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * Quote revision mutations (#986 — Phase A of the finance version-control
  * program). Five verbs over ONE shared counter, `projects.revision`, plus
  * `deleteDraftNative` (#1028), which undoes a "new version" rather than
- * advancing the state machine:
+ * advancing the state machine, and `unacceptNative` (#1032), the reverse of
+ * Accept:
  *
  * ```
  *   v1 DRAFT ─ send ─▶ v1 SENT ─ accept ─▶ v1 ACCEPTED ─▶ project may CONFIRM
- *        ▲               │ │ │
+ *        ▲               │ │ │  ◀── unaccept ──┘
  *        └─ recall ──────┘ │ └─ decline ─▶ v1 DECLINED
  *                          └─ new version ─▶ v2 DRAFT  (v1 → SUPERSEDED on v2's send)
  *                                 │
@@ -71,11 +72,14 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * figure comes from `buildFinanceLines` plus the project's own recalc-owned
  * totals, exactly as the superseded `publishNative` did.
  *
- * **Permissions (decision 11).** Send / new-version / accept / decline check
- * `invoice:publish` (owner/admin/manager). **Recall additionally requires
+ * **Permissions (decision 11).** Send / new-version / accept / decline / unaccept
+ * check `invoice:publish` (owner/admin/manager). **Recall additionally requires
  * `isHardLockOverrideAllowed`** (org admin/owner, or one of the project's
  * `projectManagers`) — un-sending a document the client may already be holding is
- * trust-sensitive in a way the other four verbs are not. No new permission
+ * trust-sensitive in a way the other verbs are not. **Unaccept is deliberately
+ * symmetric with Accept** (same audience, not the narrower owner-only bar Protect/
+ * Correct use) — it reverses the very action that audience just took, not a
+ * separate "mutate a document a client may hold" decision. No new permission
  * resource is introduced.
  */
 
@@ -1001,6 +1005,72 @@ export const markDeclinedNative = mutation({
 });
 
 /**
+ * UNACCEPT (#1032) — the reverse of Accept: `ACCEPTED → SENT`, restoring the
+ * pre-accept state. For the "accepted too soon" case — a client verbally
+ * agreed then asked for a change, or a PM fat-fingered the button — recalling
+ * (which only reaches `SENT`/`EXPIRED`) can't undo an acceptance, so this fills
+ * that gap the same way `deleteDraftNative` fills the "fat-fingered new
+ * version" gap.
+ *
+ * Clears the acceptance fields (`acceptedAt`/`acceptedById`/`acceptanceRef`)
+ * AND the `protected` flag that Accept auto-set (#1030) in the SAME step —
+ * protection existed only because this revision was accepted, so unaccepting
+ * removes both together rather than requiring a separate unprotect first. This
+ * is why unaccept, unlike Recall/Correction/recall-then-delete, is reachable
+ * even while `protected: true`: it's undoing the exact action that set it.
+ *
+ * Deliberately does NOT touch the project's status. `hasAcceptedQuote` simply
+ * reads false again afterwards — same as when a new version supersedes an
+ * accepted revision. An already-`CONFIRMED` project stays `CONFIRMED`; the gate
+ * in `projectWrites.updateStatusNative` only fires on the transition itself.
+ */
+export const unacceptNative = mutation({
+  returns: v.object({ id: v.string(), version: v.number() }),
+  args: {
+    id: v.string(),
+    organizationId: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, organizationId, actor: suppliedActor, auditId, now }) => {
+    const actor = await guardQuoteWrite(ctx, organizationId, suppliedActor);
+    const { quote, project } = await loadQuoteAndProject(ctx, id, organizationId);
+
+    const label = quoteLabel(project.projectNumber, quote.version);
+    assertQuoteStatusIs(effectiveQuoteStatus(quote, now), ["ACCEPTED"], label, "unapprove");
+
+    await ctx.db.patch(quote._id, {
+      status: "SENT",
+      acceptedAt: undefined,
+      acceptedById: undefined,
+      acceptanceRef: undefined,
+      protected: false,
+      protectedAt: undefined,
+      protectedById: undefined,
+      updatedAt: now,
+    });
+
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId,
+      action: "UPDATE",
+      entityType: "quote",
+      entityId: quote.id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Unapproved quote ${label}`,
+      details: { version: quote.version },
+      projectId: project.id,
+      createdAt: now,
+    });
+
+    return { id: quote.id, version: quote.version };
+  },
+});
+
+/**
  * PROTECT (#1030) — a soft lock independent of quote status. Owner-only
  * (`requireQuoteOwnerOnly` — stricter than Recall's admin/owner/PM audience,
  * see that helper's docstring): while `protected: true`, Recall refuses
@@ -1214,4 +1284,7 @@ export const agentOps: AgentOpsAnnotations = {
   // Recall/Correction on a revision a client may hold. Classified high for
   // both directions of the boolean rather than splitting the mutation.
   setQuoteProtectedNative: { danger: "high" },
+  // Reverses a recorded client acceptance and drops it out of hasAcceptedQuote
+  // — same risk class as the accept/decline/recall quartet it undoes.
+  unacceptNative: { danger: "high" },
 };

@@ -31884,7 +31884,8 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "quotesWrites.deleteDraftNative",
         "summary": "quotesWrites.deleteDraftNative (mutation)",
-        "description": "Requires scope: invoice:publish.",
+        "description": "Requires scope: invoice:publish. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
         "tags": [
           "invoice"
         ],

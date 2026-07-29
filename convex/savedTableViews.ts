@@ -1,6 +1,47 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import type { QueryCtx } from "./_generated/server";
+import { getAuthContext, requireSelfScope, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+/**
+ * Personal-scope read guards (Phase 5, #1001) — saved views are PERSONAL
+ * (`convex/lib/auth.ts`'s `requireSelfScope` doc comment names `savedTableViews*`
+ * explicitly), so these use the SELF pseudo-resource instead of a normal
+ * `Resource`. `requireSelfScope` alone only enforces the AGENT key-scope half
+ * (it's a no-op for `service`/`user` kinds — see its definition) — it does NOT
+ * check org-scoping, so we reproduce `requireOrgReadFor`'s org-match half
+ * in-line here (mirrors the `requireUserOrg` pattern in
+ * `savedTableViewsWrites.ts`) before calling it. Note this preserves this
+ * module's PRE-EXISTING behaviour of returning every user's rows for the org
+ * (not just the caller's own) — `list` has never been per-user filtered
+ * server-side (see `src/lib/saved-views-read.ts`'s doc comment); this migration
+ * only decides who may call it, not what it returns.
+ */
+async function requireOrgSelfRead(ctx: QueryCtx, orgId: string): Promise<void> {
+  const auth = await getAuthContext(ctx);
+  if (!auth) throw new ConvexError("Unauthorized: authentication required.");
+  if (auth.kind === "service") return;
+  if (!auth.orgId || auth.orgId !== orgId) {
+    throw new ConvexError("Forbidden: organization mismatch.");
+  }
+  await requireSelfScope(ctx, "read");
+}
+
+/** Doc-checked counterpart (the `getById` shape), same rationale. */
+async function requireOrgSelfReadDoc(
+  ctx: QueryCtx,
+  doc: { organizationId?: string | null } | null,
+): Promise<void> {
+  const auth = await getAuthContext(ctx);
+  if (!auth) throw new ConvexError("Unauthorized: authentication required.");
+  if (auth.kind === "service") return;
+  if (!doc) return;
+  if (!auth.orgId || doc.organizationId !== auth.orgId) {
+    throw new ConvexError("Forbidden: organization mismatch.");
+  }
+  await requireSelfScope(ctx, "read");
+}
 
 /**
  * Thin CRUD for SavedTableView (Convex table "savedTableViews"). GENERATED — Phase 2/5.
@@ -15,7 +56,7 @@ import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgSelfRead(ctx, orgId);
     return await ctx.db
       .query("savedTableViews")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small per-org/user saved views — see docs/exceptions.md R-8.3.3
@@ -27,7 +68,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("savedTableViews").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgSelfReadDoc(ctx, doc);
     return doc;
   },
 });
@@ -176,3 +217,17 @@ export const setDefault = mutation({
     }
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). Only the two reads are agent-reachable
+ * (`self:read`) — every mutation here is still `requireService`-only (the
+ * agent-reachable browser-direct writes live in `savedTableViewsWrites.ts`'s
+ * `createNative`/`updateNative`/`removeNative`/`setDefaultNative`, out of this
+ * file's scope), so they're left unannotated rather than denied (denial is for
+ * a deliberately-closed decision on an otherwise-classifiable op; these are
+ * simply not reachable by construction and are someone else's file to annotate).
+ */
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List every saved table view in the org (all users) for one table config surface.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one saved table view by id.", danger: "low", mcpTier: 3 },
+};

@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for SubHireItem (Convex table "subHireItems"). GENERATED — Phase 2/5.
@@ -160,3 +161,16 @@ export const patchItem = mutation({
     return doc._id;
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  list: {
+    agentAccess: "denied",
+    reason:
+      "subHireItems has no organizationId column and this query takes only a subHireId (no orgId to verify) — can't be safely org-scoped without a signature change.",
+  },
+  getById: {
+    agentAccess: "denied",
+    reason:
+      "Doc has no organizationId field (parent-join table), so requireOrgReadDocFor can't check it against the caller's org; would need to resolve the parent sub-hire's org first.",
+  },
+};

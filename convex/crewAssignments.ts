@@ -2,10 +2,21 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService, isNoFinancialsAgent, redactFields } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
+
+/**
+ * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
+ *
+ * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
+ * SERVICE token (service-only mirror/read helpers; the browser-direct write path with RBAC +
+ * validation + audit enforced inside Convex lives in the *Writes.ts mutations — see FEATUREDOCS/54). Org-scoped reads
+ * accept the service token OR a user token scoped to the same org. Lookups use the
+ * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
+ */
 
 /** Phase 4 (#1000, decision 6): what the org pays this assignment/its crew
  *  member — cost data, distinct from client-facing service pricing. */
@@ -26,16 +37,6 @@ function redactAssignmentCost<
   } as T;
 }
 
-/**
- * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
- *
- * AUTH (Phase 5, convex/lib/auth.ts): mutations require the trusted backend
- * SERVICE token (service-only mirror/read helpers; the browser-direct write path with RBAC +
- * validation + audit enforced inside Convex lives in the *Writes.ts mutations — see FEATUREDOCS/54). Org-scoped reads
- * accept the service token OR a user token scoped to the same org. Lookups use the
- * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
- */
-
 // ── Pure scheduling helpers ported from src/lib/crew-scheduling-read.ts (epoch-ms). ──
 const PHASE_RANK: Record<string, number> = { BUMP_IN: 0, EVENT: 1, BUMP_OUT: 2, DELIVERY: 3, PICKUP: 4, SETUP: 5, REHEARSAL: 6, FULL_DURATION: 7 };
 const EXCLUDED_STATUSES = new Set(["CANCELLED", "DECLINED"]);
@@ -45,6 +46,17 @@ function ascNullsLast<T>(a: T | null | undefined, b: T | null | undefined): numb
   if (a == null) return 1; if (b == null) return -1;
   return a < b ? -1 : a > b ? 1 : 0;
 }
+
+export const agentOps: AgentOpsAnnotations = {
+  projectCrew: { summary: "A project's crew composite (assignments + members + roles + shifts).", danger: "low", mcpTier: 1 },
+  projectLabourCost: { summary: "Aggregate estimated labour cost for a project's crew assignments.", danger: "low", mcpTier: 2 },
+  membersForAssignment: { summary: "Active crew members eligible for assignment, with conflict/availability signals.", danger: "low", mcpTier: 2 },
+  conflictsForProject: { summary: "Per-assignment conflict flags for a project's crew.", danger: "low", mcpTier: 3 },
+  list: { summary: "List crew assignments for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single crew assignment by id.", danger: "low", mcpTier: 2 },
+  listByProject: { summary: "List crew assignments for a project.", danger: "low", mcpTier: 1 },
+  listByServiceIds: { summary: "Crew assignments for a set of project service ids.", danger: "low", mcpTier: 3 },
+};
 
 /**
  * A project's crew — browser-native replacement for getProjectCrew. Assignments
@@ -109,7 +121,8 @@ export const projectCrew = query({
         confirmedBy,
       });
     }
-    return (await isNoFinancialsAgent(ctx)) ? out.map(redactAssignmentCost) : out;
+    const auth = await getAuthContext(ctx);
+    return (await isAgentNoFinancials(ctx, auth)) ? out.map(redactAssignmentCost) : out;
   },
 });
 
@@ -117,7 +130,7 @@ export const projectCrew = query({
 export const projectLabourCost = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
       .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? ""));
     return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };
@@ -145,7 +158,7 @@ export const membersForAssignment = query({
     excludeServiceId: v.optional(v.string()),
   },
   handler: async (ctx, { projectId, orgId, search, rangeStartMs, rangeEndMs, excludeServiceId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [allMembers, roles, projectAssignments] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) — see docs/exceptions.md R-8.3.3
       ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: crew-graph aggregation (bounded by org roster/projects) — see docs/exceptions.md R-8.3.3
@@ -233,7 +246,7 @@ export const membersForAssignment = query({
 export const conflictsForProject = query({
   args: { projectId: v.string(), orgId: v.string(), rangeStartMs: v.number(), rangeEndMs: v.number() },
   handler: async (ctx, { projectId, orgId, rangeStartMs, rangeEndMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const projectAssignments = (
       await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
     ).filter((a) => a.organizationId === orgId);
@@ -286,7 +299,8 @@ export const list = query({
       .query("crewAssignments")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
-    if (!(await isNoFinancialsAgent(ctx))) return rows;
+    const auth = await getAuthContext(ctx);
+    if (!(await isAgentNoFinancials(ctx, auth))) return rows;
     return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
   },
 });
@@ -296,7 +310,8 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
-    if (!doc || !(await isNoFinancialsAgent(ctx))) return doc;
+    const auth = await getAuthContext(ctx);
+    if (!doc || !(await isAgentNoFinancials(ctx, auth))) return doc;
     return redactFields(doc, ASSIGNMENT_COST_FIELDS);
   },
 });
@@ -310,7 +325,8 @@ export const listByProject = query({
       .query("crewAssignments")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect()).filter((r) => r.organizationId === orgId);
-    if (!(await isNoFinancialsAgent(ctx))) return rows;
+    const auth = await getAuthContext(ctx);
+    if (!(await isAgentNoFinancials(ctx, auth))) return rows;
     return rows.map((r) => redactFields(r, ASSIGNMENT_COST_FIELDS));
   },
 });
@@ -337,7 +353,7 @@ export const getByResponseToken = query({
 export const listByServiceIds = query({
   args: { serviceIds: v.array(v.string()), orgId: v.string() },
   handler: async (ctx, { serviceIds, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const results = [];
     for (const serviceId of serviceIds) {
       const rows = await ctx.db

@@ -55,7 +55,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Project, SyntaxKind, type VariableDeclaration } from "ts-morph";
 import { SELF_RESOURCE } from "../convex/lib/scopes.js";
-import type { AgentOpsAnnotations, AgentOpsDanger } from "../convex/lib/agentOps.js";
+import type { AgentOpAnnotation, AgentOpsAnnotations } from "../convex/lib/agentOps.js";
 import {
   isPrivilegedArgName,
   policyForArg,
@@ -119,11 +119,14 @@ interface Operation {
    *  re-reads the full validators at build time from the same source. */
   argsSha: string;
   returnsSha: string;
-  /** Phase 4 (#1000) — from the module's colocated `agentOps` export. Populated
-   *  for mutations only; `null` for queries (not yet in scope) and for a mutation
-   *  with no `agentOps` entry (which gate 5 below fails the build on, for an
-   *  agent-reachable one). */
-  danger: AgentOpsDanger | null;
+  /** Phase 5 (#1001) colocated annotation — see convex/lib/agentOps.ts. Absent
+   *  when the module has no `agentOps` export, or the export has no entry for
+   *  this function. Purely additive metadata; never affects `agentReachable`. */
+  summary: string | null;
+  danger: "low" | "medium" | "high" | null;
+  mcpTier: 1 | 2 | 3 | null;
+  agentAccess: "denied" | null;
+  deniedReason: string | null;
 }
 
 // ─── 1. Static guard classification ─────────────────────────────────────────
@@ -338,13 +341,36 @@ function asPublicFn(value: unknown): { fn: RegisteredFn; kind: "query" | "mutati
   return null;
 }
 
+/** Split out of `annotationFields` so neither function's branch count trips
+ *  the complexity ratchet on its own. */
+function deniedReasonFor(annotation: AgentOpAnnotation | undefined): string | null {
+  if (annotation?.agentAccess !== "denied") return null;
+  return annotation.reason ?? null;
+}
+
+/** Pulls the agentOps-derived fields out of `toOperation` so its own branch
+ *  count stays under the complexity ratchet — this is the only part of an
+ *  operation that comes from optional, annotation-shaped data. */
+function annotationFields(annotation: AgentOpAnnotation | undefined): Pick<
+  Operation,
+  "summary" | "danger" | "mcpTier" | "agentAccess" | "deniedReason"
+> {
+  return {
+    summary: annotation?.summary ?? null,
+    danger: annotation?.danger ?? null,
+    mcpTier: annotation?.mcpTier ?? null,
+    agentAccess: annotation?.agentAccess ?? null,
+    deniedReason: deniedReasonFor(annotation),
+  };
+}
+
 function toOperation(
   moduleName: string,
   fnName: string,
   fn: RegisteredFn,
   kind: "query" | "mutation",
   guard: GuardFacts,
-  agentOps: AgentOpsAnnotations | undefined,
+  annotation: AgentOpAnnotation | undefined,
 ): Operation {
   const argsJson = fn.exportArgs?.() ?? "{}";
   const returnsJson = fn.exportReturns?.() ?? "{}";
@@ -363,7 +389,7 @@ function toOperation(
     privilegedArgs: args.map((a) => a.name).filter(isPrivilegedArgName),
     argsSha: sha(argsJson),
     returnsSha: sha(returnsJson),
-    danger: kind === "mutation" ? (agentOps?.[fnName]?.danger ?? null) : null,
+    ...annotationFields(annotation),
   };
 }
 
@@ -392,7 +418,7 @@ async function collectOperations(): Promise<Operation[]> {
           registered.fn,
           registered.kind,
           guards.byFn.get(fnName) ?? NO_GUARD,
-          agentOps,
+          agentOps?.[fnName],
         ),
       );
     }
@@ -423,6 +449,31 @@ function checkPrivilegedArgs(operations: Operation[]): string[] {
   );
 }
 
+/** Gate — an `agentAccess: "denied"` annotation must carry a reason, and must
+ *  not contradict a guard that already admits agent tokens (fix the guard or
+ *  drop the denial; don't keep both — see convex/lib/agentOps.ts). */
+function checkAgentOpsAnnotations(operations: Operation[]): string[] {
+  const problems: string[] = [];
+  for (const op of operations) {
+    if (op.agentAccess !== "denied") continue;
+    if (!op.deniedReason || op.deniedReason.trim().length === 0) {
+      problems.push(
+        `'${op.operation}' is annotated agentAccess:"denied" with no reason.\n` +
+          `  "We didn't get to it" is not a reason — add one in the module's agentOps export.`,
+      );
+    }
+    if (op.agentReachable) {
+      problems.push(
+        `'${op.operation}' is annotated agentAccess:"denied" but its guard (${op.guard}) ` +
+          `already admits agent tokens.\n` +
+          `  This is a contradiction — either the denial is stale (remove it) or the guard ` +
+          `needs to go back to a SERVICE-only/resource-less guard.`,
+      );
+    }
+  }
+  return problems;
+}
+
 /** Gate 5 (#1000) — every agent-reachable mutation must carry a `danger` classification. */
 function checkDangerClassification(operations: Operation[]): string[] {
   const offenders = operations.filter(
@@ -439,8 +490,8 @@ function checkDangerClassification(operations: Operation[]): string[] {
     ([module, fns]) =>
       `Module '${module}' has ${fns.length} agent-reachable mutation(s) with no \`danger\` ` +
       `classification: ${fns.join(", ")}.\n` +
-      `  Add an \`agentOps: AgentOpsAnnotations\` export to convex/${module}.ts ` +
-      `(see convex/lib/agentOps.ts) classifying each as "low" | "medium" | "high".\n` +
+      `  Add a \`danger: "low"|"medium"|"high"\` entry to each in convex/${module}.ts's ` +
+      `\`agentOps\` export (see convex/lib/agentOps.ts).\n` +
       `  Read docs/designs/api-mcp-reimplementation.md §9 for the "high" criteria ` +
       `(stock-affecting, irreversible, lock-softening, delete/archive, financial ` +
       `issue/void, warehouse movement, bulk destructive).`,
@@ -511,10 +562,13 @@ export interface RegistryOperation {
   readonly privilegedArgs: readonly string[];
   readonly argsSha: string;
   readonly returnsSha: string;
-  /** Phase 4 (#1000) — populated for mutations from the module's colocated
-   *  \`agentOps\` export (\`convex/lib/agentOps.ts\`); \`null\` for queries. \`"high"\`
-   *  drives the dispatcher's \`confirm:true\` + idempotency requirement. */
+  /** Phase 5 (#1001) colocated annotation — see convex/lib/agentOps.ts. Purely
+   *  additive metadata; never affects \`agentReachable\`. */
+  readonly summary: string | null;
   readonly danger: "low" | "medium" | "high" | null;
+  readonly mcpTier: 1 | 2 | 3 | null;
+  readonly agentAccess: "denied" | null;
+  readonly deniedReason: string | null;
 }
 
 export const API_REGISTRY: readonly RegistryOperation[] = ${JSON.stringify(operations, null, 2)} as const;
@@ -554,8 +608,12 @@ function emitCoverage(operations: Operation[], floor: number): string {
     .map(([m, v]) => `| \`${m}\` | ${v.total} |`)
     .sort();
 
+  const denied = operations
+    .filter((o) => o.agentAccess === "denied")
+    .map((o) => `| \`${o.operation}\` | ${o.deniedReason ?? ""} |`);
+
   const reachableMutations = reachable.filter((o) => o.kind === "mutation");
-  const dangerCount = (tier: AgentOpsDanger) =>
+  const dangerCount = (tier: "low" | "medium" | "high") =>
     reachableMutations.filter((o) => o.danger === tier).length;
 
   return `<!-- GENERATED FILE — DO NOT EDIT. Run \`pnpm run api:registry\`. -->
@@ -598,6 +656,17 @@ add a redacted sibling, or record as permanently denied with a reason.
 | Module | Public operations |
 |---|---|
 ${unmigrated.join("\n")}
+
+## Deliberately denied (Phase 5 triage, #1001)
+
+Operations annotated \`agentAccess: "denied"\` in their module's \`agentOps\`
+export (\`convex/lib/agentOps.ts\`) — a recorded decision to keep the surface
+closed, not an oversight. Every row here has a written reason; the generator
+fails the build otherwise.
+
+| Operation | Reason |
+|---|---|
+${denied.length ? denied.join("\n") : "| _(none yet)_ | |"}
 `;
 }
 
@@ -629,6 +698,13 @@ function runPreWriteGates(operations: Operation[], floor: number | null): void {
   if (privilegedProblems.length) {
     console.error("\n✖ Privileged-argument gate failed:\n");
     for (const problem of privilegedProblems) console.error(`${problem}\n`);
+    process.exit(1);
+  }
+
+  const agentOpsProblems = checkAgentOpsAnnotations(operations);
+  if (agentOpsProblems.length) {
+    console.error("\n✖ agentOps annotation gate failed:\n");
+    for (const problem of agentOpsProblems) console.error(`${problem}\n`);
     process.exit(1);
   }
 

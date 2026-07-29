@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Convex mirror of the Better-Auth `user` table (the source of truth stays in
@@ -92,3 +93,29 @@ export const remove = mutation({
     if (doc) await ctx.db.delete(doc._id);
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). DEVIATION FLAG: the triage brief for
+ * this file suggested widening basic profile fields under "orgMembers" and
+ * denying only auth-secret queries — but this table is deliberately NOT
+ * org-scoped (see the file header: "a user is global; org membership is the
+ * `member` table"). None of these queries take (or could meaningfully check)
+ * an orgId, and none join through `members` to confirm the target user shares
+ * the caller's org. Widening `getById`/`listByIds` as-is would let an agent
+ * key scoped to Org A fetch the name/email/image of ANY user row, including
+ * members of a completely different org — a cross-tenant PII read (R-8.4.3
+ * Critical). `listAll` is worse: an unfiltered platform-wide dump. Fixing this
+ * properly needs a `members`-joined per-org projection, which is new logic,
+ * not a guard swap — out of scope here. Denying all three until that lands.
+ */
+const usersDenyReason =
+  "Global (non-org-scoped) user mirror — no per-row organizationId and no join against `members` to check the target user shares the caller's org; widening would let an agent read another org's members' name/email/image (cross-tenant PII, R-8.4.3).";
+
+export const agentOps: AgentOpsAnnotations = {
+  getById: { agentAccess: "denied", reason: usersDenyReason },
+  listAll: {
+    agentAccess: "denied",
+    reason: "Unfiltered platform-wide dump of every user's name/email (auth-mirror reconcile utility), not an org-scoped read.",
+  },
+  listByIds: { agentAccess: "denied", reason: usersDenyReason },
+};

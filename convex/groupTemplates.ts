@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for GroupTemplate (Convex table "groupTemplates"). GENERATED — Phase 2/5.
@@ -16,9 +17,9 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     // Browser-readable (Phase 3): the group-templates settings page + equipment tab
-    // subscribe reactively. requireOrgRead accepts the service token OR a user token
+    // subscribe reactively. requireOrgReadFor accepts the service token OR a user token
     // scoped to `orgId`; rows are org-scoped via by_organizationId.
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("groupTemplates")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
@@ -98,3 +99,8 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all group templates for an org.", danger: "low", mcpTier: 2 },
+};

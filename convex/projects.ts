@@ -1,9 +1,10 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for Project (Convex table "projects"). GENERATED — Phase 2/5.
@@ -118,7 +119,7 @@ export const listPage = query({
 export const listBoard = query({
   args: { orgId: v.string(), search: v.optional(v.string()) },
   handler: async (ctx, { orgId, search }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const [rows, clients] = await Promise.all([
       ctx.db.query("projects").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: "browse everything" kanban view, Option A (perf design) — see docs/exceptions.md R-8.3.3
       ctx.db.query("clients").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org enrichment map (board) — see docs/exceptions.md R-8.3.3
@@ -149,7 +150,7 @@ export const listBoard = query({
 export const listByIds = query({
   args: { orgId: v.string(), ids: v.array(v.string()) },
   handler: async (ctx, { orgId, ids }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const unique = [...new Set(ids)];
     if (unique.length > 1000) throw new ConvexError("projects.listByIds: too many ids (max 1000)");
     const docs = await Promise.all(
@@ -427,6 +428,11 @@ export const projectWriteFields = {
 export const getByOrgAndNumber = query({
   args: { organizationId: v.string(), projectNumber: v.string() },
   handler: async (ctx, { organizationId, projectNumber }) => {
+    // Pre-existing gap found during the Phase 5 (#1001) coverage sweep: this
+    // query had NO auth guard at all, so any authenticated identity could look
+    // up any org's project by number. Fixed here rather than left — R-8.4.3
+    // treats an unguarded cross-tenant read as a Critical, not a style nit.
+    await requireOrgReadFor(ctx, organizationId, "project");
     return await ctx.db
       .query("projects")
       .withIndex("by_organizationId_projectNumber", (q) =>
@@ -490,3 +496,13 @@ export const patchProject = mutation({
     return doc._id;
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all projects for an org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get one project by id.", danger: "low", mcpTier: 1 },
+  listPage: { summary: "Filtered, sorted, paginated project list with client join.", danger: "low", mcpTier: 1 },
+  listBoard: { summary: "Browse an org's non-template, non-cancelled projects grouped for the kanban board.", danger: "low", mcpTier: 2 },
+  listByIds: { summary: "Batch point-read projects by id, scoped to one org.", danger: "low", mcpTier: 2 },
+  getByOrgAndNumber: { summary: "Look up a project by its human-facing project number.", danger: "low", mcpTier: 1 },
+};

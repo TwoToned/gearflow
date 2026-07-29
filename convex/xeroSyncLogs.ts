@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * XeroSyncLog (WS1 #940) — audit trail of every Xero API interaction, modeled
@@ -36,7 +37,7 @@ export const create = mutation({
 export const listRecentForOrg = query({
   args: { orgId: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { orgId, limit }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "invoice"); // Phase 5 domain slice (#1001) — payload shapes checked: no Xero credentials/tokens, only ids/counts/error strings
     return await ctx.db
       .query("xeroSyncLogs")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
@@ -48,7 +49,7 @@ export const listRecentForOrg = query({
 export const listForInvoice = query({
   args: { invoiceId: v.string(), orgId: v.string() },
   handler: async (ctx, { invoiceId, orgId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "invoice"); // Phase 5 domain slice (#1001)
     // Narrowed by the by_invoiceId index (a single invoice's push attempts,
     // not an org-wide scan) — no R-9.8 hazard, so no exceptions.md marker needed.
     const rows = await ctx.db
@@ -58,3 +59,8 @@ export const listForInvoice = query({
     return rows.filter((r) => r.organizationId === orgId);
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  listRecentForOrg: { summary: "List the org's recent Xero sync attempts (push/refresh/fetch), newest first.", danger: "low", mcpTier: 3 },
+  listForInvoice: { summary: "List Xero sync attempts for one invoice.", danger: "low", mcpTier: 3 },
+};

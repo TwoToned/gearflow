@@ -6,6 +6,7 @@ import { reserveTestTagIdCounter } from "./lib/testTagIdCounter";
 import { reserveSubHireOrderNumberCounter } from "./lib/subHireOrderCounter";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Per-org BUSINESS settings — Convex-only source of truth (Phase 1 inversion).
@@ -211,3 +212,27 @@ function mergeCounters(storedJson: string, incomingJson: string): string {
   }
   return JSON.stringify(incoming);
 }
+
+/**
+ * Agent-op annotations (Phase 5, #1001). Both reads stay SERVICE-only (deny) —
+ * neither has a redacted projection (unlike `xeroIntegrations.getForOrg`):
+ *
+ *   - `getByOrg` returns the raw row, which includes `apiKillSwitchAt` (the
+ *     org's own API-write kill-switch state — an agent inspecting its own kill
+ *     switch is exactly the "inform a bypass" risk called out for
+ *     `systemFlags.ts`) AND `icalToken` (a bearer-style credential: knowing it
+ *     alone grants the public iCal feed, no further auth).
+ *   - `getByIcalToken` takes the raw secret token as its ONLY argument (no
+ *     orgId) — there is no org to check the caller against, so it's
+ *     structurally a global secret-token lookup, not an org-scoped read.
+ */
+const orgSettingsDenyReason =
+  "Row/lookup exposes apiKillSwitchAt (the org's own write-kill-switch state) and/or icalToken (a bearer credential for the public iCal feed); no redacted projection exists here (contrast xeroIntegrations.getForOrg).";
+
+export const agentOps: AgentOpsAnnotations = {
+  getByOrg: { agentAccess: "denied", reason: orgSettingsDenyReason },
+  getByIcalToken: {
+    agentAccess: "denied",
+    reason: "Global secret-token lookup (no orgId argument to scope against) — structurally not an org-scoped read.",
+  },
+};

@@ -283,11 +283,16 @@ passes `requireAgentScope` (the key's scopes ∩ the user's live RBAC). See
    read guards, which fail closed on purpose (decision 2).
 3. **A new read should use `requireOrgReadFor(ctx, orgId, resource)`**, not
    `requireOrgRead`. The resource-less guard has nothing to intersect a key's scopes
-   against, so it rejects agents — most queries are still invisible to the API until
-   Phase 5's coverage sweep migrates them (Phase 2's `#998` read bootstrap moved
-   ~45: assets/models/categories/projects/lineItems/groups/availability/
-   overbookings/clients/crew/warehouse/maintenance/kits/bulkAssets). Personal-scope
-   surfaces use `requireSelfScope`.
+   against, so it rejects agents. Phase 5's coverage sweep (`#1001`) migrated
+   essentially every remaining call site (169 → 1; the sole holdout,
+   `globalSearch.search`, is a deliberate `agentAccess: "denied"` decision, not
+   an oversight — see `docs/api-coverage.md`'s denied table), so a brand-new
+   read starting on the bare guard is now the exception, not the norm.
+   Personal-scope surfaces use `requireSelfScope`. Colocate an `agentOps`
+   annotation (`convex/lib/agentOps.ts`) — `{ summary, danger, mcpTier }`, or
+   `{ agentAccess: "denied", reason }` for a deliberate denial — next to any
+   guard you touch; the registry generator merges it in and fails the build on
+   an unreasoned denial.
 
 **Privileged args are CI-gated.** A new mutation argument matching
 `/^(allow|force|skip|override|ignore|bypass)/` or named `justification` fails the
@@ -309,8 +314,10 @@ supplies a privileged arg whose own policy `danger` is `"high"` (e.g. a non-empt
 `justification`) escalates for THAT call without reclassifying the operation. A new
 `apiKeys.noFinancials` flag force-redacts cost/margin fields (never the model's own
 sell rates — those stay visible, an agent needs them to quote/book) regardless of the
-acting user's role — see `convex/lib/auth.ts` `isNoFinancialsAgent`, applied per read
+acting user's role — see `convex/lib/auth.ts` `isAgentNoFinancials`, applied per read
 site (there is no generic "cost field" registry; each query decides what's cost-shaped).
+A read whose ENTIRE payload is financial (`projectCosts.operationalCosts`) returns the
+all-zero `EMPTY` shape instead, since there's no non-financial subset of fields to redact.
 
 ### The API dispatcher (`src/lib/api/dispatcher.ts`) — one call site, closed by default
 

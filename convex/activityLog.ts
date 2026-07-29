@@ -1,14 +1,16 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Native reads for the activity-log SCREENS (Phase 5c audit-read migration). Parity
  * target: src/server/activity-log.ts (getActivityLogs / getEntityActivityLog /
  * exportActivityLogCSV), which read Postgres `activityLog`. Org-scoping only
- * (`requireOrgRead`) — the server actions gate on `getOrgContext()`, no extra
- * permission, so any org member may view the log.
+ * (`requireOrgReadFor(ctx, orgId, "project")`, Phase 5 domain slice #1001) — the
+ * server actions gate on `getOrgContext()`, no extra permission, so any org
+ * member (or scoped agent) may view the log.
  *
  * Windowing: the list/export queries scan the org's most-recent `SCAN_CAP` rows off
  * the `by_organizationId_createdAt` index (desc) and filter/paginate in JS. This
@@ -142,7 +144,7 @@ export const list = query({
     ...filterArgs,
   },
   handler: async (ctx, args) => {
-    await requireOrgRead(ctx, args.orgId);
+    await requireOrgReadFor(ctx, args.orgId, "project"); // Phase 5 domain slice (#1001)
     const page = args.page ?? 1;
     const pageSize = args.pageSize ?? 50;
     const sort = args.sort ?? "createdAt";
@@ -185,7 +187,7 @@ export const listByEntity = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, { orgId, entityType, entityId, limit }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const rows = (await ctx.db
       .query("activityLogs")
       .withIndex("by_organizationId_entityType_entityId", (q) =>
@@ -203,7 +205,7 @@ export const listByEntity = query({
 export const exportRows = query({
   args: { orgId: v.string(), ...filterArgs },
   handler: async (ctx, args) => {
-    await requireOrgRead(ctx, args.orgId);
+    await requireOrgReadFor(ctx, args.orgId, "project"); // Phase 5 domain slice (#1001)
     const window = await scanWindow(ctx, args.orgId);
     const filtered = applyFilters(window, args);
     return filtered.map((r) => ({
@@ -212,3 +214,10 @@ export const exportRows = query({
     }));
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "Filtered, sorted, paginated org activity log.", danger: "low", mcpTier: 2 },
+  listByEntity: { summary: "Activity log entries for one entity (e.g. a project or asset).", danger: "low", mcpTier: 2 },
+  exportRows: { summary: "Raw activity log rows for CSV export, org-scoped and filtered.", danger: "low", mcpTier: 3 },
+};

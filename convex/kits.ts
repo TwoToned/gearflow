@@ -2,13 +2,14 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for Kit (Convex table "kits"). GENERATED — Phase 2/5.
@@ -64,7 +65,7 @@ export const listPage = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "kit"); // Phase 5 domain slice (#1001)
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
     const sortBy = a.sortBy ?? "assetTag";
@@ -122,7 +123,7 @@ export const listPage = query({
 export const counts = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     type Entry = { serializedItems: number; bulkItems: number; media: { url: string | null; thumbnailUrl: string | null } | null };
     const out: Record<string, Entry> = {};
     const ensure = (id: string) => (out[id] ??= { serializedItems: 0, bulkItems: 0, media: null });
@@ -172,7 +173,7 @@ export const deletability = query({
     reason: v.optional(v.string()),
   }),
   handler: async (ctx, { orgId, id }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const kit = await getKitByCuid(ctx, id);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError("Kit not found");
 
@@ -210,7 +211,7 @@ export const deletability = query({
 export const listByIds = query({
   args: { orgId: v.string(), ids: v.array(v.string()) },
   handler: async (ctx, { orgId, ids }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const unique = [...new Set(ids)];
     if (unique.length > 1000) throw new ConvexError("kits.listByIds: too many ids (max 1000)");
     const docs = await Promise.all(
@@ -228,7 +229,7 @@ export const listByIds = query({
 export const availableAssets = query({
   args: { orgId: v.string(), modelId: v.optional(v.string()) },
   handler: async (ctx, { orgId, modelId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const [{ rows: assets }, models] = await Promise.all([
       collectCapped(ctx.db.query("assets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: status defaults to AVAILABLE when absent, so a status-indexed scan can't safely replace this — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
@@ -249,7 +250,7 @@ export const availableAssets = query({
 export const availableBulkAssets = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const [{ rows: bulk }, models] = await Promise.all([
       collectCapped(ctx.db.query("bulkAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: status defaults to ACTIVE when absent, so a status-indexed scan can't safely replace this — see docs/exceptions.md R-8.3.3
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
@@ -265,7 +266,7 @@ export const availableBulkAssets = query({
 export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {
-    await requireOrgRead(ctx, organizationId);
+    await requireOrgReadFor(ctx, organizationId, "kit"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("kits")
       .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", organizationId).eq("assetTag", assetTag))
@@ -606,3 +607,16 @@ export const deleteCascade = mutation({
     return { id: a.kitId };
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all kits visible to the caller's org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get one kit by id.", danger: "low", mcpTier: 1 },
+  listPage: { summary: "Filtered, sorted, paginated kit list with category/location joins.", danger: "low", mcpTier: 2 },
+  counts: { summary: "Per-kit member counts (serialized + bulk items) and primary photo.", danger: "low", mcpTier: 3 },
+  deletability: { summary: "Whether a kit can be archived or hard-deleted, and why not.", danger: "low", mcpTier: 2 },
+  listByIds: { summary: "Batch point-read kits by id, scoped to one org.", danger: "low", mcpTier: 3 },
+  availableAssets: { summary: "Serialized assets eligible to add to a kit (available, unkitted).", danger: "low", mcpTier: 2 },
+  availableBulkAssets: { summary: "Bulk assets with available quantity, eligible to add to a kit.", danger: "low", mcpTier: 2 },
+  getByAssetTag: { summary: "Look up a kit by its asset tag.", danger: "low", mcpTier: 1 },
+};

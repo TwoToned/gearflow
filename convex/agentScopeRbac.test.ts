@@ -21,6 +21,7 @@ import schema from "./schema";
 import { api } from "./_generated/api";
 import { hasPermission } from "./lib/permissionsCore";
 import { MAX_BULK_ITEMS, MAX_BULK_ITEMS_AGENT } from "./lib/rateLimiter";
+import { requireOrgReadDoc } from "./lib/auth";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -166,17 +167,18 @@ describe("scope ∩ RBAC — neither half can be widened by the other", () => {
 
 describe("resource-less read guards fail closed for agents", () => {
   test("a query still on requireOrgRead is INVISIBLE to an agent, even with `*`", async () => {
-    // `locations.list` is one of the reads still on the resource-less guard
-    // (#998's read bootstrap migrated ~45 others — assets/models/categories/
-    // projects/lineItems/groups/availability/overbooking/clients/crew/
-    // warehouse/maintenance/kits/bulkAssets — but locations wasn't one of
-    // them). A `*` key on an OWNER is the widest possible agent, and it still
-    // can't see it.
+    // `globalSearch.search` is (as of the Phase 5 sweep, #1001) the one
+    // remaining read on the resource-less guard — a deliberate denial
+    // (14-entity blend search has no single resource to scope against; see
+    // docs/api-coverage.md's "Deliberately denied" table), not an oversight.
+    // `locations.list`, this test's previous target, was migrated to
+    // `requireOrgReadFor` in the same sweep. A `*` key on an OWNER is the
+    // widest possible agent, and it still can't see this one.
     const t = makeT();
     await seed(t, "owner", ["*"]);
 
     await expect(
-      t.withIdentity(asAgent).query(api.locations.list, { orgId: ORG }),
+      t.withIdentity(asAgent).query(api.globalSearch.search, { orgId: ORG, query: "gig" }),
     ).rejects.toThrow(/not available to API keys/i);
   });
 
@@ -186,16 +188,25 @@ describe("resource-less read guards fail closed for agents", () => {
     await seed(t, "owner", ["*"]);
 
     await expect(
-      t.withIdentity(asUser).query(api.locations.list, { orgId: ORG }),
+      t.withIdentity(asUser).query(api.globalSearch.search, { orgId: ORG, query: "gig" }),
     ).resolves.toBeTruthy();
   });
 
   test("a doc-checked read guard fails closed too", async () => {
+    // Phase 5 (#1001) migrated every real application call site off the bare
+    // `requireOrgReadDoc` — there is no longer a production query left to
+    // exercise this through, which is the intended end state, not a gap.
+    // `requireOrgReadDoc` itself remains available for future thin-CRUD
+    // modules, so its fail-closed branch stays covered directly via an
+    // inline query function (convex-test's `query`/`mutation` accept one)
+    // rather than a real registry operation.
     const t = makeT();
     await seed(t, "owner", ["*"]);
 
     await expect(
-      t.withIdentity(asAgent).query(api.locations.getById, { id: "loc1" }),
+      t.withIdentity(asAgent).query(async (ctx) => {
+        await requireOrgReadDoc(ctx, { organizationId: ORG });
+      }),
     ).rejects.toThrow(/not available to API keys/i);
   });
 });

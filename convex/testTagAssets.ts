@@ -1,9 +1,17 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
 import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  listPage: { summary: "Paginated, filtered, sorted test & tag asset list with asset/bulk/profile joins.", danger: "low", mcpTier: 1 },
+  detail: { summary: "Single test & tag asset with recent test records and linked asset/bulk info.", danger: "low", mcpTier: 2 },
+  lookup: { summary: "Look up a test & tag asset by its human-facing testTagId, with latest test record.", danger: "low", mcpTier: 2 },
+  dashboardStats: { summary: "Test & tag dashboard tallies, recent tests, and overdue/due-soon item lists.", danger: "low", mcpTier: 2 },
+};
 
 // ── Pure filter/sort helpers ported from src/lib/test-tag-read.ts (byte-for-byte;
 //    epoch-ms dates on Convex docs, so the number branch handles nextDue/lastTest). ──
@@ -182,7 +190,7 @@ export const listPage = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "testTag");
     const isActive = a.isActive ?? true;
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
@@ -272,7 +280,7 @@ async function ttRecordsFor(ctx: QueryCtx, orgId: string, testTagAssetId: string
 export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "testTag");
     const item = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!item || item.organizationId !== orgId) return null;
 
@@ -312,7 +320,7 @@ export const detail = query({
 export const lookup = query({
   args: { orgId: v.string(), testTagId: v.string() },
   handler: async (ctx, { orgId, testTagId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "testTag");
     const item = await ctx.db.query("testTagAssets")
       .withIndex("by_organizationId_testTagId", (q) => q.eq("organizationId", orgId).eq("testTagId", testTagId)).first();
     if (!item) return null;
@@ -340,7 +348,7 @@ export const lookup = query({
 export const dashboardStats = query({
   args: { orgId: v.string(), nowMs: v.number() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "testTag");
     const [{ rows: items }, recentRecordsRaw] = await Promise.all([
       collectCapped(ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))), // r9.8-ok: status is optional (schema.ts) so a per-status indexed scan can't provably enumerate every row; capped, not a bare collect — see docs/exceptions.md R-8.3.3
       // Top 20 by testDate desc via the existing by_organizationId_testDate index, instead of collecting every test record the org has ever logged.

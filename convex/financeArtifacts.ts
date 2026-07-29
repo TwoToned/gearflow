@@ -4,6 +4,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireService } from "./lib/auth";
 import { effectiveQuoteStatus, quoteLabel, requireQuoteInOrg } from "./lib/quoteState";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Immutable finance ARTIFACTS (#987, Phase B) — the storage-id side of
@@ -194,3 +195,16 @@ export const attachInvoiceArtifact = mutation({
     return { attached: true, pdfFileId: storageId };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  quoteArtifactContext: {
+    agentAccess: "denied",
+    reason:
+      "Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain.",
+  },
+  invoiceArtifactContext: {
+    agentAccess: "denied",
+    reason:
+      "Same as quoteArtifactContext: SERVICE-gated by design (module docstring), exposes pdfFileId into the deliberately-closed finance-document subsystem; non-sensitive fields are already agent-reachable via invoices.ts.",
+  },
+};

@@ -1,7 +1,14 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService } from "./lib/auth";
+import { requireService, requireOrgReadFor, requireOrgReadDocFor } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List check records (asset condition/inspection check history) for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single check record by id.", danger: "low", mcpTier: 3 },
+  listByOrgAndAsset: { summary: "List all check records for one asset within the org.", danger: "low", mcpTier: 2 },
+};
 
 /**
  * Thin CRUD for CheckRecord (Convex table "checkRecords"). GENERATED — Phase 2/5.
@@ -16,7 +23,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "checkItem");
     return await ctx.db
       .query("checkRecords")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
@@ -27,8 +34,9 @@ export const list = query({
 export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
-    await requireService(ctx);
-    return await ctx.db.query("checkRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    const doc = await ctx.db.query("checkRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
+    await requireOrgReadDocFor(ctx, doc, "checkItem");
+    return doc;
   },
 });
 
@@ -40,7 +48,7 @@ export const getById = query({
 export const listByOrgAndAsset = query({
   args: { orgId: v.string(), assetId: v.string() },
   handler: async (ctx, { orgId, assetId }) => {
-    await requireService(ctx);
+    await requireOrgReadFor(ctx, orgId, "checkItem");
     return await ctx.db
       .query("checkRecords")
       .withIndex("by_organizationId_assetId", (q) =>

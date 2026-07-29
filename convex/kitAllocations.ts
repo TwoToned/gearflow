@@ -1,9 +1,10 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
 import { suggestKitAllocation, allocationCoversKit } from "./lib/allocation";
 import { getKitByCuid } from "./lib/kits";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Per-MODEL revenue allocation for a kit (see docs/revenue-allocation-design.md).
@@ -51,7 +52,7 @@ export async function kitModelQuantities(
 export const getKitAllocation = query({
   args: { kitId: v.string(), orgId: v.string() },
   handler: async (ctx, { kitId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
 
     const kit = await getKitByCuid(ctx, kitId);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError(`kit not found: ${kitId}`);
@@ -108,3 +109,8 @@ export const getKitAllocation = query({
 
 // Kit allocation WRITES (browser-direct) live in convex/kitAllocationsWrites.ts;
 // they reuse kitModelQuantities (exported above) for the money invariants.
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  getKitAllocation: { summary: "Get a kit's per-model revenue allocation (saved percentages, suggestion, staleness).", danger: "low", mcpTier: 2 },
+};

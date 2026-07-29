@@ -1,10 +1,11 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for BulkAsset (Convex table "bulkAssets"). GENERATED — Phase 2/5.
@@ -61,7 +62,7 @@ export const listPage = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "bulkAsset"); // Phase 5 domain slice (#1001)
     const isActive = a.isActive ?? true;
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
@@ -133,7 +134,7 @@ export const listPage = query({
 export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "bulkAsset"); // Phase 5 domain slice (#1001)
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc || doc.organizationId !== orgId) return null; // graceful not-found / wrong-org (parity)
     return {
@@ -155,7 +156,7 @@ export const detail = query({
 export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {
-    await requireOrgRead(ctx, organizationId);
+    await requireOrgReadFor(ctx, organizationId, "bulkAsset"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("bulkAssets")
       .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", organizationId).eq("assetTag", assetTag))
@@ -166,7 +167,7 @@ export const getByAssetTag = query({
 export const listByModel = query({
   args: { modelId: v.string(), orgId: v.string() },
   handler: async (ctx, { modelId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "bulkAsset"); // Phase 5 domain slice (#1001)
     // by_modelId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("bulkAssets")
@@ -183,7 +184,7 @@ export const listByModel = query({
 export const listByModelIds = query({
   args: { orgId: v.string(), modelIds: v.array(v.string()) },
   handler: async (ctx, { orgId, modelIds }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "bulkAsset"); // Phase 5 domain slice (#1001)
     const unique = [...new Set(modelIds)];
     if (unique.length > 1000) throw new ConvexError("bulkAssets.listByModelIds: too many modelIds (max 1000)");
     const groups = await Promise.all(
@@ -201,7 +202,7 @@ export const listByModelIds = query({
 export const listByIds = query({
   args: { orgId: v.string(), ids: v.array(v.string()) },
   handler: async (ctx, { orgId, ids }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "bulkAsset"); // Phase 5 domain slice (#1001)
     const unique = [...new Set(ids)];
     if (unique.length > 1000) throw new ConvexError("bulkAssets.listByIds: too many ids (max 1000)");
     const docs = await Promise.all(
@@ -370,3 +371,15 @@ export const adjustAvailability = mutation({
     await adjustBulkAvailability(ctx, organizationId, adjustments);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all bulk assets visible to the caller's org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get one bulk asset by id.", danger: "low", mcpTier: 1 },
+  listPage: { summary: "Filtered, sorted, paginated bulk-asset list with model/category/location joins.", danger: "low", mcpTier: 2 },
+  detail: { summary: "Get a single bulk asset's mapped scalar fields.", danger: "low", mcpTier: 2 },
+  getByAssetTag: { summary: "Look up a bulk asset by its asset tag.", danger: "low", mcpTier: 1 },
+  listByModel: { summary: "List an org's bulk assets belonging to one model.", danger: "low", mcpTier: 2 },
+  listByModelIds: { summary: "Batch bulk-asset lookup across many models in one call.", danger: "low", mcpTier: 3 },
+  listByIds: { summary: "Batch point-read bulk assets by id, scoped to one org.", danger: "low", mcpTier: 3 },
+};

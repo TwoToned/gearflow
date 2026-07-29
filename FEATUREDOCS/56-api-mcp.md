@@ -2,12 +2,12 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
 
-> **STATUS 2026-07-28 — reinstatement underway. Phases 0-4 have landed (#996,
-> #997, #998, #999, #1000): there is now a real, curl-verifiable HTTP API —
-> `POST /api/v1/ops/{operation}` (the universal dispatcher), `GET
-> /api/v1/operations{,/[operation]}`, `GET /api/v1/whoami`, `GET
-> /api/v1/openapi.json`, `GET /llms.txt`, a handful of curated REST
-> aliases (`/api/v1/{projects,assets,clients}[/{id}]`,
+> **STATUS 2026-07-28 — reinstatement underway. Phases 0-6 have landed (#996,
+> #997, #998, #999, #1000, #1001, #1002): there is now a real,
+> curl-verifiable HTTP API — `POST /api/v1/ops/{operation}` (the universal
+> dispatcher), `GET /api/v1/operations{,/[operation]}`, `GET
+> /api/v1/whoami`, `GET /api/v1/openapi.json`, `GET /llms.txt`, a handful
+> of curated REST aliases (`/api/v1/{projects,assets,clients}[/{id}]`,
 > `POST /api/v1/projects/{id}/line-items`) — **and a streamable HTTP MCP
 > server at `/api/v1/mcp`**, over the same bearer keys and the same
 > dispatcher: 20 curated tools + `list_operations`/`describe_operation`/
@@ -20,12 +20,23 @@
 > classification (a colocated `agentOps` export per module), `danger:"high"`
 > requires `confirm: true` at the dispatcher, the §6 privileged-argument table
 > is now enforced end to end (`project:unlock_session` denied by default,
-> `emitSideEffects` re-asserted in Convex), a `noFinancials` key flag
-> force-redacts cost/margin fields regardless of the acting user's role, the
-> activity log has an agent-authored badge/filter, and `revertAgentWindow`
-> gives an operator a real (scoped) tool to reverse a bad agent warehouse run.
-> Next up: Phase 5 (#1001), the coverage sweep — migrating the remaining
-> `requireOrgRead` call sites and triaging the SERVICE-only queries.**
+> `emitSideEffects` re-asserted in Convex), the `noFinancials` key flag
+> extends to models/crew-assignment cost fields (on top of Phase 6's
+> `projectCosts.operationalCosts` groundwork), the activity log has an
+> agent-authored badge/filter, and `revertAgentWindow` gives an operator a
+> real (scoped) tool to reverse a bad agent warehouse run.
+> **Phase 5 (#1001) closed almost all of the remaining read-guard gap** —
+> agent-reachable operations went from 331 to 549 (284 queries + 265
+> mutations), and the resource-less `requireOrgRead`/`requireOrgReadDoc`
+> guard now has exactly ONE remaining call site in the whole app
+> (`globalSearch.search`, deliberately denied — see below). Phase 5 also
+> landed the `agentOps` annotation FORMAT (`convex/lib/agentOps.ts`) that
+> Phase 4's `danger` classification populates.
+> **Phase 6 (#1002) has also landed** — `/settings/api-keys` (key
+> management, scope presets, rotation, the org kill switch, the per-key
+> request log, and a "Connect an AI Agent" one-screen MCP flow), landed
+> ahead of Phase 4 in numeric order at the tracking issue's request.
+> Next up: Phase 7 (#1003), MCP OAuth 2.1.**
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:
@@ -104,10 +115,14 @@ they reject agents outright rather than admit them unscoped (decision 2). Phase 
 `requireOrgReadDocFor` — assets, models, categories, projects, line items,
 groups, availability, overbookings, clients, crew + assignments, warehouse
 status, maintenance, kits, bulk assets — chosen to fully back the curated MCP
-tool set Phase 3 will build. The remaining unmigrated reads stay invisible
-(not unscoped) until Phase 5's coverage sweep; migrating one is a one-argument
-change at the call site (`requireOrgRead(ctx, orgId)` →
-`requireOrgReadFor(ctx, orgId, "<resource>")`).
+tool set Phase 3 built. **Phase 5 (#1001) finished the migration**: all ~170
+remaining bare call sites across 56 modules moved to `requireOrgReadFor`/
+`requireOrgReadDocFor`, one domain at a time (assets/kits, models,
+projects+collaboration+dashboards, clients+crew,
+warehouse+maintenance+test&tag, suppliers+sub-hires+finance,
+settings+cross-cutting). Exactly one bare call site remains
+(`globalSearch.search`), and it's a recorded decision, not an oversight — see
+the triage section below.
 
 ### Contract registry (`scripts/generate-api-registry.mts`)
 
@@ -118,9 +133,21 @@ the `(resource, action)` pair are *derived* from the guard the function calls �
 the flag cannot drift, because changing it requires changing the guard.
 
 Live numbers are in [`docs/api-coverage.md`](../docs/api-coverage.md), regenerated
-on every PR. At the time of writing: 1,118 public operations, 330 agent-reachable
-(67 queries + 263 mutations) — up from 291 pre-#998, the +39 being the read
-bootstrap (measured; the design doc's ~45 estimate landed at 39 in practice).
+on every PR. At the time of writing: 1,119 public operations, 549 agent-reachable
+(284 queries + 265 mutations) — up from 331 pre-#1001 (67 queries + 264
+mutations), the +218 (almost all queries) being Phase 5's coverage sweep. This
+comfortably clears the original removed build's "537 operations" parity bar
+(design §4) — the number the tracking issue (#995) was watching for.
+
+Also new in Phase 5: the `agentOps` colocated annotation format
+(`convex/lib/agentOps.ts`) — `{ summary, danger, mcpTier, agentAccess,
+reason }` per exported function, read by the generator and merged into
+`RegistryOperation`. `agentAccess: "denied"` records a DELIBERATE decision to
+keep an otherwise-classifiable operation closed (the guard itself still
+enforces the denial — this is metadata about WHY, not a second gate); the
+generator fails the build on a denied entry with no reason, or one that
+contradicts an agent-admitting guard. `docs/api-coverage.md` prints every
+denied operation with its reason in a dedicated table.
 
 Four CI gates, each proved to fail on a deliberately-introduced violation in
 `src/lib/api/registry.test.ts`:
@@ -266,10 +293,14 @@ the explicit fix for the previous build's "MCP tool-list staleness" finding.
 
 Design §7 describes a future `agentOps` annotation colocated in each
 `convex/*.ts` module (`summary`/`danger`/`mcpTier`) as the eventual home for
-curated-tool metadata; that annotation format (and the `danger` classification
-it depends on) is Phase 5 (#1001) / Phase 4 (#1000) scope and doesn't exist
-yet, so `curated-tool-defs.ts` is the Phase-3-scoped stand-in — migrate it when
-`agentOps` lands rather than keeping both.
+curated-tool metadata. **Phase 5 (#1001) landed the format**
+(`convex/lib/agentOps.ts`) and populated it across every migrated/widened
+operation, but `curated-tool-defs.ts`'s `summary`/`prerequisites`/`transition`
+have NOT yet been migrated to read from it (R-3.1 — this is a known,
+still-open duplication, not an oversight). Phase 4's `danger` classification
+now HAS a real consumer (the dispatcher's confirmation gate), which makes the
+duplication more worth closing, not less — do it in a follow-up rather than
+letting both linger indefinitely.
 
 **Versioning** (`src/lib/api/version.ts`) — `rvlt_flow.v1.*` MCP tool
 namespace, an `X-RVLT-Flow-API-Version` response header (now applied to every
@@ -347,20 +378,17 @@ identical call, re-sent with `confirm: true`, is the only recovery path.
 - `allowOverbook`, `justification`, `overrideReason`, `forceSeparate`,
   `allowOrgCreation` were already enforced correctly by Phases 0-1; unchanged.
 
-**`no_financials` key flag** (`convex/schema.ts` `apiKeys.noFinancials`,
-`convex/lib/auth.ts` `isNoFinancialsAgent`) — when set, force-redacts
-cost/margin fields regardless of the acting user's manager+ standing, verified
-across THREE independent reads (not just one): `models.{list,getById,detail}`
-strip `replacementCost`/`defaultPurchasePrice` while leaving the model's own
-sell rates (`dailyRate`/`weeklyRate`/`defaultRentalPrice`) visible — an agent
-still needs those to quote/book; `crewAssignments.{list,getById,listByProject,
+**`no_financials` key flag extended** (`convex/schema.ts` `apiKeys.noFinancials`,
+`convex/lib/auth.ts` `isAgentNoFinancials` — Phase 6 groundwork, wired into
+`projectCosts.operationalCosts` there) — this phase extends the SAME flag to
+two more independent reads, verifying the redaction field-by-field rather than
+on one query alone: `models.{list,getById,detail}` strip
+`replacementCost`/`defaultPurchasePrice` while leaving the model's own sell
+rates (`dailyRate`/`weeklyRate`/`defaultRentalPrice`) visible — an agent still
+needs those to quote/book; `crewAssignments.{list,getById,listByProject,
 projectCrew}` strip `estimatedCost`/`rateOverride` plus the nested
-`crewMember`/`crewRole` rate fields; `projectCosts.operationalCosts` (the
-`get_project_financials` MCP tool) is denied outright with `FINANCIALS_REDACTED`
-since its entire payload IS a cost/margin breakdown — there's no non-financial
-subset of its fixed `costsShape` returns validator to redact fields out of.
-The settings toggle to SET the flag is still Phase 6; the enforcement (this
-phase) works today against a hand-set `noFinancials: true` row.
+`crewMember`/`crewRole` rate fields. Extending it across every remaining
+financial field family (quotes, invoices) is left to a future slice.
 
 **Agent-justified activity-log badge/filter** — `convex/activityLog.ts` gained
 an `agentAuthored` filter arg (and the exported `isAgentAuthored` helper) over
@@ -386,6 +414,68 @@ reported in `skipped` with a reason, not silently ignored, because there is no
 generic "undo any write" primitive in this codebase to call. An operator still
 gets the full agent-authored slice of the activity log (the badge/filter
 above) to review and hand-fix anything `skipped` lists.
+
+## What Phase 5 built (#1001)
+
+**The coverage sweep** — one PR-worth of commits per domain (assets/kits,
+models, projects-core, projects+collaboration+dashboards, clients+crew,
+warehouse+maintenance+test&tag, suppliers+sub-hires+finance,
+settings+cross-cutting), each doing the same four things per the tracking
+issue's checklist: migrate the domain's remaining `requireOrgRead(Doc)` call
+sites, triage its SERVICE-only queries into widen/sibling/deny, extend
+`agentOps` annotations, and extend cross-tenant test coverage.
+
+**Triage buckets applied, per design §4:**
+- **Widen** — the majority: swap `requireService` for `requireOrgPermission`/
+  `requireOrgReadFor` on a plain org-scoped read with no special sensitivity.
+- **Deny** — recorded in `agentOps` with a reason. Two real classes emerged
+  beyond the design doc's original list: (1) a query with **no `orgId`
+  argument at all**, fetched by a global foreign-key index with no way to
+  verify the caller's org against it without a parent-lookup redesign
+  (`crewShifts`, `categorySlots`, several `*Media.listByParent`s — flagged
+  for a future slice, not silently dropped); (2) a query whose raw row
+  carries a live secret (`warehouseDashboardTokens`, `testTagAuditorTokens`'
+  plaintext bearer tokens; `orgSettings.getByOrg`'s `icalToken`;
+  `wooCommerceIntegrations`' `webhookSecret`) or PII beyond what redaction
+  covers (`wooCommerceOrderLogs`' raw customer payload). The expected
+  site-admin/platform-surface denials from the tracking issue (`orgExport`,
+  `siteSettings`, `pendingSSOApprovals`, `projectNumberSequences`, `parity`,
+  `apiKeys`) were applied as directed.
+- **Sibling** — not needed this pass; every case that needed redaction
+  already had a precedent to follow (`crewRoles.list` vs `listForSettings`)
+  rather than a new sibling to write.
+
+**Real pre-existing bugs found and fixed along the way** (not hypothetical —
+each was live before this PR):
+1. `projects.getByOrgAndNumber` had **no auth guard at all** — any
+   authenticated identity could look up any org's project by number. Fixed
+   with `requireOrgReadFor`.
+2. `checkRecords.getById` and `serviceTemplates.getById` were on bare
+   `requireService` with **no doc-level org check** even for the trusted
+   path being widened — fixed by routing through `requireOrgReadDocFor`.
+3. `crew.ts` (`myCrewMemberId`, the roster `isOwnProfile` flag),
+   `dashboardLists.ts` (`home`, `blocking`), and `projectTasks.ts`
+   (`myOpenTasks`) all gated a self-scoped read on `auth.kind !== "user"` /
+   `=== "user"` — which silently excludes agent tokens even though an agent
+   carries a real `userId` (the acting user). Per this repo's own convention
+   (CLAUDE.md: "`auth.kind !== "user"` is now a bug in most places... use
+   `isMemberAuth(auth)`"), these now use `isMemberAuth` so an agent gets the
+   same answer a user would, not a wrong rejection or a silent `null`.
+
+**Cross-tenant hardening** (R-8.4.3) — `convex/xtenantHardening.test.ts`
+gained targeted regression coverage for the three bug fixes above (each
+proven exploitable before the fix, via an inserted foreign-org row) plus the
+`isMemberAuth` fix, following the file's existing "org A can't read org B's
+row through a global index" pattern.
+
+**What Phase 5 deliberately left alone:** mutations. The triage scope (per
+the tracking issue) is SERVICE-only *queries*; no write's guard was widened,
+so the reachable-mutations count barely moved (264 → 265 — one mutation,
+`dashboardCounters.reconcileIfStale`, was on the resource-less
+`requireOrgRead` rather than `requireService` and got the same one-argument
+fix as the reads). The Zod validation registry (`src/lib/validations/registry.ts`)
+therefore needed no new entries this phase — extending it is Phase 4/6
+territory, once writes actually go wide.
 
 ## What shipped before removal (for scale/scope reference)
 

@@ -87,9 +87,13 @@ export const listProjectIdsPage = query({
   },
 });
 
-/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
- *  Pure recompute of an already-existing allocation from the project's current
- *  groups/lines — no new financial commitment. */
 export const agentOps: AgentOpsAnnotations = {
+  listProjectIdsPage: {
+    agentAccess: "denied",
+    reason:
+      "Backfill-only pagination helper for scripts/convex-backfill-revenue-allocation.ts, not a runtime read; a raw project-id enumeration doesn't fit the normal resource/scope model and financial allocation detail is out of scope pending Phase 4's no_financials flag.",
+  },
+  // Phase 4 (#1000) — a pure recompute of an already-existing allocation from
+  // current groups/lines, not a new financial commitment.
   recomputeForProject: { danger: "low" },
 };

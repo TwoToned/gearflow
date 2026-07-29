@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for Category (Convex table "categories"). GENERATED — Phase 2/5.
@@ -43,7 +44,7 @@ export const counts = query({
   args: { orgId: v.string() },
   returns: v.record(v.string(), v.object({ models: v.number(), kits: v.number() })),
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const out: Record<string, { models: number; kits: number }> = {};
     const ensure = (id: string) => (out[id] ??= { models: 0, kits: 0 });
 
@@ -75,7 +76,7 @@ export const counts = query({
 export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: categories is a small bounded per-org set (tree) — see docs/exceptions.md R-8.3.3
     const category = cats.find((c) => c.id === id);
     if (!category) throw new ConvexError("Category not found");
@@ -165,7 +166,7 @@ function collectDescendants(cats: { id: string; parentId?: string | null }[], ro
 export const containerAssetSearch = query({
   args: { orgId: v.string(), query: v.optional(v.string()) },
   handler: async (ctx, { orgId, query: search }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const settingsRow = await ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).first();
     let rootCatId: string | undefined;
     if (settingsRow?.settings) {
@@ -283,3 +284,12 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List categories in the caller's org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get a single category by id.", danger: "low", mcpTier: 2 },
+  counts: { summary: "Per-category model and kit counts for the caller's org.", danger: "low", mcpTier: 3 },
+  detail: { summary: "Category detail composite: parent/children (with counts), kits (with member counts), active models (with asset counts + primary photo).", danger: "low", mcpTier: 2 },
+  containerAssetSearch: { summary: "Search assets in the org's configured prep-kit container category for a picker.", danger: "low", mcpTier: 3 },
+};

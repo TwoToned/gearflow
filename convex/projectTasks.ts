@@ -1,8 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService, getAuthContext } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isMemberAuth } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectTask (Convex table "projectTasks"). GENERATED — Phase 2/5.
@@ -18,7 +19,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "project");
     return doc;
   },
 });
@@ -26,7 +27,7 @@ export const getById = query({
 export const listByProject = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
     return (await ctx.db
       .query("projectTasks")
@@ -43,7 +44,7 @@ export const listByProject = query({
 export const assignees = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const members = await ctx.db
       .query("members")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reviewed, accepted R-9.8 tradeoff over the org set (aggregation/enrichment) — see docs/exceptions.md R-8.3.3
@@ -74,7 +75,7 @@ export const assignees = query({
 export const listByProjectWithRelations = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const rows = (
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
     ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
@@ -124,7 +125,7 @@ export const listByProjectWithRelations = query({
 // Union of this user's directly-assigned OPEN tasks (by_assigneeUserId_status)
 // and their crew-assigned OPEN tasks (by_assigneeCrewId_status, resolved via
 // crewMembers.by_userId), de-duped, org-filtered, sorted, and bounded. Mirrors
-// dashboardLists.blocking's auth shape (requireOrgRead + getAuthContext user
+// dashboardLists.blocking's auth shape (requireOrgReadFor + getAuthContext user
 // token) rather than inventing a new one. `by_assigneeUserId_status` and
 // `by_assigneeCrewId_status` are GLOBAL indexes (span every org), so every row
 // pulled through them is re-checked against `orgId` before use — the
@@ -246,9 +247,9 @@ function serializeMyOpenTask(
 export const myOpenTasks = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const auth = await getAuthContext(ctx);
-    if (!auth || auth.kind !== "user") throw new ConvexError("Unauthorized: user token required.");
+    if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
     const userId = auth.userId;
 
     const crewIds = await resolveCrewIdsForUser(ctx, userId, orgId);
@@ -422,3 +423,12 @@ export const reorderMany = mutation({
     }
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  getById: { summary: "Get one project task by id.", danger: "low", mcpTier: 1 },
+  listByProject: { summary: "List tasks belonging to one project.", danger: "low", mcpTier: 1 },
+  assignees: { summary: "List people (org members + crew) a task can be assigned to.", danger: "low", mcpTier: 2 },
+  listByProjectWithRelations: { summary: "List a project's tasks with assignee joins, sorted for the task board.", danger: "low", mcpTier: 1 },
+  myOpenTasks: { summary: "List the caller's own open (TODO/IN_PROGRESS) tasks across all projects in an org.", danger: "low", mcpTier: 2 },
+};

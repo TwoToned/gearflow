@@ -705,9 +705,11 @@ rule.** A model's `dailyRate`/`weeklyRate`/`defaultRentalPrice` are SELL prices 
 needs to operate (quote, book); only `replacementCost`/`defaultPurchasePrice` are true
 internal cost. Redacting the sell rates too would have made the flag useless for its
 stated purpose ("visibility follows the acting user's role... except never see cost").
-`projectCosts.operationalCosts` is the one query where this distinction collapses — its
-entire payload IS the P&L — so it's denied outright (`FINANCIALS_REDACTED`) rather than
-returned as a validator-breaking partial object.
+`projectCosts.operationalCosts` (wired by Phase 6 as the flag's first call site) is the
+one query where this distinction collapses — its entire payload IS the P&L — so it
+returns the all-zero `EMPTY` shape rather than a validator-breaking partial object; this
+phase's extension to `models.*`/`crewAssignments.*` uses field-level `redactFields`
+instead, since those reads mix cost fields alongside genuinely operational ones.
 
 **Phase 5 — coverage sweep (the long pole).** Per domain, in agent-value order: migrate the
 remaining `requireOrgRead` → `requireOrgReadFor`, triage the 152 SERVICE-only queries

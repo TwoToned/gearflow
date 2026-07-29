@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for XeroIntegration (Convex table "xeroIntegrations"), one row per
@@ -67,7 +68,7 @@ export const getForOrg = query({
     }),
   ),
   handler: async (ctx, { organizationId }) => {
-    await requireOrgRead(ctx, organizationId);
+    await requireOrgReadFor(ctx, organizationId, "orgSettings"); // Phase 5 domain slice (#1001)
     const doc = await ctx.db
       .query("xeroIntegrations")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
@@ -88,6 +89,14 @@ export const getForOrg = query({
     };
   },
 });
+
+export const agentOps: AgentOpsAnnotations = {
+  getForOrg: { summary: "Get the org's Xero connection status/config (never the encrypted refresh token).", danger: "low", mcpTier: 2 },
+  getByOrgId: {
+    agentAccess: "denied",
+    reason: "Raw row includes refreshTokenEncrypted; only the redacted getForOrg projection is agent-safe. Still requireService-only — untouched, not agent-reachable.",
+  },
+};
 
 export const createIfMissing = mutation({
   args: { id: v.string(), ...integrationFields, createdAt: v.optional(v.number()), updatedAt: v.optional(v.number()) },

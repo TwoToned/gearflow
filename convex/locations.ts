@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for Location (Convex table "locations"). GENERATED — Phase 2/5.
@@ -16,7 +17,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "location"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("locations")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: locations is a small bounded per-org set — see docs/exceptions.md R-8.3.3
@@ -28,7 +29,7 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "location"); // Phase 5 domain slice (#1001)
     return doc;
   },
 });
@@ -39,7 +40,7 @@ export const getById = query({
 export const listSimple = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "location"); // Phase 5 domain slice (#1001)
     const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: locations is a small bounded per-org set — see docs/exceptions.md R-8.3.3
     return locs
       .map((l) => ({ id: l.id, name: l.name, type: l.type ?? "WAREHOUSE" }))
@@ -57,7 +58,7 @@ export const listSimple = query({
 export const detail = query({
   args: { id: v.string(), orgId: v.string() },
   handler: async (ctx, { id, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "location"); // Phase 5 domain slice (#1001)
     // r9.8-ok: locations is a small bounded per-org set (tens of rows). — see docs/exceptions.md R-8.3.3
     const locs = await ctx.db.query("locations").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect();
     const self = locs.find((l) => l.id === id);
@@ -149,7 +150,7 @@ export const counts = query({
     v.object({ assets: v.number(), bulkAssets: v.number(), kits: v.number() }),
   ),
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "location"); // Phase 5 domain slice (#1001)
     const out: Record<string, { assets: number; bulkAssets: number; kits: number }> = {};
     const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, kits: 0 });
 
@@ -260,3 +261,12 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List all locations visible to the caller's org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get one location by id.", danger: "low", mcpTier: 1 },
+  listSimple: { summary: "Minimal location list (id/name/type) for pickers.", danger: "low", mcpTier: 2 },
+  detail: { summary: "Location detail composite: parent, children, contained assets/bulk/kits/projects, media.", danger: "low", mcpTier: 2 },
+  counts: { summary: "Asset/bulk-asset/kit counts per location.", danger: "low", mcpTier: 3 },
+};

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for WooCommerceIntegration (Convex table "wooCommerceIntegrations"). GENERATED — Phase 2/5.
@@ -181,3 +182,11 @@ export const patchWooCommerceIntegration = mutation({
     return doc._id;
   },
 });
+
+const wooCommerceIntegrationsDenyReason =
+  "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg).";
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { agentAccess: "denied", reason: wooCommerceIntegrationsDenyReason },
+  getById: { agentAccess: "denied", reason: wooCommerceIntegrationsDenyReason },
+};

@@ -1,7 +1,12 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  resolve: { summary: "Resolve a scanned tag to the CHECKED_OUT unit(s)/line(s)/project(s) it needs to flip for a return.", danger: "low", mcpTier: 2 },
+};
 
 /**
  * Project-less scan resolution for the org-wide returns station (issue #944 WS5).
@@ -16,8 +21,8 @@ import { requireOrgRead } from "./lib/auth";
  * which is hard-wired to ONE `projectId` (the returns station has no project
  * pre-selection — that's the whole point of WS5).
  *
- * Same SAFE_TAG + length-cap pattern as scanLookup.ts. Browser-callable
- * (`requireOrgRead`).
+ * Same SAFE_TAG + length-cap pattern as scanLookup.ts. Browser-callable and
+ * agent-reachable (`requireOrgReadFor`, resource "warehouse").
  *
  * The result is a discriminated union on `kind`:
  *   - "not_found"            — tag matches nothing in this org.
@@ -198,7 +203,7 @@ function loadKitByTag(ctx: QueryCtx, orgId: string, tag: string) {
 export const resolve = query({
   args: { orgId: v.string(), value: v.string() },
   handler: async (ctx, { orgId, value }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "warehouse");
 
     const tag = value.trim();
     if (!tag || tag.length > 128 || !SAFE_TAG.test(tag)) {

@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService, isNoFinancialsAgent, redactFields } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /** Phase 4 (#1000, decision 6): what the org paid for / would pay to replace a
  *  unit — cost data, distinct from the model's own RENTAL rates (`dailyRate`
@@ -27,7 +28,8 @@ export const list = query({
       .query("models")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large — see docs/exceptions.md R-8.3.3
       .collect();
-    if (!(await isNoFinancialsAgent(ctx))) return rows;
+    const auth = await getAuthContext(ctx);
+    if (!(await isAgentNoFinancials(ctx, auth))) return rows;
     return rows.map((r) => redactFields(r, MODEL_COST_FIELDS));
   },
 });
@@ -37,7 +39,8 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "model"); // Phase 2 read bootstrap (#998)
-    if (!doc || !(await isNoFinancialsAgent(ctx))) return doc;
+    const auth = await getAuthContext(ctx);
+    if (!doc || !(await isAgentNoFinancials(ctx, auth))) return doc;
     return redactFields(doc, MODEL_COST_FIELDS);
   },
 });
@@ -54,7 +57,7 @@ export const getById = query({
 export const counts = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     type Entry = { assets: number; bulkAssets: number; media: { url: string | null; thumbnailUrl: string | null } | null };
     const out: Record<string, Entry> = {};
     const ensure = (id: string) => (out[id] ??= { assets: 0, bulkAssets: 0, media: null });
@@ -225,7 +228,8 @@ export const detail = query({
       media,
       bulkAccessories,
     };
-    return (await isNoFinancialsAgent(ctx)) ? redactFields(composite, MODEL_COST_FIELDS) : composite;
+    const auth = await getAuthContext(ctx);
+    return (await isAgentNoFinancials(ctx, auth)) ? redactFields(composite, MODEL_COST_FIELDS) : composite;
   },
 });
 
@@ -410,3 +414,11 @@ export const remove = mutation({
     await ctx.db.delete(doc._id);
   },
 });
+
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List models visible to the caller's org.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get a single model by id.", danger: "low", mcpTier: 1 },
+  counts: { summary: "Per-model active asset/bulk-asset counts and primary photo for the caller's org.", danger: "low", mcpTier: 2 },
+  detail: { summary: "Model detail composite: model + category + active assets/bulk assets + media gallery + bulk accessories.", danger: "low", mcpTier: 1 },
+};

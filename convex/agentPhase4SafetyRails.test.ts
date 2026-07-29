@@ -219,22 +219,27 @@ describe("no_financials key flag — field-by-field, across multiple distinct re
     expect(one?.estimatedCost).toBeUndefined();
   });
 
-  test("projectCosts.operationalCosts is fully denied (no non-financial subset to redact)", async () => {
+  // projectCosts.operationalCosts' noFinancials enforcement is Phase 6 (#1002)
+  // groundwork (isAgentNoFinancials, wired there): its ENTIRE payload is a
+  // cost/margin breakdown, so a noFinancials key gets an all-zero EMPTY
+  // result rather than a partial object — there's no non-financial subset of
+  // its fixed costsShape returns validator to redact fields out of.
+  test("projectCosts.operationalCosts returns EMPTY (all zeros) for a noFinancials key", async () => {
     const t = makeT();
     await seedCommon(t);
     await seedKey(t, ["*"], { noFinancials: true });
-    await expect(
-      t.withIdentity(asAgent).query(api.projectCosts.operationalCosts, { projectId: "p1", orgId: ORG }),
-    ).rejects.toThrow(/no_financials/i);
+    const result = await t.withIdentity(asAgent).query(api.projectCosts.operationalCosts, { projectId: "p1", orgId: ORG });
+    expect(result.total).toBe(0);
+    expect(result.netMargin).toBe(0);
+    expect(result.equipmentRevenue).toBe(0);
   });
 
-  test("projectCosts.operationalCosts still works for the same key without the flag", async () => {
+  test("projectCosts.operationalCosts returns the real total for the same key without the flag", async () => {
     const t = makeT();
     await seedCommon(t);
     await seedKey(t, ["*"]);
-    await expect(
-      t.withIdentity(asAgent).query(api.projectCosts.operationalCosts, { projectId: "p1", orgId: ORG }),
-    ).resolves.toBeDefined();
+    const result = await t.withIdentity(asAgent).query(api.projectCosts.operationalCosts, { projectId: "p1", orgId: ORG });
+    expect(result.total).toBe(1000);
   });
 
   test("a browser (non-key) user is entirely unaffected by another key's noFinancials flag", async () => {

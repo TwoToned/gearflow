@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadDoc, requireService } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for CustomFieldDefinition (Convex table "customFieldDefinitions"). GENERATED — Phase 2/5.
@@ -16,7 +17,7 @@ import * as enums from "./lib/validators";
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "orgSettings"); // Phase 5 domain slice (#1001)
     return await ctx.db
       .query("customFieldDefinitions")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set — see docs/exceptions.md R-8.3.3
@@ -28,10 +29,20 @@ export const getById = query({
   args: { id: v.string() },
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("customFieldDefinitions").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
-    await requireOrgReadDoc(ctx, doc);
+    await requireOrgReadDocFor(ctx, doc, "orgSettings"); // Phase 5 domain slice (#1001)
     return doc;
   },
 });
+
+/**
+ * Agent-op annotations (Phase 5, #1001). Custom field definitions are org-wide
+ * config (field labels/types/options per entity type) — modeled as `orgSettings`
+ * for both reads, matching the resource used at the guard call sites above.
+ */
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List custom field definitions for the org.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get one custom field definition by id.", danger: "low", mcpTier: 3 },
+};
 
 export const create = mutation({
   args: {

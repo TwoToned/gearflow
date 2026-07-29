@@ -209,15 +209,23 @@ export default defineSchema({
     lastRotatedAt: v.optional(v.number()),
     revokedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
-    // Phase 4 (#1000, decision 6): force-redacts cost/margin field families on
-    // every read this key makes, regardless of the acting user's role — see
-    // `convex/lib/auth.ts` `isNoFinancialsAgent`. Absent/false = unchanged
-    // behaviour (visibility still follows the acting user's role).
+    // Phase 6 (#1002) additions ↓
+    // Decision 6 — force-redact cost/margin regardless of the acting user's role.
+    // Enforced today at the one documented curated-financial-read call site
+    // (projectCosts.operationalCosts, backing the `get_project_financials` MCP
+    // tool); full field-family coverage across every financial read is Phase 4
+    // (#1000) scope — see convex/lib/auth.ts `isAgentNoFinancials`.
     noFinancials: v.optional(v.boolean()),
+    // Rotation with a grace window (design §14, mirrors webhooks.rotateSecret):
+    // the previous secret keeps authenticating until previousTokenHashExpiresAt
+    // so a consumer can roll over without a hard cutover.
+    previousTokenHash: v.optional(v.string()),
+    previousTokenHashExpiresAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_tokenHash", ["tokenHash"])
+    .index("by_previousTokenHash", ["previousTokenHash"])
     .index("by_actingUserId", ["actingUserId"]),
 
   // ApiIdempotency — the API/MCP write-replay ledger

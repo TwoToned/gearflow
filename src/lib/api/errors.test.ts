@@ -164,15 +164,10 @@ describe("envelope shape", () => {
   });
 
   // Phase 4 (#1000)
-  test("CONFIRMATION_REQUIRED and FINANCIALS_REDACTED are registered, non-retryable where it matters", () => {
+  test("CONFIRMATION_REQUIRED is registered and retryable (re-send with confirm:true)", () => {
     expect(KNOWN_ERROR_CODES).toContain("CONFIRMATION_REQUIRED");
-    expect(KNOWN_ERROR_CODES).toContain("FINANCIALS_REDACTED");
     const confirmation = toErrorEnvelope(Object.assign(new Error("m"), { code: "CONFIRMATION_REQUIRED" }));
     expect(confirmation.error.retryable).toBe(true); // re-send the SAME call with confirm:true
     expect(confirmation.error.recovery?.action).toBe("confirm_with_human");
-
-    const redacted = toErrorEnvelope(new ConvexError({ code: "FINANCIALS_REDACTED", message: "m" }));
-    expect(redacted.error.retryable).toBe(false); // retrying changes nothing — the key itself must change
-    expect(redacted.error.category).toBe("permission");
   });
 });

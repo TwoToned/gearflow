@@ -1,8 +1,14 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireService, requireOrgRead } from "./lib/auth";
+import { requireService, requireOrgReadFor } from "./lib/auth";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
+
+export const agentOps: AgentOpsAnnotations = {
+  recordsPage: { summary: "Paginated test history for one test & tag asset, newest first, with tester/profile/sub-test relations.", danger: "low", mcpTier: 2 },
+  latestForAsset: { summary: "Latest test record for one test & tag asset (Quick Pass pre-fill).", danger: "low", mcpTier: 2 },
+};
 
 /**
  * Thin CRUD for TestTagRecord (Convex table "testTagRecords"). GENERATED — Phase 2/5.
@@ -134,7 +140,7 @@ export const recordsPage = query({
     pageSize: v.optional(v.number()),
   },
   handler: async (ctx, { orgId, testTagAssetId, page, pageSize }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "testTag");
     const p = page ?? 1;
     const ps = pageSize ?? 20;
     const all = (
@@ -160,7 +166,7 @@ export const recordsPage = query({
 export const latestForAsset = query({
   args: { orgId: v.string(), testTagAssetId: v.string() },
   handler: async (ctx, { orgId, testTagAssetId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "testTag");
     const all = (
       await ctx.db
         .query("testTagRecords")

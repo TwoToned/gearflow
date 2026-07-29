@@ -3,7 +3,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService, requireOrgPermission, resolveActor } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, requireOrgPermission, resolveActor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -12,7 +13,6 @@ import { nextOrdinal } from "./lib/lineItemUnits";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { getProjectWindow } from "./lib/projectWindow";
-import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for ProjectLineItem (Convex table "projectLineItems"). GENERATED — Phase 2/5.
@@ -44,7 +44,7 @@ export const list = query({
 export const listFlagged = query({
   args: { orgId: v.string(), limit: v.number() },
   handler: async (ctx, { orgId, limit }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const FLAGGED_STATUSES = ["FLAGGED_FAULTY", "FLAGGED_TT_OVERDUE"] as const;
     const rows = (
       await Promise.all(
@@ -77,7 +77,7 @@ export const listByProject = query({
       .query("projectLineItems")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
       .collect();
-    // `requireOrgRead` proves the CALLER belongs to `orgId`. It says nothing about
+    // `requireOrgReadFor` proves the CALLER belongs to `orgId`. It says nothing about
     // whether `projectId` does — and it short-circuits entirely for the service
     // token. Without this row filter, a foreign projectId returns another org's
     // line items. The sibling bundles (projectDetail, equipmentTab) cross-check too.
@@ -93,14 +93,14 @@ export const listByProject = query({
 export const listByIds = query({
   args: { ids: v.array(v.string()), orgId: v.string() },
   handler: async (ctx, { ids, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const out = [];
     for (const id of ids) {
       const doc = await ctx.db
         .query("projectLineItems")
         .withIndex("by_cuid", (q) => q.eq("id", id))
         .unique();
-      // by_cuid is a GLOBAL index; requireOrgRead only authorizes the CALLER's org, so
+      // by_cuid is a GLOBAL index; requireOrgReadFor only authorizes the CALLER's org, so
       // a caller-supplied foreign cuid would otherwise leak another org's line item.
       if (doc && doc.organizationId === orgId) out.push(doc);
     }
@@ -113,7 +113,7 @@ export const listByIds = query({
  * warehouse-display dashboard to count items per dispatch/return/prep project
  * without scanning the whole org's line-item table on a public endpoint — only
  * the handful of projects the dashboard renders are queried, each via the
- * `by_projectId` index. Org-scoped: `requireOrgRead` authorizes the CALLER's org, and
+ * `by_projectId` index. Org-scoped: `requireOrgReadFor` authorizes the CALLER's org, and
  * every returned row is re-checked to belong to it — `by_projectId` is a GLOBAL index,
  * so a caller-supplied foreign projectId would otherwise leak another org's line items
  * (same footgun as `listByProject`).
@@ -121,7 +121,7 @@ export const listByIds = query({
 export const listByProjectIds = query({
   args: { orgId: v.string(), projectIds: v.array(v.string()) },
   handler: async (ctx, { orgId, projectIds }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const out = [];
     for (const projectId of projectIds) {
       const rows = await ctx.db
@@ -961,7 +961,7 @@ export const mergeGroup = mutation({
 export const listByAssetId = query({
   args: { assetId: v.string(), orgId: v.string() },
   handler: async (ctx, { assetId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     return (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).collect())
       .filter((r) => r.organizationId === orgId);
   },
@@ -975,7 +975,7 @@ export const listByAssetId = query({
 export const listByModelId = query({
   args: { modelId: v.string(), orgId: v.string() },
   handler: async (ctx, { modelId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     return (await ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect())
       .filter((r) => r.organizationId === orgId);
   },
@@ -990,7 +990,7 @@ export const listByModelId = query({
 export const listByModelIds = query({
   args: { modelIds: v.array(v.string()), orgId: v.string() },
   handler: async (ctx, { modelIds, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     const unique = [...new Set(modelIds)];
     if (unique.length > 1000) throw new ConvexError("projectLineItems.listByModelIds: too many modelIds (max 1000)");
     const groups = await Promise.all(
@@ -1004,16 +1004,26 @@ export const listByModelIds = query({
 export const listByKitId = query({
   args: { kitId: v.string(), orgId: v.string() },
   handler: async (ctx, { kitId, orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "project");
     return (await ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).collect())
       .filter((r) => r.organizationId === orgId);
   },
 });
 
-/** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
- *  Reassigns which asset backs a line item, but only onto a free, compatible,
- *  non-retired asset (the double-booking OCC guard above) and is trivially
- *  reversible (swap back) — medium rather than the stock-affecting-default high. */
+// ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
+  // Phase 4 (#1000) — swaps which physical asset backs a line item. Stock-
+  // affecting but the double-booking OCC guard only allows swapping onto a
+  // free, compatible, non-retired asset, and it's trivially reversible.
   swapLineItemAsset: { danger: "medium" },
+  list: { summary: "List all project line items for an org.", danger: "low", mcpTier: 2 },
+  listFlagged: { summary: "List flagged (faulty/overdue tag) line items for an org, oldest first.", danger: "low", mcpTier: 3 },
+  getById: { summary: "Get one project line item by id.", danger: "low", mcpTier: 1 },
+  listByProject: { summary: "List line items belonging to one project.", danger: "low", mcpTier: 1 },
+  listByIds: { summary: "Batch point-read line items by id, scoped to one org.", danger: "low", mcpTier: 2 },
+  listByProjectIds: { summary: "Batch line-item lookup across a fixed set of projects in one call.", danger: "low", mcpTier: 3 },
+  listByAssetId: { summary: "List line items referencing one asset (delete-guard lookup).", danger: "low", mcpTier: 3 },
+  listByModelId: { summary: "List line items referencing one model.", danger: "low", mcpTier: 2 },
+  listByModelIds: { summary: "Batch line-item lookup across many models in one call.", danger: "low", mcpTier: 3 },
+  listByKitId: { summary: "List line items referencing one kit (delete-guard lookup).", danger: "low", mcpTier: 3 },
 };

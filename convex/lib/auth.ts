@@ -444,11 +444,6 @@ export async function requireOrgPermission(
  * own authorization. A user token re-queries the member row (NOT the JWT's `role`
  * claim, which can be stale after a demotion) — same lookup `requireOrgPermission`
  * uses, so the two can never disagree.
- *
- * Deliberately does NOT consider the `noFinancials` key flag — that's an
- * orthogonal, AGENT-ONLY override (see {@link isNoFinancialsAgent}): "the key
- * acts as a human" still holds for RBAC standing, `noFinancials` just forces a
- * redaction on top regardless of what standing comes back.
  */
 export async function isCallerManagerPlus(
   ctx: QueryCtx | MutationCtx,
@@ -456,6 +451,10 @@ export async function isCallerManagerPlus(
 ): Promise<boolean> {
   const auth = await getAuthContext(ctx);
   if (auth?.kind === "service") return true;
+  // An agent inherits the acting user's standing — "the key acts as a human".
+  // Field-level suppression for keys flagged `noFinancials` is a SEPARATE,
+  // stronger check — see `isAgentNoFinancials` below — because it must force
+  // redaction regardless of the acting user's role, not just gate on it.
   if (!isMemberAuth(auth) || auth.orgId !== orgId) return false;
   const row = await ctx.db
     .query("members")
@@ -465,20 +464,28 @@ export async function isCallerManagerPlus(
 }
 
 /**
- * Phase 4 (#1000, decision 6): does the CURRENT caller's API key have
- * `noFinancials` set? Always `false` for non-agent callers (service/user tokens
- * have no key to check). Re-reads the key row every call — same "the key doc is
- * in the transaction's read set" freshness `requireAgentScope` relies on, so
- * toggling the flag off takes effect on the very next call.
+ * Decision 6 (docs/designs/api-mcp-reimplementation.md §14) — does the caller's
+ * API key carry `noFinancials: true`? When true, cost/margin fields must be
+ * force-redacted regardless of the acting user's own role (closes the gap
+ * where a read-only key acting as an owner still sees full margins).
  *
- * Callers combine this with their own manager+/role check: cost-and-margin
- * visibility stays gated on role as it is today, and `noFinancials` additionally
- * forces the redaction closed for THIS caller regardless of what the role check
- * returns — "the key acts as a human" for RBAC standing, but never for financial
- * field visibility once this flag is set.
+ * Re-reads the key document in-transaction (same pattern as
+ * `requireAgentScope`/`assertKeyStillValid`) rather than trusting a token
+ * claim, so flipping the flag off takes effect on the NEXT call. No-op
+ * (false) for service/user callers — this is an agent-key-only restriction,
+ * not a role gate.
+ *
+ * NOTE: as of Phase 6 (#1002) this is wired into ONE call site
+ * (`projectCosts.operationalCosts`, backing the `get_project_financials`
+ * curated MCP tool — the documented agent-facing financial read). Extending
+ * it across every financial field family (quotes, invoices, line-item costs)
+ * is Phase 4 (#1000) scope, tracked there — don't assume this covers reads
+ * it hasn't been added to.
  */
-export async function isNoFinancialsAgent(ctx: DbCtx): Promise<boolean> {
-  const auth = await getAuthContext(ctx);
+export async function isAgentNoFinancials(
+  ctx: QueryCtx | MutationCtx,
+  auth: ConvexAuthContext | null,
+): Promise<boolean> {
   if (auth?.kind !== "agent") return false;
   const key = await ctx.db
     .query("apiKeys")

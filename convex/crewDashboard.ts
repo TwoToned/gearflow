@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgRead } from "./lib/auth";
+import { requireOrgReadFor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Browser-direct crew-dashboard reads (Phase 3 — replace getCrewPickerList /
@@ -22,6 +23,15 @@ const iso = (ms: number | null | undefined) => (ms == null ? null : new Date(ms)
 const cmpAscNulls = (a: number | null | undefined, b: number | null | undefined) => (a == null && b == null ? 0 : a == null ? 1 : b == null ? -1 : a - b);
 const cmpDescNulls = (a: number | null | undefined, b: number | null | undefined) => (a == null && b == null ? 0 : a == null ? -1 : b == null ? 1 : b - a);
 const cmpStr = (a: string | null | undefined, b: string | null | undefined) => (a == null && b == null ? 0 : a == null ? 1 : b == null ? -1 : a.localeCompare(b));
+
+export const agentOps: AgentOpsAnnotations = {
+  pickerList: { summary: "Active crew members with their full assignment history, for a picker.", danger: "low", mcpTier: 2 },
+  stats: { summary: "Crew dashboard summary stats (active count, assignments, pending offers, hours this week).", danger: "low", mcpTier: 2 },
+  pendingTimeEntries: { summary: "Most recent SUBMITTED time entries awaiting approval.", danger: "low", mcpTier: 2 },
+  activeAssignmentsSummary: { summary: "Currently active/confirmed crew assignments.", danger: "low", mcpTier: 2 },
+  pendingOffers: { summary: "Pending/offered crew assignments awaiting response.", danger: "low", mcpTier: 2 },
+  upcomingShifts: { summary: "Upcoming scheduled crew shifts.", danger: "low", mcpTier: 2 },
+};
 
 /**
  * Assignments narrowed to one or more statuses via the `by_organizationId_status`
@@ -73,7 +83,7 @@ const isoAssignment = <A extends Record<string, unknown>>(a: A) => ({ ...a, star
 export const pickerList = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [g, assignments] = await Promise.all([crewLookups(ctx, orgId), allOrgAssignments(ctx, orgId)]);
     const active = g.members.filter((m) => (m.isActive ?? true) && (m.status ?? "ACTIVE") === "ACTIVE").sort((a, b) => cmpStr(a.firstName, b.firstName) || cmpStr(a.lastName, b.lastName));
     const byMember = new Map<string, typeof assignments>();
@@ -92,7 +102,7 @@ export const pickerList = query({
 export const stats = query({
   args: { orgId: v.string(), nowMs: v.number() },
   handler: async (ctx, { orgId, nowMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const weekAgo = nowMs - 7 * DAY;
     const [members, confirmedAssignments, pendingAssignments, submittedEntries, hoursEntries] = await Promise.all([
       ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: see docs/exceptions.md R-8.3.3 crewDashboard-lookups
@@ -114,7 +124,7 @@ export const stats = query({
 export const pendingTimeEntries = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const g = await crewLookups(ctx, orgId);
     // Read only SUBMITTED entries via the status index — the pending set — instead of
     // scanning the whole (unbounded, grows per shift) time-entry table (R-9.8).
@@ -145,7 +155,7 @@ export const pendingTimeEntries = query({
 export const activeAssignmentsSummary = query({
   args: { orgId: v.string(), nowMs: v.number() },
   handler: async (ctx, { orgId, nowMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [g, assignments] = await Promise.all([crewLookups(ctx, orgId), assignmentsByStatus(ctx, orgId, ACTIVE)]);
     return assignments
       .filter((a) => a.endDate == null || a.endDate >= nowMs)
@@ -163,7 +173,7 @@ export const activeAssignmentsSummary = query({
 export const pendingOffers = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [g, assignments] = await Promise.all([crewLookups(ctx, orgId), assignmentsByStatus(ctx, orgId, PENDING)]);
     return assignments
       .sort((a, b) => cmpDescNulls(a.createdAt, b.createdAt))
@@ -180,7 +190,7 @@ export const pendingOffers = query({
 export const upcomingShifts = query({
   args: { orgId: v.string(), nowMs: v.number() },
   handler: async (ctx, { orgId, nowMs }) => {
-    await requireOrgRead(ctx, orgId);
+    await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [g, assignments] = await Promise.all([crewLookups(ctx, orgId), allOrgAssignments(ctx, orgId)]);
     const startOfToday = new Date(nowMs).setHours(0, 0, 0, 0);
     const orgAssignmentIds = new Set(assignments.map((a) => a.id));

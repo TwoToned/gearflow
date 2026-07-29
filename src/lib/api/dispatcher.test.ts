@@ -62,9 +62,18 @@ describe("dispatch — closed by default", () => {
   });
 
   test("a real but non-agent-reachable operation is ALSO a 404 — it doesn't leak as 403", async () => {
-    // locations.list is still on requireOrgRead (unmigrated) — present in the
-    // registry, agentReachable: false.
-    const result = await dispatch("locations.list", { args: { orgId: "org_A" } }, auth(), "req_1");
+    // globalSearch.search is (as of the Phase 5 sweep, #1001) the one
+    // remaining read on the resource-less requireOrgRead guard — a
+    // deliberate denial (14-entity blend search has no single resource to
+    // scope against), not an oversight. `locations.list`, this test's
+    // previous target, was migrated to `requireOrgReadFor` in the same
+    // sweep. Present in the registry, agentReachable: false either way.
+    const result = await dispatch(
+      "globalSearch.search",
+      { args: { orgId: "org_A", query: "gig" } },
+      auth(),
+      "req_1",
+    );
     expect(result.status).toBe(404);
     expect((result.body as { error: { code: string } }).error.code).toBe("UNKNOWN_OPERATION");
   });

@@ -1,9 +1,10 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import { requireOrgRead, requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
  * Thin CRUD for CrewMember (Convex table "crewMembers"). GENERATED — Phase 2/5.
@@ -14,6 +15,12 @@ import * as enums from "./lib/validators";
  * accept the service token OR a user token scoped to the same org. Lookups use the
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
+
+export const agentOps: AgentOpsAnnotations = {
+  list: { summary: "List crew members for the org (icalToken redacted for non-service callers).", danger: "low", mcpTier: 1 },
+  listPage: { summary: "Paginated/searchable/sortable crew member list.", danger: "low", mcpTier: 1 },
+  getById: { summary: "Get a single crew member by id.", danger: "low", mcpTier: 1 },
+};
 
 export const list = query({
   args: { orgId: v.string() },
@@ -54,7 +61,7 @@ export const listPage = query({
     sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
   handler: async (ctx, a) => {
-    await requireOrgRead(ctx, a.orgId);
+    await requireOrgReadFor(ctx, a.orgId, "crew"); // Phase 2 read bootstrap (#998)
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
     // Allowlisted, not a passthrough: sort runs on the RAW doc (below, before

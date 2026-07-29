@@ -651,6 +651,138 @@ describe("quotesWrites.setQuoteProtectedNative", () => {
   });
 });
 
+describe("quotesWrites.deleteRecalledNative — recall-then-delete, the one full-erase path (#1029)", () => {
+  const recallThenDeleteSetup = async (t: ReturnType<typeof makeT>) => {
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_v1" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Client requested full removal", actor, auditId: "a2", now: NOW + 1,
+    });
+  };
+
+  const del = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.deleteRecalledNative, {
+      id: "q1", organizationId: ORG, confirmLabel: "RVLT-2026-0087 v1", actor, auditId: "a3", now: NOW + 2, ...over,
+    } as never);
+
+  test("an owner can permanently erase a recalled, previously-sent quote with the exact typed label", async () => {
+    const t = makeT();
+    await recallThenDeleteSetup(t);
+
+    const result = await del(t);
+    expect(result.deletedVersion).toBe(1);
+    expect(result.revision).toBe(1); // nothing else was ever sent — falls back to 1
+    expect(await getQuotes(t)).toHaveLength(0);
+    expect((await getProject(t))?.revision).toBe(1);
+  });
+
+  test("rejects a confirmLabel that doesn't match exactly — no silent 'close enough'", async () => {
+    const t = makeT();
+    await recallThenDeleteSetup(t);
+
+    await expect(del(t, { confirmLabel: "RVLT-2026-0087 V1" })).rejects.toThrow(/type.*exactly/i);
+    await expect(del(t, { confirmLabel: "RVLT-2026-0087 v1 " })).rejects.toThrow(/type.*exactly/i);
+    expect(await getQuotes(t)).toHaveLength(1); // untouched by the failed attempts
+  });
+
+  test("refuses a quote that hasn't been recalled yet (still SENT)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t);
+
+    await expect(del(t, { auditId: "a2", now: NOW + 1 })).rejects.toThrow(/is sent/i);
+    expect(await getQuotes(t)).toHaveLength(1);
+  });
+
+  test("refuses a never-sent draft — that's deleteDraftNative's job", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(
+      del(t, { confirmLabel: "RVLT-2026-0087 v1", auditId: "a2", now: NOW + 1 }),
+    ).rejects.toThrow(/never sent/i);
+  });
+
+  test("refuses while protected — an owner must unprotect first", async () => {
+    const t = makeT();
+    await recallThenDeleteSetup(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: true, actor, auditId: "a3", now: NOW + 2,
+    });
+
+    await expect(del(t, { auditId: "a4", now: NOW + 3 })).rejects.toThrow(/protected/i);
+    expect(await getQuotes(t)).toHaveLength(1);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q1", organizationId: ORG, protect: false, actor, auditId: "a5", now: NOW + 4,
+    });
+    await del(t, { auditId: "a6", now: NOW + 5 });
+    expect(await getQuotes(t)).toHaveLength(0);
+  });
+
+  test("an admin — passes isHardLockOverrideAllowed, but is NOT owner-only — is denied", async () => {
+    const t = makeT();
+    await seedMember(t, "admin");
+    await seedProject(t);
+    await send(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: ORG, reason: "Client requested full removal", actor, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(del(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/only an org owner/i);
+    expect(await getQuotes(t)).toHaveLength(1);
+  });
+
+  test("rolls back to the highest-ever-sent OTHER revision, not necessarily 1", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProject(t);
+    await send(t); // v1 sent
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.newVersionNative, {
+      id: "q2", organizationId: ORG, projectId: "p1", actor, auditId: "a2", now: NOW + 1,
+    });
+    await send(t, { id: "ignored", auditId: "a3", now: NOW + 2 }); // v2 sent, supersedes v1
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.recallNative, {
+      id: "q2", organizationId: ORG, reason: "Client requested full removal", actor, auditId: "a4", now: NOW + 3,
+    });
+
+    const result = await del(t, { id: "q2", confirmLabel: "RVLT-2026-0087 v2", auditId: "a5", now: NOW + 4 });
+    expect(result.revision).toBe(1); // v1 is the highest-ever-sent revision left
+    expect((await getProject(t))?.revision).toBe(1);
+    expect((await getQuotes(t)).find((q) => q.id === "q1")?.status).toBe("SENT"); // recall already restored it
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.sendNative, {
+      id: "q1", organizationId: OTHER, projectId: "p1", quoteDate: NOW,
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.quotesWrites.recallNative, {
+      id: "q1", organizationId: OTHER, reason: "Client requested full removal",
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a2", now: NOW + 1,
+    });
+
+    await expect(del(t, { auditId: "a3", now: NOW + 2 })).rejects.toThrow(/quote not found/i);
+  });
+});
+
 describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
   const accept = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
     t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.markAcceptedNative, {

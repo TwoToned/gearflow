@@ -191,12 +191,24 @@ revision. Design: `docs/designs/quote-version-management-extensions.md`.
   — stricter than Recall's audience; a resource/action permission check can't
   express "owner only" because `hasPermission` always passes owners regardless
   of the resource, so this is a direct role check). While `protected: true`,
-  Recall refuses (`QUOTE_PROTECTED`); Correction and recall-then-delete will
-  refuse the same way once built. New Version is unaffected — it never touches
-  the protected row. **Auto-set on Accept**: a client has committed to those
-  exact numbers, so `markAcceptedNative` protects the revision by default; an
-  owner can still explicitly unprotect if a genuine correction is later
-  needed.
+  Recall refuses (`QUOTE_PROTECTED`); Correction (not yet built) will refuse
+  the same way. New Version is unaffected — it never touches the protected
+  row. **Auto-set on Accept**: a client has committed to those exact numbers,
+  so `markAcceptedNative` protects the revision by default; an owner can still
+  explicitly unprotect if a genuine correction is later needed.
+- **`deleteRecalledNative`** (#1029) — the one deliberate reversal of "a sent
+  quote's document is never truly deleted" (reversal recorded, not silent, in
+  the design doc). A two-step flow BY DESIGN: only reachable once Recall has
+  already put the row in `DRAFT` with send history — there's no path that
+  skips it. **Owner-only**, **blocked while `protected: true`**, and requires
+  a server-validated typed confirmation (`confirmLabel` must match the
+  revision's label EXACTLY — R-8.6.4, mirrors the client dialog so a direct
+  mutation call can't skip the "type the version to confirm" step). Unlike
+  every other path in this file, it actually calls `ctx.storage.delete` on
+  `pdfFileId` and every entry in `recalledPdfFileIds` — a genuine, accepted-
+  risk erase, not an unlink. The audit log entry is written BEFORE the delete
+  and carries the erased artifact ids, since it is the only record left once
+  this returns.
 
 ### Acceptance gate on CONFIRMED
 

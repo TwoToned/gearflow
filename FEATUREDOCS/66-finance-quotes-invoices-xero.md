@@ -217,20 +217,17 @@ revision. Design: `docs/designs/quote-version-management-extensions.md`.
   attached artifact (pushed onto `recalledPdfFileIds`), so the next render is
   forced fresh. **Owner-only**, **blocked while `protected: true`** — same bar
   as recall-then-delete, since this too mutates a document a client may
-  already hold. Stamps `correctedAt`/`correctedById` for the eventual reissued
-  PDF's watermark to reference.
+  already hold.
 
-  **Not yet built by this mutation:** the actual PDF re-render (that's the
-  Node-side `generateQuoteArtifact` server action's job, unchanged — clearing
-  `pdfFileId` here is what lets its existing "already attached" guard get out
-  of the way) and the "REISSUED — corrects vN sent X, edited by Y on Z"
-  watermark, which needs a new `LayoutBlock` kind in the PDF pipeline
-  (`document-layouts.ts`/`document-composer.ts`, CLAUDE.md's standing 3-consumer
-  audit). The client dialog now exists (`correct-quote-dialog.tsx`) and calls
-  `correctQuoteNative` directly; it does not yet re-trigger
-  `generateQuoteArtifact` the way `send` does, since without the watermark a
-  reissued document would look identical to the original — wiring that call
-  in is gated on the watermark landing.
+  **Deliberately no reissue watermark.** `correctedAt`/`correctedById` are
+  recorded on the row and in the activity log alongside the old/new date
+  values, but the reissued PDF itself carries no visible marker distinguishing
+  it from the original — a corrected document reads exactly like any other
+  sent quote. `use-quote-writes.ts`'s `correct()` calls `generateQuoteArtifact`
+  immediately after the mutation, same `artifactReady`-never-throws shape as
+  `send` (a render failure doesn't undo the already-committed date fix; the
+  existing "Document missing — generate" retry affordance covers it, since
+  `pdfFileId` is genuinely null in that state).
 
 ### UI (`src/components/projects/project-quote-rail.tsx`)
 

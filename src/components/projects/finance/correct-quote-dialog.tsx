@@ -62,11 +62,18 @@ export function CorrectQuoteDialog({
   async function confirm() {
     setPending(true);
     try {
-      await quoteWrites.correct(quoteId, {
+      const result = await quoteWrites.correct(quoteId, {
         quoteDate: new Date(quoteDateStr),
         validityDays: validityDaysStr ? Number(validityDaysStr) : undefined,
       });
-      toast.success(`Corrected v${version}'s date — the document will re-render on next download`);
+      // The date fix is already saved even if the render below failed — never
+      // report failure for a write that actually succeeded (same shape as
+      // `send`'s artifactReady handling).
+      toast.success(
+        result.artifactReady
+          ? `Corrected v${version}'s date`
+          : `Corrected v${version}'s date — document generation failed, retry from the rail`,
+      );
       handleOpenChange(false);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to correct");

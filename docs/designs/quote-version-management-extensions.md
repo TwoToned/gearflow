@@ -96,18 +96,28 @@ un-protect if a genuine correction is later needed.
 
 ### 2.4 Correction — audited in-place date/PDF fix, no version bump
 
-New mutation `correctNative`, distinct from Recall and New Version:
+New mutation `correctQuoteNative`, distinct from Recall and New Version:
 
-- Edits `sentAt` / `quoteDate` / `validUntil` / `dueDate` on the **current** revision. Does
-  **not** touch price, snapshot, or line items — that's what New Version is for.
-- Re-renders the PDF. Per CLAUDE.md's stored-bytes rule, the **old PDF is kept, not
-  overwritten** — `quotes.pdfFileId` becomes an append-only list (or a small
-  `quotes.priorPdfFileIds: string[]`) rather than a single field. The new PDF is what
-  `/api/finance/quote/[quoteId]/pdf` serves by default, stamped **"REISSUED — corrects vN sent
-  \<original date\>, edited by \<user\> on \<correction date\>."** The prior PDF stays
-  reachable, badged "Superseded by correction."
+- Edits `quoteDate` / `validUntil` on the **current** revision. Does **not** touch price,
+  snapshot, or line items — that's what New Version is for. Also does **not** touch `sentAt` —
+  that stays the system's true record of when the send actually happened; only the date
+  PRINTED ON THE DOCUMENT is correctable.
+- **Revised 2026-07-29: no reissue watermark.** The original plan stamped the reissued PDF
+  "REISSUED — corrects vN sent \<original date\>, edited by \<user\> on \<correction date\>"
+  and kept the prior PDF separately reachable. Dropped — a corrected document now reads
+  identically to any other sent quote. The old artifact is still never overwritten in place
+  (`recalledPdfFileIds` holds it, same mechanism recall uses), but nothing links to it or
+  badges it as superseded; it's inert history, not a surfaced feature. This removes the need
+  for a new `LayoutBlock` kind in the PDF pipeline entirely — Correction is Convex + a
+  `generateQuoteArtifact` call, no `document-layouts.ts`/`document-composer.ts` changes.
+- Re-renders the PDF: `pdfFileId` is unlinked (moved to `recalledPdfFileIds`, same shape as
+  Recall) so `generateQuoteArtifact`'s existing "already attached" guard gets out of the way,
+  then the client calls it immediately after the mutation succeeds — same `artifactReady`
+  never-throws shape `send` already uses, so a render failure doesn't undo the already-committed
+  date fix.
 - Writes an audit entry: field, old value, new value, who, when — same shape as every other
-  audited write in the app.
+  audited write in the app. `correctedAt`/`correctedById` on the row exist for this audit trail
+  even though nothing renders them onto the PDF.
 - Blocked if `protected: true` (§2.3), or if the revision isn't `SENT`/`ACCEPTED` (a `DRAFT`
   just gets edited normally — no "correction" concept needed pre-send).
 - Permission: same floor as Recall (`isHardLockOverrideAllowed`) at minimum — arguably higher,
@@ -201,4 +211,6 @@ No changes to `projectSnapshots`/`projectSnapshotEntries`, `quotes.snapshot`, or
 | 2 | Delete never-sent drafts | Delete + revision rollback (§2.1) | — |
 | 3 | Recall-then-delete (full erase) | Owner-only, typed confirm, surviving audit log (§2.2) | #2's delete plumbing |
 | 4 | Protect (soft lock) | `protected` field, blocks Recall/Correction/Delete, auto-set on ACCEPTED (§2.3) | — |
-| 5 | Correction | `correctNative`, PDF reissue history, audit trail (§2.4) | #1 (pdfFileId clearing pattern), #4 (protected gate) |
+| 5 | Correction | `correctQuoteNative`, silent re-render (no watermark, §2.4), audit trail | #1 (pdfFileId clearing pattern), #4 (protected gate) |
+
+All five shipped, plus the row-level UI in `project-quote-rail.tsx` (2026-07-29).

@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const correct = vi.fn().mockResolvedValue({ id: "q1", version: 2, quoteDate: 0, validUntil: 0 });
+const correct = vi.fn().mockResolvedValue({ id: "q1", version: 2, quoteDate: 0, validUntil: 0, artifactReady: true });
 
 vi.mock("@/hooks/use-quote-writes", () => ({
   useQuoteWrites: vi.fn(() => ({ correct })),

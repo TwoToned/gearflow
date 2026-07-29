@@ -239,15 +239,25 @@ export function useQuoteWrites() {
      *  ACCEPTED revision. No version bump, no price change, `sentAt` (the
      *  system's true send record) is never touched. Owner-only, blocked while
      *  protected. Clears the attached artifact so the next document render is
-     *  forced fresh — call `generateQuoteArtifact` after this the same way
-     *  `send` does, once the reissue watermark exists to render onto it. */
+     *  forced fresh, then renders it immediately — same `artifactReady`
+     *  never-throws shape as `send`, so a render failure doesn't undo the
+     *  already-committed date fix. No visible marker distinguishes a
+     *  corrected document from an original one on the page itself; the
+     *  record of the correction lives in the activity log and
+     *  `correctedAt`/`correctedById`, not on the PDF. */
     correct: async (
       quoteId: string,
       data: QuoteCorrectValues,
-    ): Promise<{ id: string; version: number; quoteDate: number; validUntil: number }> => {
+    ): Promise<{
+      id: string;
+      version: number;
+      quoteDate: number;
+      validUntil: number;
+      artifactReady: boolean;
+    }> => {
       const org = requireOrg();
       const parsed = quoteCorrectSchema.parse(data);
-      return await correctM({
+      const result = await correctM({
         id: quoteId,
         organizationId: org,
         quoteDate: parsed.quoteDate.getTime(),
@@ -256,6 +266,14 @@ export function useQuoteWrites() {
         auditId: createId(),
         now: Date.now(),
       });
+
+      let artifactReady = true;
+      try {
+        await generateQuoteArtifact(result.id);
+      } catch {
+        artifactReady = false;
+      }
+      return { ...result, artifactReady };
     },
   };
 }

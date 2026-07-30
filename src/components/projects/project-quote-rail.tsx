@@ -27,11 +27,12 @@ import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { quoteStatusIntent } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
-import { useIsOwner } from "@/lib/use-permissions";
+import { useCanDo, useIsOwner } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
@@ -473,7 +474,7 @@ function QuoteRailTargetDialogs({
 /** Derived booleans shared by `QuoteRevisionRow` and its two action clusters —
  *  computed once so the split-out components read as pure props, not a second
  *  copy of the same status checks (R-3.1). */
-function quoteRowFlags(quote: QuoteRevisionDoc) {
+export function quoteRowFlags(quote: QuoteRevisionDoc) {
   const isSent = quote.effectiveStatus === "SENT";
   const isAccepted = quote.effectiveStatus === "ACCEPTED";
   // A sent-or-expired revision is the one the client is holding: it can be
@@ -489,72 +490,81 @@ function quoteRowFlags(quote: QuoteRevisionDoc) {
   return { isSent, isAccepted, isHeldByClient, isProtected, isRecalledDraft, isNeverSentDraft };
 }
 
-/** The `invoice:publish` cluster — accept/decline/recall/delete-draft. Same
- *  audience every other verb in this file already used before #1026. */
-function StandardQuoteActions({
+/**
+ * Every state-transition action for a revision, collapsed into ONE overflow
+ * menu (#1038) instead of a wall of pill buttons that wrapped across 2-3
+ * lines on mobile with a sent-and-unprotected row (Mark accepted / Declined /
+ * Recall could join Correct date / Protect, all as separate buttons). Same
+ * two audiences as before — `invoice:publish` (`useCanDo`, mirrors `<CanDo>`)
+ * for the standard cluster, owner-only (`useIsOwner`) for protect/correct/
+ * delete-permanently — just read as booleans up front so both clusters can
+ * merge into one action list instead of two side-by-side button groups.
+ * `requireQuoteOwnerOnly`/the `invoice:publish` permission check are still the
+ * real server-side gates; this is UX only.
+ */
+/** The `invoice:publish` cluster's actions — accept/decline/recall/delete-draft. */
+export function standardQuoteRowActions(
+  flags: ReturnType<typeof quoteRowFlags>,
+  handlers: { onAccept: () => void; onUnaccept: () => void; onDecline: () => void; onRecall: () => void; onDeleteDraft: () => void },
+): RowAction[] {
+  const { isSent, isAccepted, isHeldByClient, isProtected, isNeverSentDraft } = flags;
+  const actions: RowAction[] = [];
+  if (isSent) actions.push({ key: "accept", label: "Mark accepted", icon: CheckCircle2, onClick: handlers.onAccept });
+  if (isAccepted) actions.push({ key: "unaccept", label: "Unapprove", icon: RotateCcw, onClick: handlers.onUnaccept });
+  if (isHeldByClient) actions.push({ key: "decline", label: "Declined", icon: XCircle, onClick: handlers.onDecline });
+  if (isHeldByClient && !isProtected) actions.push({ key: "recall", label: "Recall", icon: Undo2, onClick: handlers.onRecall });
+  if (isNeverSentDraft) actions.push({ key: "delete-draft", label: "Delete draft", icon: Trash2, onClick: handlers.onDeleteDraft, destructive: true });
+  return actions;
+}
+
+/** The owner-only cluster's actions (#1026 follow-up program) —
+ *  protect/unprotect, correct-date, recall-then-delete. */
+export function ownerOnlyQuoteRowActions(
+  flags: ReturnType<typeof quoteRowFlags>,
+  handlers: { onCorrect: () => void; onDeleteRecalled: () => void; onToggleProtect: () => void; protectPending: boolean },
+): RowAction[] {
+  const { isSent, isAccepted, isProtected, isRecalledDraft } = flags;
+  const actions: RowAction[] = [];
+  if ((isSent || isAccepted) && !isProtected) {
+    actions.push({ key: "correct", label: "Correct date", icon: Pencil, onClick: handlers.onCorrect });
+  }
+  if (isSent || isAccepted) {
+    actions.push({
+      key: "protect",
+      label: isProtected ? "Unprotect" : "Protect",
+      icon: isProtected ? Unlock : Lock,
+      onClick: handlers.onToggleProtect,
+      loading: handlers.protectPending,
+    });
+  }
+  if (isRecalledDraft && !isProtected) {
+    actions.push({ key: "delete-recalled", label: "Delete permanently", icon: Trash2, onClick: handlers.onDeleteRecalled, destructive: true });
+  }
+  return actions;
+}
+
+function QuoteRowActions({
+  quote,
   flags,
   onAccept,
   onUnaccept,
   onDecline,
   onRecall,
   onDeleteDraft,
+  onDeleteRecalled,
+  onCorrect,
 }: {
+  quote: QuoteRevisionDoc;
   flags: ReturnType<typeof quoteRowFlags>;
   onAccept: () => void;
   onUnaccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
   onDeleteDraft: () => void;
-}) {
-  const { isSent, isAccepted, isHeldByClient, isProtected, isNeverSentDraft } = flags;
-  return (
-    <CanDo resource="invoice" action="publish">
-      <div className="flex items-center gap-1.5">
-        {isSent && (
-          <Button type="button" variant="line" size="sm" onClick={onAccept}>
-            <CheckCircle2 className="h-3.5 w-3.5" /> Mark accepted
-          </Button>
-        )}
-        {isAccepted && (
-          <Button type="button" variant="line" size="sm" onClick={onUnaccept}>
-            <RotateCcw className="h-3.5 w-3.5" /> Unapprove
-          </Button>
-        )}
-        {isHeldByClient && (
-          <Button type="button" variant="line" size="sm" onClick={onDecline}>
-            <XCircle className="h-3.5 w-3.5" /> Declined
-          </Button>
-        )}
-        {isHeldByClient && !isProtected && (
-          <Button type="button" variant="line" size="sm" onClick={onRecall}>
-            <Undo2 className="h-3.5 w-3.5" /> Recall
-          </Button>
-        )}
-        {isNeverSentDraft && (
-          <Button type="button" variant="line" size="sm" onClick={onDeleteDraft}>
-            <Trash2 className="h-3.5 w-3.5" /> Delete draft
-          </Button>
-        )}
-      </div>
-    </CanDo>
-  );
-}
-
-/** The owner-only cluster (#1026 follow-up program) — protect/unprotect,
- *  correct-date, recall-then-delete. `requireQuoteOwnerOnly` server-side is
- *  the real gate; `useIsOwner` here is UX only (hide, don't just disable, so
- *  a non-owner isn't shown a button that will only ever 403). */
-function OwnerOnlyQuoteActions({
-  quote,
-  flags,
-  onDeleteRecalled,
-  onCorrect,
-}: {
-  quote: QuoteRevisionDoc;
-  flags: ReturnType<typeof quoteRowFlags>;
   onDeleteRecalled: () => void;
   onCorrect: () => void;
 }) {
+  const canPublish = useCanDo("invoice", "publish");
   const isOwner = useIsOwner();
   const quoteWrites = useQuoteWrites();
   const protectMutation = useServerMutation({
@@ -562,37 +572,20 @@ function OwnerOnlyQuoteActions({
     onSuccess: (r) => toast.success(r.protected ? `Protected v${quote.version}` : `Unprotected v${quote.version}`),
     onError: (e) => toast.error(e.message),
   });
-  if (!isOwner) return null;
 
-  const { isSent, isAccepted, isProtected, isRecalledDraft } = flags;
-  return (
-    <>
-      {(isSent || isAccepted) && (
-        <div className="flex items-center gap-1.5">
-          {!isProtected && (
-            <Button type="button" variant="line" size="sm" onClick={onCorrect}>
-              <Pencil className="h-3.5 w-3.5" /> Correct date
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="line"
-            size="sm"
-            loading={protectMutation.isPending}
-            onClick={() => protectMutation.mutate(!isProtected)}
-          >
-            {isProtected ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-            {isProtected ? "Unprotect" : "Protect"}
-          </Button>
-        </div>
-      )}
-      {isRecalledDraft && !isProtected && (
-        <Button type="button" variant="line" size="sm" onClick={onDeleteRecalled}>
-          <Trash2 className="h-3.5 w-3.5" /> Delete permanently
-        </Button>
-      )}
-    </>
-  );
+  const actions: RowAction[] = [
+    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onUnaccept, onDecline, onRecall, onDeleteDraft }) : []),
+    ...(isOwner
+      ? ownerOnlyQuoteRowActions(flags, {
+          onCorrect,
+          onDeleteRecalled,
+          onToggleProtect: () => protectMutation.mutate(!flags.isProtected),
+          protectPending: protectMutation.isPending,
+        })
+      : []),
+  ];
+
+  return <RowActionsMenu actions={actions} label={`v${quote.version} actions`} />;
 }
 
 function QuoteRevisionRow({
@@ -623,21 +616,23 @@ function QuoteRevisionRow({
   const flags = quoteRowFlags(quote);
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
-      <button type="button" className="flex min-w-0 items-center gap-2 text-left" onClick={onView}>
+    <li className="flex items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
+      <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onView}>
         <RevisionMeta quote={quote} now={now} />
       </button>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         <QuoteDocumentAction quote={quote} projectId={projectId} />
-        <StandardQuoteActions
+        <QuoteRowActions
+          quote={quote}
           flags={flags}
           onAccept={onAccept}
           onUnaccept={onUnaccept}
           onDecline={onDecline}
           onRecall={onRecall}
           onDeleteDraft={onDeleteDraft}
+          onDeleteRecalled={onDeleteRecalled}
+          onCorrect={onCorrect}
         />
-        <OwnerOnlyQuoteActions quote={quote} flags={flags} onDeleteRecalled={onDeleteRecalled} onCorrect={onCorrect} />
       </div>
     </li>
   );

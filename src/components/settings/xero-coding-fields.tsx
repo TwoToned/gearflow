@@ -26,6 +26,22 @@ interface XeroAccountOption {
 interface XeroTaxRateOption {
   Name: string;
   TaxType: string;
+  CanApplyToRevenue?: boolean;
+}
+
+/**
+ * Every Xero tax rate this integration could ever legally send, given it
+ * only ever creates ACCREC (sales) invoices — an expenses-only rate (e.g.
+ * "GST on Expenses" / INPUT2) is always rejected by Xero on push
+ * ("The TaxType code '...' cannot be used with account code '...'"),
+ * regardless of which account it's paired with. `CanApplyToRevenue` is only
+ * absent for a cache written before this field was added (src/lib/
+ * xero-client.ts) — treat that as "unknown, don't hide it" rather than
+ * silently dropping a still-valid option until the next Settings -> Xero
+ * "Refresh". Exported so its unit test doesn't need to render the picker.
+ */
+export function revenueApplicableTaxRates<T extends { CanApplyToRevenue?: boolean }>(taxRates: T[]): T[] {
+  return taxRates.filter((t) => t.CanApplyToRevenue !== false);
 }
 
 /** Exported so Settings -> Xero's org-default pickers share this exact
@@ -52,7 +68,7 @@ export function useXeroCodingOptions() {
       label: a.Name,
       description: a.Code,
     }));
-  const taxRateOptions = taxRates
+  const taxRateOptions = revenueApplicableTaxRates(taxRates)
     .filter((t) => !!t.TaxType)
     .map((t) => ({
       value: t.TaxType,

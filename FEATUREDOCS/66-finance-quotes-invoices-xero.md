@@ -648,18 +648,32 @@ through this engine.
 
 ## Lifecycle locks
 
-Quote send/new-version and invoice create/issue/void go through the shared
+Quote send/new-version go through the shared
 `assertLifecycleGuard(ctx, project, { kind: "financial" })` (FEATUREDOCS/62)
 — same FINANCE_LOCKED+ gate every other money-touching mutation uses. Phase C
 (#988) folds quote state into the tier resolution itself (`resolveLockTier`),
 so a sent revision raises the tier and "cut the next revision" becomes the
-sanctioned exit; the gate sites don't change. No new project status was added
-for "ready to invoice" — readiness is derived
-(the payment-profile-driven "deposit not yet invoiced" nudge chips on the
-project's Finance tab), and issuing a BALANCE/FULL invoice offers a UI-chain
-prompt to advance the project to `INVOICED` (the EXISTING project status
-update mutation — not a new nested mutation). Editing a project with an
-issued, non-void invoice warns + requires confirmation; it never blocks.
+sanctioned exit; the gate sites don't change.
+
+**Invoice `createNative`/`issueNative`/`voidNative`/`createCreditNative` do
+NOT call `assertLifecycleGuard`.** They used to (create/issue did, until a
+live bug: accepting a quote and confirming the project — the normal path to
+raising an invoice — puts the project at FINANCE_LOCKED, and the guard's
+"financial" kind requires an open unlock session, so every first invoice on a
+CONFIRMED+ project failed with `FINANCIALS_LOCKED`). The guard exists to gate
+edits to `LOCKED_PROJECT_FIELDS`/`LOCKED_GROUP_FIELDS`/`LOCKED_LINE_ITEM_FIELDS`
+(`unitPrice`, `discount`, `taxRate`, group `price`, …) — invoice mutations
+never touch those; they only snapshot already-computed totals
+(`buildFinanceLines`) into the separate `invoices`/`invoiceLines` tables, which
+is exactly what raising an invoice on a locked, confirmed project is supposed
+to do. `voidNative`/`createCreditNative` never had the guard; `createNative`/
+`issueNative` now match them. No new project status was added for "ready to
+invoice" — readiness is derived (the payment-profile-driven "deposit not yet
+invoiced" nudge chips on the project's Finance tab), and issuing a BALANCE/FULL
+invoice offers a UI-chain prompt to advance the project to `INVOICED` (the
+EXISTING project status update mutation — not a new nested mutation). Editing
+a project with an issued, non-void invoice warns + requires confirmation; it
+never blocks.
 
 ## Permissions
 
@@ -953,9 +967,11 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 - `src/server/xero.test.ts` — 4 mocked-boundary tests on `pushInvoiceToXero`
   (auto-create-contact idempotency, the failure path).
 - `convex/lib/xeroGate.test.ts` — 4 tests, the linked gate + org-scoping.
-- `convex/quotesWrites.test.ts` / `convex/invoicesWrites.test.ts` — 40 tests,
+- `convex/quotesWrites.test.ts` / `convex/invoicesWrites.test.ts` — 42 tests,
   server-computed money, gapless/namespaced numbering, cross-org IDOR guards,
-  RBAC, lifecycle-lock gating. #986 added the four revision invariants,
+  RBAC, lifecycle-lock gating (including createNative/issueNative on a
+  CONFIRMED, finance-locked project raising no unlock-session requirement).
+  #986 added the four revision invariants,
   supersede-on-send-not-on-draft, the recall round trip (including restoring
   the superseded predecessor), derived-`EXPIRED` blocking acceptance, and the
   manager-can-send-but-not-recall / PM-can-recall RBAC split.

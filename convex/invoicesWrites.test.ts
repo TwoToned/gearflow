@@ -122,6 +122,27 @@ describe("invoicesWrites.createNative", () => {
     expect(inv?.total).toBe(825); // 1100 - 275 (the voided 110 does NOT count)
   });
 
+  // Regression: accepting a quote and confirming the project (the normal path
+  // to raising an invoice) puts the project at FINANCE_LOCKED tier. createNative
+  // must NOT route through assertLifecycleGuard's "financial" kind — that guard
+  // is for edits to LOCKED_*_FIELDS (unitPrice/discount/taxRate/group price),
+  // which this mutation never touches (it only snapshots current pricing into
+  // a separate invoices/invoiceLines row). Before the fix this threw
+  // FINANCIALS_LOCKED on every CONFIRMED+ project with no unlock session open.
+  test("creates a DRAFT invoice on a CONFIRMED (finance-locked) project with no unlock session open", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t, ORG, "CONFIRMED");
+
+    const { id } = await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+
+    const inv = await getInvoice(t, id);
+    expect(inv?.status).toBe("DRAFT");
+    expect(inv?.total).toBe(1100);
+  });
+
   test("rejects a cross-org projectId (IDOR guard)", async () => {
     const t = makeT();
     await seedMember(t);
@@ -154,6 +175,22 @@ describe("invoicesWrites.createNative", () => {
 });
 
 describe("invoicesWrites.issueNative", () => {
+  // Regression: same FINANCIALS_LOCKED misuse as createNative — issuing a
+  // DRAFT invoice on a CONFIRMED project must not require an unlock session.
+  test("issues a DRAFT invoice on a CONFIRMED (finance-locked) project with no unlock session open", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t, ORG, "CONFIRMED");
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+
+    const result = await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW,
+    });
+    expect(result.invoiceNumber).toBe("INV-2023-0001");
+  });
+
   test("assigns a gapless invoice number and never re-numbers on a second issue", async () => {
     const t = makeT();
     await seedMember(t);

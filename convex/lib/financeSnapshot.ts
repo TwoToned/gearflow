@@ -9,6 +9,43 @@ export interface FinanceSnapshotLine {
   lineTotal: number;
 }
 
+type ProjectLine = { kitId?: string; isKitChild?: boolean; modelId?: string };
+
+/**
+ * Equipment/kit lines are usually added by picking a model/kit, not by
+ * typing a description — `structure-line-items.ts` (the PDF pipeline)
+ * already knows this and resolves `model?.name ?? description` per line.
+ * `buildFinanceLines` used to check ONLY `description`/`groupName`, so any
+ * model-linked line with no hand-typed description (the common case) fell
+ * straight through to the literal string "Line item" — that's what a
+ * pushed Xero invoice showed instead of e.g. "USB Pro DI". Batch-fetch once
+ * per unique id (deduped, org-checked — `by_cuid` is a GLOBAL index,
+ * R-8.4.3) rather than per-line, since a project reuses the same handful of
+ * models/kits across many lines. Split out purely to keep
+ * `buildFinanceLines`'s own complexity manageable (R-3.6), same rationale
+ * as `xeroPush.ts`'s per-source-type resolvers.
+ */
+async function resolveModelAndKitNames(
+  ctx: MutationCtx,
+  projectLines: ProjectLine[],
+  orgId: string,
+): Promise<{ modelNameById: Map<string, string>; kitNameById: Map<string, string> }> {
+  const modelIds = new Set<string>();
+  const kitIds = new Set<string>();
+  for (const li of projectLines) {
+    if (li.kitId && !li.isKitChild) kitIds.add(li.kitId);
+    else if (li.modelId) modelIds.add(li.modelId);
+  }
+  const [modelDocs, kitDocs] = await Promise.all([
+    Promise.all([...modelIds].map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).first())),
+    Promise.all([...kitIds].map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first())),
+  ]);
+  return {
+    modelNameById: new Map(modelDocs.filter((m) => m && m.organizationId === orgId).map((m) => [m!.id, m!.name])),
+    kitNameById: new Map(kitDocs.filter((k) => k && k.organizationId === orgId).map((k) => [k!.id, k!.name])),
+  };
+}
+
 /**
  * Build the client-facing line breakdown for a project's CURRENT pricing —
  * the single shared builder behind both `Quote.snapshot` (publish) and
@@ -26,12 +63,15 @@ export interface FinanceSnapshotLine {
 export async function buildFinanceLines(
   ctx: MutationCtx,
   projectId: string,
+  orgId: string,
 ): Promise<FinanceSnapshotLine[]> {
   const [groups, projectLines, services] = await Promise.all([
     ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
   ]);
+
+  const { modelNameById, kitNameById } = await resolveModelAndKitNames(ctx, projectLines, orgId);
 
   const lines: FinanceSnapshotLine[] = [];
 
@@ -65,10 +105,11 @@ export async function buildFinanceLines(
       continue;
     }
     const qty = li.quantity ?? 1;
+    const modelOrKitName = li.kitId && !li.isKitChild ? kitNameById.get(li.kitId) : li.modelId ? modelNameById.get(li.modelId) : undefined;
     lines.push({
       sourceType: "EQUIPMENT",
       sourceLineItemId: li.id,
-      description: li.description || li.groupName || "Line item",
+      description: li.description || modelOrKitName || li.groupName || "Line item",
       quantity: qty,
       unitPrice: Number(li.unitPrice) || 0,
       lineTotal: Number(li.lineTotal) || 0,

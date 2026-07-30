@@ -59108,10 +59108,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "success",
         "optional": false,
         "type": "boolean"
+      },
+      {
+        "name": "updated",
+        "optional": true,
+        "type": "boolean"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "5c417b55ccbecaa2",
+    "argsSha": "2c995bee0ac5331f",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

@@ -673,6 +673,36 @@ other fields:
 | `/api/documents/timeline/[projectId]` | GET | Generate project timeline PDF |
 | `/api/test-tag-reports/[reportType]` | GET | Generate T&T report. Params: `format` (pdf/csv), filters (dateFrom, dateTo, status, equipmentClass, etc.) |
 
+### Agent-facing document access (`GET /api/v1/documents/{projectId}` + MCP `get_project_document`)
+
+An API key / MCP caller gets the same 5 project documents a session user does,
+through a bearer-authenticated counterpart to the two route families above —
+`src/lib/api/documents.ts`'s `resolveProjectDocument(actor, projectId, docType)`,
+shared by the REST route and the MCP tool. It is deliberately **not** a Convex
+registry operation: `build-document-data.ts` reads Prisma AND Convex, so it can
+only ever run as Node code the dispatcher can't reach (see the file's own doc
+comment, and the "why not dispatch()" note in `src/lib/api/mcp/build-server.ts`).
+Auth still goes through the same `requirePermission` scope∩RBAC check every
+other write/read on this surface uses — just called directly (Node-side)
+instead of inside a Convex guard.
+
+| `docType` | Behaviour | Permission |
+|---|---|---|
+| `packing-list` (pick slip / pull slip), `return-sheet`, `delivery-docket` | Always live-rendered from TODAY's state, same as the session route. | `project:read` |
+| `quote` | The stored artifact if one is SENT; otherwise a watermarked DRAFT PREVIEW live render (never stored). | `invoice:read` |
+| `invoice` | The stored artifact for the most recently ISSUED invoice; `NOT_FOUND` if none has been issued yet (no draft form). | `invoice:read` |
+
+Both `project:read` and `invoice:read` are in the `read_only_agent` preset
+(`src/lib/api-key-presets.ts`), so this works out of the box for a plain
+read-only key — no `full_agent`/write scopes needed just to view paperwork.
+
+The MCP tool returns the PDF inline as a base64 `resource` content block
+(`EmbeddedResource`/`BlobResourceContents`, mimeType `application/pdf`) plus a
+small JSON summary — the one curated tool other than `whoami` that doesn't
+go through `dispatch()`, and the only one that returns binary content rather
+than JSON. The REST route streams the bytes directly
+(`Content-Type: application/pdf`). See [56-api-mcp.md](./56-api-mcp.md).
+
 ## Line item structuring
 
 `structureLineItems(rawItems, categories, options, subHireGroups)` is the

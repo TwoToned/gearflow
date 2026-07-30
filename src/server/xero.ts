@@ -262,11 +262,9 @@ export async function unlinkXeroContact(clientId: string) {
 
 // ─── Push ────────────────────────────────────────────────────────────────
 
-export interface XeroPushResult {
-  xeroInvoiceId: string;
-  varianceNote: string | null;
-  autoCreatedContact: boolean;
-}
+export type XeroPushResult =
+  | { ok: true; xeroInvoiceId: string; varianceNote: string | null; autoCreatedContact: boolean }
+  | { ok: false; error: string };
 
 /**
  * Push an ISSUED invoice to Xero as a DRAFT (ACCREC) invoice. Ensures the
@@ -274,92 +272,105 @@ export interface XeroPushResult {
  * exact-email match against Xero's contacts LINKS instead of creating (spec
  * requirement). Coding is resolved server-side (convex/xeroPush.ts,
  * convex/lib/xeroAccountCascade.ts) and snapshotted onto invoiceLines.
+ *
+ * NEVER throws — always resolves to `{ ok, ... }`. Next.js redacts every
+ * uncaught error thrown out of a Server Action in production to a generic
+ * "error occurred in the Server Components render" message with a digest,
+ * hiding the actual reason (not connected, not configured, invoice not
+ * ISSUED, a real Xero API failure, …) from the user. Returning a
+ * discriminated result is the only way a Server Action's failure message
+ * survives to the client in production.
  */
 export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResult> {
-  const { organizationId, userId, userName } = await requirePermission("invoice", "xero_push");
-  const convex = await getConvexClient();
-
-  const invoice = await convex.query(api.invoices.getById, { id: invoiceId });
-  if (!invoice || invoice.organizationId !== organizationId) throw new Error("Invoice not found.");
-  if (invoice.status !== "ISSUED") throw new Error("Only an ISSUED invoice can be pushed to Xero.");
-  if (!invoice.invoiceNumber) throw new Error("Invoice has no number — this should not happen for an ISSUED invoice.");
-
-  const integration = await requireLinkedIntegration(convex, organizationId);
-  const project = await convex.query(api.projects.getById, { id: invoice.projectId });
-  const client = await convex.query(api.clients.getById, { id: invoice.clientId });
-  if (!client) throw new Error("Client not found.");
-
-  let autoCreatedContact = false;
-  let xeroContactId = client.xeroContactId as string | undefined;
-  const { accessToken } = await getFreshAccessToken(integration.refreshTokenEncrypted!, integration.id, convex);
-  const tenantId = integration.tenantId!;
-
-  if (!xeroContactId) {
-    // Duplicate protection: exact-email match links instead of creating.
-    const email = client.contactEmail || undefined;
-    const existingContact = email ? await findXeroContactByEmail(email, { accessToken, tenantId }) : null;
-    const contact =
-      existingContact ??
-      (await createXeroContact(
-        { name: client.name, email, addressLine1: client.billingAddress || undefined },
-        { accessToken, tenantId },
-      ));
-    xeroContactId = contact.ContactID;
-    autoCreatedContact = existingContact == null;
-    await convex.mutation(api.clientXeroWrites.setXeroContactNative, {
-      clientId: client.id, orgId: organizationId, xeroContactId: contact.ContactID, xeroContactName: contact.Name,
-      actorUserId: userId, actorUserName: userName, auditId: createId(), now: Date.now(),
-    });
-  }
-
-  const lines = await convex.query(api.invoiceLines.listForInvoice, { orgId: organizationId, invoiceId });
-  const coding = await convex.query(api.xeroPush.resolveCodingForInvoice, { invoiceId, orgId: organizationId });
-  const codingByLineId = new Map(coding.lines.map((l) => [l.lineId, l]));
-
-  const lineItems: XeroInvoiceLineInput[] = lines.map((l) => {
-    const resolved = codingByLineId.get(l.id);
-    return {
-      description: l.description,
-      quantity: l.quantity,
-      unitAmount: l.unitPrice,
-      accountCode: resolved?.accountCode ?? null,
-      taxType: resolved?.taxType ?? null,
-    };
-  });
-
-  const invoiceLabel = `${invoice.kind} invoice ${invoice.invoiceNumber}`;
   try {
-    const created = await createXeroDraftInvoice(
-      {
-        contactId: xeroContactId,
-        invoiceNumber: invoice.invoiceNumber,
-        reference: project ? `Project ${project.projectNumber} — ${project.name}` : undefined,
-        date: toDateOnly(invoice.issuedAt ?? Date.now()),
-        dueDate: invoice.dueDate ? toDateOnly(invoice.dueDate) : undefined,
-        lineItems,
-      },
-      { accessToken, tenantId },
-    );
+    const { organizationId, userId, userName } = await requirePermission("invoice", "xero_push");
+    const convex = await getConvexClient();
 
-    await convex.mutation(api.xeroPush.applyXeroPushResultNative, {
-      invoiceId, orgId: organizationId, xeroInvoiceId: created.InvoiceID, resolvedLines: coding.lines, now: Date.now(),
-    });
-    await logSyncEvent(organizationId, "PUSH_INVOICE", "SUCCESS", { xeroInvoiceId: created.InvoiceID }, invoiceId, created.InvoiceID, client.id);
-    await convex.mutation(api.xeroPush.logXeroPushActivity, {
-      organizationId, invoiceId, invoiceLabel, success: true,
-      actorUserId: userId, actorUserName: userName, auditId: createId(), now: Date.now(),
+    const invoice = await convex.query(api.invoices.getById, { id: invoiceId });
+    if (!invoice || invoice.organizationId !== organizationId) throw new Error("Invoice not found.");
+    if (invoice.status !== "ISSUED") throw new Error("Only an ISSUED invoice can be pushed to Xero.");
+    if (!invoice.invoiceNumber) throw new Error("Invoice has no number — this should not happen for an ISSUED invoice.");
+
+    const integration = await requireLinkedIntegration(convex, organizationId);
+    const project = await convex.query(api.projects.getById, { id: invoice.projectId });
+    const client = await convex.query(api.clients.getById, { id: invoice.clientId });
+    if (!client) throw new Error("Client not found.");
+
+    let autoCreatedContact = false;
+    let xeroContactId = client.xeroContactId as string | undefined;
+    const { accessToken } = await getFreshAccessToken(integration.refreshTokenEncrypted!, integration.id, convex);
+    const tenantId = integration.tenantId!;
+
+    if (!xeroContactId) {
+      // Duplicate protection: exact-email match links instead of creating.
+      const email = client.contactEmail || undefined;
+      const existingContact = email ? await findXeroContactByEmail(email, { accessToken, tenantId }) : null;
+      const contact =
+        existingContact ??
+        (await createXeroContact(
+          { name: client.name, email, addressLine1: client.billingAddress || undefined },
+          { accessToken, tenantId },
+        ));
+      xeroContactId = contact.ContactID;
+      autoCreatedContact = existingContact == null;
+      await convex.mutation(api.clientXeroWrites.setXeroContactNative, {
+        clientId: client.id, orgId: organizationId, xeroContactId: contact.ContactID, xeroContactName: contact.Name,
+        actorUserId: userId, actorUserName: userName, auditId: createId(), now: Date.now(),
+      });
+    }
+
+    const lines = await convex.query(api.invoiceLines.listForInvoice, { orgId: organizationId, invoiceId });
+    const coding = await convex.query(api.xeroPush.resolveCodingForInvoice, { invoiceId, orgId: organizationId });
+    const codingByLineId = new Map(coding.lines.map((l) => [l.lineId, l]));
+
+    const lineItems: XeroInvoiceLineInput[] = lines.map((l) => {
+      const resolved = codingByLineId.get(l.id);
+      return {
+        description: l.description,
+        quantity: l.quantity,
+        unitAmount: l.unitPrice,
+        accountCode: resolved?.accountCode ?? null,
+        taxType: resolved?.taxType ?? null,
+      };
     });
 
-    return serialize<XeroPushResult>({ xeroInvoiceId: created.InvoiceID, varianceNote: coding.varianceNote, autoCreatedContact });
+    const invoiceLabel = `${invoice.kind} invoice ${invoice.invoiceNumber}`;
+    try {
+      const created = await createXeroDraftInvoice(
+        {
+          contactId: xeroContactId,
+          invoiceNumber: invoice.invoiceNumber,
+          reference: project ? `Project ${project.projectNumber} — ${project.name}` : undefined,
+          date: toDateOnly(invoice.issuedAt ?? Date.now()),
+          dueDate: invoice.dueDate ? toDateOnly(invoice.dueDate) : undefined,
+          lineItems,
+        },
+        { accessToken, tenantId },
+      );
+
+      await convex.mutation(api.xeroPush.applyXeroPushResultNative, {
+        invoiceId, orgId: organizationId, xeroInvoiceId: created.InvoiceID, resolvedLines: coding.lines, now: Date.now(),
+      });
+      await logSyncEvent(organizationId, "PUSH_INVOICE", "SUCCESS", { xeroInvoiceId: created.InvoiceID }, invoiceId, created.InvoiceID, client.id);
+      await convex.mutation(api.xeroPush.logXeroPushActivity, {
+        organizationId, invoiceId, invoiceLabel, success: true,
+        actorUserId: userId, actorUserName: userName, auditId: createId(), now: Date.now(),
+      });
+
+      return serialize<XeroPushResult>({ ok: true, xeroInvoiceId: created.InvoiceID, varianceNote: coding.varianceNote, autoCreatedContact });
+    } catch (err) {
+      const message = err instanceof XeroApiError ? err.message : err instanceof Error ? err.message : "Unknown error";
+      await convex.mutation(api.xeroPush.markXeroPushFailedNative, { invoiceId, orgId: organizationId, error: message, now: Date.now() });
+      await logSyncEvent(organizationId, "PUSH_INVOICE", "FAILED", { error: message }, invoiceId, undefined, client.id);
+      await convex.mutation(api.xeroPush.logXeroPushActivity, {
+        organizationId, invoiceId, invoiceLabel, success: false, detail: message,
+        actorUserId: userId, actorUserName: userName, auditId: createId(), now: Date.now(),
+      });
+      throw new Error(`Xero push failed: ${message}`);
+    }
   } catch (err) {
-    const message = err instanceof XeroApiError ? err.message : err instanceof Error ? err.message : "Unknown error";
-    await convex.mutation(api.xeroPush.markXeroPushFailedNative, { invoiceId, orgId: organizationId, error: message, now: Date.now() });
-    await logSyncEvent(organizationId, "PUSH_INVOICE", "FAILED", { error: message }, invoiceId, undefined, client.id);
-    await convex.mutation(api.xeroPush.logXeroPushActivity, {
-      organizationId, invoiceId, invoiceLabel, success: false, detail: message,
-      actorUserId: userId, actorUserName: userName, auditId: createId(), now: Date.now(),
-    });
-    throw new Error(`Xero push failed: ${message}`);
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return serialize<XeroPushResult>({ ok: false, error: message });
   }
 }
 

@@ -413,9 +413,16 @@ function PushToXeroButton({ invoiceId }: { invoiceId: string }) {
   const pushMutation = useServerMutation({
     mutationFn: () => pushInvoiceToXero(invoiceId),
     onSuccess: (r) => {
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
       toast.success(r.autoCreatedContact ? "Pushed to Xero (new contact created)" : "Pushed to Xero");
       if (r.varianceNote) toast.warning(r.varianceNote);
     },
+    // pushInvoiceToXero never throws — it always resolves to { ok, ... } so its
+    // failure message survives Next's production Server Action redaction. This
+    // stays only as a last-resort net for a genuinely unexpected framework error.
     onError: (e) => toast.error(e.message),
   });
   return (

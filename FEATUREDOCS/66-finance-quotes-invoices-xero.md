@@ -864,6 +864,37 @@ direct visit to `/settings/xero` shows a "not configured" message instead of
 a "Connect Xero" button that would otherwise throw at click-time
 (`requireXeroAppCredentials()` in `src/server/xero.ts`).
 
+### `pushInvoiceToXero` never throws — it returns `{ ok, ... }`
+
+`src/server/xero.ts`'s `pushInvoiceToXero` is a real Next.js Server Action
+(`"use server"`), invoked from `PushToXeroButton`
+(`project-finance-panel.tsx`) via `useServerMutation`. Next.js redacts every
+UNCAUGHT error thrown out of a Server Action in production to a generic
+"An error occurred in the Server Components render" message plus an opaque
+digest — the actual reason (invoice not ISSUED, client not found, Xero not
+connected for this org, `XERO_CLIENT_ID`/`XERO_CLIENT_SECRET` unset on this
+deployment, or a real Xero API failure) never reaches the browser. This was a
+live bug (2026-07): every one of those precondition checks used a plain
+`throw new Error(...)`, so the button failed with an unreadable 500 no matter
+which one fired.
+
+Fix: `pushInvoiceToXero`'s return type is `XeroPushResult =
+{ ok: true; xeroInvoiceId; varianceNote; autoCreatedContact } | { ok: false; error: string }`
+and the WHOLE function body is wrapped in a top-level try/catch that returns
+`{ ok: false, error }` instead of letting anything escape — the ONLY way a
+Server Action's failure message survives Next's production redaction. The
+existing inner try/catch around the actual `createXeroDraftInvoice` call
+(which marks the invoice `ERROR`, logs the sync event, and writes the
+activity log entry) is unchanged; its re-thrown `Error` is now just an
+internal signal caught by the outer catch, not something that escapes the
+function. `PushToXeroButton` checks `r.ok` in `onSuccess` and shows `r.error`
+via `toast.error` when false — `onError` on the hook stays wired only as a
+last-resort net for a genuinely unexpected framework-level failure. Any new
+`"use server"` action that can fail in an expected way (not-found, wrong
+state, integration not connected, …) should follow this same
+discriminated-result pattern rather than throwing, or it will hit the exact
+same production-only failure mode.
+
 ### Account-coding pickers are searchable, not plain `Select`s
 
 `/settings/xero`'s org-default-account, default-tax-type, and per-service-type
@@ -964,8 +995,10 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 - `src/lib/xero-client.test.ts` — 16 tests against fixture Xero responses
   (mocked `fetch`).
 - `src/lib/xero-oauth-state.test.ts` — 5 tamper/expiry tests.
-- `src/server/xero.test.ts` — 4 mocked-boundary tests on `pushInvoiceToXero`
-  (auto-create-contact idempotency, the failure path).
+- `src/server/xero.test.ts` — 7 mocked-boundary tests on `pushInvoiceToXero`
+  (auto-create-contact idempotency, the Xero-API-failure path, and three
+  precondition failures — not-ISSUED, not-connected, not-configured —
+  asserting each resolves to `{ ok: false, error }` rather than throwing).
 - `convex/lib/xeroGate.test.ts` — 4 tests, the linked gate + org-scoping.
 - `convex/quotesWrites.test.ts` / `convex/invoicesWrites.test.ts` — 42 tests,
   server-computed money, gapless/namespaced numbering, cross-org IDOR guards,

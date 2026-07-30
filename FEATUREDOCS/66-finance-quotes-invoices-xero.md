@@ -923,6 +923,36 @@ it goes through `xeroGet`/`xeroPost` rather than hand-rolling its own
 the OAuth2 `{error, error_description}` shape, not this Accounting-API shape,
 and they're outside this bug's scope.
 
+### The tax-type picker only offers rates valid for a SALES invoice
+
+With Xero's own validation detail now visible (above), a real push failed
+with `"The TaxType code 'INPUT' cannot be used with account code '200'."`
+— an operator had picked an expenses-only GST rate (`INPUT`-family, Xero's
+"GST on Expenses" side) as the org's default tax type, or as a category/
+line override. This integration exclusively creates ACCREC (sales)
+invoices (`createXeroDraftInvoice`, `Type: "ACCREC"`) — an expenses-only
+rate is NEVER valid on any push, regardless of which account it's paired
+with, because Xero ties every tax rate to `CanApplyToRevenue`/
+`CanApplyToExpenses` flags on the rate itself. The Settings -> Xero
+tax-type picker (`XeroTaxTypeField`, `xero-coding-fields.tsx`) offered
+every cached rate from BOTH sides identically, with nothing in the UI
+distinguishing "GST on Income" from "GST on Expenses" beyond the name —
+an easy, silent misconfiguration to make, and one that only ever surfaces
+downstream, at push time, on whichever invoice happens to be pushed first.
+
+Fix, at the source rather than downstream: `taxRateSchema`
+(`src/lib/xero-client.ts`) now models Xero's `CanApplyToRevenue` boolean
+(previously dropped — this file's schemas only model fields the
+integration actually reads), so it survives into `xeroIntegrations.
+cachedTaxRates`. `revenueApplicableTaxRates()` (`xero-coding-fields.tsx`)
+filters `useXeroCodingOptions()`'s `taxRateOptions` to
+`CanApplyToRevenue !== false` — deliberately NOT `=== true`, so a cache
+written before this field existed (every org's cache, until their next
+Settings -> Xero "Refresh") still offers all its rates rather than going
+empty. This is the ONE picker instance shared by the org default AND every
+category/line/service override (R-3.1) — fixing it here closes the gap at
+every level of the cascade in one place, not just the org default.
+
 ### Account-coding pickers are searchable, not plain `Select`s
 
 `/settings/xero`'s org-default-account, default-tax-type, and per-service-type
@@ -1020,9 +1050,15 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
   rental-vs-sale + service-type branches.
 - `convex/xeroPush.test.ts` — 6 tests, cascade resolution IN CONTEXT (real
   DB reads through model/kit/category/service, not just the pure functions).
-- `src/lib/xero-client.test.ts` — 20 tests against fixture Xero responses
+- `src/lib/xero-client.test.ts` — 21 tests against fixture Xero responses
   (mocked `fetch`), including one asserting a realistic `ValidationErrors`
-  body surfaces its specific per-line message, not just the HTTP status.
+  body surfaces its specific per-line message, not just the HTTP status,
+  and one pinning `CanApplyToRevenue` surviving schema parsing on both an
+  income and an expenses tax rate.
+- `src/components/settings/xero-coding-fields.test.ts` — 3 tests on
+  `revenueApplicableTaxRates`, the tax-type picker's income-vs-expenses
+  filter (drops `CanApplyToRevenue: false`, keeps a pre-fix cache's
+  fieldless rates, empty input).
 - `src/lib/xero-oauth-state.test.ts` — 5 tamper/expiry tests.
 - `src/server/xero.test.ts` — 7 mocked-boundary tests on `pushInvoiceToXero`
   (auto-create-contact idempotency, the Xero-API-failure path, and three

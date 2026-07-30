@@ -176,6 +176,25 @@ describe("fetchXeroTaxRates", () => {
     expect(result).toHaveLength(1);
     expect(result[0]!.TaxType).toBe("OUTPUT2");
   });
+
+  // Regression (live bug): a push failed with "The TaxType code 'INPUT'
+  // cannot be used with account code '200'" because the org's default tax
+  // type was set to an expenses-only rate — nothing modeled or surfaced
+  // Xero's own CanApplyToRevenue flag that would have caught this at
+  // configuration time. It must survive schema parsing so the Settings ->
+  // Xero picker can filter on it (xero-coding-fields.test.tsx).
+  it("preserves CanApplyToRevenue on both income and expense rates", async () => {
+    const fixture = {
+      TaxRates: [
+        { Name: "GST on Income", TaxType: "OUTPUT2", Status: "ACTIVE", CanApplyToRevenue: true, CanApplyToExpenses: false },
+        { Name: "GST on Expenses", TaxType: "INPUT2", Status: "ACTIVE", CanApplyToRevenue: false, CanApplyToExpenses: true },
+      ],
+    };
+    const { impl } = mockFetch(fixture);
+    const result = await fetchXeroTaxRates({ ...authOpts, fetchImpl: impl });
+    expect(result.find((r) => r.TaxType === "OUTPUT2")?.CanApplyToRevenue).toBe(true);
+    expect(result.find((r) => r.TaxType === "INPUT2")?.CanApplyToRevenue).toBe(false);
+  });
 });
 
 describe("findXeroContactByEmail", () => {

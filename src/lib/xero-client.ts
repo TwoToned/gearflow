@@ -299,6 +299,16 @@ const taxRateSchema = z.object({
   Status: z.string().optional(),
   DisplayTaxRate: z.number().optional(),
   EffectiveRate: z.number().optional(),
+  // Xero tags every tax rate with which transaction sides it's valid for
+  // (income/revenue vs. expenses/purchases). This integration ONLY ever
+  // creates ACCREC (sales) invoices (createXeroDraftInvoice), so an
+  // expenses-only TaxType (e.g. "GST on Expenses" / INPUT2) picked for the
+  // org default or a coding override is invalid on every single push — Xero
+  // rejects it with "The TaxType code '...' cannot be used with account code
+  // '...'". Modeled here so `CanApplyToRevenue` survives the cache and the
+  // Settings -> Xero picker (xero-coding-fields.tsx) can filter it out at
+  // the source, instead of every push failing downstream.
+  CanApplyToRevenue: z.boolean().optional(),
 });
 const taxRatesResponseSchema = z.object({ TaxRates: z.array(taxRateSchema) });
 export type XeroTaxRate = z.infer<typeof taxRateSchema>;

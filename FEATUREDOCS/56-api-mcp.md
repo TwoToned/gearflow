@@ -312,12 +312,15 @@ have checked a gate, same posture as the REST dispatcher.
    one of a project's 5 PDFs; can't be a registry operation because PDF
    rendering needs Node+Prisma, which the Convex-only dispatcher can never
    reach, `src/lib/api/documents.ts`, shared with `GET
-   /api/v1/documents/{projectId}`). Unlike every other tool, its result
-   carries the PDF inline as a base64 `resource` content block
-   (`EmbeddedResource`/`BlobResourceContents`, mimeType `application/pdf`)
-   rather than JSON only — the one place this MCP surface returns binary
-   content. See [13-pdfs.md](./13-pdfs.md)'s "Agent-facing document access"
-   section for the doc-type/permission table.
+   /api/v1/documents/{projectId}`). Its result is JSON like every other
+   tool — a short-lived download URL + metadata (`resolveProjectDocumentUrl`),
+   not the PDF bytes inline. A same-day version that embedded the PDF as a
+   base64 MCP `resource` content block broke in real client use (some layer
+   in the actual relay path stripped fields it didn't recognise, failing
+   client-side schema validation) and was replaced with the URL-returning
+   approach before this doc's review date. See
+   [13-pdfs.md](./13-pdfs.md)'s "Agent-facing document access" section for
+   the doc-type/permission table and the incident detail.
 2. **Discovery + generic dispatch** — `list_operations`/`describe_operation`
    (shared with the REST `/api/v1/operations{,/[operation]}` routes via
    `src/lib/api/operations-listing.ts`) and `call_operation` (a thin pass-through

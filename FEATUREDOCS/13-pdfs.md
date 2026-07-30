@@ -696,12 +696,24 @@ Both `project:read` and `invoice:read` are in the `read_only_agent` preset
 (`src/lib/api-key-presets.ts`), so this works out of the box for a plain
 read-only key — no `full_agent`/write scopes needed just to view paperwork.
 
-The MCP tool returns the PDF inline as a base64 `resource` content block
-(`EmbeddedResource`/`BlobResourceContents`, mimeType `application/pdf`) plus a
-small JSON summary — the one curated tool other than `whoami` that doesn't
-go through `dispatch()`, and the only one that returns binary content rather
-than JSON. The REST route streams the bytes directly
-(`Content-Type: application/pdf`). See [56-api-mcp.md](./56-api-mcp.md).
+The MCP tool returns a short-lived download URL + metadata as plain JSON
+(`resolveProjectDocumentUrl`) — the one curated tool other than `whoami` that
+doesn't go through `dispatch()`, but still JSON-only like every other tool.
+**An earlier version embedded the PDF inline as a base64 MCP `resource`
+content block** (`EmbeddedResource`/`BlobResourceContents`); that shipped
+2026-07-30 and broke within hours in real client use — some layer in the
+actual MCP relay path stripped/nulled fields it didn't recognise (`_meta`,
+`blob`) before the result reached the calling client's own schema
+validation, failing with `Invalid tools/call result`. Fixed same-day by
+returning a URL instead (`files.getServeInfo`'s already-established "give an
+agent a fetchable URL" pattern) — a live-rendered document (no persisted
+artifact to point at) is first uploaded to Convex `_storage` under
+`agent-documents/` so there's something to resolve a URL for; this is a
+disposable snapshot, never attached to any row, and isn't cleaned up today
+(a known follow-up, not a correctness issue). The REST route is unaffected
+by any of this — it always streamed bytes directly
+(`Content-Type: application/pdf`) and never used the blob-content path. See
+[56-api-mcp.md](./56-api-mcp.md).
 
 ## Line item structuring
 

@@ -22,15 +22,21 @@
  * from there instead of duplicating them here (R-3.1) — do not let both
  * exist at once.
  *
- * `operation: null` marks `whoami`, which has no underlying registry
- * operation (`src/lib/api/whoami.ts` is shared with the REST route instead).
+ * `operation: null` marks a tool with no underlying registry operation —
+ * `whoami` (`src/lib/api/whoami.ts`, shared with the REST route) and
+ * `get_project_document` (`src/lib/api/documents.ts`, shared with
+ * `GET /api/v1/documents/{projectId}`) — both handled specially in
+ * `build-server.ts`'s `SPECIAL_TOOL_HANDLERS` because their actual work
+ * (Node/Prisma/pdfme PDF rendering, for the latter) can't run inside a Convex
+ * query/mutation the dispatcher could reach.
  */
 export interface CuratedToolDef {
   /** Unprefixed tool name, e.g. "search_assets". The generator applies the
    *  `rvlt_flow.v1.` namespace (design §13). */
   name: string;
   title: string;
-  /** The registry operation this tool wraps 1:1, or null for `whoami`. */
+  /** The registry operation this tool wraps 1:1, or null for a specially
+   *  handled tool. */
   operation: string | null;
   /** One or more sentences: what the tool does and why an agent would call
    *  it. Combined with registry-derived facts (scope, idempotency, errors)
@@ -42,6 +48,10 @@ export interface CuratedToolDef {
    *  lifecycle (dispatch/receive, reserve/release). Omitted for pure reads
    *  and for writes with no meaningful before/after state to name. */
   transition?: string;
+  /** Hand-authored input schema for an `operation: null` tool (there's no
+   *  registry operation to derive one from). Ignored when `operation` is
+   *  set. Omitted (whoami) defaults to an empty object schema. */
+  inputSchema?: Record<string, unknown>;
 }
 
 export const CURATED_TOOL_DEFS: readonly CuratedToolDef[] = [
@@ -203,5 +213,30 @@ export const CURATED_TOOL_DEFS: readonly CuratedToolDef[] = [
       "Cost/margin breakdown for one project. A key created with the `no_financials` flag set " +
       "(/settings/api-keys) force-redacts this regardless of the acting user's role — otherwise " +
       "visibility follows their role like everywhere else.",
+  },
+  {
+    name: "get_project_document",
+    title: "Get project document",
+    operation: null,
+    summary:
+      "Fetch one of a project's PDF documents, returned inline as a base64 `resource` content block (mimeType " +
+      '"application/pdf") plus a short JSON summary. `docType` is one of: "delivery-docket", "packing-list" ' +
+      '(the pick slip / pull slip), "return-sheet" — always freshly rendered from TODAY\'s project state; ' +
+      '"quote", "invoice" — the frozen document if one has been sent/issued (never re-rendered), otherwise ' +
+      '"quote" falls back to a watermarked DRAFT PREVIEW live render ("invoice" has no draft form and reports ' +
+      "not-found instead). Requires `project:read` for the first three, `invoice:read` for quote/invoice — both " +
+      "already in the read_only_agent preset, so this works out of the box for a read-only key.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        docType: {
+          type: "string",
+          enum: ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket"],
+        },
+      },
+      required: ["projectId", "docType"],
+      additionalProperties: false,
+    },
   },
 ];

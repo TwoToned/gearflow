@@ -85,7 +85,7 @@ function buildCuratedTools(): McpToolManifestEntry[] {
         name: `${MCP_NAMESPACE}.${def.name}`,
         title: def.title,
         description: def.summary,
-        inputSchema: { type: "object", properties: {}, additionalProperties: false },
+        inputSchema: def.inputSchema ?? { type: "object", properties: {}, additionalProperties: false },
         stability: "stable" as const,
         operation: null,
       };

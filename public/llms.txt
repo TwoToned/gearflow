@@ -10,6 +10,8 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 4. `POST /ops/{operation}` — call it. Body: `{"args": {...}, "idempotencyKey": "..."}` (idempotencyKey required for mutations).
 5. `GET /openapi.json` — the full machine-readable contract.
 
+`GET /documents/{projectId}?type=<quote|invoice|packing-list|return-sheet|delivery-docket>` fetches a project's PDF (binary `application/pdf` response, not a JSON-wrapped operation) — see the MCP `get_project_document` tool for the same capability with the bytes returned inline as a base64 resource.
+
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
 ## Operations (554 agent-reachable)

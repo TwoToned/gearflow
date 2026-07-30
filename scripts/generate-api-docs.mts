@@ -121,6 +121,31 @@ function buildOpenApiDocument(ops: RegistryOperation[]): JsonSchema {
         responses: { "200": { description: "OK" }, "404": { description: "Unknown or not agent-reachable." } },
       },
     },
+    "/api/v1/documents/{projectId}": {
+      get: {
+        operationId: "getProjectDocument",
+        summary: "Fetch a project's PDF — delivery docket, pick slip, quote (draft or sent), or invoice (if issued).",
+        description:
+          "Live-rendered from today's project state for delivery-docket/packing-list/return-sheet. For quote/invoice, " +
+          "streams the frozen stored PDF if one has been sent/issued (never re-rendered); quote falls back to a " +
+          'watermarked DRAFT PREVIEW live render when none has been sent yet (invoice has no draft form). Requires ' +
+          "`project:read` for the first three types, `invoice:read` for quote/invoice. Not a registry operation — " +
+          "PDF rendering needs Node/Prisma, which the Convex-only dispatcher can't reach (src/lib/api/documents.ts).",
+        parameters: [
+          { name: "projectId", in: "path", required: true, schema: { type: "string" } },
+          {
+            name: "type",
+            in: "query",
+            required: true,
+            schema: { type: "string", enum: ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket"] },
+          },
+        ],
+        responses: {
+          "200": { description: "The PDF bytes.", content: { "application/pdf": { schema: { type: "string", format: "binary" } } } },
+          default: { description: "Error.", content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } },
+        },
+      },
+    },
   };
 
   for (const op of ops) {
@@ -212,6 +237,10 @@ function buildLlmsTxt(ops: RegistryOperation[]): string {
     "3. `GET /operations/{operation}` — one operation's arg schema, scope, and possible error codes.",
     "4. `POST /ops/{operation}` — call it. Body: `{\"args\": {...}, \"idempotencyKey\": \"...\"}` (idempotencyKey required for mutations).",
     "5. `GET /openapi.json` — the full machine-readable contract.",
+    "",
+    "`GET /documents/{projectId}?type=<quote|invoice|packing-list|return-sheet|delivery-docket>` fetches a project's " +
+      "PDF (binary `application/pdf` response, not a JSON-wrapped operation) — see the MCP `get_project_document` " +
+      "tool for the same capability with the bytes returned inline as a base64 resource.",
     "",
     "An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.",
     "",

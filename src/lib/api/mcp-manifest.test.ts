@@ -73,8 +73,12 @@ describe("MCP manifest — shape invariants", () => {
     }
   });
 
-  test("whoami is the only curated tool with a null operation", () => {
+  test("whoami and get_project_document are the only curated tools with a null operation", () => {
+    // Both are handled specially in build-server.ts's SPECIAL_TOOL_HANDLERS rather
+    // than dispatched to a registry operation — whoami reuses the already-resolved
+    // agent context, get_project_document because PDF rendering needs Node/Prisma,
+    // which a Convex-only dispatch can never reach (src/lib/api/documents.ts).
     const nullOps = MCP_CURATED_TOOLS.filter((t) => t.operation === null).map((t) => t.name);
-    expect(nullOps).toEqual([`${MCP_NAMESPACE}.whoami`]);
+    expect(nullOps).toEqual([`${MCP_NAMESPACE}.whoami`, `${MCP_NAMESPACE}.get_project_document`]);
   });
 });

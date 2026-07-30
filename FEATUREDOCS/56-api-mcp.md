@@ -10,7 +10,7 @@
 > of curated REST aliases (`/api/v1/{projects,assets,clients}[/{id}]`,
 > `POST /api/v1/projects/{id}/line-items`) — **and a streamable HTTP MCP
 > server at `/api/v1/mcp`**, over the same bearer keys and the same
-> dispatcher: 20 curated tools + `list_operations`/`describe_operation`/
+> dispatcher: 21 curated tools + `list_operations`/`describe_operation`/
 > `call_operation` discovery + `llms.txt`/OpenAPI resources + 3 prompt
 > templates, plus a local stdio↔HTTP proxy for clients that don't speak
 > remote MCP yet. The Phase-0 throwaway prover (`POST
@@ -74,6 +74,12 @@
 > context). Third-party developer access (OAuth apps for other orgs, a
 > marketplace) remains explicitly out of scope (decision 5) until its own
 > program.**
+> **Agent document access added 2026-07-30** — `GET
+> /api/v1/documents/{projectId}` + a 21st curated MCP tool,
+> `get_project_document`: an agent can now fetch any of the 5 project PDFs
+> (delivery docket, pick slip, return sheet, quote, invoice) it could already
+> see the DATA for. See "Agent document access" below and
+> [13-pdfs.md](./13-pdfs.md).
 
 > **⚠️ Removed 2026-07-14 (the state phases 0-1 are building out of).** The entire agent-API
 > request surface was deleted during the Convex-native migration:
@@ -292,16 +298,26 @@ have checked a gate, same posture as the REST dispatcher.
 
 **Three tiers**, matching design §12:
 
-1. **20 curated tools** (`rvlt_flow.v1.*` namespace) — `whoami` plus 19 named
-   `verb_object` tools (`search_assets`, `get_asset`, `check_availability`,
-   `list_projects`, `get_project`, `create_project`, `add_line_items`,
-   `reserve_items`, `release_items`, `swap_asset`, `stage_pick_list`,
-   `dispatch_gear`, `receive_gear`, `list_crew`, `assign_crew`,
-   `get_warehouse_status`, `create_maintenance`, `list_overbookings`,
-   `get_project_financials`) — each a 1:1 wrapper over one registry operation.
-   `whoami` is the one exception with no underlying operation; it's answered
-   directly from the pre-resolved agent context (`src/lib/api/whoami.ts`,
-   shared with `GET /api/v1/whoami` so the two surfaces can't disagree).
+1. **21 curated tools** (`rvlt_flow.v1.*` namespace) — 19 named `verb_object`
+   tools that each 1:1 wrap one registry operation (`search_assets`,
+   `get_asset`, `check_availability`, `list_projects`, `get_project`,
+   `create_project`, `add_line_items`, `reserve_items`, `release_items`,
+   `swap_asset`, `stage_pick_list`, `dispatch_gear`, `receive_gear`,
+   `list_crew`, `assign_crew`, `get_warehouse_status`, `create_maintenance`,
+   `list_overbookings`, `get_project_financials`), plus two with no
+   underlying registry operation, handled specially in `build-server.ts`'s
+   `SPECIAL_TOOL_HANDLERS`: `whoami` (answered directly from the
+   pre-resolved agent context, `src/lib/api/whoami.ts`, shared with `GET
+   /api/v1/whoami`) and `get_project_document` (added 2026-07-30 — fetches
+   one of a project's 5 PDFs; can't be a registry operation because PDF
+   rendering needs Node+Prisma, which the Convex-only dispatcher can never
+   reach, `src/lib/api/documents.ts`, shared with `GET
+   /api/v1/documents/{projectId}`). Unlike every other tool, its result
+   carries the PDF inline as a base64 `resource` content block
+   (`EmbeddedResource`/`BlobResourceContents`, mimeType `application/pdf`)
+   rather than JSON only — the one place this MCP surface returns binary
+   content. See [13-pdfs.md](./13-pdfs.md)'s "Agent-facing document access"
+   section for the doc-type/permission table.
 2. **Discovery + generic dispatch** — `list_operations`/`describe_operation`
    (shared with the REST `/api/v1/operations{,/[operation]}` routes via
    `src/lib/api/operations-listing.ts`) and `call_operation` (a thin pass-through
@@ -344,7 +360,7 @@ namespace, an `X-RVLT-Flow-API-Version` response header (now applied to every
 `/api/v1` REST response too, not just MCP, since design §13 calls it a "day
 one" mechanic and Phase 2 had not yet added it), and the `warnings[]` in-band
 channel is documented but currently empty — no operation is deprecated yet, so
-there's nothing for it to carry. Compatibility tiers: the 20 curated tools +
+there's nothing for it to carry. Compatibility tiers: the 21 curated tools +
 discovery are `stability: "stable"` (additive-only within `/v1`);
 `call_operation` is `stability: "tracks-app"` (follows the app's internals
 directly, per decision 12).

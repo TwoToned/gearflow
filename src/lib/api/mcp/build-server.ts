@@ -14,6 +14,8 @@ import { dispatch, type DispatchResult } from "../dispatcher";
 import { listOperationsPage, describeOperation } from "../operations-listing";
 import { getWhoamiData } from "../whoami";
 import { toErrorEnvelope } from "../errors";
+import { resolveProjectDocument, type AgentDocumentType } from "../documents";
+import { getFileAsDataUri, getProxyUrl } from "@/lib/storage";
 import type { AgentRequestContext } from "../agent-auth";
 import { MCP_RESOURCES, readMcpResource } from "./resources";
 import { MCP_PROMPTS, MCP_PROMPTS_BY_NAME } from "./prompts";
@@ -22,9 +24,13 @@ import { MCP_PROMPTS, MCP_PROMPTS_BY_NAME } from "./prompts";
  * The MCP surface (Phase 3, #999, design §12) — a protocol adapter with no
  * business logic of its own, built fresh per HTTP request (stateless
  * Streamable HTTP — src/app/api/v1/mcp/route.ts) around the SAME dispatcher
- * REST uses. Every tool call that isn't `whoami` ends at `dispatch()`, which
- * re-authenticates the bearer token itself — exactly as if it were a REST
- * call — so nothing here is trusted to have checked a gate.
+ * REST uses. Every tool call ends at `dispatch()`, which re-authenticates the
+ * bearer token itself — exactly as if it were a REST call — so nothing here
+ * is trusted to have checked a gate. The two exceptions are `whoami` (reuses
+ * the already-resolved `opts.agent` instead of a redundant dispatch
+ * round-trip) and `get_project_document` (PDF rendering needs Node/Prisma,
+ * which a Convex-only dispatch can never reach — see `src/lib/api/documents.ts`
+ * — so it does its own `requirePermission` check directly).
  */
 
 export interface BuildMcpServerOptions {
@@ -108,6 +114,48 @@ async function handleWhoami(_args: Record<string, unknown>, opts: BuildMcpServer
   return toCallToolResult({ data: await getWhoamiData(opts.agent), requestId: opts.requestId }, false);
 }
 
+/**
+ * `get_project_document` — the other `operation: null` special tool (see
+ * `src/lib/api/documents.ts`). Unlike every dispatch-backed tool, this one
+ * hands back the actual PDF bytes as a base64 `resource` content block
+ * (MCP's `EmbeddedResource`/`BlobResourceContents` shape) alongside a small
+ * JSON summary, rather than JSON-only — there is nothing to "dispatch" to,
+ * since the PDF has to be produced by Node/Prisma/pdfme, not a Convex query.
+ */
+async function handleGetProjectDocument(args: Record<string, unknown>, opts: BuildMcpServerOptions): Promise<CallToolResult> {
+  const projectId = typeof args.projectId === "string" ? args.projectId : "";
+  const docType = typeof args.docType === "string" ? args.docType : "";
+
+  try {
+    const outcome = await resolveProjectDocument(opts.agent.actor, projectId, docType as AgentDocumentType);
+
+    let blob: string;
+    let contentType: string;
+    if (outcome.kind === "bytes") {
+      blob = outcome.bytes.toString("base64");
+      contentType = outcome.contentType;
+    } else {
+      const dataUri = await getFileAsDataUri(getProxyUrl(outcome.storageId));
+      if (!dataUri) return toCallToolResult(toErrorEnvelope(Object.assign(new Error("The stored document's bytes could not be retrieved."), { code: "DOCUMENT_NOT_READY" })), true);
+      const separator = dataUri.indexOf(",");
+      contentType = dataUri.slice("data:".length, dataUri.indexOf(";"));
+      blob = dataUri.slice(separator + 1);
+    }
+
+    const summary = { docType: outcome.docType, status: outcome.status, fileName: outcome.fileName, contentType };
+    return {
+      content: [
+        { type: "text", text: JSON.stringify({ data: summary, requestId: opts.requestId }, null, 2) },
+        { type: "resource", resource: { uri: `document://${projectId}/${outcome.docType}`, mimeType: contentType, blob } },
+      ],
+      structuredContent: summary,
+      isError: false,
+    };
+  } catch (err) {
+    return toCallToolResult(toErrorEnvelope(err, { requestId: opts.requestId }), true);
+  }
+}
+
 function handleListOperations(args: Record<string, unknown>, opts: BuildMcpServerOptions): CallToolResult {
   const page = listOperationsPage({
     resource: typeof args.resource === "string" ? args.resource : undefined,
@@ -137,6 +185,7 @@ const SPECIAL_TOOL_HANDLERS: Record<
   list_operations: handleListOperations,
   describe_operation: handleDescribeOperation,
   call_operation: handleCallOperation,
+  get_project_document: handleGetProjectDocument,
 };
 
 export async function routeToolCall(name: string, rawArgs: unknown, opts: BuildMcpServerOptions): Promise<CallToolResult> {

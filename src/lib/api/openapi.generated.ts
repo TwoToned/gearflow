@@ -99,6 +99,61 @@ export const OPENAPI_DOCUMENT = {
     }
   },
   "paths": {
+    "/api/v1/documents/{projectId}": {
+      "get": {
+        "operationId": "getProjectDocument",
+        "summary": "Fetch a project's PDF — delivery docket, pick slip, quote (draft or sent), or invoice (if issued).",
+        "description": "Live-rendered from today's project state for delivery-docket/packing-list/return-sheet. For quote/invoice, streams the frozen stored PDF if one has been sent/issued (never re-rendered); quote falls back to a watermarked DRAFT PREVIEW live render when none has been sent yet (invoice has no draft form). Requires `project:read` for the first three types, `invoice:read` for quote/invoice. Not a registry operation — PDF rendering needs Node/Prisma, which the Convex-only dispatcher can't reach (src/lib/api/documents.ts).",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "quote",
+                "invoice",
+                "packing-list",
+                "return-sheet",
+                "delivery-docket"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The PDF bytes.",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/operations": {
       "get": {
         "operationId": "listOperations",

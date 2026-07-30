@@ -82,8 +82,8 @@ describe("OpenAPI 3.1 document — structural validity", () => {
 
   test("one path per agent-reachable operation, no more, no fewer", () => {
     const reachableCount = API_REGISTRY.filter((op) => op.agentReachable).length;
-    // +3 fixed paths: /whoami, /operations, /operations/{operation}.
-    expect(Object.keys(OPENAPI_DOCUMENT.paths).length).toBe(reachableCount + 3);
+    // +4 fixed paths: /whoami, /operations, /operations/{operation}, /documents/{projectId}.
+    expect(Object.keys(OPENAPI_DOCUMENT.paths).length).toBe(reachableCount + 4);
   });
 
   test("an injected arg (actor/id/auditId/now/orgId) never appears in a published request schema", () => {

@@ -2,6 +2,7 @@ import { getConvexClient } from "@/lib/convex-client";
 import { requirePermission } from "@/lib/org-context";
 import { generatePdf } from "@/lib/pdfme/generate-pdf";
 import { quoteArtifactFileName, invoiceArtifactFileName } from "@/lib/finance-artifacts";
+import { getServeInfo, uploadToS3 } from "@/lib/storage";
 import type { ActorContext } from "@/lib/actor-types";
 import { api } from "../../../convex/_generated/api";
 
@@ -50,6 +51,7 @@ export type AgentDocumentOutcome =
       fileName: string;
       contentType: "application/pdf";
       bytes: Buffer;
+      organizationId: string;
     }
   | {
       kind: "stored";
@@ -82,6 +84,7 @@ async function resolveQuote(actor: ActorContext, projectId: string): Promise<Age
       fileName: `quote-draft-${projectId}.pdf`,
       contentType: "application/pdf",
       bytes: Buffer.from(bytes),
+      organizationId,
     };
   }
 
@@ -154,6 +157,7 @@ async function resolveLiveWarehouseDoc(
     fileName: `${docType}-${projectId}.pdf`,
     contentType: "application/pdf",
     bytes: Buffer.from(bytes),
+    organizationId,
   };
 }
 
@@ -181,4 +185,67 @@ export async function resolveProjectDocument(
   if (LIVE_RENDER_TYPES.has(docType)) return resolveLiveWarehouseDoc(actor, projectId, docType);
 
   throw apiError("VALIDATION_FAILED", `Unknown document type "${docType}".`);
+}
+
+export interface AgentDocumentUrl {
+  docType: AgentDocumentType;
+  status: "draft-preview" | "live" | "sent" | "issued";
+  fileName: string;
+  contentType: string;
+  /** Short-lived Convex `_storage` URL (`files.getServeInfo`) — directly
+   *  fetchable, no bearer token needed. */
+  url: string;
+}
+
+/**
+ * MCP-facing variant of {@link resolveProjectDocument} that resolves to a
+ * short-lived download URL instead of raw bytes, mirroring `files.getServeInfo`
+ * (the established "give an agent a fetchable URL" pattern in this codebase).
+ *
+ * Embedding the PDF inline as a base64 MCP `resource` content block was tried
+ * first and doesn't survive every real MCP client/relay path intact (some
+ * layer strips/nulls fields it doesn't recognise before the result reaches
+ * the client's own schema validation) — plain JSON (a URL + metadata) is what
+ * every other curated tool already returns reliably, so that's what this
+ * returns too. A live-rendered document (no persisted artifact to point at)
+ * is uploaded to Convex `_storage` under `agent-documents/` first so there's
+ * something to hand back a URL for; unlike a finance artifact this is a
+ * disposable snapshot, not attached to any row, and is never cleaned up
+ * today (a follow-up, not a correctness issue).
+ */
+export async function resolveProjectDocumentUrl(
+  actor: ActorContext,
+  projectId: string,
+  docType: AgentDocumentType,
+): Promise<AgentDocumentUrl> {
+  const outcome = await resolveProjectDocument(actor, projectId, docType);
+
+  const storageId =
+    outcome.kind === "stored"
+      ? outcome.storageId
+      : (
+          await uploadToS3(outcome.bytes, {
+            organizationId: outcome.organizationId,
+            folder: "agent-documents",
+            entityId: projectId,
+            fileName: outcome.fileName,
+            mimeType: outcome.contentType,
+          })
+        ).storageKey;
+
+  const info = await getServeInfo(storageId);
+  if (!info) {
+    throw apiError(
+      "DOCUMENT_NOT_READY",
+      "The document was rendered but its download URL could not be resolved. Try again shortly.",
+    );
+  }
+
+  return {
+    docType: outcome.docType,
+    status: outcome.status,
+    fileName: outcome.fileName,
+    contentType: info.contentType ?? "application/pdf",
+    url: info.url,
+  };
 }

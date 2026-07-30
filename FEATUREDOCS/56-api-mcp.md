@@ -639,6 +639,35 @@ tables); `oauthAuthorizationCodes` is `EXCLUDED/ephemeral` (a ~120s one-shot
 credential, same "restoring a dead short-lived row has no value" rationale
 as `apiIdempotency`).
 
+**Cloudflare bot protection can block MCP clients even when the app is
+correct** (found 2026-07-30, Claude Desktop) — a non-browser MCP client (a
+desktop app's HTTP client, not a browser tab) can present a TLS/HTTP
+fingerprint that Cloudflare's Bot Fight Mode / Super Bot Fight Mode / a
+managed WAF rule flags and blocks or challenges, at the network edge,
+before the request ever reaches this app. Symptom: the client shows a
+generic "couldn't connect to the server" with nothing to debug —
+`/api/v1/mcp`, `/oauth/authorize`, `/api/v1/oauth/*`, and `/.well-known/oauth-*`
+all respond correctly to `curl` (valid TLS, correct 401 + `WWW-Authenticate`,
+correct CORS) throughout, because curl isn't what's being blocked. Check
+**Cloudflare dashboard → Security → Events** for the hostname/path around the
+failed attempt; a **Block** or **Managed/JS Challenge** action there is the
+tell. Fix with a scoped WAF custom rule that skips bot mitigation for just
+this surface, not the whole site:
+
+```
+(starts_with(http.request.uri.path, "/api/v1/mcp"))
+or (http.request.uri.path eq "/oauth/authorize")
+or (starts_with(http.request.uri.path, "/api/v1/oauth/"))
+or (starts_with(http.request.uri.path, "/.well-known/oauth-"))
+```
+
+Action: **Skip** the specific bot mechanism that fired (Bot Fight Mode /
+Super Bot Fight Mode / the managed rule ID from the Events log). Safe to
+skip broadly here because every one of these routes is either bearer-token
+authenticated (no cookie/session to hijack) or, for `/oauth/authorize`,
+already gated on a real Better Auth session by `src/middleware.ts` — bot
+mitigation was never the thing protecting them.
+
 ## What shipped before removal (for scale/scope reference)
 
 Coverage was complete: 537 operations (every server action the UI called,

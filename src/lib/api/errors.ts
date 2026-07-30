@@ -262,6 +262,15 @@ const CODE_SPECS: Record<string, CodeSpec> = {
       hint: "An earlier call with this idempotency key is still running. Retry shortly with the SAME key.",
     },
   },
+  DOCUMENT_NOT_READY: {
+    category: "conflict",
+    retryable: true,
+    status: 409,
+    recovery: {
+      action: "retry_after_delay",
+      hint: "The document was sent/issued but its PDF is still generating (or failed). Retry shortly, or check the Finance tab.",
+    },
+  },
   IDEMPOTENCY_KEY_REUSED: {
     category: "conflict",
     retryable: false,

@@ -895,6 +895,34 @@ state, integration not connected, …) should follow this same
 discriminated-result pattern rather than throwing, or it will hit the exact
 same production-only failure mode.
 
+### `xeroGet`/`xeroPost` surface Xero's OWN validation detail, not just the HTTP status
+
+Once `pushInvoiceToXero`'s message could reach the browser (above), a live
+push failed with `"Xero push failed: Xero POST /api.xro/2.0/Invoices returned
+400"` — technically correct, completely useless. Xero's error response for a
+rejected Accounting API call carries the actual reason in the JSON body: a
+top-level `Message` plus, for validation failures, an `Elements[]` array
+whose `ValidationErrors[].Message` names the specific rejected field (e.g.
+`"Account code '9999' is not a valid code for this document."` — a stale or
+wrong-region account/tax code from the coding cascade, convex/lib/
+xeroAccountCascade.ts, is the most likely real-world cause). `XeroApiError`
+always captured this body in its `.body` property, but nothing ever READ
+it — the thrown `.message` was always just the bare `"Xero {METHOD} {path}
+returned {status}"`, so neither the toast nor the persisted
+`invoices.lastSyncError`/`xeroSyncLogs.errorMessage` ever showed it.
+
+`extractXeroErrorDetail`/`xeroErrorMessage` (`src/lib/xero-client.ts`) are the
+one place both `xeroGet` and `xeroPost` build their error message now —
+`Message` + every `Elements[].ValidationErrors[].Message`, best-effort and
+defensive (never throws on an unexpected body shape, since this is diagnostic
+text, not domain data). A future Accounting API call added to this file
+automatically gets full validation detail in its error for free, as long as
+it goes through `xeroGet`/`xeroPost` rather than hand-rolling its own
+`!res.ok` check. The OAuth token/connections endpoints (`postToken`,
+`listXeroConnections`) are deliberately NOT touched — their error body is
+the OAuth2 `{error, error_description}` shape, not this Accounting-API shape,
+and they're outside this bug's scope.
+
 ### Account-coding pickers are searchable, not plain `Select`s
 
 `/settings/xero`'s org-default-account, default-tax-type, and per-service-type
@@ -992,8 +1020,9 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
   rental-vs-sale + service-type branches.
 - `convex/xeroPush.test.ts` — 6 tests, cascade resolution IN CONTEXT (real
   DB reads through model/kit/category/service, not just the pure functions).
-- `src/lib/xero-client.test.ts` — 16 tests against fixture Xero responses
-  (mocked `fetch`).
+- `src/lib/xero-client.test.ts` — 20 tests against fixture Xero responses
+  (mocked `fetch`), including one asserting a realistic `ValidationErrors`
+  body surfaces its specific per-line message, not just the HTTP status.
 - `src/lib/xero-oauth-state.test.ts` — 5 tamper/expiry tests.
 - `src/server/xero.test.ts` — 7 mocked-boundary tests on `pushInvoiceToXero`
   (auto-create-contact idempotency, the Xero-API-failure path, and three

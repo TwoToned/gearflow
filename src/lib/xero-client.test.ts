@@ -276,4 +276,37 @@ describe("createXeroDraftInvoice", () => {
       ),
     ).rejects.toMatchObject({ status: 400 });
   });
+
+  // Regression (live bug): a bare "Xero POST /api.xro/2.0/Invoices returned
+  // 400" told the user (and the persisted invoices.lastSyncError /
+  // xeroSyncLogs.errorMessage) nothing about WHY Xero rejected the push.
+  // Xero's actual reason (per-line ValidationErrors, e.g. an invalid account
+  // code or tax type) sat unread in the error body. The thrown message must
+  // surface it.
+  it("includes Xero's per-line ValidationErrors detail in the thrown message, not just the status", async () => {
+    const { impl } = mockFetch(
+      {
+        Type: "ValidationException",
+        Message: "A validation exception occurred",
+        Elements: [
+          {
+            LineItems: [{ Description: "PA System hire" }],
+            ValidationErrors: [{ Message: "Account code '9999' is not a valid code for this document." }],
+          },
+        ],
+      },
+      400,
+    );
+    await expect(
+      createXeroDraftInvoice(
+        {
+          contactId: "c1",
+          invoiceNumber: "INV-1",
+          date: "2026-07-26",
+          lineItems: [{ description: "PA System hire", quantity: 1, unitAmount: 500, accountCode: "9999", taxType: "OUTPUT2" }],
+        },
+        { ...authOpts, fetchImpl: impl },
+      ),
+    ).rejects.toThrow(/Account code '9999' is not a valid code for this document/);
+  });
 });

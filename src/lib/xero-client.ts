@@ -70,6 +70,48 @@ export class XeroApiError extends Error {
   }
 }
 
+/**
+ * Xero's error response body carries the ACTUAL reason a request was
+ * rejected (e.g. "Account code '9999' is not a valid code for this
+ * document.") — a per-field `ValidationErrors[].Message` nested under
+ * `Elements`, alongside a top-level `Message`. Every `xeroGet`/`xeroPost`
+ * error previously discarded this: the thrown message was just
+ * "Xero POST /path returned 400" with the actual detail sitting unread in
+ * `XeroApiError.body`, so neither the user's toast nor the persisted
+ * `invoices.lastSyncError`/`xeroSyncLogs.errorMessage` ever showed WHY a
+ * push failed. Best-effort, defensive parsing — this is diagnostic text,
+ * not domain data, so it never throws on an unexpected shape.
+ */
+/** A non-empty trimmed string, or undefined for anything else. */
+function trimmedStringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** Every `ValidationErrors[].Message` string across one `Elements` entry. */
+function validationErrorMessages(element: unknown): string[] {
+  if (typeof element !== "object" || element === null) return [];
+  const validationErrors = (element as Record<string, unknown>).ValidationErrors;
+  if (!Array.isArray(validationErrors)) return [];
+  return validationErrors.map((ve) => trimmedStringOrUndefined((ve as Record<string, unknown> | null)?.Message)).filter((m) => m != null);
+}
+
+function extractXeroErrorDetail(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const record = body as Record<string, unknown>;
+  const elements = Array.isArray(record.Elements) ? record.Elements : [];
+  const parts = [trimmedStringOrUndefined(record.Message), ...elements.flatMap(validationErrorMessages)].filter((m) => m != null);
+  return parts.length > 0 ? parts.join(": ") : undefined;
+}
+
+/** `Xero {METHOD} {path} returned {status}` with Xero's own validation detail
+ *  appended when present (see `extractXeroErrorDetail`) — the ONE place every
+ *  `xeroGet`/`xeroPost` caller's error message is built, so the detail is
+ *  never accidentally dropped by a future call site. */
+function xeroErrorMessage(method: "GET" | "POST", path: string, status: number, body: unknown): string {
+  const detail = extractXeroErrorDetail(body);
+  return `Xero ${method} ${path} returned ${status}${detail ? `: ${detail}` : ""}`;
+}
+
 // ─── OAuth2 ──────────────────────────────────────────────────────────────────
 
 export function buildXeroAuthorizeUrl(opts: {
@@ -208,7 +250,7 @@ async function xeroGet(path: string, opts: AuthedRequestOpts): Promise<unknown> 
     },
   });
   const json = await safeJson(res);
-  if (!res.ok) throw new XeroApiError(`Xero GET ${path} returned ${res.status}`, res.status, json);
+  if (!res.ok) throw new XeroApiError(xeroErrorMessage("GET", path, res.status, json), res.status, json);
   return json;
 }
 
@@ -225,7 +267,7 @@ async function xeroPost(path: string, body: unknown, opts: AuthedRequestOpts): P
     body: JSON.stringify(body),
   });
   const json = await safeJson(res);
-  if (!res.ok) throw new XeroApiError(`Xero POST ${path} returned ${res.status}`, res.status, json);
+  if (!res.ok) throw new XeroApiError(xeroErrorMessage("POST", path, res.status, json), res.status, json);
   return json;
 }
 

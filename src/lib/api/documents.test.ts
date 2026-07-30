@@ -18,7 +18,14 @@ vi.mock("@/lib/org-context", () => ({ requirePermission: (...args: unknown[]) =>
 const generatePdfMock = vi.fn();
 vi.mock("@/lib/pdfme/generate-pdf", () => ({ generatePdf: (...args: unknown[]) => generatePdfMock(...args) }));
 
-const { resolveProjectDocument } = await import("./documents");
+const getServeInfoMock = vi.fn();
+const uploadToS3Mock = vi.fn();
+vi.mock("@/lib/storage", () => ({
+  getServeInfo: (...args: unknown[]) => getServeInfoMock(...args),
+  uploadToS3: (...args: unknown[]) => uploadToS3Mock(...args),
+}));
+
+const { resolveProjectDocument, resolveProjectDocumentUrl } = await import("./documents");
 
 const actor = { organizationId: "org_A", userId: "user_1", userName: "Ada", actorType: "apiKey" as const, apiKeyId: "key_1", scopes: ["*"] };
 
@@ -148,5 +155,73 @@ describe("resolveProjectDocument — invoice", () => {
       organizationId: "org_A",
       storageId: "storage_2",
     });
+  });
+});
+
+describe("resolveProjectDocumentUrl — the MCP-facing, URL-returning wrapper", () => {
+  test("a stored outcome resolves a URL straight from its storageId (no upload)", async () => {
+    queryMock.mockImplementation(async (fnRef: unknown) => {
+      const name = nameOf(fnRef);
+      if (name === "invoices:listForProject") return [{ id: "inv_new", status: "ISSUED", issuedAt: 1_000 }];
+      if (name === "financeArtifacts:invoiceArtifactContext") {
+        return { invoiceId: "inv_new", projectId: "proj_1", projectNumber: "RVLT-2026-0001", invoiceNumber: "INV-42", pdfFileId: "storage_2" };
+      }
+      throw new Error(`Unmocked query: ${name}`);
+    });
+    getServeInfoMock.mockResolvedValueOnce({
+      organizationId: "org_A",
+      url: "https://storage.convex.cloud/signed-url-2",
+      contentType: "application/pdf",
+      size: 1234,
+      fileName: "INV-42-invoice.pdf",
+    });
+
+    const result = await resolveProjectDocumentUrl(actor, "proj_1", "invoice");
+
+    expect(uploadToS3Mock).not.toHaveBeenCalled();
+    expect(getServeInfoMock).toHaveBeenCalledWith("storage_2");
+    expect(result).toEqual({
+      docType: "invoice",
+      status: "issued",
+      fileName: "INV-42-invoice.pdf",
+      contentType: "application/pdf",
+      url: "https://storage.convex.cloud/signed-url-2",
+    });
+  });
+
+  test("a live-rendered ('bytes') outcome uploads the bytes first, then resolves a URL for the upload", async () => {
+    uploadToS3Mock.mockResolvedValueOnce({ storageKey: "storage_ephemeral_1", url: "/api/files/storage_ephemeral_1" });
+    getServeInfoMock.mockResolvedValueOnce({
+      organizationId: "org_A",
+      url: "https://storage.convex.cloud/signed-url-ephemeral",
+      contentType: "application/pdf",
+      size: 42,
+      fileName: "delivery-docket-proj_1.pdf",
+    });
+
+    const result = await resolveProjectDocumentUrl(actor, "proj_1", "delivery-docket");
+
+    expect(uploadToS3Mock).toHaveBeenCalledWith(Buffer.from([1, 2, 3]), {
+      organizationId: "org_A",
+      folder: "agent-documents",
+      entityId: "proj_1",
+      fileName: "delivery-docket-proj_1.pdf",
+      mimeType: "application/pdf",
+    });
+    expect(getServeInfoMock).toHaveBeenCalledWith("storage_ephemeral_1");
+    expect(result).toEqual({
+      docType: "delivery-docket",
+      status: "live",
+      fileName: "delivery-docket-proj_1.pdf",
+      contentType: "application/pdf",
+      url: "https://storage.convex.cloud/signed-url-ephemeral",
+    });
+  });
+
+  test("a URL that can't be resolved is DOCUMENT_NOT_READY", async () => {
+    uploadToS3Mock.mockResolvedValueOnce({ storageKey: "storage_ephemeral_2", url: "/api/files/storage_ephemeral_2" });
+    getServeInfoMock.mockResolvedValueOnce(null);
+
+    await expect(resolveProjectDocumentUrl(actor, "proj_1", "return-sheet")).rejects.toMatchObject({ code: "DOCUMENT_NOT_READY" });
   });
 });

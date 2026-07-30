@@ -86,6 +86,7 @@ describe("pushInvoiceToXero — auto-create contact idempotency", () => {
 
     expect(findXeroContactByEmail).toHaveBeenCalledWith("billing@acme.test", expect.anything());
     expect(createXeroContact).not.toHaveBeenCalled(); // duplicate protection — no create when found
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error}`);
     expect(result.autoCreatedContact).toBe(false);
     // The found contact is stored back onto the client (mutation call present).
     const setContactCall = mutationMock.mock.calls.find((c) => getFunctionName(c[0] as Parameters<typeof getFunctionName>[0]) === "clientXeroWrites:setXeroContactNative");
@@ -102,6 +103,7 @@ describe("pushInvoiceToXero — auto-create contact idempotency", () => {
     const result = await pushInvoiceToXero("inv1");
 
     expect(createXeroContact).toHaveBeenCalledTimes(1);
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error}`);
     expect(result.autoCreatedContact).toBe(true);
   });
 
@@ -114,19 +116,82 @@ describe("pushInvoiceToXero — auto-create contact idempotency", () => {
 
     expect(findXeroContactByEmail).not.toHaveBeenCalled();
     expect(createXeroContact).not.toHaveBeenCalled();
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error}`);
     expect(result.autoCreatedContact).toBe(false);
     expect(result.xeroInvoiceId).toBe("xero-inv-1");
   });
 
-  test("a Xero API failure marks the invoice ERROR and rethrows, without silently swallowing the error", async () => {
+  test("a Xero API failure marks the invoice ERROR and returns { ok: false }, without silently swallowing the error", async () => {
     const client = { id: "c1", organizationId: "org_1", name: "Acme Events", contactEmail: "billing@acme.test", xeroContactId: "mapped", xeroContactName: "Acme" };
     queryMock.mockImplementation(queryImplFor(client));
     createXeroDraftInvoice.mockRejectedValue(new Error("Xero POST /Invoices returned 400"));
 
     const { pushInvoiceToXero } = await import("./xero");
-    await expect(pushInvoiceToXero("inv1")).rejects.toThrow(/xero push failed/i);
+    const result = await pushInvoiceToXero("inv1");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toMatch(/xero push failed/i);
 
     const failCall = mutationMock.mock.calls.find((c) => getFunctionName(c[0] as Parameters<typeof getFunctionName>[0]) === "xeroPush:markXeroPushFailedNative");
     expect(failCall).toBeDefined();
+  });
+
+  // Regression (live bug): every one of these precondition failures used to
+  // throw a plain, uncaught Error straight out of the Server Action. Next.js
+  // redacts uncaught Server Action errors in production to a generic "error
+  // occurred in the Server Components render" message + digest, so the user
+  // pressing "Push to Xero" saw a useless 500 no matter which of these fired.
+  // pushInvoiceToXero must never throw — every failure resolves to
+  // `{ ok: false, error }` so the real reason survives to the client.
+  test("never throws — an invoice not ISSUED yet resolves to { ok: false } with a clear reason", async () => {
+    const client = { id: "c1", organizationId: "org_1", name: "Acme Events" };
+    queryMock.mockImplementation(queryImplFor(client));
+    queryMock.mockImplementation(async (fnRef: unknown) => {
+      const name = getFunctionName(fnRef as Parameters<typeof getFunctionName>[0]);
+      if (name === "invoices:getById") return { ...INVOICE, status: "DRAFT" };
+      throw new Error(`Unmocked query: ${name}`);
+    });
+
+    const { pushInvoiceToXero } = await import("./xero");
+    const result = await pushInvoiceToXero("inv1");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toMatch(/only an issued invoice/i);
+  });
+
+  test("never throws — Xero not connected for the org resolves to { ok: false } with a clear reason", async () => {
+    queryMock.mockImplementation(async (fnRef: unknown) => {
+      const name = getFunctionName(fnRef as Parameters<typeof getFunctionName>[0]);
+      if (name === "invoices:getById") return INVOICE;
+      if (name === "xeroIntegrations:getByOrgId") return { ...INTEGRATION, isConnected: false };
+      throw new Error(`Unmocked query: ${name}`);
+    });
+
+    const { pushInvoiceToXero } = await import("./xero");
+    const result = await pushInvoiceToXero("inv1");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toMatch(/not connected/i);
+  });
+
+  test("never throws — Xero not configured on this deployment resolves to { ok: false } with a clear reason", async () => {
+    vi.stubEnv("XERO_CLIENT_ID", "");
+    vi.stubEnv("XERO_CLIENT_SECRET", "");
+    // @/env parses process.env into a frozen object once at first import;
+    // vi.resetModules forces a fresh read so the empty stub above takes effect
+    // (a plain vi.stubEnv is invisible to an already-cached `env` object).
+    vi.resetModules();
+    const client = { id: "c1", organizationId: "org_1", name: "Acme Events", xeroContactId: "mapped", xeroContactName: "Acme" };
+    queryMock.mockImplementation(queryImplFor(client));
+
+    const { pushInvoiceToXero } = await import("./xero");
+    const result = await pushInvoiceToXero("inv1");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toMatch(/not configured/i);
   });
 });

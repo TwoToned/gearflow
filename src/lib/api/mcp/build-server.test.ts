@@ -23,14 +23,8 @@ vi.mock("../operations-listing", () => ({
   describeOperation: (...args: unknown[]) => describeOperationMock(...args),
 }));
 
-const resolveProjectDocumentMock = vi.fn();
-vi.mock("../documents", () => ({ resolveProjectDocument: (...args: unknown[]) => resolveProjectDocumentMock(...args) }));
-
-const getFileAsDataUriMock = vi.fn();
-vi.mock("@/lib/storage", () => ({
-  getFileAsDataUri: (...args: unknown[]) => getFileAsDataUriMock(...args),
-  getProxyUrl: (storageId: string) => `/api/files/${storageId}`,
-}));
+const resolveProjectDocumentUrlMock = vi.fn();
+vi.mock("../documents", () => ({ resolveProjectDocumentUrl: (...args: unknown[]) => resolveProjectDocumentUrlMock(...args) }));
 
 const { routeToolCall } = await import("./build-server");
 const { MCP_NAMESPACE, MCP_CURATED_TOOLS } = await import("../mcp-manifest.generated");
@@ -136,14 +130,13 @@ describe("routeToolCall — curated tools", () => {
 });
 
 describe("routeToolCall — get_project_document (the other operation:null special tool)", () => {
-  test("a live-rendered ('bytes') outcome returns a base64 resource block, without calling dispatch", async () => {
-    resolveProjectDocumentMock.mockResolvedValueOnce({
-      kind: "bytes",
+  test("returns a download URL + metadata as plain JSON, without calling dispatch", async () => {
+    resolveProjectDocumentUrlMock.mockResolvedValueOnce({
       docType: "delivery-docket",
       status: "live",
       fileName: "delivery-docket-proj_1.pdf",
       contentType: "application/pdf",
-      bytes: Buffer.from("pdf-bytes"),
+      url: "https://storage.convex.cloud/some-signed-url",
     });
 
     const result = await routeToolCall(
@@ -152,60 +145,24 @@ describe("routeToolCall — get_project_document (the other operation:null speci
       opts,
     );
 
-    expect(resolveProjectDocumentMock).toHaveBeenCalledWith(mockAgent.actor, "proj_1", "delivery-docket");
+    expect(resolveProjectDocumentUrlMock).toHaveBeenCalledWith(mockAgent.actor, "proj_1", "delivery-docket");
     expect(dispatchMock).not.toHaveBeenCalled();
-    expect(getFileAsDataUriMock).not.toHaveBeenCalled();
     expect(result.isError).toBe(false);
-    expect(result.structuredContent).toEqual({
+    // Plain JSON only — no `resource`/`image`/`audio` content block, same shape every other tool returns.
+    expect(result.content.every((c) => c.type === "text")).toBe(true);
+    expect((result.structuredContent as { data: unknown }).data).toEqual({
       docType: "delivery-docket",
       status: "live",
       fileName: "delivery-docket-proj_1.pdf",
       contentType: "application/pdf",
+      url: "https://storage.convex.cloud/some-signed-url",
     });
-    const resourceBlock = result.content.find((c) => c.type === "resource") as { resource: { mimeType: string; blob: string } };
-    expect(resourceBlock.resource.mimeType).toBe("application/pdf");
-    expect(resourceBlock.resource.blob).toBe(Buffer.from("pdf-bytes").toString("base64"));
   });
 
-  test("a stored-artifact outcome fetches the bytes via getFileAsDataUri and returns them as a blob", async () => {
-    resolveProjectDocumentMock.mockResolvedValueOnce({
-      kind: "stored",
-      docType: "quote",
-      status: "sent",
-      fileName: "RVLT-2026-0001-quote-v1.pdf",
-      organizationId: "org_A",
-      storageId: "storage_1",
-    });
-    getFileAsDataUriMock.mockResolvedValueOnce("data:application/pdf;base64,AAAA");
-
-    const result = await routeToolCall(`${MCP_NAMESPACE}.get_project_document`, { projectId: "proj_1", docType: "quote" }, opts);
-
-    expect(getFileAsDataUriMock).toHaveBeenCalledWith("/api/files/storage_1");
-    expect(result.isError).toBe(false);
-    const resourceBlock = result.content.find((c) => c.type === "resource") as { resource: { mimeType: string; blob: string } };
-    expect(resourceBlock.resource.mimeType).toBe("application/pdf");
-    expect(resourceBlock.resource.blob).toBe("AAAA");
-  });
-
-  test("a stored artifact whose bytes can't be fetched is a DOCUMENT_NOT_READY tool-level error", async () => {
-    resolveProjectDocumentMock.mockResolvedValueOnce({
-      kind: "stored",
-      docType: "invoice",
-      status: "issued",
-      fileName: "INV-1-invoice.pdf",
-      organizationId: "org_A",
-      storageId: "storage_missing",
-    });
-    getFileAsDataUriMock.mockResolvedValueOnce(null);
-
-    const result = await routeToolCall(`${MCP_NAMESPACE}.get_project_document`, { projectId: "proj_1", docType: "invoice" }, opts);
-
-    expect(result.isError).toBe(true);
-    expect((result.structuredContent as { error: { code: string } }).error.code).toBe("DOCUMENT_NOT_READY");
-  });
-
-  test("a thrown error (e.g. missing scope / not found) becomes an in-band error envelope, not a rejection", async () => {
-    resolveProjectDocumentMock.mockRejectedValueOnce(Object.assign(new Error("No issued invoice found for this project yet."), { code: "NOT_FOUND" }));
+  test("a thrown error (e.g. missing scope / not found / not ready) becomes an in-band error envelope, not a rejection", async () => {
+    resolveProjectDocumentUrlMock.mockRejectedValueOnce(
+      Object.assign(new Error("No issued invoice found for this project yet."), { code: "NOT_FOUND" }),
+    );
 
     const result = await routeToolCall(`${MCP_NAMESPACE}.get_project_document`, { projectId: "proj_1", docType: "invoice" }, opts);
 

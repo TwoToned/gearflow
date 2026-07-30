@@ -754,7 +754,7 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
   {
     "name": "rvlt_flow.v1.get_project_document",
     "title": "Get project document",
-    "description": "Fetch one of a project's PDF documents, returned inline as a base64 `resource` content block (mimeType \"application/pdf\") plus a short JSON summary. `docType` is one of: \"delivery-docket\", \"packing-list\" (the pick slip / pull slip), \"return-sheet\" — always freshly rendered from TODAY's project state; \"quote\", \"invoice\" — the frozen document if one has been sent/issued (never re-rendered), otherwise \"quote\" falls back to a watermarked DRAFT PREVIEW live render (\"invoice\" has no draft form and reports not-found instead). Requires `project:read` for the first three, `invoice:read` for quote/invoice — both already in the read_only_agent preset, so this works out of the box for a read-only key.",
+    "description": "Fetch one of a project's PDF documents. Returns a short-lived download URL (no further auth needed) plus `fileName`/`contentType`/`docType`/`status` — fetch the `url` to get the actual PDF bytes. `docType` is one of: \"delivery-docket\", \"packing-list\" (the pick slip / pull slip), \"return-sheet\" — always freshly rendered from TODAY's project state; \"quote\", \"invoice\" — the frozen document if one has been sent/issued (never re-rendered), otherwise \"quote\" falls back to a watermarked DRAFT PREVIEW live render (\"invoice\" has no draft form and reports not-found instead). Requires `project:read` for the first three, `invoice:read` for quote/invoice — both already in the read_only_agent preset, so this works out of the box for a read-only key.",
     "inputSchema": {
       "type": "object",
       "properties": {

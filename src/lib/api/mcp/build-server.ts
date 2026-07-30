@@ -14,8 +14,7 @@ import { dispatch, type DispatchResult } from "../dispatcher";
 import { listOperationsPage, describeOperation } from "../operations-listing";
 import { getWhoamiData } from "../whoami";
 import { toErrorEnvelope } from "../errors";
-import { resolveProjectDocument, type AgentDocumentType } from "../documents";
-import { getFileAsDataUri, getProxyUrl } from "@/lib/storage";
+import { resolveProjectDocumentUrl, type AgentDocumentType } from "../documents";
 import type { AgentRequestContext } from "../agent-auth";
 import { MCP_RESOURCES, readMcpResource } from "./resources";
 import { MCP_PROMPTS, MCP_PROMPTS_BY_NAME } from "./prompts";
@@ -116,41 +115,24 @@ async function handleWhoami(_args: Record<string, unknown>, opts: BuildMcpServer
 
 /**
  * `get_project_document` — the other `operation: null` special tool (see
- * `src/lib/api/documents.ts`). Unlike every dispatch-backed tool, this one
- * hands back the actual PDF bytes as a base64 `resource` content block
- * (MCP's `EmbeddedResource`/`BlobResourceContents` shape) alongside a small
- * JSON summary, rather than JSON-only — there is nothing to "dispatch" to,
- * since the PDF has to be produced by Node/Prisma/pdfme, not a Convex query.
+ * `src/lib/api/documents.ts`). There is nothing to "dispatch" to, since the
+ * PDF has to be produced by Node/Prisma/pdfme, not a Convex query.
+ *
+ * Returns a short-lived download URL + metadata as plain JSON — the same
+ * shape every other tool returns. An earlier version embedded the PDF inline
+ * as a base64 MCP `resource` content block, but that doesn't survive every
+ * real MCP client/relay path intact (a layer somewhere strips/nulls fields it
+ * doesn't recognise before the result reaches the client's own schema
+ * validation); a URL is what `files.getServeInfo` already hands agents
+ * elsewhere in this codebase, and it's proven reliable.
  */
 async function handleGetProjectDocument(args: Record<string, unknown>, opts: BuildMcpServerOptions): Promise<CallToolResult> {
   const projectId = typeof args.projectId === "string" ? args.projectId : "";
   const docType = typeof args.docType === "string" ? args.docType : "";
 
   try {
-    const outcome = await resolveProjectDocument(opts.agent.actor, projectId, docType as AgentDocumentType);
-
-    let blob: string;
-    let contentType: string;
-    if (outcome.kind === "bytes") {
-      blob = outcome.bytes.toString("base64");
-      contentType = outcome.contentType;
-    } else {
-      const dataUri = await getFileAsDataUri(getProxyUrl(outcome.storageId));
-      if (!dataUri) return toCallToolResult(toErrorEnvelope(Object.assign(new Error("The stored document's bytes could not be retrieved."), { code: "DOCUMENT_NOT_READY" })), true);
-      const separator = dataUri.indexOf(",");
-      contentType = dataUri.slice("data:".length, dataUri.indexOf(";"));
-      blob = dataUri.slice(separator + 1);
-    }
-
-    const summary = { docType: outcome.docType, status: outcome.status, fileName: outcome.fileName, contentType };
-    return {
-      content: [
-        { type: "text", text: JSON.stringify({ data: summary, requestId: opts.requestId }, null, 2) },
-        { type: "resource", resource: { uri: `document://${projectId}/${outcome.docType}`, mimeType: contentType, blob } },
-      ],
-      structuredContent: summary,
-      isError: false,
-    };
+    const result = await resolveProjectDocumentUrl(opts.agent.actor, projectId, docType as AgentDocumentType);
+    return toCallToolResult({ data: result, requestId: opts.requestId }, false);
   } catch (err) {
     return toCallToolResult(toErrorEnvelope(err, { requestId: opts.requestId }), true);
   }

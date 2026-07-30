@@ -47,6 +47,26 @@ totals `recalc.ts` already stored on the project. This is the DATA-MODEL
 snapshot, not the PDF's own line structuring (`structure-line-items.ts`,
 unchanged) — that pipeline stays presentation-only.
 
+**A line's DESCRIPTION resolves the same way the PDF pipeline already
+does.** Live bug: a pushed Xero invoice showed an equipment line simply as
+"Line item" instead of e.g. "USB Pro DI". Equipment/kit lines are usually
+added by picking a model/kit, not by typing a description — `projectLineItems.
+description` is commonly unset, and the model/kit's OWN name is the
+canonical source (`structure-line-items.ts` already resolves `model?.name ??
+description` for exactly this reason). `buildFinanceLines` used to check
+only `description`/`groupName`, so any model-linked line with no hand-typed
+description fell straight through to the literal fallback string. It now
+resolves the line's `modelId` (or, for a kit-PARENT line — `kitId` set,
+`isKitChild` false — its `kitId`) to that doc's `name` as an ADDITIONAL
+fallback, ahead of `groupName`: `description || modelOrKitName ||
+groupName || "Line item"`. A hand-typed `description` still always wins
+(unchanged) — this only fixes the case that was silently broken.
+`buildFinanceLines` now takes `orgId` (both call sites already had a
+`project`/`fields.organizationId` in scope) so the model/kit lookup —
+`by_cuid`, a GLOBAL index — is org-checked before its name is trusted
+(R-8.4.3); a cross-org id falls through to the same "Line item" default
+rather than leaking a foreign org's model name.
+
 - **FULL** invoice: the project's full `subtotal`/`taxAmount`/`total`, full
   line breakdown.
 - **DEPOSIT** invoice: % of the tax-**inclusive** total (matches the

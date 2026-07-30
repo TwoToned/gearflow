@@ -164,7 +164,7 @@ export const createNative = mutation({
       updatedAt: now,
     });
 
-    const lines = await buildFinanceLines(ctx, fields.projectId);
+    const lines = await buildFinanceLines(ctx, fields.projectId, fields.organizationId);
     // A DEPOSIT/BALANCE invoice doesn't carry the full equipment/service line
     // breakdown (the % is against the total, not itemised) — snapshot a
     // single summary line instead of the full FULL-invoice breakdown.

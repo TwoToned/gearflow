@@ -166,7 +166,7 @@ async function buildQuoteSnapshot(
   project: Doc<"projects">,
   notes: string | undefined,
 ): Promise<Record<string, unknown>> {
-  const lines = await buildFinanceLines(ctx, project.id);
+  const lines = await buildFinanceLines(ctx, project.id, project.organizationId);
   return {
     lines,
     subtotal: Number(project.subtotal) || 0,

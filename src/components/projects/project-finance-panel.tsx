@@ -11,6 +11,7 @@ import { ProjectQuoteRail } from "@/components/projects/project-quote-rail";
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
+import { useCanDo } from "@/lib/use-permissions";
 import { pushInvoiceToXero } from "@/server/xero";
 import { generateInvoiceArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -21,6 +22,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { IssueInvoiceDialog } from "@/components/projects/finance/issue-invoice-dialog";
 
@@ -266,6 +268,24 @@ interface InvoiceRowDoc {
   issuedAt?: number;
 }
 
+/** The overflow-menu cluster for an invoice row — Delete draft / Void.
+ *  `canDelete`/`canVoid` mirror the `<CanDo>` gates these replaced; still UX
+ *  only, the server re-checks `invoice:delete`/`invoice:void` unconditionally. */
+export function invoiceRowMenuActions(
+  inv: InvoiceRowDoc,
+  perms: { canDelete: boolean; canVoid: boolean },
+  handlers: { onDeleteDraft: () => void; onVoidRequest: () => void },
+): RowAction[] {
+  const actions: RowAction[] = [];
+  if (inv.status === "DRAFT" && perms.canDelete) {
+    actions.push({ key: "delete-draft", label: "Delete draft", icon: Trash2, onClick: handlers.onDeleteDraft, destructive: true });
+  }
+  if (inv.status === "ISSUED" && perms.canVoid) {
+    actions.push({ key: "void", label: "Void invoice", icon: Ban, onClick: handlers.onVoidRequest, destructive: true });
+  }
+  return actions;
+}
+
 function InvoiceRow({
   invoice: inv,
   projectId,
@@ -281,9 +301,17 @@ function InvoiceRow({
   onDeleteDraft: () => void;
   onVoidRequest: () => void;
 }) {
+  // Document + at most one visible "primary" action (Issue on a draft, Push
+  // to Xero on an unsynced issued invoice) — everything else (Void, Delete
+  // draft) collapses into the overflow menu (#1038) instead of a row of
+  // pill buttons. Mirrors QuoteRowActions' consolidation in project-quote-rail.tsx.
+  const canDelete = useCanDo("invoice", "delete");
+  const canVoid = useCanDo("invoice", "void");
+  const menuActions = invoiceRowMenuActions(inv, { canDelete, canVoid }, { onDeleteDraft, onVoidRequest });
+
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
-      <div className="flex min-w-0 items-center gap-2">
+    <li className="flex items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         <Badge status={INVOICE_STATUS_BADGE[inv.status] ?? "neutral"}>{inv.status}</Badge>
         <span className="font-medium text-fg">{inv.invoiceNumber ?? `${inv.kind} (draft)`}</span>
         <span className="text-fg-4">{formatCurrency(inv.total)}</span>
@@ -294,7 +322,7 @@ function InvoiceRow({
           </span>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         <InvoiceDocumentAction invoice={inv} projectId={projectId} />
         {inv.status === "DRAFT" && (
           <CanDo resource="invoice" action="issue">
@@ -303,25 +331,12 @@ function InvoiceRow({
             </Button>
           </CanDo>
         )}
-        {inv.status === "DRAFT" && (
-          <CanDo resource="invoice" action="delete">
-            <Button type="button" variant="line" size="sm" onClick={onDeleteDraft}>
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </CanDo>
-        )}
-        {inv.status === "ISSUED" && (
-          <CanDo resource="invoice" action="void">
-            <Button type="button" variant="line" size="sm" onClick={onVoidRequest}>
-              <Ban className="h-3.5 w-3.5" /> Void
-            </Button>
-          </CanDo>
-        )}
         {xeroLinked && inv.status === "ISSUED" && inv.xeroSyncStatus !== "SYNCED" && (
           <CanDo resource="invoice" action="xero_push">
             <PushToXeroButton invoiceId={inv.id} />
           </CanDo>
         )}
+        <RowActionsMenu actions={menuActions} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
       </div>
     </li>
   );

@@ -7,7 +7,6 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { assertRefInOrg } from "./lib/orgRef";
-import { assertLifecycleGuard } from "./lib/projectLocks";
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { reserveProjectNumberCounter } from "./lib/projectNumberCounter";
@@ -109,7 +108,6 @@ export const createNative = mutation({
     await assertRefInOrg(ctx, "clients", fields.clientId, fields.organizationId);
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", fields.projectId)).first();
     if (!project) throw new ConvexError("Project not found: " + fields.projectId);
-    await assertLifecycleGuard(ctx, project, { kind: "financial" });
 
     const dup = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
     if (dup) throw new ConvexError("Invoice already exists");
@@ -259,9 +257,6 @@ export const issueNative = mutation({
     if (doc.status !== "DRAFT") {
       throw new ConvexError({ code: "INVALID_STATE", message: `Invoice is ${doc.status}, only a DRAFT invoice can be issued.` });
     }
-
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", doc.projectId)).first();
-    if (project) await assertLifecycleGuard(ctx, project, { kind: "financial" });
 
     const invoiceNumber = await allocateInvoiceNumber(ctx, orgId, autoNumber, now);
 

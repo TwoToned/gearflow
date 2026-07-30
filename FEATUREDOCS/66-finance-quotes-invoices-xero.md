@@ -280,13 +280,34 @@ regardless of what the UI shows.
   Plain confirm dialog, no reason field — `UnacceptDialog` in
   `project-quote-rail.tsx`, same "are you sure" shape as `DeleteDraftDialog`.
 
-`QuoteRevisionRow`'s conditions are split into `StandardQuoteActions` (the
-`invoice:publish` cluster) and `OwnerOnlyQuoteActions` (protect/correct/
-delete-permanently), sharing one `quoteRowFlags()` helper — kept the row's own
-cyclomatic complexity down without duplicating the status-derivation logic
-(R-3.1). jsdom smoke tests: `correct-quote-dialog.smoke.test.tsx`,
+`QuoteRevisionRow`'s conditions are split into `standardQuoteRowActions()` (the
+`invoice:publish` cluster) and `ownerOnlyQuoteRowActions()` (protect/correct/
+delete-permanently) — pure functions sharing one `quoteRowFlags()` helper,
+kept the row's own cyclomatic complexity down without duplicating the
+status-derivation logic (R-3.1). jsdom smoke tests: `correct-quote-dialog.smoke.test.tsx`,
 `delete-recalled-dialog.smoke.test.tsx` (CLAUDE.md's standing "new overlay UI
 needs a render-it smoke test" rule).
+
+**Row actions are one Document button + one overflow menu, not a button wall
+(#1038)** — a `SENT`, unprotected, owner-viewed revision used to render up to
+six separate `Button`s (Document, Mark accepted, Declined, Recall, Correct
+date, Protect), which wrapped across 2-3 lines on mobile and read as visual
+noise even on desktop (Mobbin review against Jobber/Wave/Square's own quote
+and invoice list rows — DESIGN.md §10 Mobbin Research Protocol). Both clusters
+above now return `RowAction[]` (`{ key, label, icon, onClick, destructive?,
+loading? }`) instead of JSX, combined into one array and handed to
+`<RowActionsMenu>` (`src/components/ui/row-actions-menu.tsx`) — a shared
+Radix `DropdownMenu` wrapper (`asChild` trigger, `touch-target` 44px hit area
+per DESIGN.md §15) that renders nothing when the array is empty. `QuoteRowActions`
+reads `useCanDo("invoice","publish")`/`useIsOwner()` directly (same permission
+checks `<CanDo>`/the old owner gate used, just read as booleans up front so
+both clusters can merge into one list) — the server-side gates are unchanged,
+this is UX only. The invoice list (`project-finance-panel.tsx`'s `InvoiceRow`)
+uses the same component: Document + the one contextual "next step" action
+(Issue on a draft, Push to Xero on an unsynced issued invoice) stay visible,
+Delete draft/Void move into the menu via `invoiceRowMenuActions()`. Unit tests
+for the action-list logic: `quote-row-actions.test.ts`, `invoice-row-actions.test.ts`;
+smoke test for the shared menu: `row-actions-menu.smoke.test.tsx`.
 
 ### Acceptance gate on CONFIRMED
 
@@ -417,7 +438,20 @@ The structured workflow that replaces "press the Documents button and hope."
 Finance · Tasks · Notes · Files`) — the old `Financials` tab's content
 (`StalePricingBanner`, the unlock banner, `FinancialSummary`, `ProjectCostsPanel`)
 moved in wholesale rather than being duplicated; only the tab's `value`/label
-changed (`financials` → `finance`). Full UI/UX spec:
+changed (`financials` → `finance`).
+
+**Section order leads with the workflow, not the reference data (#1038).**
+`src/app/(app)/projects/[id]/page.tsx`'s Finance `TabsContent` renders
+`StalePricingBanner` (the one alert), then `<ProjectFinancePanel>` — quote
+revisions + invoices, the tab's actual actionable content — THEN a divider,
+`BillingSummaryRow`/`FinancialSummary`/`ProjectCostsPanel` (read-only reference
+figures a PM checks less often). Quotes/invoices previously rendered LAST,
+after three reference panels — a PM opening the Finance tab to send a quote
+had to scroll past a billing summary, a financial summary, and an operational
+P&L panel first. No component moved between tabs, nothing was duplicated —
+only the render order within this one `TabsContent` changed.
+
+Full UI/UX spec:
 [`docs/designs/finance-workflow-ux.md`](../docs/designs/finance-workflow-ux.md).
 
 ### Send dialog (`src/components/projects/finance/send-quote-dialog.tsx`)

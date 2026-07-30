@@ -33,7 +33,7 @@ const AUTHORIZE_BASE = "https://login.xero.com/identity/connect/authorize";
  * scope isn't available to request at all, so asking for it throws
  * `invalid_scope` at the /authorize step for every new app. `accounting.invoices`
  * is the granular replacement covering invoices/credit notes/quotes, which is
- * all this integration pushes (createXeroDraftInvoice). Pre-March-2026 apps can
+ * all this integration pushes (upsertXeroDraftInvoice). Pre-March-2026 apps can
  * still use the broad scope through September 2027, but there's no reason to —
  * the granular scope works for both old and new apps.
  */
@@ -301,7 +301,7 @@ const taxRateSchema = z.object({
   EffectiveRate: z.number().optional(),
   // Xero tags every tax rate with which transaction sides it's valid for
   // (income/revenue vs. expenses/purchases). This integration ONLY ever
-  // creates ACCREC (sales) invoices (createXeroDraftInvoice), so an
+  // creates ACCREC (sales) invoices (upsertXeroDraftInvoice), so an
   // expenses-only TaxType (e.g. "GST on Expenses" / INPUT2) picked for the
   // org default or a coding override is invalid on every single push — Xero
   // rejects it with "The TaxType code '...' cannot be used with account code
@@ -403,11 +403,22 @@ const xeroInvoiceSchema = z.object({
 const invoicesResponseSchema = z.object({ Invoices: z.array(xeroInvoiceSchema) });
 export type XeroInvoice = z.infer<typeof xeroInvoiceSchema>;
 
-/** Create a Xero DRAFT invoice (ACCREC — accounts receivable, i.e. a sales
- *  invoice) carrying Flow's own invoice number as `InvoiceNumber` and
- *  `Reference`. Xero owns the ledger from here — Flow never marks it approved. */
-export async function createXeroDraftInvoice(
+/**
+ * Create OR update a Xero DRAFT invoice (ACCREC — accounts receivable, i.e.
+ * a sales invoice) carrying Flow's own invoice number as `InvoiceNumber` and
+ * `Reference`. Xero's `/Invoices` POST endpoint is itself an upsert: include
+ * `InvoiceID` to update that exact invoice in place, omit it to create a new
+ * one — same endpoint, same body shape, no separate PUT/update call. Xero
+ * owns the ledger from here — Flow never marks it approved, and this only
+ * ever writes an invoice while it's still DRAFT there (Xero rejects the
+ * update itself once a human has approved/voided it in Xero, surfaced as a
+ * normal `XeroApiError`).
+ */
+export async function upsertXeroDraftInvoice(
   input: {
+    /** The Xero-side InvoiceID from a prior push. Present -> UPDATE that
+     *  invoice; absent -> CREATE a new one. */
+    xeroInvoiceId?: string;
     contactId: string;
     invoiceNumber: string;
     reference?: string;
@@ -420,6 +431,7 @@ export async function createXeroDraftInvoice(
   const body = {
     Invoices: [
       {
+        ...(input.xeroInvoiceId ? { InvoiceID: input.xeroInvoiceId } : {}),
         Type: "ACCREC",
         Contact: { ContactID: input.contactId },
         Date: input.date,

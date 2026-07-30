@@ -864,6 +864,40 @@ direct visit to `/settings/xero` shows a "not configured" message instead of
 a "Connect Xero" button that would otherwise throw at click-time
 (`requireXeroAppCredentials()` in `src/server/xero.ts`).
 
+### "Push to Xero" both CREATES and UPDATES — same button, same Xero invoice
+
+An issued invoice's `xeroSyncStatus` starts `NOT_SYNCED`, moves to `SYNCED`
+on a successful push, or `ERROR` on a failed one. The button used to
+disappear the moment it went `SYNCED` — so a correction made on the Flow
+side AFTER the first push (a fixed line description, corrected account/tax
+coding from the picker fix above) had no way back into Xero short of
+editing the invoice there by hand.
+
+`upsertXeroDraftInvoice` (`src/lib/xero-client.ts`, renamed from
+`createXeroDraftInvoice`) leans on the fact that Xero's `POST /Invoices` is
+itself an upsert: include `InvoiceID` in the body to edit that exact
+invoice in place, omit it to create a new one — same endpoint, same shape,
+no separate update call. `pushInvoiceToXero` (`src/server/xero.ts`) passes
+`invoice.xeroInvoiceId` through when the invoice already has one, and
+reports which happened via `XeroPushResult`'s new `updated: boolean` — the
+button (`PushToXeroButton`, `project-finance-panel.tsx`) now renders
+whenever an invoice is `ISSUED`, regardless of sync status, showing "Push to
+Xero" / a filled button pre-sync and "Update in Xero" / an outline button
+once `xeroSyncStatus === "SYNCED"`; the toast reads "Updated in Xero" vs.
+"Pushed to Xero" from that same flag. `logXeroPushActivity`
+(`convex/xeroPush.ts`) takes the same `updated` flag so the activity feed
+reads correctly either way, not just "Pushed ... as a draft invoice" on
+every re-push.
+
+Coding re-resolves on every push, not just the first — `resolveCodingForInvoice`
+runs unconditionally, so a corrected category/model account or tax-type
+mapping flows into Xero on the next "Update in Xero" click without any
+special-casing. This only ever edits the invoice while it's still `DRAFT`
+in Xero (Flow never approves it there); if a human has since approved or
+voided it in Xero, the update itself is rejected by Xero and surfaces as a
+normal `XeroApiError` (via the validation-detail fix above), not a silent
+no-op or a duplicate invoice.
+
 ### `pushInvoiceToXero` never throws — it returns `{ ok, ... }`
 
 `src/server/xero.ts`'s `pushInvoiceToXero` is a real Next.js Server Action
@@ -879,11 +913,11 @@ live bug (2026-07): every one of those precondition checks used a plain
 which one fired.
 
 Fix: `pushInvoiceToXero`'s return type is `XeroPushResult =
-{ ok: true; xeroInvoiceId; varianceNote; autoCreatedContact } | { ok: false; error: string }`
+{ ok: true; xeroInvoiceId; varianceNote; autoCreatedContact; updated } | { ok: false; error: string }`
 and the WHOLE function body is wrapped in a top-level try/catch that returns
 `{ ok: false, error }` instead of letting anything escape — the ONLY way a
 Server Action's failure message survives Next's production redaction. The
-existing inner try/catch around the actual `createXeroDraftInvoice` call
+existing inner try/catch around the actual `upsertXeroDraftInvoice` call
 (which marks the invoice `ERROR`, logs the sync event, and writes the
 activity log entry) is unchanged; its re-thrown `Error` is now just an
 internal signal caught by the outer catch, not something that escapes the
@@ -930,7 +964,7 @@ with `"The TaxType code 'INPUT' cannot be used with account code '200'."`
 — an operator had picked an expenses-only GST rate (`INPUT`-family, Xero's
 "GST on Expenses" side) as the org's default tax type, or as a category/
 line override. This integration exclusively creates ACCREC (sales)
-invoices (`createXeroDraftInvoice`, `Type: "ACCREC"`) — an expenses-only
+invoices (`upsertXeroDraftInvoice`, `Type: "ACCREC"`) — an expenses-only
 rate is NEVER valid on any push, regardless of which account it's paired
 with, because Xero ties every tax rate to `CanApplyToRevenue`/
 `CanApplyToExpenses` flags on the rate itself. The Settings -> Xero
@@ -1050,20 +1084,23 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
   rental-vs-sale + service-type branches.
 - `convex/xeroPush.test.ts` — 6 tests, cascade resolution IN CONTEXT (real
   DB reads through model/kit/category/service, not just the pure functions).
-- `src/lib/xero-client.test.ts` — 21 tests against fixture Xero responses
+- `src/lib/xero-client.test.ts` — 22 tests against fixture Xero responses
   (mocked `fetch`), including one asserting a realistic `ValidationErrors`
-  body surfaces its specific per-line message, not just the HTTP status,
-  and one pinning `CanApplyToRevenue` surviving schema parsing on both an
-  income and an expenses tax rate.
+  body surfaces its specific per-line message, not just the HTTP status;
+  one pinning `CanApplyToRevenue` surviving schema parsing on both an
+  income and an expenses tax rate; and one asserting `upsertXeroDraftInvoice`
+  includes `InvoiceID` in the request body (an UPDATE) when supplied one.
 - `src/components/settings/xero-coding-fields.test.ts` — 3 tests on
   `revenueApplicableTaxRates`, the tax-type picker's income-vs-expenses
   filter (drops `CanApplyToRevenue: false`, keeps a pre-fix cache's
   fieldless rates, empty input).
 - `src/lib/xero-oauth-state.test.ts` — 5 tamper/expiry tests.
-- `src/server/xero.test.ts` — 7 mocked-boundary tests on `pushInvoiceToXero`
-  (auto-create-contact idempotency, the Xero-API-failure path, and three
+- `src/server/xero.test.ts` — 8 mocked-boundary tests on `pushInvoiceToXero`
+  (auto-create-contact idempotency, the Xero-API-failure path, three
   precondition failures — not-ISSUED, not-connected, not-configured —
-  asserting each resolves to `{ ok: false, error }` rather than throwing).
+  asserting each resolves to `{ ok: false, error }` rather than throwing,
+  and one asserting a re-push on an already-`SYNCED` invoice threads its
+  `xeroInvoiceId` through as an UPDATE rather than a duplicate create).
 - `convex/lib/xeroGate.test.ts` — 4 tests, the linked gate + org-scoping.
 - `convex/quotesWrites.test.ts` / `convex/invoicesWrites.test.ts` — 42 tests,
   server-computed money, gapless/namespaced numbering, cross-org IDOR guards,

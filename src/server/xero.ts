@@ -35,7 +35,7 @@ import {
   findXeroContactByEmail,
   searchXeroContactsByName,
   createXeroContact,
-  createXeroDraftInvoice,
+  upsertXeroDraftInvoice,
   XeroApiError,
   type XeroInvoiceLineInput,
 } from "@/lib/xero-client";
@@ -263,15 +263,22 @@ export async function unlinkXeroContact(clientId: string) {
 // ─── Push ────────────────────────────────────────────────────────────────
 
 export type XeroPushResult =
-  | { ok: true; xeroInvoiceId: string; varianceNote: string | null; autoCreatedContact: boolean }
+  | { ok: true; xeroInvoiceId: string; varianceNote: string | null; autoCreatedContact: boolean; updated: boolean }
   | { ok: false; error: string };
 
 /**
- * Push an ISSUED invoice to Xero as a DRAFT (ACCREC) invoice. Ensures the
- * client has a mapped Xero contact first — duplicate protection: an
- * exact-email match against Xero's contacts LINKS instead of creating (spec
- * requirement). Coding is resolved server-side (convex/xeroPush.ts,
- * convex/lib/xeroAccountCascade.ts) and snapshotted onto invoiceLines.
+ * Push an ISSUED invoice to Xero as a DRAFT (ACCREC) invoice — CREATING it
+ * the first time, UPDATING the same Xero invoice in place on every
+ * subsequent push (`invoice.xeroInvoiceId` from a prior push, threaded
+ * through to `upsertXeroDraftInvoice`). Before this, `xeroSyncStatus ===
+ * "SYNCED"` hid the button entirely (`project-finance-panel.tsx`), so
+ * fixing something in Flow AFTER the first push (a wrong line description,
+ * a coding-cascade correction) had no way back into Xero short of editing
+ * it there by hand. Ensures the client has a mapped Xero contact first —
+ * duplicate protection: an exact-email match against Xero's contacts LINKS
+ * instead of creating (spec requirement). Coding is resolved server-side
+ * (convex/xeroPush.ts, convex/lib/xeroAccountCascade.ts) and snapshotted
+ * onto invoiceLines, so a re-push also refreshes coding, not just amounts.
  *
  * NEVER throws — always resolves to `{ ok, ... }`. Next.js redacts every
  * uncaught error thrown out of a Server Action in production to a generic
@@ -334,10 +341,12 @@ export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResu
       };
     });
 
+    const isUpdate = Boolean(invoice.xeroInvoiceId);
     const invoiceLabel = `${invoice.kind} invoice ${invoice.invoiceNumber}`;
     try {
-      const created = await createXeroDraftInvoice(
+      const created = await upsertXeroDraftInvoice(
         {
+          xeroInvoiceId: invoice.xeroInvoiceId ?? undefined,
           contactId: xeroContactId,
           invoiceNumber: invoice.invoiceNumber,
           reference: project ? `Project ${project.projectNumber} — ${project.name}` : undefined,
@@ -351,13 +360,13 @@ export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResu
       await convex.mutation(api.xeroPush.applyXeroPushResultNative, {
         invoiceId, orgId: organizationId, xeroInvoiceId: created.InvoiceID, resolvedLines: coding.lines, now: Date.now(),
       });
-      await logSyncEvent(organizationId, "PUSH_INVOICE", "SUCCESS", { xeroInvoiceId: created.InvoiceID }, invoiceId, created.InvoiceID, client.id);
+      await logSyncEvent(organizationId, "PUSH_INVOICE", "SUCCESS", { xeroInvoiceId: created.InvoiceID, updated: isUpdate }, invoiceId, created.InvoiceID, client.id);
       await convex.mutation(api.xeroPush.logXeroPushActivity, {
-        organizationId, invoiceId, invoiceLabel, success: true,
+        organizationId, invoiceId, invoiceLabel, success: true, updated: isUpdate,
         actorUserId: userId, actorUserName: userName, auditId: createId(), now: Date.now(),
       });
 
-      return serialize<XeroPushResult>({ ok: true, xeroInvoiceId: created.InvoiceID, varianceNote: coding.varianceNote, autoCreatedContact });
+      return serialize<XeroPushResult>({ ok: true, xeroInvoiceId: created.InvoiceID, varianceNote: coding.varianceNote, autoCreatedContact, updated: isUpdate });
     } catch (err) {
       const message = err instanceof XeroApiError ? err.message : err instanceof Error ? err.message : "Unknown error";
       await convex.mutation(api.xeroPush.markXeroPushFailedNative, { invoiceId, orgId: organizationId, error: message, now: Date.now() });

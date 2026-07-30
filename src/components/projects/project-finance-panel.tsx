@@ -331,9 +331,9 @@ function InvoiceRow({
             </Button>
           </CanDo>
         )}
-        {xeroLinked && inv.status === "ISSUED" && inv.xeroSyncStatus !== "SYNCED" && (
+        {xeroLinked && inv.status === "ISSUED" && (
           <CanDo resource="invoice" action="xero_push">
-            <PushToXeroButton invoiceId={inv.id} />
+            <PushToXeroButton invoiceId={inv.id} alreadySynced={inv.xeroSyncStatus === "SYNCED"} />
           </CanDo>
         )}
         <RowActionsMenu actions={menuActions} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
@@ -409,7 +409,17 @@ function NudgeChip({ label, action, onAction }: { label: string; action: string;
   );
 }
 
-function PushToXeroButton({ invoiceId }: { invoiceId: string }) {
+/**
+ * `alreadySynced` only picks the IDLE label/toast wording — pushInvoiceToXero
+ * itself decides create-vs-update from the invoice's own `xeroInvoiceId`
+ * (whichever this button's prop reflects, since both read the same row), so
+ * they can never disagree. A synced invoice keeps showing this button
+ * (rather than disappearing once `xeroSyncStatus === "SYNCED"`, as it used
+ * to) so a Flow-side correction — a fixed line description, a corrected
+ * account/tax coding — has a way back into the SAME Xero invoice instead of
+ * requiring a manual edit there.
+ */
+function PushToXeroButton({ invoiceId, alreadySynced }: { invoiceId: string; alreadySynced: boolean }) {
   const pushMutation = useServerMutation({
     mutationFn: () => pushInvoiceToXero(invoiceId),
     onSuccess: (r) => {
@@ -417,7 +427,11 @@ function PushToXeroButton({ invoiceId }: { invoiceId: string }) {
         toast.error(r.error);
         return;
       }
-      toast.success(r.autoCreatedContact ? "Pushed to Xero (new contact created)" : "Pushed to Xero");
+      if (r.updated) {
+        toast.success("Updated in Xero");
+      } else {
+        toast.success(r.autoCreatedContact ? "Pushed to Xero (new contact created)" : "Pushed to Xero");
+      }
       if (r.varianceNote) toast.warning(r.varianceNote);
     },
     // pushInvoiceToXero never throws — it always resolves to { ok, ... } so its
@@ -426,8 +440,8 @@ function PushToXeroButton({ invoiceId }: { invoiceId: string }) {
     onError: (e) => toast.error(e.message),
   });
   return (
-    <Button type="button" size="sm" loading={pushMutation.isPending} onClick={() => pushMutation.mutate(undefined)}>
-      <UploadCloud className="h-3.5 w-3.5" /> Push to Xero
+    <Button type="button" variant={alreadySynced ? "line" : "primary"} size="sm" loading={pushMutation.isPending} onClick={() => pushMutation.mutate(undefined)}>
+      <UploadCloud className="h-3.5 w-3.5" /> {alreadySynced ? "Update in Xero" : "Push to Xero"}
     </Button>
   );
 }

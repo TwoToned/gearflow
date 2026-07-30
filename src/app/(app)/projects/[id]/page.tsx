@@ -587,11 +587,28 @@ export default function ProjectDetailPage({
                     this is that content, not a duplicate of it. The lock
                     strip/banner used to live here (Phase D's `QuoteLockStrip`)
                     but is now the page-level `<ProjectLockStrip>` (#990) above
-                    the tabs — visible from every tab, not just this one. */}
+                    the tabs — visible from every tab, not just this one.
+
+                    Section order is deliberate (#1038 IA pass): the alert
+                    banner, then Quotes & Invoices — the tab's actual workflow,
+                    what a PM opens this tab to DO — leads. Financial summary
+                    and operational P&L are read-only reference figures a PM
+                    checks less often; they follow behind a divider rather than
+                    burying the actionable content below them. */}
                 {!project.isTemplate && (
                   <TabsContent value="finance">
                     <div className="space-y-6 pt-4">
                       <StalePricingBanner projectId={project.id} orgId={orgId} />
+                      <ProjectFinancePanel
+                        projectId={project.id}
+                        projectNumber={project.projectNumber}
+                        clientId={project.clientId as string | null | undefined}
+                        projectStatus={project.status as string | null | undefined}
+                        subtotal={project.subtotal as number | null}
+                        taxAmount={project.taxAmount as number | null}
+                        total={project.total as number | null}
+                      />
+                      <div className="h-px bg-line" />
                       <BillingSummaryRow
                         projectId={project.id}
                         orgId={orgId}
@@ -638,17 +655,6 @@ export default function ProjectDetailPage({
                       })()}
                       <div className="h-px bg-line" />
                       <ProjectCostsPanel projectId={project.id} />
-                      <div className="h-px bg-line" />
-                      {/* WS1 (#940), Phase D (#989) — Quotes & Invoices */}
-                      <ProjectFinancePanel
-                        projectId={project.id}
-                        projectNumber={project.projectNumber}
-                        clientId={project.clientId as string | null | undefined}
-                        projectStatus={project.status as string | null | undefined}
-                        subtotal={project.subtotal as number | null}
-                        taxAmount={project.taxAmount as number | null}
-                        total={project.total as number | null}
-                      />
                     </div>
                   </TabsContent>
                 )}

@@ -19,7 +19,21 @@ status → tier boundary is defined. Every gate site across
 `projectCategoriesWrites.ts`/`projectServicesWrites.ts`/`crewAssignmentsWrites.ts`
 imports it (directly or via `assertLifecycleGuard`) rather than re-deriving the
 boundary — a second hand-maintained copy would be a defect even in sync
-(POLICY.md R-3.1).
+(POLICY.md R-3.1). The same module exports `LOCK_TIER_RANK`, an ordering of the
+four tiers — the single place that answers "did this transition make the
+project MORE or LESS locked" — consumed by `updateStatusNative`'s activity-log
+write (below) so a second hand-maintained ordering doesn't grow elsewhere.
+
+**Activity log visibility.** Opening/closing an unlock session is its own
+explicit `activityLogs` action (`UNLOCK_OPENED`/`UNLOCK_COMMITTED`/
+`UNLOCK_DISCARDED`/`UNLOCK_AUTO_COMMITTED`, justification in
+`metadata.justification` — see below). Entering or leaving a lock tier via an
+ordinary status change has no action of its own — it's a `STATUS_CHANGE`
+(`convex/projectWrites.ts`'s `updateStatusNative`) — but that row is enriched
+whenever `lockTierForStatus(from) !== lockTierForStatus(to)`: the summary gets
+a `— project locked (TIER)` / `— project unlocked (TIER)` suffix, and
+`metadata.lockTierFrom`/`lockTierTo` are stamped for programmatic queries. See
+FEATUREDOCS/24's "Finance events" section.
 
 | Statuses | Tier | What's gated |
 |---|---|---|

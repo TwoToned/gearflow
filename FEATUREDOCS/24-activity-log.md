@@ -1,6 +1,6 @@
 # Activity Log (Audit Trail)
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-31 (review quarterly — POLICY.md R-5.5)_
 
 ## Overview
 Tracks every significant write operation across all entities. Full audit
@@ -40,9 +40,61 @@ equivalent for them anymore.
 - Full-width table with filter bar: entity type, action, date range, search, CSV export.
 - Expandable rows show field changes ("field: old -> new").
 - Paginated, sortable by timestamp (newest first).
+- **Reason / Justification column** (`src/app/(app)/activity/page.tsx`): reads
+  `metadata.justification ?? metadata.reason` — the two names the codebase uses
+  for "why a caller had to type an explanation" (see below) — and renders it
+  next to the summary, truncated with a full-text tooltip. Em dash when absent.
 
 ## Entity Detail Integration
-**`ActivityTimeline`** component (`src/components/activity/activity-timeline.tsx`): Compact timeline for entity detail pages.
+**`ActivityTimeline`** component (`src/components/activity/activity-timeline.tsx`): Compact timeline for entity detail pages. Also renders the same
+`metadata.justification`/`metadata.reason` text as a "Reason: …" line under the
+summary when present.
+
+## Finance events (quotes, invoices, Xero, project locks)
+
+Every quote/invoice lifecycle mutation and the Xero push already wrote an audit
+row before this section existed; what changed (2026-07-31) is that each now
+uses a **specific `action` string** instead of a generic `CREATE`/`UPDATE`/`DELETE`,
+so the log is filterable/labelable per verb. `action` is still free-form text
+(no schema enum) — see `src/app/(app)/activity/page.tsx`'s `actionLabels` dict
+for the display label of every value below; add a new entry there whenever a
+finance mutation gains a new action string.
+
+**Quotes** (`convex/quotesWrites.ts`, `entityType: "quote"`):
+`QUOTE_CREATED` (new draft / new version / reprice-from-revision), `QUOTE_SENT`,
+`QUOTE_RECALLED` (reason in `metadata.reason`), `QUOTE_DELETED` (draft delete or
+recall-then-delete), `QUOTE_ACCEPTED`, `QUOTE_DECLINED` (reason in
+`metadata.reason`), `QUOTE_UNACCEPTED`, `QUOTE_PROTECTED`/`QUOTE_UNPROTECTED`,
+`QUOTE_CORRECTED`. The PDF-store step (`generateQuoteArtifact`,
+`src/server/finance-documents.ts`) separately logs `QUOTE_DOCUMENT_STORED` —
+this fires right after `QUOTE_SENT` but is a distinct row (rendering/storage
+succeeding is not the same event as the send itself).
+
+**Invoices** (`convex/invoicesWrites.ts`, `entityType: "invoice"`):
+`INVOICE_CREATED`, `INVOICE_ISSUED`, `INVOICE_VOIDED` (reason in
+`metadata.reason` — there is no separate "recall" verb for invoices, since an
+issued invoice is immutable; void is the un-issue action, see FEATUREDOCS/66),
+`INVOICE_DELETED` (draft only), `INVOICE_CREDIT_CREATED`. PDF storage
+(`generateInvoiceArtifact`) logs `INVOICE_DOCUMENT_STORED`.
+
+**Xero sync** (`convex/xeroPush.ts`'s `logXeroPushActivity`, called from
+`src/server/xero.ts`'s `pushInvoiceToXero()`): `INVOICE_XERO_SYNCED` on success
+(summary distinguishes first push vs. re-push/update), `INVOICE_XERO_SYNC_FAILED`
+on failure (`summary` carries the error detail). Separate from `xeroSyncLogs`
+(`convex/xeroSyncLogs.ts`), a narrower Xero-specific sync log not shown on
+`/activity` — this row is the general-audience audit entry.
+
+**Project lock/unlock** (`entityType: "project"`): opening/closing an unlock
+session is already its own explicit action —
+`UNLOCK_OPENED`/`UNLOCK_COMMITTED`/`UNLOCK_DISCARDED`/`UNLOCK_AUTO_COMMITTED`
+(`convex/projectUnlockSessionsWrites.ts`, justification in `metadata.justification`).
+Entering a locked tier has no separate action of its own — it's a normal
+`STATUS_CHANGE` (`convex/projectWrites.ts`'s `updateStatusNative`) — but that
+row is enriched whenever the transition crosses a lock-tier boundary
+(`lockTierForStatus`/`LOCK_TIER_RANK` in `convex/lib/projectLocks.ts`): the
+summary gets a `— project locked (TIER)` / `— project unlocked (TIER)` suffix,
+and `metadata.lockTierFrom`/`lockTierTo` are stamped for anyone querying the
+log programmatically. See FEATUREDOCS/62 for the tier table itself.
 
 ## Sidebar & Navigation
 - Sidebar: "Activity Log" with `ScrollText` icon, gated by `reports` read permission.

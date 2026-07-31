@@ -34,6 +34,8 @@ const entityTypeLabels: Record<string, string> = {
   member: "Member",
   invitation: "Invitation",
   settings: "Settings",
+  quote: "Quote",
+  invoice: "Invoice",
 };
 
 const actionLabels: Record<string, string> = {
@@ -48,10 +50,48 @@ const actionLabels: Record<string, string> = {
   EXPORT: "Export",
   IMPORT: "Import",
   INVITE: "Invite",
+  // Finance — quotes (convex/quotesWrites.ts / src/server/finance-documents.ts)
+  QUOTE_CREATED: "Quote Created",
+  QUOTE_SENT: "Quote Sent",
+  QUOTE_RECALLED: "Quote Recalled",
+  QUOTE_DELETED: "Quote Deleted",
+  QUOTE_ACCEPTED: "Quote Accepted",
+  QUOTE_DECLINED: "Quote Declined",
+  QUOTE_UNACCEPTED: "Quote Unaccepted",
+  QUOTE_PROTECTED: "Quote Protected",
+  QUOTE_UNPROTECTED: "Quote Unprotected",
+  QUOTE_CORRECTED: "Quote Corrected",
+  QUOTE_DOCUMENT_STORED: "Quote PDF Stored",
+  // Finance — invoices (convex/invoicesWrites.ts / convex/xeroPush.ts)
+  INVOICE_CREATED: "Invoice Created",
+  INVOICE_ISSUED: "Invoice Issued",
+  INVOICE_VOIDED: "Invoice Voided",
+  INVOICE_DELETED: "Invoice Deleted",
+  INVOICE_CREDIT_CREATED: "Credit Invoice Created",
+  INVOICE_DOCUMENT_STORED: "Invoice PDF Stored",
+  INVOICE_XERO_SYNCED: "Synced to Xero",
+  INVOICE_XERO_SYNC_FAILED: "Xero Sync Failed",
+  // Project lock/unlock (convex/projectUnlockSessionsWrites.ts — locking itself
+  // rides on STATUS_CHANGE, see the lockTierFrom/lockTierTo metadata note below)
+  UNLOCK_OPENED: "Unlock Opened",
+  UNLOCK_COMMITTED: "Unlock Saved & Relocked",
+  UNLOCK_DISCARDED: "Unlock Discarded",
+  UNLOCK_AUTO_COMMITTED: "Unlock Auto-Closed",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyLog = Record<string, any>;
+
+/** `metadata.justification` (lock-tier gates, unlock sessions) and
+ *  `metadata.reason` (quote recall/decline, invoice void) are two names for the
+ *  same "why" a finance/lifecycle action needed a typed explanation — surfaced
+ *  under one label here rather than adding a second column. */
+function justificationOf(row: AnyLog): string | undefined {
+  const metadata = row.metadata;
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const value = (metadata as Record<string, unknown>).justification ?? (metadata as Record<string, unknown>).reason;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
 
 /** Read-side of `writeActivityLog`'s agent stamp (`convex/lib/audit.ts`) — mirrors
  *  `convex/activityLog.ts`'s `isAgentAuthored` (Phase 4, #1000, decision 1), kept
@@ -147,6 +187,23 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       cell: (row) => (
         <span className="text-sm max-w-[300px] truncate block">{row.summary}</span>
       ),
+    },
+    {
+      id: "justification",
+      header: "Reason / Justification",
+      sortable: false,
+      responsiveHide: "lg",
+      mobile: "meta",
+      cell: (row) => {
+        const value = justificationOf(row);
+        return value ? (
+          <span className="text-sm text-fg-3 max-w-[240px] truncate block" title={value}>
+            {value}
+          </span>
+        ) : (
+          <span className="text-sm text-fg-3">—</span>
+        );
+      },
     },
   ];
 }

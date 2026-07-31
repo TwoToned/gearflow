@@ -483,6 +483,49 @@ Custom items are ad-hoc line items for gear not in the system — borrowed equip
 
 **Distinction from sub-hires:** Sub-hires represent formally ordered gear from a supplier with a structured order workflow. Custom items are anonymous ad-hoc entries with no supplier and no order tracking.
 
+### Inline editing (equipment table)
+Unit price, discount, description, and notes are editable directly in the
+equipment table row — click the cell, type, then blur (click away or Tab) or
+press Enter to save; Escape reverts without saving. This is a second entry
+point onto the *same* write as the "Edit" pencil's `EditLineItemDialog`, not a
+parallel path: `line-item-inline-cells.tsx`'s cell components call
+`equipment-tab.tsx`'s `handleInlineLineItemUpdate`, which layers the one
+changed field onto `buildLineItemFormDefaults(item)` and resolves it via
+`computeEditLineItemPayload` — the identical helper `EditLineItemDialog`'s
+`handleSave` calls for a full-form save (both now live in
+`src/lib/line-item-edit-payload.ts`, R-3.1). The resulting payload goes
+through the same `updateLineItemMut` mutation function (a second
+`useServerMutation` instance, `updateLineItemInlineMut`, shares the identical
+`mutationFn` but skips the dialog-close/success-toast side effects — the
+row's own `justChanged` flash on `updatedAt` change is feedback enough for a
+single-cell save).
+
+- **Description** is only inline-editable when the row has no `modelId` —
+  a model-backed row always displays `model.name` regardless of
+  `description` (the same read-fallback the dialog's field seeds from), so
+  inline-editing it for an equipment line would visibly do nothing on save.
+  Custom/service/labour/transport/misc items (no model) are always editable.
+- **Discount** reuses `resolveDiscountAmount`/`discountEntryValue` from
+  `src/lib/discount-mode.ts` exactly like the dialog's `DiscountField` — the
+  inline editor is a number input plus the same `$`/`%` toggle, seeded from
+  the stored `discount`/`discountMode` pair. An empty discount renders a
+  hover-revealed "+ Discount" affordance instead of a $0 line, matching the
+  row's other hover-revealed actions.
+- **Price/discount lock**: wrapped in the same `<LockedField>` the dialog uses
+  for money fields — when the project's financials are locked
+  (`moneyLocked`, FEATUREDOCS/62), the cells render read-only with the same
+  tooltip + "Manage unlock" exit, never bypassing the lock client-side.
+  Description/notes are the *structural* gate instead (`assertLifecycleGuard`
+  `kind: "structural"`) — same as editing them via the dialog today, a
+  JUSTIFY-tier project without an open session surfaces the server's
+  `JUSTIFICATION_REQUIRED` error as a toast (no inline justification prompt
+  yet, matching the dialog's current behaviour).
+- **Not offered** on sub-hire group children — those rows' "Edit" pencil opens
+  `SubHireOrderDialog` instead of `EditLineItemDialog` (their price flows
+  through cost/charge on the sub-hire group, not per-line `unitPrice`), so
+  `onInlineUpdate` is simply omitted at those two `LineItemRow` call sites in
+  `equipment-tab.tsx` and the cells stay static.
+
 ## Project Detail Page Layout
 Restructured (v0.x) to a clean hero card + lean sidebar — the old big header,
 standalone lifecycle band, and nine-section sidebar were "far too much info".

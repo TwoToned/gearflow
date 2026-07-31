@@ -368,16 +368,20 @@ export async function buildDocumentData(
   );
 
   // ─── Append billable services as virtual line items ─────────────────────────
-  // Services with showOnDocuments appear on quotes/invoices as their own section.
-  // projectService is dual-written to Convex — read the org's services, filter to
-  // this project (showOnDocuments === true, status != CANCELLED) and order by
-  // sortOrder asc, replicating the dropped Prisma findMany.
+  // A service appears on quotes/invoices as its own section once it has an actual
+  // charge — `lineTotal` is null/0 until a unitPrice is typed or a crew charge
+  // rate auto-prices it (calculateServiceLineTotal / recalcServiceChargeFromCrew).
+  // Mirrors `buildFinanceLines` (convex/lib/financeSnapshot.ts) and
+  // `recalcProjectTotals`'s serviceRevenue (convex/lib/recalc.ts) — same rule,
+  // not a second one (R-3.1). projectService is dual-written to Convex — read the
+  // org's services, filter to this project and order by sortOrder asc,
+  // replicating the dropped Prisma findMany.
   const billableServices = (await getProjectServicesByOrg(organizationId))
     .filter(
       (s) =>
         s.projectId === projectId &&
-        s.showOnDocuments === true &&
-        s.status !== "CANCELLED",
+        s.status !== "CANCELLED" &&
+        Number(s.lineTotal) > 0,
     )
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 

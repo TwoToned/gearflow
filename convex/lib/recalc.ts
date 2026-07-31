@@ -207,9 +207,11 @@ export async function recalcProjectTotals(
     (s) => s.organizationId === orgId && s.status !== "CANCELLED",
   );
   const serviceCostTotal = round(services.reduce((sum, s) => sum + num(s.costTotal), 0));
-  const serviceRevenue = round(
-    services.filter((s) => s.showOnDocuments === true).reduce((sum, s) => sum + num(s.lineTotal), 0),
-  );
+  // Billable iff it has an actual charge — `lineTotal` is null/0 until a unitPrice
+  // is typed or a crew charge rate auto-prices it, so a plain unconditional sum
+  // already excludes an unpriced service (num() reads it as 0). No separate
+  // "show on documents" gate (superseded — a priced service always bills).
+  const serviceRevenue = round(services.reduce((sum, s) => sum + num(s.lineTotal), 0));
 
   // 4. Labour costs from crew assignments NOT already linked to a service — a
   // service-linked assignment's cost is rolled into its service's costTotal instead

@@ -143,17 +143,16 @@ describe("countActiveCrew", () => {
 });
 
 describe("sumProjectServiceRevenue", () => {
-  it("sums lineTotal for non-CANCELLED, showOnDocuments services of the project", () => {
+  it("sums lineTotal for non-CANCELLED services of the project — billable is derived from the charge, not a showOnDocuments flag", () => {
     const rows = [
-      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: true, lineTotal: 100 }),
-      svc({ projectId: "p1", status: "PLANNED", showOnDocuments: true, lineTotal: 50 }),
-      svc({ projectId: "p1", status: "CANCELLED", showOnDocuments: true, lineTotal: 999 }), // excluded
-      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: false, lineTotal: 999 }), // excluded
-      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: undefined, lineTotal: 999 }), // absent → excluded
-      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: true, lineTotal: undefined }), // null total → 0
-      svc({ projectId: "p2", status: "CONFIRMED", showOnDocuments: true, lineTotal: 7 }), // other project
+      svc({ projectId: "p1", status: "CONFIRMED", lineTotal: 100 }),
+      svc({ projectId: "p1", status: "PLANNED", lineTotal: 50 }),
+      svc({ projectId: "p1", status: "CANCELLED", lineTotal: 999 }), // excluded — cancelled
+      svc({ projectId: "p1", status: "CONFIRMED", showOnDocuments: false, lineTotal: 999 }), // showOnDocuments no longer gates — counted
+      svc({ projectId: "p1", status: "CONFIRMED", lineTotal: undefined }), // no charge set → 0
+      svc({ projectId: "p2", status: "CONFIRMED", lineTotal: 7 }), // other project
     ];
-    expect(sumProjectServiceRevenue(rows, "p1")).toBe(150);
+    expect(sumProjectServiceRevenue(rows, "p1")).toBe(1149);
   });
 
   it("returns 0 when nothing matches", () => {

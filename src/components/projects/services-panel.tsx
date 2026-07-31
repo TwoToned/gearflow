@@ -925,10 +925,12 @@ function ServiceCard({
                   );
                 })()
               )}
-              {service.showOnDocuments ? (
+              {/* Billable iff it has an actual charge — mirrors buildFinanceLines/
+                  recalcProjectTotals (R-3.1), not a separate manual flag. */}
+              {Number(service.lineTotal) > 0 ? (
                 <span className="text-muted text-caption">· On quote</span>
               ) : (
-                service.crewChargeTotal != null && (
+                service.costTotal != null && Number(service.costTotal) > 0 && (
                   <span className="text-muted text-caption">· Internal (not billed)</span>
                 )
               )}
@@ -2137,6 +2139,25 @@ function ServiceDialog({
                   </LockedField>
                 </div>
               </div>
+              {/* Derived, not a toggle — a service shows on the client's quote/
+                  invoice (and the pushed Xero invoice) automatically once it has
+                  a charge, same rule the server applies at build time (R-3.1: no
+                  second flag to keep in sync with the rate typed above). Mirrors
+                  calculateServiceLineTotal: manual rate wins, else the crew
+                  auto-price, minus discount, clamped at 0 — UX preview only. */}
+              {(() => {
+                const watchUnitPrice = Number(form.watch("unitPrice")) || 0;
+                const watchDiscount = Number(form.watch("discount")) || 0;
+                const base = watchUnitPrice > 0 ? watchUnitPrice : crewChargeTotalPreview;
+                const previewCharge = Math.max(0, base - watchDiscount);
+                return (
+                  <p className="text-[11px] text-faint">
+                    {previewCharge > 0
+                      ? "Has a charge — will show on quotes, invoices & Xero."
+                      : "No charge set — stays internal, won't show on quotes, invoices or Xero."}
+                  </p>
+                );
+              })()}
               {watchCrew.length > 0 && (
                 <div className="space-y-1.5">
                   <Label>Charge rate override ($){rateOverrideUnitSuffix}</Label>

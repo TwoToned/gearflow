@@ -33,11 +33,13 @@ describe("projectCosts.operationalCosts", () => {
         total: 1000, equipmentRevenue: 800, serviceCostTotal: 100, labourCostTotal: 50, subHireCostTotal: 25,
         createdAt: NOW, updatedAt: NOW,
       });
-      // counted service (non-cancelled, shown on docs)
-      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", showOnDocuments: true, lineTotal: 200, createdAt: NOW, updatedAt: NOW });
-      // excluded: cancelled + not-on-docs
-      await ctx.db.insert("projectServices", { id: "s2", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CANCELLED", showOnDocuments: true, lineTotal: 999, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectServices", { id: "s3", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", showOnDocuments: false, lineTotal: 999, createdAt: NOW, updatedAt: NOW });
+      // counted service (non-cancelled, has a charge set)
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", lineTotal: 200, createdAt: NOW, updatedAt: NOW });
+      // excluded: cancelled (even though charged)
+      await ctx.db.insert("projectServices", { id: "s2", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CANCELLED", lineTotal: 999, createdAt: NOW, updatedAt: NOW });
+      // excluded: no charge set (lineTotal unset) — billable is derived from the
+      // charge, not a separate showOnDocuments flag
+      await ctx.db.insert("projectServices", { id: "s3", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Svc", status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
       // maintenance: one counted, one cancelled
       await ctx.db.insert("maintenanceRecords", { id: "mr1", organizationId: ORG, projectId: "p1", type: "REPAIR", status: "SCHEDULED", title: "Fix", reportedById: USER, cost: 40, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("maintenanceRecords", { id: "mr2", organizationId: ORG, projectId: "p1", type: "REPAIR", status: "CANCELLED", title: "X", reportedById: USER, cost: 999, createdAt: NOW, updatedAt: NOW });

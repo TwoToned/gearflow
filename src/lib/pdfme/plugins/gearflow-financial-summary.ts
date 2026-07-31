@@ -37,18 +37,18 @@ async function pdfRender(arg: PDFRenderProps<FinancialSummarySchema>) {
 
     if (opts?.divider) {
       // Draw the divider line clear of both the row above (space before)
-      // and this row's own bold, larger text (space after). Deliberately
-      // generous — a prior smaller gap (6pt/10pt) still visually touched
-      // the "Total" text on real renders, so this uses a wide safety
-      // margin instead of the tightest theoretically-sufficient value.
-      currentY -= 8;
+      // and this row's own bold, larger text (space after). A prior smaller
+      // gap (6pt/10pt) visually touched the "Total" text on real renders, so
+      // this keeps a safety margin above that rather than the tightest
+      // theoretically-sufficient value — just a narrower one than before.
+      currentY -= 6;
       page.drawLine({
         start: { x: blockX, y: currentY },
         end: { x: blockX + blockWidth, y: currentY },
         thickness: 1,
         color: docColor,
       });
-      currentY -= 16;
+      currentY -= 13;
     }
 
     // Label

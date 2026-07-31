@@ -90,6 +90,12 @@ Each sub-hire item and group has exactly two display toggles:
 
 These replace the previous order-level showOnDocs toggle and per-item eye/eyeoff controls. Toggles are available in the item add/edit dialog and the group edit dialog.
 
+**Where the "sub-hired" indicator is gated, and where it isn't:** `showSubhireOnDocs` governs two independent renders that must never drift apart — the `SUBHIRE` badge and the "via {supplier}" line drawn beneath the item description:
+
+- **Client-facing PDFs (quote, invoice):** both the badge and the "via {supplier}" line are gated by `isSubhireIndicatorVisible()` (`src/lib/pdfme/plugins/gearflow-table.ts`) — visible only when `showSubhireOnDocs` is true. `document-composer.ts`'s `calculateItemHeight` mirrors the same gate (with the doc's `documentType` threaded in) for its row-height reservation, or pagination silently diverges from the real render (tail-drop — see that function's comment).
+- **Internal-only PDFs (packing-list, return-sheet, delivery-docket):** both always show, regardless of the toggle — warehouse staff always need to know an item is sub-hired.
+- **Internal project view** (`src/components/projects/equipment-rows.tsx`, staff-only, no client ever sees this page): the `Subhire` badge and the group row's `Handshake` icon always show (staff need at-a-glance visibility). The "via {supplier}" text — naming the actual supplier — is gated by `item.showSubhireOnDocs` / `group.showOnDocs`, matching the client-doc toggle even though this page is internal, so the item's supplier-visibility setting reads consistently everywhere.
+
 ## Payment Status
 
 Sub-hire orders track payment to the supplier via `paymentStatus`:

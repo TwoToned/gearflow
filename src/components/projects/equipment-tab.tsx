@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { ConvexError } from "convex/values";
 
 import { useProjectServices } from "@/hooks/use-project-services";
 import { useGroupTemplates } from "@/hooks/use-group-templates";
@@ -86,6 +87,7 @@ import {
   type SubHireGroupData,
   type MixedGroupSlot,
   type OverbookedInfo,
+  type GroupInlinePricePatch,
 } from "./equipment-rows";
 import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
@@ -596,8 +598,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // Same write as updateLineItemMut, minus the dialog-close/success-toast side
   // effects — a table cell already shows its own save state, and the row's
   // `justChanged` flash (equipment-rows.tsx, on `updatedAt` changing) is
-  // feedback enough. Errors still toast; a silent failure would be worse
-  // than a silent success.
+  // feedback enough. Errors still toast, EXCEPT `INSUFFICIENT_STOCK` — that
+  // one is a quantity overbook, which `InlineEditableQuantity` handles itself
+  // via its own confirm-and-retry step; toasting it here too would just be a
+  // redundant, less actionable copy of the same message.
   const updateLineItemInlineMut = useServerMutation({
     mutationFn: updateLineItemMutationFn,
     onSuccess: (_r: unknown, { id }: { id: string }) => {
@@ -606,7 +610,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     },
     onError: (e: Error, { id }: { id: string }) => {
       clearPendingEdit(id);
-      toast.error(e.message);
+      const isOverbook =
+        e instanceof ConvexError &&
+        typeof e.data === "object" &&
+        e.data !== null &&
+        (e.data as { code?: unknown }).code === "INSUFFICIENT_STOCK";
+      if (!isOverbook) toast.error(e.message);
     },
   });
 
@@ -614,9 +623,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // `onInlineUpdate`. Builds the exact same payload the full edit dialog
   // would (computeInlineLineItemPayload -> computeEditLineItemPayload), just
   // for a single changed field, and runs it through the identical
-  // update/optimistic-overlay path. Never touches quantity, so there's no
-  // overbook confirmation to thread through (allowOverbook: false is always
-  // correct here).
+  // update/optimistic-overlay path. A "quantity" patch carries its own
+  // `allowOverbook` (false on the first attempt, true only on a confirmed
+  // retry from `InlineEditableQuantity`'s overbook prompt) — every other
+  // field never touches availability, so `allowOverbook: false` is always
+  // correct for them.
   const handleInlineLineItemUpdate = useCallback(
     (item: LineItemData, patch: InlineLineItemPatch) => {
       if (item.subHireGroupId != null) {
@@ -663,7 +674,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       return updateLineItemInlineMut.mutateAsync({
         id: item.id,
         data: payload as unknown as Record<string, unknown>,
-        allowOverbook: false,
+        allowOverbook: patch.field === "quantity" ? patch.allowOverbook : false,
         baseUpdatedAt,
       });
     },
@@ -693,6 +704,34 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
           throw e;
         }),
     [subHireWrites, invalidate],
+  );
+
+  // Inline price/discount cells on a regular PROJECT group's own row
+  // (GroupRow) — the same updateGroupPriceNative call PriceEditDialog's
+  // project branch / EditGroupDialog make. Unlike the sub-hire group's
+  // updateGroup, this mutation IS financial-lock-gated server-side (see
+  // GroupInlinePricePatch's doc comment), so GroupRow wraps these cells in
+  // <LockedField>. `price` is always-required/full-replace (resend the
+  // current value when only discount changed); `discount`/`discountMode` are
+  // set-or-clear-when-provided (resend the current price, omit discount
+  // entirely, when only price changed) — mirrors EditGroupDialog's own
+  // handleSave, which has this exact same "clearing the discount input
+  // doesn't actually clear a stored discount" characteristic already
+  // (resolveDiscountAmount returns undefined for a blank field, and
+  // undefined = "leave untouched" server-side, not "clear").
+  const handleInlineGroupPriceUpdate = useCallback(
+    (group: GroupData, patch: GroupInlinePricePatch) => {
+      const currentPrice = group.price != null ? Number(group.price) : 0;
+      const call =
+        patch.field === "price"
+          ? groupWrites.updatePrice(group.id, patch.value ?? 0)
+          : groupWrites.updatePrice(group.id, currentPrice, patch.value, patch.discountMode);
+      return call.then(() => invalidate()).catch((e: Error) => {
+        toast.error(e.message);
+        throw e;
+      });
+    },
+    [groupWrites, invalidate],
   );
 
   const removeMut = useServerMutation({
@@ -1337,6 +1376,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               }}
                               onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
                               onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
+                              onInlinePriceUpdate={handleInlineGroupPriceUpdate}
+                              moneyLocked={moneyLocked}
+                              lockReason={lockReason}
+                              onUnlockExit={scrollToLockStrip}
                             />
                             {/* Expanded line items */}
                             {isExpanded && groupItems.length === 0 && (
@@ -1548,6 +1591,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           setShowUnifiedAdd(true);
                         }}
                         onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
+                        onInlinePriceUpdate={handleInlineGroupPriceUpdate}
+                        moneyLocked={moneyLocked}
+                        lockReason={lockReason}
+                        onUnlockExit={scrollToLockStrip}
                       />
                       {isExpanded && groupItems.length === 0 && (
                         isMobile ? (

@@ -45,10 +45,10 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { LockedField } from "@/components/ui/locked-field";
 import { formatCurrency } from "@/lib/formatters";
 import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
-import { lineGrossAmount } from "@/lib/discount-mode";
+import { lineGrossAmount, type DiscountMode } from "@/lib/discount-mode";
 import type { InlineLineItemPatch } from "@/lib/line-item-edit-payload";
 import { cn, focusRing } from "@/lib/utils";
-import { InlineEditableText, InlineEditablePrice, InlineEditableDiscount, InlineEditablePercent } from "./line-item-inline-cells";
+import { InlineEditableText, InlineEditablePrice, InlineEditableDiscount, InlineEditablePercent, InlineEditableQuantity } from "./line-item-inline-cells";
 import { useRowShortcuts } from "./use-row-shortcuts";
 import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
 import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
@@ -302,6 +302,17 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
 
 // ─── Sortable group row ─────────────────────────────────────────────────────
 
+/** A single inline-edited field on a project group's own price cells. Unlike
+ *  `InlineLineItemPatch`'s "discount" variant, `price` and `discount` are
+ *  separate variants (not a shared object) because `updateGroupPriceNative`'s
+ *  `price` arg is always-required/full-replace while `discount`/
+ *  `discountMode` are set-or-clear-when-provided — the caller
+ *  (`equipment-tab.tsx`'s `handleInlineGroupPriceUpdate`) needs to know which
+ *  one was actually edited to resend the untouched value for the other. */
+export type GroupInlinePricePatch =
+  | { field: "price"; value: number | undefined }
+  | { field: "discount"; value: number | undefined; discountMode: DiscountMode };
+
 export function GroupRow({
   group,
   isExpanded,
@@ -322,6 +333,10 @@ export function GroupRow({
   onMoveDown,
   canMoveUp,
   canMoveDown,
+  onInlinePriceUpdate,
+  moneyLocked,
+  lockReason,
+  onUnlockExit,
 }: {
   group: GroupData;
   isExpanded: boolean;
@@ -336,7 +351,8 @@ export function GroupRow({
   onToggle: () => void;
   onDelete: () => void;
   onEdit: () => void;
-  /** Phase 6c — opens the unified PriceEditDialog in project-group mode. */
+  /** Phase 6c — opens the unified PriceEditDialog in project-group mode.
+   *  Kept alongside inline editing (below) as a redundant entry point. */
   onEditPrice?: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
@@ -344,6 +360,14 @@ export function GroupRow({
    *  want the affordance (e.g. read-only views) can omit it. */
   onMove?: () => void;
   onSaveAsTemplate?: () => void;
+  /** Inline click-to-edit price/discount cells — the same
+   *  `updateGroupPriceNative` write `onEditPrice`'s dialog makes. */
+  onInlinePriceUpdate?: (group: GroupData, patch: GroupInlinePricePatch) => Promise<unknown>;
+  /** Unlike sub-hire groups' cost/charge, a project group's price/discount
+   *  IS financial-lock-gated server-side — real gating, not cosmetic. */
+  moneyLocked?: boolean;
+  lockReason?: string;
+  onUnlockExit?: () => void;
 } & MoveControls) {
   const priceVal = group.price != null ? Number(group.price) : null;
   const discountVal = group.discount != null ? Number(group.discount) : 0;
@@ -478,9 +502,35 @@ export function GroupRow({
       </TableCell>
       <TableCell className="text-center t-data">{group.quantity}</TableCell>
       <TableCell className="text-right whitespace-nowrap t-data">
-        {priceVal != null ? formatCurrency(priceVal) : <span className="text-faint">—</span>}
-        {discountVal > 0 && (
-          <p className="text-micro text-ok">-{formatCurrency(discountVal)} disc.</p>
+        {onInlinePriceUpdate ? (
+          <LockedField
+            locked={!!moneyLocked}
+            reason={lockReason ?? "This project's financials are locked."}
+            exitLabel="Manage unlock"
+            onExit={onUnlockExit}
+          >
+            <div className="flex justify-end">
+              <InlineEditablePrice
+                value={priceVal}
+                onSave={(next) => onInlinePriceUpdate(group, { field: "price", value: next })}
+              />
+            </div>
+            <div className="flex justify-end">
+              <InlineEditableDiscount
+                discount={discountVal > 0 ? discountVal : null}
+                discountMode={group.discountMode}
+                gross={lineGrossAmount({ unitPrice: priceVal, quantity: group.quantity, duration: 1 })}
+                onSave={(amount, mode) => onInlinePriceUpdate(group, { field: "discount", value: amount, discountMode: mode })}
+              />
+            </div>
+          </LockedField>
+        ) : (
+          <>
+            {priceVal != null ? formatCurrency(priceVal) : <span className="text-faint">—</span>}
+            {discountVal > 0 && (
+              <p className="text-micro text-ok">-{formatCurrency(discountVal)} disc.</p>
+            )}
+          </>
         )}
         {group.pricedUnderLock && (
           <div className="mt-0.5 flex justify-end">
@@ -1543,7 +1593,16 @@ export function LineItemRow({
           )
         )}
       </TableCell>
-      <TableCell className="text-center t-data">{item.quantity}</TableCell>
+      <TableCell className="text-center t-data">
+        {onInlineUpdate ? (
+          <InlineEditableQuantity
+            value={item.quantity}
+            onSave={(next, allowOverbook) => onInlineUpdate(item, { field: "quantity", value: next, allowOverbook })}
+          />
+        ) : (
+          item.quantity
+        )}
+      </TableCell>
       <TableCell className="text-right whitespace-nowrap t-data">
         {onInlineUpdate && isSubHireGroupChild ? (
           // Sub-hire GROUP CHILDREN route through updateSubHireItemNative

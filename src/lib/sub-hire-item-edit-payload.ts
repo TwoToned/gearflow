@@ -105,5 +105,9 @@ export function computeInlineSubHireItemInput(
       return { ...base, unitCharge: patch.value ?? 0 };
     case "discountPercent":
       return { ...base, discount: patch.value };
+    case "quantity":
+      // No availability concept for sub-hire items — `allowOverbook` is
+      // meaningless here and simply ignored.
+      return { ...base, quantity: patch.value };
   }
 }

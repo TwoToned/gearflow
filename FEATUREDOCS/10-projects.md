@@ -484,16 +484,16 @@ Custom items are ad-hoc line items for gear not in the system — borrowed equip
 **Distinction from sub-hires:** Sub-hires represent formally ordered gear from a supplier with a structured order workflow. Custom items are anonymous ad-hoc entries with no supplier and no order tracking.
 
 ### Inline editing (equipment table)
-Unit price, discount, description, and notes are editable directly in the
-equipment table row — click the cell, type, then blur (click away or Tab) or
-press Enter to save; Escape reverts without saving. This is a second entry
-point onto the *same* write as the "Edit" pencil's `EditLineItemDialog`, not a
-parallel path: `line-item-inline-cells.tsx`'s cell components call
-`equipment-tab.tsx`'s `handleInlineLineItemUpdate`, which layers the one
-changed field onto `buildLineItemFormDefaults(item)` and resolves it via
-`computeEditLineItemPayload` — the identical helper `EditLineItemDialog`'s
-`handleSave` calls for a full-form save (both now live in
-`src/lib/line-item-edit-payload.ts`, R-3.1). The resulting payload goes
+Unit price, discount, quantity, description, and notes are editable directly
+in the equipment table row — click the cell, type, then blur (click away or
+Tab) or press Enter to save; Escape reverts without saving. This is a second
+entry point onto the *same* write as the "Edit" pencil's
+`EditLineItemDialog`, not a parallel path: `line-item-inline-cells.tsx`'s
+cell components call `equipment-tab.tsx`'s `handleInlineLineItemUpdate`,
+which layers the one changed field onto `buildLineItemFormDefaults(item)` and
+resolves it via `computeEditLineItemPayload` — the identical helper
+`EditLineItemDialog`'s `handleSave` calls for a full-form save (both now live
+in `src/lib/line-item-edit-payload.ts`, R-3.1). The resulting payload goes
 through the same `updateLineItemMut` mutation function (a second
 `useServerMutation` instance, `updateLineItemInlineMut`, shares the identical
 `mutationFn` but skips the dialog-close/success-toast side effects — the
@@ -511,6 +511,20 @@ single-cell save).
   the stored `discount`/`discountMode` pair. An empty discount renders a
   hover-revealed "+ Discount" affordance instead of a $0 line, matching the
   row's other hover-revealed actions.
+- **Quantity** (`InlineEditableQuantity`) reproduces `EditLineItemDialog`'s
+  overbook check, just reactively instead of proactively: no per-row
+  availability query is pre-fetched (no `rentalStartDate`/`rentalEndDate`
+  threaded into `LineItemRow` at all) — the cell attempts the save with
+  `allowOverbook: false`, and `patchNative`'s own re-check is the single
+  source of truth. On a quantity *increase* past availability, the server
+  throws `ConvexError({ code: "INSUFFICIENT_STOCK", message, hint })`; the
+  cell catches exactly that code, shows the server's own message plus a
+  "Cancel" / "Overbook anyway" pair inline, and only resends with
+  `allowOverbook: true` on confirm. `updateLineItemInlineMut`'s `onError`
+  skips its normal toast for this one code (the inline confirm handles it)
+  but still toasts every other error. Quantity is a *structural* field
+  (`LOCKED_LINE_ITEM_FIELDS` doesn't include it), so the cell isn't wrapped in
+  `<LockedField>` — same JUSTIFY-tier/toast treatment as description/notes.
 - **Price/discount lock**: wrapped in the same `<LockedField>` the dialog uses
   for money fields — when the project's financials are locked
   (`moneyLocked`, FEATUREDOCS/62), the cells render read-only with the same
@@ -520,11 +534,27 @@ single-cell save).
   JUSTIFY-tier project without an open session surfaces the server's
   `JUSTIFICATION_REQUIRED` error as a toast (no inline justification prompt
   yet, matching the dialog's current behaviour).
-- **Not offered** on sub-hire group children — those rows' "Edit" pencil opens
-  `SubHireOrderDialog` instead of `EditLineItemDialog` (their price flows
-  through cost/charge on the sub-hire group, not per-line `unitPrice`), so
-  `onInlineUpdate` is simply omitted at those two `LineItemRow` call sites in
-  `equipment-tab.tsx` and the cells stay static.
+- **Sub-hire group children** get all five cells too (added after the initial
+  pass, which excluded them), routed through a different mutation entirely —
+  see FEATUREDOCS/39-sub-hires.md's own "Inline editing" section for why
+  `patchNative` isn't safe for these rows and what routes there instead.
+  Quantity is the one field with no overbook concept for these rows (no
+  `INSUFFICIENT_STOCK` check server-side), so the confirm step simply never
+  triggers.
+- **Project groups** (`GroupRow`, not a line item) also get inline
+  price/discount cells now, wired to the exact `updateGroupPriceNative` call
+  `EditGroupDialog`/`PriceEditDialog`'s project branch already make — `price`
+  is always-required/full-replace (the cell resends the current price when
+  only discount changed); `discount`/`discountMode` are set-or-clear-when-
+  provided (resend the current price, omit discount entirely, when only
+  price changed). This mutation genuinely is `assertLifecycleGuard({kind:
+  "financial"})`-gated server-side (unlike sub-hire groups' `updateGroup`),
+  so `GroupRow`'s cells wrap in `<LockedField>` same as `LineItemRow`'s.
+  Clearing the discount input resolves to `resolveDiscountAmount`'s
+  `undefined` ("nothing to discount"), which the mutation reads as "leave
+  untouched" rather than "clear to zero" — a pre-existing characteristic of
+  `updateGroupPriceNative` shared with `EditGroupDialog`'s own save, not
+  something introduced here.
 
 ## Project Detail Page Layout
 Restructured (v0.x) to a clean hero card + lean sidebar — the old big header,

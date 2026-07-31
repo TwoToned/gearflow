@@ -159,6 +159,30 @@ export function applySubHireGroupOrderOverlay<
 }
 
 /**
+ * Sibling to `GroupOrderEdit` for CATEGORY drag-and-drop (`use-equipment-dnd.ts`'s
+ * `resolveCategoryDragAction`): categories don't nest into anything and
+ * nothing nests INTO a category via a "category drag" (that's decided by the
+ * line item's/group's OWN drag) — top-level reorder only, so there's no
+ * reparent field here, just the pending `sortOrder`.
+ */
+export interface CategoryOrderEdit {
+  sortOrder: number;
+}
+
+/** Overlay onto the raw `categories` bundle array — same "cleared on settle"
+ *  lifecycle as `applyGroupOrderOverlay`, just simpler (no placement field). */
+export function applyCategoryOrderOverlay<
+  T extends { id: string; sortOrder?: number },
+>(categories: readonly T[], overlay: ReadonlyMap<string, CategoryOrderEdit>): T[] {
+  if (overlay.size === 0) return categories as T[];
+  return categories.map((c) => {
+    const e = overlay.get(c.id);
+    if (!e) return c;
+    return { ...c, sortOrder: e.sortOrder };
+  });
+}
+
+/**
  * Overlay onto the raw `categorySlots` bundle array. `reconstructProjectCategories`'s
  * `mixedGroups` ordering prioritises a category slot's `sortOrder` over the
  * group's own (`slotByGroupId.get(g.id)?.sortOrder ?? g.sortOrder`), so a

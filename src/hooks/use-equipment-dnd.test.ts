@@ -5,6 +5,7 @@ import {
   buildGroupContainerMap,
   resolveGroupDragAction,
   planGroupReorder,
+  resolveCategoryDragAction,
   type ContainerContext,
   type GroupContainerContext,
 } from "./use-equipment-dnd";
@@ -438,5 +439,69 @@ describe("planGroupReorder", () => {
       categoryId: "catA",
       orderedIds: ["pg-g1", "shg-sh1", "pg-g2"],
     });
+  });
+});
+
+describe("resolveCategoryDragAction", () => {
+  const allCategorySortableIds = ["cat-a", "cat-b", "cat-c"];
+
+  test("same position -> noop", () => {
+    const action = resolveCategoryDragAction({
+      activeSortableId: "cat-a",
+      overSortableId: "cat-a",
+      allCategorySortableIds,
+    });
+    expect(action).toEqual({ kind: "noop" });
+  });
+
+  test("dropped earlier in the list -> reorder", () => {
+    const action = resolveCategoryDragAction({
+      activeSortableId: "cat-c",
+      overSortableId: "cat-a",
+      allCategorySortableIds,
+    });
+    expect(action).toEqual({
+      kind: "reorder",
+      orderedIds: ["c", "a", "b"],
+    });
+  });
+
+  test("dropped later in the list -> reorder", () => {
+    const action = resolveCategoryDragAction({
+      activeSortableId: "cat-a",
+      overSortableId: "cat-c",
+      allCategorySortableIds,
+    });
+    expect(action).toEqual({
+      kind: "reorder",
+      orderedIds: ["b", "c", "a"],
+    });
+  });
+
+  test("noop: no over target, an unresolvable active id, or an unresolvable over id", () => {
+    expect(
+      resolveCategoryDragAction({ activeSortableId: "cat-a", overSortableId: null, allCategorySortableIds }),
+    ).toEqual({ kind: "noop" });
+    expect(
+      resolveCategoryDragAction({ activeSortableId: "cat-ghost", overSortableId: "cat-a", allCategorySortableIds }),
+    ).toEqual({ kind: "noop" });
+    expect(
+      resolveCategoryDragAction({ activeSortableId: "cat-a", overSortableId: "cat-ghost", allCategorySortableIds }),
+    ).toEqual({ kind: "noop" });
+  });
+
+  test("not a category id -> noop (line items and groups don't dispatch here)", () => {
+    expect(
+      resolveCategoryDragAction({ activeSortableId: "li-a", overSortableId: "cat-a", allCategorySortableIds }),
+    ).toEqual({ kind: "noop" });
+    expect(
+      resolveCategoryDragAction({ activeSortableId: "grp-a", overSortableId: "cat-a", allCategorySortableIds }),
+    ).toEqual({ kind: "noop" });
+  });
+
+  test("dropped onto a non-category row -> noop (categories only reorder against each other)", () => {
+    expect(
+      resolveCategoryDragAction({ activeSortableId: "cat-a", overSortableId: "li-x", allCategorySortableIds }),
+    ).toEqual({ kind: "noop" });
   });
 });

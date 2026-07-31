@@ -26,9 +26,11 @@ import {
   applyGroupOrderOverlay,
   applySubHireGroupOrderOverlay,
   applyCategorySlotOrderOverlay,
+  applyCategoryOrderOverlay,
   type OptimisticLineEdit,
   type OptimisticOrderEdit,
   type GroupOrderEdit,
+  type CategoryOrderEdit,
 } from "@/hooks/use-native-line-item-writes";
 
 export interface NativeEquipmentTab {
@@ -63,6 +65,9 @@ export function useNativeEquipmentTab(
   /** Groups' sibling of `orderOverlay` (use-equipment-dnd.ts's
    *  `resolveGroupDragAction`) — see `GroupOrderEdit`'s doc comment. */
   groupOrderOverlay?: ReadonlyMap<string, GroupOrderEdit>,
+  /** Categories' sibling of `orderOverlay`/`groupOrderOverlay` (use-equipment-dnd.ts's
+   *  `resolveCategoryDragAction`) — see `CategoryOrderEdit`'s doc comment. */
+  categoryOrderOverlay?: ReadonlyMap<string, CategoryOrderEdit>,
 ): NativeEquipmentTab {
   const enabled = !!projectId && !!orgId;
   const rawBundle = useAuthedQuery(
@@ -71,11 +76,12 @@ export function useNativeEquipmentTab(
   );
 
   // Overlay optimistic line-item edits (Phase 5d), the line-item drag-and-drop
-  // order/placement overlay, AND the group drag-and-drop order/placement
-  // overlay (use-equipment-dnd.ts) onto the raw bundle BEFORE reconstruction,
-  // so an edited/dragged row updates instantly. All three are cleared by
-  // their respective callers once the server write settles; any being empty
-  // is a no-op. See use-native-line-item-writes.ts.
+  // order/placement overlay, the group drag-and-drop order/placement overlay,
+  // AND the category drag-and-drop order overlay (use-equipment-dnd.ts) onto
+  // the raw bundle BEFORE reconstruction, so an edited/dragged row updates
+  // instantly. All four are cleared by their respective callers once the
+  // server write settles; any being empty is a no-op. See
+  // use-native-line-item-writes.ts.
   const bundle = useMemo(() => {
     if (!rawBundle) return rawBundle;
     let lineItems = rawBundle.lineItems;
@@ -95,16 +101,22 @@ export function useNativeEquipmentTab(
       categorySlots = applyCategorySlotOrderOverlay(categorySlots, groupOrderOverlay);
     }
 
+    let categories = rawBundle.categories;
+    if (categoryOrderOverlay && categoryOrderOverlay.size > 0) {
+      categories = applyCategoryOrderOverlay(categories, categoryOrderOverlay);
+    }
+
     if (
       lineItems === rawBundle.lineItems &&
       groups === rawBundle.groups &&
       subHireGroups === rawBundle.subHireGroups &&
-      categorySlots === rawBundle.categorySlots
+      categorySlots === rawBundle.categorySlots &&
+      categories === rawBundle.categories
     ) {
       return rawBundle;
     }
-    return { ...rawBundle, lineItems, groups, subHireGroups, categorySlots };
-  }, [rawBundle, optimisticEdits, orderOverlay, groupOrderOverlay]);
+    return { ...rawBundle, lineItems, groups, subHireGroups, categorySlots, categories };
+  }, [rawBundle, optimisticEdits, orderOverlay, groupOrderOverlay, categoryOrderOverlay]);
 
   // The project doc supplies the rental window the overbooked computation needs.
   const project = useProject(enabled ? projectId : undefined);

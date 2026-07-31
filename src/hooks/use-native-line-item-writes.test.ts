@@ -3,8 +3,10 @@ import {
   computeLineTotal,
   applyOptimisticEdits,
   applyOrderOverlay,
+  applyCategoryOrderOverlay,
   type OptimisticLineEdit,
   type OptimisticOrderEdit,
+  type CategoryOrderEdit,
 } from "./use-native-line-item-writes";
 
 describe("computeLineTotal", () => {
@@ -66,5 +68,24 @@ describe("applyOrderOverlay", () => {
     const edit: OptimisticOrderEdit = { sortOrder: 0, groupId: null, categoryId: null };
     const out = applyOrderOverlay(rows, new Map([["l1", edit]]));
     expect(out[0]).toMatchObject({ id: "l1", sortOrder: 0, groupId: null, categoryId: null });
+  });
+});
+
+describe("applyCategoryOrderOverlay", () => {
+  const cats = [
+    { id: "c1", sortOrder: 0 },
+    { id: "c2", sortOrder: 1 },
+  ];
+
+  test("empty overlay is a no-op reference", () => {
+    const out = applyCategoryOrderOverlay(cats, new Map());
+    expect(out).toBe(cats);
+  });
+
+  test("patches only the matching row's sortOrder; leaves others untouched", () => {
+    const edit: CategoryOrderEdit = { sortOrder: 5 };
+    const out = applyCategoryOrderOverlay(cats, new Map([["c1", edit]]));
+    expect(out[0]).toMatchObject({ id: "c1", sortOrder: 5 });
+    expect(out[1]).toBe(cats[1]); // untouched row keeps its reference
   });
 });

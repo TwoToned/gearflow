@@ -1,36 +1,43 @@
 "use client";
 
 /**
- * Real drag-and-drop for LINE ITEMS and GROUPS (project groups + sub-hire
- * groups). Categories still use their ▲/▼ MoveButtons — those convert to drag
- * in a later commit.
+ * Real drag-and-drop for LINE ITEMS, GROUPS (project groups + sub-hire
+ * groups), and CATEGORIES.
  *
  * Encapsulates the @dnd-kit wiring equipment-tab.tsx needs: sensors, hover/
  * invalid-drop tracking, the optimistic sortOrder/groupId/categoryId overlay
  * for line items (mirrors use-native-line-item-writes.ts's
- * `applyOptimisticEdits` pattern — see `applyOrderOverlay`) and the analogous
- * overlay for groups (`applyGroupOrderOverlay` + friends, same file), and the
- * justified-mutation wrappers (reorder within a container / move across
- * containers, one pair per row kind) with their shared <JustificationDialog>
- * instances.
+ * `applyOptimisticEdits` pattern — see `applyOrderOverlay`), the analogous
+ * overlay for groups (`applyGroupOrderOverlay` + friends, same file), the
+ * analogous (simpler — no reparent field) overlay for categories
+ * (`applyCategoryOrderOverlay`), and the justified-mutation wrappers (reorder
+ * within a container / move across containers, one pair per row kind — a
+ * single reorder wrapper for categories, which never move across containers)
+ * with their shared <JustificationDialog> instances.
  *
  * Container membership resolution and the actual "what should this drop do"
  * decision are pure, framework-free functions exported for unit testing
  * without mounting anything — line items get `buildContainerMap` /
  * `resolveLineItemDragAction`, groups get the parallel `buildGroupContainerMap`
- * / `resolveGroupDragAction`. Kept as two separate pairs rather than one
- * generalized pair: line items nest inside groups (an extra `items:{groupId}`
- * container groups never participate in) and groups can never nest inside
- * groups, so the two "what containers exist, what can move where" shapes
- * genuinely differ — forcing them into one generic risked exactly the
- * contorted abstraction the task brief warned against. `handleDragEnd`
- * dispatches on the active id's prefix (`li-` vs `grp-`/`shg-`) to the right
- * pair.
+ * / `resolveGroupDragAction`. Categories get only `resolveCategoryDragAction`
+ * — no container-map builder, because there is exactly ONE category
+ * container for the whole project (top-level reorder only; categories don't
+ * nest into anything and nothing nests INTO a category via a "category
+ * drag" — a line item/group landing under a category is decided by ITS OWN
+ * drag). Kept as separate functions rather than one generalized set: line
+ * items nest inside groups (an extra `items:{groupId}` container groups never
+ * participate in), groups can never nest inside groups, and categories never
+ * move across containers at all — so the three "what containers exist, what
+ * can move where" shapes genuinely differ — forcing them into one generic
+ * risked exactly the contorted abstraction the task brief warned against.
+ * `handleDragEnd` dispatches on the active id's prefix (`li-` vs `grp-`/`shg-`
+ * vs `cat-`) to the right one.
  *
  * Circular-dependency note: `useNativeEquipmentTab`'s `categories` /
  * `uncategorizedItems` / `uncategorizedProjectGroups` /
  * `uncategorizedSubHireGroups` are computed FROM this hook's `orderOverlay` /
- * `groupOrderOverlay` (the overlays must apply before reconstruction), while
+ * `groupOrderOverlay` / `categoryOrderOverlay` (the overlays must apply
+ * before reconstruction), while
  * this hook's drag handlers need those same reconstructed trees to resolve a
  * drop (container membership, current order). Passing plain values would be
  * circular within one render. The caller instead hands us stable `RefObject`s
@@ -71,7 +78,8 @@ import { isUserFacingError } from "@/lib/errors/user-facing-error";
 import type { useLineItemWrites } from "@/hooks/use-line-item-writes";
 import type { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
 import type { useCategorySlotWrites } from "@/hooks/use-category-slots-writes";
-import type { OptimisticOrderEdit, GroupOrderEdit } from "@/hooks/use-native-line-item-writes";
+import type { useProjectCategoryWrites } from "@/hooks/use-project-categories-writes";
+import type { OptimisticOrderEdit, GroupOrderEdit, CategoryOrderEdit } from "@/hooks/use-native-line-item-writes";
 
 // ─── Container id scheme (line items) ───────────────────────────────────────
 //
@@ -429,6 +437,52 @@ export function resolveGroupDragAction(input: {
   };
 }
 
+// ─── Container id scheme (categories) ───────────────────────────────────────
+//
+// Categories don't nest into anything, and nothing nests INTO a category via
+// a "category drag" — a line item/group landing under a category is decided
+// by ITS OWN drag (resolveLineItemDragAction / resolveGroupDragAction; see
+// the `cat-` branch inside resolveGroupDragAction above — that branch is
+// unrelated to this section, it's for a GROUP landing on a category, not a
+// category reordering itself). So unlike line items and groups, there is
+// exactly ONE container for the whole project: every category, top-level, in
+// one list. No buildContainerMap-style indexing is needed — the ordered list
+// of `cat-{id}` sortable ids the caller already has (equipment-tab.tsx's
+// `allSortableIds`, filtered to the `cat-` prefix) IS the whole picture.
+export type CategoryContainerId = "categories";
+
+export type CategoryDragAction =
+  | { kind: "noop" }
+  | { kind: "reorder"; orderedIds: string[] };
+
+/**
+ * Decide what a CATEGORY drag-end should do — the simplest of the three
+ * sibling resolvers: top-level reorder only, no cross-container move, and no
+ * Drop Matrix rule to consult (`getDisallowedDropReason` has no
+ * category-vs-category case — there is nothing to block a category from
+ * landing on another category). Framework-free, unit testable without
+ * mounting dnd-kit or React.
+ */
+export function resolveCategoryDragAction(input: {
+  activeSortableId: string;
+  overSortableId: string | null;
+  /** Every category's sortable id (`cat-{id}`), in current display order. */
+  allCategorySortableIds: readonly string[];
+}): CategoryDragAction {
+  const { activeSortableId, overSortableId, allCategorySortableIds } = input;
+
+  if (!activeSortableId.startsWith("cat-")) return { kind: "noop" };
+  if (!overSortableId || activeSortableId === overSortableId) return { kind: "noop" };
+  if (!overSortableId.startsWith("cat-")) return { kind: "noop" };
+
+  const fromIndex = allCategorySortableIds.indexOf(activeSortableId);
+  const toIndex = allCategorySortableIds.indexOf(overSortableId);
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return { kind: "noop" };
+
+  const reordered = arrayMove([...allCategorySortableIds], fromIndex, toIndex);
+  return { kind: "reorder", orderedIds: reordered.map((sid) => sid.slice(4)) };
+}
+
 // ─── Error classification (mirrors use-justified-mutation.ts's own helper) ──
 
 function getConvexErrorCode(e: unknown): string | undefined {
@@ -476,6 +530,8 @@ export interface UseEquipmentDndArgs {
   groupWrites: ReturnType<typeof useProjectGroupWrites>;
   /** Groups-only: cross-category move + mixed-order reorder writes. */
   categorySlotWrites: ReturnType<typeof useCategorySlotWrites>;
+  /** Categories-only: top-level reorder write. */
+  categoryWrites: ReturnType<typeof useProjectCategoryWrites>;
   lockStatus: LockStatusLike;
   /** Called once a drag-driven mutation settles (success OR failure) — mirrors
    *  every other mutation call site in equipment-tab.tsx, which invalidates
@@ -496,8 +552,14 @@ export interface UseEquipmentDndResult {
   /** Groups' sibling of `orderOverlay` — see `use-native-line-item-writes.ts`'s
    *  `GroupOrderEdit` / `applyGroupOrderOverlay`. */
   groupOrderOverlay: ReadonlyMap<string, GroupOrderEdit>;
+  /** Categories' sibling of `orderOverlay`/`groupOrderOverlay` — see
+   *  `use-native-line-item-writes.ts`'s `CategoryOrderEdit` /
+   *  `applyCategoryOrderOverlay`. No reparent field: categories never move
+   *  across containers. */
+  categoryOrderOverlay: ReadonlyMap<string, CategoryOrderEdit>;
   /** <JustificationDialog> instance(s) for the reorder/move wrappers (line
-   *  items AND groups) — render once near this equipment tab's other dialogs. */
+   *  items, groups, AND categories) — render once near this equipment tab's
+   *  other dialogs. */
   dialogs: React.ReactNode;
 }
 
@@ -511,6 +573,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     lineItemWrites,
     groupWrites,
     categorySlotWrites,
+    categoryWrites,
     lockStatus,
     onSettled,
   } = args;
@@ -526,6 +589,9 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     () => new Map(),
   );
   const [groupOrderOverlay, setGroupOrderOverlay] = useState<ReadonlyMap<string, GroupOrderEdit>>(
+    () => new Map(),
+  );
+  const [categoryOrderOverlay, setCategoryOrderOverlay] = useState<ReadonlyMap<string, CategoryOrderEdit>>(
     () => new Map(),
   );
 
@@ -589,6 +655,14 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
             categoryId: jargs.categoryId,
             justification: jargs.justification,
           }),
+    lockStatus,
+  );
+  // Categories' single reorder wrapper — no move counterpart (categories
+  // never leave the one top-level container), so unlike line items/groups
+  // there's only one mutation, one dialog.
+  const justifiedCategoryReorder = useJustifiedMutation(
+    (jargs: { orderedIds: string[]; justification?: string }) =>
+      categoryWrites.reorder({ orderedIds: jargs.orderedIds, justification: jargs.justification }),
     lockStatus,
   );
 
@@ -688,6 +762,27 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
         return;
       }
 
+      if (activeSortableId.startsWith("cat-")) {
+        const allCategorySortableIds = (categoriesRef.current ?? []).map((cat) => `cat-${cat.id}`);
+        const action = resolveCategoryDragAction({ activeSortableId, overSortableId, allCategorySortableIds });
+
+        if (action.kind === "noop") return;
+
+        setCategoryOrderOverlay((prev) => {
+          const next = new Map(prev);
+          action.orderedIds.forEach((id, idx) => next.set(id, { sortOrder: idx }));
+          return next;
+        });
+        justifiedCategoryReorder
+          .run({ orderedIds: action.orderedIds })
+          .catch(reportDragMutationError)
+          .finally(() => {
+            setCategoryOrderOverlay(new Map());
+            onSettled?.();
+          });
+        return;
+      }
+
       const ctx = buildContainerMap(
         categoriesRef.current ?? [],
         uncategorizedItemsRef.current ?? [],
@@ -760,6 +855,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
       justifiedReorder,
       justifiedMove,
       justifiedGroupMove,
+      justifiedCategoryReorder,
       runGroupReorder,
       onSettled,
     ],
@@ -772,6 +868,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     React.createElement(JustificationDialog, { key: "move", ...justifiedMove.dialogProps }),
     React.createElement(JustificationDialog, { key: "group-reorder", ...justifiedGroupReorder.dialogProps }),
     React.createElement(JustificationDialog, { key: "group-move", ...justifiedGroupMove.dialogProps }),
+    React.createElement(JustificationDialog, { key: "category-reorder", ...justifiedCategoryReorder.dialogProps }),
   );
 
   return {
@@ -783,6 +880,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     handleDragEnd,
     orderOverlay,
     groupOrderOverlay,
+    categoryOrderOverlay,
     dialogs,
   };
 }

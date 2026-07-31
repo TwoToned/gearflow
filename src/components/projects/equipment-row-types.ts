@@ -34,6 +34,11 @@ export interface LineItemData {
   isCustomItem?: boolean;
   isKitChild?: boolean;
   subHireId?: string | null;
+  /** Client-document sub-hire visibility toggle ("Show as sub-hired").
+   *  Gates the "via {supplier}" text on both client-facing PDFs and this
+   *  internal project view; the Subhire badge itself stays unconditional
+   *  here since staff always need to see which items are sub-hired. */
+  showSubhireOnDocs?: boolean | null;
   /** Sub-hire group this synthetic line item belongs to. Used by the
    *  flat-list filter to suppress sub-hire group parent rows now that
    *  SubHireGroupRow renders the group itself (Phase 5c). */

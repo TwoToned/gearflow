@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Sub-hire items/groups toggled "Show as sub-hired" off still showed a
+  "via {supplier}" line on client-facing quote/invoice PDFs (the `SUBHIRE`
+  badge already respected the toggle; the supplier line didn't) — a client
+  could see which supplier an item was sourced from even with the toggle
+  off. Also hid the same text in the internal project view for consistency
+  (the badge/icon there stays visible to staff regardless of the toggle).
+
 - Discounted invoice lines now sync correctly to Xero — pushing an invoice used to
   let Xero recompute each line's total from Quantity × UnitAmount, silently dropping
   any per-line discount (and multi-day rental duration) already netted into Flow's

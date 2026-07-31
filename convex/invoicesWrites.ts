@@ -202,7 +202,7 @@ export const createNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: fields.organizationId,
-      action: "CREATE",
+      action: "INVOICE_CREATED",
       entityType: "invoice",
       entityId: fields.id,
       entityName: `${fields.kind} invoice — ${project.name}`,
@@ -287,7 +287,7 @@ export const issueNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
-      action: "UPDATE",
+      action: "INVOICE_ISSUED",
       entityType: "invoice",
       entityId: id,
       entityName: invoiceNumber,
@@ -357,13 +357,14 @@ export const voidNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
-      action: "UPDATE",
+      action: "INVOICE_VOIDED",
       entityType: "invoice",
       entityId: id,
       entityName: doc.invoiceNumber ?? id,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Voided invoice ${doc.invoiceNumber ?? id}: ${reason}`,
+      summary: `Voided invoice ${doc.invoiceNumber ?? id}`,
+      metadata: { reason },
       projectId: doc.projectId,
       createdAt: now,
     });
@@ -395,7 +396,7 @@ export const deleteDraftNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
-      action: "DELETE",
+      action: "INVOICE_DELETED",
       entityType: "invoice",
       entityId: id,
       entityName: `${doc.kind} invoice draft`,
@@ -472,7 +473,7 @@ export const createCreditNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
-      action: "CREATE",
+      action: "INVOICE_CREDIT_CREATED",
       entityType: "invoice",
       entityId: id,
       entityName: `Credit for ${original.invoiceNumber ?? creditForInvoiceId}`,

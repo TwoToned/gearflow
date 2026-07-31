@@ -336,6 +336,11 @@ export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResu
         description: l.description,
         quantity: l.quantity,
         unitAmount: l.unitPrice,
+        // Xero would otherwise recompute LineAmount as Quantity × UnitAmount,
+        // which knows nothing about Flow's per-line discount (or duration) —
+        // `lineTotal` is the already-resolved net amount, so pass it through
+        // as an explicit override rather than letting Xero re-derive it.
+        lineAmount: l.lineTotal,
         accountCode: resolved?.accountCode ?? null,
         taxType: resolved?.taxType ?? null,
       };

@@ -287,6 +287,31 @@ describe("upsertXeroDraftInvoice", () => {
     expect(body.Invoices[0].LineItems[0].TaxType).toBe("OUTPUT2");
   });
 
+  // Regression: a discount netted into Flow's lineTotal used to be dropped on
+  // push — this file only ever sent Quantity/UnitAmount, so Xero recomputed
+  // LineAmount itself (Quantity × UnitAmount) with no knowledge of the
+  // discount. `lineAmount` is the explicit override that keeps Xero's total
+  // matching Flow's already-discounted figure.
+  it("passes a supplied lineAmount through as an explicit LineAmount override", async () => {
+    const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
+    const { impl, calls } = mockFetch(fixture);
+    await upsertXeroDraftInvoice(
+      {
+        contactId: "c1",
+        invoiceNumber: "INV-2026-0001",
+        date: "2026-07-26",
+        lineItems: [
+          { description: "USB Pro DI", quantity: 2, unitAmount: 100, lineAmount: 170, accountCode: "4200", taxType: "OUTPUT2" },
+        ],
+      },
+      { ...authOpts, fetchImpl: impl },
+    );
+    const body = JSON.parse(calls[0]!.init!.body as string);
+    expect(body.Invoices[0].LineItems[0].Quantity).toBe(2);
+    expect(body.Invoices[0].LineItems[0].UnitAmount).toBe(100);
+    expect(body.Invoices[0].LineItems[0].LineAmount).toBe(170);
+  });
+
   // The "make Push to Xero also update" feature: a re-push threads the prior
   // xeroInvoiceId through so Xero's own upsert semantics (InvoiceID present
   // -> update that invoice; absent -> create a new one) edit the SAME Xero

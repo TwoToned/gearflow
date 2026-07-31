@@ -390,6 +390,15 @@ export interface XeroInvoiceLineInput {
   description: string;
   quantity: number;
   unitAmount: number;
+  /**
+   * The authoritative net line amount (tax-exclusive), already discount- and
+   * duration-adjusted — Flow's own `invoiceLines.lineTotal`, not re-derived.
+   * Passed through as Xero's `LineAmount` override so Xero's own
+   * `Quantity × UnitAmount` calc (which knows nothing about Flow's discount)
+   * never silently overrides a discounted total. Optional only so
+   * lower-level tests can omit it and fall back to Xero's default calc.
+   */
+  lineAmount?: number;
   accountCode?: string | null;
   taxType?: string | null;
 }
@@ -443,6 +452,7 @@ export async function upsertXeroDraftInvoice(
           Description: li.description,
           Quantity: li.quantity,
           UnitAmount: li.unitAmount,
+          LineAmount: li.lineAmount,
           AccountCode: li.accountCode || undefined,
           TaxType: li.taxType || undefined,
         })),

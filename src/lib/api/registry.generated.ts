@@ -46165,6 +46165,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -46221,7 +46226,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "80a4bae6703d6fc3",
+    "argsSha": "13be291450dfcd4b",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -47076,6 +47081,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -47127,7 +47137,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "16d5f3b5078d480b",
+    "argsSha": "244562061db103f1",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

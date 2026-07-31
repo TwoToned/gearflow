@@ -50,14 +50,22 @@ function toPricingType(value: string | undefined): SubHireItemInput["pricingType
   return (PRICING_TYPES as readonly string[]).includes(value ?? "") ? (value as SubHireItemInput["pricingType"]) : "FLAT";
 }
 
+/** `null` -> `undefined` — the shape every optional `SubHireItemInput` field
+ *  needs (the mutation args are `v.optional(...)`, not nullable). Pulled out
+ *  so `buildSubHireItemInput`'s own branch count stays under R-3.6's
+ *  complexity ratchet instead of inlining five `?? undefined`s. */
+function orUndef<T>(v: T | null | undefined): T | undefined {
+  return v ?? undefined;
+}
+
 /** The full `SubHireItemInput` baseline for editing `item` — every field
  *  seeded from its current value, so a single inline-edited field can be
  *  layered on top without clobbering the rest (the mutation is a full
  *  replace, not a partial patch). */
 export function buildSubHireItemInput(item: SubHireItemRowLike): SubHireItemInput {
   return {
-    modelId: item.modelId ?? undefined,
-    groupId: item.groupId ?? undefined,
+    modelId: orUndef(item.modelId),
+    groupId: orUndef(item.groupId),
     description: item.description ?? "",
     quantity: item.quantity,
     unitCost: Number(item.unitCost ?? 0),
@@ -67,9 +75,9 @@ export function buildSubHireItemInput(item: SubHireItemRowLike): SubHireItemInpu
     discount: Number(item.discount ?? 0),
     showOnQuote: item.showOnQuote,
     showOnDocs: item.showOnDocs,
-    targetCategoryId: item.targetCategoryId ?? undefined,
-    targetGroupId: item.targetGroupId ?? undefined,
-    notes: item.notes ?? undefined,
+    targetCategoryId: orUndef(item.targetCategoryId),
+    targetGroupId: orUndef(item.targetGroupId),
+    notes: orUndef(item.notes),
   };
 }
 

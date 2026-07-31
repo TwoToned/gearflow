@@ -180,10 +180,21 @@ standing precedent).
 | **Accept** (`markAcceptedNative`) | `SENT → ACCEPTED` + acceptance date + optional reference (PO number, email subject). An `EXPIRED` revision cannot be accepted without an explicit re-send. Unblocks `CONFIRMED`. |
 | **Decline** (`markDeclinedNative`) | `SENT`/`EXPIRED` → `DECLINED` + bounded reason. Offers `CANCELLED`, never forces it. |
 
-All five take the standard 4-guard browser-direct shape (FEATUREDOCS/54) plus
-org-checked reference loads and `writeActivityLog`. `sendNative` and
-`newVersionNative` keep `assertLifecycleGuard(…, { kind: "financial" })`, so a
-hard-locked project can't emit a quote out of band.
+All five (and the Delete/Protect follow-ups below) take the standard 4-guard
+browser-direct shape (FEATUREDOCS/54) plus org-checked reference loads and
+`writeActivityLog`. `sendNative` and `newVersionNative` keep
+`assertLifecycleGuard(…, { kind: "financial" })`, so a hard-locked project
+can't emit a quote out of band.
+
+**Every verb writes its own `action` string** (`QUOTE_CREATED`/`QUOTE_SENT`/
+`QUOTE_RECALLED`/`QUOTE_DELETED`/`QUOTE_ACCEPTED`/`QUOTE_DECLINED`/
+`QUOTE_UNACCEPTED`/`QUOTE_PROTECTED`/`QUOTE_UNPROTECTED`/`QUOTE_CORRECTED`, plus
+`QUOTE_DOCUMENT_STORED` for the PDF-store step) rather than a generic
+`CREATE`/`UPDATE`/`DELETE` — see FEATUREDOCS/24's "Finance events" section for
+the full vocabulary shared with invoices/Xero/project locks, and
+`src/app/(app)/activity/page.tsx`'s `actionLabels` for the UI label of each.
+Recall/Decline's bounded reason is stored in `metadata.reason`, read back by
+the activity log's Reason/Justification column.
 
 **"Send" does not email anyone.** Flow records the send, freezes pricing and
 (Phase B, #987) stores the PDF for the user to attach to their own mail. The UI
@@ -930,7 +941,10 @@ once `xeroSyncStatus === "SYNCED"`; the toast reads "Updated in Xero" vs.
 "Pushed to Xero" from that same flag. `logXeroPushActivity`
 (`convex/xeroPush.ts`) takes the same `updated` flag so the activity feed
 reads correctly either way, not just "Pushed ... as a draft invoice" on
-every re-push.
+every re-push. The `activityLogs` row's `action` is `INVOICE_XERO_SYNCED` on
+success or `INVOICE_XERO_SYNC_FAILED` on a caught failure (`metadata.detail`
+carries the error) — distinct from the narrower, Xero-specific `xeroSyncLogs`
+row (below), which isn't shown on `/activity`.
 
 Coding re-resolves on every push, not just the first — `resolveCodingForInvoice`
 runs unconditionally, so a corrected category/model account or tax-type

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
@@ -34,6 +34,8 @@ import {
 } from "@/hooks/use-line-item-writes";
 import { lineItemSchema } from "@/lib/validations/line-item";
 import { computeInlineLineItemPayload, type InlineLineItemPatch } from "@/lib/line-item-edit-payload";
+import { computeInlineSubHireItemInput, type SubHireItemRowLike, type InlineSubHireItemPatch } from "@/lib/sub-hire-item-edit-payload";
+import { useSubHireWrites } from "@/hooks/use-sub-hire-writes";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -341,6 +343,26 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const uncategorizedSubHireGroups = native.uncategorizedSubHireGroups;
   const uncategorizedProjectGroups = native.uncategorizedProjectGroups;
 
+  // Sub-hire item id -> full source row, built from both categorized and
+  // uncategorized sub-hire groups' children. Inline edits on a sub-hire
+  // GROUP CHILD row (handleInlineLineItemUpdate below) look up the current
+  // full item here — updateSubHireItemNative is a full-replace mutation
+  // (unlike patchNative's set/clear), so every other field needs to round-trip
+  // unchanged alongside the one the cell actually edited. Declared before the
+  // isLoading/isMobile early returns (and before handleInlineLineItemUpdate's
+  // useCallback, which closes over it) so it's always initialized by the time
+  // anything in this render could reference it.
+  const subHireItemsById = useMemo(() => {
+    const map = new Map<string, SubHireItemRowLike>();
+    for (const g of [
+      ...(categories as CategoryData[]).flatMap((c) => c.subHireGroupTargets ?? []),
+      ...(uncategorizedSubHireGroups as SubHireGroupData[]),
+    ]) {
+      for (const it of g.items ?? []) map.set(it.id, it);
+    }
+    return map;
+  }, [categories, uncategorizedSubHireGroups]);
+
   // ── Reassign: candidate same-model target lines for the per-unit picker, plus
   // the move handler. Built from the reconstructed tree so a unit can be moved to
   // any other line of its model on this project. The label carries the container
@@ -478,6 +500,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // recalcProjectTotals + audit + collab feed into one transaction.
   const lineItemWrites = useLineItemWrites();
 
+  // Browser-direct sub-hire writes — used here for inline edits on sub-hire
+  // GROUP CHILD line items (updateSubHireItemNative, keyed by subHireItemId
+  // instead of the derived line's own id) and the sub-hire group's own
+  // inline cost/charge cells (updateGroup). PriceEditDialog/SubHireOrderDialog
+  // own their own separate instances of this same hook for their dialogs.
+  const subHireWrites = useSubHireWrites();
+
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
   // rolled back on error (row reappears) and pruned once the refetch confirms the
@@ -590,7 +619,33 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // correct here).
   const handleInlineLineItemUpdate = useCallback(
     (item: LineItemData, patch: InlineLineItemPatch) => {
-      const payload = computeInlineLineItemPayload(item, patch);
+      if (item.subHireGroupId != null) {
+        // Sub-hire GROUP CHILD — routes through updateSubHireItemNative
+        // (keyed by the SOURCE subHireItems row, not the derived line's own
+        // id), never patchNative. A direct patchNative edit would silently
+        // vanish the next time anything in that sub-hire order changes
+        // (regenerateSubHireLines deletes + recreates every derived line).
+        // equipment-rows.tsx only ever sends description/notes/unitPrice/
+        // discountPercent patches for these rows, never the $/% "discount"
+        // variant — see InlineSubHireItemPatch.
+        const subHireItemId = item.subHireItemId;
+        const source = subHireItemId ? subHireItemsById.get(subHireItemId) : undefined;
+        if (!subHireItemId || !source) {
+          const err = new Error("This item's sub-hire data hasn't loaded yet — try again in a moment.");
+          toast.error(err.message);
+          return Promise.reject(err);
+        }
+        const input = computeInlineSubHireItemInput(source, patch as InlineSubHireItemPatch);
+        return subHireWrites
+          .updateItem(subHireItemId, input)
+          .then(() => invalidate())
+          .catch((e: Error) => {
+            toast.error(e.message);
+            throw e;
+          });
+      }
+
+      const payload = computeInlineLineItemPayload(item, patch as Exclude<InlineLineItemPatch, { field: "discountPercent" }>);
       setPendingEdits((prev) => {
         const next = new Map(prev);
         next.set(item.id, {
@@ -612,7 +667,32 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         baseUpdatedAt,
       });
     },
-    [updateLineItemInlineMut],
+    [updateLineItemInlineMut, subHireWrites, subHireItemsById, invalidate],
+  );
+
+  // Inline cost/charge cells on a sub-hire GROUP's own row (SubHireGroupRow)
+  // — the same updateGroup call PriceEditDialog's sub-hire branch uses
+  // (price-edit-dialog.tsx), just triggered per-cell instead of via the
+  // dialog. title/quantity resend unchanged (updateGroupNative full-replaces
+  // those); cost/charge are set-or-clear (omitted = left alone), so only the
+  // one changed field needs to be passed. Not lock-gated — the sub-hire
+  // group mutation never checks the project financial lock, matching
+  // PriceEditDialog's existing (also ungated) sub-hire branch.
+  const handleInlineSubHireGroupPriceUpdate = useCallback(
+    (group: SubHireGroupData, patch: { cost?: number | null; charge?: number | null }) =>
+      subHireWrites
+        .updateGroup(group.id, {
+          title: group.title,
+          quantity: group.quantity,
+          ...(patch.cost !== undefined ? { cost: patch.cost } : {}),
+          ...(patch.charge !== undefined ? { charge: patch.charge } : {}),
+        })
+        .then(() => invalidate())
+        .catch((e: Error) => {
+          toast.error(e.message);
+          throw e;
+        }),
+    [subHireWrites, invalidate],
   );
 
   const removeMut = useServerMutation({
@@ -1161,6 +1241,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   charge: shGroup.charge != null ? Number(shGroup.charge) : null,
                                 })}
                                 onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
+                                onInlinePriceUpdate={handleInlineSubHireGroupPriceUpdate}
                               />
                               {isExpanded && childItems.length === 0 && (
                                 isMobile ? (
@@ -1197,6 +1278,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     setShowSubHireOrderDialog(true);
                                   }}
                                   onRemove={() => handleRemoveItem(item.id)}
+                                  onInlineUpdate={handleInlineLineItemUpdate}
                                 />
                               ))}
                             </React.Fragment>
@@ -1547,6 +1629,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           charge: shGroup.charge != null ? Number(shGroup.charge) : null,
                         })}
                         onMove={() => setMoveSubHireGroup({ id: shGroup.id, title: shGroup.title })}
+                        onInlinePriceUpdate={handleInlineSubHireGroupPriceUpdate}
                       />
                       {isExpanded && childItems.length === 0 && (
                         isMobile ? (
@@ -1583,6 +1666,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             setShowSubHireOrderDialog(true);
                           }}
                           onRemove={() => handleRemoveItem(item.id)}
+                          onInlineUpdate={handleInlineLineItemUpdate}
                         />
                       ))}
                     </React.Fragment>

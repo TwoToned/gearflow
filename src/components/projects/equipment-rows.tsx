@@ -48,7 +48,7 @@ import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivat
 import { lineGrossAmount } from "@/lib/discount-mode";
 import type { InlineLineItemPatch } from "@/lib/line-item-edit-payload";
 import { cn, focusRing } from "@/lib/utils";
-import { InlineEditableText, InlineEditablePrice, InlineEditableDiscount } from "./line-item-inline-cells";
+import { InlineEditableText, InlineEditablePrice, InlineEditableDiscount, InlineEditablePercent } from "./line-item-inline-cells";
 import { useRowShortcuts } from "./use-row-shortcuts";
 import { ReviewMarkerBadge } from "@/components/collaboration/review-marker-badge";
 import type { MarkerStatus } from "@/components/collaboration/review-marker-badge";
@@ -610,6 +610,7 @@ export function SubHireGroupRow({
   onMoveDown,
   canMoveUp,
   canMoveDown,
+  onInlinePriceUpdate,
 }: {
   group: SubHireGroupData;
   isExpanded: boolean;
@@ -620,11 +621,16 @@ export function SubHireGroupRow({
   /** Open the existing SubHireOrderDialog for this group's parent sub-hire. */
   onEdit: () => void;
   /** Phase 6c — opens the unified PriceEditDialog in sub-hire mode
-   *  (charge + cost). */
+   *  (charge + cost). Kept alongside inline editing (below) as a redundant
+   *  entry point, same as LineItemRow's pencil "Edit" button. */
   onEditPrice?: () => void;
   /** Open the move dialog so the group can be reassigned to a different
    *  category (or uncategorised). */
   onMove?: () => void;
+  /** Inline click-to-edit charge/cost cells — the same `updateGroup` call
+   *  `onEditPrice`'s dialog makes, just per-cell. Omitted (mobile, or a
+   *  future caller that doesn't want it) falls back to the static display. */
+  onInlinePriceUpdate?: (group: SubHireGroupData, patch: { cost?: number | null; charge?: number | null }) => Promise<unknown>;
 } & MoveControls) {
   const charge = group.charge != null ? Number(group.charge) : null;
   const cost = group.cost != null ? Number(group.cost) : null;
@@ -729,11 +735,29 @@ export function SubHireGroupRow({
       </TableCell>
       <TableCell className="text-center t-data">{group.quantity}</TableCell>
       <TableCell className="text-right whitespace-nowrap t-data">
-        {charge != null ? formatCurrency(charge) : <span className="text-faint">—</span>}
+        {onInlinePriceUpdate ? (
+          <InlineEditablePrice
+            value={charge}
+            onSave={(next) => onInlinePriceUpdate(group, { charge: next ?? null })}
+          />
+        ) : charge != null ? (
+          formatCurrency(charge)
+        ) : (
+          <span className="text-faint">—</span>
+        )}
       </TableCell>
       {showCostColumn && (
         <TableCell className="text-right whitespace-nowrap t-data">
-          {cost != null ? formatCurrency(cost) : <span className="text-faint">—</span>}
+          {onInlinePriceUpdate ? (
+            <InlineEditablePrice
+              value={cost}
+              onSave={(next) => onInlinePriceUpdate(group, { cost: next ?? null })}
+            />
+          ) : cost != null ? (
+            formatCurrency(cost)
+          ) : (
+            <span className="text-faint">—</span>
+          )}
         </TableCell>
       )}
       <TableCell className="text-right font-medium whitespace-nowrap t-data">
@@ -1023,6 +1047,13 @@ export function LineItemRow({
   const hasChildren = desc.hasChildren;
   // Per-unit serials are shown via the compact LineAssetsIndicator (icon +
   // hover), not inline text or expandable rows — keeps the table calm.
+
+  // A sub-hire GROUP CHILD (as opposed to an ungrouped/standalone sub-hire
+  // item, which stays on the regular patchNative path) — its price/discount
+  // cells route through updateSubHireItemNative instead. See
+  // sub-hire-item-edit-payload.ts and equipment-tab.tsx's
+  // handleInlineLineItemUpdate.
+  const isSubHireGroupChild = item.subHireGroupId != null;
 
   // Captures the shift key on checkbox click so the row-level handler can extend
   // a range — Radix's onCheckedChange doesn't forward the originating event.
@@ -1521,7 +1552,30 @@ export function LineItemRow({
       </TableCell>
       <TableCell className="text-center t-data">{item.quantity}</TableCell>
       <TableCell className="text-right whitespace-nowrap t-data">
-        {onInlineUpdate ? (
+        {onInlineUpdate && isSubHireGroupChild ? (
+          // Sub-hire GROUP CHILDREN route through updateSubHireItemNative
+          // (equipment-tab.tsx's handleInlineLineItemUpdate), not patchNative
+          // — that mutation isn't lock-gated (same as SubHireOrderDialog's
+          // item form today), so no <LockedField> here. Discount is a plain
+          // 0-100% (no $/% mode — sub-hire items don't have that concept).
+          <>
+            <div className="flex items-center justify-end gap-1">
+              <InlineEditablePrice
+                value={item.unitPrice != null ? Number(item.unitPrice) : null}
+                onSave={(next) => onInlineUpdate(item, { field: "unitPrice", value: next })}
+              />
+              {item.priceOverridden && (
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-warn shrink-0" title="Manually set price" />
+              )}
+            </div>
+            <div className="flex justify-end">
+              <InlineEditablePercent
+                value={item.discount != null ? Number(item.discount) : null}
+                onSave={(next) => onInlineUpdate(item, { field: "discountPercent", value: next })}
+              />
+            </div>
+          </>
+        ) : onInlineUpdate ? (
           <LockedField
             locked={!!moneyLocked}
             reason={lockReason ?? "This project's financials are locked."}

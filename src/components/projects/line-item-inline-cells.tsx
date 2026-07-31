@@ -231,6 +231,117 @@ export function InlineEditablePrice({ value, disabled, className, onSave }: Inli
   );
 }
 
+export interface InlineEditablePercentProps {
+  /** 0-100, or null/undefined for "no discount". */
+  value: number | null | undefined;
+  disabled?: boolean;
+  className?: string;
+  onSave: (next: number) => Promise<unknown>;
+}
+
+/** Click-to-edit plain percentage (0-100, no `$`/`%` mode toggle) — sub-hire
+ *  items store discount this way, unlike regular line items' resolved-dollar
+ *  + entry-mode pair (see `InlineEditableDiscount`). Empty/zero renders the
+ *  same hover-revealed "+ Discount" affordance as the regular cell. */
+export function InlineEditablePercent({ value, disabled, className, onSave }: InlineEditablePercentProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ? String(value) : "");
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    ref.current?.focus();
+    ref.current?.select();
+  }, [editing]);
+
+  function startEditing() {
+    setDraft(value ? String(value) : "");
+    setEditing(true);
+  }
+
+  async function commit() {
+    setEditing(false);
+    const trimmed = draft.trim();
+    const parsed = trimmed === "" ? 0 : Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 0) return; // garbage input — revert silently
+    const next = Math.min(parsed, 100);
+    if (next === (value ?? 0)) return;
+    setSaving(true);
+    try {
+      await onSave(next);
+    } catch {
+      // Caller's mutation surfaces the error toast.
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={ref}
+        type="number"
+        step="0.01"
+        min={0}
+        max={100}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={commit}
+        onKeyDown={(e) => handleEditKeyDown(e, () => setEditing(false), true)}
+        className={cn(
+          "w-16 rounded-sm border border-line bg-paper px-1.5 py-0.5 text-right t-data outline-none",
+          focusRing,
+          className,
+        )}
+        aria-label="Discount %"
+      />
+    );
+  }
+
+  if (!value || value <= 0) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          startEditing();
+        }}
+        className={cn(
+          "rounded-sm px-1 -mx-1 text-micro text-faint opacity-0 pointer-coarse:opacity-100 transition-opacity md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+          !disabled && "cursor-text hover:bg-elev hover:text-muted",
+          focusRing,
+          className,
+        )}
+      >
+        + Discount
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        startEditing();
+      }}
+      className={cn(
+        "rounded-sm px-1 -mx-1 text-micro text-ok",
+        !disabled && "cursor-text hover:bg-elev",
+        saving && "opacity-60",
+        focusRing,
+        className,
+      )}
+    >
+      -{value}% disc.
+    </button>
+  );
+}
+
 export interface InlineEditableDiscountProps {
   discount: number | null;
   discountMode: string | null | undefined;

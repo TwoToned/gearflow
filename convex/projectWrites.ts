@@ -20,6 +20,7 @@ import { enqueueWebhookEvent } from "./lib/webhookEnqueue";
 import {
   assertLifecycleGuard,
   crossesIntoSnapshotStatus,
+  getOpenUnlockSession,
   isRevertOutOfHardLock,
   lifecycleAuditMetadata,
   LOCKED_PROJECT_FIELDS,
@@ -159,12 +160,29 @@ export const updateStatusNative = mutation({
     // FULL unlock session — audience (admin/owner/PM) + a bounded justification,
     // audited. COMPLETED → INVOICED stays HARD_LOCKED on both ends and is NOT a
     // revert (normal forward move, ungated here).
+    //
+    // Unified with the unlock-session mechanism (not a second lock system): an
+    // OPEN FULL session already satisfies the SAME "deliberately correcting a
+    // hard-locked project" intent this check exists for — `assertLifecycleGuard`
+    // grants the identical escape for every other HARD_LOCKED write, so this is
+    // the one outlier that used to demand a brand-new justification even while a
+    // FULL session sat open. A FINANCIAL session does NOT count here, matching
+    // `assertLifecycleGuard`'s own FULL-only rule for HARD_LOCKED. No session
+    // (or a FINANCIAL one) still requires the caller's own justification, same
+    // as before.
+    let revertJustification: string | undefined;
     if (from !== status && isRevertOutOfHardLock(from, status)) {
       await requireHardLockOverrideAllowed(ctx, orgId, id, actor.userId);
-      requireJustification(
-        justification,
-        "Reverting a completed project's status requires a justification (at least 10 characters).",
-      );
+      const openSession = await getOpenUnlockSession(ctx, orgId, id);
+      if (openSession?.scope === "FULL") {
+        revertJustification = openSession.justification;
+      } else {
+        requireJustification(
+          justification,
+          "Reverting a completed project's status requires a justification (at least 10 characters).",
+        );
+        revertJustification = justification?.trim();
+      }
     }
 
     // #986 (decision 3): a project may not advance to CONFIRMED until a quote
@@ -225,7 +243,16 @@ export const updateStatusNative = mutation({
       userName: actor.userName,
       summary: `Changed project ${project.projectNumber} status from ${from} to ${status}`,
       details: { changes: [{ field: "status", from, to: status }] },
-      metadata: justification?.trim() ? { justification: justification.trim() } : undefined,
+      metadata: revertJustification
+        ? {
+            justification: revertJustification,
+            // Distinguishes "typed a fresh reason" from "an already-open FULL
+            // unlock session covered it" in the audit trail (#792 unification).
+            justificationSource: justification?.trim() ? "manual" : "unlock_session",
+          }
+        : justification?.trim()
+          ? { justification: justification.trim() } // CONFIRMED-without-quote gate path, unchanged
+          : undefined,
       projectId: id,
       createdAt: now,
     });

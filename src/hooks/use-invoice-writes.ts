@@ -24,6 +24,7 @@ export function useInvoiceWrites() {
   const issueM = useMutation(api.invoicesWrites.issueNative);
   const voidM = useMutation(api.invoicesWrites.voidNative);
   const deleteDraftM = useMutation(api.invoicesWrites.deleteDraftNative);
+  const deleteVoidM = useMutation(api.invoicesWrites.deleteVoidNative);
   const createCreditM = useMutation(api.invoicesWrites.createCreditNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
@@ -49,6 +50,8 @@ export function useInvoiceWrites() {
         notes: parsed.notes || undefined,
         dueDate: parsed.dueDate?.getTime(),
         depositPercent: parsed.depositPercent,
+        depositAmount: parsed.depositAmount,
+        depositMode: parsed.depositMode,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),
@@ -110,6 +113,10 @@ export function useInvoiceWrites() {
     deleteDraft: async (id: string): Promise<void> => {
       const org = requireOrg();
       await deleteDraftM({ id, orgId: org, actor: actor(), auditId: createId(), now: Date.now() });
+    },
+    deleteVoid: async (id: string, opts: { confirmLabel: string }): Promise<void> => {
+      const org = requireOrg();
+      await deleteVoidM({ id, orgId: org, confirmLabel: opts.confirmLabel, actor: actor(), auditId: createId(), now: Date.now() });
     },
     createCredit: async (creditForInvoiceId: string, notes?: string): Promise<{ id: string }> => {
       const org = requireOrg();

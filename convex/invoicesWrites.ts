@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -70,6 +71,10 @@ export const invoiceFields = {
   notes: v.optional(v.string()),
   dueDate: v.optional(v.number()),
   depositPercent: v.optional(v.number()),
+  /** Fixed-$ alternative to depositPercent (#1055) — mutually exclusive with it.
+   *  depositMode picks which one createNative reads; the other is ignored. */
+  depositAmount: v.optional(v.number()),
+  depositMode: v.optional(enums.InvoiceDepositMode),
 };
 
 export const createNative = mutation({
@@ -89,6 +94,8 @@ export const createNative = mutation({
      *  between projects, so the invoice snapshots whatever % applied when it
      *  was created, same "snapshot, don't re-derive" rule as the money below). */
     depositPercent: v.optional(v.number()),
+    depositAmount: v.optional(v.number()),
+    depositMode: v.optional(enums.InvoiceDepositMode),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
@@ -103,6 +110,10 @@ export const createNative = mutation({
     if (fields.depositPercent != null && (fields.depositPercent < 0 || fields.depositPercent > 100)) {
       throw new ConvexError({ code: "INVALID_FIELD", message: "depositPercent must be between 0 and 100." });
     }
+    if (fields.depositAmount != null && fields.depositAmount <= 0) {
+      throw new ConvexError({ code: "INVALID_FIELD", message: "depositAmount must be greater than 0." });
+    }
+    const depositMode = fields.depositMode ?? "%";
 
     await assertRefInOrg(ctx, "projects", fields.projectId, fields.organizationId);
     await assertRefInOrg(ctx, "clients", fields.clientId, fields.organizationId);
@@ -119,7 +130,24 @@ export const createNative = mutation({
     let subtotal = projectSubtotal;
     let taxAmount = projectTax;
     let total = projectTotal;
-    if (fields.kind === "DEPOSIT") {
+    if (fields.kind === "DEPOSIT" && depositMode === "$") {
+      const amount = fields.depositAmount ?? 0;
+      if (amount <= 0) {
+        throw new ConvexError({ code: "INVALID_FIELD", message: "depositAmount is required when depositMode is \"$\"." });
+      }
+      if (amount > projectTotal) {
+        throw new ConvexError({
+          code: "INVALID_FIELD",
+          message: `Deposit amount cannot exceed the project total ($${projectTotal.toFixed(2)}).`,
+        });
+      }
+      // Fixed-$ basis (#1055) — same proportional-GST-fraction split as the %
+      // branch below, just against an operator-entered dollar figure instead of
+      // a percentage of the tax-inclusive total.
+      total = round(amount);
+      taxAmount = projectTotal > 0 ? round(total * (projectTax / projectTotal)) : 0;
+      subtotal = round(total - taxAmount);
+    } else if (fields.kind === "DEPOSIT") {
       const pct = fields.depositPercent ?? 25;
       // Deposit basis: % of the tax-INCLUSIVE total (matches the pre-#940
       // display math in financial-summary.tsx). taxAmount is the GST fraction
@@ -156,7 +184,9 @@ export const createNative = mutation({
       subtotal,
       taxAmount,
       total,
-      depositPercent: fields.kind === "DEPOSIT" ? (fields.depositPercent ?? 25) : undefined,
+      depositPercent: fields.kind === "DEPOSIT" && depositMode === "%" ? (fields.depositPercent ?? 25) : undefined,
+      depositMode: fields.kind === "DEPOSIT" ? depositMode : undefined,
+      depositAmount: fields.kind === "DEPOSIT" && depositMode === "$" ? total : undefined,
       notes: fields.notes,
       xeroSyncStatus: "NOT_SYNCED",
       createdById: actor.userId,
@@ -175,7 +205,9 @@ export const createNative = mutation({
               sourceType: "CUSTOM" as const,
               description:
                 fields.kind === "DEPOSIT"
-                  ? `Deposit (${fields.depositPercent ?? 25}% of project total)`
+                  ? depositMode === "$"
+                    ? `Deposit ($${total.toFixed(2)})`
+                    : `Deposit (${fields.depositPercent ?? 25}% of project total)`
                   : "Balance due",
               quantity: 1,
               unitPrice: total,
@@ -372,6 +404,113 @@ export const voidNative = mutation({
   },
 });
 
+/**
+ * DELETE VOID (#1055) — the invoice-side counterpart to quotesWrites.ts
+ * `deleteRecalledNative` ("recall-then-delete", #1029): the one deliberate,
+ * accepted-risk reversal of "a client-facing finance PDF is never deleted",
+ * mirrored here rather than reinvented.
+ *
+ * Reachable only from `status === "VOID"` — VOID is only ever reached from
+ * ISSUED (`voidNative` above), so a VOID row is inherently "this was actually
+ * issued", unlike a quote's DRAFT (which can mean either "never sent" or
+ * "recalled from sent") — no separate two-step recall is needed here.
+ *
+ * Gated on the ordinary `invoice:delete` permission (owner + admin — same
+ * audience `deleteDraftNative` already uses), not a stricter owner-only bar
+ * like quotes' `requireQuoteOwnerOnly`. Requires a server-validated typed
+ * confirmation (`confirmLabel` must equal the invoice number exactly) and
+ * refuses to proceed while the invoice has any non-voided `payments` row — the
+ * operator must void those first; nothing about a payment is ever silently
+ * cascaded away. The audit entry is written FIRST (it's the only record left
+ * once this returns), and this actually erases the stored PDF via
+ * `ctx.storage.delete`, not just unlinks it.
+ *
+ * No `recalcProjectTotals` call needed: a VOID invoice was never counted in
+ * `depositPaid`/`invoicedTotal` (those only sum ISSUED), so deleting it
+ * changes nothing there. No numbering-counter rollback either — unlike a
+ * quote's revision counter, invoice numbers are never reused.
+ */
+export const deleteVoidNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    /** Must exactly match the invoice's number (or id, if somehow unnumbered). */
+    confirmLabel: v.string(),
+    actor: actorValidator,
+    auditId: v.string(),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, confirmLabel, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "invoice");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "invoice", "delete");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const doc = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!doc) throw new ConvexError("Invoice not found: " + id);
+    if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (doc.status !== "VOID") {
+      throw new ConvexError({ code: "INVALID_STATE", message: "Only a VOID invoice can be permanently deleted." });
+    }
+
+    const label = doc.invoiceNumber ?? doc.id;
+    if (confirmLabel !== label) {
+      throw new ConvexError({
+        code: "CONFIRMATION_MISMATCH",
+        message: `Type "${label}" exactly to confirm — this permanently deletes a document the client may already hold.`,
+      });
+    }
+
+    const livePayments = await ctx.db
+      .query("payments")
+      .withIndex("by_organizationId_invoiceId", (q) => q.eq("organizationId", orgId).eq("invoiceId", id))
+      .collect();
+    const nonVoidPayments = livePayments.filter((p) => p.voidedAt == null);
+    if (nonVoidPayments.length > 0) {
+      throw new ConvexError({
+        code: "INVOICE_HAS_PAYMENTS",
+        message: `This invoice has ${nonVoidPayments.length} payment(s) recorded against it — void them first.`,
+      });
+    }
+
+    const erasedArtifactIds = doc.pdfFileId ? [doc.pdfFileId] : [];
+
+    // Audit FIRST — this is the only record left once the row and its
+    // artifact are gone.
+    await writeActivityLog(ctx, {
+      id: auditId,
+      organizationId: orgId,
+      action: "DELETE",
+      entityType: "invoice",
+      entityId: id,
+      entityName: label,
+      userId: actor.userId,
+      userName: actor.userName,
+      summary: `Permanently deleted voided invoice ${label}`,
+      details: { invoiceNumber: doc.invoiceNumber, kind: doc.kind, total: doc.total, voidReason: doc.voidReason },
+      metadata: { erasedArtifactIds },
+      projectId: doc.projectId,
+      createdAt: now,
+    });
+
+    for (const storageId of erasedArtifactIds) {
+      try {
+        await ctx.storage.delete(storageId as Id<"_storage">);
+      } catch {
+        // Already gone — genuine erase, not a retry-safe attach, so a missing
+        // blob is not an error condition.
+      }
+    }
+
+    const lines = await ctx.db.query("invoiceLines").withIndex("by_invoiceId", (q) => q.eq("invoiceId", id)).collect();
+    for (const line of lines) await ctx.db.delete(line._id);
+    await ctx.db.delete(doc._id);
+
+    return { id };
+  },
+});
+
 export const deleteDraftNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
@@ -500,6 +639,9 @@ export const agentOps: AgentOpsAnnotations = {
   // Delete = high (§9) even though it's scoped to DRAFT-only invoices —
   // deletion is deletion.
   deleteDraftNative: { danger: "high" },
+  // Genuinely irreversible — erases stored PDF bytes a client may already
+  // hold, not just unlinks them (mirrors quotesWrites.ts deleteRecalledNative).
+  deleteVoidNative: { danger: "high" },
   // Financial issue (§9) — assigns the invoice number and moves DRAFT → ISSUED,
   // the immutable-once-issued moment.
   issueNative: { danger: "high" },

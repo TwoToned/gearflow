@@ -102,3 +102,82 @@ export function applyOrderOverlay<
     };
   });
 }
+
+/**
+ * Sibling to `OptimisticOrderEdit`, for GROUP drag-and-drop
+ * (`use-equipment-dnd.ts`'s `resolveGroupDragAction`): overlays a pending
+ * `sortOrder` (+ optionally a new category placement) onto the raw bundle's
+ * project-group / sub-hire-group / category-slot arrays BEFORE
+ * reconstruction — same "cleared on settle" lifecycle as `OptimisticOrderEdit`,
+ * just for groups, which live in entirely different bundle collections
+ * (`groups` / `subHireGroups` / `categorySlots`) than the `lineItems` array
+ * `applyOrderOverlay` patches.
+ *
+ * Keyed by the group's own bare cuid — works for BOTH project groups and
+ * sub-hire groups since the two id spaces never collide (separate Convex
+ * tables' cuids).
+ */
+export interface GroupOrderEdit {
+  sortOrder: number;
+  /** Present (possibly null) only when the drag reparented the group into a
+   *  different category — a same-category reorder omits this so the group's
+   *  existing placement is left untouched. */
+  categoryId?: string | null;
+}
+
+/** Overlay onto the raw `groups` (project-group) bundle array. */
+export function applyGroupOrderOverlay<
+  T extends { id: string; sortOrder?: number; categoryId?: string | null },
+>(groups: readonly T[], overlay: ReadonlyMap<string, GroupOrderEdit>): T[] {
+  if (overlay.size === 0) return groups as T[];
+  return groups.map((g) => {
+    const e = overlay.get(g.id);
+    if (!e) return g;
+    return {
+      ...g,
+      sortOrder: e.sortOrder,
+      ...(e.categoryId !== undefined ? { categoryId: e.categoryId } : {}),
+    };
+  });
+}
+
+/** Overlay onto the raw `subHireGroups` bundle array — same shape, but the
+ *  category-placement field is `targetCategoryId`, not `categoryId`. */
+export function applySubHireGroupOrderOverlay<
+  T extends { id: string; sortOrder?: number; targetCategoryId?: string | null },
+>(groups: readonly T[], overlay: ReadonlyMap<string, GroupOrderEdit>): T[] {
+  if (overlay.size === 0) return groups as T[];
+  return groups.map((g) => {
+    const e = overlay.get(g.id);
+    if (!e) return g;
+    return {
+      ...g,
+      sortOrder: e.sortOrder,
+      ...(e.categoryId !== undefined ? { targetCategoryId: e.categoryId } : {}),
+    };
+  });
+}
+
+/**
+ * Overlay onto the raw `categorySlots` bundle array. `reconstructProjectCategories`'s
+ * `mixedGroups` ordering prioritises a category slot's `sortOrder` over the
+ * group's own (`slotByGroupId.get(g.id)?.sortOrder ?? g.sortOrder`), so a
+ * mixed (project + sub-hire) reorder needs this patched too, not just the
+ * group's own `sortOrder` (which `applyGroupOrderOverlay`/
+ * `applySubHireGroupOrderOverlay` already handle for the plain, no-slot-yet
+ * case). Only touches a slot's `sortOrder`, never its `projectCategoryId` —
+ * `mixedGroups`' per-category membership is decided by the group's own
+ * `categoryId`/`targetCategoryId` (patched above), not by which category the
+ * slot claims, so a momentarily-stale slot category is harmless here.
+ */
+export function applyCategorySlotOrderOverlay<
+  T extends { projectGroupId?: string | null; subHireGroupId?: string | null; sortOrder: number },
+>(slots: readonly T[], overlay: ReadonlyMap<string, GroupOrderEdit>): T[] {
+  if (overlay.size === 0) return slots as T[];
+  return slots.map((s) => {
+    const key = s.projectGroupId ?? s.subHireGroupId ?? undefined;
+    const e = key ? overlay.get(key) : undefined;
+    if (!e) return s;
+    return { ...s, sortOrder: e.sortOrder };
+  });
+}

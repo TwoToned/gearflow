@@ -23,8 +23,12 @@ import type { OverbookedInfo } from "@/lib/overbooking-core";
 import {
   applyOptimisticEdits,
   applyOrderOverlay,
+  applyGroupOrderOverlay,
+  applySubHireGroupOrderOverlay,
+  applyCategorySlotOrderOverlay,
   type OptimisticLineEdit,
   type OptimisticOrderEdit,
+  type GroupOrderEdit,
 } from "@/hooks/use-native-line-item-writes";
 
 export interface NativeEquipmentTab {
@@ -56,6 +60,9 @@ export function useNativeEquipmentTab(
   orgId: string | undefined,
   optimisticEdits?: ReadonlyMap<string, OptimisticLineEdit>,
   orderOverlay?: ReadonlyMap<string, OptimisticOrderEdit>,
+  /** Groups' sibling of `orderOverlay` (use-equipment-dnd.ts's
+   *  `resolveGroupDragAction`) — see `GroupOrderEdit`'s doc comment. */
+  groupOrderOverlay?: ReadonlyMap<string, GroupOrderEdit>,
 ): NativeEquipmentTab {
   const enabled = !!projectId && !!orgId;
   const rawBundle = useAuthedQuery(
@@ -63,10 +70,11 @@ export function useNativeEquipmentTab(
     enabled ? { projectId: projectId!, orgId: orgId! } : "skip",
   );
 
-  // Overlay optimistic line-item edits (Phase 5d) AND the drag-and-drop order/
-  // placement overlay (use-equipment-dnd.ts) onto the raw bundle BEFORE
-  // reconstruction, so an edited/dragged row updates instantly. Both are cleared
-  // by their respective callers once the server write settles; either being empty
+  // Overlay optimistic line-item edits (Phase 5d), the line-item drag-and-drop
+  // order/placement overlay, AND the group drag-and-drop order/placement
+  // overlay (use-equipment-dnd.ts) onto the raw bundle BEFORE reconstruction,
+  // so an edited/dragged row updates instantly. All three are cleared by
+  // their respective callers once the server write settles; any being empty
   // is a no-op. See use-native-line-item-writes.ts.
   const bundle = useMemo(() => {
     if (!rawBundle) return rawBundle;
@@ -77,9 +85,26 @@ export function useNativeEquipmentTab(
     if (orderOverlay && orderOverlay.size > 0) {
       lineItems = applyOrderOverlay(lineItems, orderOverlay);
     }
-    if (lineItems === rawBundle.lineItems) return rawBundle;
-    return { ...rawBundle, lineItems };
-  }, [rawBundle, optimisticEdits, orderOverlay]);
+
+    let groups = rawBundle.groups;
+    let subHireGroups = rawBundle.subHireGroups;
+    let categorySlots = rawBundle.categorySlots;
+    if (groupOrderOverlay && groupOrderOverlay.size > 0) {
+      groups = applyGroupOrderOverlay(groups, groupOrderOverlay);
+      subHireGroups = applySubHireGroupOrderOverlay(subHireGroups, groupOrderOverlay);
+      categorySlots = applyCategorySlotOrderOverlay(categorySlots, groupOrderOverlay);
+    }
+
+    if (
+      lineItems === rawBundle.lineItems &&
+      groups === rawBundle.groups &&
+      subHireGroups === rawBundle.subHireGroups &&
+      categorySlots === rawBundle.categorySlots
+    ) {
+      return rawBundle;
+    }
+    return { ...rawBundle, lineItems, groups, subHireGroups, categorySlots };
+  }, [rawBundle, optimisticEdits, orderOverlay, groupOrderOverlay]);
 
   // The project doc supplies the rental window the overbooked computation needs.
   const project = useProject(enabled ? projectId : undefined);

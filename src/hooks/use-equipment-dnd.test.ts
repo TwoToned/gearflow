@@ -2,9 +2,19 @@ import { describe, test, expect } from "vitest";
 import {
   buildContainerMap,
   resolveLineItemDragAction,
+  buildGroupContainerMap,
+  resolveGroupDragAction,
+  planGroupReorder,
   type ContainerContext,
+  type GroupContainerContext,
 } from "./use-equipment-dnd";
-import type { CategoryData, GroupData, LineItemData } from "@/components/projects/equipment-rows";
+import type {
+  CategoryData,
+  GroupData,
+  LineItemData,
+  SubHireGroupData,
+  MixedGroupSlot,
+} from "@/components/projects/equipment-rows";
 
 function li(id: string, extra: Partial<LineItemData> = {}): LineItemData {
   return {
@@ -32,15 +42,35 @@ function group(id: string, lineItems: LineItemData[]): GroupData {
   } as GroupData;
 }
 
+function subHireGroup(id: string): SubHireGroupData {
+  return {
+    id,
+    title: id,
+    quantity: 1,
+    cost: null,
+    charge: null,
+    sortOrder: 0,
+    targetCategoryId: null,
+    subHire: { id: `sh-${id}`, orderNumber: "PO-1", status: "DRAFT" },
+  } as SubHireGroupData;
+}
+
 function category(
   id: string,
-  opts: { standalone?: LineItemData[]; groups?: GroupData[] } = {},
+  opts: {
+    standalone?: LineItemData[];
+    groups?: GroupData[];
+    subHireGroupTargets?: SubHireGroupData[];
+    mixedGroups?: MixedGroupSlot[];
+  } = {},
 ): CategoryData {
   return {
     id,
     name: id,
     sortOrder: 0,
     groups: opts.groups ?? [],
+    subHireGroupTargets: opts.subHireGroupTargets,
+    mixedGroups: opts.mixedGroups,
     lineItems: opts.standalone ?? [],
   } as CategoryData;
 }
@@ -160,5 +190,253 @@ describe("resolveLineItemDragAction", () => {
     expect(resolveLineItemDragAction({ activeSortableId: "li-a", overSortableId: null, ctx })).toEqual({ kind: "noop" });
     expect(resolveLineItemDragAction({ activeSortableId: "grp-1", overSortableId: "li-a", ctx })).toEqual({ kind: "noop" });
     expect(resolveLineItemDragAction({ activeSortableId: "li-ghost", overSortableId: "li-a", ctx })).toEqual({ kind: "noop" });
+  });
+});
+
+describe("buildGroupContainerMap", () => {
+  test("indexes a category's mixed project+sub-hire groups and the flat Uncategorized zone", () => {
+    const catA = category("catA", {
+      groups: [group("g1", []), group("g2", [])],
+      subHireGroupTargets: [subHireGroup("sh1")],
+      mixedGroups: [
+        { kind: "project", sortOrder: 0, projectGroupId: "g1" },
+        { kind: "subHire", sortOrder: 1, subHireGroupId: "sh1" },
+        { kind: "project", sortOrder: 2, projectGroupId: "g2" },
+      ],
+    });
+    const orphanGroup = group("og1", []);
+    const orphanSh = subHireGroup("osh1");
+
+    const ctx = buildGroupContainerMap([catA], [orphanGroup], [orphanSh]);
+
+    expect(ctx.itemsByContainer.get("mixed:catA")).toEqual(["grp-g1", "shg-sh1", "grp-g2"]);
+    expect(ctx.itemsByContainer.get("uncategorized-groups")).toEqual(["grp-og1", "shg-osh1"]);
+
+    expect(ctx.containerOf.get("grp-g1")).toBe("mixed:catA");
+    expect(ctx.containerOf.get("shg-sh1")).toBe("mixed:catA");
+    expect(ctx.containerOf.get("grp-og1")).toBe("uncategorized-groups");
+    expect(ctx.containerOf.get("shg-osh1")).toBe("uncategorized-groups");
+
+    expect(ctx.containerMeta.get("mixed:catA")).toEqual({ categoryId: "catA" });
+    expect(ctx.containerMeta.get("uncategorized-groups")).toEqual({ categoryId: null });
+  });
+
+  test("falls back to cat.groups (project groups only) when mixedGroups is absent", () => {
+    const catA = category("catA", { groups: [group("g1", []), group("g2", [])] });
+    const ctx = buildGroupContainerMap([catA], [], []);
+    expect(ctx.itemsByContainer.get("mixed:catA")).toEqual(["grp-g1", "grp-g2"]);
+  });
+});
+
+describe("resolveGroupDragAction", () => {
+  function groupCtxFor(catA: CategoryData, orphanGroups: GroupData[] = [], orphanSh: SubHireGroupData[] = []): GroupContainerContext {
+    return buildGroupContainerMap([catA], orphanGroups, orphanSh);
+  }
+
+  test("same-category reorder, pure project groups (no sub-hire in the mix)", () => {
+    const catA = category("catA", {
+      groups: [group("g1", []), group("g2", []), group("g3", [])],
+      mixedGroups: [
+        { kind: "project", sortOrder: 0, projectGroupId: "g1" },
+        { kind: "project", sortOrder: 1, projectGroupId: "g2" },
+        { kind: "project", sortOrder: 2, projectGroupId: "g3" },
+      ],
+    });
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "grp-g3",
+      ctx: groupCtxFor(catA),
+    });
+    expect(action).toEqual({
+      kind: "reorder",
+      categoryId: "catA",
+      orderedSortableIds: ["grp-g2", "grp-g3", "grp-g1"],
+    });
+  });
+
+  test("same-category reorder, mixed list (a sub-hire group is in the mix, but the drop itself is same-kind — the Drop Matrix blocks a grp-/shg- direct hover, see the Drop Matrix tests below)", () => {
+    const catA = category("catA", {
+      groups: [group("g1", []), group("g2", [])],
+      subHireGroupTargets: [subHireGroup("sh1")],
+      mixedGroups: [
+        { kind: "project", sortOrder: 0, projectGroupId: "g1" },
+        { kind: "subHire", sortOrder: 1, subHireGroupId: "sh1" },
+        { kind: "project", sortOrder: 2, projectGroupId: "g2" },
+      ],
+    });
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "grp-g2",
+      ctx: groupCtxFor(catA),
+    });
+    // The resulting order still carries the sub-hire group that was already
+    // in the mix — this is what makes the caller's downstream
+    // `planGroupReorder` pick the "mixed" (reorderMixed) branch instead of
+    // the plain project-group reorder, even though THIS particular drag only
+    // reordered two project groups past each other.
+    expect(action).toEqual({
+      kind: "reorder",
+      categoryId: "catA",
+      orderedSortableIds: ["shg-sh1", "grp-g2", "grp-g1"],
+    });
+  });
+
+  test("cross-category move: dropped on a sibling group in a different category -> move with insert order", () => {
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      mixedGroups: [{ kind: "project", sortOrder: 0, projectGroupId: "g1" }],
+    });
+    const catB = category("catB", {
+      groups: [group("g2", []), group("g3", [])],
+      mixedGroups: [
+        { kind: "project", sortOrder: 0, projectGroupId: "g2" },
+        { kind: "project", sortOrder: 1, projectGroupId: "g3" },
+      ],
+    });
+    const ctx = buildGroupContainerMap([catA, catB], [], []);
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "grp-g3",
+      ctx,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      groupKind: "project",
+      groupId: "g1",
+      fromContainerId: "mixed:catA",
+      toContainerId: "mixed:catB",
+      targetCategoryId: "catB",
+      resultingOrder: ["grp-g2", "grp-g1", "grp-g3"],
+    });
+  });
+
+  test("move to Uncategorized: dropped on an orphan group -> move, no resultingOrder (zone isn't reorderable)", () => {
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      mixedGroups: [{ kind: "project", sortOrder: 0, projectGroupId: "g1" }],
+    });
+    const orphanGroup = group("og1", []);
+    const ctx = groupCtxFor(catA, [orphanGroup], []);
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "grp-og1",
+      ctx,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      groupKind: "project",
+      groupId: "g1",
+      fromContainerId: "mixed:catA",
+      toContainerId: "uncategorized-groups",
+      targetCategoryId: null,
+      resultingOrder: undefined,
+    });
+  });
+
+  test("move from Uncategorized: an orphan sub-hire group dropped onto a category's (same-kind) sub-hire group -> move into that category", () => {
+    // A sub-hire group can only be dropped directly onto ANOTHER sub-hire
+    // group row (the Drop Matrix blocks shg- hovering a grp- row — see the
+    // Drop Matrix tests below), so the destination category needs one to
+    // land next to.
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      subHireGroupTargets: [subHireGroup("sh-existing")],
+      mixedGroups: [
+        { kind: "project", sortOrder: 0, projectGroupId: "g1" },
+        { kind: "subHire", sortOrder: 1, subHireGroupId: "sh-existing" },
+      ],
+    });
+    const orphanSh = subHireGroup("osh1");
+    const ctx = groupCtxFor(catA, [], [orphanSh]);
+    const action = resolveGroupDragAction({
+      activeSortableId: "shg-osh1",
+      overSortableId: "shg-sh-existing",
+      ctx,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      groupKind: "subHire",
+      groupId: "osh1",
+      fromContainerId: "uncategorized-groups",
+      toContainerId: "mixed:catA",
+      targetCategoryId: "catA",
+      resultingOrder: ["grp-g1", "shg-osh1", "shg-sh-existing"],
+    });
+  });
+
+  test("no internal reorder within the Uncategorized zone", () => {
+    const catA = category("catA", { groups: [] });
+    const og1 = group("og1", []);
+    const og2 = group("og2", []);
+    const ctx = groupCtxFor(catA, [og1, og2], []);
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-og1",
+      overSortableId: "grp-og2",
+      ctx,
+    });
+    expect(action).toEqual({ kind: "noop" });
+  });
+
+  test("Drop Matrix: a project group onto a sub-hire group is blocked (no nested groups)", () => {
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      subHireGroupTargets: [subHireGroup("sh1")],
+      mixedGroups: [
+        { kind: "project", sortOrder: 0, projectGroupId: "g1" },
+        { kind: "subHire", sortOrder: 1, subHireGroupId: "sh1" },
+      ],
+    });
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "shg-sh1",
+      ctx: groupCtxFor(catA),
+    });
+    expect(action.kind).toBe("blocked");
+  });
+
+  test("Drop Matrix: a sub-hire group onto a project group is blocked (no nested groups)", () => {
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      subHireGroupTargets: [subHireGroup("sh1")],
+      mixedGroups: [
+        { kind: "project", sortOrder: 0, projectGroupId: "g1" },
+        { kind: "subHire", sortOrder: 1, subHireGroupId: "sh1" },
+      ],
+    });
+    const action = resolveGroupDragAction({
+      activeSortableId: "shg-sh1",
+      overSortableId: "grp-g1",
+      ctx: groupCtxFor(catA),
+    });
+    expect(action.kind).toBe("blocked");
+  });
+
+  test("noop: not a group id, dropped on itself, no over target, or an unresolvable active id", () => {
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      mixedGroups: [{ kind: "project", sortOrder: 0, projectGroupId: "g1" }],
+    });
+    const ctx = groupCtxFor(catA);
+    expect(resolveGroupDragAction({ activeSortableId: "li-a", overSortableId: "grp-g1", ctx })).toEqual({ kind: "noop" });
+    expect(resolveGroupDragAction({ activeSortableId: "grp-g1", overSortableId: "grp-g1", ctx })).toEqual({ kind: "noop" });
+    expect(resolveGroupDragAction({ activeSortableId: "grp-g1", overSortableId: null, ctx })).toEqual({ kind: "noop" });
+    expect(resolveGroupDragAction({ activeSortableId: "grp-ghost", overSortableId: "grp-g1", ctx })).toEqual({ kind: "noop" });
+  });
+});
+
+describe("planGroupReorder", () => {
+  test("no sub-hire group in the list -> plain project-group reorder (bare ids)", () => {
+    expect(planGroupReorder("catA", ["grp-g1", "grp-g2", "grp-g3"])).toEqual({
+      kind: "pure",
+      orderedIds: ["g1", "g2", "g3"],
+    });
+  });
+
+  test("a sub-hire group in the list -> mixed reorder (pg-/shg- prefixed ids)", () => {
+    expect(planGroupReorder("catA", ["grp-g1", "shg-sh1", "grp-g2"])).toEqual({
+      kind: "mixed",
+      categoryId: "catA",
+      orderedIds: ["pg-g1", "shg-sh1", "pg-g2"],
+    });
   });
 });

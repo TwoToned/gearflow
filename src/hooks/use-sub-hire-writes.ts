@@ -52,6 +52,7 @@ export interface SubHireItemInput {
   showOnDocs?: boolean;
   targetCategoryId?: string | null;
   targetGroupId?: string | null;
+  notes?: string;
 }
 
 export interface SubHireGroupInput {
@@ -172,6 +173,7 @@ export function useSubHireWrites() {
         showOnDocs: input.showOnDocs,
         targetCategoryId: input.targetCategoryId || undefined,
         targetGroupId: input.targetGroupId || undefined,
+        notes: input.notes || undefined,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
@@ -195,6 +197,7 @@ export function useSubHireWrites() {
         showOnDocs: input.showOnDocs,
         targetCategoryId: input.targetCategoryId ?? undefined,
         targetGroupId: input.targetGroupId ?? undefined,
+        notes: input.notes || undefined,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

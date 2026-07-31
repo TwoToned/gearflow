@@ -29,6 +29,7 @@ export const subHireItemSchema = z.object({
   showOnDocs: z.boolean().default(false),
   targetCategoryId: z.string().optional().nullable(),
   targetGroupId: z.string().optional().nullable(),
+  notes: z.string().max(2000).optional(),
 });
 
 export type SubHireItemFormValues = z.input<typeof subHireItemSchema>;

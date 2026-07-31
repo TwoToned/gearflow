@@ -39,6 +39,7 @@ interface MappedItem {
   sortOrder: number;
   targetCategoryId: string | null;
   targetGroupId: string | null;
+  notes: string | null;
 }
 
 interface MappedGroup {
@@ -72,6 +73,7 @@ export function mapItem(d: Doc<"subHireItems">): MappedItem {
     sortOrder: d.sortOrder ?? 0,
     targetCategoryId: d.targetCategoryId ?? null,
     targetGroupId: d.targetGroupId ?? null,
+    notes: d.notes ?? null,
   };
 }
 

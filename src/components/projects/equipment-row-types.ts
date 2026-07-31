@@ -38,6 +38,14 @@ export interface LineItemData {
    *  flat-list filter to suppress sub-hire group parent rows now that
    *  SubHireGroupRow renders the group itself (Phase 5c). */
   subHireGroupId?: string | null;
+  /** The source `subHireItems` row this generated line was derived from
+   *  (only set on sub-hire-sourced lines). Inline edits on a sub-hire GROUP
+   *  CHILD row (`subHireGroupId != null`) key off this to route through
+   *  `subHiresWrites.updateSubHireItemNative` instead of `patchNative` — a
+   *  direct `patchNative` edit would be silently discarded the next time
+   *  anything in that sub-hire order changes (`regenerateSubHireLines`
+   *  deletes and recreates every derived line). See `line-item-edit-payload.ts`. */
+  subHireItemId?: string | null;
   kitId?: string | null;
   /** Child discriminator: KIT (kit member) vs ACCESSORY (permanently attached
    *  to a parent asset). Drives the "Accessory" badge on child rows. */
@@ -108,12 +116,30 @@ export interface SubHireGroupData {
     status: string;
     supplier?: { id: string; name: string } | null;
   };
+  /** Full per-item detail (not just the display-relevant subset) — the extra
+   *  fields (modelId, groupId, pricingType, duration, discount, showOnQuote,
+   *  showOnDocs, targetCategoryId, targetGroupId, notes) are what
+   *  `computeInlineSubHireItemInput` needs to round-trip
+   *  `updateSubHireItemNative`'s full-replace payload from a single changed
+   *  inline-edited field. All of these are already present at runtime
+   *  (`mapSubHireItem` in `equipment-tab-reconstruct.ts` returns the full
+   *  row) — this just widens the type to admit them. */
   items?: Array<{
     id: string;
+    modelId?: string | null;
+    groupId?: string | null;
     description?: string | null;
     quantity: number;
     unitCost?: unknown;
     unitCharge?: unknown;
+    pricingType?: string;
+    duration?: number;
+    discount?: unknown;
+    showOnQuote?: boolean;
+    showOnDocs?: boolean;
+    targetCategoryId?: string | null;
+    targetGroupId?: string | null;
+    notes?: string | null;
   }>;
   /** Synthetic parent ProjectLineItem(s) — usually 0 or 1. The parent's
    *  childLineItems are what the row renders when expanded. */

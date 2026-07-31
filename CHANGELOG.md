@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Discounted invoice lines now sync correctly to Xero — pushing an invoice used to
+  let Xero recompute each line's total from Quantity × UnitAmount, silently dropping
+  any per-line discount (and multi-day rental duration) already netted into Flow's
+  own total. The Xero push now sends that resolved total explicitly, so the invoice
+  in Xero always matches what the client was actually charged.
+
 - **#790** — The quote layout no longer shows a "/day" (or other rental-period)
   suffix next to prices. Audited discount/item-notes/group-notes rendering on the
   quote end-to-end and confirmed they already flow correctly through the new

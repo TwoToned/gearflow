@@ -215,7 +215,11 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       expect(p?.status).toBe("CONFIRMED");
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.metadata).toEqual({ justification: "Client confirmed verbally on site; PO to follow." });
+      expect(log?.metadata).toEqual({
+        lockTierFrom: "OPEN",
+        lockTierTo: "FINANCE_LOCKED",
+        justification: "Client confirmed verbally on site; PO to follow.",
+      });
     });
   });
 
@@ -329,6 +333,8 @@ describe("projectWrites.updateStatusNative — hard-lock revert (#792)", () => {
       expect(p?.status).toBe("QUOTING");
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.metadata).toEqual({
+        lockTierFrom: "HARD_LOCKED",
+        lockTierTo: "OPEN",
         justification: "Client asked us to redo the whole quote from scratch.",
         justificationSource: "manual",
       });
@@ -345,6 +351,8 @@ describe("projectWrites.updateStatusNative — hard-lock revert (#792)", () => {
       expect(p?.status).toBe("QUOTING");
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
       expect(log?.metadata).toEqual({
+        lockTierFrom: "HARD_LOCKED",
+        lockTierTo: "OPEN",
         justification: "Client requested a correction after the invoice was voided.",
         justificationSource: "unlock_session",
       });

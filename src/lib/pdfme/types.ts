@@ -179,7 +179,7 @@ export interface DocumentData {
   org_address: string;
   org_website: string;
   /** Australian Business Number (or local equivalent). Rendered in the
-   *  header, under the org's address/email, on the invoice only. */
+   *  header, under the org's address/email, on every doc type. */
   org_abn: string;
   org_logo: string | null;
   org_icon: string | null;

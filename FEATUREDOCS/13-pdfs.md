@@ -185,10 +185,15 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 | Type | Blocks | `expandProjectGroups` | Status filter |
 |------|--------|------------------------|----------------|
 | `quote` | header (+ "Expiry: {date}" meta line, real computed date), client+project details, table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset) | false (collapse groups) | none |
-| `invoice` | header (+ ABN under address/email when set, + bold "Due: {date}" meta line), client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals (+ deposit/balance, + bold "Due Date" row), payment details (omitted if unset), client notes, T&Cs (omitted unless `showTermsAndConditionsOnInvoice` is on AND text is set) | false | none |
+| `invoice` | header (+ bold "Due: {date}" meta line), client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals (+ deposit/balance, + bold "Due Date" row), payment details (omitted if unset), client notes, T&Cs (omitted unless `showTermsAndConditionsOnInvoice` is on AND text is set) | false | none |
 | `packing-list` | header, client+project details, table (checkboxes, per-unit, asset tags, categories), total-items note | true (expand groups) | none |
 | `return-sheet` | header, client+project details, table (checkboxes, condition columns, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT`, `RETURNED` |
 | `delivery-docket` | header, client+project details (+ site contact), table (checkboxes, row numbers, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT` |
+
+The `header` block itself is the SAME across all 5 doc types (`document-composer.ts`'s
+one `case "header"` in both `estimateBlockHeight` and `buildEntryFields`) — the org's ABN
+(when set) renders under the address/phone/email lines on **every** doc type, not just
+the invoice. Only the "Expiry"/"Due" meta lines next to the doc number are doc-type-gated.
 
 Call sheets are a 6th `DocumentType` value but are **not** in
 `DOCUMENT_LAYOUTS` — they render via `templates/call-sheet-services.ts`
@@ -250,9 +255,10 @@ card at `/settings/branding` ("Branding & documents").
 Org-level ABN (Australian Business Number, or local equivalent) is a separate
 top-level `OrgSettings.abn` field (not under `documents` — it's business
 identity, edited on the General settings page next to address/email/phone).
-Rendered in the PDF header, under the org's address/phone/email lines,
-**invoice only** — real Tax Invoices need it; the other 4 doc types don't.
-Omitted when unset.
+Rendered in the PDF header, under the org's address/phone/email lines, on
+**every** doc type — Tax Invoices legally require it, but it's shown wherever
+the org details block itself renders rather than singled out to that one
+type. Omitted when unset.
 
 `build-document-data.ts` computes these `DocumentData` fields from the settings
 above each time a document is built: `document_footer_text`,

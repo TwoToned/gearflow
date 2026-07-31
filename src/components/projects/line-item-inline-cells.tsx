@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { ConvexError } from "convex/values";
 import { formatCurrency } from "@/lib/formatters";
 import {
   type DiscountMode,
@@ -473,6 +474,157 @@ export function InlineEditableDiscount({
       )}
     >
       -{formatCurrency(Number(discount))} disc.
+    </button>
+  );
+}
+
+/** Reads a `ConvexError`'s structured `data.code`, the pattern
+ *  `use-justified-mutation.ts` already uses for `JUSTIFICATION_REQUIRED`. */
+function convexErrorCode(e: unknown): string | undefined {
+  if (!(e instanceof ConvexError) || typeof e.data !== "object" || e.data === null) return undefined;
+  const code = (e.data as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function convexErrorMessage(e: unknown, fallback: string): string {
+  if (e instanceof ConvexError && typeof e.data === "object" && e.data !== null) {
+    const message = (e.data as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return e instanceof Error ? e.message : fallback;
+}
+
+export interface InlineEditableQuantityProps {
+  value: number;
+  disabled?: boolean;
+  className?: string;
+  /** Resolves on success. On a rejected quantity increase, `patchNative`
+   *  throws a `ConvexError` with `data.code === "INSUFFICIENT_STOCK"` — this
+   *  component catches exactly that code to show a confirm-overbook step
+   *  (mirroring `EditLineItemDialog`'s pre-fetched-availability checkbox,
+   *  just reactive instead of proactive: no per-row availability query, the
+   *  server's own re-check is the single source of truth). Call again with
+   *  `allowOverbook: true` to confirm. Any OTHER rejection is assumed
+   *  already toasted by the caller's mutation — this component just reverts
+   *  silently. */
+  onSave: (next: number, allowOverbook: boolean) => Promise<unknown>;
+}
+
+/** Click-to-edit quantity, with an inline overbook-confirm step in place of
+ *  `EditLineItemDialog`'s checkbox. Not lock-gated — quantity is a
+ *  *structural* field (`LOCKED_LINE_ITEM_FIELDS` doesn't include it), not a
+ *  financial one, so it's ungated the same way description/notes are. */
+export function InlineEditableQuantity({ value, disabled, className, onSave }: InlineEditableQuantityProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const [saving, setSaving] = useState(false);
+  const [overbook, setOverbook] = useState<{ next: number; message: string } | null>(null);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    ref.current?.focus();
+    ref.current?.select();
+  }, [editing]);
+
+  function startEditing() {
+    setDraft(String(value));
+    setOverbook(null);
+    setEditing(true);
+  }
+
+  async function attemptSave(next: number, allowOverbook: boolean) {
+    setSaving(true);
+    try {
+      await onSave(next, allowOverbook);
+      setOverbook(null);
+    } catch (e) {
+      if (convexErrorCode(e) === "INSUFFICIENT_STOCK") {
+        setOverbook({ next, message: convexErrorMessage(e, "Not enough stock available for that quantity.") });
+      }
+      // Any other error: the caller's mutation already surfaced a toast —
+      // just fall through and revert to the display value.
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function commit() {
+    setEditing(false);
+    const parsed = Math.round(Number(draft.trim()));
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed === value) return; // garbage/no-op — revert silently
+    await attemptSave(parsed, false);
+  }
+
+  if (overbook) {
+    return (
+      <div
+        className="flex flex-col items-end gap-1"
+        onBlur={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setOverbook(null);
+        }}
+      >
+        <span className="max-w-[140px] text-right text-micro text-t-out">{overbook.message}</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setOverbook(null)}
+            className={cn("rounded-sm border border-line px-1.5 py-0.5 text-micro text-muted hover:bg-elev", focusRing)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => attemptSave(overbook.next, true)}
+            className={cn("rounded-sm border border-out bg-out-soft px-1.5 py-0.5 text-micro text-t-out hover:bg-out-soft/80", focusRing)}
+          >
+            Overbook anyway
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={ref}
+        type="number"
+        min={1}
+        step={1}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onBlur={commit}
+        onKeyDown={(e) => handleEditKeyDown(e, () => setEditing(false), true)}
+        className={cn(
+          "w-14 rounded-sm border border-line bg-paper px-1.5 py-0.5 text-center t-data outline-none",
+          focusRing,
+          className,
+        )}
+        aria-label="Quantity"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        startEditing();
+      }}
+      className={cn(
+        "rounded-sm px-1 -mx-1 tabular-nums",
+        !disabled && "cursor-text hover:bg-elev",
+        saving && "opacity-60",
+        focusRing,
+        className,
+      )}
+    >
+      {value}
     </button>
   );
 }

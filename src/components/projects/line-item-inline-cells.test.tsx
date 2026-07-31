@@ -7,10 +7,12 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { ConvexError } from "convex/values";
 import {
   InlineEditableText,
   InlineEditablePrice,
   InlineEditableDiscount,
+  InlineEditableQuantity,
 } from "./line-item-inline-cells";
 
 describe("InlineEditableText", () => {
@@ -125,5 +127,102 @@ describe("InlineEditableDiscount", () => {
     fireEvent.click(screen.getByText("-$150.00 disc."));
     expect((screen.getByLabelText("Discount") as HTMLInputElement).value).toBe("15");
     expect(screen.getByLabelText("Discount mode").textContent).toBe("%");
+  });
+});
+
+describe("InlineEditableQuantity", () => {
+  it("click to edit, blur saves the parsed quantity with allowOverbook: false", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<InlineEditableQuantity value={2} onSave={onSave} />);
+
+    fireEvent.click(screen.getByText("2"));
+    const input = screen.getByLabelText("Quantity") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "5" } });
+    fireEvent.blur(input);
+
+    expect(onSave).toHaveBeenCalledWith(5, false);
+  });
+
+  it("a no-op edit (unchanged value) never calls onSave", () => {
+    const onSave = vi.fn();
+    render(<InlineEditableQuantity value={3} onSave={onSave} />);
+
+    fireEvent.click(screen.getByText("3"));
+    fireEvent.blur(screen.getByLabelText("Quantity"));
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("garbage input (< 1) reverts silently without saving", () => {
+    const onSave = vi.fn();
+    render(<InlineEditableQuantity value={3} onSave={onSave} />);
+
+    fireEvent.click(screen.getByText("3"));
+    const input = screen.getByLabelText("Quantity") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.blur(input);
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("3")).toBeTruthy();
+  });
+
+  it("INSUFFICIENT_STOCK shows an inline overbook-confirm step; confirming retries with allowOverbook: true", async () => {
+    const onSave = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ConvexError({ code: "INSUFFICIENT_STOCK", message: "Only 3 of 5 requested are free during those dates." }),
+      )
+      .mockResolvedValueOnce(undefined);
+
+    render(<InlineEditableQuantity value={2} onSave={onSave} />);
+
+    fireEvent.click(screen.getByText("2"));
+    const input = screen.getByLabelText("Quantity") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "5" } });
+    fireEvent.blur(input);
+
+    expect(await screen.findByText("Only 3 of 5 requested are free during those dates.")).toBeTruthy();
+    expect(onSave).toHaveBeenNthCalledWith(1, 5, false);
+
+    fireEvent.click(screen.getByText("Overbook anyway"));
+
+    expect(onSave).toHaveBeenNthCalledWith(2, 5, true);
+  });
+
+  it("Cancel on the overbook prompt reverts without a retry", async () => {
+    const onSave = vi
+      .fn()
+      .mockRejectedValueOnce(new ConvexError({ code: "INSUFFICIENT_STOCK", message: "Not enough stock." }));
+
+    render(<InlineEditableQuantity value={2} onSave={onSave} />);
+
+    fireEvent.click(screen.getByText("2"));
+    const input = screen.getByLabelText("Quantity") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "5" } });
+    fireEvent.blur(input);
+
+    await screen.findByText("Not enough stock.");
+    fireEvent.click(screen.getByText("Cancel"));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("2")).toBeTruthy();
+  });
+
+  it("a non-overbook error reverts silently (no confirm step)", async () => {
+    const onSave = vi.fn().mockRejectedValueOnce(new Error("Not ready — try again in a moment."));
+
+    render(<InlineEditableQuantity value={2} onSave={onSave} />);
+
+    fireEvent.click(screen.getByText("2"));
+    const input = screen.getByLabelText("Quantity") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "5" } });
+    fireEvent.blur(input);
+
+    // Flush the rejected promise before asserting.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.queryByText("Overbook anyway")).toBeNull();
+    expect(screen.getByText("2")).toBeTruthy();
   });
 });

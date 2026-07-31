@@ -101,14 +101,22 @@ export function useNativeProjectStatus(orgId: string | undefined) {
 
   const enabled = !!orgId && !!session?.user;
 
-  /** Change a project's status browser-direct. Resolves once the server confirms. */
-  const updateStatus = async (projectId: string, status: string): Promise<void> => {
+  /**
+   * Change a project's status browser-direct. Resolves once the server confirms.
+   * `justification` (#792) is only required by the server for two specific
+   * transitions (reverting out of HARD_LOCKED, or confirming with no accepted
+   * quote) — omit it for every other transition. `useJustifiedMutation` supplies
+   * it after prompting via `JustificationDialog` when the server rejects with
+   * `JUSTIFICATION_REQUIRED`.
+   */
+  const updateStatus = async (projectId: string, status: string, justification?: string): Promise<void> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     try {
       await mutate({
         id: projectId,
         orgId,
         status: status as StatusArg,
+        justification,
         emitSideEffects: true,
         actor: { userId: session.user.id, userName: session.user.name ?? "" },
         auditId: createId(),

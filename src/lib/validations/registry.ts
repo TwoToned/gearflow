@@ -37,6 +37,7 @@ import {
   quoteDeclineFields,
 } from "../../../convex/quotesWrites";
 import { invoiceFields, invoiceIssueFields } from "../../../convex/invoicesWrites";
+import { paymentFields } from "../../../convex/paymentsWrites";
 
 import { clientSchema } from "./client";
 import { clientContactSchema } from "./client-contact";
@@ -52,6 +53,7 @@ import { subTestRecordSchema } from "./test-tag";
 import { supplierOrderUpdateSchema, supplierOrderItemSchema } from "./supplier-order";
 import { quoteSendSchema, quoteRecallSchema, quoteAcceptSchema, quoteDeclineSchema } from "./quote";
 import { invoiceSchema, invoiceIssueSchema } from "./invoice";
+import { paymentSchema } from "./payment";
 
 /** Unwrap a Zod schema (through .refine/.default/.optional wrappers) to its object shape keys. */
 export function zodKeys(schema: unknown): string[] {
@@ -169,6 +171,8 @@ export const VALIDATION_PAIRS: ValidationPair[] = [
   },
   // #989 — the invoice ISSUE dialog's fields (distinct from create above).
   { name: "invoiceIssue", zod: invoiceIssueSchema, convex: invoiceIssueFields },
+  // #1055 — recording a payment against an ISSUED invoice.
+  { name: "payment", zod: paymentSchema, convex: paymentFields },
 ];
 
 export const VALIDATION_PAIR_BY_NAME: Readonly<Record<string, ValidationPair>> = Object.fromEntries(
@@ -219,4 +223,5 @@ export const OPERATION_VALIDATION_PAIR: Readonly<Record<string, string>> = {
   "quotesWrites.markAcceptedNative": "quoteAccept",
   "quotesWrites.markDeclinedNative": "quoteDecline",
   "invoicesWrites.createNative": "invoice",
+  "paymentsWrites.recordNative": "payment",
 };

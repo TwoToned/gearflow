@@ -481,6 +481,39 @@ describe("updateSubHireItemNative", () => {
       }),
     ).rejects.toThrow(/Sub-hire not found/i);
   });
+
+  test("notes round-trips onto the item and the regenerated derived line", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.addSubHireItemNative, {
+      id: "it1", orgId: ORG, subHireId: "sh1", ...itemInput, now: NOW, actor: ACTOR, auditId: "loga",
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireItemNative, {
+      itemId: "it1", orgId: ORG, ...itemInput, notes: "Fragile — handle with care", now: NOW + 1, actor: ACTOR, auditId: "logu",
+    });
+    expect((await itemById(t, "it1"))?.notes).toBe("Fragile — handle with care");
+    const lines = await linesForSubHire(t, "sh1");
+    expect(lines.find((l) => l.subHireItemId === "it1")?.notes).toBe("Fragile — handle with care");
+  });
+
+  test("notes over the 2000-char bound is rejected", async () => {
+    const t = makeT();
+    await member(t, "manager");
+    await seedProject(t);
+    await seedSupplier(t);
+    await seedSubHire(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.addSubHireItemNative, {
+      id: "it1", orgId: ORG, subHireId: "sh1", ...itemInput, now: NOW, actor: ACTOR, auditId: "loga",
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.subHiresWrites.updateSubHireItemNative, {
+        itemId: "it1", orgId: ORG, ...itemInput, notes: "x".repeat(2001), now: NOW + 1, actor: ACTOR, auditId: "logu",
+      }),
+    ).rejects.toThrow();
+  });
 });
 
 // ─── removeSubHireItemNative ──────────────────────────────────────────────────

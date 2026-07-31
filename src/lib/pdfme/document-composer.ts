@@ -42,6 +42,7 @@ import {
 } from "./template-constants";
 import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
 import { wrapRichText, richTextLineHeight, type RichLine, type RichTextFonts } from "./plugins/helpers";
+import { isSubhireIndicatorVisible } from "./plugins/gearflow-table";
 
 // ─── Height constants (pt) — must match gearflow-table.ts's actual draw sizes ─
 const PT_PER_MM = 2.835;
@@ -211,20 +212,20 @@ function calculateRemainingItemHeight(item: DocumentLineItem, config: TableLayou
 }
 
 /** Rendered height (mm) of one parent item incl. all sub-rows (per-unit, kit/group/accessory children, grandchildren). */
-export function calculateItemHeight(item: DocumentLineItem, config: TableLayoutConfig): number {
+export function calculateItemHeight(item: DocumentLineItem, config: TableLayoutConfig, documentType?: string): number {
   let heightPt = PARENT_ROW_PT;
 
   // Sub-hire "via <Supplier>" line — must match gearflow-table.ts's own
-  // unconditional `item.subHireId != null && item.supplierName` check
-  // exactly (fontSize(9) + 1 = 10pt there), or every sub-hire row's real
-  // rendered height silently exceeds what was reserved for it. On a doc
-  // with many sub-hire lines this compounds fast: document-composer.ts
-  // ends up believing more items fit on a page than actually do, the
-  // table's own render-time overflow guard then quietly stops mid-page
-  // with no continuation page ever scheduled — a silent tail-drop that
-  // can lose entire trailing categories, not just one row (the exact class
-  // of bug the #790 redesign's "no tail-drop" guarantee exists to prevent).
-  if (item.subHireId != null && item.supplierName) {
+  // isSubhireIndicatorVisible() gate exactly (fontSize(9) + 1 = 10pt there),
+  // or every sub-hire row's real rendered height silently diverges from what
+  // was reserved for it. On a doc with many sub-hire lines this compounds
+  // fast: document-composer.ts ends up believing a different number of items
+  // fit on a page than actually do, the table's own render-time overflow
+  // guard then quietly stops mid-page with no continuation page ever
+  // scheduled — a silent tail-drop that can lose entire trailing categories,
+  // not just one row (the exact class of bug the #790 redesign's
+  // "no tail-drop" guarantee exists to prevent).
+  if (item.supplierName && isSubhireIndicatorVisible(item, documentType)) {
     heightPt += 9 + 1;
   }
 
@@ -310,7 +311,7 @@ function calculateTableItemHeights(
 
   for (const groupKey of groupOrder) {
     if (groupKey !== ungrouped && config.showGroupHeaders) heights.push(ptToMm(GROUP_HEADER_PT));
-    for (const item of groups.get(groupKey)!) heights.push(calculateItemHeight(item, config));
+    for (const item of groups.get(groupKey)!) heights.push(calculateItemHeight(item, config, docType));
   }
 
   return heights;

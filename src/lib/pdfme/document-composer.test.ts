@@ -891,25 +891,34 @@ describe("composeDocument — termsAndConditions.forceNewPage", () => {
 
 // ─── Sub-hire "via <Supplier>" line height (tail-drop regression) ────────────
 //
-// Real bug: calculateItemHeight (the pagination estimate) had no case for
-// the "via <Supplier>" line gearflow-table.ts always draws under a sub-hire
-// item's description — every sub-hire row's real rendered height silently
-// exceeded what was reserved. On a quote with many sub-hire lines (a normal
-// shape — most of a production's gear is commonly hired in from suppliers)
-// this compounds: document-composer.ts believes more items fit on page 1
-// than actually do, the table's own render-time overflow guard then quietly
-// stops mid-page, and since no continuation page was ever scheduled for the
-// table, everything after that point — potentially entire trailing
-// categories — is silently dropped from the PDF while still counted in the
-// (independently-computed) subtotal.
-describe("calculateItemHeight — sub-hire 'via Supplier' line (tail-drop regression)", () => {
+// Real bug #1 (fixed): calculateItemHeight (the pagination estimate) had no
+// case for the "via <Supplier>" line gearflow-table.ts always draws under a
+// sub-hire item's description — every sub-hire row's real rendered height
+// silently exceeded what was reserved. On a quote with many sub-hire lines
+// (a normal shape — most of a production's gear is commonly hired in from
+// suppliers) this compounds: document-composer.ts believes more items fit
+// on page 1 than actually do, the table's own render-time overflow guard
+// then quietly stops mid-page, and since no continuation page was ever
+// scheduled for the table, everything after that point — potentially entire
+// trailing categories — is silently dropped from the PDF while still
+// counted in the (independently-computed) subtotal.
+//
+// Real bug #2 (fixed): the "via <Supplier>" line ignored the item's
+// showSubhireOnDocs toggle entirely — a sub-hire item toggled OFF still
+// showed "via <Supplier>" on client-facing quote/invoice PDFs, leaking a
+// detail the toggle exists specifically to hide from the client. It's now
+// gated by isSubhireIndicatorVisible() (gearflow-table.ts), same as the
+// SUBHIRE badge: always visible on internal docs (packing-list,
+// return-sheet, delivery-docket), gated by showSubhireOnDocs on client docs
+// (quote, invoice).
+describe("calculateItemHeight — sub-hire 'via Supplier' line (tail-drop + visibility regression)", () => {
   function quoteTableConfig() {
     const block = DOCUMENT_LAYOUTS.quote.blocks.find((b) => b.kind === "table");
     if (block?.kind !== "table") throw new Error("quote layout has no table block");
     return block.config;
   }
 
-  it("reserves extra height for a sub-hire item with a supplier name", () => {
+  it("reserves extra height for a sub-hire item with showSubhireOnDocs on, on a client doc", () => {
     const config = quoteTableConfig();
     const plain = makeLineItem({ id: "a", model: { name: "GrandMA 3 Console" } });
     const subHire = makeLineItem({
@@ -917,14 +926,43 @@ describe("calculateItemHeight — sub-hire 'via Supplier' line (tail-drop regres
       model: { name: "GrandMA 3 Console" },
       subHireId: "sh-1",
       supplierName: "Resolution X",
+      showSubhireOnDocs: true,
     });
-    expect(calculateItemHeight(subHire, config)).toBeGreaterThan(calculateItemHeight(plain, config));
+    expect(calculateItemHeight(subHire, config, "quote")).toBeGreaterThan(calculateItemHeight(plain, config, "quote"));
+  });
+
+  it("reserves NO extra height for a sub-hire item with showSubhireOnDocs off, on a client doc", () => {
+    const config = quoteTableConfig();
+    const plain = makeLineItem({ id: "a", model: { name: "GrandMA 3 Console" } });
+    const subHireHidden = makeLineItem({
+      id: "b",
+      model: { name: "GrandMA 3 Console" },
+      subHireId: "sh-1",
+      supplierName: "Resolution X",
+      showSubhireOnDocs: false,
+    });
+    expect(calculateItemHeight(subHireHidden, config, "quote")).toBe(calculateItemHeight(plain, config, "quote"));
+  });
+
+  it("reserves extra height for a sub-hire item on an internal doc regardless of showSubhireOnDocs", () => {
+    const config = quoteTableConfig();
+    const plain = makeLineItem({ id: "a", model: { name: "GrandMA 3 Console" } });
+    const subHire = makeLineItem({
+      id: "b",
+      model: { name: "GrandMA 3 Console" },
+      subHireId: "sh-1",
+      supplierName: "Resolution X",
+      showSubhireOnDocs: false,
+    });
+    expect(calculateItemHeight(subHire, config, "packing-list")).toBeGreaterThan(
+      calculateItemHeight(plain, config, "packing-list"),
+    );
   });
 
   it("full pipeline: a quote with many sub-hire lines across several categories paginates with no tail-drop", () => {
     // Mirrors the real reported shape: several categories, most rows are
-    // sub-hire ("via <Supplier>"), long enough to force the table across
-    // multiple pages.
+    // sub-hire ("via <Supplier>", visible on this client doc via
+    // showSubhireOnDocs), long enough to force the table across multiple pages.
     const suppliers = ["Resolution X", "Madzin Productions"];
     const categoryNames = ["Power Distribution", "Site", "Audio", "Lighting", "Staging"];
     const items: DocumentLineItem[] = [];
@@ -942,6 +980,7 @@ describe("calculateItemHeight — sub-hire 'via Supplier' line (tail-drop regres
             lineTotal: 100 + i,
             subHireId: n % 2 === 0 ? `sh-${i}` : null,
             supplierName: n % 2 === 0 ? suppliers[i % suppliers.length] : null,
+            showSubhireOnDocs: n % 2 === 0,
           }),
         );
         i++;

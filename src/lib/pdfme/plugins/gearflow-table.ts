@@ -52,6 +52,17 @@ function breakdownLabel(item: DocumentLineItem, config: TablePluginConfig): stri
   return parsed ? formatPriceBreakdown(parsed) : "";
 }
 
+/** Internal docs (packing-list, return-sheet, delivery-docket) always show the
+ *  sub-hire indicator (badge + "via Supplier" line); client-facing docs (quote,
+ *  invoice) only show it when the item's showSubhireOnDocs toggle is on. Shared
+ *  by the badge, the "via Supplier" line, and its row-height reservation so
+ *  none of them can drift out of sync with each other. */
+export function isSubhireIndicatorVisible(item: DocumentLineItem, documentType?: string): boolean {
+  if (item.subHireId == null) return false;
+  const isInternalDoc = documentType === "packing-list" || documentType === "return-sheet" || documentType === "delivery-docket";
+  return isInternalDoc || !!item.showSubhireOnDocs;
+}
+
 interface TableSchema extends Schema {
   type: "gearflowTable";
 }
@@ -426,7 +437,7 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
         // Calculate row content height
         const noteLineHeight = noteFontSize + 2;
         let rowContentHeight = fontSize + rowPadding * 2;
-        if (item.subHireId != null && item.supplierName) {
+        if (item.supplierName && isSubhireIndicatorVisible(item, config.documentType)) {
           rowContentHeight += fontSize + 1; // "via Supplier" line
         }
         if (breakdownLabel(item, config)) {
@@ -519,9 +530,11 @@ async function pdfRender(arg: PDFRenderProps<TableSchema>) {
               }
             }
 
-            // "via Supplier" for sub-hire items on internal docs
+            // "via Supplier" for sub-hire items — internal docs always, client
+            // docs only when showSubhireOnDocs is on (must match isSubhireIndicatorVisible
+            // used for the badge and the row-height reservation above).
             let supplierLineOffset = 0;
-            if (item.subHireId != null && item.supplierName) {
+            if (item.supplierName && isSubhireIndicatorVisible(item, config.documentType)) {
               const viaText = `via ${item.supplierName}`;
               supplierLineOffset = fontSize + 1;
               page.drawText(viaText, {
@@ -1285,10 +1298,7 @@ function getBadges(item: DocumentLineItem, documentType?: string): typeof BADGE_
     }
   }
 
-  // Internal docs (packing-list, return-sheet, delivery-docket) always show subhire badge
-  // Client-facing docs (quote, invoice) only show when showSubhireOnDocs is true
-  const isInternalDoc = documentType === "packing-list" || documentType === "return-sheet" || documentType === "delivery-docket";
-  if (item.subHireId != null && (isInternalDoc || item.showSubhireOnDocs)) {
+  if (isSubhireIndicatorVisible(item, documentType)) {
     badges.push(BADGE_STYLES.subhire);
   }
 

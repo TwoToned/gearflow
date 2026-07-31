@@ -108,13 +108,14 @@ the component module there created a circular dependency with `equipment-rows.ts
 those two files). Fixed as part of the POLICY.md R-3.5 cycle burn-down (#730/#766).
 
 `src/components/projects/equipment-rows.tsx` exports four row primitives.
-Reordering is via **▲/▼ move buttons** (the former drag handle column) —
-drag-and-drop was removed (`chore/remove-pdf-builder-and-dnd`, `@dnd-kit`
-dropped). Each row takes `onMoveUp`/`onMoveDown`/`canMoveUp`/`canMoveDown`
-(`MoveControls`); the shared `MoveButtons` helper renders the stacked
-chevrons and disables the up button on the first row / down on the last.
-The legacy `cat-`/`grp-`/`shg-`/`li-` id prefixes are still referenced
-below only to describe scope, not drag identity.
+Reordering is real **drag-and-drop** again (`@dnd-kit`, re-added after the
+`chore/remove-pdf-builder-and-dnd` removal) — see
+[Reordering](#reordering-drag-and-drop) below. Each row takes
+`dragHandleRef`/`dragAttributes`/`dragListeners`/`isDragDisabled`
+(`DragHandleControls`, `equipment-rows.tsx`); the shared `DragHandle` helper
+renders a `GripVertical` grab handle and renders nothing when
+`isDragDisabled`. The `cat-`/`grp-`/`shg-`/`li-` id prefixes referenced below
+are real `useSortable()` ids, not just historical scope labels.
 
 - **`CategoryRow`** — ProjectCategory header. Kebab:
   Add Equipment / Add Kit / Add Custom Item / Rename / Delete. The three
@@ -361,33 +362,56 @@ tokens `equipment-add-form.tsx`'s internal `ModeTab` uses — flagged as a
 follow-up, not fixed here to keep this pass's blast radius to the
 form-library/discount work the issue scoped).
 
-## Reordering (▲/▼ move buttons)
+## Reordering (drag-and-drop)
 
 Drag-and-drop was removed (`chore/remove-pdf-builder-and-dnd`; `@dnd-kit`
-dropped). Each level now reorders via ▲/▼ buttons in the leading column.
-The handlers in
+dropped), then re-added row-kind by row-kind (line items, then groups, then
+categories) once the cross-type unification above settled. All four row
+kinds — `CategoryRow`, `GroupRow`, `SubHireGroupRow`, `LineItemRow` — are
+real `@dnd-kit` sortables now; the ▲/▼ move-button era is over.
+
+`src/hooks/use-equipment-dnd.ts` owns the wiring: sensors, hover/invalid-drop
+tracking, a per-row-kind optimistic `sortOrder`/placement overlay applied to
+the `equipmentTab.bundle` bundle BEFORE reconstruction (so a drop updates
+instantly, cleared once the real write settles), and the justified-mutation
+wrappers (`useJustifiedMutation` — #990's justify-tier prompt) that fire the
+real reorder/move mutations. A single `DndContext` in
 [`src/components/projects/equipment-tab.tsx`](../src/components/projects/equipment-tab.tsx)
-(`moveCategory`, `moveGroupSlot`, `moveLineItemInList`) swap a row with its
-neighbour, build the new ordered id array, and call the **same server
-actions** the old `handleDragEnd` used:
+wraps the whole tree; `handleDragEnd` dispatches on the active sortable id's
+prefix to one of three pure, unit-tested decision functions:
 
-- Categories → `reorderProjectCategories`.
-- Group slots within a category → `reorderProjectGroups` (when no sub-hire
-  group is involved) or `reorderMixedGroupsInCategory` (mixed).
-- Line items (group / standalone / uncategorised) → `reorderLineItems`.
+- **`resolveLineItemDragAction`** (`li-` ids) — reorder within a container
+  (category standalone / group / uncategorised) or move across containers
+  (category, group, both). Containers indexed by `buildContainerMap`.
+- **`resolveGroupDragAction`** (`grp-`/`shg-` ids) — reorder within a
+  category's mixed project+sub-hire list, or move to a different category /
+  Uncategorized. Containers indexed by `buildGroupContainerMap`; the
+  underlying mutation (`groupWrites.reorder` vs
+  `categorySlotWrites.reorderMixed`) is picked by `planGroupReorder`.
+- **`resolveCategoryDragAction`** (`cat-` ids) — top-level reorder only.
+  Categories don't nest into anything and nothing nests INTO a category via
+  a "category drag" (a line item/group landing under a category is decided
+  by *its own* drag — the group resolver's `cat-` branch is for that, not
+  this), so there is exactly ONE category container for the whole project
+  and no container-map builder is needed — just the ordered `cat-*` id list.
+  Fires `categoryWrites.reorder`.
 
-Move buttons reorder within a scope only — they do not move items *across*
-categories/groups. Cross-container moves (and uncategorise) remain available
-through the kebab "Move to category" / "Move to group" dialogs
-(`moveLineItemToGroup`, `moveSubHireGroupToCategory`, `moveProjectGroupToCategory`).
-Orphan (uncategorised) groups and sub-hire group children have no inline
-reorder buttons (matching prior behaviour — drag had no reorder path there).
+Cross-container moves (and uncategorise) for line items/groups are also
+reachable through the kebab "Move to category" / "Move to group" dialogs
+(`moveLineItemToGroup`, `moveSubHireGroupToCategory`,
+`moveProjectGroupToCategory`) — both paths call the same underlying
+mutations. Orphan (uncategorised) groups and sub-hire group children are
+valid drop *targets* but can't originate a drag themselves
+(`isDragDisabled`) — they were never independently reorderable.
 
-`getDisallowedDropReason` (the Drop Matrix 8C predicate) is retained in
-`equipment-rows.tsx` and unit-tested, but is no longer wired into the UI
-(it gated drag targets, which no longer exist).
+`getDisallowedDropReason` (the Drop Matrix 8C predicate, `equipment-rows.tsx`)
+IS wired into the live UI again — `handleDragOver` calls it to style an
+invalid hover target, and `resolveLineItemDragAction`/`resolveGroupDragAction`
+call it to short-circuit a disallowed drop with a toast. It has no
+category-vs-category rule — categories don't nest into anything, so no
+category drop needs blocking.
 
-### Drop Matrix 8C summary (historical — drag removed)
+### Drop Matrix 8C summary
 
 | Source ↓ \ Dest → | ProjectCategory | ProjectGroup | SubHireGroup | Uncat | SubHire (top) |
 |---|---|---|---|---|---|

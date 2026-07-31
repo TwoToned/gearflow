@@ -690,6 +690,21 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
   with %) — negative margin renders `text-t-out`, UNCLAMPED (a loss-making service
   is meant to be visible, not hidden). A `showOnDocuments: false` auto-priced
   service shows an "Internal (not billed)" tag instead of forcing the flag on.
+- **`showOnDocuments` is a manual toggle on the create/edit `ServiceDialog`**
+  ("Show on quotes, invoices & Xero", in the "Charge to client" pricing section) —
+  fixed bug: the dialog only ever seeded this from a matching org-level
+  `serviceTemplates` default (`Generate services`), so a hand-added or hand-edited
+  service (the common case — a PM typing a custom delivery/labour line) had no way
+  to make it billable on documents at all. Not gated by `LockedField`/the financial
+  lock — `updateServiceNative`'s `moneyChanged` check only looks at
+  `unitPrice`/`discount`/`costTotal`, so this flag is a structural change server-side
+  too. This is the ONE flag `buildFinanceLines` (FEATUREDOCS/66), the PDF pipeline's
+  `billableServices` filter (`build-document-data.ts`), and `recalcProjectTotals`'s
+  `serviceRevenue` all gate on — flipping it is what makes a service (labour,
+  delivery, bump in/out, misc) actually show up on a sent quote, an issued invoice,
+  and the pushed Xero invoice's line items (`convex/xeroPush.ts` resolves its
+  account/tax coding via `serviceAccountDefaults`), not just the project's internal
+  P&L.
 - The services financial summary panel's third tile used to duplicate the second
   ("Total" and "Internal" both read the same `costTotal`-derived value) — it's now
   "Margin" (`onDocumentsTotal - internalTotal`), gated manager+ along with the

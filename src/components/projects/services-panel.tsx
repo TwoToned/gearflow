@@ -2137,6 +2137,18 @@ function ServiceDialog({
                   </LockedField>
                 </div>
               </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="svc-showOnDocs"
+                  checked={!!form.watch("showOnDocuments")}
+                  onCheckedChange={(checked) =>
+                    form.setValue("showOnDocuments", !!checked)
+                  }
+                />
+                <Label htmlFor="svc-showOnDocs" className="text-sm font-normal cursor-pointer">
+                  Show on quotes, invoices &amp; Xero
+                </Label>
+              </div>
               {watchCrew.length > 0 && (
                 <div className="space-y-1.5">
                   <Label>Charge rate override ($){rateOverrideUnitSuffix}</Label>

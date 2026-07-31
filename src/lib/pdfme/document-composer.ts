@@ -344,20 +344,43 @@ function wrappedLineCount(text: string, fonts: RichTextFonts): number {
 function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: LayoutContext): number {
   switch (block.kind) {
     case "header": {
+      // Measured against gearflow-page-header.ts's actual draw geometry
+      // (rather than flat per-mode constants) so the reservation tracks what
+      // gets drawn instead of padding every header with slack sized for the
+      // worst case — that slack was the visible gap above the details row.
       const mode = data.org_branding?.documentLogoMode ?? "icon";
-      const base = mode === "logo" ? 25 + 22 : 25;
-      // Quote's header meta gains a 3rd line ("Expiry: <date>") — a little
-      // extra headroom so it can't ever crowd the details row below it.
+      const showOrgName = (data.org_branding?.showOrgNameOnDocuments ?? true) && !!data.org_name;
+
+      // Org detail lines (address/phone/email/ABN/website), same fields and
+      // order as buildEntryFields' orgDetailParts below.
+      let orgDetailLines = 0;
+      if (data.org_address) orgDetailLines++;
+      if (data.org_phone) orgDetailLines++;
+      if (data.org_email) orgDetailLines++;
+      if (data.org_abn) orgDetailLines++;
+      if (data.org_website) orgDetailLines++;
+
+      // Left column: logo row (maxLogoH 50pt + 16pt clearance, logo mode
+      // only) + org name row (18pt + spacing, if shown) + 12pt per detail line.
+      const logoRowMm = mode === "logo" ? ptToMm(50 + 16) : 0;
+      const orgNameRowMm = showOrgName ? ptToMm(28) : 0;
+      const leftColumnMm = logoRowMm + orgNameRowMm + orgDetailLines * ptToMm(12);
+
+      // Right column: title (22pt) + 14pt clearance + 13pt per meta line
+      // (doc number + date, +expiry on quotes) + the bold "Due: <date>"
+      // highlight line on invoices.
       const hasExpiryLine = ctx.docType === "quote" && !!data.quote_valid_until;
-      // The org-details column gains an extra "ABN: <abn>" line on EVERY doc
-      // type (wherever the org address/phone/email block renders — not just
-      // Tax Invoices). Invoice's meta column additionally gains a bold
-      // "Due: <date>" highlight line. Same small headroom bump per extra
-      // line, same reasoning.
-      const hasAbnLine = !!data.org_abn;
       const hasDueDateLine = ctx.docType === "invoice" && !!data.invoice_due_date;
-      const extraLines = [hasExpiryLine, hasAbnLine, hasDueDateLine].filter(Boolean).length;
-      return base + extraLines * 5;
+      const metaLineCount = 2 + (hasExpiryLine ? 1 : 0);
+      const rightColumnMm = ptToMm(22 + 14 + metaLineCount * 13 + (hasDueDateLine ? 11 : 0));
+
+      // Icon mode's icon renders inline with the org name/details column
+      // (up to 40pt tall) rather than its own row — floor the column so a
+      // header with an icon but no org name/details still clears it.
+      const iconFloorMm = mode === "icon" ? ptToMm(40) : 0;
+
+      const PADDING_MM = 4; // breathing room below the taller column
+      return Math.max(leftColumnMm, rightColumnMm, iconFloorMm) + PADDING_MM;
     }
 
     case "detailsRow": {

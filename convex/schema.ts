@@ -2386,7 +2386,20 @@ export default defineSchema({
     total: v.number(),
     // % of the tax-inclusive project total this DEPOSIT invoice represents
     // (informational snapshot of the client profile % used at creation time).
+    // Set only when depositMode is "%" (or omitted) — mutually exclusive with
+    // depositAmount, same "one authoritative entered figure" rule as discountMode.
     depositPercent: v.optional(v.number()),
+    // How a DEPOSIT invoice's amount was entered (#1055). Absent = "%", the only
+    // mode that existed before this field — see validators.ts InvoiceDepositMode.
+    depositMode: v.optional(enums.InvoiceDepositMode),
+    // The entered dollar figure when depositMode is "$" — `total` is still the one
+    // authoritative resolved amount either way (R-9.3).
+    depositAmount: v.optional(v.number()),
+    // Derived sum of this invoice's non-voided `payments` rows (#1055), patched by
+    // paymentsWrites.ts recordNative/voidNative in the same transaction as the
+    // payment write — never hand-typed. Absent = 0. balanceRemaining is NOT stored;
+    // it's `total - (amountPaid ?? 0)`, computed wherever displayed.
+    amountPaid: v.optional(v.number()),
     notes: v.optional(v.string()),
     // A CREDIT invoice's back-reference to the invoice it credits.
     creditForInvoiceId: v.optional(v.string()),
@@ -2433,6 +2446,37 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_invoiceId", ["invoiceId"]),
+
+  // Payment (#1055) — a bookkeeping record against an ISSUED invoice, recorded
+  // in-app (never delete this domain's rows, only void — see paymentsWrites.ts).
+  // Voiding a payment recomputes the parent invoice's amountPaid/paymentStatus,
+  // same "derived, never hand-typed" rule the invoice-level fields already follow.
+  // Not a client-facing document (no PDF), so it doesn't fall under the "never
+  // delete a finance artifact" rule that gates invoices/quotes — permanently
+  // deleting a VOID invoice (invoicesWrites.ts deleteVoidNative) still refuses to
+  // proceed while any of its payments are non-voided, though, so a payment's
+  // existence is never silently lost either.
+  payments: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    invoiceId: v.string(),
+    projectId: v.string(),
+    amount: v.number(),
+    method: enums.PaymentMethod,
+    reference: v.optional(v.string()),
+    paidAt: v.number(),
+    notes: v.optional(v.string()),
+    recordedById: v.string(),
+    voidedAt: v.optional(v.number()),
+    voidedById: v.optional(v.string()),
+    voidReason: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_organizationId_invoiceId", ["organizationId", "invoiceId"])
+    .index("by_organizationId_projectId", ["organizationId", "projectId"]),
 
   // ServiceTemplate
   serviceTemplates: defineTable({

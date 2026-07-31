@@ -489,12 +489,31 @@ export const InvoiceStatus = v.union(
   v.literal("ISSUED"),
   v.literal("VOID"),
 );
-/** Vocabulary matches SubHirePaymentStatus (same shape, separate enum — a different
- *  entity) — written only by Xero payment sync (phase 2), never by the client. */
+/** Written by paymentsWrites.ts recordNative/voidNative, derived from the invoice's
+ *  own amountPaid vs total — NOT by a Xero poll (that phase-2 idea was never built;
+ *  see FEATUREDOCS/66). Vocabulary matches SubHirePaymentStatus (same shape, separate
+ *  enum — a different entity). */
 export const InvoicePaymentStatus = v.union(
   v.literal("UNPAID"),
   v.literal("PARTIALLY_PAID"),
   v.literal("PAID"),
+);
+/** How a DEPOSIT invoice's amount was entered — the resolved dollar figure always
+ *  lives in `invoices.total` (R-9.3), this only records which input the operator used
+ *  (mirrors `discountMode` — src/lib/discount-mode.ts). Absent on a row = "%", the
+ *  only mode that existed before this field was added. */
+export const InvoiceDepositMode = v.union(
+  v.literal("%"),
+  v.literal("$"),
+);
+/** How a recorded payment was received — free text beyond this belongs in `reference`/
+ *  `notes`, not a longer enum. */
+export const PaymentMethod = v.union(
+  v.literal("BANK_TRANSFER"),
+  v.literal("CARD"),
+  v.literal("CASH"),
+  v.literal("CHEQUE"),
+  v.literal("OTHER"),
 );
 export const ClientPaymentProfile = v.union(
   v.literal("FULL_UPFRONT"),

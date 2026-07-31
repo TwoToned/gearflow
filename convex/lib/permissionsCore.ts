@@ -55,7 +55,13 @@ const ALL_PROJECT = ["create", "read", "update", "delete", "manage_line_items", 
 // whole finance surface, not a separate "xero" resource — the actions ARE the
 // granularity: xero_manage is the connect/disconnect/settings action, distinct
 // from xero_push which just sends an already-issued invoice).
-const ALL_INVOICE = ["create", "read", "update", "delete", "publish", "issue", "void", "xero_push", "xero_manage"] as const;
+// record_payment/void_payment (#1055) — recording/voiding a payment against an
+// invoice is bookkeeping on the same resource, not a separate "payment"
+// resource (mirrors why Xero push/manage live here instead of their own).
+const ALL_INVOICE = [
+  "create", "read", "update", "delete", "publish", "issue", "void", "xero_push", "xero_manage",
+  "record_payment", "void_payment",
+] as const;
 
 export const rolePermissions: Record<string, PermissionMap> = {
   owner: {
@@ -120,8 +126,11 @@ export const rolePermissions: Record<string, PermissionMap> = {
     reports: ["view", "export", "create", "delete"],
     checkItem: ALL_CRUD,
     // No delete/void/xero_manage for manager — voiding an issued invoice and
-    // connecting/disconnecting Xero stay owner/admin-only.
-    invoice: ["create", "read", "update", "publish", "issue", "xero_push"],
+    // connecting/disconnecting Xero stay owner/admin-only. record_payment is
+    // included (bookkeeping, same tier as issue/xero_push); void_payment is
+    // not (correcting a recorded payment stays owner/admin-only, same as
+    // void/delete).
+    invoice: ["create", "read", "update", "publish", "issue", "xero_push", "record_payment"],
   },
   member: {
     asset: ["create", "read", "update"],

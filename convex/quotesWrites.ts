@@ -347,7 +347,7 @@ export const sendNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: "QUOTE_SENT",
       entityType: "quote",
       entityId: quoteId,
       entityName: label,
@@ -442,7 +442,7 @@ export const recallNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: "QUOTE_RECALLED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,
@@ -536,7 +536,7 @@ export const newVersionNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "CREATE",
+      action: "QUOTE_CREATED",
       entityType: "quote",
       entityId: id,
       entityName: label,
@@ -648,7 +648,7 @@ export const deleteDraftNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "DELETE",
+      action: "QUOTE_DELETED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,
@@ -717,7 +717,7 @@ export const deleteRecalledNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "DELETE",
+      action: "QUOTE_DELETED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,
@@ -866,7 +866,7 @@ export const repriceFromRevisionNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "CREATE",
+      action: "QUOTE_CREATED",
       entityType: "quote",
       entityId: id,
       entityName: label,
@@ -930,7 +930,7 @@ export const markAcceptedNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: "QUOTE_ACCEPTED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,
@@ -987,7 +987,7 @@ export const markDeclinedNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: "QUOTE_DECLINED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,
@@ -1054,7 +1054,7 @@ export const unacceptNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: "QUOTE_UNACCEPTED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,
@@ -1112,7 +1112,7 @@ export const setQuoteProtectedNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: protect ? "QUOTE_PROTECTED" : "QUOTE_UNPROTECTED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,
@@ -1209,7 +1209,7 @@ export const correctQuoteNative = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: "QUOTE_CORRECTED",
       entityType: "quote",
       entityId: quote.id,
       entityName: label,

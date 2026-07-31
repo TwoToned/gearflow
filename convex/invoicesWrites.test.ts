@@ -27,9 +27,9 @@ function makeT() {
   return t;
 }
 
-async function seedMember(t: ReturnType<typeof makeT>, role = "owner") {
+async function seedMember(t: ReturnType<typeof makeT>, role = "owner", orgId = ORG, userId = USER) {
   await t.run(async (ctx) => {
-    await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role });
+    await ctx.db.insert("members", { id: `m_${userId}_${orgId}`, organizationId: orgId, userId, role });
   });
 }
 
@@ -103,6 +103,75 @@ describe("invoicesWrites.createNative", () => {
     const lines = await getLines(t, "i1");
     expect(lines).toHaveLength(1);
     expect(lines[0]?.description).toContain("Deposit");
+  });
+
+  test("$-mode DEPOSIT invoice uses the entered amount as total, with the same proportional GST split", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT",
+      depositMode: "$", depositAmount: 500, actor, auditId: "a1", now: NOW,
+    });
+
+    const inv = await getInvoice(t, "i1");
+    expect(inv?.total).toBe(500);
+    expect(inv?.taxAmount).toBeCloseTo(500 * (100 / 1100), 2);
+    expect(inv?.subtotal).toBeCloseTo(500 - 500 * (100 / 1100), 2);
+    expect(inv?.depositMode).toBe("$");
+    expect(inv?.depositAmount).toBe(500);
+    expect(inv?.depositPercent).toBeUndefined();
+
+    const lines = await getLines(t, "i1");
+    expect(lines[0]?.description).toBe("Deposit ($500.00)");
+  });
+
+  test("rejects a $-mode deposit amount exceeding the project total", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t); // project total is 1100
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+        id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT",
+        depositMode: "$", depositAmount: 1100.01, actor, auditId: "a1", now: NOW,
+      }),
+    ).rejects.toThrow(/cannot exceed the project total/i);
+  });
+
+  test("% mode is still the default when depositMode is omitted (unaffected by #1055)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT", depositPercent: 10, actor, auditId: "a1", now: NOW,
+    });
+
+    const inv = await getInvoice(t, "i1");
+    expect(inv?.depositMode).toBe("%");
+    expect(inv?.total).toBe(110); // 10% of 1100
+    expect(inv?.depositAmount).toBeUndefined();
+  });
+
+  test("BALANCE nets against a mix of %-mode and $-mode DEPOSIT invoices", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoices", {
+        id: "dep1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT", status: "ISSUED",
+        subtotal: 227, taxAmount: 23, total: 250, depositMode: "$", depositAmount: 250, invoiceNumber: "INV-2023-0001",
+      });
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "bal1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "BALANCE", actor, auditId: "a1", now: NOW,
+    });
+
+    const inv = await getInvoice(t, "bal1");
+    expect(inv?.total).toBe(850); // 1100 - 250
   });
 
   test("BALANCE invoice subtracts every prior non-VOID DEPOSIT invoice's total (server-computed, not client-supplied)", async () => {
@@ -401,5 +470,116 @@ describe("invoicesWrites.createCreditNative", () => {
         id: "cr1", orgId: ORG, creditForInvoiceId: "i1", actor, auditId: "a2", now: NOW,
       }),
     ).rejects.toThrow(/can only credit an issued invoice/i);
+  });
+});
+
+async function setRole(t: ReturnType<typeof makeT>, role: string, orgId = ORG, userId = USER) {
+  await t.run(async (ctx) => {
+    const m = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId)).first();
+    await ctx.db.patch(m!._id, { role });
+  });
+}
+
+describe("invoicesWrites.deleteVoidNative — the invoice-side accepted-risk erase (#1055)", () => {
+  // Always seeded as owner — voidNative (unlike create/issue) requires the
+  // owner/admin `void` action, so a role downgrade for the actual permission-
+  // under-test has to happen AFTER setup, via setRole below.
+  const voidSetup = async (t: ReturnType<typeof makeT>) => {
+    await seedMember(t, "owner");
+    await seedProjectAndClient(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, { id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW });
+    await t.run(async (ctx) => {
+      const inv = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", "i1")).first();
+      await ctx.db.patch(inv!._id, { pdfFileId: "storage_i1" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.voidNative, {
+      id: "i1", orgId: ORG, reason: "Data entry error", actor, auditId: "a3", now: NOW + 1,
+    });
+  };
+
+  const del = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.deleteVoidNative, {
+      id: "i1", orgId: ORG, confirmLabel: "INV-2023-0001", actor, auditId: "a4", now: NOW + 2, ...over,
+    } as never);
+
+  test("an owner/admin can permanently erase a VOID invoice + its lines with the exact typed label", async () => {
+    const t = makeT();
+    await voidSetup(t);
+
+    await del(t);
+    expect(await getInvoice(t, "i1")).toBeNull();
+    expect(await getLines(t, "i1")).toHaveLength(0);
+  });
+
+  test("rejects a confirmLabel that doesn't match exactly", async () => {
+    const t = makeT();
+    await voidSetup(t);
+
+    await expect(del(t, { confirmLabel: "inv-2023-0001" })).rejects.toThrow(/type.*exactly/i);
+    expect(await getInvoice(t, "i1")).not.toBeNull();
+  });
+
+  test("refuses an invoice that isn't VOID (still ISSUED)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedProjectAndClient(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, { id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW });
+
+    await expect(del(t, { auditId: "a3", now: NOW + 1 })).rejects.toThrow(/only a void invoice/i);
+  });
+
+  test("refuses while the invoice still has a non-voided payment recorded against it", async () => {
+    const t = makeT();
+    await voidSetup(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("payments", {
+        id: "pay1", organizationId: ORG, invoiceId: "i1", projectId: "p1", amount: 100, method: "CASH",
+        paidAt: NOW, recordedById: USER, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(del(t)).rejects.toThrow(/payment\(s\) recorded against it/i);
+    expect(await getInvoice(t, "i1")).not.toBeNull();
+
+    // Void the payment, then deletion is allowed.
+    await t.withIdentity(asUser(ORG)).mutation(api.paymentsWrites.voidNative, {
+      id: "pay1", orgId: ORG, reason: "recorded in error", actor, auditId: "a5", now: NOW + 3,
+    });
+    await del(t, { auditId: "a6", now: NOW + 4 });
+    expect(await getInvoice(t, "i1")).toBeNull();
+  });
+
+  test("a manager (lacks invoice:delete) cannot permanently delete a VOID invoice", async () => {
+    const t = makeT();
+    await voidSetup(t);
+    await setRole(t, "manager");
+
+    await expect(del(t)).rejects.toThrow(/forbidden|permission/i);
+    expect(await getInvoice(t, "i1")).not.toBeNull();
+  });
+
+  test("rejects another org's invoice (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t, "owner");
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProjectAndClient(t, OTHER);
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: OTHER, projectId: "p1", clientId: "c1", kind: "FULL",
+      actor: { userId: "user_2", userName: "Bob" }, auditId: "a1", now: NOW,
+    });
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.invoicesWrites.issueNative, {
+      id: "i1", orgId: OTHER, autoNumber, actor: { userId: "user_2", userName: "Bob" }, auditId: "a2", now: NOW,
+    });
+    await t.withIdentity({ subject: "user_2", orgId: OTHER }).mutation(api.invoicesWrites.voidNative, {
+      id: "i1", orgId: OTHER, reason: "oops", actor: { userId: "user_2", userName: "Bob" }, auditId: "a3", now: NOW + 1,
+    });
+
+    await expect(del(t, { confirmLabel: "INV-2023-0001" })).rejects.toThrow(/forbidden|organization mismatch/i);
   });
 });

@@ -24,6 +24,8 @@ import {
   isRevertOutOfHardLock,
   lifecycleAuditMetadata,
   LOCKED_PROJECT_FIELDS,
+  lockTierForStatus,
+  LOCK_TIER_RANK,
   requireHardLockOverrideAllowed,
   requireJustification,
 } from "./lib/projectLocks";
@@ -232,6 +234,21 @@ export const updateStatusNative = mutation({
       await autoCommitOpenSession(ctx, orgId, id, project.projectNumber, actor, now);
     }
 
+    // Locking itself has no dedicated status-change verb (unlocking does — see
+    // the explicit UNLOCK_OPENED/COMMITTED/DISCARDED actions in
+    // projectUnlockSessionsWrites.ts) — a status move can cross a lock-tier
+    // boundary in either direction, so stamp that onto THIS row rather than
+    // inventing a second action a caller would have to also watch for.
+    const fromTier = lockTierForStatus(from);
+    const toTier = lockTierForStatus(status);
+    const tierDelta = LOCK_TIER_RANK[toTier] - LOCK_TIER_RANK[fromTier];
+    const lockTierSuffix =
+      tierDelta > 0
+        ? ` — project locked (${toTier})`
+        : tierDelta < 0
+          ? ` — project unlocked (${toTier})`
+          : "";
+
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId: orgId,
@@ -241,18 +258,21 @@ export const updateStatusNative = mutation({
       entityName: project.projectNumber,
       userId: actor.userId,
       userName: actor.userName,
-      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}`,
+      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${lockTierSuffix}`,
       details: { changes: [{ field: "status", from, to: status }] },
-      metadata: revertJustification
-        ? {
-            justification: revertJustification,
-            // Distinguishes "typed a fresh reason" from "an already-open FULL
-            // unlock session covered it" in the audit trail (#792 unification).
-            justificationSource: justification?.trim() ? "manual" : "unlock_session",
-          }
-        : justification?.trim()
-          ? { justification: justification.trim() } // CONFIRMED-without-quote gate path, unchanged
-          : undefined,
+      metadata: {
+        ...(tierDelta !== 0 ? { lockTierFrom: fromTier, lockTierTo: toTier } : {}),
+        ...(revertJustification
+          ? {
+              justification: revertJustification,
+              // Distinguishes "typed a fresh reason" from "an already-open FULL
+              // unlock session covered it" in the audit trail (#792 unification).
+              justificationSource: justification?.trim() ? "manual" : "unlock_session",
+            }
+          : justification?.trim()
+            ? { justification: justification.trim() } // CONFIRMED-without-quote gate path, unchanged
+            : {}),
+      },
       projectId: id,
       createdAt: now,
     });

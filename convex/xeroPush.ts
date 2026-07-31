@@ -260,7 +260,7 @@ export const logXeroPushActivity = mutation({
     await writeActivityLog(ctx, {
       id: auditId,
       organizationId,
-      action: "UPDATE",
+      action: success ? "INVOICE_XERO_SYNCED" : "INVOICE_XERO_SYNC_FAILED",
       entityType: "invoice",
       entityId: invoiceId,
       entityName: invoiceLabel,
@@ -271,6 +271,7 @@ export const logXeroPushActivity = mutation({
           ? `Updated ${invoiceLabel} in Xero`
           : `Pushed ${invoiceLabel} to Xero as a draft invoice`
         : `Xero push failed for ${invoiceLabel}${detail ? `: ${detail}` : ""}`,
+      metadata: !success && detail ? { detail } : undefined,
       createdAt: now,
     });
   },

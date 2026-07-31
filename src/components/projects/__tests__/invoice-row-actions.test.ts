@@ -4,11 +4,12 @@ import { invoiceRowMenuActions } from "@/components/projects/project-finance-pan
 
 /**
  * #1038 — unit coverage for the invoice row's overflow-menu logic (Delete
- * draft / Void), extracted out of `InvoiceRow` so the state × permission
- * matrix is testable without mounting the full Convex-wired panel.
+ * draft / Void / Delete permanently, #1055), extracted out of `InvoiceRow` so
+ * the state × permission matrix is testable without mounting the full
+ * Convex-wired panel.
  */
 function handlers() {
-  return { onDeleteDraft: vi.fn(), onVoidRequest: vi.fn() };
+  return { onDeleteDraft: vi.fn(), onVoidRequest: vi.fn(), onDeleteVoidRequest: vi.fn() };
 }
 
 describe("invoiceRowMenuActions", () => {
@@ -40,10 +41,20 @@ describe("invoiceRowMenuActions", () => {
     expect(actions.map((a) => a.key)).toEqual(["void"]);
   });
 
-  it("offers nothing for a VOID invoice regardless of permissions", () => {
+  it("offers Delete permanently on a VOID invoice when permitted (#1055)", () => {
     const actions = invoiceRowMenuActions(
       { id: "i1", status: "VOID", kind: "FULL", total: 100 },
       { canDelete: true, canVoid: true },
+      handlers(),
+    );
+    expect(actions.map((a) => a.key)).toEqual(["delete-void"]);
+    expect(actions[0].destructive).toBe(true);
+  });
+
+  it("hides Delete permanently on a VOID invoice without invoice:delete", () => {
+    const actions = invoiceRowMenuActions(
+      { id: "i1", status: "VOID", kind: "FULL", total: 100 },
+      { canDelete: false, canVoid: true },
       handlers(),
     );
     expect(actions).toEqual([]);

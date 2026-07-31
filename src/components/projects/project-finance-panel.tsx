@@ -2,20 +2,21 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Ban, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye, Send } from "lucide-react";
+import { Ban, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye, Send, Wallet } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
 import { ProjectQuoteRail } from "@/components/projects/project-quote-rail";
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
+import { usePaymentWrites } from "@/hooks/use-payment-writes";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { useCanDo } from "@/lib/use-permissions";
 import { pushInvoiceToXero } from "@/server/xero";
 import { generateInvoiceArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { formatCurrency } from "@/lib/formatters";
+import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,6 +26,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { IssueInvoiceDialog } from "@/components/projects/finance/issue-invoice-dialog";
+import { CreateDepositInvoiceDialog } from "@/components/projects/finance/create-deposit-invoice-dialog";
+import { RecordPaymentDialog } from "@/components/projects/finance/record-payment-dialog";
+import { DeleteVoidInvoiceDialog } from "@/components/projects/finance/delete-void-invoice-dialog";
+import { PAYMENT_METHOD_LABELS } from "@/lib/payment-method-labels";
 
 interface ProjectFinancePanelProps {
   projectId: string;
@@ -40,6 +45,16 @@ const INVOICE_STATUS_BADGE: Record<string, "ok" | "warn" | "neutral" | "overbook
   DRAFT: "neutral",
   ISSUED: "ok",
   VOID: "overbooked",
+};
+
+const PAYMENT_STATUS_BADGE: Record<string, "ok" | "warn"> = {
+  PARTIALLY_PAID: "warn",
+  PAID: "ok",
+};
+
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  PARTIALLY_PAID: "Partially paid",
+  PAID: "Paid",
 };
 
 /**
@@ -76,12 +91,18 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
   const client = useAuthedQuery(api.clients.getById, clientId ? { id: clientId } : "skip");
 
   const invoiceWrites = useInvoiceWrites();
+  const paymentWrites = usePaymentWrites();
   const { updateStatus } = useNativeProjectStatus(orgId);
 
   const [voidTarget, setVoidTarget] = useState<{ id: string; number: string } | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [issueTarget, setIssueTarget] = useState<{ id: string; kind: string; total: number } | null>(null);
   const [advanceOffer, setAdvanceOffer] = useState<{ invoiceNumber: string } | null>(null);
+  const [depositDialogOpen, setDepositDialogOpen] = useState(false);
+  const [recordPaymentTarget, setRecordPaymentTarget] = useState<{ id: string; number: string; balanceRemaining: number } | null>(null);
+  const [paymentVoidTarget, setPaymentVoidTarget] = useState<{ id: string; amount: number } | null>(null);
+  const [paymentVoidReason, setPaymentVoidReason] = useState("");
+  const [deleteVoidTarget, setDeleteVoidTarget] = useState<{ id: string; label: string } | null>(null);
 
   if (!clientId) {
     return <p className="t-micro text-fg-4">Assign a client to this project to generate quotes and invoices.</p>;
@@ -99,12 +120,9 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
   const hasFull = nonVoidInvoices.some((inv) => inv.kind === "FULL");
   const depositIssued = nonVoidInvoices.some((inv) => inv.kind === "DEPOSIT" && inv.status === "ISSUED");
 
-  async function createInvoice(kind: "FULL" | "DEPOSIT" | "BALANCE") {
+  async function createInvoice(kind: "FULL" | "BALANCE") {
     try {
-      await invoiceWrites.create(projectId, clientId!, {
-        kind,
-        depositPercent: kind === "DEPOSIT" ? depositPercent : undefined,
-      });
+      await invoiceWrites.create(projectId, clientId!, { kind });
       toast.success(`${kind} invoice draft created`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create invoice");
@@ -149,6 +167,18 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
     }
   }
 
+  async function confirmVoidPayment() {
+    if (!paymentVoidTarget) return;
+    try {
+      await paymentWrites.void(paymentVoidTarget.id, paymentVoidReason);
+      toast.success("Payment voided");
+      setPaymentVoidTarget(null);
+      setPaymentVoidReason("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to void payment");
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Quote revisions (#986, #989) */}
@@ -167,7 +197,7 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
       {paymentProfile === "DEPOSIT_BALANCE" ? (
         <div className="flex flex-wrap gap-2">
           {!hasDeposit && (
-            <NudgeChip label={`Deposit not yet invoiced (${depositPercent}%)`} action="Create deposit invoice" onAction={() => void createInvoice("DEPOSIT")} />
+            <NudgeChip label={`Deposit not yet invoiced (${depositPercent}%)`} action="Create deposit invoice" onAction={() => setDepositDialogOpen(true)} />
           )}
           {depositIssued && !hasBalance && (
             <NudgeChip label="Balance not yet invoiced" action="Create balance invoice" onAction={() => void createInvoice("BALANCE")} />
@@ -193,12 +223,18 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
                 key={inv.id}
                 invoice={inv}
                 projectId={projectId}
+                orgId={orgId}
                 xeroLinked={xeroLinked}
                 onIssue={() => setIssueTarget({ id: inv.id, kind: inv.kind, total: inv.total })}
                 onDeleteDraft={() =>
                   void invoiceWrites.deleteDraft(inv.id).then(() => toast.success("Draft deleted")).catch((e) => toast.error(e instanceof Error ? e.message : "Failed"))
                 }
                 onVoidRequest={() => setVoidTarget({ id: inv.id, number: inv.invoiceNumber ?? inv.id })}
+                onDeleteVoidRequest={() => setDeleteVoidTarget({ id: inv.id, label: inv.invoiceNumber ?? inv.id })}
+                onRecordPaymentRequest={(balanceRemaining) =>
+                  setRecordPaymentTarget({ id: inv.id, number: inv.invoiceNumber ?? inv.id, balanceRemaining })
+                }
+                onVoidPaymentRequest={(paymentId, amount) => setPaymentVoidTarget({ id: paymentId, amount })}
               />
             ))}
           </ul>
@@ -250,6 +286,54 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {depositDialogOpen && clientId && (
+        <CreateDepositInvoiceDialog
+          open={depositDialogOpen}
+          onOpenChange={setDepositDialogOpen}
+          projectId={projectId}
+          clientId={clientId}
+          defaultDepositPercent={depositPercent}
+          projectTotal={total ?? 0}
+        />
+      )}
+
+      {recordPaymentTarget && (
+        <RecordPaymentDialog
+          open={!!recordPaymentTarget}
+          onOpenChange={(open) => !open && setRecordPaymentTarget(null)}
+          invoiceId={recordPaymentTarget.id}
+          invoiceNumber={recordPaymentTarget.number}
+          balanceRemaining={recordPaymentTarget.balanceRemaining}
+        />
+      )}
+
+      <Dialog open={!!paymentVoidTarget} onOpenChange={(open) => !open && setPaymentVoidTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Void {paymentVoidTarget ? formatCurrency(paymentVoidTarget.amount) : ""} payment</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={paymentVoidReason}
+            onChange={(e) => setPaymentVoidReason(e.target.value)}
+            placeholder="Why is this payment being voided?"
+            rows={3}
+          />
+          <DialogFooter>
+            <Button type="button" variant="line" onClick={() => setPaymentVoidTarget(null)}>Cancel</Button>
+            <Button type="button" disabled={paymentVoidReason.trim().length === 0} onClick={() => void confirmVoidPayment()}>Void payment</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {deleteVoidTarget && (
+        <DeleteVoidInvoiceDialog
+          open={!!deleteVoidTarget}
+          onOpenChange={(open) => !open && setDeleteVoidTarget(null)}
+          invoiceId={deleteVoidTarget.id}
+          label={deleteVoidTarget.label}
+        />
+      )}
     </div>
   );
 }
@@ -266,15 +350,29 @@ interface InvoiceRowDoc {
    *  on an issued invoice whose render failed — hence the retry. */
   pdfFileId?: string;
   issuedAt?: number;
+  /** Derived from this invoice's non-voided `payments` rows (#1055) — patched
+   *  by paymentsWrites.ts, never hand-typed here. Absent = 0/UNPAID. */
+  amountPaid?: number;
+  paymentStatus?: string;
 }
 
-/** The overflow-menu cluster for an invoice row — Delete draft / Void.
- *  `canDelete`/`canVoid` mirror the `<CanDo>` gates these replaced; still UX
- *  only, the server re-checks `invoice:delete`/`invoice:void` unconditionally. */
+interface PaymentRowDoc {
+  id: string;
+  amount: number;
+  method: string;
+  paidAt: number;
+  reference?: string;
+  voidedAt?: number;
+}
+
+/** The overflow-menu cluster for an invoice row — Delete draft / Void /
+ *  Delete permanently. `canDelete`/`canVoid` mirror the `<CanDo>` gates these
+ *  replaced; still UX only, the server re-checks `invoice:delete`/
+ *  `invoice:void` unconditionally. */
 export function invoiceRowMenuActions(
   inv: InvoiceRowDoc,
   perms: { canDelete: boolean; canVoid: boolean },
-  handlers: { onDeleteDraft: () => void; onVoidRequest: () => void },
+  handlers: { onDeleteDraft: () => void; onVoidRequest: () => void; onDeleteVoidRequest: () => void },
 ): RowAction[] {
   const actions: RowAction[] = [];
   if (inv.status === "DRAFT" && perms.canDelete) {
@@ -283,62 +381,201 @@ export function invoiceRowMenuActions(
   if (inv.status === "ISSUED" && perms.canVoid) {
     actions.push({ key: "void", label: "Void invoice", icon: Ban, onClick: handlers.onVoidRequest, destructive: true });
   }
+  if (inv.status === "VOID" && perms.canDelete) {
+    actions.push({ key: "delete-void", label: "Delete permanently", icon: Trash2, onClick: handlers.onDeleteVoidRequest, destructive: true });
+  }
   return actions;
 }
 
 function InvoiceRow({
   invoice: inv,
   projectId,
+  orgId,
   xeroLinked,
   onIssue,
   onDeleteDraft,
   onVoidRequest,
+  onDeleteVoidRequest,
+  onRecordPaymentRequest,
+  onVoidPaymentRequest,
 }: {
   invoice: InvoiceRowDoc;
   projectId: string;
+  orgId?: string;
   xeroLinked: boolean;
   onIssue: () => void;
   onDeleteDraft: () => void;
   onVoidRequest: () => void;
+  onDeleteVoidRequest: () => void;
+  onRecordPaymentRequest: (balanceRemaining: number) => void;
+  onVoidPaymentRequest: (paymentId: string, amount: number) => void;
 }) {
   // Document + at most one visible "primary" action (Issue on a draft, Push
   // to Xero on an unsynced issued invoice) — everything else (Void, Delete
-  // draft) collapses into the overflow menu (#1038) instead of a row of
-  // pill buttons. Mirrors QuoteRowActions' consolidation in project-quote-rail.tsx.
+  // draft/permanently) collapses into the overflow menu (#1038) instead of a
+  // row of pill buttons. Mirrors QuoteRowActions' consolidation in
+  // project-quote-rail.tsx.
   const canDelete = useCanDo("invoice", "delete");
   const canVoid = useCanDo("invoice", "void");
-  const menuActions = invoiceRowMenuActions(inv, { canDelete, canVoid }, { onDeleteDraft, onVoidRequest });
+  const canVoidPayment = useCanDo("invoice", "void_payment");
+  const menuActions = invoiceRowMenuActions(inv, { canDelete, canVoid }, { onDeleteDraft, onVoidRequest, onDeleteVoidRequest });
+
+  // Payments only ever exist against an invoice that was at some point ISSUED
+  // (paymentsWrites.ts recordNative requires it) — skip the query for a DRAFT.
+  const payments = useAuthedQuery(
+    api.payments.listForInvoice,
+    orgId && inv.status !== "DRAFT" ? { orgId, invoiceId: inv.id } : "skip",
+  ) as PaymentRowDoc[] | undefined;
+  const livePayments = (payments ?? []).filter((p) => p.voidedAt == null);
+  const amountPaid = inv.amountPaid ?? 0;
+  const balanceRemaining = inv.total - amountPaid;
 
   return (
-    <li className="flex items-center justify-between gap-2 rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-        <Badge status={INVOICE_STATUS_BADGE[inv.status] ?? "neutral"}>{inv.status}</Badge>
-        <span className="font-medium text-fg">{inv.invoiceNumber ?? `${inv.kind} (draft)`}</span>
-        <span className="text-fg-4">{formatCurrency(inv.total)}</span>
-        {inv.xeroSyncStatus === "SYNCED" && <Badge status="ok">Synced to Xero</Badge>}
-        {inv.xeroSyncStatus === "ERROR" && (
-          <span className="flex items-center gap-1 text-destructive" title={inv.lastSyncError}>
-            <AlertCircle className="h-3.5 w-3.5" /> Xero push failed
-          </span>
-        )}
+    <li className="rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <Badge status={INVOICE_STATUS_BADGE[inv.status] ?? "neutral"}>{inv.status}</Badge>
+          <span className="font-medium text-fg">{inv.invoiceNumber ?? `${inv.kind} (draft)`}</span>
+          <span className="text-fg-4">{formatCurrency(inv.total)}</span>
+          {inv.status !== "DRAFT" && (
+            <InvoicePaymentSummary paymentStatus={inv.paymentStatus} amountPaid={amountPaid} balanceRemaining={balanceRemaining} />
+          )}
+          <InvoiceXeroSyncBadge status={inv.xeroSyncStatus} error={inv.lastSyncError} />
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <InvoiceDocumentAction invoice={inv} projectId={projectId} />
+          <InvoiceRowPrimaryActions
+            status={inv.status}
+            invoiceId={inv.id}
+            xeroLinked={xeroLinked}
+            xeroSyncStatus={inv.xeroSyncStatus}
+            onIssue={onIssue}
+            onRecordPaymentRequest={() => onRecordPaymentRequest(balanceRemaining)}
+          />
+          <RowActionsMenu actions={menuActions} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
+        </div>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <InvoiceDocumentAction invoice={inv} projectId={projectId} />
-        {inv.status === "DRAFT" && (
-          <CanDo resource="invoice" action="issue">
-            <Button type="button" variant="line" size="sm" onClick={onIssue}>
-              <Send className="h-3.5 w-3.5" /> Issue
-            </Button>
-          </CanDo>
-        )}
-        {xeroLinked && inv.status === "ISSUED" && (
-          <CanDo resource="invoice" action="xero_push">
-            <PushToXeroButton invoiceId={inv.id} alreadySynced={inv.xeroSyncStatus === "SYNCED"} />
-          </CanDo>
-        )}
-        <RowActionsMenu actions={menuActions} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
-      </div>
+
+      <InvoicePaymentsList payments={livePayments} canVoidPayment={canVoidPayment} onVoidPaymentRequest={onVoidPaymentRequest} />
     </li>
+  );
+}
+
+/** The Xero sync status badge on an invoice row — split out of `InvoiceRow`
+ *  to keep its own complexity low (R-3.6). */
+function InvoiceXeroSyncBadge({ status, error }: { status?: string; error?: string }) {
+  if (status === "SYNCED") return <Badge status="ok">Synced to Xero</Badge>;
+  if (status === "ERROR") {
+    return (
+      <span className="flex items-center gap-1 text-destructive" title={error}>
+        <AlertCircle className="h-3.5 w-3.5" /> Xero push failed
+      </span>
+    );
+  }
+  return null;
+}
+
+/** The at-most-one-visible "primary" action on an invoice row (Issue on a
+ *  draft, Record payment on an issued invoice, Push to Xero on an unsynced
+ *  issued invoice) — split out of `InvoiceRow` to keep its own complexity low
+ *  (R-3.6). Everything else collapses into the overflow menu (#1038). */
+function InvoiceRowPrimaryActions({
+  status,
+  invoiceId,
+  xeroLinked,
+  xeroSyncStatus,
+  onIssue,
+  onRecordPaymentRequest,
+}: {
+  status: string;
+  invoiceId: string;
+  xeroLinked: boolean;
+  xeroSyncStatus?: string;
+  onIssue: () => void;
+  onRecordPaymentRequest: () => void;
+}) {
+  if (status === "DRAFT") {
+    return (
+      <CanDo resource="invoice" action="issue">
+        <Button type="button" variant="line" size="sm" onClick={onIssue}>
+          <Send className="h-3.5 w-3.5" /> Issue
+        </Button>
+      </CanDo>
+    );
+  }
+  if (status !== "ISSUED") return null;
+  return (
+    <>
+      <CanDo resource="invoice" action="record_payment">
+        <Button type="button" variant="line" size="sm" onClick={onRecordPaymentRequest}>
+          <Wallet className="h-3.5 w-3.5" /> Record payment
+        </Button>
+      </CanDo>
+      {xeroLinked && (
+        <CanDo resource="invoice" action="xero_push">
+          <PushToXeroButton invoiceId={invoiceId} alreadySynced={xeroSyncStatus === "SYNCED"} />
+        </CanDo>
+      )}
+    </>
+  );
+}
+
+/** The payment-status badge + balance-remaining readout on an invoice row —
+ *  split out of `InvoiceRow` to keep its own complexity low (R-3.6). Renders
+ *  nothing while nothing has been paid yet (a fresh ISSUED invoice with no
+ *  payments looks the same as before this feature). */
+function InvoicePaymentSummary({
+  paymentStatus,
+  amountPaid,
+  balanceRemaining,
+}: {
+  paymentStatus?: string;
+  amountPaid: number;
+  balanceRemaining: number;
+}) {
+  if (amountPaid <= 0) return null;
+  return (
+    <>
+      <Badge status={PAYMENT_STATUS_BADGE[paymentStatus ?? ""] ?? "warn"}>
+        {PAYMENT_STATUS_LABEL[paymentStatus ?? ""] ?? "Partially paid"}
+      </Badge>
+      <span className="text-fg-4">Balance {formatCurrency(balanceRemaining)}</span>
+    </>
+  );
+}
+
+/** The always-visible payments list under an invoice row — split out of
+ *  `InvoiceRow` to keep its own complexity low (R-3.6). */
+function InvoicePaymentsList({
+  payments,
+  canVoidPayment,
+  onVoidPaymentRequest,
+}: {
+  payments: PaymentRowDoc[];
+  canVoidPayment: boolean;
+  onVoidPaymentRequest: (paymentId: string, amount: number) => void;
+}) {
+  if (payments.length === 0) return null;
+  return (
+    <ul className="mt-1.5 space-y-1 border-t border-line pt-1.5">
+      {payments.map((p) => (
+        <li key={p.id} className="flex items-center justify-between gap-2 text-caption text-fg-4">
+          <span>
+            {formatCurrency(p.amount)} · {PAYMENT_METHOD_LABELS[p.method] ?? p.method} · {formatDate(new Date(p.paidAt))}
+            {p.reference ? ` · ${p.reference}` : ""}
+          </span>
+          {canVoidPayment && (
+            <button
+              type="button"
+              onClick={() => onVoidPaymentRequest(p.id, p.amount)}
+              className="shrink-0 underline underline-offset-2 hover:text-fg"
+            >
+              Void
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

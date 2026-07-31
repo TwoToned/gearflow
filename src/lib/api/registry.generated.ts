@@ -20383,6 +20383,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "depositAmount",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "depositMode",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "depositPercent",
         "optional": true,
         "type": "number"
@@ -20424,7 +20434,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fddc6cb9441d58ba",
+    "argsSha": "d8001772de8647bb",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -20477,6 +20487,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "invoicesWrites.deleteVoidNative",
+    "module": "invoicesWrites",
+    "fn": "deleteVoidNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "confirmLabel",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "218fba77c2736bce",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -31819,6 +31886,182 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "mcpTier": null,
     "agentAccess": "denied",
     "deniedReason": "Internal migration-parity diagnostic tool, not an application read surface."
+  },
+  {
+    "operation": "payments.listForInvoice",
+    "module": "payments",
+    "fn": "listForInvoice",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "invoiceId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "83c8d5cb09b4b3f8",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "List payments recorded against an invoice.",
+    "danger": "low",
+    "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "paymentsWrites.recordNative",
+    "module": "paymentsWrites",
+    "fn": "recordNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "record_payment",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "record_payment"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "amount",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "invoiceId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "method",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "paidAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "reference",
+        "optional": true,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d445abb7991374a0",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "paymentsWrites.voidNative",
+    "module": "paymentsWrites",
+    "fn": "voidNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "void_payment",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "void_payment"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reason",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "9a1efd90fa9e1974",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
   },
   {
     "operation": "pendingSSOApprovals.createForProvisioning",
@@ -59404,10 +59647,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1138,
-  agentReachable: 554,
-  queries: 401,
-  mutations: 737,
-  agentReachableQueries: 286,
-  agentReachableMutations: 268,
+  total: 1142,
+  agentReachable: 558,
+  queries: 402,
+  mutations: 740,
+  agentReachableQueries: 287,
+  agentReachableMutations: 271,
 } as const;

@@ -49,6 +49,12 @@ export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTi
         const action = log.action as string;
         const details = log.details as Record<string, unknown> | null;
         const changes = details?.changes as Array<{ field: string; from: unknown; to: unknown; fromLabel?: string; toLabel?: string }> | undefined;
+        // `metadata.justification` (lock-tier gates, unlock sessions) and
+        // `metadata.reason` (quote recall/decline, invoice void) are the same
+        // "why" a finance/lifecycle action needed a typed explanation.
+        const metadata = log.metadata as Record<string, unknown> | null;
+        const justificationRaw = metadata?.justification ?? metadata?.reason;
+        const justification = typeof justificationRaw === "string" && justificationRaw.trim() ? justificationRaw : undefined;
 
         return (
           <div key={log.id as string} className="flex gap-3 text-sm">
@@ -78,6 +84,11 @@ export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTi
                     </p>
                   ))}
                 </div>
+              )}
+              {justification && (
+                <p className="mt-1 text-xs text-fg-3">
+                  <span className="font-medium">Reason:</span> {justification}
+                </p>
               )}
             </div>
           </div>

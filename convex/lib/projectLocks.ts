@@ -52,6 +52,17 @@ export function lockTierForStatus(status: string | null | undefined): LockTier {
   return TIER_BY_STATUS[status] ?? "OPEN";
 }
 
+/** Restrictiveness order of the four tiers — the single place that answers
+ *  "did this transition make the project MORE or LESS locked", so callers
+ *  (e.g. `projectWrites.updateStatusNative`'s activity-log summary) don't grow
+ *  a second hand-maintained ordering of `LockTier` (R-3.1). */
+export const LOCK_TIER_RANK: Record<LockTier, number> = {
+  OPEN: 0,
+  FINANCE_LOCKED: 1,
+  JUSTIFY: 2,
+  HARD_LOCKED: 3,
+};
+
 export function isConfirmedOrLater(status: string | null | undefined): boolean {
   return lockTierForStatus(status) !== "OPEN";
 }

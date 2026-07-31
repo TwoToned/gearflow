@@ -98,7 +98,7 @@ export async function generateQuoteArtifact(quoteId: string): Promise<ArtifactRe
 
   await logActivity({
     organizationId,
-    action: "CREATE",
+    action: "QUOTE_DOCUMENT_STORED",
     entityType: "quote",
     entityId: quote.quoteId,
     entityName: quote.label,
@@ -162,7 +162,7 @@ export async function generateInvoiceArtifact(invoiceId: string): Promise<Artifa
 
   await logActivity({
     organizationId,
-    action: "CREATE",
+    action: "INVOICE_DOCUMENT_STORED",
     entityType: "invoice",
     entityId: invoice.invoiceId,
     entityName: invoice.invoiceNumber ?? invoice.invoiceId,

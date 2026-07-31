@@ -583,6 +583,43 @@ header prints once across a multi-page group" full-pipeline test (100-item
 single-category fixture spanning 3+ real composed pages, counts header draws
 across every page via `runTablePlugin`).
 
+### Header/totals spacing tightened — reserved height now tracks actual draw geometry (2026-07-31)
+
+**The gap between the header and the client/project details row was
+noticeably larger in `logo` mode than `icon` mode, for no visual reason.**
+`estimateBlockHeight`'s `header` case used flat per-mode constants (`25mm`,
+or `47mm` in `logo` mode, +5mm per extra meta/ABN/due-date line) regardless
+of how much the header actually draws. `gearflow-page-header.ts`'s `logo`
+mode reserves a fixed 50pt-tall logo row whether or not the org name is
+even shown underneath it (`showOrgNameOnDocuments` can be `false`), so a
+common real-world header (logo, org name hidden, 3-4 detail lines) left
+~20mm of dead whitespace before the details row — the reserved height
+assumed a taller org-name+details stack than the header actually drew.
+Fixed by measuring the header's real content instead of guessing at it:
+`estimateBlockHeight`'s `header` case now computes the left column (logo
+row if `mode === "logo"`, org name row if shown, one row per populated
+org-detail line — address/phone/email/ABN/website, mirroring
+`buildEntryFields`'s `orgDetailParts` exactly) and the right column (title
++ meta lines, +1 for a quote's Expiry line, + the invoice due-date
+highlight), reserving `Math.max(leftColumn, rightColumn, iconFloor) + 4mm`
+padding instead of a flat constant. Icon-mode headers (the common case) are
+essentially unchanged (~35mm either way for a typical org); logo-mode
+headers with the org name hidden shrink from ~57mm to ~44mm for the same
+data — the gap that was reported as "a decent gap from the page header to
+the content." `document-composer.test.ts`'s existing full-pipeline tests
+(none of which pinned a specific header height) still pass unmodified.
+
+**GST → Total spacing in the totals block trimmed slightly.** The Total
+row's divider clearance (see "Totals-divider redesign" above, 2026-07-28)
+was deliberately generous — 8pt before the line, 16pt after it — after an
+earlier 6pt/10pt pair visibly touched the bold "Total" text. Tightened to
+6pt/13pt: still 3pt above the known-bad 10pt on the side that actually
+touched (the space before the bold Total text), while trimming ~5pt
+(~1.8mm) of visible gap between the GST row and the Total row.
+`gearflow-financial-summary.test.ts`'s existing clearance assertions
+(divider strictly between the two rows' baselines, Total's real ascent
+still clear of the line) still pass unmodified.
+
 ### Quote-specific fixes (#790 Phase 4)
 
 - **No "/day" (or other period) price suffix on the quote or invoice.** `TablePluginConfig.hidePricingPeriodSuffix`

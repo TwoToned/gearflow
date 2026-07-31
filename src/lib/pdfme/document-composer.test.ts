@@ -29,6 +29,7 @@ function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
     org_phone: "0400 000 000",
     org_address: "1 Test St",
     org_website: "test.com",
+    org_abn: "",
     org_logo: null,
     org_icon: null,
     org_tax_rate: 10,
@@ -72,8 +73,10 @@ function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
     invoice_number: "",
     document_footer_text: "",
     document_footer_second_line: "",
-    quote_terms_and_conditions: "",
+    terms_and_conditions: "",
     quote_valid_until: "2026-08-25",
+    invoice_due_date: "",
+    payment_details: "",
     line_items: [],
     pm_name: "",
     pm_phone: "",
@@ -340,13 +343,13 @@ describe("composeDocument — org document settings (footer, T&Cs, quote validit
   });
 
   it("omits the T&Cs block entirely when the org hasn't set any terms", () => {
-    const result = composeDocument("quote", soloData({ quote_terms_and_conditions: "" }), "#0d4f4f");
+    const result = composeDocument("quote", soloData({ terms_and_conditions: "" }), "#0d4f4f");
     const hasTermsSchema = result.template.schemas[0].some((s) => String(s.name).startsWith("termsAndConditions"));
     expect(hasTermsSchema).toBe(false);
   });
 
   it("renders the T&Cs block when the org has set terms (on its own forced-new page)", () => {
-    const result = composeDocument("quote", soloData({ quote_terms_and_conditions: "All sales final." }), "#0d4f4f");
+    const result = composeDocument("quote", soloData({ terms_and_conditions: "All sales final." }), "#0d4f4f");
     // termsAndConditions.forceNewPage means it never shares page 0 with the
     // table/totals/notes above it — it's on a later page.
     const termsPageIdx = result.template.schemas.findIndex((pageSchemas) =>
@@ -374,6 +377,94 @@ describe("composeDocument — org document settings (footer, T&Cs, quote validit
     const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
     const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
     expect(headerConfig.docMeta).not.toContain("Expiry");
+  });
+});
+
+describe("composeDocument — invoice T&Cs, payment details, ABN, due date", () => {
+  const soloData = (overrides: Partial<DocumentData> = {}) =>
+    makeData({
+      line_items: [makeLineItem({ id: "only-item", status: "CHECKED_OUT", checkedOutQuantity: 1, model: { name: "Solo Item" } })],
+      ...overrides,
+    });
+
+  it("omits the T&Cs block on the invoice when unset (same convention as the quote)", () => {
+    const result = composeDocument("invoice", soloData({ terms_and_conditions: "" }), "#0d4f4f");
+    const hasTermsSchema = result.template.schemas.some((page) => page.some((s) => String(s.name).startsWith("termsAndConditions")));
+    expect(hasTermsSchema).toBe(false);
+  });
+
+  it("renders the T&Cs block on the invoice when the data carries text (build-document-data.ts's showTermsAndConditionsOnInvoice gate resolves upstream)", () => {
+    const result = composeDocument("invoice", soloData({ terms_and_conditions: "Standard terms apply." }), "#0d4f4f");
+    const termsPageIdx = result.template.schemas.findIndex((page) => page.some((s) => String(s.name).startsWith("termsAndConditions")));
+    expect(termsPageIdx).toBeGreaterThanOrEqual(0);
+    const termsSchema = result.template.schemas[termsPageIdx].find((s) => String(s.name).startsWith("termsAndConditions"))!;
+    expect(result.inputs[0][termsSchema.name as string]).toBe("Standard terms apply.");
+  });
+
+  it("never renders a paymentDetails block on the quote, even when set (invoice-only field)", () => {
+    const result = composeDocument("quote", soloData({ payment_details: "Bank: Test Bank" }), "#0d4f4f");
+    const hasPaymentSchema = result.template.schemas.some((page) => page.some((s) => String(s.name).startsWith("paymentDetails")));
+    expect(hasPaymentSchema).toBe(false);
+  });
+
+  it("omits the paymentDetails block on the invoice when unset", () => {
+    const result = composeDocument("invoice", soloData({ payment_details: "" }), "#0d4f4f");
+    const hasPaymentSchema = result.template.schemas.some((page) => page.some((s) => String(s.name).startsWith("paymentDetails")));
+    expect(hasPaymentSchema).toBe(false);
+  });
+
+  it("renders the paymentDetails block on the invoice, on the same page as the totals block, directly after it", () => {
+    const result = composeDocument("invoice", soloData({ payment_details: "Bank: Test Bank\nBSB: 000-000\nAcct: 12345678" }), "#0d4f4f");
+    const page0 = result.template.schemas[0];
+    const totalsIdx = page0.findIndex((s) => s.type === "gearflowFinancialSummary");
+    const paymentIdx = page0.findIndex((s) => String(s.name).startsWith("paymentDetails"));
+    expect(totalsIdx).toBeGreaterThanOrEqual(0);
+    expect(paymentIdx).toBe(totalsIdx + 1);
+    expect(result.inputs[0][page0[paymentIdx].name as string]).toBe("Bank: Test Bank\nBSB: 000-000\nAcct: 12345678");
+  });
+
+  it("renders the org's ABN under the address/email in the invoice header, never on the quote", () => {
+    const invoiceResult = composeDocument("invoice", soloData({ org_abn: "12 345 678 901" }), "#0d4f4f");
+    const invoiceHeaderSchema = invoiceResult.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const invoiceHeaderConfig = JSON.parse(invoiceResult.inputs[0][invoiceHeaderSchema.name as string]);
+    expect(invoiceHeaderConfig.orgDetails).toContain("ABN: 12 345 678 901");
+    expect(invoiceHeaderConfig.orgDetails.indexOf("ABN:")).toBeGreaterThan(invoiceHeaderConfig.orgDetails.indexOf(soloData().org_address));
+
+    const quoteResult = composeDocument("quote", soloData({ org_abn: "12 345 678 901" }), "#0d4f4f");
+    const quoteHeaderSchema = quoteResult.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const quoteHeaderConfig = JSON.parse(quoteResult.inputs[0][quoteHeaderSchema.name as string]);
+    expect(quoteHeaderConfig.orgDetails).not.toContain("ABN:");
+  });
+
+  it("omits the ABN line when the org hasn't set one, even on the invoice", () => {
+    const result = composeDocument("invoice", soloData({ org_abn: "" }), "#0d4f4f");
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.orgDetails).not.toContain("ABN:");
+  });
+
+  it("renders the invoice due date as a bold header highlight AND as a bold row at the bottom of the totals block", () => {
+    const result = composeDocument("invoice", soloData({ invoice_due_date: "25 Aug 2026" }), "#0d4f4f");
+
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.highlightMeta).toBe("Due: 25 Aug 2026");
+
+    const totalsSchema = result.template.schemas[0].find((s) => s.type === "gearflowFinancialSummary")!;
+    const totalsConfig = JSON.parse(result.inputs[0][totalsSchema.name as string]);
+    expect(totalsConfig.dueDate).toBe("25 Aug 2026");
+  });
+
+  it("never renders a due date highlight/row on the quote", () => {
+    const result = composeDocument("quote", soloData({ invoice_due_date: "25 Aug 2026" }), "#0d4f4f");
+
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.highlightMeta).toBeUndefined();
+
+    const totalsSchema = result.template.schemas[0].find((s) => s.type === "gearflowFinancialSummary")!;
+    const totalsConfig = JSON.parse(result.inputs[0][totalsSchema.name as string]);
+    expect(totalsConfig.dueDate).toBeUndefined();
   });
 });
 
@@ -421,20 +512,25 @@ describe("composeDocument — quote content audit (#790 Phase 4)", () => {
     return JSON.parse(result.inputs[0][totalsSchema.name as string]);
   }
 
-  it("quote table hides the '/day' (or other period) price suffix; other doc types are unaffected", () => {
+  it("quote and invoice tables both hide the '/day' (or other period) price suffix; other doc types are unaffected", () => {
     const { config: quoteConfig } = tableItemsAndConfig(composeDocument("quote", makeData({ line_items: [] }), "#0d4f4f"));
     expect(quoteConfig.hidePricingPeriodSuffix).toBe(true);
 
     const { config: invoiceConfig } = tableItemsAndConfig(composeDocument("invoice", makeData({ line_items: [] }), "#0d4f4f"));
-    expect(invoiceConfig.hidePricingPeriodSuffix).toBe(false);
+    expect(invoiceConfig.hidePricingPeriodSuffix).toBe(true);
+
+    const { config: docketConfig } = tableItemsAndConfig(composeDocument("delivery-docket", makeData({ line_items: [] }), "#0d4f4f"));
+    expect(docketConfig.hidePricingPeriodSuffix).toBe(false);
   });
 
-  it("the price suffix is actually suppressed at render time on the quote", async () => {
+  it("the price suffix is actually suppressed at render time on the quote and the invoice", async () => {
     const item = makeLineItem({ id: "priced", status: "CONFIRMED", unitPrice: 100, pricingType: "PER_DAY", model: { name: "Priced Item" } });
-    const { items, config } = tableItemsAndConfig(composeDocument("quote", makeData({ line_items: [item] }), "#0d4f4f"));
-    const calls = await runTablePlugin(items, config);
-    const text = calls.drawText.map((c) => c.text).join("\n");
-    expect(text).not.toContain("/day");
+    for (const docType of ["quote", "invoice"] as const) {
+      const { items, config } = tableItemsAndConfig(composeDocument(docType, makeData({ line_items: [item] }), "#0d4f4f"));
+      const calls = await runTablePlugin(items, config);
+      const text = calls.drawText.map((c) => c.text).join("\n");
+      expect(text).not.toContain("/day");
+    }
   });
 
   it("discount renders on the quote totals block when set", () => {
@@ -475,7 +571,7 @@ describe("composeDocument — quote content audit (#790 Phase 4)", () => {
   it("the event name in the details block is bolded via markdown, and details/notes/T&Cs render through gearflowRichText", () => {
     const result = composeDocument(
       "quote",
-      makeData({ project_name: "Karaoke Party", client_notes: "Handle with care.", quote_terms_and_conditions: "Standard terms." }),
+      makeData({ project_name: "Karaoke Party", client_notes: "Handle with care.", terms_and_conditions: "Standard terms." }),
       "#0d4f4f",
     );
     const pageSchemas = result.template.schemas[0];
@@ -734,8 +830,8 @@ describe("composeDocument — accurate rich-text pagination (fonts provided)", (
     // is only a meaningful regression test if this holds.
     expect(realWrappedCount).toBeGreaterThan(rawNewlineCount);
 
-    const withFonts = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f", fonts);
-    const withoutFonts = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f");
+    const withFonts = composeDocument("quote", makeData({ terms_and_conditions: text }), "#0d4f4f", fonts);
+    const withoutFonts = composeDocument("quote", makeData({ terms_and_conditions: text }), "#0d4f4f");
 
     const heightOf = (r: ComposeResult) =>
       findAllSchemasOfType(r, "gearflowRichText")
@@ -751,7 +847,7 @@ describe("composeDocument — accurate rich-text pagination (fonts provided)", (
   it("splits a terms & conditions block too long for one page across multiple pages with no dropped lines", async () => {
     const fonts = await makeFonts();
     const text = makeLongTermsAndConditions(20); // long enough to exceed a single page
-    const result = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f", fonts);
+    const result = composeDocument("quote", makeData({ terms_and_conditions: text }), "#0d4f4f", fonts);
 
     const tcEntries = findAllSchemasOfType(result, "gearflowRichText").filter(({ schema }) =>
       (schema.name as string).startsWith("termsAndConditions_"),
@@ -774,7 +870,7 @@ describe("composeDocument — accurate rich-text pagination (fonts provided)", (
 
   it("without fonts, a very long T&Cs block still moves whole to a fresh page (unchanged fallback behavior)", () => {
     const text = makeLongTermsAndConditions(20);
-    const result = composeDocument("quote", makeData({ quote_terms_and_conditions: text }), "#0d4f4f");
+    const result = composeDocument("quote", makeData({ terms_and_conditions: text }), "#0d4f4f");
     const tcEntries = findAllSchemasOfType(result, "gearflowRichText").filter(({ schema }) =>
       (schema.name as string).startsWith("termsAndConditions_"),
     );
@@ -851,7 +947,7 @@ describe("composeDocument — termsAndConditions.forceNewPage", () => {
       "quote",
       makeData({
         line_items: [makeLineItem({ id: "a", status: "CONFIRMED", model: { name: "USB Pro DI" }, unitPrice: 20, lineTotal: 20 })],
-        quote_terms_and_conditions: "Standard terms apply.",
+        terms_and_conditions: "Standard terms apply.",
       }),
       "#0d4f4f",
     );
@@ -875,7 +971,7 @@ describe("composeDocument — termsAndConditions.forceNewPage", () => {
     const items = makeLongLineItemList(60);
     const result = composeDocument(
       "quote",
-      makeData({ line_items: items, quote_terms_and_conditions: "Standard terms apply." }),
+      makeData({ line_items: items, terms_and_conditions: "Standard terms apply." }),
       "#0d4f4f",
     );
     const tcPageIdx = result.template.schemas.findIndex((pageSchemas) =>

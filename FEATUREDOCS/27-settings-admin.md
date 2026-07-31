@@ -24,6 +24,16 @@
 }
 ```
 
+Abbreviated — the real, current shape is `OrgSettings` in
+`src/lib/org-settings-types.ts` (business identity: `email`/`phone`/`website`/
+`address`/`abn`; the `documents` sub-object: footer text, terms & conditions
++ its `showTermsAndConditionsOnInvoice` invoice toggle, `paymentDetails`,
+`quoteValidityDays`, `paymentTermsDays`; plus branding/invoice-numbering/SSO —
+see FEATUREDOCS/13 for what each `documents` field renders on which PDF doc
+type). `abn` is edited on the General settings page (`/settings`, next to
+address/email/phone); the `documents` fields are edited on the "Documents"
+card at `/settings/branding` (`document-settings.tsx`).
+
 ## Platform Branding (`SiteSettings`)
 - `platformName` — Displayed in sidebar, page titles, emails
 - `platformIcon` — Lucide icon name, rendered via `DynamicIcon`

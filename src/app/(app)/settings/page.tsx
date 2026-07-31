@@ -225,6 +225,19 @@ export default function GeneralSettingsPage() {
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="orgAbn">ABN</Label>
+            <Input
+              id="orgAbn"
+              value={settings.abn || ""}
+              onChange={(e) => updateSetting("abn", e.target.value)}
+              placeholder="12 345 678 901"
+              disabled={!canEdit}
+            />
+            <p className="t-micro text-muted">
+              Australian Business Number — required on Tax Invoices. Printed in the PDF header, under your address and email.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="country">Country</Label>
             <Select
               value={settings.country || ""}

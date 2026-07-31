@@ -29,7 +29,7 @@ import type { TestTagReportType } from "./types";
 export interface ProjectPdfOptions {
   /** Dates frozen on the finance row this render represents — see
    *  `buildDocumentData`'s `stampedDates`. */
-  stampedDates?: { documentDate?: number; quoteValidUntil?: number };
+  stampedDates?: { documentDate?: number; quoteValidUntil?: number; invoiceDueDate?: number };
   /** Stamp the "DRAFT PREVIEW — NOT SENT" banner on every page. */
   draftPreview?: boolean;
 }

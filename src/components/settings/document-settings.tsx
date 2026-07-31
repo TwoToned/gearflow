@@ -30,6 +30,8 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
   const [footerText, setFooterText] = useState(documents.footerText || "");
   const [footerSecondLine, setFooterSecondLine] = useState(documents.footerSecondLine || "");
   const [termsAndConditions, setTermsAndConditions] = useState(documents.termsAndConditions || "");
+  const [showTermsOnInvoice, setShowTermsOnInvoice] = useState(!!documents.showTermsAndConditionsOnInvoice);
+  const [paymentDetails, setPaymentDetails] = useState(documents.paymentDetails || "");
   const [quoteValidityDays, setQuoteValidityDays] = useState(documents.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS);
   const [paymentTermsDays, setPaymentTermsDays] = useState(documents.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS);
 
@@ -39,6 +41,8 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
     setFooterText(d.footerText || ""); // eslint-disable-line react-hooks/set-state-in-effect
     setFooterSecondLine(d.footerSecondLine || ""); // eslint-disable-line react-hooks/set-state-in-effect
     setTermsAndConditions(d.termsAndConditions || ""); // eslint-disable-line react-hooks/set-state-in-effect
+    setShowTermsOnInvoice(!!d.showTermsAndConditionsOnInvoice); // eslint-disable-line react-hooks/set-state-in-effect
+    setPaymentDetails(d.paymentDetails || ""); // eslint-disable-line react-hooks/set-state-in-effect
     setQuoteValidityDays(d.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS); // eslint-disable-line react-hooks/set-state-in-effect
     setPaymentTermsDays(d.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS); // eslint-disable-line react-hooks/set-state-in-effect
   }, [settings.documents]);
@@ -48,6 +52,8 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
       footerText: footerText.trim() || undefined,
       footerSecondLine: footerSecondLine.trim() || undefined,
       termsAndConditions: termsAndConditions.trim() || undefined,
+      showTermsAndConditionsOnInvoice: showTermsOnInvoice ? true : undefined,
+      paymentDetails: paymentDetails.trim() || undefined,
       quoteValidityDays: quoteValidityDays !== DEFAULT_QUOTE_VALIDITY_DAYS ? quoteValidityDays : undefined,
       paymentTermsDays: paymentTermsDays !== DEFAULT_PAYMENT_TERMS_DAYS ? paymentTermsDays : undefined,
     };
@@ -55,6 +61,8 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
       !!next.footerText ||
       !!next.footerSecondLine ||
       !!next.termsAndConditions ||
+      next.showTermsAndConditionsOnInvoice !== undefined ||
+      !!next.paymentDetails ||
       next.quoteValidityDays !== undefined ||
       next.paymentTermsDays !== undefined;
     return hasAny ? next : undefined;
@@ -78,6 +86,8 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
     footerText !== (documents.footerText || "") ||
     footerSecondLine !== (documents.footerSecondLine || "") ||
     termsAndConditions !== (documents.termsAndConditions || "") ||
+    showTermsOnInvoice !== !!documents.showTermsAndConditionsOnInvoice ||
+    paymentDetails !== (documents.paymentDetails || "") ||
     quoteValidityDays !== (documents.quoteValidityDays ?? DEFAULT_QUOTE_VALIDITY_DAYS) ||
     paymentTermsDays !== (documents.paymentTermsDays ?? DEFAULT_PAYMENT_TERMS_DAYS);
 
@@ -128,7 +138,31 @@ export function DocumentSettings({ orgName, settings, onDocumentsChange }: Docum
           maxLength={4000}
           rows={5}
         />
-        <p className="text-xs text-fg-3">Shown on quotes only. Supports **bold**, *italic*, and &quot;- &quot; bullet lines.</p>
+        <p className="text-xs text-fg-3">Always shown on quotes. Supports **bold**, *italic*, and &quot;- &quot; bullet lines.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={showTermsOnInvoice}
+            onChange={(e) => setShowTermsOnInvoice(e.target.checked)}
+            className="accent-primary"
+          />
+          Also show these terms &amp; conditions on invoices
+        </label>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="paymentDetails">Payment details</Label>
+        <Textarea
+          id="paymentDetails"
+          value={paymentDetails}
+          onChange={(e) => setPaymentDetails(e.target.value)}
+          placeholder={"Bank: Example Bank\nBSB: 000-000\nAccount number: 00000000\nAccount name: Your Org Pty Ltd"}
+          maxLength={2000}
+          rows={4}
+        />
+        <p className="text-xs text-fg-3">
+          Shown on invoices only, next to the total. Supports **bold**, *italic*, and &quot;- &quot; bullet lines. Leave blank to omit.
+        </p>
       </div>
 
       <div className="space-y-2 sm:max-w-xs">

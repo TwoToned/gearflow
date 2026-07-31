@@ -44,12 +44,12 @@ Sub-hires are managed via a **dialog** on the project equipment tab:
 
 ### Inline editing on the equipment table
 
-Price, discount, description, and notes are inline-editable directly on a
-sub-hire **group child** row in the equipment table (`equipment-rows.tsx`'s
-`LineItemRow`, gated on `item.subHireGroupId != null`) — the same
-click-to-edit/save-on-blur cells the regular equipment table uses
-(`src/components/projects/line-item-inline-cells.tsx`), but routed to a
-DIFFERENT write than a normal line item:
+Price, discount, quantity, description, and notes are inline-editable
+directly on a sub-hire **group child** row in the equipment table
+(`equipment-rows.tsx`'s `LineItemRow`, gated on `item.subHireGroupId !=
+null`) — the same click-to-edit/save-on-blur cells the regular equipment
+table uses (`src/components/projects/line-item-inline-cells.tsx`), but
+routed to a DIFFERENT write than a normal line item:
 
 - A sub-hire group child's `ProjectLineItem` row is a **derived/display
   copy** — `regenerateSubHireLines` (`convex/lib/subHireLineGen.ts`) deletes
@@ -69,6 +69,11 @@ DIFFERENT write than a normal line item:
 - **Not lock-gated** — `updateSubHireItemNative` never checks the project's
   financial lock (same as `SubHireOrderDialog`'s item form today), so these
   cells render without the `<LockedField>` wrapper regular money cells use.
+- **Quantity** has no availability/overbook concept for sub-hire items —
+  `updateSubHireItemNative` sets it directly with no stock check, so
+  `InlineEditableQuantity`'s overbook-confirm step (built for the regular
+  `patchNative`/`INSUFFICIENT_STOCK` path) simply never triggers here; the
+  save always succeeds on the first attempt.
 - The sub-hire **group's own row** (`SubHireGroupRow`) also gets inline
   charge/cost cells, calling the same `updateGroup` mutation
   `PriceEditDialog`'s sub-hire branch uses (`onInlinePriceUpdate` prop) — the

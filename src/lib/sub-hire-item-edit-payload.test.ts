@@ -82,4 +82,11 @@ describe("computeInlineSubHireItemInput", () => {
     expect(input.description).toBe("New label");
     expect(input.unitCharge).toBe(100);
   });
+
+  it("a quantity patch overrides only the quantity — no availability concept, allowOverbook is not a field here", () => {
+    const input = computeInlineSubHireItemInput(baseItem, { field: "quantity", value: 7, allowOverbook: false });
+    expect(input.quantity).toBe(7);
+    expect(input.unitCharge).toBe(100);
+    expect(input.discount).toBe(10);
+  });
 });

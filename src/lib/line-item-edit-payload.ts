@@ -114,7 +114,16 @@ export type InlineLineItemPatch =
   | { field: "notes"; value: string }
   | { field: "unitPrice"; value: number | undefined }
   | { field: "discount"; value: number | undefined; discountMode: DiscountMode }
-  | { field: "discountPercent"; value: number };
+  | { field: "discountPercent"; value: number }
+  /** `allowOverbook` — set true only on a confirmed retry after the first
+   *  attempt (allowOverbook: false) came back INSUFFICIENT_STOCK. See
+   *  `InlineEditableQuantity` and `equipment-tab.tsx`'s
+   *  `handleInlineLineItemUpdate`, which reads it straight through to the
+   *  mutate call (never routed through this module's own payload — quantity
+   *  IS one of this module's fields, `allowOverbook` is a sibling mutate arg,
+   *  not a payload field). Ignored on the sub-hire-item route — those items
+   *  have no availability concept to overbook. */
+  | { field: "quantity"; value: number; allowOverbook: boolean };
 
 /** Layers a single inline-edited field onto `item`'s current values and
  *  resolves the full update payload — the inline-edit equivalent of the
@@ -134,6 +143,7 @@ export function computeInlineLineItemPayload(
     ...(patch.field === "notes" ? { notes: patch.value } : {}),
     ...(patch.field === "unitPrice" ? { unitPrice: patch.value } : {}),
     ...(patch.field === "discount" ? { discount: patch.value } : {}),
+    ...(patch.field === "quantity" ? { quantity: patch.value } : {}),
   };
   return computeEditLineItemPayload(item, data, discountMode);
 }

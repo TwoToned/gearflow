@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { api } from "../../../convex/_generated/api";
@@ -15,6 +17,7 @@ import {
   computeLineTotal,
   type OptimisticLineEdit,
 } from "@/hooks/use-native-line-item-writes";
+import { useEquipmentDnd } from "@/hooks/use-equipment-dnd";
 import { Plus, FolderPlus, FolderTree, Pencil, Trash2, ChevronDown as ChevronDownIcon } from "lucide-react";
 import {
   DropdownMenu,
@@ -110,6 +113,45 @@ interface EquipmentTabProps {
   addMenuSlot?: HTMLElement | null;
 }
 
+// ─── Sortable line-item row wrapper ──────────────────────────────────────────
+//
+// Line items only (groups/categories keep their ▲/▼ MoveButtons for now — see
+// use-equipment-dnd.ts's file header). One `useSortable()` call per row, kept
+// in a small wrapper (rather than inline in the .map() callbacks below) so the
+// hook isn't called from a plain callback, which would trip
+// react-hooks/rules-of-hooks. `dragHandleRef` is `useSortable`'s `setNodeRef`
+// (NOT `setActivatorNodeRef`) attached to the handle button itself, so that
+// small button is the only DOM node dnd-kit measures/tracks for this row —
+// see equipment-rows.tsx's `DragHandleControls` doc comment.
+function SortableLineItemRow({
+  sortableId,
+  containerId,
+  dragDisabled,
+  ...rowProps
+}: {
+  sortableId: string;
+  containerId: string;
+  dragDisabled?: boolean;
+} & Omit<
+  React.ComponentProps<typeof LineItemRow>,
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+>) {
+  const { setNodeRef, attributes, listeners } = useSortable({
+    id: sortableId,
+    data: { containerId },
+    disabled: dragDisabled,
+  });
+  return (
+    <LineItemRow
+      {...rowProps}
+      dragHandleRef={setNodeRef}
+      dragAttributes={attributes as unknown as Record<string, unknown>}
+      dragListeners={listeners as unknown as Record<string, unknown>}
+      isDragDisabled={dragDisabled}
+    />
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
@@ -117,6 +159,39 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const orgId = activeOrg?.id;
   const isMobile = useIsMobile();
   const warehouseWrites = useWarehouseWrites();
+
+  const invalidate = useCallback(() => {
+    refreshProjectDetail(projectId);
+  }, [projectId]);
+
+  // Browser-direct project-group writes (create / update / price / delete / reorder /
+  // move) — guarded api.projectGroupsWrites.* mutations; each folds the suggested-price
+  // recompute + in-mutation recalcProjectTotals + audit into one transaction. Hoisted
+  // above the native read-layer path (below) so useEquipmentDnd — which needs both
+  // this and lineItemWrites — can be called before `native` without a TDZ violation.
+  const groupWrites = useProjectGroupWrites();
+
+  // Browser-direct line-item writes (update / remove / reorder). Each guarded
+  // api.lineItemWrites.* mutation folds the availability re-check +
+  // recalcProjectTotals + audit + collab feed into one transaction.
+  const lineItemWrites = useLineItemWrites();
+
+  // Browser-direct sub-hire writes — used here for inline edits on sub-hire
+  // GROUP CHILD line items (updateSubHireItemNative, keyed by subHireItemId
+  // instead of the derived line's own id) and the sub-hire group's own
+  // inline cost/charge cells (updateGroup). PriceEditDialog/SubHireOrderDialog
+  // own their own separate instances of this same hook for their dialogs.
+  const subHireWrites = useSubHireWrites();
+
+  // #990 — one `useProjectLockStatus` subscription backs every money-field
+  // lock in this tab (price/discount edit dialogs, bulk edit, gated add/
+  // delete buttons at HARD_LOCKED). `moneyLocked` mirrors the server's
+  // `defaultToZero`/gate condition: tier isn't OPEN and no session is open.
+  const [lockNow] = useState(() => Date.now());
+  const lockStatus = useProjectLockStatus(projectId, orgId, lockNow);
+  const moneyLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
+  const lockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
+  const hardLocked = !lockStatus.loading && lockStatus.tier === "HARD_LOCKED" && !lockStatus.hasOpenSession;
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -138,17 +213,30 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       return next;
     });
   }, []);
-  const native = useNativeEquipmentTab(projectId, orgId, pendingEdits);
 
-  // #990 — one `useProjectLockStatus` subscription backs every money-field
-  // lock in this tab (price/discount edit dialogs, bulk edit, gated add/
-  // delete buttons at HARD_LOCKED). `moneyLocked` mirrors the server's
-  // `defaultToZero`/gate condition: tier isn't OPEN and no session is open.
-  const [lockNow] = useState(() => Date.now());
-  const lockStatus = useProjectLockStatus(projectId, orgId, lockNow);
-  const moneyLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
-  const lockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
-  const hardLocked = !lockStatus.loading && lockStatus.tier === "HARD_LOCKED" && !lockStatus.hasOpenSession;
+  // Drag-and-drop for LINE ITEMS (groups/categories still use their ▲/▼
+  // MoveButtons — those convert to drag in a later commit). "Latest ref"
+  // pattern (see use-equipment-dnd.ts's file header) resolves the circular
+  // dependency between this hook's `orderOverlay` (needed BEFORE
+  // useNativeEquipmentTab reconstructs categories/uncategorizedItems below)
+  // and its drag handlers (which need those SAME reconstructed trees to
+  // resolve a drop) — the refs are written AFTER `native` is computed, every
+  // render, and read only later from a dnd-kit event, never during render.
+  const categoriesRef = useRef<CategoryData[]>([]);
+  const uncategorizedItemsRef = useRef<LineItemData[]>([]);
+  const uncategorizedProjectGroupsRef = useRef<GroupData[]>([]);
+  const dnd = useEquipmentDnd({
+    projectId,
+    categoriesRef,
+    uncategorizedItemsRef,
+    uncategorizedProjectGroupsRef,
+    lineItemWrites,
+    groupWrites,
+    lockStatus,
+    onSettled: invalidate,
+  });
+
+  const native = useNativeEquipmentTab(projectId, orgId, pendingEdits, dnd.orderOverlay);
 
   // #990 (surface 5, "justify tier") — line item/group remove prompt for a
   // reason at ON_SITE+ with no open session (`useJustifiedMutation` pre-checks
@@ -345,6 +433,18 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const uncategorizedSubHireGroups = native.uncategorizedSubHireGroups;
   const uncategorizedProjectGroups = native.uncategorizedProjectGroups;
 
+  // "Latest ref" hand-off to useEquipmentDnd (see that hook's file header and
+  // the comment on its call above). Written in an effect (not during render —
+  // react-hooks/refs correctly flags a bare `ref.current = x` in the render
+  // body) so it still always holds the latest committed tree by the time any
+  // subsequent drag-end callback reads it, which can only happen after this
+  // render has committed and the rows are interactive.
+  useEffect(() => {
+    categoriesRef.current = categories;
+    uncategorizedItemsRef.current = uncategorizedItems;
+    uncategorizedProjectGroupsRef.current = uncategorizedProjectGroups;
+  }, [categories, uncategorizedItems, uncategorizedProjectGroups]);
+
   // Sub-hire item id -> full source row, built from both categorized and
   // uncategorized sub-hire groups' children. Inline edits on a sub-hire
   // GROUP CHILD row (handleInlineLineItemUpdate below) look up the current
@@ -479,35 +579,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })
   );
 
-  const invalidate = useCallback(() => {
-    refreshProjectDetail(projectId);
-  }, [projectId]);
-
   // Browser-direct project-category writes (create / rename / delete / reorder) —
   // guarded api.projectCategoriesWrites.* mutations; category reads are reactive.
   const categoryWrites = useProjectCategoryWrites();
-
-  // Browser-direct project-group writes (create / update / price / delete / reorder /
-  // move) — guarded api.projectGroupsWrites.* mutations; each folds the suggested-price
-  // recompute + in-mutation recalcProjectTotals + audit into one transaction.
-  const groupWrites = useProjectGroupWrites();
 
   // Browser-direct cross-type category-slot writes (reorder mixed groups + the
   // move/create-and-place flows used by the move dialogs) — guarded
   // api.categorySlotsWrites.* mutations, each folding recalc + audit atomically.
   const categorySlotWrites = useCategorySlotWrites();
 
-  // Browser-direct line-item writes (update / remove / reorder). Each guarded
-  // api.lineItemWrites.* mutation folds the availability re-check +
-  // recalcProjectTotals + audit + collab feed into one transaction.
-  const lineItemWrites = useLineItemWrites();
-
-  // Browser-direct sub-hire writes — used here for inline edits on sub-hire
-  // GROUP CHILD line items (updateSubHireItemNative, keyed by subHireItemId
-  // instead of the derived line's own id) and the sub-hire group's own
-  // inline cost/charge cells (updateGroup). PriceEditDialog/SubHireOrderDialog
-  // own their own separate instances of this same hook for their dialogs.
-  const subHireWrites = useSubHireWrites();
+  // (groupWrites / lineItemWrites / subHireWrites / invalidate are declared
+  // earlier in this component, above `native` — useEquipmentDnd needs the
+  // first two before native's orderOverlay can be computed. See that block's
+  // comment.)
 
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
@@ -952,21 +1036,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     invalidate();
   }
 
-  /** Move a line item up/down within its sibling list. */
-  function moveLineItemInList(items: LineItemData[], index: number, dir: -1 | 1) {
-    const target = index + dir;
-    if (target < 0 || target >= items.length) return;
-    const reordered = [...items];
-    const [moved] = reordered.splice(index, 1);
-    reordered.splice(target, 0, moved);
-    const reorderedIds = reordered.map((i) => i.id);
-    // Browser-direct native path — reorderNative rewrites sortOrder atomically.
-    if (!lineItemWrites.enabled) return;
-    lineItemWrites.reorder(projectId, reorderedIds).catch(() => {
-      toast.error("Failed to reorder items");
-    });
-    invalidate();
-  }
+  // Line-item reordering is now real drag-and-drop (useEquipmentDnd,
+  // rendered rows wrapped in SortableLineItemRow below) — the old ▲/▼
+  // moveLineItemInList swap-with-neighbour helper is fully superseded.
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -1007,6 +1079,22 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   for (const sh of projectSubHires) {
     if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
   }
+
+  // DragOverlay content (see the DndContext wrap below) — a small floating
+  // label naming whatever line item is currently being dragged. Looked up
+  // from the same reconstructed tree the rows render from; a plain O(n) scan
+  // is fine at this scale (one drag at a time, small trees).
+  const draggedLineItem = (() => {
+    const bareId = dnd.activeDragId?.startsWith("li-") ? dnd.activeDragId.slice(3) : null;
+    if (!bareId) return null;
+    for (const cat of typedCategories) {
+      for (const li of cat.lineItems ?? []) if (li.id === bareId) return li;
+      for (const g of cat.groups ?? []) for (const li of g.lineItems ?? []) if (li.id === bareId) return li;
+    }
+    for (const li of uncategorizedItems as LineItemData[]) if (li.id === bareId) return li;
+    for (const g of orphanProjectGroups) for (const li of g.lineItems ?? []) if (li.id === bareId) return li;
+    return null;
+  })();
 
   // Build flat list of all line-item IDs in visual order. Used by
   // shift-click range selection (handleRowClick). Walks each category's
@@ -1303,6 +1391,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
                                   showCostColumn={showCostColumn}
                                   isExpanded={expandedParents.has(item.id)}
+                                  isDragDisabled
                                   onToggle={() => toggleParent(item.id)}
                                   onEdit={() => {
                                     setManagingSubHireId(shGroup.subHire.id);
@@ -1393,92 +1482,98 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 </TableRow>
                               )
                             )}
-                            {isExpanded && groupItems.map((item, itemIndex) => (
-                              <LineItemRow
-                                key={item.id}
-                                item={item}
-                                indent="ml-12"
-                                orgId={orgId}
-                                projectId={projectId}
-                                markerByTarget={markerByTarget}
-                                onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
-                                onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
-                                canMoveUp={itemIndex > 0}
-                                canMoveDown={itemIndex < groupItems.length - 1}
-                                overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                                isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                                showCostColumn={showCostColumn}
-                                isExpanded={expandedParents.has(item.id)}
-                                isSelected={selection.isSelected(`li-${item.id}`)}
-                                selectable={!item.isKitChild}
-                                selectionActive={someLiSelected}
-                                onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                                onClick={(e) => handleRowClick(item.id, e)}
-                                onToggle={() => toggleParent(item.id)}
-                                onEdit={() => {
-                                  setEditLineItemPlacement({ categoryId: cat.id, groupId: group.id });
-                                  setEditLineItem(item);
-                                }}
-                                onMoveToCategory={() => setMoveItemToCategory({
-                                  lineItemId: item.id,
-                                  initialCategoryId: cat.id,
-                                })}
-                                onMoveToGroup={() => setMoveItemToGroup({
-                                  lineItemId: item.id,
-                                  initialGroupId: group.id,
-                                })}
-                                onRemove={() => handleRemoveItem(item.id)}
-                                onInlineUpdate={handleInlineLineItemUpdate}
-                                moneyLocked={moneyLocked}
-                                lockReason={lockReason}
-                                onUnlockExit={scrollToLockStrip}
-                              />
-                            ))}
+                            <SortableContext
+                              items={groupItems.map((item) => `li-${item.id}`)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              {isExpanded && groupItems.map((item) => (
+                                <SortableLineItemRow
+                                  key={item.id}
+                                  sortableId={`li-${item.id}`}
+                                  containerId={`items:${group.id}`}
+                                  item={item}
+                                  indent="ml-12"
+                                  orgId={orgId}
+                                  projectId={projectId}
+                                  markerByTarget={markerByTarget}
+                                  overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                                  isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                                  showCostColumn={showCostColumn}
+                                  isExpanded={expandedParents.has(item.id)}
+                                  isSelected={selection.isSelected(`li-${item.id}`)}
+                                  selectable={!item.isKitChild}
+                                  selectionActive={someLiSelected}
+                                  onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
+                                  onClick={(e) => handleRowClick(item.id, e)}
+                                  onToggle={() => toggleParent(item.id)}
+                                  onEdit={() => {
+                                    setEditLineItemPlacement({ categoryId: cat.id, groupId: group.id });
+                                    setEditLineItem(item);
+                                  }}
+                                  onMoveToCategory={() => setMoveItemToCategory({
+                                    lineItemId: item.id,
+                                    initialCategoryId: cat.id,
+                                  })}
+                                  onMoveToGroup={() => setMoveItemToGroup({
+                                    lineItemId: item.id,
+                                    initialGroupId: group.id,
+                                  })}
+                                  onRemove={() => handleRemoveItem(item.id)}
+                                  onInlineUpdate={handleInlineLineItemUpdate}
+                                  moneyLocked={moneyLocked}
+                                  lockReason={lockReason}
+                                  onUnlockExit={scrollToLockStrip}
+                                />
+                              ))}
+                            </SortableContext>
                           </React.Fragment>
                         );
                       })}
 
                       {/* Standalone line items in category */}
-                      {standaloneItems.map((item, itemIndex) => (
-                        <LineItemRow
-                          key={item.id}
-                          item={item}
-                          indent="ml-3"
-                          orgId={orgId}
-                          projectId={projectId}
-                          markerByTarget={markerByTarget}
-                          onMoveUp={() => moveLineItemInList(standaloneItems, itemIndex, -1)}
-                          onMoveDown={() => moveLineItemInList(standaloneItems, itemIndex, 1)}
-                          canMoveUp={itemIndex > 0}
-                          canMoveDown={itemIndex < standaloneItems.length - 1}
-                          overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                          isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                          showCostColumn={showCostColumn}
-                          isExpanded={expandedParents.has(item.id)}
-                          isSelected={selection.isSelected(`li-${item.id}`)}
-                          selectable={!item.isKitChild}
-                          selectionActive={someLiSelected}
-                          onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                          onClick={(e) => handleRowClick(item.id, e)}
-                          onToggle={() => toggleParent(item.id)}
-                          onEdit={() => {
-                            setEditLineItemPlacement({ categoryId: cat.id });
-                            setEditLineItem(item);
-                          }}
-                          onMoveToCategory={() => setMoveItemToCategory({
-                            lineItemId: item.id,
-                            initialCategoryId: cat.id,
-                          })}
-                          onMoveToGroup={() => setMoveItemToGroup({
-                            lineItemId: item.id,
-                          })}
-                          onRemove={() => handleRemoveItem(item.id)}
-                          onInlineUpdate={handleInlineLineItemUpdate}
-                          moneyLocked={moneyLocked}
-                          lockReason={lockReason}
-                          onUnlockExit={scrollToLockStrip}
-                        />
-                      ))}
+                      <SortableContext
+                        items={standaloneItems.map((item) => `li-${item.id}`)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {standaloneItems.map((item) => (
+                          <SortableLineItemRow
+                            key={item.id}
+                            sortableId={`li-${item.id}`}
+                            containerId={`standalone:${cat.id}`}
+                            item={item}
+                            indent="ml-3"
+                            orgId={orgId}
+                            projectId={projectId}
+                            markerByTarget={markerByTarget}
+                            overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                            isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                            showCostColumn={showCostColumn}
+                            isExpanded={expandedParents.has(item.id)}
+                            isSelected={selection.isSelected(`li-${item.id}`)}
+                            selectable={!item.isKitChild}
+                            selectionActive={someLiSelected}
+                            onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
+                            onClick={(e) => handleRowClick(item.id, e)}
+                            onToggle={() => toggleParent(item.id)}
+                            onEdit={() => {
+                              setEditLineItemPlacement({ categoryId: cat.id });
+                              setEditLineItem(item);
+                            }}
+                            onMoveToCategory={() => setMoveItemToCategory({
+                              lineItemId: item.id,
+                              initialCategoryId: cat.id,
+                            })}
+                            onMoveToGroup={() => setMoveItemToGroup({
+                              lineItemId: item.id,
+                            })}
+                            onRemove={() => handleRemoveItem(item.id)}
+                            onInlineUpdate={handleInlineLineItemUpdate}
+                            moneyLocked={moneyLocked}
+                            lockReason={lockReason}
+                            onUnlockExit={scrollToLockStrip}
+                          />
+                        ))}
+                      </SortableContext>
                     </React.Fragment>
                   );
                 })}
@@ -1500,45 +1595,50 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                 )}
                 {(() => {
                   const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
-                  return uncatVisible.map((item, itemIndex) => (
-                  <LineItemRow
-                    key={item.id}
-                    item={item}
-                    indent=""
-                    orgId={orgId}
-                    projectId={projectId}
-                    markerByTarget={markerByTarget}
-                    onMoveUp={() => moveLineItemInList(uncatVisible, itemIndex, -1)}
-                    onMoveDown={() => moveLineItemInList(uncatVisible, itemIndex, 1)}
-                    canMoveUp={itemIndex > 0}
-                    canMoveDown={itemIndex < uncatVisible.length - 1}
-                    overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                    isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                    showCostColumn={showCostColumn}
-                    isExpanded={expandedParents.has(item.id)}
-                    isSelected={selection.isSelected(`li-${item.id}`)}
-                    selectable={!item.isKitChild}
-                    selectionActive={someLiSelected}
-                    onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                    onClick={(e) => handleRowClick(item.id, e)}
-                    onToggle={() => toggleParent(item.id)}
-                    onEdit={() => {
-                      setEditLineItemPlacement({});
-                      setEditLineItem(item);
-                    }}
-                    onMoveToCategory={() => setMoveItemToCategory({
-                      lineItemId: item.id,
-                    })}
-                    onMoveToGroup={() => setMoveItemToGroup({
-                      lineItemId: item.id,
-                    })}
-                    onRemove={() => handleRemoveItem(item.id)}
-                    onInlineUpdate={handleInlineLineItemUpdate}
-                    moneyLocked={moneyLocked}
-                    lockReason={lockReason}
-                    onUnlockExit={scrollToLockStrip}
-                  />
-                  ));
+                  return (
+                    <SortableContext
+                      items={uncatVisible.map((item) => `li-${item.id}`)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {uncatVisible.map((item) => (
+                        <SortableLineItemRow
+                          key={item.id}
+                          sortableId={`li-${item.id}`}
+                          containerId="uncategorized-standalone"
+                          item={item}
+                          indent=""
+                          orgId={orgId}
+                          projectId={projectId}
+                          markerByTarget={markerByTarget}
+                          overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                          isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                          showCostColumn={showCostColumn}
+                          isExpanded={expandedParents.has(item.id)}
+                          isSelected={selection.isSelected(`li-${item.id}`)}
+                          selectable={!item.isKitChild}
+                          selectionActive={someLiSelected}
+                          onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
+                          onClick={(e) => handleRowClick(item.id, e)}
+                          onToggle={() => toggleParent(item.id)}
+                          onEdit={() => {
+                            setEditLineItemPlacement({});
+                            setEditLineItem(item);
+                          }}
+                          onMoveToCategory={() => setMoveItemToCategory({
+                            lineItemId: item.id,
+                          })}
+                          onMoveToGroup={() => setMoveItemToGroup({
+                            lineItemId: item.id,
+                          })}
+                          onRemove={() => handleRemoveItem(item.id)}
+                          onInlineUpdate={handleInlineLineItemUpdate}
+                          moneyLocked={moneyLocked}
+                          lockReason={lockReason}
+                          onUnlockExit={scrollToLockStrip}
+                        />
+                      ))}
+                    </SortableContext>
+                  );
                 })()}
                 {/* Orphan PROJECT groups — categoryId IS NULL (v0.9.4.0
                     allows groups to live uncategorised). Render with the
@@ -1607,46 +1707,49 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           </TableRow>
                         )
                       )}
-                      {isExpanded && groupItems.map((item: LineItemData, itemIndex) => (
-                        <LineItemRow
-                          key={item.id}
-                          item={item}
-                          indent="ml-12"
-                          orgId={orgId}
-                          projectId={projectId}
-                          markerByTarget={markerByTarget}
-                          onMoveUp={() => moveLineItemInList(groupItems, itemIndex, -1)}
-                          onMoveDown={() => moveLineItemInList(groupItems, itemIndex, 1)}
-                          canMoveUp={itemIndex > 0}
-                          canMoveDown={itemIndex < groupItems.length - 1}
-                          overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                          isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                          showCostColumn={showCostColumn}
-                          isExpanded={expandedParents.has(item.id)}
-                          isSelected={selection.isSelected(`li-${item.id}`)}
-                          selectable={!item.isKitChild}
-                          selectionActive={someLiSelected}
-                          onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                          onClick={(e) => handleRowClick(item.id, e)}
-                          onToggle={() => toggleParent(item.id)}
-                          onEdit={() => {
-                            setEditLineItemPlacement({ groupId: group.id });
-                            setEditLineItem(item);
-                          }}
-                          onMoveToCategory={() => setMoveItemToCategory({
-                            lineItemId: item.id,
-                          })}
-                          onMoveToGroup={() => setMoveItemToGroup({
-                            lineItemId: item.id,
-                            initialGroupId: group.id,
-                          })}
-                          onRemove={() => handleRemoveItem(item.id)}
-                          onInlineUpdate={handleInlineLineItemUpdate}
-                          moneyLocked={moneyLocked}
-                          lockReason={lockReason}
-                          onUnlockExit={scrollToLockStrip}
-                        />
-                      ))}
+                      <SortableContext
+                        items={groupItems.map((item: LineItemData) => `li-${item.id}`)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {isExpanded && groupItems.map((item: LineItemData) => (
+                          <SortableLineItemRow
+                            key={item.id}
+                            sortableId={`li-${item.id}`}
+                            containerId={`items:${group.id}`}
+                            item={item}
+                            indent="ml-12"
+                            orgId={orgId}
+                            projectId={projectId}
+                            markerByTarget={markerByTarget}
+                            overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                            isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                            showCostColumn={showCostColumn}
+                            isExpanded={expandedParents.has(item.id)}
+                            isSelected={selection.isSelected(`li-${item.id}`)}
+                            selectable={!item.isKitChild}
+                            selectionActive={someLiSelected}
+                            onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
+                            onClick={(e) => handleRowClick(item.id, e)}
+                            onToggle={() => toggleParent(item.id)}
+                            onEdit={() => {
+                              setEditLineItemPlacement({ groupId: group.id });
+                              setEditLineItem(item);
+                            }}
+                            onMoveToCategory={() => setMoveItemToCategory({
+                              lineItemId: item.id,
+                            })}
+                            onMoveToGroup={() => setMoveItemToGroup({
+                              lineItemId: item.id,
+                              initialGroupId: group.id,
+                            })}
+                            onRemove={() => handleRemoveItem(item.id)}
+                            onInlineUpdate={handleInlineLineItemUpdate}
+                            moneyLocked={moneyLocked}
+                            lockReason={lockReason}
+                            onUnlockExit={scrollToLockStrip}
+                          />
+                        ))}
+                      </SortableContext>
                     </React.Fragment>
                   );
                 })}
@@ -1699,6 +1802,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           isUnconfirmed={!!shGroup.subHire && draftSubHireIds.has(shGroup.subHire.id)}
                           showCostColumn={showCostColumn}
                           isExpanded={expandedParents.has(item.id)}
+                          isDragDisabled
                           onToggle={() => toggleParent(item.id)}
                           onEdit={() => {
                             setManagingSubHireId(shGroup.subHire.id);
@@ -1721,10 +1825,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                 })}
           </>
         );
-        if (isMobile) {
-          return <div className="space-y-1.5">{equipmentRows}</div>;
-        }
-        return (
+        const content = isMobile ? (
+          <div className="space-y-1.5">{equipmentRows}</div>
+        ) : (
           <div className="overflow-x-auto rounded-[var(--r)] border border-line">
             <table className="w-full caption-bottom text-[13.5px] table-fixed">
               <colgroup>
@@ -1765,6 +1868,31 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
               <TableBody>{equipmentRows}</TableBody>
             </table>
           </div>
+        );
+        // Line-item drag-and-drop (LINE ITEMS ONLY — see use-equipment-dnd.ts).
+        // A single DndContext wraps both the desktop table and mobile card
+        // shells; DragOverlay renders a small floating label for whatever's
+        // being dragged (dragHandleRef only registers the tiny handle button
+        // with dnd-kit — not the whole row — as a drop-target/measured node,
+        // so this overlay is the user's main "something is being dragged"
+        // feedback; see equipment-rows.tsx's DragHandleControls doc comment).
+        return (
+          <DndContext
+            sensors={dnd.sensors}
+            collisionDetection={closestCenter}
+            onDragStart={dnd.handleDragStart}
+            onDragOver={dnd.handleDragOver}
+            onDragEnd={dnd.handleDragEnd}
+          >
+            {content}
+            <DragOverlay>
+              {draggedLineItem ? (
+                <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                  {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         );
       })()}
 
@@ -2069,6 +2197,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       <JustificationDialog {...justifiedRemoveLineItem.dialogProps} />
       <JustificationDialog {...justifiedRemoveLineItems.dialogProps} />
       <JustificationDialog {...justifiedRemoveGroup.dialogProps} />
+      {/* Drag-and-drop reorder/move justification prompts (useEquipmentDnd). */}
+      {dnd.dialogs}
 
       {/* Bulk move to group — reuses the single-item picker with a sentinel id;
           the echoed id is ignored in favour of the current selection. */}

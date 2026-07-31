@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
+  GripVertical,
   Plus,
   Package,
   MoreHorizontal,
@@ -161,6 +162,53 @@ function MoveButtons({
         <ChevronDown className="h-3.5 w-3.5" />
       </button>
     </div>
+  );
+}
+
+// ─── Drag handle (line items only) ──────────────────────────────────────────
+//
+// LineItemRow's real @dnd-kit drag entry point. Kept generic (`Record<string,
+// unknown>` for attributes/listeners) so this file stays free of a hard
+// `@dnd-kit` import — the caller (equipment-tab.tsx, which DOES import
+// dnd-kit) passes its `useSortable()` return values straight through.
+
+export interface DragHandleControls {
+  /** `useSortable()`'s `setNodeRef`, attached to this handle button (not the
+   *  whole row) — the button is what dnd-kit measures/tracks for this item. */
+  dragHandleRef?: (el: HTMLElement | null) => void;
+  dragAttributes?: Record<string, unknown>;
+  dragListeners?: Record<string, unknown>;
+  /** No drag entry point at all when true (e.g. sub-hire/kit group children,
+   *  which aren't independently reorderable). */
+  isDragDisabled?: boolean;
+}
+
+function DragHandle({
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
+  className,
+}: DragHandleControls & { className?: string }) {
+  if (isDragDisabled) return null;
+  return (
+    // Same hover/focus-reveal treatment as the old MoveButtons — hidden by
+    // default on desktop, shown on row hover/keyboard focus, always visible on
+    // touch (no hover) via the `md:` gate.
+    <button
+      type="button"
+      aria-label="Reorder"
+      ref={dragHandleRef}
+      {...(dragAttributes as React.HTMLAttributes<HTMLButtonElement> | undefined)}
+      {...(dragListeners as React.HTMLAttributes<HTMLButtonElement> | undefined)}
+      className={cn(
+        "cursor-grab touch-none rounded-sm text-muted transition-opacity hover:text-ink active:cursor-grabbing md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+        focusRing,
+        className,
+      )}
+    >
+      <GripVertical className="h-3.5 w-3.5" />
+    </button>
   );
 }
 
@@ -1031,10 +1079,10 @@ export function LineItemRow({
   onMoveToGroup,
   onRemove,
   onClick,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
   onInlineUpdate,
   moneyLocked,
   lockReason,
@@ -1085,7 +1133,7 @@ export function LineItemRow({
   moneyLocked?: boolean;
   lockReason?: string;
   onUnlockExit?: () => void;
-} & MoveControls) {
+} & DragHandleControls) {
   const desc = describeRow(item);
   const hasChildren = desc.hasChildren;
   // Per-unit serials are shown via the compact LineAssetsIndicator (icon +
@@ -1341,6 +1389,17 @@ export function LineItemRow({
             <div className="min-w-0 flex-1">{bodyInner}</div>
           )}
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* Mobile drag handle — this row type previously had ZERO reorder
+                affordance on touch (MoveButtons hid itself entirely there's no
+                up/down concept worth tapping on a phone); long-press-to-drag
+                (TouchSensor) is the first reorder entry point here. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             {hasChildren && (
               <button
                 type="button"
@@ -1439,11 +1498,11 @@ export function LineItemRow({
     >
       <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
           />
         </div>
       </TableCell>

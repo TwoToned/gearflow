@@ -13,6 +13,8 @@ export const orgDocumentSettingsSchema = z.object({
   footerText: z.string().max(200).optional(),
   footerSecondLine: z.string().max(200).optional(),
   termsAndConditions: z.string().max(4000).optional(),
+  showTermsAndConditionsOnInvoice: z.boolean().optional(),
+  paymentDetails: z.string().max(2000).optional(),
   /** Days a quote stays valid from its generation date. Default 30. */
   quoteValidityDays: z.coerce
     .number()

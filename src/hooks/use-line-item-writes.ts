@@ -432,11 +432,15 @@ export function useLineItemWrites() {
 
     /** Reorder line items (+ optional per-row groupName change). Builds the same
      *  `items` payload as reorderLineItems (src/server/line-items.ts ~1350-1361). No
-     *  emit signal — reorder folds no collab event. */
+     *  emit signal — reorder folds no collab event. `justification` (#988) —
+     *  forwarded to `reorderNative`, required once a touched project is JUSTIFY+
+     *  with no open unlock session (drag-and-drop reorder routes this through
+     *  useJustifiedMutation; see use-equipment-dnd.ts). */
     reorder: async (
       _projectId: string,
       itemIds: string[],
       groupUpdates?: { id: string; groupName: string | null }[],
+      justification?: string,
     ): Promise<{ ok: boolean }> => {
       const groupNameById = new Map((groupUpdates ?? []).map((g) => [g.id, g.groupName]));
       const orderedSet = new Set(itemIds);
@@ -452,7 +456,7 @@ export function useLineItemWrites() {
         if (orderedSet.has(id)) continue;
         items.push({ id, sortOrder: extraSort++, groupName: groupName || undefined });
       }
-      return reorderM({ orgId: requireOrg(), items, now: Date.now() });
+      return reorderM({ orgId: requireOrg(), items, now: Date.now(), justification });
     },
   };
 }

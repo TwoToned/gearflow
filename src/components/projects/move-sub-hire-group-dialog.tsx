@@ -85,7 +85,7 @@ function MoveSubHireGroupDialogBody({
       if (!groupId) throw new Error("No sub-hire group selected");
       const categoryId =
         selectedCategoryId === UNCATEGORISED_VALUE ? null : selectedCategoryId;
-      return slotWrites.moveSubHireGroup(groupId, categoryId);
+      return slotWrites.moveSubHireGroup({ groupId, categoryId });
     },
     onSuccess: () => {
       refreshCaches();

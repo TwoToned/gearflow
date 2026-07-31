@@ -140,6 +140,29 @@ describe("categorySlotsWrites.moveSubHireGroupToCategory", () => {
       }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // Gap fix: moveSubHireGroupToCategory previously never called assertLifecycleGuard.
+  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+    const t = makeT();
+    await seedSubHireGroup(t);
+    await seedCategory(t, "cat1");
+    await t.run(async (ctx) => {
+      await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "ON_SITE" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveSubHireGroupToCategory, {
+        groupId: "shg1", orgId: ORG, categoryId: "cat1", slotId: "sl1", now: NOW, actor: ACTOR, auditId: "log1",
+      }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveSubHireGroupToCategory, {
+      groupId: "shg1", orgId: ORG, categoryId: "cat1", slotId: "sl1", now: NOW + 1, actor: ACTOR, auditId: "log1",
+      justification: "Client requested a change while on site today.",
+    });
+    await t.run(async (ctx) => {
+      const shg = await ctx.db.query("subHireGroups").withIndex("by_cuid", (q) => q.eq("id", "shg1")).first();
+      expect(shg?.targetCategoryId).toBe("cat1");
+    });
+  });
 });
 
 // ─── moveProjectGroupToCategory ───────────────────────────────────────────────
@@ -243,6 +266,21 @@ describe("categorySlotsWrites.moveProjectGroupToCategory", () => {
       }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // Gap fix: moveProjectGroupToCategory previously never called assertLifecycleGuard.
+  test("rejects on a HARD_LOCKED (COMPLETED) project with no open FULL unlock session", async () => {
+    const t = makeT();
+    await seedProjectGroup(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "COMPLETED" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveProjectGroupToCategory, {
+        groupId: "g1", orgId: ORG, categoryId: "cat2", slotId: "slNew", now: NOW, actor: ACTOR, auditId: "log1",
+        justification: "Doesn't matter — HARD_LOCKED needs a session, not a reason.",
+      }),
+    ).rejects.toThrow(/PROJECT_LOCKED/i);
+  });
 });
 
 // ─── reorderMixedGroupsInCategory ─────────────────────────────────────────────
@@ -325,6 +363,32 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
         orgId: ORG, categoryId: "cat1", items: [{ prefixedId: "pg-g1", newSlotId: "n1" }], now: NOW, actor: ACTOR,
       }),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // Gap fix: reorderMixedGroupsInCategory previously never called assertLifecycleGuard.
+  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+    const t = makeT();
+    await seedMixed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())!._id, { status: "ON_SITE" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
+        orgId: ORG, categoryId: "cat1",
+        items: [{ prefixedId: "shg-shg1", newSlotId: "n1" }, { prefixedId: "pg-g1", newSlotId: "n2" }],
+        now: NOW, actor: ACTOR,
+      }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
+      orgId: ORG, categoryId: "cat1",
+      items: [{ prefixedId: "shg-shg1", newSlotId: "n1" }, { prefixedId: "pg-g1", newSlotId: "n2" }],
+      now: NOW + 1, actor: ACTOR,
+      justification: "Client requested a change while on site today.",
+    });
+    await t.run(async (ctx) => {
+      const shgSlot = (await ctx.db.query("categorySlots").withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", "shg1")).collect())[0];
+      expect(shgSlot.sortOrder).toBe(0);
+    });
   });
 });
 

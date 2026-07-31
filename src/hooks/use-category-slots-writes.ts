@@ -35,37 +35,55 @@ export function useCategorySlotWrites() {
   };
 
   return {
-    moveSubHireGroup: async (groupId: string, categoryId: string | null): Promise<void> => {
+    /** `justification` — required once the group's project is JUSTIFY+ with no
+     *  open unlock session (drag-and-drop cross-category move routes this
+     *  through useJustifiedMutation). */
+    moveSubHireGroup: async (args: {
+      groupId: string;
+      categoryId: string | null;
+      justification?: string;
+    }): Promise<void> => {
       await moveSubHireGroupM({
-        groupId,
+        groupId: args.groupId,
         orgId: requireOrg(),
-        categoryId,
+        categoryId: args.categoryId,
         slotId: createId(),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
+        justification: args.justification,
       });
     },
 
-    moveProjectGroup: async (groupId: string, categoryId: string | null): Promise<void> => {
+    moveProjectGroup: async (args: {
+      groupId: string;
+      categoryId: string | null;
+      justification?: string;
+    }): Promise<void> => {
       await moveProjectGroupM({
-        groupId,
+        groupId: args.groupId,
         orgId: requireOrg(),
-        categoryId,
+        categoryId: args.categoryId,
         slotId: createId(),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
+        justification: args.justification,
       });
     },
 
-    reorderMixed: async (categoryId: string, orderedIds: string[]): Promise<void> => {
+    reorderMixed: async (args: {
+      categoryId: string;
+      orderedIds: string[];
+      justification?: string;
+    }): Promise<void> => {
       await reorderMixedM({
         orgId: requireOrg(),
-        categoryId,
-        items: orderedIds.map((prefixedId) => ({ prefixedId, newSlotId: createId() })),
+        categoryId: args.categoryId,
+        items: args.orderedIds.map((prefixedId) => ({ prefixedId, newSlotId: createId() })),
         now: Date.now(),
         actor: actor(),
+        justification: args.justification,
       });
     },
 

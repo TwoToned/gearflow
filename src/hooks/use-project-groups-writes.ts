@@ -106,12 +106,16 @@ export function useProjectGroupWrites() {
       });
     },
 
-    reorder: async (orderedIds: string[]): Promise<void> => {
+    /** `justification` — required once a touched project is JUSTIFY+ with no
+     *  open unlock session (drag-and-drop reorder routes this through
+     *  useJustifiedMutation). */
+    reorder: async (args: { orderedIds: string[]; justification?: string }): Promise<void> => {
       await reorderM({
         orgId: requireOrg(),
-        orderedIds,
+        orderedIds: args.orderedIds,
         now: Date.now(),
         actor: actor(),
+        justification: args.justification,
       });
     },
 
@@ -119,6 +123,7 @@ export function useProjectGroupWrites() {
       lineItemId: string;
       targetGroupId: string | null;
       targetCategoryId: string | null;
+      justification?: string;
     }): Promise<void> => {
       await moveM({
         lineItemId: args.lineItemId,
@@ -128,6 +133,7 @@ export function useProjectGroupWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
+        justification: args.justification,
       });
     },
 

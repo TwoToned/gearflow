@@ -7,6 +7,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
+import { assertLifecycleGuard, lifecycleAuditMetadata, type LifecycleGuardResult } from "./lib/projectLocks";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -122,6 +123,7 @@ async function logSlotChange(
     action: string;
     entityName: string;
     summary: string;
+    metadata?: unknown;
   },
 ): Promise<void> {
   await writeActivityLog(ctx, {
@@ -135,6 +137,7 @@ async function logSlotChange(
     userId: args.actor.userId,
     userName: args.actor.userName,
     summary: args.summary,
+    metadata: args.metadata,
     createdAt: args.now,
   });
 }
@@ -232,6 +235,9 @@ export const moveSubHireGroupToCategory = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // Required once the sub-hire's project is JUSTIFY+ and no unlock session is
+    // open — this mutation previously bypassed the lifecycle lock entirely.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "categorySlot");
@@ -242,6 +248,12 @@ export const moveSubHireGroupToCategory = mutation({
 
     const { group, subHire } = await requireSubHireGroupInOrg(ctx, a.groupId, a.orgId);
     const projectId = subHire.projectId ?? null;
+    let guard: LifecycleGuardResult | null = null;
+    if (projectId != null) {
+      const project = await getProjectInOrg(ctx, projectId, a.orgId);
+      if (!project) throw new ConvexError("Project not found");
+      guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
+    }
 
     // Validate the destination category is the caller's org + this sub-hire's project.
     let destCategoryId: string | null = null;
@@ -296,6 +308,7 @@ export const moveSubHireGroupToCategory = mutation({
         summary: destCategoryId
           ? `Moved sub-hire group to category ${destCategoryId}`
           : `Moved sub-hire group to uncategorised`,
+        metadata: guard ? lifecycleAuditMetadata(guard, a.justification) : undefined,
       });
     }
 
@@ -320,6 +333,9 @@ export const moveProjectGroupToCategory = mutation({
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
+    // Required once the group's project is JUSTIFY+ and no unlock session is
+    // open — this mutation previously bypassed the lifecycle lock entirely.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "categorySlot");
@@ -328,6 +344,9 @@ export const moveProjectGroupToCategory = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const group = await requireGroupInOrg(ctx, a.groupId, a.orgId);
+    const project = await getProjectInOrg(ctx, group.projectId, a.orgId);
+    if (!project) throw new ConvexError("Project not found");
+    const guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
 
     // Validate the destination category is the caller's org + this group's project.
     let destCategoryId: string | null = null;
@@ -380,6 +399,7 @@ export const moveProjectGroupToCategory = mutation({
       summary: destCategoryName
         ? `Moved project group to category ${destCategoryName}`
         : `Moved project group to uncategorised`,
+      metadata: lifecycleAuditMetadata(guard, a.justification),
     });
 
     return { ok: true };
@@ -402,6 +422,9 @@ export const reorderMixedGroupsInCategory = mutation({
     items: v.array(v.object({ prefixedId: v.string(), newSlotId: v.string() })),
     now: v.number(),
     actor: actorValidator,
+    // Required once this category's project is JUSTIFY+ and no unlock session is
+    // open — this mutation previously bypassed the lifecycle lock entirely.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "categorySlot");
@@ -411,6 +434,9 @@ export const reorderMixedGroupsInCategory = mutation({
     await resolveActor(ctx, a.actor);
 
     const category = await requireCategoryInOrg(ctx, a.categoryId, a.orgId);
+    const categoryProject = await getProjectInOrg(ctx, category.projectId, a.orgId);
+    if (!categoryProject) throw new ConvexError("Project not found");
+    await assertLifecycleGuard(ctx, categoryProject, { kind: "structural", justification: a.justification });
 
     // Parse every prefixed id up front (a bare/malformed id is a client bug).
     const parsed = a.items.map((item) => {

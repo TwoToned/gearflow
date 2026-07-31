@@ -14,8 +14,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "../../../convex/_generated/api";
 import {
   ChevronRight,
-  ChevronUp,
-  ChevronDown,
+  GripVertical,
   Plus,
   Package,
   MoreHorizontal,
@@ -98,69 +97,52 @@ export function getDisallowedDropReason(
   return null;
 }
 
-// ─── Reorder move buttons ────────────────────────────────────────────────────
+// ─── Drag handle (every row kind) ────────────────────────────────────────────
 //
-// Replaces the former drag handle. Small stacked ▲/▼ buttons that move a row
-// up or down by one position within its scope. The ▲ is disabled on the first
-// row and the ▼ on the last; the parent computes the new ordered id array and
-// calls the matching server reorder action.
+// The real @dnd-kit drag entry point, shared by LineItemRow, GroupRow,
+// SubHireGroupRow, and CategoryRow (the last to convert — categories used to
+// keep their ▲/▼ MoveButtons). Kept generic (`Record<string, unknown>` for
+// attributes/listeners) so this file stays free of a hard `@dnd-kit` import —
+// the caller (equipment-tab.tsx, which DOES import dnd-kit) passes its
+// `useSortable()` return values straight through.
 
-export interface MoveControls {
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
+export interface DragHandleControls {
+  /** `useSortable()`'s `setNodeRef`, attached to this handle button (not the
+   *  whole row) — the button is what dnd-kit measures/tracks for this item. */
+  dragHandleRef?: (el: HTMLElement | null) => void;
+  dragAttributes?: Record<string, unknown>;
+  dragListeners?: Record<string, unknown>;
+  /** No drag entry point at all when true (e.g. sub-hire/kit group children,
+   *  which aren't independently reorderable). */
+  isDragDisabled?: boolean;
 }
 
-function MoveButtons({
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+function DragHandle({
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
   className,
-}: MoveControls & { className?: string }) {
-  if (!onMoveUp && !onMoveDown) return null;
+}: DragHandleControls & { className?: string }) {
+  if (isDragDisabled) return null;
   return (
-    // Hover/focus-reveal cluster (declutter): hidden by default on desktop,
-    // shown on row hover or keyboard focus. Stays visible on touch (no hover)
-    // by gating the hide behind `md:` — mirrors the category kebab pattern.
-    <div
+    // Same hover/focus-reveal treatment as the old MoveButtons — hidden by
+    // default on desktop, shown on row hover/keyboard focus, always visible on
+    // touch (no hover) via the `md:` gate.
+    <button
+      type="button"
+      aria-label="Reorder"
+      ref={dragHandleRef}
+      {...(dragAttributes as React.HTMLAttributes<HTMLButtonElement> | undefined)}
+      {...(dragListeners as React.HTMLAttributes<HTMLButtonElement> | undefined)}
       className={cn(
-        "flex flex-col items-center transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+        "cursor-grab touch-none rounded-sm text-muted transition-opacity hover:text-ink active:cursor-grabbing md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
+        focusRing,
         className,
       )}
     >
-      <button
-        type="button"
-        aria-label="Move up"
-        disabled={!canMoveUp}
-        onClick={(e) => {
-          e.stopPropagation();
-          onMoveUp?.();
-        }}
-        className={cn(
-          "rounded-sm text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-25",
-          focusRing,
-        )}
-      >
-        <ChevronUp className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        aria-label="Move down"
-        disabled={!canMoveDown}
-        onClick={(e) => {
-          e.stopPropagation();
-          onMoveDown?.();
-        }}
-        className={cn(
-          "rounded-sm text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-25",
-          focusRing,
-        )}
-      >
-        <ChevronDown className="h-3.5 w-3.5" />
-      </button>
-    </div>
+      <GripVertical className="h-3.5 w-3.5" />
+    </button>
   );
 }
 
@@ -329,10 +311,10 @@ export function GroupRow({
   orgId,
   projectId,
   commentBadge,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
   onInlinePriceUpdate,
   moneyLocked,
   lockReason,
@@ -368,7 +350,7 @@ export function GroupRow({
   moneyLocked?: boolean;
   lockReason?: string;
   onUnlockExit?: () => void;
-} & MoveControls) {
+} & DragHandleControls) {
   const priceVal = group.price != null ? Number(group.price) : null;
   const discountVal = group.discount != null ? Number(group.discount) : 0;
   const groupTotal = priceVal != null ? Math.max(0, priceVal * group.quantity - discountVal) : null;
@@ -437,6 +419,17 @@ export function GroupRow({
         onToggle={onToggle}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* Mobile drag handle — mirrors LineItemRow's mobile treatment:
+                this row previously had ZERO reorder affordance on touch
+                (MoveButtons hid itself there too), long-press-to-drag
+                (TouchSensor) is the first reorder entry point here. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             {orgId && projectId && (
               <CommentThreadPanel
                 orgId={orgId}
@@ -476,11 +469,11 @@ export function GroupRow({
     <TableRow className="group/row" {...shortcuts}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
           />
         </div>
       </TableCell>
@@ -656,10 +649,10 @@ export function SubHireGroupRow({
   onEdit,
   onEditPrice,
   onMove,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
   onInlinePriceUpdate,
 }: {
   group: SubHireGroupData;
@@ -681,7 +674,7 @@ export function SubHireGroupRow({
    *  `onEditPrice`'s dialog makes, just per-cell. Omitted (mobile, or a
    *  future caller that doesn't want it) falls back to the static display. */
   onInlinePriceUpdate?: (group: SubHireGroupData, patch: { cost?: number | null; charge?: number | null }) => Promise<unknown>;
-} & MoveControls) {
+} & DragHandleControls) {
   const charge = group.charge != null ? Number(group.charge) : null;
   const cost = group.cost != null ? Number(group.cost) : null;
   const margin = charge != null && cost != null ? charge - cost : null;
@@ -708,6 +701,16 @@ export function SubHireGroupRow({
         onToggle={onToggle}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* Mobile drag handle — same treatment as GroupRow's mobile
+                card (see that component's comment); this row previously had
+                no reorder affordance on touch either. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-8">
@@ -746,11 +749,11 @@ export function SubHireGroupRow({
     <TableRow className="group/row" {...shortcuts}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
           />
         </div>
       </TableCell>
@@ -859,10 +862,10 @@ export function CategoryRow({
   onAddEquipment,
   onAddKit,
   onAddCustom,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
 }: {
   cat: CategoryData;
   /** Total rendered column count (COL_COUNT + cost). The header cell spans this so it
@@ -879,7 +882,7 @@ export function CategoryRow({
   onAddEquipment?: () => void;
   onAddKit?: () => void;
   onAddCustom?: () => void;
-} & MoveControls) {
+} & DragHandleControls) {
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
   const isMobile = useIsMobile();
 
@@ -938,6 +941,16 @@ export function CategoryRow({
         name={cat.name}
         action={
           <div className="flex shrink-0 items-center gap-1">
+            {/* Mobile drag handle — same treatment as GroupRow/SubHireGroupRow's
+                mobile cards (see those components' comments); this heading
+                previously had zero reorder affordance on touch either. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             {onAddEquipment && <CardAddButton onClick={onAddEquipment} />}
             {categoryMenu}
           </div>
@@ -950,11 +963,11 @@ export function CategoryRow({
     <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
       <TableCell colSpan={columnCount} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
             className="px-1 md:group-hover/cat:opacity-100 md:group-focus-within/cat:opacity-100"
           />
           <h3 className="t-overline text-muted">{cat.name}</h3>
@@ -1031,10 +1044,10 @@ export function LineItemRow({
   onMoveToGroup,
   onRemove,
   onClick,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
   onInlineUpdate,
   moneyLocked,
   lockReason,
@@ -1085,7 +1098,7 @@ export function LineItemRow({
   moneyLocked?: boolean;
   lockReason?: string;
   onUnlockExit?: () => void;
-} & MoveControls) {
+} & DragHandleControls) {
   const desc = describeRow(item);
   const hasChildren = desc.hasChildren;
   // Per-unit serials are shown via the compact LineAssetsIndicator (icon +
@@ -1341,6 +1354,17 @@ export function LineItemRow({
             <div className="min-w-0 flex-1">{bodyInner}</div>
           )}
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* Mobile drag handle — this row type previously had ZERO reorder
+                affordance on touch (MoveButtons hid itself entirely there's no
+                up/down concept worth tapping on a phone); long-press-to-drag
+                (TouchSensor) is the first reorder entry point here. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             {hasChildren && (
               <button
                 type="button"
@@ -1439,11 +1463,11 @@ export function LineItemRow({
     >
       <TableCell className="px-0">
         <div className={`flex justify-end ${gripIndent || "px-1"}`}>
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
           />
         </div>
       </TableCell>

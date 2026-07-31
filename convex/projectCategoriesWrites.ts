@@ -358,19 +358,28 @@ export const reorderCategoriesNative = mutation({
     orderedIds: v.array(v.string()),
     now: v.number(),
     actor: actorValidator,
+    // Required once a touched project is JUSTIFY+ and no unlock session is open —
+    // this mutation previously bypassed the lifecycle lock entirely.
+    justification: v.optional(v.string()),
   },
-  handler: async (ctx, { orgId, orderedIds, now, actor: suppliedActor }) => {
+  handler: async (ctx, { orgId, orderedIds, now, actor: suppliedActor, justification }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
     await resolveActor(ctx, suppliedActor);
 
+    const guardedProjectIds = new Set<string>();
     for (let i = 0; i < orderedIds.length; i++) {
       const doc = await ctx.db
         .query("projectCategories")
         .withIndex("by_cuid", (q) => q.eq("id", orderedIds[i]))
         .first();
       if (doc && doc.organizationId === orgId) {
+        if (!guardedProjectIds.has(doc.projectId)) {
+          const project = await requireProjectForGuard(ctx, doc.projectId, orgId);
+          await assertLifecycleGuard(ctx, project, { kind: "structural", justification });
+          guardedProjectIds.add(doc.projectId);
+        }
         await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: now });
       }
     }

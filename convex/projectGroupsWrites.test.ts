@@ -430,6 +430,7 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
   test("member reorders (sortOrder = index), org-scoped, NO audit", async () => {
     const t = makeT();
     await member(t, "member");
+    await seedProject(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0 });
       await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1 });
@@ -456,6 +457,47 @@ describe("projectGroupsWrites.reorderGroupsNative", () => {
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, { orgId: ORG, orderedIds: [], now: NOW, actor: ACTOR }),
     ).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  // Gap fix: reorderGroupsNative previously never called assertLifecycleGuard,
+  // so a locked project's groups could be silently reordered. Mirrors the
+  // equivalent lineItemWrites.reorderNative coverage.
+  test("rejects on an ON_SITE project without justification, succeeds with one", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "ON_SITE", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1 });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
+        orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR,
+      }),
+    ).rejects.toThrow(/JUSTIFICATION_REQUIRED/i);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
+      orgId: ORG, orderedIds: ["g2", "g1"], now: NOW + 1, actor: ACTOR,
+      justification: "Client requested a change while on site today.",
+    });
+    await t.run(async (ctx) => {
+      const g2 = await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g2")).first();
+      expect(g2?.sortOrder).toBe(0);
+    });
+  });
+
+  test("rejects on a HARD_LOCKED (COMPLETED) project with no open FULL unlock session", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "COMPLETED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "A", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g2", organizationId: ORG, projectId: "p1", title: "B", sortOrder: 1 });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.reorderGroupsNative, {
+        orgId: ORG, orderedIds: ["g2", "g1"], now: NOW, actor: ACTOR, justification: "Doesn't matter — HARD_LOCKED needs a session, not a reason.",
+      }),
+    ).rejects.toThrow(/PROJECT_LOCKED/i);
   });
 });
 

@@ -585,6 +585,10 @@ export const reorderGroupsNative = mutation({
     orderedIds: v.array(v.string()),
     now: v.number(),
     actor: actorValidator,
+    // Required once a touched project is JUSTIFY+ and no unlock session is open —
+    // same gate reorderNative (line items) and moveLineItemNative already apply;
+    // this mutation previously bypassed the lifecycle lock entirely.
+    justification: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "projectGroup");
@@ -592,12 +596,20 @@ export const reorderGroupsNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "project", "manage_line_items");
     await resolveActor(ctx, a.actor);
 
+    const projectCache = new Map<string, Doc<"projects"> | null>();
+    const guardedProjectIds = new Set<string>();
     for (let i = 0; i < a.orderedIds.length; i++) {
       const doc = await ctx.db
         .query("projectGroups")
         .withIndex("by_cuid", (q) => q.eq("id", a.orderedIds[i]))
         .first();
       if (doc && doc.organizationId === a.orgId) {
+        if (!guardedProjectIds.has(doc.projectId)) {
+          const project = await getProjectInOrg(ctx, doc.projectId, a.orgId, projectCache);
+          if (!project) throw new ConvexError("Project not found");
+          await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
+          guardedProjectIds.add(doc.projectId);
+        }
         await ctx.db.patch(doc._id, { sortOrder: i, updatedAt: a.now });
       }
     }

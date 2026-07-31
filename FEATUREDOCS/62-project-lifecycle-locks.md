@@ -204,6 +204,39 @@ requires a bounded `justification` arg whenever `isRevertOutOfHardLock(from, to)
 normal forward move, ungated). Re-completing captures a fresh snapshot (any
 crossing back into CONFIRMED/COMPLETED always snapshots).
 
+**Unified with unlock sessions, not a second lock system.** An **OPEN `FULL`**
+unlock session on the project satisfies this check with NO fresh justification
+required — its own stored `justification` is reused, and the audit row records
+`metadata.justificationSource: "unlock_session"` instead of `"manual"` so the
+trail still shows which one applied. This is the one outlier that used to
+demand a brand-new justification even while a FULL session sat open (fixed
+2026-07); every other HARD_LOCKED write already got this for free via
+`assertLifecycleGuard`. A `FINANCIAL`-scope session does **not** satisfy it
+(matches `assertLifecycleGuard`'s own FULL-only rule for HARD_LOCKED), and
+neither does an already-`COMMITTED`/`DISCARDED` session — reusing a *closed*
+session's justification for a later, unrelated action would be stale
+authorization, so a caller who already relocked still types one fresh reason.
+The separate CONFIRMED-without-accepted-quote gate (#986, below) is
+deliberately **not** folded into this — "did the client accept a quote" has
+no relationship to "is there an open unlock session", so it always requires
+its own explicit justification.
+
+**Client wiring:** `src/hooks/use-native-project-writes.ts`'s
+`useNativeProjectStatus().updateStatus` takes an optional third
+`justification` param. The project detail page wraps it in the same
+`useJustifiedMutation` + `<JustificationDialog>` pattern the equipment/
+services/crew tabs already use for #793 — `lockStatus.tier` is never
+`"JUSTIFY"` for these two transitions, so it always takes the hook's reactive
+path (try once, catch the server's `JUSTIFICATION_REQUIRED`, prompt, retry)
+rather than the proactive one. That reactive catch (`isJustificationRequired`
+in `use-justified-mutation.ts`) now recognizes a `UserFacingError` in addition
+to a raw `ConvexError` — every native-write hook rethrows
+`mapNativeWriteError(e)`, so the raw `ConvexError` a mutation throws never
+actually reaches a caller further up the stack; this was a latent gap that
+only didn't matter for the existing #793 call sites because they always
+already know `tier === "JUSTIFY"` before calling and never fall through to the
+reactive path in practice.
+
 ## Versions / diff UI
 
 - **`convex/projectLocksRead.ts`** — `status` (tier + open session, for the

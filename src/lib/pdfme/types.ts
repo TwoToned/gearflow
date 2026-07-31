@@ -178,6 +178,9 @@ export interface DocumentData {
   org_phone: string;
   org_address: string;
   org_website: string;
+  /** Australian Business Number (or local equivalent). Rendered in the
+   *  header, under the org's address/email, on the invoice only. */
+  org_abn: string;
   org_logo: string | null;
   org_icon: string | null;
   org_tax_rate: number;
@@ -241,10 +244,20 @@ export interface DocumentData {
    *  from org_name/org_email/org_phone. */
   document_footer_text: string;
   document_footer_second_line: string;
-  /** Quote-only: plain-text T&Cs block and a real computed "valid until" date
-   *  (generatedAt + org's quoteValidityDays, default 30). */
-  quote_terms_and_conditions: string;
+  /** Org-authored plain-text T&Cs block — always populated for the quote;
+   *  populated for the invoice only when the org's
+   *  `showTermsAndConditionsOnInvoice` setting is on. */
+  terms_and_conditions: string;
+  /** Quote-only: a real computed "valid until" date (generatedAt + org's
+   *  quoteValidityDays, default 30). */
   quote_valid_until: string;
+  /** Invoice-only: a real computed "due" date — an ISSUED invoice's stamped
+   *  `dueDate` row value, or (preview/no invoice yet) documentDate + org's
+   *  paymentTermsDays (default 14), same fallback shape as quote_valid_until. */
+  invoice_due_date: string;
+  /** Org-authored plain-text payment/bank details block — invoice only,
+   *  omitted (empty string) for every other doc type. */
+  payment_details: string;
 
   // PM
   pm_name: string;
@@ -304,6 +317,9 @@ export interface FinancialSummaryConfig {
   depositPaid: number;
   balanceDue: number;
   documentColor: string;
+  /** Bold "Due Date" row after Total/Balance Due — invoice only, already
+   *  formatted for display. Omitted (undefined/empty) draws nothing. */
+  dueDate?: string;
 }
 
 /** Config for the page header plugin */
@@ -317,6 +333,10 @@ export interface PageHeaderConfig {
   documentLogoMode: "logo" | "icon" | "none";
   showOrgNameOnDocuments: boolean;
   documentColor: string;
+  /** A bold, document-coloured highlight line drawn after `docMeta` — used
+   *  for the invoice's "Due: <date>" line so it can't be missed at the top
+   *  of the document, next to the doc number/date. Undefined draws nothing. */
+  highlightMeta?: string;
 }
 
 /**

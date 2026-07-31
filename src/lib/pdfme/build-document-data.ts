@@ -37,6 +37,7 @@ import {
 import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, DocumentType } from "./types";
 import type { OrgDocumentSettings } from "@/lib/org-settings-types";
 import { computeValidUntil, resolveQuoteValidityDays } from "@/lib/quote-validity";
+import { resolvePaymentTermsDays } from "@/lib/invoice-terms";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
@@ -93,7 +94,7 @@ export async function buildDocumentData(
      * to be recomputed from `now` on every render, so merely re-opening an old
      * quote moved the expiry date the client had been given.
      */
-    stampedDates?: { documentDate?: number; quoteValidUntil?: number };
+    stampedDates?: { documentDate?: number; quoteValidUntil?: number; invoiceDueDate?: number };
   }
 ): Promise<DocumentData> {
   const expandProjectGroups = options?.expandProjectGroups ?? false;
@@ -697,6 +698,16 @@ export async function buildDocumentData(
       ? new Date(stamped.quoteValidUntil)
       : new Date(computeValidUntil(documentDate.getTime(), quoteValidityDays, orgTimezone));
 
+  // Same shape as quoteValidUntil above: an ISSUED invoice's row wins
+  // (stampedDates), otherwise (preview / not yet issued) fall back to a live
+  // computation from the org's paymentTermsDays default — never stored, so
+  // this can't silently drift once the invoice is actually issued.
+  const paymentTermsDays = resolvePaymentTermsDays(documentSettings?.paymentTermsDays);
+  const invoiceDueDate =
+    stamped?.invoiceDueDate != null
+      ? new Date(stamped.invoiceDueDate)
+      : new Date(computeValidUntil(documentDate.getTime(), paymentTermsDays, orgTimezone));
+
   // WS1 (#940) — only the invoice doc type renders this; skip the extra
   // Convex round trip for the other 4 doc types.
   const invoiceNumber = docType === "invoice" ? await getLatestInvoiceNumberForProject(projectId, organizationId) : null;
@@ -708,6 +719,7 @@ export async function buildDocumentData(
     org_phone: (orgSettings.phone as string) || "",
     org_address: (orgSettings.address as string) || "",
     org_website: (orgSettings.website as string) || "",
+    org_abn: (orgSettings.abn as string) || "",
     org_logo: logoData,
     org_icon: iconData,
     org_tax_rate: (orgSettings.taxRate as number) || 10,
@@ -771,8 +783,16 @@ export async function buildDocumentData(
     invoice_number: invoiceNumber || "",
     document_footer_text: documentSettings?.footerText || "",
     document_footer_second_line: documentSettings?.footerSecondLine || "",
-    quote_terms_and_conditions: documentSettings?.termsAndConditions || "",
+    // Quotes always carry T&Cs when the org has set any; the invoice needs
+    // the separate opt-in toggle (an invoice already has its own payment
+    // terms/due date, so T&Cs there is opt-in, not always-on like the quote).
+    terms_and_conditions:
+      docType === "invoice" && !documentSettings?.showTermsAndConditionsOnInvoice
+        ? ""
+        : documentSettings?.termsAndConditions || "",
     quote_valid_until: formatDate(quoteValidUntil),
+    invoice_due_date: formatDate(invoiceDueDate),
+    payment_details: docType === "invoice" ? documentSettings?.paymentDetails || "" : "",
 
     // PM
     pm_name: pmName,

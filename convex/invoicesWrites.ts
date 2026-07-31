@@ -143,9 +143,12 @@ export const createNative = mutation({
       }
       // Fixed-$ basis (#1055) — same proportional-GST-fraction split as the %
       // branch below, just against an operator-entered dollar figure instead of
-      // a percentage of the tax-inclusive total.
+      // a percentage of the tax-inclusive total. projectTotal is provably > 0
+      // here (amount > 0 and amount <= projectTotal were just checked above),
+      // unlike the % branch below where pct can be set with no equipment priced
+      // yet — so no zero-guard needed on this division.
       total = round(amount);
-      taxAmount = projectTotal > 0 ? round(total * (projectTax / projectTotal)) : 0;
+      taxAmount = round(total * (projectTax / projectTotal));
       subtotal = round(total - taxAmount);
     } else if (fields.kind === "DEPOSIT") {
       const pct = fields.depositPercent ?? 25;
@@ -462,10 +465,11 @@ export const deleteVoidNative = mutation({
       });
     }
 
+    // Bounded by invoiceId (R-9.8) — see paymentsWrites.ts recomputeInvoicePaymentState.
     const livePayments = await ctx.db
       .query("payments")
       .withIndex("by_organizationId_invoiceId", (q) => q.eq("organizationId", orgId).eq("invoiceId", id))
-      .collect();
+      .take(500);
     const nonVoidPayments = livePayments.filter((p) => p.voidedAt == null);
     if (nonVoidPayments.length > 0) {
       throw new ConvexError({
@@ -503,7 +507,8 @@ export const deleteVoidNative = mutation({
       }
     }
 
-    const lines = await ctx.db.query("invoiceLines").withIndex("by_invoiceId", (q) => q.eq("invoiceId", id)).collect();
+    // Bounded by invoiceId (R-9.8) — an invoice's own line count is small and fixed.
+    const lines = await ctx.db.query("invoiceLines").withIndex("by_invoiceId", (q) => q.eq("invoiceId", id)).take(500);
     for (const line of lines) await ctx.db.delete(line._id);
     await ctx.db.delete(doc._id);
 

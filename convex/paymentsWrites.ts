@@ -45,10 +45,13 @@ function round(v: number): number {
  *  payments and patch the invoice row — called from inside the same mutation
  *  that just wrote or voided a payment, so the two can never drift apart. */
 async function recomputeInvoicePaymentState(ctx: MutationCtx, invoice: Doc<"invoices">, now: number): Promise<void> {
+  // Bounded by invoiceId (R-9.8) — a single invoice never realistically carries
+  // more than a handful of payments; 500 is a generous safety cap, not an
+  // expected count.
   const payments = await ctx.db
     .query("payments")
     .withIndex("by_organizationId_invoiceId", (q) => q.eq("organizationId", invoice.organizationId).eq("invoiceId", invoice.id))
-    .collect();
+    .take(500);
   const amountPaid = round(payments.filter((p) => p.voidedAt == null).reduce((sum, p) => sum + p.amount, 0));
   const total = Number(invoice.total) || 0;
   const paymentStatus = amountPaid <= 0 ? "UNPAID" : amountPaid >= total ? "PAID" : "PARTIALLY_PAID";

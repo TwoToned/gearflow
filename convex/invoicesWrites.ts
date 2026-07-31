@@ -1,7 +1,8 @@
 import { createId } from "@paralleldrive/cuid2";
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -433,6 +434,46 @@ export const voidNative = mutation({
  * changes nothing there. No numbering-counter rollback either — unlike a
  * quote's revision counter, invoice numbers are never reused.
  */
+/** Everything `deleteVoidNative` must confirm before it starts writing — split
+ *  out so the handler reads as a straight line (R-3.6, same reasoning as
+ *  quotesWrites.ts's `assertRecalledDeletable`). Order matters: org match,
+ *  then state, then the typed confirmation last — so a caller fixing one
+ *  rejection at a time sees the real blocker first. Returns the label the
+ *  confirmation (and the audit entry) is keyed on. */
+function assertVoidDeletable(doc: Doc<"invoices">, orgId: string, confirmLabel: string): string {
+  if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+  if (doc.status !== "VOID") {
+    throw new ConvexError({ code: "INVALID_STATE", message: "Only a VOID invoice can be permanently deleted." });
+  }
+  const label = doc.invoiceNumber ?? doc.id;
+  if (confirmLabel !== label) {
+    throw new ConvexError({
+      code: "CONFIRMATION_MISMATCH",
+      message: `Type "${label}" exactly to confirm — this permanently deletes a document the client may already hold.`,
+    });
+  }
+  return label;
+}
+
+/** Refuses if the invoice has any non-voided `payments` row — nothing about a
+ *  payment is ever silently cascaded away by an invoice delete (§ user
+ *  decision on #1055). Split out alongside `assertVoidDeletable` for the same
+ *  R-3.6 reason. */
+async function assertNoLivePayments(ctx: MutationCtx, orgId: string, invoiceId: string): Promise<void> {
+  // Bounded by invoiceId (R-9.8) — see paymentsWrites.ts recomputeInvoicePaymentState.
+  const livePayments = await ctx.db
+    .query("payments")
+    .withIndex("by_organizationId_invoiceId", (q) => q.eq("organizationId", orgId).eq("invoiceId", invoiceId))
+    .take(500);
+  const nonVoidCount = livePayments.filter((p) => p.voidedAt == null).length;
+  if (nonVoidCount > 0) {
+    throw new ConvexError({
+      code: "INVOICE_HAS_PAYMENTS",
+      message: `This invoice has ${nonVoidCount} payment(s) recorded against it — void them first.`,
+    });
+  }
+}
+
 export const deleteVoidNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
@@ -452,31 +493,8 @@ export const deleteVoidNative = mutation({
 
     const doc = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError("Invoice not found: " + id);
-    if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
-    if (doc.status !== "VOID") {
-      throw new ConvexError({ code: "INVALID_STATE", message: "Only a VOID invoice can be permanently deleted." });
-    }
-
-    const label = doc.invoiceNumber ?? doc.id;
-    if (confirmLabel !== label) {
-      throw new ConvexError({
-        code: "CONFIRMATION_MISMATCH",
-        message: `Type "${label}" exactly to confirm — this permanently deletes a document the client may already hold.`,
-      });
-    }
-
-    // Bounded by invoiceId (R-9.8) — see paymentsWrites.ts recomputeInvoicePaymentState.
-    const livePayments = await ctx.db
-      .query("payments")
-      .withIndex("by_organizationId_invoiceId", (q) => q.eq("organizationId", orgId).eq("invoiceId", id))
-      .take(500);
-    const nonVoidPayments = livePayments.filter((p) => p.voidedAt == null);
-    if (nonVoidPayments.length > 0) {
-      throw new ConvexError({
-        code: "INVOICE_HAS_PAYMENTS",
-        message: `This invoice has ${nonVoidPayments.length} payment(s) recorded against it — void them first.`,
-      });
-    }
+    const label = assertVoidDeletable(doc, orgId, confirmLabel);
+    await assertNoLivePayments(ctx, orgId, id);
 
     const erasedArtifactIds = doc.pdfFileId ? [doc.pdfFileId] : [];
 

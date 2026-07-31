@@ -437,68 +437,145 @@ function InvoiceRow({
           <Badge status={INVOICE_STATUS_BADGE[inv.status] ?? "neutral"}>{inv.status}</Badge>
           <span className="font-medium text-fg">{inv.invoiceNumber ?? `${inv.kind} (draft)`}</span>
           <span className="text-fg-4">{formatCurrency(inv.total)}</span>
-          {inv.status !== "DRAFT" && amountPaid > 0 && (
-            <>
-              <Badge status={PAYMENT_STATUS_BADGE[inv.paymentStatus ?? ""] ?? "warn"}>
-                {PAYMENT_STATUS_LABEL[inv.paymentStatus ?? ""] ?? "Partially paid"}
-              </Badge>
-              <span className="text-fg-4">Balance {formatCurrency(balanceRemaining)}</span>
-            </>
+          {inv.status !== "DRAFT" && (
+            <InvoicePaymentSummary paymentStatus={inv.paymentStatus} amountPaid={amountPaid} balanceRemaining={balanceRemaining} />
           )}
-          {inv.xeroSyncStatus === "SYNCED" && <Badge status="ok">Synced to Xero</Badge>}
-          {inv.xeroSyncStatus === "ERROR" && (
-            <span className="flex items-center gap-1 text-destructive" title={inv.lastSyncError}>
-              <AlertCircle className="h-3.5 w-3.5" /> Xero push failed
-            </span>
-          )}
+          <InvoiceXeroSyncBadge status={inv.xeroSyncStatus} error={inv.lastSyncError} />
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <InvoiceDocumentAction invoice={inv} projectId={projectId} />
-          {inv.status === "DRAFT" && (
-            <CanDo resource="invoice" action="issue">
-              <Button type="button" variant="line" size="sm" onClick={onIssue}>
-                <Send className="h-3.5 w-3.5" /> Issue
-              </Button>
-            </CanDo>
-          )}
-          {inv.status === "ISSUED" && (
-            <CanDo resource="invoice" action="record_payment">
-              <Button type="button" variant="line" size="sm" onClick={() => onRecordPaymentRequest(balanceRemaining)}>
-                <Wallet className="h-3.5 w-3.5" /> Record payment
-              </Button>
-            </CanDo>
-          )}
-          {xeroLinked && inv.status === "ISSUED" && (
-            <CanDo resource="invoice" action="xero_push">
-              <PushToXeroButton invoiceId={inv.id} alreadySynced={inv.xeroSyncStatus === "SYNCED"} />
-            </CanDo>
-          )}
+          <InvoiceRowPrimaryActions
+            status={inv.status}
+            invoiceId={inv.id}
+            xeroLinked={xeroLinked}
+            xeroSyncStatus={inv.xeroSyncStatus}
+            onIssue={onIssue}
+            onRecordPaymentRequest={() => onRecordPaymentRequest(balanceRemaining)}
+          />
           <RowActionsMenu actions={menuActions} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
         </div>
       </div>
 
-      {livePayments.length > 0 && (
-        <ul className="mt-1.5 space-y-1 border-t border-line pt-1.5">
-          {livePayments.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-2 text-caption text-fg-4">
-              <span>
-                {formatCurrency(p.amount)} · {PAYMENT_METHOD_LABELS[p.method] ?? p.method} · {formatDate(new Date(p.paidAt))}
-                {p.reference ? ` · ${p.reference}` : ""}
-              </span>
-              {canVoidPayment && (
-                <button
-                  type="button"
-                  onClick={() => onVoidPaymentRequest(p.id, p.amount)}
-                  className="shrink-0 underline underline-offset-2 hover:text-fg"
-                >
-                  Void
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <InvoicePaymentsList payments={livePayments} canVoidPayment={canVoidPayment} onVoidPaymentRequest={onVoidPaymentRequest} />
     </li>
+  );
+}
+
+/** The Xero sync status badge on an invoice row — split out of `InvoiceRow`
+ *  to keep its own complexity low (R-3.6). */
+function InvoiceXeroSyncBadge({ status, error }: { status?: string; error?: string }) {
+  if (status === "SYNCED") return <Badge status="ok">Synced to Xero</Badge>;
+  if (status === "ERROR") {
+    return (
+      <span className="flex items-center gap-1 text-destructive" title={error}>
+        <AlertCircle className="h-3.5 w-3.5" /> Xero push failed
+      </span>
+    );
+  }
+  return null;
+}
+
+/** The at-most-one-visible "primary" action on an invoice row (Issue on a
+ *  draft, Record payment on an issued invoice, Push to Xero on an unsynced
+ *  issued invoice) — split out of `InvoiceRow` to keep its own complexity low
+ *  (R-3.6). Everything else collapses into the overflow menu (#1038). */
+function InvoiceRowPrimaryActions({
+  status,
+  invoiceId,
+  xeroLinked,
+  xeroSyncStatus,
+  onIssue,
+  onRecordPaymentRequest,
+}: {
+  status: string;
+  invoiceId: string;
+  xeroLinked: boolean;
+  xeroSyncStatus?: string;
+  onIssue: () => void;
+  onRecordPaymentRequest: () => void;
+}) {
+  if (status === "DRAFT") {
+    return (
+      <CanDo resource="invoice" action="issue">
+        <Button type="button" variant="line" size="sm" onClick={onIssue}>
+          <Send className="h-3.5 w-3.5" /> Issue
+        </Button>
+      </CanDo>
+    );
+  }
+  if (status !== "ISSUED") return null;
+  return (
+    <>
+      <CanDo resource="invoice" action="record_payment">
+        <Button type="button" variant="line" size="sm" onClick={onRecordPaymentRequest}>
+          <Wallet className="h-3.5 w-3.5" /> Record payment
+        </Button>
+      </CanDo>
+      {xeroLinked && (
+        <CanDo resource="invoice" action="xero_push">
+          <PushToXeroButton invoiceId={invoiceId} alreadySynced={xeroSyncStatus === "SYNCED"} />
+        </CanDo>
+      )}
+    </>
+  );
+}
+
+/** The payment-status badge + balance-remaining readout on an invoice row —
+ *  split out of `InvoiceRow` to keep its own complexity low (R-3.6). Renders
+ *  nothing while nothing has been paid yet (a fresh ISSUED invoice with no
+ *  payments looks the same as before this feature). */
+function InvoicePaymentSummary({
+  paymentStatus,
+  amountPaid,
+  balanceRemaining,
+}: {
+  paymentStatus?: string;
+  amountPaid: number;
+  balanceRemaining: number;
+}) {
+  if (amountPaid <= 0) return null;
+  return (
+    <>
+      <Badge status={PAYMENT_STATUS_BADGE[paymentStatus ?? ""] ?? "warn"}>
+        {PAYMENT_STATUS_LABEL[paymentStatus ?? ""] ?? "Partially paid"}
+      </Badge>
+      <span className="text-fg-4">Balance {formatCurrency(balanceRemaining)}</span>
+    </>
+  );
+}
+
+/** The always-visible payments list under an invoice row — split out of
+ *  `InvoiceRow` to keep its own complexity low (R-3.6). */
+function InvoicePaymentsList({
+  payments,
+  canVoidPayment,
+  onVoidPaymentRequest,
+}: {
+  payments: PaymentRowDoc[];
+  canVoidPayment: boolean;
+  onVoidPaymentRequest: (paymentId: string, amount: number) => void;
+}) {
+  if (payments.length === 0) return null;
+  return (
+    <ul className="mt-1.5 space-y-1 border-t border-line pt-1.5">
+      {payments.map((p) => (
+        <li key={p.id} className="flex items-center justify-between gap-2 text-caption text-fg-4">
+          <span>
+            {formatCurrency(p.amount)} · {PAYMENT_METHOD_LABELS[p.method] ?? p.method} · {formatDate(new Date(p.paidAt))}
+            {p.reference ? ` · ${p.reference}` : ""}
+          </span>
+          {canVoidPayment && (
+            <button
+              type="button"
+              onClick={() => onVoidPaymentRequest(p.id, p.amount)}
+              className="shrink-0 underline underline-offset-2 hover:text-fg"
+            >
+              Void
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

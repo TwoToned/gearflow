@@ -192,6 +192,8 @@ import type * as orgSettings from "../orgSettings.js";
 import type * as overbooking from "../overbooking.js";
 import type * as overbookingBoard from "../overbookingBoard.js";
 import type * as parity from "../parity.js";
+import type * as payments from "../payments.js";
+import type * as paymentsWrites from "../paymentsWrites.js";
 import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
 import type * as projectCategories from "../projectCategories.js";
 import type * as projectCategoriesWrites from "../projectCategoriesWrites.js";
@@ -462,6 +464,8 @@ declare const fullApi: ApiFromModules<{
   overbooking: typeof overbooking;
   overbookingBoard: typeof overbookingBoard;
   parity: typeof parity;
+  payments: typeof payments;
+  paymentsWrites: typeof paymentsWrites;
   pendingSSOApprovals: typeof pendingSSOApprovals;
   projectCategories: typeof projectCategories;
   projectCategoriesWrites: typeof projectCategoriesWrites;

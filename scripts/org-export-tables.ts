@@ -73,6 +73,7 @@ export const DIRECT_TABLES = [
   "notificationDismissals",
   "notificationEmailLogs",
   "orgSettings",
+  "payments",
   "pendingSSOApprovals",
   "projectCategories",
   "projectGroups",
@@ -217,7 +218,8 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1003: +2 — oauthClients (EXCLUDED/platform, global DCR registry), oauthAuthorizationCodes
 // (EXCLUDED/ephemeral, the one-shot authorization_code hop).
 // #1004: +1 — miraKeys (EXCLUDED/ephemeral, Mira's own encrypted-at-rest apiKeys binding).
-export const EXPECTED_TABLE_COUNT = 112;
+// #1055: +1 — payments (DIRECT, org-scoped bookkeeping rows against an invoice).
+export const EXPECTED_TABLE_COUNT = 113;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

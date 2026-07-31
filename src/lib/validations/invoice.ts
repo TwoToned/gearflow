@@ -13,10 +13,16 @@ export const invoiceSchema = z.object({
   kind: z.enum(["FULL", "DEPOSIT", "BALANCE", "CREDIT"]),
   notes: z.string().max(2000).optional(),
   dueDate: z.union([z.literal(""), z.coerce.date()]).optional().transform((v) => (v === "" ? undefined : v)),
-  /** Only meaningful for kind: "DEPOSIT" — the % of the tax-inclusive total to
-   *  invoice. Defaults to the client's `profileDepositPercent` (or 25) when
+  /** Only meaningful for kind: "DEPOSIT" — which of depositPercent/depositAmount
+   *  createNative should read. Defaults server-side to "%" when omitted. */
+  depositMode: z.enum(["%", "$"]).optional(),
+  /** % of the tax-inclusive total to invoice, used when depositMode is "%" (or
+   *  omitted). Defaults to the client's `profileDepositPercent` (or 25) when
    *  omitted — see use-invoice-writes.ts. */
   depositPercent: z.coerce.number().min(0).max(100).optional(),
+  /** Fixed-$ alternative, used when depositMode is "$". Must not exceed the
+   *  project's current total — re-validated server-side (R-9.3). */
+  depositAmount: z.coerce.number().positive().optional(),
 });
 
 export type InvoiceFormValues = z.input<typeof invoiceSchema>;

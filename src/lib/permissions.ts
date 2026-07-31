@@ -215,6 +215,8 @@ export const PERMISSION_REGISTRY: Record<
       { key: "void", label: "Void Invoice" },
       { key: "xero_push", label: "Push to Xero" },
       { key: "xero_manage", label: "Manage Xero Connection" },
+      { key: "record_payment", label: "Record Payment" },
+      { key: "void_payment", label: "Void Payment" },
     ],
   },
 };

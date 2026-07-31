@@ -638,6 +638,12 @@ export function SubHireGroupRow({
   const supplierName = group.subHire.supplier?.name ?? "Supplier";
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove }, "equipment");
   const isMobile = useIsMobile();
+  // "Show as sub-hired" (showOnDocs) only governs client-document visibility —
+  // staff always see the Subhire badge/icon here — but the "via {supplier}"
+  // text names the actual supplier, so it's suppressed with the same toggle
+  // the client-facing docs use, even in this internal-only project view.
+  const marginLabel = margin != null ? `${formatCurrency(margin * group.quantity)} margin` : null;
+  const subhireLine = [group.showOnDocs ? `via ${supplierName}` : null, marginLabel].filter(Boolean).join(" · ") || null;
 
   // ── Mobile: sub-hire group header card (children render as sibling cards). ──
   if (isMobile) {
@@ -645,12 +651,7 @@ export function SubHireGroupRow({
       <GroupCard
         title={group.title}
         isSubHire
-        subtext={
-          <>
-            via {supplierName}
-            {margin != null && <> · {formatCurrency(margin * group.quantity)} margin</>}
-          </>
-        }
+        subtext={subhireLine}
         qty={group.quantity}
         total={charge != null ? charge * group.quantity : null}
         isExpanded={isExpanded}
@@ -720,15 +721,7 @@ export function SubHireGroupRow({
                 <Handshake className="h-3.5 w-3.5 text-muted" />
                 {group.title}
               </span>
-              <span className="text-caption text-muted">
-                via {supplierName}
-                {margin != null && (
-                  <>
-                    {" · "}
-                    {formatCurrency(margin * group.quantity)} margin
-                  </>
-                )}
-              </span>
+              {subhireLine && <span className="text-caption text-muted">{subhireLine}</span>}
             </div>
           </button>
         </div>
@@ -1246,7 +1239,7 @@ export function LineItemRow({
           />
           {badges}
         </div>
-        {desc.isSubhire && item.supplier && (
+        {desc.isSubhire && item.supplier && item.showSubhireOnDocs && (
           <p className="text-caption text-muted">via {item.supplier.name}</p>
         )}
         {item.notes && (
@@ -1526,7 +1519,7 @@ export function LineItemRow({
             />
           )}
         </div>
-        {desc.isSubhire && item.supplier && (
+        {desc.isSubhire && item.supplier && item.showSubhireOnDocs && (
           <p className={`text-caption text-muted mt-0.5 ${indent}`}>via {item.supplier.name}</p>
         )}
         {onInlineUpdate ? (

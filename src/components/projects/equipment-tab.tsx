@@ -1180,13 +1180,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const draggedLineItem = (() => {
     const bareId = dnd.activeDragId?.startsWith("li-") ? dnd.activeDragId.slice(3) : null;
     if (!bareId) return null;
-    for (const cat of typedCategories) {
-      for (const li of cat.lineItems ?? []) if (li.id === bareId) return li;
-      for (const g of cat.groups ?? []) for (const li of g.lineItems ?? []) if (li.id === bareId) return li;
-    }
-    for (const li of uncategorizedItems as LineItemData[]) if (li.id === bareId) return li;
-    for (const g of orphanProjectGroups) for (const li of g.lineItems ?? []) if (li.id === bareId) return li;
-    return null;
+    const allLineItems: LineItemData[] = [
+      ...typedCategories.flatMap((cat) => cat.lineItems ?? []),
+      ...typedCategories.flatMap((cat) => cat.groups.flatMap((g) => g.lineItems ?? [])),
+      ...(uncategorizedItems as LineItemData[]),
+      ...orphanProjectGroups.flatMap((g) => g.lineItems ?? []),
+    ];
+    return allLineItems.find((li) => li.id === bareId) ?? null;
   })();
 
   // DragOverlay content for a dragged GROUP (project group or sub-hire
@@ -1198,21 +1198,16 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     if (!id) return null;
     if (id.startsWith("grp-")) {
       const bareId = id.slice(4);
-      for (const cat of typedCategories) {
-        const g = cat.groups.find((g) => g.id === bareId);
-        if (g) return g.title;
-      }
-      const og = orphanProjectGroups.find((g) => g.id === bareId);
-      return og?.title ?? null;
+      const allProjectGroups = [...typedCategories.flatMap((cat) => cat.groups), ...orphanProjectGroups];
+      return allProjectGroups.find((g) => g.id === bareId)?.title ?? null;
     }
     if (id.startsWith("shg-")) {
       const bareId = id.slice(4);
-      for (const cat of typedCategories) {
-        const g = (cat.subHireGroupTargets ?? []).find((g: SubHireGroupData) => g.id === bareId);
-        if (g) return g.title;
-      }
-      const og = orphanSubHireGroups.find((g) => g.id === bareId);
-      return og?.title ?? null;
+      const allSubHireGroups: SubHireGroupData[] = [
+        ...typedCategories.flatMap((cat) => cat.subHireGroupTargets ?? []),
+        ...orphanSubHireGroups,
+      ];
+      return allSubHireGroups.find((g) => g.id === bareId)?.title ?? null;
     }
     return null;
   })();

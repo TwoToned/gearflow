@@ -161,11 +161,73 @@ export type LineItemDragAction =
     };
 
 /**
+ * Splice `activeId` into `orderedIds` immediately before `overId` (or at the
+ * end when `overId` is undefined — an append-only drop), first removing any
+ * existing occurrence of `activeId` so a same-list move doesn't duplicate it.
+ * Pure, shared by both the line-item and group move resolvers below — same
+ * "insert relative to a sibling" shape either way, just typed as plain
+ * strings so there's nothing row-kind-specific to it.
+ */
+function insertBeforeSibling(orderedIds: readonly string[], activeId: string, overId: string | undefined): string[] {
+  const withoutActive = orderedIds.filter((id) => id !== activeId);
+  if (!overId) return [...withoutActive, activeId];
+  const insertAt = withoutActive.indexOf(overId);
+  const idx = insertAt === -1 ? withoutActive.length : insertAt;
+  return [...withoutActive.slice(0, idx), activeId, ...withoutActive.slice(idx)];
+}
+
+/**
+ * Resolve which container a line-item drop is targeting, and (when it landed
+ * on a specific sibling rather than an empty container's landing zone) that
+ * sibling's bare id. Extracted from `resolveLineItemDragAction` to keep that
+ * function's own branching under the complexity ratchet (POLICY.md R-3.6) —
+ * a pure, separately-testable-in-principle piece of "where did this land",
+ * distinct from "what should happen there".
+ */
+function resolveLineItemDropTarget(
+  overSortableId: string,
+  ctx: ContainerContext,
+): { toContainerId: ContainerId; overBareId?: string } | null {
+  if (overSortableId.startsWith("li-")) {
+    const overBareId = overSortableId.slice(3);
+    const toContainerId = ctx.containerOf.get(overBareId);
+    return toContainerId ? { toContainerId, overBareId } : null;
+  }
+  // Hovering an (empty) container's own landing zone directly.
+  if (ctx.itemsByContainer.has(overSortableId as ContainerId)) {
+    return { toContainerId: overSortableId as ContainerId };
+  }
+  return null;
+}
+
+/**
  * Decide what a line-item drag-end should do. Framework-free (plain strings +
  * the `ContainerContext` produced by `buildContainerMap`) so it's unit
  * testable without mounting dnd-kit or React. `handleDragEnd` below is a thin
  * wrapper that calls this then dispatches to the right mutation(s).
  */
+/**
+ * The same-container branch of `resolveLineItemDragAction` — reorder the
+ * mover within its current container, or `null` when the drop didn't
+ * actually change position. Extracted for the same complexity-ratchet
+ * reason `planGroupSameContainerReorder` was.
+ */
+function planLineItemSameContainerReorder(
+  containerId: ContainerId,
+  activeId: string,
+  overBareId: string | undefined,
+  destItems: readonly string[],
+): LineItemDragAction | null {
+  const fromIndex = destItems.indexOf(activeId);
+  const toIndex = overBareId ? destItems.indexOf(overBareId) : destItems.length - 1;
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return null;
+  return {
+    kind: "reorder",
+    containerId,
+    orderedIds: arrayMove([...destItems], fromIndex, toIndex),
+  };
+}
+
 export function resolveLineItemDragAction(input: {
   activeSortableId: string;
   overSortableId: string | null;
@@ -183,39 +245,34 @@ export function resolveLineItemDragAction(input: {
   const fromContainerId = ctx.containerOf.get(activeId);
   if (!fromContainerId) return { kind: "noop" };
 
-  let toContainerId: ContainerId | undefined;
-  let overBareId: string | undefined;
-  if (overSortableId.startsWith("li-")) {
-    overBareId = overSortableId.slice(3);
-    toContainerId = ctx.containerOf.get(overBareId);
-  } else if (ctx.itemsByContainer.has(overSortableId as ContainerId)) {
-    // Hovering an (empty) container's own landing zone directly.
-    toContainerId = overSortableId as ContainerId;
-  }
-  if (!toContainerId) return { kind: "noop" };
+  const target = resolveLineItemDropTarget(overSortableId, ctx);
+  if (!target) return { kind: "noop" };
+  const { toContainerId, overBareId } = target;
 
   const destItems = ctx.itemsByContainer.get(toContainerId) ?? [];
 
   if (fromContainerId === toContainerId) {
-    const fromIndex = destItems.indexOf(activeId);
-    const toIndex = overBareId ? destItems.indexOf(overBareId) : destItems.length - 1;
-    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return { kind: "noop" };
-    return {
-      kind: "reorder",
-      containerId: fromContainerId,
-      orderedIds: arrayMove([...destItems], fromIndex, toIndex),
-    };
+    const action = planLineItemSameContainerReorder(fromContainerId, activeId, overBareId, destItems);
+    return action ?? { kind: "noop" };
   }
 
+  return planLineItemMove(activeId, fromContainerId, toContainerId, overBareId, destItems, ctx);
+}
+
+/**
+ * The cross-container branch of `resolveLineItemDragAction` — build the
+ * `move` action for a line item leaving its container. Extracted for the
+ * same complexity-ratchet reason `planLineItemSameContainerReorder` was.
+ */
+function planLineItemMove(
+  activeId: string,
+  fromContainerId: ContainerId,
+  toContainerId: ContainerId,
+  overBareId: string | undefined,
+  destItems: readonly string[],
+  ctx: ContainerContext,
+): LineItemDragAction {
   const meta = ctx.containerMeta.get(toContainerId)!;
-  let resultingOrder: string[] | undefined;
-  if (overBareId) {
-    const withoutActive = destItems.filter((id) => id !== activeId);
-    const insertAt = withoutActive.indexOf(overBareId);
-    const idx = insertAt === -1 ? withoutActive.length : insertAt;
-    resultingOrder = [...withoutActive.slice(0, idx), activeId, ...withoutActive.slice(idx)];
-  }
-
   return {
     kind: "move",
     lineItemId: activeId,
@@ -223,7 +280,7 @@ export function resolveLineItemDragAction(input: {
     toContainerId,
     targetCategoryId: meta.categoryId,
     targetGroupId: meta.groupId,
-    resultingOrder,
+    resultingOrder: overBareId ? insertBeforeSibling(destItems, activeId, overBareId) : undefined,
   };
 }
 
@@ -354,6 +411,95 @@ export type GroupDragAction =
     };
 
 /**
+ * Resolve which container a GROUP drop is targeting, and (when it landed on
+ * a specific sibling group rather than a container's own landing zone) that
+ * sibling's sortable id. Extracted from `resolveGroupDragAction` for the same
+ * complexity-ratchet reason `resolveLineItemDropTarget` was — three distinct
+ * ways a drop can resolve a target here (onto another group, onto a category
+ * row, onto an empty container) vs. line items' two.
+ */
+function resolveGroupDropTarget(
+  overSortableId: string,
+  ctx: GroupContainerContext,
+): { toContainerId: GroupContainerId; overSlotId?: string } | null {
+  if (overSortableId.startsWith("grp-") || overSortableId.startsWith("shg-")) {
+    const toContainerId = ctx.containerOf.get(overSortableId);
+    return toContainerId ? { toContainerId, overSlotId: overSortableId } : null;
+  }
+  if (overSortableId.startsWith("cat-")) {
+    // Dropping directly on a category row targets that category's mixed
+    // container. Categories themselves still use ▲/▼ (not drag) — see this
+    // file's header — so `cat-*` isn't wired as a real sortable id YET, but
+    // the Drop Matrix explicitly allows this target, and resolving it here
+    // keeps this function correct (and testable) ahead of that later commit.
+    const candidate: GroupContainerId = `mixed:${overSortableId.slice(4)}`;
+    return ctx.itemsByContainer.has(candidate) ? { toContainerId: candidate } : null;
+  }
+  // Hovering a container's own landing zone directly (e.g. an empty
+  // Uncategorized zone) — same defensive branch `resolveLineItemDropTarget` has.
+  if (ctx.itemsByContainer.has(overSortableId as GroupContainerId)) {
+    return { toContainerId: overSortableId as GroupContainerId };
+  }
+  return null;
+}
+
+/**
+ * The same-container branch of `resolveGroupDragAction` — reorder the mover
+ * within its current mixed list, or `null` when there's nothing to do
+ * (Uncategorized never reorders internally; see `buildGroupContainerMap`'s
+ * doc comment) or the drop didn't actually change position.
+ */
+function planGroupSameContainerReorder(
+  toContainerId: GroupContainerId,
+  activeSortableId: string,
+  overSlotId: string | undefined,
+  destItems: readonly string[],
+  ctx: GroupContainerContext,
+): GroupDragAction | null {
+  if (toContainerId === "uncategorized-groups") return null;
+  const fromIndex = destItems.indexOf(activeSortableId);
+  const toIndex = overSlotId ? destItems.indexOf(overSlotId) : destItems.length - 1;
+  if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return null;
+  return {
+    kind: "reorder",
+    categoryId: ctx.containerMeta.get(toContainerId)!.categoryId!,
+    orderedSortableIds: arrayMove([...destItems], fromIndex, toIndex),
+  };
+}
+
+function isGroupSortableId(id: string): boolean {
+  return id.startsWith("grp-") || id.startsWith("shg-");
+}
+
+/**
+ * The cross-container branch of `resolveGroupDragAction` — build the `move`
+ * action for a group leaving its container. Extracted for the same
+ * complexity-ratchet reason `planGroupSameContainerReorder` was.
+ */
+function planGroupMove(
+  activeSortableId: string,
+  fromContainerId: GroupContainerId,
+  toContainerId: GroupContainerId,
+  overSlotId: string | undefined,
+  destItems: readonly string[],
+  ctx: GroupContainerContext,
+): GroupDragAction {
+  const meta = ctx.containerMeta.get(toContainerId)!;
+  return {
+    kind: "move",
+    groupKind: activeSortableId.startsWith("grp-") ? "project" : "subHire",
+    groupId: bareGroupId(activeSortableId),
+    fromContainerId,
+    toContainerId,
+    targetCategoryId: meta.categoryId,
+    resultingOrder:
+      overSlotId && toContainerId !== "uncategorized-groups"
+        ? insertBeforeSibling(destItems, activeSortableId, overSlotId)
+        : undefined,
+  };
+}
+
+/**
  * Decide what a GROUP (project group or sub-hire group) drag-end should do —
  * the sibling of `resolveLineItemDragAction`. Framework-free, unit testable
  * without mounting dnd-kit or React.
@@ -365,8 +511,7 @@ export function resolveGroupDragAction(input: {
 }): GroupDragAction {
   const { activeSortableId, overSortableId, ctx } = input;
 
-  const isGroup = activeSortableId.startsWith("grp-") || activeSortableId.startsWith("shg-");
-  if (!isGroup) return { kind: "noop" };
+  if (!isGroupSortableId(activeSortableId)) return { kind: "noop" };
   if (!overSortableId || activeSortableId === overSortableId) return { kind: "noop" };
 
   const disallowed = getDisallowedDropReason(activeSortableId, overSortableId);
@@ -375,67 +520,18 @@ export function resolveGroupDragAction(input: {
   const fromContainerId = ctx.containerOf.get(activeSortableId);
   if (!fromContainerId) return { kind: "noop" };
 
-  let toContainerId: GroupContainerId | undefined;
-  let overSlotId: string | undefined;
-  if (overSortableId.startsWith("grp-") || overSortableId.startsWith("shg-")) {
-    const c = ctx.containerOf.get(overSortableId);
-    if (c) {
-      toContainerId = c;
-      overSlotId = overSortableId;
-    }
-  } else if (overSortableId.startsWith("cat-")) {
-    // Dropping directly on a category row targets that category's mixed
-    // container. Categories themselves still use ▲/▼ (not drag) — see this
-    // file's header — so `cat-*` isn't wired as a real sortable id YET, but
-    // the Drop Matrix explicitly allows this target, and resolving it here
-    // keeps this function correct (and testable) ahead of that later commit.
-    const candidate: GroupContainerId = `mixed:${overSortableId.slice(4)}`;
-    if (ctx.itemsByContainer.has(candidate)) toContainerId = candidate;
-  } else if (ctx.itemsByContainer.has(overSortableId as GroupContainerId)) {
-    // Hovering a container's own landing zone directly (e.g. an empty
-    // Uncategorized zone) — same defensive branch `resolveLineItemDragAction`
-    // has for its containers.
-    toContainerId = overSortableId as GroupContainerId;
-  }
-  if (!toContainerId) return { kind: "noop" };
+  const target = resolveGroupDropTarget(overSortableId, ctx);
+  if (!target) return { kind: "noop" };
+  const { toContainerId, overSlotId } = target;
 
   const destItems = ctx.itemsByContainer.get(toContainerId) ?? [];
-  const groupKind: "project" | "subHire" = activeSortableId.startsWith("grp-") ? "project" : "subHire";
-  const groupId = bareGroupId(activeSortableId);
 
   if (fromContainerId === toContainerId) {
-    // No internal reorder in the Uncategorized zone — see this function's
-    // and `buildGroupContainerMap`'s doc comments.
-    if (toContainerId === "uncategorized-groups") return { kind: "noop" };
-    const fromIndex = destItems.indexOf(activeSortableId);
-    const toIndex = overSlotId ? destItems.indexOf(overSlotId) : destItems.length - 1;
-    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return { kind: "noop" };
-    const categoryId = ctx.containerMeta.get(toContainerId)!.categoryId!;
-    return {
-      kind: "reorder",
-      categoryId,
-      orderedSortableIds: arrayMove([...destItems], fromIndex, toIndex),
-    };
+    const action = planGroupSameContainerReorder(toContainerId, activeSortableId, overSlotId, destItems, ctx);
+    return action ?? { kind: "noop" };
   }
 
-  const meta = ctx.containerMeta.get(toContainerId)!;
-  let resultingOrder: string[] | undefined;
-  if (overSlotId && toContainerId !== "uncategorized-groups") {
-    const withoutActive = destItems.filter((id) => id !== activeSortableId);
-    const insertAt = withoutActive.indexOf(overSlotId);
-    const idx = insertAt === -1 ? withoutActive.length : insertAt;
-    resultingOrder = [...withoutActive.slice(0, idx), activeSortableId, ...withoutActive.slice(idx)];
-  }
-
-  return {
-    kind: "move",
-    groupKind,
-    groupId,
-    fromContainerId,
-    toContainerId,
-    targetCategoryId: meta.categoryId,
-    resultingOrder,
-  };
+  return planGroupMove(activeSortableId, fromContainerId, toContainerId, overSlotId, destItems, ctx);
 }
 
 // ─── Container id scheme (categories) ───────────────────────────────────────
@@ -701,72 +797,34 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     setInvalidOverId(reason ? overId : null);
   }, []);
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      setActiveDragId(null);
-      setInvalidOverId(null);
+  // Each of the three `handleDragEnd` branches below (group / category / line
+  // item) is its own `useCallback`, not inlined, so its internal noop/
+  // blocked/reorder/move branching counts toward ITS OWN complexity score
+  // instead of piling onto one giant dispatcher — the complexity ratchet
+  // (POLICY.md R-3.6) measures per-function, so this split is what keeps
+  // `handleDragEnd` itself a thin 3-way dispatch.
+  const handleGroupDrop = useCallback(
+    (activeSortableId: string, overSortableId: string | null) => {
+      const groupCtx = buildGroupContainerMap(
+        categoriesRef.current ?? [],
+        uncategorizedProjectGroupsRef.current ?? [],
+        uncategorizedSubHireGroupsRef.current ?? [],
+      );
+      const action = resolveGroupDragAction({ activeSortableId, overSortableId, ctx: groupCtx });
 
-      const activeSortableId = String(event.active.id);
-      const overSortableId = event.over ? String(event.over.id) : null;
+      if (action.kind === "noop") return;
+      if (action.kind === "blocked") {
+        toast.error(action.reason);
+        return;
+      }
 
-      if (activeSortableId.startsWith("grp-") || activeSortableId.startsWith("shg-")) {
-        const groupCtx = buildGroupContainerMap(
-          categoriesRef.current ?? [],
-          uncategorizedProjectGroupsRef.current ?? [],
-          uncategorizedSubHireGroupsRef.current ?? [],
-        );
-        const action = resolveGroupDragAction({ activeSortableId, overSortableId, ctx: groupCtx });
-
-        if (action.kind === "noop") return;
-        if (action.kind === "blocked") {
-          toast.error(action.reason);
-          return;
-        }
-
-        if (action.kind === "reorder") {
-          setGroupOrderOverlay((prev) => {
-            const next = new Map(prev);
-            action.orderedSortableIds.forEach((sid, idx) => next.set(bareGroupId(sid), { sortOrder: idx }));
-            return next;
-          });
-          runGroupReorder(action.categoryId, action.orderedSortableIds)
-            .catch(reportDragMutationError)
-            .finally(() => {
-              setGroupOrderOverlay(new Map());
-              onSettled?.();
-            });
-          return;
-        }
-
-        // Cross-category move — overlay the mover's new placement (+ every
-        // destination sibling's shifted position when a specific position was
-        // targeted) instantly, then fire the move (and a follow-up reorder for
-        // the exact position, if implied).
+      if (action.kind === "reorder") {
         setGroupOrderOverlay((prev) => {
           const next = new Map(prev);
-          if (action.resultingOrder) {
-            action.resultingOrder.forEach((sid, idx) => {
-              next.set(bareGroupId(sid), { sortOrder: idx, categoryId: action.targetCategoryId });
-            });
-          } else {
-            // Append-only move (typically into "uncategorized-groups", which
-            // has no defined order to insert into — see
-            // `buildGroupContainerMap`) — only the mover's own placement
-            // needs to change; siblings' positions are left alone, matching
-            // what the move mutation itself actually does server-side.
-            const destLen = (groupCtx.itemsByContainer.get(action.toContainerId) ?? []).length;
-            next.set(action.groupId, { sortOrder: destLen, categoryId: action.targetCategoryId });
-          }
+          action.orderedSortableIds.forEach((sid, idx) => next.set(bareGroupId(sid), { sortOrder: idx }));
           return next;
         });
-
-        justifiedGroupMove
-          .run({ groupKind: action.groupKind, groupId: action.groupId, categoryId: action.targetCategoryId })
-          .then(() => {
-            if (action.resultingOrder && action.targetCategoryId) {
-              return runGroupReorder(action.targetCategoryId, action.resultingOrder);
-            }
-          })
+        runGroupReorder(action.categoryId, action.orderedSortableIds)
           .catch(reportDragMutationError)
           .finally(() => {
             setGroupOrderOverlay(new Map());
@@ -775,27 +833,69 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
         return;
       }
 
-      if (activeSortableId.startsWith("cat-")) {
-        const allCategorySortableIds = (categoriesRef.current ?? []).map((cat) => `cat-${cat.id}`);
-        const action = resolveCategoryDragAction({ activeSortableId, overSortableId, allCategorySortableIds });
-
-        if (action.kind === "noop") return;
-
-        setCategoryOrderOverlay((prev) => {
-          const next = new Map(prev);
-          action.orderedIds.forEach((id, idx) => next.set(id, { sortOrder: idx }));
-          return next;
-        });
-        justifiedCategoryReorder
-          .run({ orderedIds: action.orderedIds })
-          .catch(reportDragMutationError)
-          .finally(() => {
-            setCategoryOrderOverlay(new Map());
-            onSettled?.();
+      // Cross-category move — overlay the mover's new placement (+ every
+      // destination sibling's shifted position when a specific position was
+      // targeted) instantly, then fire the move (and a follow-up reorder for
+      // the exact position, if implied).
+      setGroupOrderOverlay((prev) => {
+        const next = new Map(prev);
+        if (action.resultingOrder) {
+          action.resultingOrder.forEach((sid, idx) => {
+            next.set(bareGroupId(sid), { sortOrder: idx, categoryId: action.targetCategoryId });
           });
-        return;
-      }
+        } else {
+          // Append-only move (typically into "uncategorized-groups", which
+          // has no defined order to insert into — see
+          // `buildGroupContainerMap`) — only the mover's own placement
+          // needs to change; siblings' positions are left alone, matching
+          // what the move mutation itself actually does server-side.
+          const destLen = (groupCtx.itemsByContainer.get(action.toContainerId) ?? []).length;
+          next.set(action.groupId, { sortOrder: destLen, categoryId: action.targetCategoryId });
+        }
+        return next;
+      });
 
+      justifiedGroupMove
+        .run({ groupKind: action.groupKind, groupId: action.groupId, categoryId: action.targetCategoryId })
+        .then(() => {
+          if (action.resultingOrder && action.targetCategoryId) {
+            return runGroupReorder(action.targetCategoryId, action.resultingOrder);
+          }
+        })
+        .catch(reportDragMutationError)
+        .finally(() => {
+          setGroupOrderOverlay(new Map());
+          onSettled?.();
+        });
+    },
+    [categoriesRef, uncategorizedProjectGroupsRef, uncategorizedSubHireGroupsRef, justifiedGroupMove, runGroupReorder, onSettled],
+  );
+
+  const handleCategoryDrop = useCallback(
+    (activeSortableId: string, overSortableId: string | null) => {
+      const allCategorySortableIds = (categoriesRef.current ?? []).map((cat) => `cat-${cat.id}`);
+      const action = resolveCategoryDragAction({ activeSortableId, overSortableId, allCategorySortableIds });
+
+      if (action.kind === "noop") return;
+
+      setCategoryOrderOverlay((prev) => {
+        const next = new Map(prev);
+        action.orderedIds.forEach((id, idx) => next.set(id, { sortOrder: idx }));
+        return next;
+      });
+      justifiedCategoryReorder
+        .run({ orderedIds: action.orderedIds })
+        .catch(reportDragMutationError)
+        .finally(() => {
+          setCategoryOrderOverlay(new Map());
+          onSettled?.();
+        });
+    },
+    [categoriesRef, justifiedCategoryReorder, onSettled],
+  );
+
+  const handleLineItemDrop = useCallback(
+    (activeSortableId: string, overSortableId: string | null) => {
       const ctx = buildContainerMap(
         categoriesRef.current ?? [],
         uncategorizedItemsRef.current ?? [],
@@ -860,18 +960,26 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
           onSettled?.();
         });
     },
-    [
-      categoriesRef,
-      uncategorizedItemsRef,
-      uncategorizedProjectGroupsRef,
-      uncategorizedSubHireGroupsRef,
-      justifiedReorder,
-      justifiedMove,
-      justifiedGroupMove,
-      justifiedCategoryReorder,
-      runGroupReorder,
-      onSettled,
-    ],
+    [categoriesRef, uncategorizedItemsRef, uncategorizedProjectGroupsRef, justifiedReorder, justifiedMove, onSettled],
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setActiveDragId(null);
+      setInvalidOverId(null);
+
+      const activeSortableId = String(event.active.id);
+      const overSortableId = event.over ? String(event.over.id) : null;
+
+      if (isGroupSortableId(activeSortableId)) {
+        return handleGroupDrop(activeSortableId, overSortableId);
+      }
+      if (activeSortableId.startsWith("cat-")) {
+        return handleCategoryDrop(activeSortableId, overSortableId);
+      }
+      return handleLineItemDrop(activeSortableId, overSortableId);
+    },
+    [handleGroupDrop, handleCategoryDrop, handleLineItemDrop],
   );
 
   const dialogs = React.createElement(

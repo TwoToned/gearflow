@@ -106,6 +106,12 @@ async function pdfRender(arg: PDFRenderProps<FinancialSummarySchema>) {
     drawRow("Deposit Paid", `-${formatCurrency(config.depositPaid)}`);
     drawRow("Balance Due", formatCurrency(config.balanceDue), { bold: true });
   }
+
+  // Due Date — bold, at the very bottom, so the amount owed and the date
+  // it's owed by are read together (invoice only, see FinancialSummaryConfig).
+  if (config.dueDate) {
+    drawRow("Due Date", config.dueDate, { bold: true });
+  }
 }
 
 const gearflowFinancialSummary: Plugin<FinancialSummarySchema> = {

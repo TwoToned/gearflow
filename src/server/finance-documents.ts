@@ -133,7 +133,10 @@ export async function generateInvoiceArtifact(invoiceId: string): Promise<Artifa
   const pdf = await generatePdf(invoice.projectId, organizationId, "invoice", {
     // `invoiceDate` (#989) is the user-chosen printed date; a pre-#989 issued
     // invoice has none, so fall back to the system `issuedAt` timestamp.
-    stampedDates: { documentDate: invoice.invoiceDate ?? invoice.issuedAt },
+    stampedDates: {
+      documentDate: invoice.invoiceDate ?? invoice.issuedAt,
+      invoiceDueDate: invoice.dueDate ?? undefined,
+    },
   });
 
   const fileName = invoiceArtifactFileName(invoice.projectNumber, invoice.invoiceNumber);

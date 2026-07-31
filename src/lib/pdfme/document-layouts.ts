@@ -53,6 +53,10 @@ export interface TotalsLayoutConfig {
   showTotal: boolean;
   showDeposit: boolean;
   showBalance: boolean;
+  /** Bold "Due Date" row at the bottom of the totals block. Invoice only —
+   *  makes the due date impossible to miss right where the client is
+   *  already looking for the amount owed. */
+  showDueDate: boolean;
 }
 
 export type LayoutBlock =
@@ -73,6 +77,14 @@ export type LayoutBlock =
    *  whatever room is left on the page above it — the legal boilerplate
    *  reads as its own section, not a tacked-on tail. */
   | { kind: "termsAndConditions"; forceNewPage?: boolean }
+  /**
+   * Bank/payment details block (invoice only) — org-authored plain text,
+   * same free-text/markdown-lite convention as `termsAndConditions`. Unlike
+   * T&Cs it never forces a new page: it's meant to land on the same page as
+   * the totals block it's placed directly after, not read as a separate
+   * legal section.
+   */
+  | { kind: "paymentDetails" }
   | { kind: "signature"; columns: number; labels: string[] };
 
 export interface DocumentLayout {
@@ -129,6 +141,7 @@ const defaultTotals: TotalsLayoutConfig = {
   showTotal: true,
   showDeposit: false,
   showBalance: false,
+  showDueDate: false,
 };
 
 /** The 5 project document types the composer pipeline renders. Call sheets
@@ -174,9 +187,11 @@ export const DOCUMENT_LAYOUTS: Record<ProjectDocumentType, DocumentLayout> = {
         client: { ...defaultClientDetails, showClientTaxId: true },
         project: { ...defaultProjectDetails, showPaymentTerms: true, showInvoiceNumber: true },
       },
-      { kind: "table", config: clientFacingTable },
-      { kind: "totals", config: { ...defaultTotals, showDeposit: true, showBalance: true } },
+      { kind: "table", config: { ...clientFacingTable, hidePricingPeriodSuffix: true } },
+      { kind: "totals", config: { ...defaultTotals, showDeposit: true, showBalance: true, showDueDate: true } },
+      { kind: "paymentDetails" },
       { kind: "clientNotes" },
+      { kind: "termsAndConditions", forceNewPage: true },
     ],
   },
 

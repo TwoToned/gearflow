@@ -185,7 +185,7 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 | Type | Blocks | `expandProjectGroups` | Status filter |
 |------|--------|------------------------|----------------|
 | `quote` | header (+ "Expiry: {date}" meta line, real computed date), client+project details, table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset) | false (collapse groups) | none |
-| `invoice` | header, client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no badges, no kit/accessory children), totals (+ deposit/balance), client notes | false | none |
+| `invoice` | header (+ ABN under address/email when set, + bold "Due: {date}" meta line), client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals (+ deposit/balance, + bold "Due Date" row), payment details (omitted if unset), client notes, T&Cs (omitted unless `showTermsAndConditionsOnInvoice` is on AND text is set) | false | none |
 | `packing-list` | header, client+project details, table (checkboxes, per-unit, asset tags, categories), total-items note | true (expand groups) | none |
 | `return-sheet` | header, client+project details, table (checkboxes, condition columns, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT`, `RETURNED` |
 | `delivery-docket` | header, client+project details (+ site contact), table (checkboxes, row numbers, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT` |
@@ -241,12 +241,24 @@ card at `/settings/branding` ("Branding & documents").
 | Setting | Effect |
 |---|---|
 | `footerText` / `footerSecondLine` | Rendered on every page of every doc type. Empty falls back to an auto-generated `{org name} \| {org email} \| {org phone}` line. |
-| `termsAndConditions` | Plain text (no token system) rendered as a block on the quote only. Omitted entirely (zero height, no schema) when unset — no empty box by default. |
+| `termsAndConditions` | Plain text (no token system) — always rendered as a block on the quote when set. Omitted entirely (zero height, no schema) when unset — no empty box by default. |
+| `showTermsAndConditionsOnInvoice` (default off) | Invoice-only opt-in: when on AND `termsAndConditions` is set, the SAME text also renders as a block on the invoice (its own forced page, same as the quote). An invoice already carries its own payment terms/due date, so T&Cs there is opt-in rather than always-on like the quote. No separate per-doc-type text — one org-authored block, two doc types. |
+| `paymentDetails` | Plain text (no token system) — bank name, BSB, account number, reference, etc. Invoice only, rendered directly after the totals block (same page whenever the two fit together — never forced to its own page, unlike T&Cs). Omitted entirely when unset. |
 | `quoteValidityDays` (default 30) | The org DEFAULT `sendNative` stamps `validUntil` from at send time (#986). A SENT revision's document renders that stamped date, not a fresh computation (#987); only the draft preview still derives it live. Feeds a **real computed date** — `document_date + quoteValidityDays` — into the quote header's "Expiry: {date}" meta line (2026-07-28 — previously its own "This quote is valid until {date}." sentence at the bottom of the document; moved into the header alongside the doc number/date so it's visible without scrolling to the end of a possibly multi-page quote — see below). Replaces the two hardcoded "valid for 30 days" static-text copies the deleted customization layer used to carry. |
+| `paymentTermsDays` (default 14) | Same "stamped row wins, live fallback for previews" shape as `quoteValidityDays` (see `invoice-terms.ts`), now ALSO feeds a real computed **invoice due date** into two places: a bold "Due: {date}" header meta line (next to the doc number, same treatment as the quote's Expiry line) and a bold "Due Date" row at the bottom of the totals block. An ISSUED invoice's own `dueDate` row wins over the live computation once one exists (`generateInvoiceArtifact`'s `stampedDates.invoiceDueDate`). |
 
-`build-document-data.ts` computes 4 `DocumentData` fields from these settings each
-time a document is built: `document_footer_text`, `document_footer_second_line`,
-`quote_terms_and_conditions`, `quote_valid_until`.
+Org-level ABN (Australian Business Number, or local equivalent) is a separate
+top-level `OrgSettings.abn` field (not under `documents` — it's business
+identity, edited on the General settings page next to address/email/phone).
+Rendered in the PDF header, under the org's address/phone/email lines,
+**invoice only** — real Tax Invoices need it; the other 4 doc types don't.
+Omitted when unset.
+
+`build-document-data.ts` computes these `DocumentData` fields from the settings
+above each time a document is built: `document_footer_text`,
+`document_footer_second_line`, `terms_and_conditions` (gated by the invoice
+toggle above when `docType === "invoice"`), `quote_valid_until`,
+`invoice_due_date`, `payment_details`, `org_abn`.
 
 ### Quote/invoice layout refinements (2026-07-27)
 
@@ -567,11 +579,12 @@ across every page via `runTablePlugin`).
 
 ### Quote-specific fixes (#790 Phase 4)
 
-- **No "/day" (or other period) price suffix on the quote.** `TablePluginConfig.hidePricingPeriodSuffix`
-  (only the quote's `document-layouts.ts` entry sets it `true`) suppresses the
-  `PRICING_LABELS` lookup in `gearflow-table.ts`'s top-level price cell. Other doc
-  types are unaffected (kit/group child rows never showed the suffix anyway — only
-  the top-level unitPrice cell did).
+- **No "/day" (or other period) price suffix on the quote or invoice.** `TablePluginConfig.hidePricingPeriodSuffix`
+  (the quote and invoice `document-layouts.ts` entries both set it `true`) suppresses the
+  `PRICING_LABELS` lookup in `gearflow-table.ts`'s top-level price cell — a client-facing
+  document shows a plain rate, not "$150.00/day". The 3 warehouse doc types are unaffected
+  (kit/group child rows never showed the suffix anyway — only the top-level unitPrice cell
+  did, and warehouse staff aren't reading a client rate off it).
 - **Discount, item notes, group notes**: audited end-to-end
   (`document-composer.test.ts`) and confirmed already flowing correctly through the
   new pipeline — `data.discount_amount`/`discount_percent` are unconditional from the
@@ -825,12 +838,17 @@ PDF footgun section for the pre-#790 history of exactly this):
 3. **`document-composer.ts`'s `getFilteredParentItems`** — status filter (miss this → items disappear from docket / return-sheet)
 4. **`gearflow-table.ts`'s own top-level filter** — mirrors #3, must stay in sync (documented cross-reference in both files)
 
-A new **LayoutBlock kind** (e.g. `draftWatermark`, #987) is a different audit
-with two entries, not four: `estimateBlockHeight`'s switch (miss it → the block
-draws over whatever follows, or is silently dropped) and `buildEntryFields`'s
-switch (miss it → nothing renders). Both are exhaustive `switch`es over
-`LayoutBlock["kind"]`, so TypeScript fails the build on a missing arm — which is
-the point of keeping the block union closed.
+A new **LayoutBlock kind** (e.g. `draftWatermark`, #987; `paymentDetails`, the
+invoice payment-details block) is a different audit with two entries, not four:
+`estimateBlockHeight`'s switch (miss it → the block draws over whatever follows,
+or is silently dropped) and `buildEntryFields`'s switch (miss it → nothing
+renders). Both are exhaustive `switch`es over `LayoutBlock["kind"]`, so
+TypeScript fails the build on a missing arm — which is the point of keeping the
+block union closed. `trySplitAcrossPages`/`splitRichTextBlock`'s narrower
+`Extract<LayoutBlock, {...}>` union (the three free-text block kinds that can
+split across pages by wrapped line) is NOT exhaustive-checked by the compiler —
+`paymentDetails` had to be added there by hand alongside `clientNotes`/
+`termsAndConditions`, same as `estimateBlockHeight`/`buildEntryFields`.
 
 This is down from 5 consumers in 2 files pre-redesign (the dual pipeline
 meant `section-renderer.ts` and `gearflow-table.ts` each had their own filter

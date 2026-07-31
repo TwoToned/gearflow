@@ -27,7 +27,17 @@ export interface OrgBranding {
 export interface OrgDocumentSettings {
   footerText?: string;
   footerSecondLine?: string;
+  /** Org-authored plain text (no tokens). Always rendered on the quote when
+   *  set; rendered on the invoice too only when `showTermsAndConditionsOnInvoice`
+   *  is also on — quotes have no separate toggle, presence of text is enough. */
   termsAndConditions?: string;
+  /** Off by default — an invoice already carries its own payment terms/due
+   *  date; T&Cs is opt-in there rather than always-on like the quote. */
+  showTermsAndConditionsOnInvoice?: boolean;
+  /** Org-authored plain text (no tokens) — bank name, BSB, account number,
+   *  reference, etc. Rendered on the invoice only, directly after the totals
+   *  block, omitted entirely when unset (same convention as T&Cs). */
+  paymentDetails?: string;
   /** Days a quote stays valid from its generation date. Default 30. */
   quoteValidityDays?: number;
   /** Default payment terms for an issued invoice — the due date defaults to
@@ -53,6 +63,9 @@ export interface OrgSettings {
   email?: string;
   website?: string;
   address?: string;
+  /** Australian Business Number (or local equivalent tax/business
+   *  registration id). Rendered in the PDF header on Tax Invoices only. */
+  abn?: string;
   country?: string;
   timezone?: string;
   currency?: string;

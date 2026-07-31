@@ -28,7 +28,7 @@ vi.mock("@/lib/crypto/secret-vault", () => ({
 
 const findXeroContactByEmail = vi.fn();
 const createXeroContact = vi.fn();
-const createXeroDraftInvoice = vi.fn(async () => ({ InvoiceID: "xero-inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT" }));
+const upsertXeroDraftInvoice = vi.fn(async () => ({ InvoiceID: "xero-inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT" }));
 const refreshXeroAccessToken = vi.fn(async () => ({ access_token: "access-tok", refresh_token: "new-refresh-tok" }));
 
 vi.mock("@/lib/xero-client", async () => {
@@ -38,7 +38,7 @@ vi.mock("@/lib/xero-client", async () => {
     refreshXeroAccessToken: (...args: unknown[]) => refreshXeroAccessToken(...(args as [])),
     findXeroContactByEmail: (...args: unknown[]) => findXeroContactByEmail(...(args as [])),
     createXeroContact: (...args: unknown[]) => createXeroContact(...(args as [])),
-    createXeroDraftInvoice: (...args: unknown[]) => createXeroDraftInvoice(...(args as [])),
+    upsertXeroDraftInvoice: (...args: unknown[]) => upsertXeroDraftInvoice(...(args as [])),
   };
 });
 
@@ -73,7 +73,7 @@ describe("pushInvoiceToXero — auto-create contact idempotency", () => {
     vi.clearAllMocks();
     vi.stubEnv("XERO_CLIENT_ID", "test-client-id");
     vi.stubEnv("XERO_CLIENT_SECRET", "test-client-secret");
-    createXeroDraftInvoice.mockResolvedValue({ InvoiceID: "xero-inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT" });
+    upsertXeroDraftInvoice.mockResolvedValue({ InvoiceID: "xero-inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT" });
   });
 
   test("links to an existing Xero contact found by exact email match — does NOT create a duplicate", async () => {
@@ -119,12 +119,46 @@ describe("pushInvoiceToXero — auto-create contact idempotency", () => {
     if (!result.ok) throw new Error(`expected ok, got: ${result.error}`);
     expect(result.autoCreatedContact).toBe(false);
     expect(result.xeroInvoiceId).toBe("xero-inv-1");
+    expect(result.updated).toBe(false);
+  });
+
+  // The "make Push to Xero also update" feature: re-pushing an ALREADY-synced
+  // invoice (xeroInvoiceId set from a prior push) must update that same Xero
+  // invoice, not create a duplicate — Button visibility used to hide once
+  // xeroSyncStatus === "SYNCED", so a Flow-side fix (wrong description,
+  // corrected coding) had no way back into Xero short of editing it by hand.
+  test("re-pushing an already-synced invoice UPDATES the same Xero invoice, not a new one", async () => {
+    const client = { id: "c1", organizationId: "org_1", name: "Acme Events", xeroContactId: "mapped", xeroContactName: "Acme" };
+    queryMock.mockImplementation(async (fnRef: unknown) => {
+      const name = getFunctionName(fnRef as Parameters<typeof getFunctionName>[0]);
+      if (name === "invoices:getById") return { ...INVOICE, xeroInvoiceId: "xero-inv-1", xeroSyncStatus: "SYNCED" };
+      if (name === "xeroIntegrations:getByOrgId") return INTEGRATION;
+      if (name === "projects:getById") return PROJECT;
+      if (name === "clients:getById") return client;
+      if (name === "invoiceLines:listForInvoice") return [{ id: "line1", description: "USB Pro DI", quantity: 1, unitPrice: 1000 }];
+      if (name === "xeroPush:resolveCodingForInvoice") return { lines: [{ lineId: "line1", accountCode: "4200", taxType: "OUTPUT2" }], varianceNote: null };
+      throw new Error(`Unmocked query: ${name}`);
+    });
+
+    const { pushInvoiceToXero } = await import("./xero");
+    const result = await pushInvoiceToXero("inv1");
+
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error}`);
+    expect(result.updated).toBe(true);
+    expect(result.xeroInvoiceId).toBe("xero-inv-1");
+    expect(upsertXeroDraftInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ xeroInvoiceId: "xero-inv-1" }),
+      expect.anything(),
+    );
+
+    const activityCall = mutationMock.mock.calls.find((c) => getFunctionName(c[0] as Parameters<typeof getFunctionName>[0]) === "xeroPush:logXeroPushActivity");
+    expect(activityCall?.[1]).toMatchObject({ updated: true });
   });
 
   test("a Xero API failure marks the invoice ERROR and returns { ok: false }, without silently swallowing the error", async () => {
     const client = { id: "c1", organizationId: "org_1", name: "Acme Events", contactEmail: "billing@acme.test", xeroContactId: "mapped", xeroContactName: "Acme" };
     queryMock.mockImplementation(queryImplFor(client));
-    createXeroDraftInvoice.mockRejectedValue(new Error("Xero POST /Invoices returned 400"));
+    upsertXeroDraftInvoice.mockRejectedValue(new Error("Xero POST /Invoices returned 400"));
 
     const { pushInvoiceToXero } = await import("./xero");
     const result = await pushInvoiceToXero("inv1");

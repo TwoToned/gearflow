@@ -238,20 +238,24 @@ export const markXeroPushFailedNative = mutation({
 });
 
 /** Best-effort activity-log write for a Xero push, callable from the server
- *  action after either a success or a caught failure. */
+ *  action after either a success or a caught failure. `updated` distinguishes
+ *  a re-push (the invoice already had a `xeroInvoiceId` — the same Xero
+ *  invoice was edited in place) from the first push (a new Xero invoice was
+ *  created), so the activity feed reads correctly either way. */
 export const logXeroPushActivity = mutation({
   args: {
     organizationId: v.string(),
     invoiceId: v.string(),
     invoiceLabel: v.string(),
     success: v.boolean(),
+    updated: v.optional(v.boolean()),
     detail: v.optional(v.string()),
     actorUserId: v.string(),
     actorUserName: v.string(),
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { organizationId, invoiceId, invoiceLabel, success, detail, actorUserId, actorUserName, auditId, now }) => {
+  handler: async (ctx, { organizationId, invoiceId, invoiceLabel, success, updated, detail, actorUserId, actorUserName, auditId, now }) => {
     await requireService(ctx);
     await writeActivityLog(ctx, {
       id: auditId,
@@ -263,7 +267,9 @@ export const logXeroPushActivity = mutation({
       userId: actorUserId,
       userName: actorUserName,
       summary: success
-        ? `Pushed ${invoiceLabel} to Xero as a draft invoice`
+        ? updated
+          ? `Updated ${invoiceLabel} in Xero`
+          : `Pushed ${invoiceLabel} to Xero as a draft invoice`
         : `Xero push failed for ${invoiceLabel}${detail ? `: ${detail}` : ""}`,
       createdAt: now,
     });

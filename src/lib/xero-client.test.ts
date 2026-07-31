@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildXeroAuthorizeUrl,
   createXeroContact,
-  createXeroDraftInvoice,
+  upsertXeroDraftInvoice,
   exchangeXeroAuthCode,
   fetchXeroAccounts,
   fetchXeroTaxRates,
@@ -260,11 +260,11 @@ describe("createXeroContact", () => {
   });
 });
 
-describe("createXeroDraftInvoice", () => {
-  it("posts a DRAFT ACCREC invoice with Flow's invoice number and line coding", async () => {
+describe("upsertXeroDraftInvoice", () => {
+  it("CREATES a DRAFT ACCREC invoice (no InvoiceID) with Flow's invoice number and line coding", async () => {
     const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
     const { impl, calls } = mockFetch(fixture);
-    const result = await createXeroDraftInvoice(
+    const result = await upsertXeroDraftInvoice(
       {
         contactId: "c1",
         invoiceNumber: "INV-2026-0001",
@@ -279,6 +279,7 @@ describe("createXeroDraftInvoice", () => {
     );
     expect(result.InvoiceID).toBe("inv-1");
     const body = JSON.parse(calls[0]!.init!.body as string);
+    expect(body.Invoices[0].InvoiceID).toBeUndefined();
     expect(body.Invoices[0].Type).toBe("ACCREC");
     expect(body.Invoices[0].Status).toBe("DRAFT");
     expect(body.Invoices[0].InvoiceNumber).toBe("INV-2026-0001");
@@ -286,10 +287,33 @@ describe("createXeroDraftInvoice", () => {
     expect(body.Invoices[0].LineItems[0].TaxType).toBe("OUTPUT2");
   });
 
+  // The "make Push to Xero also update" feature: a re-push threads the prior
+  // xeroInvoiceId through so Xero's own upsert semantics (InvoiceID present
+  // -> update that invoice; absent -> create a new one) edit the SAME Xero
+  // invoice in place instead of creating a duplicate.
+  it("UPDATES the same Xero invoice when xeroInvoiceId is supplied", async () => {
+    const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
+    const { impl, calls } = mockFetch(fixture);
+    const result = await upsertXeroDraftInvoice(
+      {
+        xeroInvoiceId: "inv-1",
+        contactId: "c1",
+        invoiceNumber: "INV-2026-0001",
+        date: "2026-07-26",
+        lineItems: [{ description: "USB Pro DI", quantity: 1, unitAmount: 50, accountCode: "4200", taxType: "OUTPUT2" }],
+      },
+      { ...authOpts, fetchImpl: impl },
+    );
+    expect(result.InvoiceID).toBe("inv-1");
+    const body = JSON.parse(calls[0]!.init!.body as string);
+    expect(body.Invoices[0].InvoiceID).toBe("inv-1");
+    expect(body.Invoices[0].LineItems[0].Description).toBe("USB Pro DI");
+  });
+
   it("throws XeroApiError on a non-2xx response with the Xero error payload attached", async () => {
     const { impl } = mockFetch({ Type: "ValidationException", Message: "A validation exception occurred" }, 400);
     await expect(
-      createXeroDraftInvoice(
+      upsertXeroDraftInvoice(
         { contactId: "c1", invoiceNumber: "INV-1", date: "2026-07-26", lineItems: [] },
         { ...authOpts, fetchImpl: impl },
       ),
@@ -317,7 +341,7 @@ describe("createXeroDraftInvoice", () => {
       400,
     );
     await expect(
-      createXeroDraftInvoice(
+      upsertXeroDraftInvoice(
         {
           contactId: "c1",
           invoiceNumber: "INV-1",

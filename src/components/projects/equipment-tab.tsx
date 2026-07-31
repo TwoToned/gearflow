@@ -33,6 +33,7 @@ import {
   type BulkLineItemPatch,
 } from "@/hooks/use-line-item-writes";
 import { lineItemSchema } from "@/lib/validations/line-item";
+import { computeInlineLineItemPayload, type InlineLineItemPatch } from "@/lib/line-item-edit-payload";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -531,20 +532,24 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Browser-direct native path. patchNative re-checks availability (on qty increase) +
+  // recalcs + audits + emits the collab feed atomically. NOTE: it has no baseUpdatedAt
+  // stale-revision guard (the server action's optimistic-concurrency check) — edit
+  // locks remain the first line of defence. Reactive useQuery renders the updated row.
+  // Shared by the full edit dialog AND inline cell edits below — one write path,
+  // two entry points (POLICY.md R-3.1).
+  const updateLineItemMutationFn = ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) => {
+    if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
+    const parsed = lineItemSchema.parse(data);
+    const { set, clear } = buildLineItemSetClear(parsed);
+    return lineItemWrites.update(id, set, clear, {
+      entityName: parsed.description || "Line item",
+      allowOverbook: allowOverbook ?? false,
+    });
+  };
+
   const updateLineItemMut = useServerMutation({
-    mutationFn: ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) => {
-      // Browser-direct native path. patchNative re-checks availability (on qty increase) +
-      // recalcs + audits + emits the collab feed atomically. NOTE: it has no baseUpdatedAt
-      // stale-revision guard (the server action's optimistic-concurrency check) — edit
-      // locks remain the first line of defence. Reactive useQuery renders the updated row.
-      if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
-      const parsed = lineItemSchema.parse(data);
-      const { set, clear } = buildLineItemSetClear(parsed);
-      return lineItemWrites.update(id, set, clear, {
-        entityName: parsed.description || "Line item",
-        allowOverbook: allowOverbook ?? false,
-      });
-    },
+    mutationFn: updateLineItemMutationFn,
     onSuccess: (_r: unknown, { id }: { id: string }) => {
       invalidate();
       // Drop the optimistic overlay — the reactive bundle now carries the server value.
@@ -558,6 +563,57 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       toast.error(e.message);
     },
   });
+
+  // Same write as updateLineItemMut, minus the dialog-close/success-toast side
+  // effects — a table cell already shows its own save state, and the row's
+  // `justChanged` flash (equipment-rows.tsx, on `updatedAt` changing) is
+  // feedback enough. Errors still toast; a silent failure would be worse
+  // than a silent success.
+  const updateLineItemInlineMut = useServerMutation({
+    mutationFn: updateLineItemMutationFn,
+    onSuccess: (_r: unknown, { id }: { id: string }) => {
+      invalidate();
+      clearPendingEdit(id);
+    },
+    onError: (e: Error, { id }: { id: string }) => {
+      clearPendingEdit(id);
+      toast.error(e.message);
+    },
+  });
+
+  // Inline (click-to-edit, save-on-blur) cell edits — equipment-rows.tsx's
+  // `onInlineUpdate`. Builds the exact same payload the full edit dialog
+  // would (computeInlineLineItemPayload -> computeEditLineItemPayload), just
+  // for a single changed field, and runs it through the identical
+  // update/optimistic-overlay path. Never touches quantity, so there's no
+  // overbook confirmation to thread through (allowOverbook: false is always
+  // correct here).
+  const handleInlineLineItemUpdate = useCallback(
+    (item: LineItemData, patch: InlineLineItemPatch) => {
+      const payload = computeInlineLineItemPayload(item, patch);
+      setPendingEdits((prev) => {
+        const next = new Map(prev);
+        next.set(item.id, {
+          quantity: payload.quantity,
+          unitPrice: payload.unitPrice,
+          discount: payload.discount,
+          description: payload.description,
+          notes: payload.notes,
+          lineTotal: computeLineTotal(payload.unitPrice, payload.quantity, payload.duration, payload.discount),
+        });
+        return next;
+      });
+      const baseUpdatedAt =
+        item.updatedAt instanceof Date ? item.updatedAt.toISOString() : (item.updatedAt ?? null);
+      return updateLineItemInlineMut.mutateAsync({
+        id: item.id,
+        data: payload as unknown as Record<string, unknown>,
+        allowOverbook: false,
+        baseUpdatedAt,
+      });
+    },
+    [updateLineItemInlineMut],
+  );
 
   const removeMut = useServerMutation({
     mutationFn: async (id: string) => {
@@ -1247,6 +1303,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   initialGroupId: group.id,
                                 })}
                                 onRemove={() => handleRemoveItem(item.id)}
+                                onInlineUpdate={handleInlineLineItemUpdate}
+                                moneyLocked={moneyLocked}
+                                lockReason={lockReason}
+                                onUnlockExit={scrollToLockStrip}
                               />
                             ))}
                           </React.Fragment>
@@ -1288,6 +1348,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             lineItemId: item.id,
                           })}
                           onRemove={() => handleRemoveItem(item.id)}
+                          onInlineUpdate={handleInlineLineItemUpdate}
+                          moneyLocked={moneyLocked}
+                          lockReason={lockReason}
+                          onUnlockExit={scrollToLockStrip}
                         />
                       ))}
                     </React.Fragment>
@@ -1344,6 +1408,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       lineItemId: item.id,
                     })}
                     onRemove={() => handleRemoveItem(item.id)}
+                    onInlineUpdate={handleInlineLineItemUpdate}
+                    moneyLocked={moneyLocked}
+                    lockReason={lockReason}
+                    onUnlockExit={scrollToLockStrip}
                   />
                   ));
                 })()}
@@ -1444,6 +1512,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             initialGroupId: group.id,
                           })}
                           onRemove={() => handleRemoveItem(item.id)}
+                          onInlineUpdate={handleInlineLineItemUpdate}
+                          moneyLocked={moneyLocked}
+                          lockReason={lockReason}
+                          onUnlockExit={scrollToLockStrip}
                         />
                       ))}
                     </React.Fragment>

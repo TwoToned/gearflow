@@ -77,6 +77,7 @@ export interface SubHireItemRow {
   sortOrder: number;
   targetCategoryId: string | null;
   targetGroupId: string | null;
+  notes: string | null;
 }
 
 export interface SubHireGroupRow {
@@ -140,6 +141,7 @@ export function mapSubHireItem(d: RawItem): SubHireItemRow {
     sortOrder: d.sortOrder ?? 0,
     targetCategoryId: orNull(d.targetCategoryId),
     targetGroupId: orNull(d.targetGroupId),
+    notes: orNull(d.notes),
   };
 }
 

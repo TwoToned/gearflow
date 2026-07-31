@@ -35178,6 +35178,9 @@ export const OPENAPI_DOCUMENT = {
                       "modelId": {
                         "type": "string"
                       },
+                      "notes": {
+                        "type": "string"
+                      },
                       "pricingType": {},
                       "quantity": {
                         "type": "number"
@@ -36313,6 +36316,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "modelId": {
+                        "type": "string"
+                      },
+                      "notes": {
                         "type": "string"
                       },
                       "pricingType": {},

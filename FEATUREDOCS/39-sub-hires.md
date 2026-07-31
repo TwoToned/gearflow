@@ -10,7 +10,7 @@ Sub-hires track gear rented from third-party suppliers with structured items, du
 
 - **SubHire** — order-level entity: supplier, project, status, dates, totals, pricingMode (ITEMIZED or ORDER_TOTAL), orderTotalCost/orderTotalCharge, paymentStatus (UNPAID/PARTIALLY_PAID/PAID), showOnDocs, defaultTargetCategoryId/defaultTargetGroupId (order-level placement default)
 - **SubHireGroup** — groups items within a sub-hire (e.g. "Shure ULXD Kit"). Has title, sortOrder, quantity, cost/charge overrides, **discount (% off the client charge)**, showOnQuote, showOnDocs, and placement targets (targetCategoryId/targetGroupId). Items within a group become parent+child line items on the project (using the kit pattern: `isKitChild` + `parentLineItemId`). Children inherit placement from parent.
-- **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount, showOnQuote (include on client quote), showOnDocs (show sub-hire indicator), optional groupId, placement targets (targetCategoryId/targetGroupId for ungrouped items)
+- **SubHireItem** — line-level: description, model, quantity, unitCost, unitCharge, pricingType, duration, discount (0-100%, plain — no `$`/`%` entry-mode toggle like `ProjectLineItem.discount`), notes, showOnQuote (include on client quote), showOnDocs (show sub-hire indicator), optional groupId, placement targets (targetCategoryId/targetGroupId for ungrouped items)
 - **SubHireMedia** — file attachments (quotes, invoices, documents) linked to sub-hire orders via FileUpload join table
 - **SupplierModelRate** — caches last rate per supplier+model pair for pre-fill
 - **ProjectLineItem** — gains `subHireId`, `subHireItemId`, and `subHireGroupId` FKs
@@ -41,6 +41,45 @@ Sub-hires are managed via a **dialog** on the project equipment tab:
    - **Create view** — still available (used by manual entry points / templates), but the equipment-tab path goes straight to manage view on the freshly-created order
    - **Manage view** — full sub-hire detail with groups, items table, pricing mode, placement pickers, status transitions, delete
 4. **Overbook shortcut** — the "Sub-hire N units instead" link in the add-equipment dialog opens the sub-hire flow instead of navigating away
+
+### Inline editing on the equipment table
+
+Price, discount, description, and notes are inline-editable directly on a
+sub-hire **group child** row in the equipment table (`equipment-rows.tsx`'s
+`LineItemRow`, gated on `item.subHireGroupId != null`) — the same
+click-to-edit/save-on-blur cells the regular equipment table uses
+(`src/components/projects/line-item-inline-cells.tsx`), but routed to a
+DIFFERENT write than a normal line item:
+
+- A sub-hire group child's `ProjectLineItem` row is a **derived/display
+  copy** — `regenerateSubHireLines` (`convex/lib/subHireLineGen.ts`) deletes
+  and recreates every derived line for a sub-hire order on ANY change to
+  that order (add/edit/remove item or group, confirm, placement, project
+  change...). Patching the derived row directly (`patchNative`, what regular
+  line items use) would appear to save but silently vanish the next time
+  anything else in that order changes. Inline edits on these rows instead
+  patch the SOURCE `subHireItems` row via `subHiresWrites.updateSubHireItemNative`
+  (keyed by the row's `subHireItemId`, not its own `id`) — see
+  `src/lib/sub-hire-item-edit-payload.ts`'s `computeInlineSubHireItemInput`
+  and `equipment-tab.tsx`'s `handleInlineLineItemUpdate`, which branches on
+  `subHireGroupId` to pick the write path.
+- **Discount** renders as a plain 0-100% cell (`InlineEditablePercent`, no
+  `$`/`%` toggle) — sub-hire items don't have `ProjectLineItem.discountMode`'s
+  entry-mode concept, the percentage IS what's stored.
+- **Not lock-gated** — `updateSubHireItemNative` never checks the project's
+  financial lock (same as `SubHireOrderDialog`'s item form today), so these
+  cells render without the `<LockedField>` wrapper regular money cells use.
+- The sub-hire **group's own row** (`SubHireGroupRow`) also gets inline
+  charge/cost cells, calling the same `updateGroup` mutation
+  `PriceEditDialog`'s sub-hire branch uses (`onInlinePriceUpdate` prop) — the
+  dialog stays available as a redundant entry point, same as the pencil
+  "Edit" button elsewhere.
+- Ungrouped/standalone sub-hire items (no `subHireGroupId`) are unaffected —
+  they already went through the regular `patchNative` inline-edit path
+  before this, since a standalone line's own `unitPrice`/`discount` ARE what
+  bills (unlike a group child's, which is excluded from revenue calc —
+  `recalc.ts` filters out `isKitChild` lines, only the group parent's total
+  counts).
 
 ## Display Toggles (Two-Toggle System)
 

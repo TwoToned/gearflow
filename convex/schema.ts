@@ -665,6 +665,7 @@ export default defineSchema({
     sortOrder: v.optional(v.number()),
     targetCategoryId: v.optional(v.string()),
     targetGroupId: v.optional(v.string()),
+    notes: v.optional(v.string()),
   })
     .index("by_cuid", ["id"])
     .index("by_subHireId", ["subHireId"])

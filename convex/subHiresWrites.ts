@@ -566,9 +566,10 @@ const itemInputArgs = {
   showOnDocs: v.optional(v.boolean()),
   targetCategoryId: v.optional(v.string()),
   targetGroupId: v.optional(v.string()),
+  notes: v.optional(v.string()),
 };
 
-function assertItemMoney(a: { description: string; quantity: number; unitCost: number; unitCharge: number; duration: number; discount: number }) {
+function assertItemMoney(a: { description: string; quantity: number; unitCost: number; unitCharge: number; duration: number; discount: number; notes?: string }) {
   if (!a.description) throw new ConvexError("Description is required");
   assertStrLen(a.description, "Description", { max: 500 }); // R-8.6.2: mirror subHireItemSchema
   assertIntMin1(a.quantity, "Quantity");
@@ -576,6 +577,7 @@ function assertItemMoney(a: { description: string; quantity: number; unitCost: n
   assertFiniteMin0(a.unitCharge, "Charge");
   assertIntMin1(a.duration, "Duration");
   assertDiscount(a.discount);
+  assertStrLen(a.notes, "Notes", { max: 2000 }); // R-8.6.2: mirror subHireItemSchema
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -635,6 +637,7 @@ export const addSubHireItemNative = mutation({
       showOnDocs: a.showOnDocs ?? head.showOnDocs ?? false,
       ...(a.targetCategoryId ? { targetCategoryId: a.targetCategoryId } : {}),
       ...(a.targetGroupId ? { targetGroupId: a.targetGroupId } : {}),
+      ...(a.notes ? { notes: a.notes } : {}),
       sortOrder: nextSort,
     });
 
@@ -698,6 +701,7 @@ export const updateSubHireItemNative = mutation({
       discount: a.discount,
       showOnQuote: a.showOnQuote,
       showOnDocs: a.showOnDocs,
+      notes: a.notes || undefined,
     };
     patch.modelId = a.modelId ? a.modelId : undefined;
     if (a.groupId !== undefined) patch.groupId = a.groupId ? a.groupId : undefined;

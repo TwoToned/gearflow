@@ -65,3 +65,40 @@ export function applyOptimisticEdits<
     };
   });
 }
+
+/**
+ * Sibling to `OptimisticLineEdit` for drag-and-drop (`use-equipment-dnd.ts`):
+ * overlays a pending `sortOrder` (+ optionally a new `groupId`/`categoryId`,
+ * for a cross-container move) onto the raw bundle line items BEFORE
+ * reconstruction — same idea, same "cleared on settle" lifecycle, just a
+ * position patch instead of a field patch.
+ */
+export interface OptimisticOrderEdit {
+  sortOrder: number;
+  /** Present (possibly null) only when the drag reparented the item — a
+   *  same-container reorder omits these so the row's existing placement is
+   *  left untouched. */
+  groupId?: string | null;
+  categoryId?: string | null;
+}
+
+/**
+ * Overlay pending order/placement edits onto the raw bundle line items (by
+ * cuid `id`). Pure — an empty overlay is a no-op reference, same as
+ * `applyOptimisticEdits`.
+ */
+export function applyOrderOverlay<
+  T extends { id: string; sortOrder?: number; groupId?: string | null; categoryId?: string | null },
+>(lineItems: readonly T[], overlay: ReadonlyMap<string, OptimisticOrderEdit>): T[] {
+  if (overlay.size === 0) return lineItems as T[];
+  return lineItems.map((li) => {
+    const o = overlay.get(li.id);
+    if (!o) return li;
+    return {
+      ...li,
+      sortOrder: o.sortOrder,
+      ...(o.groupId !== undefined ? { groupId: o.groupId } : {}),
+      ...(o.categoryId !== undefined ? { categoryId: o.categoryId } : {}),
+    };
+  });
+}

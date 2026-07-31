@@ -20,7 +20,12 @@ import type {
   LineItemData,
 } from "@/components/projects/equipment-rows";
 import type { OverbookedInfo } from "@/lib/overbooking-core";
-import { applyOptimisticEdits, type OptimisticLineEdit } from "@/hooks/use-native-line-item-writes";
+import {
+  applyOptimisticEdits,
+  applyOrderOverlay,
+  type OptimisticLineEdit,
+  type OptimisticOrderEdit,
+} from "@/hooks/use-native-line-item-writes";
 
 export interface NativeEquipmentTab {
   categories: CategoryData[];
@@ -50,6 +55,7 @@ export function useNativeEquipmentTab(
   projectId: string | undefined,
   orgId: string | undefined,
   optimisticEdits?: ReadonlyMap<string, OptimisticLineEdit>,
+  orderOverlay?: ReadonlyMap<string, OptimisticOrderEdit>,
 ): NativeEquipmentTab {
   const enabled = !!projectId && !!orgId;
   const rawBundle = useAuthedQuery(
@@ -57,13 +63,23 @@ export function useNativeEquipmentTab(
     enabled ? { projectId: projectId!, orgId: orgId! } : "skip",
   );
 
-  // Overlay optimistic line-item edits (Phase 5d) onto the raw bundle BEFORE
-  // reconstruction, so an edited row updates instantly. Cleared by the caller once
-  // the server write settles; a no-op when there are none. See use-native-line-item-writes.ts.
+  // Overlay optimistic line-item edits (Phase 5d) AND the drag-and-drop order/
+  // placement overlay (use-equipment-dnd.ts) onto the raw bundle BEFORE
+  // reconstruction, so an edited/dragged row updates instantly. Both are cleared
+  // by their respective callers once the server write settles; either being empty
+  // is a no-op. See use-native-line-item-writes.ts.
   const bundle = useMemo(() => {
-    if (!rawBundle || !optimisticEdits || optimisticEdits.size === 0) return rawBundle;
-    return { ...rawBundle, lineItems: applyOptimisticEdits(rawBundle.lineItems, optimisticEdits) };
-  }, [rawBundle, optimisticEdits]);
+    if (!rawBundle) return rawBundle;
+    let lineItems = rawBundle.lineItems;
+    if (optimisticEdits && optimisticEdits.size > 0) {
+      lineItems = applyOptimisticEdits(lineItems, optimisticEdits);
+    }
+    if (orderOverlay && orderOverlay.size > 0) {
+      lineItems = applyOrderOverlay(lineItems, orderOverlay);
+    }
+    if (lineItems === rawBundle.lineItems) return rawBundle;
+    return { ...rawBundle, lineItems };
+  }, [rawBundle, optimisticEdits, orderOverlay]);
 
   // The project doc supplies the rental window the overbooked computation needs.
   const project = useProject(enabled ? projectId : undefined);

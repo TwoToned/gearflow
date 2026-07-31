@@ -377,10 +377,10 @@ export function GroupRow({
   orgId,
   projectId,
   commentBadge,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
   onInlinePriceUpdate,
   moneyLocked,
   lockReason,
@@ -416,7 +416,7 @@ export function GroupRow({
   moneyLocked?: boolean;
   lockReason?: string;
   onUnlockExit?: () => void;
-} & MoveControls) {
+} & DragHandleControls) {
   const priceVal = group.price != null ? Number(group.price) : null;
   const discountVal = group.discount != null ? Number(group.discount) : 0;
   const groupTotal = priceVal != null ? Math.max(0, priceVal * group.quantity - discountVal) : null;
@@ -485,6 +485,17 @@ export function GroupRow({
         onToggle={onToggle}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* Mobile drag handle — mirrors LineItemRow's mobile treatment:
+                this row previously had ZERO reorder affordance on touch
+                (MoveButtons hid itself there too), long-press-to-drag
+                (TouchSensor) is the first reorder entry point here. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             {orgId && projectId && (
               <CommentThreadPanel
                 orgId={orgId}
@@ -524,11 +535,11 @@ export function GroupRow({
     <TableRow className="group/row" {...shortcuts}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
           />
         </div>
       </TableCell>
@@ -704,10 +715,10 @@ export function SubHireGroupRow({
   onEdit,
   onEditPrice,
   onMove,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
   onInlinePriceUpdate,
 }: {
   group: SubHireGroupData;
@@ -729,7 +740,7 @@ export function SubHireGroupRow({
    *  `onEditPrice`'s dialog makes, just per-cell. Omitted (mobile, or a
    *  future caller that doesn't want it) falls back to the static display. */
   onInlinePriceUpdate?: (group: SubHireGroupData, patch: { cost?: number | null; charge?: number | null }) => Promise<unknown>;
-} & MoveControls) {
+} & DragHandleControls) {
   const charge = group.charge != null ? Number(group.charge) : null;
   const cost = group.cost != null ? Number(group.cost) : null;
   const margin = charge != null && cost != null ? charge - cost : null;
@@ -756,6 +767,16 @@ export function SubHireGroupRow({
         onToggle={onToggle}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
+            {/* Mobile drag handle — same treatment as GroupRow's mobile
+                card (see that component's comment); this row previously had
+                no reorder affordance on touch either. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-8">
@@ -794,11 +815,11 @@ export function SubHireGroupRow({
     <TableRow className="group/row" {...shortcuts}>
       <TableCell className="px-0">
         <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
           />
         </div>
       </TableCell>

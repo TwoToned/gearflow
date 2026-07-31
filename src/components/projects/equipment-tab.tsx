@@ -115,9 +115,10 @@ interface EquipmentTabProps {
 
 // ─── Sortable line-item row wrapper ──────────────────────────────────────────
 //
-// Line items only (groups/categories keep their ▲/▼ MoveButtons for now — see
-// use-equipment-dnd.ts's file header). One `useSortable()` call per row, kept
-// in a small wrapper (rather than inline in the .map() callbacks below) so the
+// Categories still keep their ▲/▼ MoveButtons for now (see
+// use-equipment-dnd.ts's file header) — groups convert to drag below via
+// SortableGroupRow/SortableSubHireGroupRow. One `useSortable()` call per row,
+// kept in a small wrapper (rather than inline in the .map() callbacks below) so the
 // hook isn't called from a plain callback, which would trip
 // react-hooks/rules-of-hooks. `dragHandleRef` is `useSortable`'s `setNodeRef`
 // (NOT `setActivatorNodeRef`) attached to the handle button itself, so that
@@ -152,6 +153,74 @@ function SortableLineItemRow({
   );
 }
 
+// ─── Sortable group row wrappers ────────────────────────────────────────────
+//
+// Same "small wrapper to satisfy rules-of-hooks" shape as SortableLineItemRow
+// above, one per group kind. `dragDisabled: true` is used for orphan
+// (Uncategorized-zone) groups — they're still registered as sortable items
+// (so the Uncategorized zone resolves as a valid drop container/target for a
+// group leaving a category — see use-equipment-dnd.ts's
+// `buildGroupContainerMap`) but can't originate a drag themselves, matching
+// their existing no-reorder-affordance behaviour (`DragHandle` renders
+// nothing when `isDragDisabled`).
+function SortableGroupRow({
+  sortableId,
+  containerId,
+  dragDisabled,
+  ...rowProps
+}: {
+  sortableId: string;
+  containerId: string;
+  dragDisabled?: boolean;
+} & Omit<
+  React.ComponentProps<typeof GroupRow>,
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+>) {
+  const { setNodeRef, attributes, listeners } = useSortable({
+    id: sortableId,
+    data: { containerId },
+    disabled: dragDisabled,
+  });
+  return (
+    <GroupRow
+      {...rowProps}
+      dragHandleRef={setNodeRef}
+      dragAttributes={attributes as unknown as Record<string, unknown>}
+      dragListeners={listeners as unknown as Record<string, unknown>}
+      isDragDisabled={dragDisabled}
+    />
+  );
+}
+
+function SortableSubHireGroupRow({
+  sortableId,
+  containerId,
+  dragDisabled,
+  ...rowProps
+}: {
+  sortableId: string;
+  containerId: string;
+  dragDisabled?: boolean;
+} & Omit<
+  React.ComponentProps<typeof SubHireGroupRow>,
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+>) {
+  const { setNodeRef, attributes, listeners } = useSortable({
+    id: sortableId,
+    data: { containerId },
+    disabled: dragDisabled,
+  });
+  return (
+    <SubHireGroupRow
+      {...rowProps}
+      dragHandleRef={setNodeRef}
+      dragAttributes={attributes as unknown as Record<string, unknown>}
+      dragListeners={listeners as unknown as Record<string, unknown>}
+      isDragDisabled={dragDisabled}
+    />
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
@@ -170,6 +239,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // above the native read-layer path (below) so useEquipmentDnd — which needs both
   // this and lineItemWrites — can be called before `native` without a TDZ violation.
   const groupWrites = useProjectGroupWrites();
+
+  // Browser-direct cross-type category-slot writes (reorder mixed groups + the
+  // move/create-and-place flows used by the move dialogs AND group
+  // drag-and-drop). Hoisted here (same reason as groupWrites above) so
+  // useEquipmentDnd can be called before `native` without a TDZ violation.
+  const categorySlotWrites = useCategorySlotWrites();
 
   // Browser-direct line-item writes (update / remove / reorder). Each guarded
   // api.lineItemWrites.* mutation folds the availability re-check +
@@ -214,29 +289,38 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     });
   }, []);
 
-  // Drag-and-drop for LINE ITEMS (groups/categories still use their ▲/▼
+  // Drag-and-drop for LINE ITEMS and GROUPS (categories still use their ▲/▼
   // MoveButtons — those convert to drag in a later commit). "Latest ref"
   // pattern (see use-equipment-dnd.ts's file header) resolves the circular
-  // dependency between this hook's `orderOverlay` (needed BEFORE
-  // useNativeEquipmentTab reconstructs categories/uncategorizedItems below)
-  // and its drag handlers (which need those SAME reconstructed trees to
+  // dependency between this hook's `orderOverlay`/`groupOrderOverlay` (needed
+  // BEFORE useNativeEquipmentTab reconstructs categories/uncategorizedItems
+  // below) and its drag handlers (which need those SAME reconstructed trees to
   // resolve a drop) — the refs are written AFTER `native` is computed, every
   // render, and read only later from a dnd-kit event, never during render.
   const categoriesRef = useRef<CategoryData[]>([]);
   const uncategorizedItemsRef = useRef<LineItemData[]>([]);
   const uncategorizedProjectGroupsRef = useRef<GroupData[]>([]);
+  const uncategorizedSubHireGroupsRef = useRef<SubHireGroupData[]>([]);
   const dnd = useEquipmentDnd({
     projectId,
     categoriesRef,
     uncategorizedItemsRef,
     uncategorizedProjectGroupsRef,
+    uncategorizedSubHireGroupsRef,
     lineItemWrites,
     groupWrites,
+    categorySlotWrites,
     lockStatus,
     onSettled: invalidate,
   });
 
-  const native = useNativeEquipmentTab(projectId, orgId, pendingEdits, dnd.orderOverlay);
+  const native = useNativeEquipmentTab(
+    projectId,
+    orgId,
+    pendingEdits,
+    dnd.orderOverlay,
+    dnd.groupOrderOverlay,
+  );
 
   // #990 (surface 5, "justify tier") — line item/group remove prompt for a
   // reason at ON_SITE+ with no open session (`useJustifiedMutation` pre-checks
@@ -443,7 +527,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     categoriesRef.current = categories;
     uncategorizedItemsRef.current = uncategorizedItems;
     uncategorizedProjectGroupsRef.current = uncategorizedProjectGroups;
-  }, [categories, uncategorizedItems, uncategorizedProjectGroups]);
+    uncategorizedSubHireGroupsRef.current = uncategorizedSubHireGroups;
+  }, [categories, uncategorizedItems, uncategorizedProjectGroups, uncategorizedSubHireGroups]);
 
   // Sub-hire item id -> full source row, built from both categorized and
   // uncategorized sub-hire groups' children. Inline edits on a sub-hire
@@ -583,15 +668,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // guarded api.projectCategoriesWrites.* mutations; category reads are reactive.
   const categoryWrites = useProjectCategoryWrites();
 
-  // Browser-direct cross-type category-slot writes (reorder mixed groups + the
-  // move/create-and-place flows used by the move dialogs) — guarded
-  // api.categorySlotsWrites.* mutations, each folding recalc + audit atomically.
-  const categorySlotWrites = useCategorySlotWrites();
-
-  // (groupWrites / lineItemWrites / subHireWrites / invalidate are declared
-  // earlier in this component, above `native` — useEquipmentDnd needs the
-  // first two before native's orderOverlay can be computed. See that block's
-  // comment.)
+  // (groupWrites / categorySlotWrites / lineItemWrites / subHireWrites /
+  // invalidate are declared earlier in this component, above `native` —
+  // useEquipmentDnd needs all but subHireWrites before native's
+  // orderOverlay/groupOrderOverlay can be computed. See that block's comment.)
 
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
@@ -1005,38 +1085,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     invalidate();
   }
 
-  /** Move a group slot (project OR sub-hire) within its category. Routes through
-   *  the lighter reorderProjectGroups when no sub-hire group is involved, else
-   *  the unified reorderMixedGroupsInCategory (which owns cross-type slot order). */
-  function moveGroupSlot(cat: CategoryData, slotIndex: number, dir: -1 | 1) {
-    const mixed: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map((g) => ({
-      kind: "project" as const,
-      sortOrder: g.sortOrder,
-      projectGroupId: g.id,
-    }));
-    const target = slotIndex + dir;
-    if (target < 0 || target >= mixed.length) return;
-    const reordered = [...mixed];
-    const [moved] = reordered.splice(slotIndex, 1);
-    reordered.splice(target, 0, moved);
-
-    const hasAnySubHire = reordered.some((s) => s.kind === "subHire");
-    if (!hasAnySubHire) {
-      groupWrites.reorder({
-        orderedIds: reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
-      }).catch(() => toast.error("Failed to reorder groups"));
-    } else {
-      const orderedIds = reordered.map((s) =>
-        s.kind === "project" ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
-      );
-      categorySlotWrites.reorderMixed({ categoryId: cat.id, orderedIds }).catch(() => {
-        toast.error("Failed to reorder groups");
-      });
-    }
-    invalidate();
-  }
-
-  // Line-item reordering is now real drag-and-drop (useEquipmentDnd,
+  // Group (project group + sub-hire group) reordering AND cross-category
+  // moves are now real drag-and-drop too (useEquipmentDnd, rendered rows
+  // wrapped in SortableGroupRow/SortableSubHireGroupRow below) — the old
+  // ▲/▼ moveGroupSlot swap-with-neighbour helper (which branched between
+  // groupWrites.reorder and categorySlotWrites.reorderMixed the same way
+  // useEquipmentDnd's runGroupReorder now does) is fully superseded.
+  //
+  // Line-item reordering is real drag-and-drop too (useEquipmentDnd,
   // rendered rows wrapped in SortableLineItemRow below) — the old ▲/▼
   // moveLineItemInList swap-with-neighbour helper is fully superseded.
 
@@ -1093,6 +1149,34 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     }
     for (const li of uncategorizedItems as LineItemData[]) if (li.id === bareId) return li;
     for (const g of orphanProjectGroups) for (const li of g.lineItems ?? []) if (li.id === bareId) return li;
+    return null;
+  })();
+
+  // DragOverlay content for a dragged GROUP (project group or sub-hire
+  // group) — just its title, the simplest label consistent with the
+  // line-item overlay above. Looked up the same way, from the same
+  // reconstructed tree the rows render from.
+  const draggedGroupTitle = (() => {
+    const id = dnd.activeDragId;
+    if (!id) return null;
+    if (id.startsWith("grp-")) {
+      const bareId = id.slice(4);
+      for (const cat of typedCategories) {
+        const g = cat.groups.find((g) => g.id === bareId);
+        if (g) return g.title;
+      }
+      const og = orphanProjectGroups.find((g) => g.id === bareId);
+      return og?.title ?? null;
+    }
+    if (id.startsWith("shg-")) {
+      const bareId = id.slice(4);
+      for (const cat of typedCategories) {
+        const g = (cat.subHireGroupTargets ?? []).find((g: SubHireGroupData) => g.id === bareId);
+        if (g) return g.title;
+      }
+      const og = orphanSubHireGroups.find((g) => g.id === bareId);
+      return og?.title ?? null;
+    }
     return null;
   })();
 
@@ -1329,10 +1413,19 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       />
 
                       {/* Mixed groups within category (CategorySlot order; falls back
-                          to cat.groups when mixedGroups hasn't been computed). */}
-                      {mixedSlots.map((slot, slotIndex) => {
-                        const canSlotUp = slotIndex > 0;
-                        const canSlotDown = slotIndex < mixedSlots.length - 1;
+                          to cat.groups when mixedGroups hasn't been computed).
+                          ONE SortableContext for the whole interleaved
+                          project-group + sub-hire-group list — a drag can
+                          reorder within it or move a group out to another
+                          category/Uncategorized (useEquipmentDnd's
+                          resolveGroupDragAction; container id `mixed:{cat.id}`). */}
+                      <SortableContext
+                        items={mixedSlots.map((slot) =>
+                          slot.kind === "project" ? `grp-${slot.projectGroupId}` : `shg-${slot.subHireGroupId}`,
+                        )}
+                        strategy={verticalListSortingStrategy}
+                      >
+                      {mixedSlots.map((slot) => {
                         if (slot.kind === "subHire") {
                           const shGroup = (cat.subHireGroupTargets ?? []).find(
                             (g: SubHireGroupData) => g.id === slot.subHireGroupId,
@@ -1345,15 +1438,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
                           return (
                             <React.Fragment key={`shg-${shGroup.id}`}>
-                              <SubHireGroupRow
+                              <SortableSubHireGroupRow
+                                sortableId={`shg-${shGroup.id}`}
+                                containerId={`mixed:${cat.id}`}
                                 group={shGroup}
                                 isExpanded={isExpanded}
                                 showCostColumn={showCostColumn}
                                 indented
-                                onMoveUp={() => moveGroupSlot(cat, slotIndex, -1)}
-                                onMoveDown={() => moveGroupSlot(cat, slotIndex, 1)}
-                                canMoveUp={canSlotUp}
-                                canMoveDown={canSlotDown}
                                 onToggle={() => toggleGroup(shGroup.id)}
                                 onEdit={() => {
                                   setManagingSubHireId(shGroup.subHire.id);
@@ -1419,16 +1510,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                         return (
                           <React.Fragment key={group.id}>
-                            <GroupRow
+                            <SortableGroupRow
+                              sortableId={`grp-${group.id}`}
+                              containerId={`mixed:${cat.id}`}
                               group={group}
                               isExpanded={isExpanded}
                               indented
                               orgId={orgId}
                               projectId={projectId}
-                              onMoveUp={() => moveGroupSlot(cat, slotIndex, -1)}
-                              onMoveDown={() => moveGroupSlot(cat, slotIndex, 1)}
-                              canMoveUp={canSlotUp}
-                              canMoveDown={canSlotDown}
                               commentBadge={{
                                 open: commentCounts?.[group.id]?.open ?? 0,
                                 blocking: commentCounts?.[group.id]?.blockingOpen ?? 0,
@@ -1529,6 +1618,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           </React.Fragment>
                         );
                       })}
+                      </SortableContext>
 
                       {/* Standalone line items in category */}
                       <SortableContext
@@ -1640,6 +1730,23 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     </SortableContext>
                   );
                 })()}
+                {/* Orphan groups (project + sub-hire) — a single flat
+                    "Uncategorized" drop container (useEquipmentDnd's
+                    "uncategorized-groups"), spanning BOTH maps below so a
+                    group dragged out of any category can land among either
+                    kind. Every row here is a valid DROP TARGET but not
+                    itself draggable (`dragDisabled` — see
+                    SortableGroupRow/SortableSubHireGroupRow's doc comment):
+                    orphan groups have never had reorder buttons, and this
+                    doesn't add reordering among them, only makes the zone
+                    reachable by drag. */}
+                <SortableContext
+                  items={[
+                    ...orphanProjectGroups.map((g) => `grp-${g.id}`),
+                    ...orphanSubHireGroups.map((g) => `shg-${g.id}`),
+                  ]}
+                  strategy={verticalListSortingStrategy}
+                >
                 {/* Orphan PROJECT groups — categoryId IS NULL (v0.9.4.0
                     allows groups to live uncategorised). Render with the
                     full GroupRow affordances (kebab, Move, Delete) so
@@ -1651,7 +1758,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                   const groupItems = (group.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                   return (
                     <React.Fragment key={`pg-${group.id}`}>
-                      <GroupRow
+                      <SortableGroupRow
+                        sortableId={`grp-${group.id}`}
+                        containerId="uncategorized-groups"
+                        dragDisabled
                         group={group}
                         isExpanded={isExpanded}
                         orgId={orgId}
@@ -1761,7 +1871,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                   const childItems = (parentLi?.childLineItems ?? []) as LineItemData[];
                   return (
                     <React.Fragment key={`shg-${shGroup.id}`}>
-                      <SubHireGroupRow
+                      <SortableSubHireGroupRow
+                        sortableId={`shg-${shGroup.id}`}
+                        containerId="uncategorized-groups"
+                        dragDisabled
                         group={shGroup}
                         isExpanded={isExpanded}
                         showCostColumn={showCostColumn}
@@ -1823,6 +1936,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     </React.Fragment>
                   );
                 })}
+                </SortableContext>
           </>
         );
         const content = isMobile ? (
@@ -1869,7 +1983,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             </table>
           </div>
         );
-        // Line-item drag-and-drop (LINE ITEMS ONLY — see use-equipment-dnd.ts).
+        // Drag-and-drop for LINE ITEMS and GROUPS (see use-equipment-dnd.ts).
         // A single DndContext wraps both the desktop table and mobile card
         // shells; DragOverlay renders a small floating label for whatever's
         // being dragged (dragHandleRef only registers the tiny handle button
@@ -1889,6 +2003,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
               {draggedLineItem ? (
                 <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
                   {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
+                </div>
+              ) : draggedGroupTitle ? (
+                <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                  {draggedGroupTitle}
                 </div>
               ) : null}
             </DragOverlay>

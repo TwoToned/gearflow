@@ -115,14 +115,14 @@ interface EquipmentTabProps {
 
 // ─── Sortable line-item row wrapper ──────────────────────────────────────────
 //
-// Categories still keep their ▲/▼ MoveButtons for now (see
-// use-equipment-dnd.ts's file header) — groups convert to drag below via
-// SortableGroupRow/SortableSubHireGroupRow. One `useSortable()` call per row,
-// kept in a small wrapper (rather than inline in the .map() callbacks below) so the
-// hook isn't called from a plain callback, which would trip
-// react-hooks/rules-of-hooks. `dragHandleRef` is `useSortable`'s `setNodeRef`
-// (NOT `setActivatorNodeRef`) attached to the handle button itself, so that
-// small button is the only DOM node dnd-kit measures/tracks for this row —
+// Groups convert to drag below via SortableGroupRow/SortableSubHireGroupRow,
+// and categories via SortableCategoryRow (see use-equipment-dnd.ts's file
+// header). One `useSortable()` call per row, kept in a small wrapper (rather
+// than inline in the .map() callbacks below) so the hook isn't called from a
+// plain callback, which would trip react-hooks/rules-of-hooks. `dragHandleRef`
+// is `useSortable`'s `setNodeRef` (NOT `setActivatorNodeRef`) attached to the
+// handle button itself, so that small button is the only DOM node dnd-kit
+// measures/tracks for this row —
 // see equipment-rows.tsx's `DragHandleControls` doc comment.
 function SortableLineItemRow({
   sortableId,
@@ -221,6 +221,38 @@ function SortableSubHireGroupRow({
   );
 }
 
+// ─── Sortable category row wrapper ──────────────────────────────────────────
+//
+// Same "small wrapper to satisfy rules-of-hooks" shape as the wrappers above —
+// the simplest of the four, since categories are top-level reorder only:
+// every category is always independently reorderable (no "orphan zone"
+// equivalent for categories the way there is for groups), so there's no
+// `dragDisabled` branch to thread through.
+function SortableCategoryRow({
+  sortableId,
+  containerId,
+  ...rowProps
+}: {
+  sortableId: string;
+  containerId: string;
+} & Omit<
+  React.ComponentProps<typeof CategoryRow>,
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+>) {
+  const { setNodeRef, attributes, listeners } = useSortable({
+    id: sortableId,
+    data: { containerId },
+  });
+  return (
+    <CategoryRow
+      {...rowProps}
+      dragHandleRef={setNodeRef}
+      dragAttributes={attributes as unknown as Record<string, unknown>}
+      dragListeners={listeners as unknown as Record<string, unknown>}
+    />
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
@@ -245,6 +277,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   // drag-and-drop). Hoisted here (same reason as groupWrites above) so
   // useEquipmentDnd can be called before `native` without a TDZ violation.
   const categorySlotWrites = useCategorySlotWrites();
+
+  // Browser-direct project-category writes (create / rename / delete / reorder) —
+  // guarded api.projectCategoriesWrites.* mutations; category reads are reactive.
+  // Hoisted here too (same TDZ reason as groupWrites/categorySlotWrites above) so
+  // useEquipmentDnd — which now also drives category drag-and-drop reorder — can
+  // be called before `native` is computed.
+  const categoryWrites = useProjectCategoryWrites();
 
   // Browser-direct line-item writes (update / remove / reorder). Each guarded
   // api.lineItemWrites.* mutation folds the availability re-check +
@@ -289,14 +328,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     });
   }, []);
 
-  // Drag-and-drop for LINE ITEMS and GROUPS (categories still use their ▲/▼
-  // MoveButtons — those convert to drag in a later commit). "Latest ref"
+  // Drag-and-drop for LINE ITEMS, GROUPS, and CATEGORIES. "Latest ref"
   // pattern (see use-equipment-dnd.ts's file header) resolves the circular
-  // dependency between this hook's `orderOverlay`/`groupOrderOverlay` (needed
-  // BEFORE useNativeEquipmentTab reconstructs categories/uncategorizedItems
-  // below) and its drag handlers (which need those SAME reconstructed trees to
-  // resolve a drop) — the refs are written AFTER `native` is computed, every
-  // render, and read only later from a dnd-kit event, never during render.
+  // dependency between this hook's `orderOverlay`/`groupOrderOverlay`/
+  // `categoryOrderOverlay` (needed BEFORE useNativeEquipmentTab reconstructs
+  // categories/uncategorizedItems below) and its drag handlers (which need
+  // those SAME reconstructed trees to resolve a drop) — the refs are written
+  // AFTER `native` is computed, every render, and read only later from a
+  // dnd-kit event, never during render.
   const categoriesRef = useRef<CategoryData[]>([]);
   const uncategorizedItemsRef = useRef<LineItemData[]>([]);
   const uncategorizedProjectGroupsRef = useRef<GroupData[]>([]);
@@ -310,6 +349,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     lineItemWrites,
     groupWrites,
     categorySlotWrites,
+    categoryWrites,
     lockStatus,
     onSettled: invalidate,
   });
@@ -320,6 +360,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     pendingEdits,
     dnd.orderOverlay,
     dnd.groupOrderOverlay,
+    dnd.categoryOrderOverlay,
   );
 
   // #990 (surface 5, "justify tier") — line item/group remove prompt for a
@@ -664,14 +705,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     (t) => ({ id: t.id, name: t.name, description: t.description, itemCount: t.items.length })
   );
 
-  // Browser-direct project-category writes (create / rename / delete / reorder) —
-  // guarded api.projectCategoriesWrites.* mutations; category reads are reactive.
-  const categoryWrites = useProjectCategoryWrites();
-
-  // (groupWrites / categorySlotWrites / lineItemWrites / subHireWrites /
-  // invalidate are declared earlier in this component, above `native` —
-  // useEquipmentDnd needs all but subHireWrites before native's
-  // orderOverlay/groupOrderOverlay can be computed. See that block's comment.)
+  // (groupWrites / categorySlotWrites / categoryWrites / lineItemWrites /
+  // subHireWrites / invalidate are declared earlier in this component, above
+  // `native` — useEquipmentDnd needs all but subHireWrites before native's
+  // orderOverlay/groupOrderOverlay/categoryOrderOverlay can be computed. See
+  // that block's comment.)
 
   // Optimistic delete: a removed row vanishes from the list INSTANTLY (instead of
   // lingering until the server round-trip + the reactive refetch land). The id is
@@ -1064,27 +1102,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // ─── Reorder handlers (▲/▼ move buttons) ───────────────────────
+  // Category reordering is real drag-and-drop too (useEquipmentDnd, rendered
+  // rows wrapped in SortableCategoryRow below) — the old ▲/▼ moveCategory
+  // swap-with-neighbour helper is fully superseded.
   //
-  // Each handler swaps a row with its neighbour in the same scope, builds the
-  // new ordered id array, and calls the same server reorder action the old
-  // drag-and-drop onDragEnd used. The buttons are disabled at the ends, so a
-  // handler is only ever invoked with a valid in-range swap.
-
-  /** Move a top-level category up (dir -1) or down (dir +1). */
-  function moveCategory(index: number, dir: -1 | 1) {
-    const cats = categories as CategoryData[];
-    const target = index + dir;
-    if (target < 0 || target >= cats.length) return;
-    const reordered = [...cats];
-    const [moved] = reordered.splice(index, 1);
-    reordered.splice(target, 0, moved);
-    categoryWrites.reorder({ orderedIds: reordered.map((c) => c.id) }).catch(() => {
-      toast.error("Failed to reorder categories");
-    });
-    invalidate();
-  }
-
   // Group (project group + sub-hire group) reordering AND cross-category
   // moves are now real drag-and-drop too (useEquipmentDnd, rendered rows
   // wrapped in SortableGroupRow/SortableSubHireGroupRow below) — the old
@@ -1178,6 +1199,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       return og?.title ?? null;
     }
     return null;
+  })();
+
+  // DragOverlay content for a dragged CATEGORY — just its name, same simple
+  // label treatment as the line-item/group overlays above.
+  const draggedCategoryTitle = (() => {
+    const id = dnd.activeDragId;
+    if (!id?.startsWith("cat-")) return null;
+    const bareId = id.slice(4);
+    return typedCategories.find((cat) => cat.id === bareId)?.name ?? null;
   })();
 
   // Build flat list of all line-item IDs in visual order. Used by
@@ -1372,7 +1402,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       {(hasCategories || hasUncategorized) && (() => {
         const equipmentRows = (
           <>
-                {typedCategories.map((cat, catIndex) => {
+                {/* Top-level category reorder — ONE SortableContext for the
+                    whole project's category list (useEquipmentDnd's
+                    resolveCategoryDragAction; single "categories" container,
+                    top-level reorder only — categories don't nest into
+                    anything and nothing nests INTO a category via a
+                    "category drag", see that function's doc comment). */}
+                <SortableContext
+                  items={typedCategories.map((cat) => `cat-${cat.id}`)}
+                  strategy={verticalListSortingStrategy}
+                >
+                {typedCategories.map((cat) => {
                   const standaloneItems = (cat.lineItems ?? []).filter((i: LineItemData) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
                   const mixedSlots: MixedGroupSlot[] = cat.mixedGroups ?? cat.groups.map<MixedGroupSlot>((g) => ({
                     kind: "project" as const,
@@ -1383,13 +1423,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                   return (
                     <React.Fragment key={cat.id}>
                       {/* Category label row */}
-                      <CategoryRow
+                      <SortableCategoryRow
+                        sortableId={`cat-${cat.id}`}
+                        containerId="categories"
                         cat={cat}
                         columnCount={colCount}
-                        onMoveUp={() => moveCategory(catIndex, -1)}
-                        onMoveDown={() => moveCategory(catIndex, 1)}
-                        canMoveUp={catIndex > 0}
-                        canMoveDown={catIndex < typedCategories.length - 1}
                         onRename={() => {
                           setRenameCategoryId(cat.id);
                           setRenameCategoryValue(cat.name);
@@ -1667,6 +1705,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     </React.Fragment>
                   );
                 })}
+                </SortableContext>
 
                 {/* Uncategorized items */}
                 {hasCategories && hasUncategorized && (
@@ -1983,13 +2022,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             </table>
           </div>
         );
-        // Drag-and-drop for LINE ITEMS and GROUPS (see use-equipment-dnd.ts).
-        // A single DndContext wraps both the desktop table and mobile card
-        // shells; DragOverlay renders a small floating label for whatever's
-        // being dragged (dragHandleRef only registers the tiny handle button
-        // with dnd-kit — not the whole row — as a drop-target/measured node,
-        // so this overlay is the user's main "something is being dragged"
-        // feedback; see equipment-rows.tsx's DragHandleControls doc comment).
+        // Drag-and-drop for LINE ITEMS, GROUPS, and CATEGORIES (see
+        // use-equipment-dnd.ts). A single DndContext wraps both the desktop
+        // table and mobile card shells; DragOverlay renders a small floating
+        // label for whatever's being dragged (dragHandleRef only registers
+        // the tiny handle button with dnd-kit — not the whole row — as a
+        // drop-target/measured node, so this overlay is the user's main
+        // "something is being dragged" feedback; see equipment-rows.tsx's
+        // DragHandleControls doc comment).
         return (
           <DndContext
             sensors={dnd.sensors}
@@ -2007,6 +2047,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
               ) : draggedGroupTitle ? (
                 <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
                   {draggedGroupTitle}
+                </div>
+              ) : draggedCategoryTitle ? (
+                <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                  {draggedCategoryTitle}
                 </div>
               ) : null}
             </DragOverlay>

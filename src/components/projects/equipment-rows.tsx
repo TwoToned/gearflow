@@ -14,8 +14,6 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "../../../convex/_generated/api";
 import {
   ChevronRight,
-  ChevronUp,
-  ChevronDown,
   GripVertical,
   Plus,
   Package,
@@ -99,78 +97,14 @@ export function getDisallowedDropReason(
   return null;
 }
 
-// ─── Reorder move buttons ────────────────────────────────────────────────────
+// ─── Drag handle (every row kind) ────────────────────────────────────────────
 //
-// Replaces the former drag handle. Small stacked ▲/▼ buttons that move a row
-// up or down by one position within its scope. The ▲ is disabled on the first
-// row and the ▼ on the last; the parent computes the new ordered id array and
-// calls the matching server reorder action.
-
-export interface MoveControls {
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-}
-
-function MoveButtons({
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
-  className,
-}: MoveControls & { className?: string }) {
-  if (!onMoveUp && !onMoveDown) return null;
-  return (
-    // Hover/focus-reveal cluster (declutter): hidden by default on desktop,
-    // shown on row hover or keyboard focus. Stays visible on touch (no hover)
-    // by gating the hide behind `md:` — mirrors the category kebab pattern.
-    <div
-      className={cn(
-        "flex flex-col items-center transition-opacity md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
-        className,
-      )}
-    >
-      <button
-        type="button"
-        aria-label="Move up"
-        disabled={!canMoveUp}
-        onClick={(e) => {
-          e.stopPropagation();
-          onMoveUp?.();
-        }}
-        className={cn(
-          "rounded-sm text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-25",
-          focusRing,
-        )}
-      >
-        <ChevronUp className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        aria-label="Move down"
-        disabled={!canMoveDown}
-        onClick={(e) => {
-          e.stopPropagation();
-          onMoveDown?.();
-        }}
-        className={cn(
-          "rounded-sm text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-25",
-          focusRing,
-        )}
-      >
-        <ChevronDown className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
-}
-
-// ─── Drag handle (line items only) ──────────────────────────────────────────
-//
-// LineItemRow's real @dnd-kit drag entry point. Kept generic (`Record<string,
-// unknown>` for attributes/listeners) so this file stays free of a hard
-// `@dnd-kit` import — the caller (equipment-tab.tsx, which DOES import
-// dnd-kit) passes its `useSortable()` return values straight through.
+// The real @dnd-kit drag entry point, shared by LineItemRow, GroupRow,
+// SubHireGroupRow, and CategoryRow (the last to convert — categories used to
+// keep their ▲/▼ MoveButtons). Kept generic (`Record<string, unknown>` for
+// attributes/listeners) so this file stays free of a hard `@dnd-kit` import —
+// the caller (equipment-tab.tsx, which DOES import dnd-kit) passes its
+// `useSortable()` return values straight through.
 
 export interface DragHandleControls {
   /** `useSortable()`'s `setNodeRef`, attached to this handle button (not the
@@ -928,10 +862,10 @@ export function CategoryRow({
   onAddEquipment,
   onAddKit,
   onAddCustom,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
+  isDragDisabled,
 }: {
   cat: CategoryData;
   /** Total rendered column count (COL_COUNT + cost). The header cell spans this so it
@@ -948,7 +882,7 @@ export function CategoryRow({
   onAddEquipment?: () => void;
   onAddKit?: () => void;
   onAddCustom?: () => void;
-} & MoveControls) {
+} & DragHandleControls) {
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
   const isMobile = useIsMobile();
 
@@ -1007,6 +941,16 @@ export function CategoryRow({
         name={cat.name}
         action={
           <div className="flex shrink-0 items-center gap-1">
+            {/* Mobile drag handle — same treatment as GroupRow/SubHireGroupRow's
+                mobile cards (see those components' comments); this heading
+                previously had zero reorder affordance on touch either. */}
+            <DragHandle
+              dragHandleRef={dragHandleRef}
+              dragAttributes={dragAttributes}
+              dragListeners={dragListeners}
+              isDragDisabled={isDragDisabled}
+              className="inline-flex min-h-11 min-w-8 items-center justify-center"
+            />
             {onAddEquipment && <CardAddButton onClick={onAddEquipment} />}
             {categoryMenu}
           </div>
@@ -1019,11 +963,11 @@ export function CategoryRow({
     <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
       <TableCell colSpan={columnCount} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
-          <MoveButtons
-            onMoveUp={onMoveUp}
-            onMoveDown={onMoveDown}
-            canMoveUp={canMoveUp}
-            canMoveDown={canMoveDown}
+          <DragHandle
+            dragHandleRef={dragHandleRef}
+            dragAttributes={dragAttributes}
+            dragListeners={dragListeners}
+            isDragDisabled={isDragDisabled}
             className="px-1 md:group-hover/cat:opacity-100 md:group-focus-within/cat:opacity-100"
           />
           <h3 className="t-overline text-muted">{cat.name}</h3>

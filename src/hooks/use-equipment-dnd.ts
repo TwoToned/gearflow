@@ -61,6 +61,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
+import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers";
 import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import {
@@ -539,8 +540,20 @@ export interface UseEquipmentDndArgs {
   onSettled?: () => void;
 }
 
+/** Every row kind renders as a single vertically-stacked list (desktop table
+ *  rows and mobile cards both scroll top-to-bottom only) — clamp the dragged
+ *  node to that axis (no horizontal drift while dragging on a `table-fixed`
+ *  layout) and keep the floating `DragOverlay` from escaping the viewport on
+ *  a small screen. Same modifiers for both layouts; neither needs different
+ *  treatment since the constraint (vertical-only, stay-on-screen) is
+ *  layout-agnostic. */
+const dragModifiers = [restrictToVerticalAxis, restrictToWindowEdges];
+
 export interface UseEquipmentDndResult {
   sensors: ReturnType<typeof useSensors>;
+  /** Pass to `<DndContext modifiers={modifiers}>` — see `dragModifiers`'s
+   *  doc comment for why these two, and why they apply uniformly. */
+  modifiers: typeof dragModifiers;
   activeDragId: string | null;
   /** The `over.id` currently being hovered when the Drop Matrix disallows it
    *  — null otherwise. Lets the caller render invalid-drop styling. */
@@ -873,6 +886,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
 
   return {
     sensors,
+    modifiers: dragModifiers,
     activeDragId,
     invalidOverId,
     handleDragStart,

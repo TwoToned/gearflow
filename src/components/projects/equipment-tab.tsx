@@ -18,6 +18,7 @@ import {
   type OptimisticLineEdit,
 } from "@/hooks/use-native-line-item-writes";
 import { useEquipmentDnd } from "@/hooks/use-equipment-dnd";
+import { useCanDo } from "@/lib/use-permissions";
 import { Plus, FolderPlus, FolderTree, Pencil, Trash2, ChevronDown as ChevronDownIcon } from "lucide-react";
 import {
   DropdownMenu,
@@ -223,18 +224,20 @@ function SortableSubHireGroupRow({
 
 // ─── Sortable category row wrapper ──────────────────────────────────────────
 //
-// Same "small wrapper to satisfy rules-of-hooks" shape as the wrappers above —
-// the simplest of the four, since categories are top-level reorder only:
-// every category is always independently reorderable (no "orphan zone"
-// equivalent for categories the way there is for groups), so there's no
-// `dragDisabled` branch to thread through.
+// Same "small wrapper to satisfy rules-of-hooks" shape as the wrappers above.
+// Categories are always independently reorderable structurally (no "orphan
+// zone" equivalent the way groups have), but `dragDisabled` is still threaded
+// through so the caller can gate drag on permission/lock state, same as every
+// other row kind.
 function SortableCategoryRow({
   sortableId,
   containerId,
+  dragDisabled,
   ...rowProps
 }: {
   sortableId: string;
   containerId: string;
+  dragDisabled?: boolean;
 } & Omit<
   React.ComponentProps<typeof CategoryRow>,
   "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
@@ -242,6 +245,7 @@ function SortableCategoryRow({
   const { setNodeRef, attributes, listeners } = useSortable({
     id: sortableId,
     data: { containerId },
+    disabled: dragDisabled,
   });
   return (
     <CategoryRow
@@ -249,6 +253,7 @@ function SortableCategoryRow({
       dragHandleRef={setNodeRef}
       dragAttributes={attributes as unknown as Record<string, unknown>}
       dragListeners={listeners as unknown as Record<string, unknown>}
+      isDragDisabled={dragDisabled}
     />
   );
 }
@@ -306,6 +311,17 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   const moneyLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
   const lockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
   const hardLocked = !lockStatus.loading && lockStatus.tier === "HARD_LOCKED" && !lockStatus.hasOpenSession;
+
+  // Drag-and-drop is client-gated on the SAME permission every reorder/move
+  // mutation already enforces server-side (`project:manage_line_items`) —
+  // unlike the old ▲/▼ buttons (which rendered unconditionally for any
+  // viewer), a dragged handle should simply not exist for someone who can't
+  // write. Also disabled at HARD_LOCKED with no open FULL session: every
+  // drag mutation's `assertLifecycleGuard` throws `PROJECT_LOCKED` there with
+  // no retry-with-justification path (see use-equipment-dnd.ts's
+  // `reportDragMutationError`), so starting that drag can only ever fail —
+  // better to not offer the handle at all than let it fail every time.
+  const canDragEquipment = useCanDo("project", "manage_line_items") && !hardLocked;
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -1426,6 +1442,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       <SortableCategoryRow
                         sortableId={`cat-${cat.id}`}
                         containerId="categories"
+                        dragDisabled={!canDragEquipment}
                         cat={cat}
                         columnCount={colCount}
                         onRename={() => {
@@ -1479,6 +1496,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               <SortableSubHireGroupRow
                                 sortableId={`shg-${shGroup.id}`}
                                 containerId={`mixed:${cat.id}`}
+                                dragDisabled={!canDragEquipment}
                                 group={shGroup}
                                 isExpanded={isExpanded}
                                 showCostColumn={showCostColumn}
@@ -1551,6 +1569,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             <SortableGroupRow
                               sortableId={`grp-${group.id}`}
                               containerId={`mixed:${cat.id}`}
+                              dragDisabled={!canDragEquipment}
                               group={group}
                               isExpanded={isExpanded}
                               indented
@@ -1618,6 +1637,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   key={item.id}
                                   sortableId={`li-${item.id}`}
                                   containerId={`items:${group.id}`}
+                                  dragDisabled={!canDragEquipment}
                                   item={item}
                                   indent="ml-12"
                                   orgId={orgId}
@@ -1668,6 +1688,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             key={item.id}
                             sortableId={`li-${item.id}`}
                             containerId={`standalone:${cat.id}`}
+                            dragDisabled={!canDragEquipment}
                             item={item}
                             indent="ml-3"
                             orgId={orgId}
@@ -1734,6 +1755,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           key={item.id}
                           sortableId={`li-${item.id}`}
                           containerId="uncategorized-standalone"
+                          dragDisabled={!canDragEquipment}
                           item={item}
                           indent=""
                           orgId={orgId}
@@ -1865,6 +1887,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             key={item.id}
                             sortableId={`li-${item.id}`}
                             containerId={`items:${group.id}`}
+                            dragDisabled={!canDragEquipment}
                             item={item}
                             indent="ml-12"
                             orgId={orgId}
@@ -2034,6 +2057,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
           <DndContext
             sensors={dnd.sensors}
             collisionDetection={closestCenter}
+            modifiers={dnd.modifiers}
             onDragStart={dnd.handleDragStart}
             onDragOver={dnd.handleDragOver}
             onDragEnd={dnd.handleDragEnd}

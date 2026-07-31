@@ -423,24 +423,23 @@ describe("composeDocument — invoice T&Cs, payment details, ABN, due date", () 
     expect(result.inputs[0][page0[paymentIdx].name as string]).toBe("Bank: Test Bank\nBSB: 000-000\nAcct: 12345678");
   });
 
-  it("renders the org's ABN under the address/email in the invoice header, never on the quote", () => {
-    const invoiceResult = composeDocument("invoice", soloData({ org_abn: "12 345 678 901" }), "#0d4f4f");
-    const invoiceHeaderSchema = invoiceResult.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
-    const invoiceHeaderConfig = JSON.parse(invoiceResult.inputs[0][invoiceHeaderSchema.name as string]);
-    expect(invoiceHeaderConfig.orgDetails).toContain("ABN: 12 345 678 901");
-    expect(invoiceHeaderConfig.orgDetails.indexOf("ABN:")).toBeGreaterThan(invoiceHeaderConfig.orgDetails.indexOf(soloData().org_address));
-
-    const quoteResult = composeDocument("quote", soloData({ org_abn: "12 345 678 901" }), "#0d4f4f");
-    const quoteHeaderSchema = quoteResult.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
-    const quoteHeaderConfig = JSON.parse(quoteResult.inputs[0][quoteHeaderSchema.name as string]);
-    expect(quoteHeaderConfig.orgDetails).not.toContain("ABN:");
+  it("renders the org's ABN under the address/email, on every doc type — wherever the org details block renders", () => {
+    for (const docType of ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket"] as const) {
+      const result = composeDocument(docType, soloData({ org_abn: "12 345 678 901" }), "#0d4f4f");
+      const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+      const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+      expect(headerConfig.orgDetails).toContain("ABN: 12 345 678 901");
+      expect(headerConfig.orgDetails.indexOf("ABN:")).toBeGreaterThan(headerConfig.orgDetails.indexOf(soloData().org_address));
+    }
   });
 
-  it("omits the ABN line when the org hasn't set one, even on the invoice", () => {
-    const result = composeDocument("invoice", soloData({ org_abn: "" }), "#0d4f4f");
-    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
-    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
-    expect(headerConfig.orgDetails).not.toContain("ABN:");
+  it("omits the ABN line when the org hasn't set one, on every doc type", () => {
+    for (const docType of ["quote", "invoice", "packing-list", "return-sheet", "delivery-docket"] as const) {
+      const result = composeDocument(docType, soloData({ org_abn: "" }), "#0d4f4f");
+      const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+      const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+      expect(headerConfig.orgDetails).not.toContain("ABN:");
+    }
   });
 
   it("renders the invoice due date as a bold header highlight AND as a bold row at the bottom of the totals block", () => {

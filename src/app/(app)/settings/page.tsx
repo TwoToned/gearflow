@@ -234,7 +234,7 @@ export default function GeneralSettingsPage() {
               disabled={!canEdit}
             />
             <p className="t-micro text-muted">
-              Australian Business Number — required on Tax Invoices. Printed in the PDF header, under your address and email.
+              Australian Business Number — required on Tax Invoices. Printed in the PDF header, under your address and email, on every document type.
             </p>
           </div>
           <div className="space-y-2">

@@ -64,7 +64,9 @@ export interface OrgSettings {
   website?: string;
   address?: string;
   /** Australian Business Number (or local equivalent tax/business
-   *  registration id). Rendered in the PDF header on Tax Invoices only. */
+   *  registration id). Rendered in the PDF header on every doc type, under
+   *  the org's address/phone/email — required on Tax Invoices, but shown
+   *  wherever the org details block renders, not gated to that one type. */
   abn?: string;
   country?: string;
   timezone?: string;

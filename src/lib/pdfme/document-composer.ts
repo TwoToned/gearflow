@@ -349,10 +349,12 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       // Quote's header meta gains a 3rd line ("Expiry: <date>") — a little
       // extra headroom so it can't ever crowd the details row below it.
       const hasExpiryLine = ctx.docType === "quote" && !!data.quote_valid_until;
-      // Invoice's org-details column gains an extra "ABN: <abn>" line, and
-      // its meta column gains a bold "Due: <date>" highlight line — same
-      // small headroom bump per extra line, same reasoning.
-      const hasAbnLine = ctx.docType === "invoice" && !!data.org_abn;
+      // The org-details column gains an extra "ABN: <abn>" line on EVERY doc
+      // type (wherever the org address/phone/email block renders — not just
+      // Tax Invoices). Invoice's meta column additionally gains a bold
+      // "Due: <date>" highlight line. Same small headroom bump per extra
+      // line, same reasoning.
+      const hasAbnLine = !!data.org_abn;
       const hasDueDateLine = ctx.docType === "invoice" && !!data.invoice_due_date;
       const extraLines = [hasExpiryLine, hasAbnLine, hasDueDateLine].filter(Boolean).length;
       return base + extraLines * 5;
@@ -839,9 +841,11 @@ function buildEntryFields(
       if (data.org_address) orgDetailParts.push(data.org_address);
       if (data.org_phone) orgDetailParts.push(data.org_phone);
       if (data.org_email) orgDetailParts.push(data.org_email);
-      // AU Tax Invoices must carry the org's ABN — invoice-only, placed
-      // under the address/email lines already above it.
-      if (docType === "invoice" && data.org_abn) orgDetailParts.push(`ABN: ${data.org_abn}`);
+      // Business registration id, shown wherever the org address/phone/email
+      // block renders — every doc type, not just Tax Invoices (AU Tax
+      // Invoices require it, but there's no reason to hide it elsewhere).
+      // Placed under the address/email lines already above it.
+      if (data.org_abn) orgDetailParts.push(`ABN: ${data.org_abn}`);
       if (data.org_website) orgDetailParts.push(data.org_website);
 
       // Quote expiry moves from its own bottom-of-document line into the

@@ -915,7 +915,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     const reordered = [...cats];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(target, 0, moved);
-    categoryWrites.reorder(reordered.map((c) => c.id)).catch(() => {
+    categoryWrites.reorder({ orderedIds: reordered.map((c) => c.id) }).catch(() => {
       toast.error("Failed to reorder categories");
     });
     invalidate();
@@ -938,14 +938,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
     const hasAnySubHire = reordered.some((s) => s.kind === "subHire");
     if (!hasAnySubHire) {
-      groupWrites.reorder(
-        reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
-      ).catch(() => toast.error("Failed to reorder groups"));
+      groupWrites.reorder({
+        orderedIds: reordered.map((s) => (s.kind === "project" ? s.projectGroupId : "")).filter(Boolean),
+      }).catch(() => toast.error("Failed to reorder groups"));
     } else {
       const orderedIds = reordered.map((s) =>
         s.kind === "project" ? `pg-${s.projectGroupId}` : `shg-${s.subHireGroupId}`,
       );
-      categorySlotWrites.reorderMixed(cat.id, orderedIds).catch(() => {
+      categorySlotWrites.reorderMixed({ categoryId: cat.id, orderedIds }).catch(() => {
         toast.error("Failed to reorder groups");
       });
     }

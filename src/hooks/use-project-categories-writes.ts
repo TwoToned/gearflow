@@ -63,12 +63,16 @@ export function useProjectCategoryWrites() {
         auditId: createId(),
       });
     },
-    reorder: async (orderedIds: string[]): Promise<void> => {
+    /** `justification` — required once a touched project is JUSTIFY+ with no
+     *  open unlock session (drag-and-drop reorder routes this through
+     *  useJustifiedMutation). */
+    reorder: async (args: { orderedIds: string[]; justification?: string }): Promise<void> => {
       await reorderM({
         orgId: requireOrg(),
-        orderedIds,
+        orderedIds: args.orderedIds,
         now: Date.now(),
         actor: actor(),
+        justification: args.justification,
       });
     },
   };

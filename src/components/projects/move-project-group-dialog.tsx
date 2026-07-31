@@ -92,10 +92,10 @@ function MoveProjectGroupDialogBody({
     mutationFn: async () => {
       if (!groupId) throw new Error("No project group selected");
       if (!selectedCategoryId) throw new Error("Pick a destination");
-      return slotWrites.moveProjectGroup(
+      return slotWrites.moveProjectGroup({
         groupId,
-        selectedCategoryId === UNCATEGORISED_VALUE ? null : selectedCategoryId,
-      );
+        categoryId: selectedCategoryId === UNCATEGORISED_VALUE ? null : selectedCategoryId,
+      });
     },
     onSuccess: () => {
       refreshCaches();

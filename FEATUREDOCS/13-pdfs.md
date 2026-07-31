@@ -589,8 +589,10 @@ across every page via `runTablePlugin`).
   exists on the Convex `projectServices` schema but has **no UI to set it anywhere
   in the app** (confirmed by grep — the one place it's read,
   `project-service-read.ts`, defaults it to `false` when absent). Gating the
-  existing quote services injection (`build-document-data.ts`'s `showOnDocuments`
-  filter, already live) by `billableToClient` today would silently hide every
+  existing quote services injection (`build-document-data.ts`'s billable-services
+  filter — since superseded to gate on `lineTotal > 0` rather than the old
+  `showOnDocuments` flag, see FEATUREDOCS/10 "Margin Display") by `billableToClient`
+  today would silently hide every
   existing org's services from every quote, since no org has ever been able to set
   the field `true`. Shipping the gate without the UI control would recreate exactly
   the "feature nobody can reach" anti-pattern this redesign removed. Needs a

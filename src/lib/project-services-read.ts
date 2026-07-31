@@ -21,14 +21,13 @@ export async function getProjectServicesByOrg(
 }
 
 /**
- * Sum of `lineTotal` over a project's non-CANCELLED, document-visible services.
- * Replicates Prisma `aggregate({ where: { projectId, status: { not: CANCELLED },
- * showOnDocuments: true }, _sum: { lineTotal } })`. Org-scoped Convex `list` is
- * filtered to the project here; null `lineTotal` contributes 0.
- *
- * NOTE on `showOnDocuments`: Prisma's `showOnDocuments: true` matches only rows
- * whose column is exactly `true`. The Convex field is optional, so a row with the
- * value absent reads `undefined` and is correctly excluded by the strict `=== true`.
+ * Sum of `lineTotal` over a project's non-CANCELLED, CHARGED services — a service
+ * bills iff it has an actual charge (`lineTotal` is null/0 until a unitPrice is
+ * typed or a crew charge rate auto-prices it). Org-scoped Convex `list` is
+ * filtered to the project here; null/zero `lineTotal` contributes 0, which is
+ * what makes an unpriced (internal-only) service exclude itself with no separate
+ * flag to check. Mirrors `convex/lib/recalc.ts`'s `serviceRevenue` — kept in sync
+ * there (R-3.1).
  */
 export function sumProjectServiceRevenue(
   services: ConvexProjectService[],
@@ -38,7 +37,6 @@ export function sumProjectServiceRevenue(
   for (const s of services) {
     if (s.projectId !== projectId) continue;
     if (s.status === "CANCELLED") continue;
-    if (s.showOnDocuments !== true) continue;
     total += s.lineTotal ?? 0;
   }
   return total;
@@ -59,7 +57,6 @@ export function sumProjectLabourServiceRevenue(
   for (const s of services) {
     if (s.projectId !== projectId) continue;
     if (s.status === "CANCELLED") continue;
-    if (s.showOnDocuments !== true) continue;
     if (s.type !== "LABOUR") continue;
     total += s.lineTotal ?? 0;
   }

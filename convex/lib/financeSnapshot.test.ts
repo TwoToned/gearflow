@@ -111,4 +111,54 @@ describe("buildFinanceLines", () => {
     const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
     expect(lines[0]?.description).toBe("Line item");
   });
+
+  // A service bills iff it has an actual charge — DERIVED from lineTotal, no
+  // separate manual flag to keep in sync (R-3.1). Mirrors recalcProjectTotals's
+  // serviceRevenue and the PDF pipeline's billableServices filter.
+  describe("SERVICE lines", () => {
+    test("includes a service with a charge set", async () => {
+      const t = makeT();
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectServices", {
+          id: "s1", organizationId: ORG, projectId: "p1", type: "DELIVERY",
+          title: "Truck delivery", status: "CONFIRMED", quantity: 1,
+          unitPrice: 150, lineTotal: 150,
+        });
+      });
+
+      const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({ sourceType: "SERVICE", description: "Truck delivery", lineTotal: 150 });
+    });
+
+    test("excludes a service with no charge set (lineTotal null)", async () => {
+      const t = makeT();
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectServices", {
+          id: "s1", organizationId: ORG, projectId: "p1", type: "BUMP_IN",
+          title: "Bump in", status: "CONFIRMED", quantity: 1,
+        });
+      });
+
+      const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+      expect(lines).toHaveLength(0);
+    });
+
+    test("excludes a CANCELLED service even if it has a charge set", async () => {
+      const t = makeT();
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectServices", {
+          id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR",
+          title: "Show day", status: "CANCELLED", quantity: 1,
+          unitPrice: 500, lineTotal: 500,
+        });
+      });
+
+      const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+      expect(lines).toHaveLength(0);
+    });
+  });
 });

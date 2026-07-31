@@ -68,7 +68,7 @@ export const operationalCosts = query({
       .first();
     if (!project || project.organizationId !== orgId) return EMPTY;
 
-    // Service revenue: mirrors sumProjectServiceRevenue (non-cancelled, shown on docs).
+    // Service revenue: mirrors sumProjectServiceRevenue (non-cancelled, has a charge set).
     const services = await ctx.db
       .query("projectServices")
       .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
@@ -78,9 +78,9 @@ export const operationalCosts = query({
     for (const s of services) {
       if (s.organizationId !== orgId) continue; // defence-in-depth (by_projectId is not org-scoped)
       if (s.status === "CANCELLED") continue;
-      if (s.showOnDocuments !== true) continue;
-      serviceRevenue += s.lineTotal ?? 0;
-      if (s.type === "LABOUR") labourServiceRevenue += s.lineTotal ?? 0;
+      if (!s.lineTotal || s.lineTotal <= 0) continue; // billable iff it has an actual charge
+      serviceRevenue += s.lineTotal;
+      if (s.type === "LABOUR") labourServiceRevenue += s.lineTotal;
     }
 
     // Maintenance cost: mirrors aggregateMaintenanceForProject (non-cancelled).

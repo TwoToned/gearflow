@@ -1808,8 +1808,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
 
       {/* ─── Billable Services on Documents ─────────────────────────────────── */}
       {(() => {
+        // A service is billable once it has an actual charge — mirrors
+        // buildFinanceLines/build-document-data.ts/recalcProjectTotals (R-3.1),
+        // not a separate "show on documents" flag.
         const billable = (servicesData ?? []).filter(
-          (s: { showOnDocuments: boolean; status: string }) => s.showOnDocuments && s.status !== "CANCELLED"
+          (s: { lineTotal: number | null; status: string }) => s.status !== "CANCELLED" && Number(s.lineTotal) > 0
         );
         if (billable.length === 0) return null;
         return (

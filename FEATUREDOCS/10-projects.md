@@ -688,23 +688,32 @@ Structured operational tasks attached to a project (deliveries, pickups, bump in
 - `ServiceCard`'s financial line (`services-panel.tsx`) shows charge (`lineTotal`,
   everyone) and, for manager+ only, cost (`costTotal`) + margin (charge - cost,
   with %) — negative margin renders `text-t-out`, UNCLAMPED (a loss-making service
-  is meant to be visible, not hidden). A `showOnDocuments: false` auto-priced
-  service shows an "Internal (not billed)" tag instead of forcing the flag on.
-- **`showOnDocuments` is a manual toggle on the create/edit `ServiceDialog`**
-  ("Show on quotes, invoices & Xero", in the "Charge to client" pricing section) —
-  fixed bug: the dialog only ever seeded this from a matching org-level
-  `serviceTemplates` default (`Generate services`), so a hand-added or hand-edited
-  service (the common case — a PM typing a custom delivery/labour line) had no way
-  to make it billable on documents at all. Not gated by `LockedField`/the financial
-  lock — `updateServiceNative`'s `moneyChanged` check only looks at
-  `unitPrice`/`discount`/`costTotal`, so this flag is a structural change server-side
-  too. This is the ONE flag `buildFinanceLines` (FEATUREDOCS/66), the PDF pipeline's
-  `billableServices` filter (`build-document-data.ts`), and `recalcProjectTotals`'s
-  `serviceRevenue` all gate on — flipping it is what makes a service (labour,
-  delivery, bump in/out, misc) actually show up on a sent quote, an issued invoice,
-  and the pushed Xero invoice's line items (`convex/xeroPush.ts` resolves its
-  account/tax coding via `serviceAccountDefaults`), not just the project's internal
-  P&L.
+  is meant to be visible, not hidden).
+- **A service is billable — shows on quotes/invoices/Xero — iff it has an actual
+  charge, DERIVED from `lineTotal`, never a manually-set flag.** `lineTotal` is
+  null/0 until a `unitPrice` is typed or a crew charge rate auto-prices it
+  (`calculateServiceLineTotal` / `recalcServiceChargeFromCrew`), so "has a charge"
+  and "will bill" are the same condition by construction — nothing to keep in
+  sync (R-3.1). This replaced an earlier `showOnDocuments` boolean (had two
+  failure modes: it defaulted `false` with no UI control at all on a hand-added/
+  hand-edited service, the common case — a PM typing a custom delivery/labour
+  line had no way to ever bill it; and even once a manual toggle was added, it
+  was a second flag that could disagree with whether the service was actually
+  priced). `showOnDocuments` stays in the schema (raw stored field, still readable
+  via the API/MCP mapper `project-service-read.ts` and the `serviceTemplates`
+  "Show on documents by default" seed for `Generate services`) but no longer
+  gates anything — the four call sites below all read `lineTotal` directly:
+  `buildFinanceLines` (FEATUREDOCS/66, quote/invoice snapshot), the PDF pipeline's
+  `billableServices` filter (`build-document-data.ts`), `recalcProjectTotals`'s
+  `serviceRevenue` (`convex/lib/recalc.ts`), and `convex/projectCosts.ts` /
+  `sumProjectServiceRevenue` (`project-services-read.ts`, the Prisma-mirror P&L
+  read). `ServiceCard`'s "On quote" / "Internal (not billed)" badge and the
+  Equipment tab's "Services on documents" section (`equipment-tab.tsx`) are the
+  same derived condition, so what a PM sees in the app always matches what ends
+  up on the document. The create/edit `ServiceDialog`'s pricing section shows a
+  live, non-editable hint ("Has a charge — will show on quotes, invoices & Xero" /
+  "No charge set — stays internal…") instead of a toggle — a UX-only preview of
+  the same server-side rule, mirroring the crew-charge preview it sits next to.
 - The services financial summary panel's third tile used to duplicate the second
   ("Total" and "Internal" both read the same `costTotal`-derived value) — it's now
   "Margin" (`onDocumentsTotal - internalTotal`), gated manager+ along with the

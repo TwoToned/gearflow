@@ -117,14 +117,22 @@ export async function buildFinanceLines(
   }
 
   for (const s of services) {
-    if (s.status === "CANCELLED" || s.showOnDocuments !== true) continue;
+    if (s.status === "CANCELLED") continue;
+    // A service only appears on a quote/invoice/Xero push once it has an actual
+    // charge — `lineTotal` is null/0 until a unitPrice is typed or a crew charge
+    // rate auto-prices it (calculateServiceLineTotal / recalcServiceChargeFromCrew).
+    // Mirrors recalcProjectTotals's serviceRevenue (convex/lib/recalc.ts), which
+    // sums the SAME lineTotal unconditionally — a $0/unset service already
+    // contributes nothing there, so this is the same rule, not a second one.
+    const lineTotal = Number(s.lineTotal) || 0;
+    if (lineTotal <= 0) continue;
     lines.push({
       sourceType: "SERVICE",
       sourceLineItemId: s.id,
       description: s.title || s.type,
       quantity: s.quantity ?? 1,
       unitPrice: Number(s.unitPrice) || 0,
-      lineTotal: Number(s.lineTotal) || 0,
+      lineTotal,
     });
   }
 

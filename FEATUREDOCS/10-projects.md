@@ -603,7 +603,17 @@ HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
 - Categories as collapsible row headers with tinted background
 - Groups as collapsible table rows with edit button + dropdown menu, showing qty/price columns
 - Line items indented under their parent group, drag-and-drop reorderable
-- Single flat `DndContext` with prefixed IDs (categories, groups, items all in one context)
+- Every row kind (categories, groups, sub-hire groups, line items) drags via
+  `@dnd-kit` — one shared `DndContext` (`src/hooks/use-equipment-dnd.ts`)
+  with a `SortableContext` per container (the category list; each
+  category's mixed project+sub-hire group list; each group's/category's/
+  Uncategorized's line items), not one flat context — `handleDragEnd`
+  dispatches on the dragged sortable id's `cat-`/`grp-`/`shg-`/`li-` prefix
+  to one of three pure resolver functions. Long-press (mobile `TouchSensor`)
+  and keyboard (`KeyboardSensor`) both work; drag handles are gated on
+  `project:manage_line_items` and hidden at `HARD_LOCKED`. See
+  [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md#reordering-drag-and-drop)
+  for the full architecture.
 - Inline "Add Group" button in toolbar with template picker
 - Uncategorized zone at the bottom holds orphan line items, orphan
   sub-hire groups, **and orphan project groups** (since v0.10.0.0) —

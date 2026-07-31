@@ -6737,6 +6737,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -6752,8 +6757,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "3fea7c7062c98d32",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "1de54cbaf6637106",
     "returnsSha": "efda0e408ef31eef",
     "stability": "tracks-app",
     "summary": null,
@@ -6803,6 +6810,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -6818,8 +6830,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "3fea7c7062c98d32",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "1de54cbaf6637106",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -6864,6 +6878,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -6874,8 +6893,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "bf6185a8a2f45559",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "a0e074a035ef6cee",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -32571,6 +32592,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "object"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -32586,8 +32612,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "49e9976c1d49fd65",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "60c4b7f0c27dcdcf",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -33581,6 +33609,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "object"
       },
       {
+        "name": "justification",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -33596,8 +33629,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       }
     ],
-    "privilegedArgs": [],
-    "argsSha": "49e9976c1d49fd65",
+    "privilegedArgs": [
+      "justification"
+    ],
+    "argsSha": "60c4b7f0c27dcdcf",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,

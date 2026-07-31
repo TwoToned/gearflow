@@ -5070,6 +5070,9 @@ export const OPENAPI_DOCUMENT = {
                       "groupId": {
                         "type": "string"
                       },
+                      "justification": {
+                        "type": "string"
+                      },
                       "slotId": {
                         "type": "string"
                       }
@@ -5148,6 +5151,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "categoryId": {},
                       "groupId": {
+                        "type": "string"
+                      },
+                      "justification": {
                         "type": "string"
                       },
                       "slotId": {
@@ -5231,6 +5237,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "items": {
                         "type": "array"
+                      },
+                      "justification": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -25294,6 +25303,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "justification": {
+                        "type": "string"
+                      },
                       "orderedIds": {
                         "type": "array"
                       }
@@ -26155,6 +26167,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "justification": {
+                        "type": "string"
+                      },
                       "orderedIds": {
                         "type": "array"
                       }

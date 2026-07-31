@@ -48,42 +48,17 @@ import {
   SectionTitle,
   Field,
   DiscountField,
-  discountEntryValue,
-  resolveDiscountAmount,
-  toDiscountMode,
   type DiscountMode,
 } from "./line-item-form-fields";
+import {
+  initialDiscountEntry,
+  buildLineItemFormDefaults,
+  computeEditLineItemPayload,
+  type EditLineItemPayload,
+} from "@/lib/line-item-edit-payload";
 import type { LineItemData, CategoryData } from "./equipment-rows";
 
-export interface EditLineItemPayload {
-  type: string;
-  quantity: number;
-  unitPrice?: number;
-  description: string;
-  pricingType: string;
-  duration: number;
-  discount?: number;
-  /** #1012 — how the discount above was entered; persisted for document display. */
-  discountMode?: DiscountMode;
-  notes?: string;
-  isOptional: boolean;
-  xeroAccountCode?: string;
-  xeroTaxType?: string;
-}
-
-/**
- * #1012 — reopen the editor showing the discount the way it was ENTERED: a line
- * saved as 15% comes back as "15" with the toggle on `%`, not as the resolved
- * dollar amount with the toggle reset to `$` (which would silently rewrite the
- * stored mode on the next save). The percentage is derived from the stored
- * dollar amount against the line's current gross — see
- * `src/lib/discount-mode.ts` for why it isn't stored.
- */
-function initialDiscountEntry(item: LineItemData): { value: string; mode: DiscountMode } {
-  const mode = toDiscountMode(item.discountMode);
-  const gross = Number(item.unitPrice ?? 0) * Number(item.quantity ?? 1) * Number(item.duration ?? 1);
-  return { value: discountEntryValue(item.discount != null ? Number(item.discount) : null, mode, gross), mode };
-}
+export type { EditLineItemPayload } from "@/lib/line-item-edit-payload";
 
 export interface EditLineItemPlacement {
   categoryId: string | null;
@@ -161,19 +136,7 @@ function EditLineItemDialogBody({
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
-    defaultValues: {
-      type: (item.type as LineItemFormValues["type"]) ?? "EQUIPMENT",
-      description: item.description ?? item.model?.name ?? "",
-      quantity: item.quantity,
-      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : undefined,
-      pricingType: (item.pricingType as LineItemFormValues["pricingType"]) ?? "PER_DAY",
-      duration: item.duration ?? 1,
-      discount: initialDiscount.value !== "" ? Number(initialDiscount.value) : undefined,
-      notes: item.notes ?? "",
-      isOptional: item.isOptional ?? false,
-      xeroAccountCode: item.xeroAccountCode ?? "",
-      xeroTaxType: item.xeroTaxType ?? "",
-    },
+    defaultValues: buildLineItemFormDefaults(item),
   });
   const [discountMode, setDiscountMode] = useState<DiscountMode>(initialDiscount.mode);
   const [overbookConfirmed, setOverbookConfirmed] = useState(false);
@@ -225,28 +188,9 @@ function EditLineItemDialogBody({
     availableForEdit != null && requestedQty > availableForEdit;
 
   function handleSave(data: LineItemFormValues) {
-    const qty = Number(data.quantity) || 1;
-    const price = data.unitPrice != null ? Number(data.unitPrice) : undefined;
-    const dur = Number(data.duration) || item.duration || 1;
-    // #1012: shared conversion (resolveDiscountAmount) + the mode is submitted
-    // alongside the resolved amount instead of being discarded.
-    const disc = resolveDiscountAmount(discountMode, data.discount as number | string | undefined, (price ?? 0) * qty * dur);
     onSubmit(
       item.id,
-      {
-        type: data.type ?? item.type ?? "EQUIPMENT",
-        quantity: qty,
-        unitPrice: price,
-        description: data.description ?? "",
-        pricingType: data.pricingType ?? item.pricingType ?? "PER_DAY",
-        duration: dur,
-        discount: disc,
-        discountMode,
-        notes: data.notes || undefined,
-        isOptional: data.isOptional ?? false,
-        xeroAccountCode: data.xeroAccountCode || undefined,
-        xeroTaxType: data.xeroTaxType || undefined,
-      },
+      computeEditLineItemPayload(item, data, discountMode),
       overbookConfirmed,
       baseUpdatedAt,
     );

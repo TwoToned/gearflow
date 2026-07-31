@@ -272,10 +272,11 @@ function buildDepositDue(
     .sort((a, b) => a.project.projectNumber.localeCompare(b.project.projectNumber));
 }
 
-/** Outstanding: issued invoices not (yet) marked PAID. Reflects issuance, not
- *  confirmed payment — the Xero payment poll (FEATUREDOCS/66 "Deferred") is
- *  what would make this payment-truth; until then this is explicit about
- *  what it is (surfaced in the UI copy, not just here). */
+/** Outstanding: issued invoices not (yet) marked PAID. `paymentStatus` is now
+ *  real for any org recording payments in Flow (#1055, paymentsWrites.ts) —
+ *  the remaining gap is Xero-side payments Flow doesn't know about, since the
+ *  Xero payment-status poll itself (FEATUREDOCS/66 "Deferred") was never
+ *  built. */
 function buildOutstanding(
   issuedInvoices: Doc<"invoices">[],
   projectDocsById: Map<string, Doc<"projects">>,

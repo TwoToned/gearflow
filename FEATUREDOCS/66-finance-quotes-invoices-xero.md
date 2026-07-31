@@ -1,6 +1,6 @@
 # Finance — Quotes, Invoices, Client Payment Profiles, Xero Integration
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-28 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-07-31 (review quarterly — POLICY.md R-5.5)_
 
 WS1 of #934 (#940) — the finance model. **RVLT Flow owns quote + invoice
 generation; Xero owns the ledger, payment collection, and reconciliation.**
@@ -16,6 +16,7 @@ reporting, or email documents to clients — those stay Xero's job.
 Project (recalc-owned pricing) → Quote revision (snapshot, versioned) → PDF
                                 → Invoice (Flow-numbered) → InvoiceLine (resolved Xero coding)
                                      → Xero draft invoice (push)
+                                     → Payment (Flow-recorded, against an ISSUED invoice)
 ```
 
 - **Quote revision** (`quotes` table) — see "Quote revisions (#986)" below.
@@ -25,9 +26,11 @@ Project (recalc-owned pricing) → Quote revision (snapshot, versioned) → PDF
   CREDIT`. Created as `DRAFT`; `invoiceNumber` is assigned only at `issueNative`
   (the ONE numbering moment — drafts stay unnumbered). Immutable once
   `ISSUED` — a correction is `VOID` + reissue, or a `CREDIT` invoice.
-  `paymentStatus` (`UNPAID | PARTIALLY_PAID | PAID`) is written only by a
-  future Xero payment-status poll (phase 2, not built in this PR — see
-  "Deferred" below); it is never client-writable.
+  `paymentStatus` (`UNPAID | PARTIALLY_PAID | PAID`) and `amountPaid` are
+  DERIVED, written by `paymentsWrites.ts` `recordNative`/`voidNative` (#1055)
+  from this invoice's own non-voided `payments` rows — not by a Xero poll
+  (that phase-2 idea was never built — see "Deferred" below, which now only
+  covers Xero-side payment reconciliation, not Flow-recorded payments).
 - **InvoiceLine** (`invoiceLines` table) — snapshot rows under an invoice.
   `PARENT_JOIN` for org-export (no `organizationId` column — joined via
   `invoiceId` into the already org-scoped `invoices` row, same pattern as
@@ -35,6 +38,13 @@ Project (recalc-owned pricing) → Quote revision (snapshot, versioned) → PDF
   `xeroAccountCode`/`xeroTaxType` per line, frozen at push time — an issued
   invoice's coding never changes retroactively when a model/kit/category
   mapping is edited later.
+- **Payment** (`payments` table, #1055) — a bookkeeping record against an
+  `ISSUED` invoice: amount, method, reference, date received, notes. Not a
+  client-facing document (no PDF), so the "never delete a finance artifact"
+  rule below doesn't apply to it directly — but it's still never hard-deleted,
+  only voided (`paymentsWrites.ts voidNative`), so the audit trail never loses
+  a record of money that was recorded in error. Voiding a payment recomputes
+  the parent invoice's `amountPaid`/`paymentStatus` in the same mutation.
 
 ### Money is never hand-typed
 
@@ -69,13 +79,20 @@ rather than leaking a foreign org's model name.
 
 - **FULL** invoice: the project's full `subtotal`/`taxAmount`/`total`, full
   line breakdown.
-- **DEPOSIT** invoice: % of the tax-**inclusive** total (matches the
-  pre-#940 display math), with its own GST fraction computed from the
-  project's tax rate — a real tax invoice, not a placeholder line. % defaults
-  to the client's `profileDepositPercent` (or 25) when not overridden at
-  creation.
+- **DEPOSIT** invoice: either a % of the tax-**inclusive** total (matches the
+  pre-#940 display math, still the default), or — #1055 — a fixed dollar
+  amount. `depositMode` (`"%" | "$"`) records which one was entered; absent =
+  `"%"` (every pre-#1055 row, same "absent means the only mode that existed"
+  convention `discountMode` established). Both compute the SAME proportional
+  GST fraction from the project's tax rate — a real tax invoice either way,
+  not a placeholder line. `$` mode is capped at the project's current total
+  (rejected server-side if the entered amount exceeds it). % defaults to the
+  client's `profileDepositPercent` (or 25) when not overridden at creation;
+  `depositAmount` has no such default — it must be entered.
 - **BALANCE** invoice: server-computed as `total - Σ(non-VOID DEPOSIT
-  invoices)`, never a client-supplied figure.
+  invoices)`, never a client-supplied figure. This nets against each prior
+  deposit's `total` regardless of whether it was entered as `%` or `$` — no
+  special-casing needed for the mix.
 - **CREDIT** invoice: negates an already-`ISSUED` invoice's amounts
   (`creditForInvoiceId` back-reference).
 
@@ -413,13 +430,18 @@ structural rather than disciplinary — the same reasoning as `withValidatedBody
   replacing it. That is what makes exposing a retry button safe: a retry racing a
   slow first attempt loses harmlessly, and the server action bins its orphan
   upload.
-- **Nothing deletes one.** A superseded, declined or voided row keeps its
-  artifact on `pdfFileId` untouched — the client may be holding that copy, so
-  destroying ours makes the record worse. The rail badges the state next to the
-  download. **Recalling** the *same* revision is the one case that unlinks
-  `pdfFileId` (moved to `recalledPdfFileIds`, never dropped) — deliberately, so
-  a resend forces a fresh render rather than the attach guard silently keeping
-  pre-recall bytes attached under a since-corrected revision (#1027).
+- **Nothing deletes one** — with two accepted-risk exceptions, both gated hard
+  enough that "nothing deletes one" stays true for every ordinary path. A
+  superseded, declined or voided row otherwise keeps its artifact on
+  `pdfFileId` untouched — the client may be holding that copy, so destroying
+  ours makes the record worse. The rail badges the state next to the download.
+  **Recalling** the *same* revision is a related-but-different case that
+  unlinks (not deletes) `pdfFileId` (moved to `recalledPdfFileIds`) —
+  deliberately, so a resend forces a fresh render rather than the attach guard
+  silently keeping pre-recall bytes attached under a since-corrected revision
+  (#1027). The two genuine erases are `quotesWrites.ts deleteRecalledNative`
+  (#1029, "Delete and Protect" below) and `invoicesWrites.ts
+  deleteVoidNative` (#1055, "Delete voided invoice" below).
 - **A draft has no artifact**, and the mutations refuse to give it one. Its only
   document is the watermarked preview, which is never stored.
 - **Dates come from the row.** The render is handed the stamped
@@ -450,6 +472,40 @@ generate/retry a quote artifact, `invoice:issue` for an invoice one — the same
 audiences that can send and issue in the first place. Both routes carry explicit
 cross-org tests (`quotes.by_cuid`/`invoices.by_cuid` are GLOBAL indexes,
 R-8.4.3).
+
+### Delete voided invoice (#1055)
+
+The invoice-side counterpart to quotes' recall-then-delete (#1029, "Delete and
+Protect" above) — `invoicesWrites.ts deleteVoidNative` mirrors its shape
+rather than inventing a separate deletion path:
+
+- Reachable only from `status === "VOID"`. Unlike a quote's `DRAFT` (which can
+  mean either "never sent" or "recalled from sent"), `VOID` is only ever
+  reached from `ISSUED` (`voidNative`), so a `VOID` row inherently means "this
+  was actually issued" — no separate recall step is needed first.
+- **Gated on the ordinary `invoice:delete` permission** (owner + admin — same
+  audience `deleteDraftNative` already uses), not the stricter owner-only bar
+  `requireQuoteOwnerOnly` uses for quotes. A deliberate divergence from the
+  quote precedent, not an oversight.
+- **Blocked while the invoice has any non-voided `payments` row.** The
+  operator must void those first (`paymentsWrites.ts voidNative`) — nothing
+  about a recorded payment is ever silently cascaded away by an invoice
+  delete.
+- Requires a server-validated typed confirmation: `confirmLabel` must match
+  the invoice number exactly (R-8.6.4, same "type the label to confirm"
+  pattern as `DeleteRecalledDialog`/`deleteRecalledNative`).
+- The audit log entry is written FIRST (it's the only record left once this
+  returns), then `ctx.storage.delete` actually erases the stored PDF
+  (`pdfFileId`) — a genuine erase, not an unlink — then the `invoiceLines`
+  and the `invoices` row itself.
+- No `recalcProjectTotals` call: a `VOID` invoice was never counted in
+  `depositPaid`/`invoicedTotal` (those only sum `ISSUED`), so deleting it
+  changes nothing there. No numbering-counter rollback either — unlike a
+  quote's revision counter, invoice numbers are never reused.
+
+UI: `DeleteVoidInvoiceDialog` (`src/components/projects/finance/`), a
+near-verbatim port of `DeleteRecalledDialog`, reachable from a `VOID` row's
+overflow menu (`invoiceRowMenuActions` in `project-finance-panel.tsx`).
 
 ## The Finance tab (#989 — Phase D of #985)
 
@@ -578,7 +634,7 @@ bounded sections in `convex/financeOrg.ts`'s single `bundle` query:
 | Never sent | `DRAFT` revisions on active (non-template, non-`CANCELLED`) projects |
 | Confirmed but uninvoiced | Project status `CONFIRMED` or later (excluding `CANCELLED`) with zero `ISSUED` invoices |
 | Deposit due | Same CONFIRMED-or-later candidate set, client `paymentProfile === "DEPOSIT_BALANCE"`, no `ISSUED` `DEPOSIT` invoice — the per-project nudge chip (`project-finance-panel.tsx`) lifted to org scope |
-| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — reflects issuance, not confirmed payment (the UI says so explicitly); full payment truth needs the Xero payment-status poll, still deferred (see "Deferred" below) |
+| Outstanding | `ISSUED` invoices not `paymentStatus: "PAID"` — `paymentStatus` is now real for any org recording payments in Flow (#1055, `paymentsWrites.ts`); the remaining gap is Xero-side payments Flow doesn't know about, since the Xero payment-status poll itself is still deferred (see "Deferred" below) |
 
 ### Perf — bounded, not a per-project loop (the #942 lesson)
 
@@ -697,13 +753,20 @@ never blocks.
 
 ## Permissions
 
-New `invoice` resource (`convex/lib/permissionsCore.ts`):
-`create/read/update/delete/publish/issue/void/xero_push/xero_manage`.
-Owner/admin get everything; manager gets `create/read/update/publish/issue/
-xero_push` (not `delete`/`void`/`xero_manage`); member gets `create/read`;
+`invoice` resource (`convex/lib/permissionsCore.ts`):
+`create/read/update/delete/publish/issue/void/xero_push/xero_manage/
+record_payment/void_payment` (the last two added by #1055 — payments are
+bookkeeping on this SAME resource, not a separate "payment" resource, mirroring
+why Xero push/manage live here too). Owner/admin get everything; manager gets
+`create/read/update/publish/issue/xero_push/record_payment` (not `delete`/
+`void`/`xero_manage`/`void_payment` — correcting a recorded payment stays
+owner/admin-only, same tier as void/delete); member gets `create/read`;
 warehouse/viewer get `read` only. `xero_manage` gates connecting/
 disconnecting Xero and editing coding settings — a more sensitive action
-than day-to-day invoice pushing (`xero_push`).
+than day-to-day invoice pushing (`xero_push`). `deleteVoidNative` (permanently
+deleting a `VOID` invoice, #1055) reuses the plain `delete` action — owner +
+admin, not the stricter owner-only bar quotes' `deleteRecalledNative` uses (a
+deliberate divergence — see "Delete voided invoice" above).
 
 ## Xero integration
 
@@ -1213,11 +1276,17 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 
 ## Deferred (not built in this PR)
 
-- **Payment-status poll (phase 2).** `invoices.paymentStatus` field + the
-  Xero-linked gate exist; the cron that polls Xero for payment status and
-  writes it back does not. `convex/scheduledJobs.ts`'s
-  `ENABLE_CONVEX_CRONS` off-by-default discipline (FEATUREDOCS in that file)
-  is the pattern to follow when this lands.
+- **Xero payment-status poll.** Flow-recorded payments (#1055,
+  `paymentsWrites.ts`) now make `invoices.paymentStatus`/`amountPaid` real for
+  money collected and entered in Flow — what's still deferred is a cron that
+  polls Xero itself for payments collected/reconciled on the Xero side (e.g. a
+  client paying an invoice Flow pushed) and reflects those back. `convex/
+  scheduledJobs.ts`'s `ENABLE_CONVEX_CRONS` off-by-default discipline
+  (FEATUREDOCS in that file) is the pattern to follow when this lands; it
+  would need to merge with, not overwrite, Flow-recorded payments (e.g. sum
+  both sources, or treat a Xero-side reconciliation as its own `payments` row
+  with a distinguishing `method`/source marker) rather than assuming Xero is
+  the only payment source once built.
 - **Project financial tab "invoiced/paid/outstanding" summary** beyond what
   `financial-summary.tsx`'s new Invoicing block already shows.
 - **Live Xero verification — partial.** The OAuth connect/callback round trip

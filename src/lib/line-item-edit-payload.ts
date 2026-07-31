@@ -99,19 +99,33 @@ export function computeEditLineItemPayload(
 
 /** A single inline-edited field, as produced by the table cell components in
  *  `line-item-inline-cells.tsx`. Only ever one field per patch — each cell
- *  saves independently on blur/Tab, there's no multi-field inline form. */
+ *  saves independently on blur/Tab, there's no multi-field inline form.
+ *
+ *  `discountPercent` is the odd one out: it's never routed through THIS
+ *  module. A sub-hire GROUP CHILD row (`item.subHireGroupId != null`) renders
+ *  a plain 0-100% discount cell (`InlineEditablePercent`, no `$`/`%` toggle —
+ *  sub-hire items don't have that concept) and its patches route through
+ *  `sub-hire-item-edit-payload.ts`'s `computeInlineSubHireItemInput` instead
+ *  — see `equipment-tab.tsx`'s `handleInlineLineItemUpdate`. It's declared
+ *  here anyway so `LineItemRow` has ONE patch union for its `onInlineUpdate`
+ *  prop regardless of which backend a given row ends up routed to. */
 export type InlineLineItemPatch =
   | { field: "description"; value: string }
   | { field: "notes"; value: string }
   | { field: "unitPrice"; value: number | undefined }
-  | { field: "discount"; value: number | undefined; discountMode: DiscountMode };
+  | { field: "discount"; value: number | undefined; discountMode: DiscountMode }
+  | { field: "discountPercent"; value: number };
 
 /** Layers a single inline-edited field onto `item`'s current values and
  *  resolves the full update payload — the inline-edit equivalent of the
  *  dialog's `handleSave` calling `computeEditLineItemPayload` with the whole
  *  form. Every other field passes through unchanged via
- *  `buildLineItemFormDefaults`. */
-export function computeInlineLineItemPayload(item: LineItemData, patch: InlineLineItemPatch): EditLineItemPayload {
+ *  `buildLineItemFormDefaults`. Never called with a `discountPercent` patch —
+ *  see the type doc above. */
+export function computeInlineLineItemPayload(
+  item: LineItemData,
+  patch: Exclude<InlineLineItemPatch, { field: "discountPercent" }>,
+): EditLineItemPayload {
   const defaults = buildLineItemFormDefaults(item);
   const discountMode = patch.field === "discount" ? patch.discountMode : toDiscountMode(item.discountMode);
   const data: LineItemFormValues = {

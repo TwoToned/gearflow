@@ -272,6 +272,112 @@ describe("projectWrites.updateStatusNative — acceptance gate on CONFIRMED (#98
   });
 });
 
+// #792 — reverting a project's status OUT of HARD_LOCKED (COMPLETED/INVOICED →
+// earlier) requires the same admin/owner/PM audience as opening a full unlock
+// session, plus a bounded justification — UNLESS an OPEN FULL unlock session
+// already covers it (unified with `assertLifecycleGuard`'s own escape for every
+// other HARD_LOCKED write, rather than demanding a second, brand-new reason).
+describe("projectWrites.updateStatusNative — hard-lock revert (#792)", () => {
+  const revert = { id: "p1", orgId: ORG, status: "QUOTING" as const, actor: ACTOR, auditId: "log1", now: NOW };
+
+  async function seedUnlockSession(
+    t: ReturnType<typeof makeT>,
+    scope: "FINANCIAL" | "FULL",
+    outcome: "OPEN" | "COMMITTED" = "OPEN",
+  ) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectUnlockSessions", {
+        id: "sess1", organizationId: ORG, projectId: "p1", scope,
+        justification: "Client requested a correction after the invoice was voided.",
+        openedBy: USER, openedByName: "Alice", openedAt: NOW - 1000,
+        snapshotId: "snap1", outcome,
+        ...(outcome === "COMMITTED" ? { closedAt: NOW - 500, closedBy: USER } : {}),
+      });
+    });
+  }
+
+  test("blocks the revert with no justification and no open session", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "INVOICED");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
+    ).rejects.toThrow(/justification/i);
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("INVOICED");
+  });
+
+  test("a non-admin/non-PM member is denied regardless of justification", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "INVOICED");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+        ...revert,
+        justification: "Client asked us to redo the whole quote from scratch.",
+      }),
+    ).rejects.toThrow(/admins.*owners.*PM/i);
+  });
+
+  test("an admin/owner with a valid typed justification succeeds — audited as manual", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "INVOICED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, {
+      ...revert,
+      justification: "Client asked us to redo the whole quote from scratch.",
+    });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.status).toBe("QUOTING");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.metadata).toEqual({
+        justification: "Client asked us to redo the whole quote from scratch.",
+        justificationSource: "manual",
+      });
+    });
+  });
+
+  test("an OPEN FULL unlock session satisfies the gate with no justification arg — audited as unlock_session", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "INVOICED");
+    await seedUnlockSession(t, "FULL");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.status).toBe("QUOTING");
+      const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      expect(log?.metadata).toEqual({
+        justification: "Client requested a correction after the invoice was voided.",
+        justificationSource: "unlock_session",
+      });
+    });
+  });
+
+  test("an OPEN FINANCIAL (not FULL) unlock session does NOT satisfy the gate", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "INVOICED");
+    await seedUnlockSession(t, "FINANCIAL");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
+    ).rejects.toThrow(/justification/i);
+  });
+
+  test("a COMMITTED (already-closed) FULL session does NOT satisfy the gate — a fresh justification is still required", async () => {
+    const t = makeT();
+    await seedProject(t, "owner", false, "INVOICED");
+    await seedUnlockSession(t, "FULL", "COMMITTED");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, revert),
+    ).rejects.toThrow(/justification/i);
+  });
+
+  test("COMPLETED -> INVOICED is not a revert (stays HARD_LOCKED) — ungated regardless of session/justification", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "COMPLETED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateStatusNative, { ...revert, status: "INVOICED" as const });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.status).toBe("INVOICED");
+  });
+});
+
 // #986 — `projects.revision` is the shared quote/project version counter and is
 // SERVER-OWNED: written only by createNative (seeded to 1) and
 // quotesWrites.newVersionNative, never by a client patch.

@@ -83,6 +83,8 @@ import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
 import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
+import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
+import { JustificationDialog } from "@/components/projects/justification-dialog";
 import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
 
 const projectStatusLabels: Record<string, string> = {
@@ -188,9 +190,25 @@ export default function ProjectDetailPage({
   // so it re-renders on its own once the native mutation commits.
   const statusBrowser = useNativeProjectStatus(orgId);
   const projectWrites = useProjectWrites(orgId);
+
+  // #792: a status change can require a justification (reverting out of
+  // HARD_LOCKED, or confirming with no accepted quote) — `useJustifiedMutation`
+  // catches the server's `JUSTIFICATION_REQUIRED` and prompts via
+  // `JustificationDialog` instead of dead-ending on a toast. `lockStatus.tier` is
+  // never `"JUSTIFY"` for either gated transition here, so this always takes the
+  // reactive (try once, prompt on rejection) path — an OPEN FULL unlock session
+  // still short-circuits the server-side check entirely, so nothing prompts at
+  // all in that case (same "unlocked in one place = unlocked" behaviour every
+  // other locked write already has via `assertLifecycleGuard`).
+  const justifiedStatusChange = useJustifiedMutation(
+    (args: { status: string; justification?: string }) =>
+      statusBrowser.updateStatus(id, args.status, args.justification),
+    lockStatus,
+  );
+
   const statusMutation = useServerMutation({
     mutationFn: async (nextStatus: string) => {
-      await statusBrowser.updateStatus(id, nextStatus);
+      await justifiedStatusChange.run({ status: nextStatus });
     },
     onSuccess: () => {
       toast.success("Status updated");
@@ -910,6 +928,7 @@ export default function ProjectDetailPage({
         }}
         pending={archiveMutation.isPending}
       />
+      <JustificationDialog {...justifiedStatusChange.dialogProps} status={project.status ?? undefined} />
       {orgId && (
         <>
           <UnlockSessionDialog

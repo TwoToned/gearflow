@@ -2,14 +2,17 @@
 
 import { useCallback, useRef, useState } from "react";
 import { ConvexError } from "convex/values";
+import { isUserFacingError } from "@/lib/errors/user-facing-error";
 
 /**
  * #793 shared wrapper: pre-checks the project's lock tier and prompts for a
  * justification BEFORE invoking a gated mutation, and also catches the
  * server's `JUSTIFICATION_REQUIRED` as a fallback (the project may have
- * advanced to ON_SITE+ underneath a stale client). One shared hook so every
- * equipment/group/service/crew surface prompts the same way — not a
- * per-form one-off (CLAUDE.md / #793 acceptance criteria).
+ * advanced to ON_SITE+ underneath a stale client, or — #792 — the caller's
+ * gate never sets `tier === "JUSTIFY"` at all, e.g. a HARD_LOCKED status
+ * revert, so the reactive catch is the ONLY path that ever fires). One shared
+ * hook so every equipment/group/service/crew/status surface prompts the same
+ * way — not a per-form one-off (CLAUDE.md / #793 acceptance criteria).
  *
  * Usage:
  *   const { run, dialogProps } = useJustifiedMutation(mutateFn, lockStatus);
@@ -17,7 +20,12 @@ import { ConvexError } from "convex/values";
  *   <JustificationDialog {...dialogProps} />
  */
 
+/** Most native-write hooks (`use-line-item-writes.ts`, `use-native-project-writes.ts`,
+ *  ...) catch the raw `ConvexError` and rethrow `mapNativeWriteError(e)` — a
+ *  `UserFacingError` — so the reactive fallback must recognize BOTH shapes, not
+ *  just the raw `ConvexError` a caller that skips that wrapping might throw. */
 function isJustificationRequired(e: unknown): boolean {
+  if (isUserFacingError(e)) return e.code === "JUSTIFICATION_REQUIRED";
   return (
     e instanceof ConvexError &&
     !!e.data &&

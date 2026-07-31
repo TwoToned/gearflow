@@ -775,6 +775,29 @@ nothing else). Every equipment line resolves via the RENTAL branch of the
 cascade today; the SALE branch is unit-tested but unreachable until #950
 wires an actual sale line type.
 
+### Line amounts push `LineAmount`, never re-derived from Quantity × UnitAmount
+
+**Live bug fixed:** a discounted line's discount never reached Xero.
+`pushInvoiceToXero` (`src/server/xero.ts`) used to send only `Quantity`/
+`UnitAmount` per line — the Xero `/Invoices` endpoint computes `LineAmount`
+itself as `Quantity × UnitAmount` when it isn't supplied, which knows nothing
+about `projectLineItems.discount`/`projectGroups.discount` already netted
+into `invoiceLines.lineTotal` (`convex/lib/lineTotal.ts` `computeLineTotal` —
+`unitPrice · quantity · duration − discount`). A discounted (or multi-day
+`duration`-rated) line therefore posted to Xero at its pre-discount gross,
+overstating the client's actual charge.
+
+`XeroInvoiceLineInput.lineAmount` (`src/lib/xero-client.ts`) is now populated
+from the invoice line's own `lineTotal` and sent as Xero's `LineAmount` — an
+explicit override Xero accepts alongside `Quantity`/`UnitAmount`, so the
+posted total always matches Flow's already-resolved figure instead of being
+re-derived. `Quantity`/`UnitAmount` are still sent for Xero's own line
+display; `lineTotal` is the one number both a Flow document and the pushed
+Xero invoice now agree on (R-3.1 — no second, divergent total-calculation
+path). No schema change: `invoiceLines.lineTotal` already carried the correct
+net figure — the fix is purely "stop letting Xero recompute a number Flow
+already resolved," matching "Money is never hand-typed" project-wide.
+
 ### Per-entity coding override UI
 
 Every level of the cascade above has a write path + form field:

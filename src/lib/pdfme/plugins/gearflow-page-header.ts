@@ -119,9 +119,9 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
         color: docColor,
       });
 
+      let metaY = topY - titleSize - 14;
       if (docMeta) {
         const metaLines = docMeta.split("\n");
-        let metaY = topY - titleSize - 14;
         for (const line of metaLines) {
           const lineWidth = fonts.regular.widthOfTextAtSize(line, 9);
           page.drawText(line, {
@@ -133,6 +133,20 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
           });
           metaY -= 13;
         }
+      }
+
+      // Bold, document-coloured highlight line (e.g. invoice "Due: <date>")
+      // — deliberately louder than the plain meta lines above it, right
+      // where the client is already reading the doc number/date.
+      if (config.highlightMeta) {
+        const lineWidth = fonts.bold.widthOfTextAtSize(config.highlightMeta, 10);
+        page.drawText(config.highlightMeta, {
+          x: x + width - lineWidth,
+          y: metaY - 1,
+          size: 10,
+          font: fonts.bold,
+          color: docColor,
+        });
       }
     }
 
@@ -217,9 +231,9 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
       color: docColor,
     });
 
+    let metaY = currentY - titleSize - 14;
     if (docMeta) {
       const metaLines = docMeta.split("\n");
-      let metaY = currentY - titleSize - 14;
       for (const line of metaLines) {
         const lineWidth = fonts.regular.widthOfTextAtSize(line, 9);
         page.drawText(line, {
@@ -231,6 +245,17 @@ async function pdfRender(arg: PDFRenderProps<PageHeaderSchema>) {
         });
         metaY -= 13;
       }
+    }
+
+    if (config.highlightMeta) {
+      const lineWidth = fonts.bold.widthOfTextAtSize(config.highlightMeta, 10);
+      page.drawText(config.highlightMeta, {
+        x: x + width - lineWidth,
+        y: metaY - 1,
+        size: 10,
+        font: fonts.bold,
+        color: docColor,
+      });
     }
   }
 }

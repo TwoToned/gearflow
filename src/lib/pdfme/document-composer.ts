@@ -348,7 +348,13 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       // Quote's header meta gains a 3rd line ("Expiry: <date>") — a little
       // extra headroom so it can't ever crowd the details row below it.
       const hasExpiryLine = ctx.docType === "quote" && !!data.quote_valid_until;
-      return hasExpiryLine ? base + 5 : base;
+      // Invoice's org-details column gains an extra "ABN: <abn>" line, and
+      // its meta column gains a bold "Due: <date>" highlight line — same
+      // small headroom bump per extra line, same reasoning.
+      const hasAbnLine = ctx.docType === "invoice" && !!data.org_abn;
+      const hasDueDateLine = ctx.docType === "invoice" && !!data.invoice_due_date;
+      const extraLines = [hasExpiryLine, hasAbnLine, hasDueDateLine].filter(Boolean).length;
+      return base + extraLines * 5;
     }
 
     case "detailsRow": {
@@ -383,7 +389,10 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       // carries its own discount ("Subtotal (before discounts)" + "Item
       // Discounts", drawn above the existing net Subtotal row).
       const hasItemDiscounts = computeItemDiscountTotal(data) > 0;
-      return hasItemDiscounts ? 44 : 34;
+      let height = hasItemDiscounts ? 44 : 34;
+      // + 1 row (~5mm) for the bold "Due Date" row at the bottom, invoice only.
+      if (block.config.showDueDate && data.invoice_due_date) height += 5;
+      return height;
     }
 
     case "clientNotes": {
@@ -406,15 +415,32 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
 
     case "termsAndConditions": {
       // Optional — collapses to zero height (and is skipped entirely by the
-      // page-layout walk) when the org hasn't set any T&Cs text.
-      if (!data.quote_terms_and_conditions) return 0;
+      // page-layout walk) when the org hasn't set any T&Cs text (or, on the
+      // invoice, when showTermsAndConditionsOnInvoice is off — see
+      // build-document-data.ts, which resolves that gate into this same field).
+      if (!data.terms_and_conditions) return 0;
       if (ctx.fonts) {
         return Math.max(
-          ptToMm(wrappedLineCount(data.quote_terms_and_conditions, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
+          ptToMm(wrappedLineCount(data.terms_and_conditions, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
           8,
         );
       }
-      const lines = data.quote_terms_and_conditions.split("\n").length;
+      const lines = data.terms_and_conditions.split("\n").length;
+      return Math.max(lines * 4 + 4, 8);
+    }
+
+    case "paymentDetails": {
+      // Same optional-collapse convention as termsAndConditions — empty
+      // (no bank details configured, or non-invoice doc type) means zero
+      // height, no schema.
+      if (!data.payment_details) return 0;
+      if (ctx.fonts) {
+        return Math.max(
+          ptToMm(wrappedLineCount(data.payment_details, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
+          8,
+        );
+      }
+      const lines = data.payment_details.split("\n").length;
       return Math.max(lines * 4 + 4, 8);
     }
 
@@ -698,15 +724,15 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
   }
 
   /**
-   * Split a clientNotes/termsAndConditions block across pages by wrapped
-   * line — mirrors splitTable's per-item fill loop, but lines are uniform
-   * height and atomic (no sub-items/children to worry about), so the loop
-   * is a straight "how many whole lines fit in what's left" fill. Wraps
+   * Split a clientNotes/termsAndConditions/paymentDetails block across pages
+   * by wrapped line — mirrors splitTable's per-item fill loop, but lines are
+   * uniform height and atomic (no sub-items/children to worry about), so the
+   * loop is a straight "how many whole lines fit in what's left" fill. Wraps
    * ONCE up front with real font metrics (the same call estimateBlockHeight
    * used to decide this block needed splitting in the first place) so the
    * line breaks placed on the page are identical to what was measured.
    */
-  function splitRichTextBlock(block: Extract<LayoutBlock, { kind: "clientNotes" | "termsAndConditions" }>, text: string, fonts: RichTextFonts) {
+  function splitRichTextBlock(block: Extract<LayoutBlock, { kind: "clientNotes" | "termsAndConditions" | "paymentDetails" }>, text: string, fonts: RichTextFonts) {
     const lineHeightMm = ptToMm(richTextLineHeight(RICH_TEXT_FONT_SIZE));
     const allLines = wrapRichText(text, { maxWidth: CONTENT_WIDTH_PT, fontSize: RICH_TEXT_FONT_SIZE, fonts });
 
@@ -742,8 +768,13 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
       splitTable(block);
       return true;
     }
-    if ((block.kind === "clientNotes" || block.kind === "termsAndConditions") && ctx.fonts) {
-      const text = block.kind === "clientNotes" ? data.client_notes || "" : data.quote_terms_and_conditions;
+    if ((block.kind === "clientNotes" || block.kind === "termsAndConditions" || block.kind === "paymentDetails") && ctx.fonts) {
+      const text =
+        block.kind === "clientNotes"
+          ? data.client_notes || ""
+          : block.kind === "termsAndConditions"
+            ? data.terms_and_conditions
+            : data.payment_details;
       splitRichTextBlock(block, text, ctx.fonts);
       return true;
     }
@@ -807,6 +838,9 @@ function buildEntryFields(
       if (data.org_address) orgDetailParts.push(data.org_address);
       if (data.org_phone) orgDetailParts.push(data.org_phone);
       if (data.org_email) orgDetailParts.push(data.org_email);
+      // AU Tax Invoices must carry the org's ABN — invoice-only, placed
+      // under the address/email lines already above it.
+      if (docType === "invoice" && data.org_abn) orgDetailParts.push(`ABN: ${data.org_abn}`);
       if (data.org_website) orgDetailParts.push(data.org_website);
 
       // Quote expiry moves from its own bottom-of-document line into the
@@ -826,6 +860,11 @@ function buildEntryFields(
         documentLogoMode: data.org_branding?.documentLogoMode ?? "icon",
         showOrgNameOnDocuments: data.org_branding?.showOrgNameOnDocuments ?? true,
         documentColor: docColor,
+        // Bold, document-coloured — impossible to miss at the top of the
+        // invoice, right next to the doc number/date the client is already
+        // reading. Repeated (plain, not bold) at the bottom of the totals
+        // block via FinancialSummaryConfig.dueDate — see the "totals" case.
+        highlightMeta: docType === "invoice" && data.invoice_due_date ? `Due: ${data.invoice_due_date}` : undefined,
       };
       return [
         {
@@ -968,6 +1007,7 @@ function buildEntryFields(
         depositPaid: block.config.showDeposit ? data.deposit_paid : 0,
         balanceDue: block.config.showBalance ? data.balance_due : 0,
         documentColor: docColor,
+        dueDate: block.config.showDueDate && data.invoice_due_date ? data.invoice_due_date : undefined,
       };
       return [
         {
@@ -1032,7 +1072,27 @@ function buildEntryFields(
             fontSize: RICH_TEXT_FONT_SIZE,
             fontColor: "#666666",
           },
-          input: entry.textLines ? JSON.stringify({ lines: entry.textLines }) : data.quote_terms_and_conditions,
+          input: entry.textLines ? JSON.stringify({ lines: entry.textLines }) : data.terms_and_conditions,
+        },
+      ];
+
+    // Same free-text convention as termsAndConditions — bank name, BSB,
+    // account number, reference, etc. Invoice only (data.payment_details is
+    // "" for every other doc type — see build-document-data.ts).
+    case "paymentDetails":
+      return [
+        {
+          schema: {
+            name,
+            type: "gearflowRichText",
+            content: "",
+            position: { x: MARGIN, y },
+            width: CONTENT_WIDTH,
+            height,
+            fontSize: RICH_TEXT_FONT_SIZE,
+            fontColor: "#666666",
+          },
+          input: entry.textLines ? JSON.stringify({ lines: entry.textLines }) : data.payment_details,
         },
       ];
 

@@ -120,6 +120,12 @@ const CODE_SPECS: Record<string, CodeSpec> = {
     status: 403,
     recovery: { action: "contact_admin", hint: "API access is switched off for this organization." },
   },
+  ORG_ARCHIVED: {
+    category: "auth",
+    retryable: false,
+    status: 403,
+    recovery: { action: "contact_admin", hint: "This organization has been archived." },
+  },
 
   // ── scope vs permission: the distinction that matters most ────────────────
   MISSING_SCOPE: {

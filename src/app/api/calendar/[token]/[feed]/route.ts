@@ -28,8 +28,13 @@ type FeedType = (typeof VALID_FEEDS)[number];
  * Look up organization by iCal token. `icalToken` is a denormalised, indexed
  * lookup key on the Convex `orgSettings` table, SET ONLY while the feed is
  * enabled — so a hit means "valid + live" (no full-table scan). Org name stays
- * on the Better Auth org row (Postgres). Returns null if not found/disabled.
- * Includes the org's configured IANA timezone (default Australia/Sydney).
+ * on the Better Auth org row (Postgres). Returns null if not found/disabled/
+ * archived. Includes the org's configured IANA timezone (default
+ * Australia/Sydney).
+ *
+ * This route has no session, so it doesn't go through the identity
+ * chokepoints that already refuse an archived org (#1075, A5) — the
+ * `archivedAt` check here is this feed's own equivalent.
  */
 async function findOrgByToken(token: string) {
   const orgId = await orgIdForIcalToken(token);
@@ -37,9 +42,9 @@ async function findOrgByToken(token: string) {
 
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, archivedAt: true },
   });
-  if (!org) return null;
+  if (!org || org.archivedAt) return null;
 
   const settings = await readOrgSettingsBlob(orgId);
   return {

@@ -30,6 +30,7 @@ import {
   getWooCommerceIntegration,
   updateWooCommerceIntegration,
   regenerateWebhookSecret,
+  rotateWebhookToken,
   getWooCommerceOrderLogs,
   getLastPayloadMetaKeys,
   retryFailedOrder,
@@ -51,6 +52,14 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { FadeIn } from "@/components/ui/motion";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const projectTypeOptions = [
   { value: "DRY_HIRE", label: "Dry Hire" },
@@ -77,6 +86,7 @@ export default function WooCommerceSettingsPage() {
   const [showSecret, setShowSecret] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [showMetaDetect, setShowMetaDetect] = useState(false);
+  const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
 
   const { data: integration, isLoading, refetch: refetchIntegration } = useServerQuery({
     queryKey: ["woocommerce-integration", orgId],
@@ -171,6 +181,16 @@ export default function WooCommerceSettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
+  const rotateTokenMutation = useServerMutation({
+    mutationFn: () => rotateWebhookToken(),
+    onSuccess: () => {
+      setRotateConfirmOpen(false);
+      toast.success("Webhook URL rotated — update the Delivery URL in WooCommerce");
+      refetchIntegration();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const retryMutation = useServerMutation({
     mutationFn: (logId: string) => retryFailedOrder(logId),
     onSuccess: () => {
@@ -180,8 +200,8 @@ export default function WooCommerceSettingsPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const webhookUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/api/integrations/woocommerce/webhook`
+  const webhookUrl = typeof window !== "undefined" && integration?.webhookToken
+    ? `${window.location.origin}/api/integrations/woocommerce/webhook/${integration.webhookToken}`
     : "";
 
   if (isLoading) {
@@ -232,11 +252,16 @@ export default function WooCommerceSettingsPage() {
             <div className="space-y-2">
               <Label>Webhook URL (copy to WooCommerce)</Label>
               <div className="flex gap-2">
-                <Input value={webhookUrl} readOnly className="font-mono text-xs" />
+                <Input
+                  value={webhookUrl || "Not yet generated"}
+                  readOnly
+                  className="font-mono text-xs"
+                />
                 <Button
                   type="button"
                   variant="line"
                   size="icon"
+                  disabled={!webhookUrl}
                   onClick={() => {
                     navigator.clipboard.writeText(webhookUrl);
                     toast.success("Copied to clipboard");
@@ -244,7 +269,19 @@ export default function WooCommerceSettingsPage() {
                 >
                   <Copy className="h-4 w-4" />
                 </Button>
+                <Button
+                  type="button"
+                  variant="line"
+                  size="icon"
+                  onClick={() => setRotateConfirmOpen(true)}
+                  disabled={rotateTokenMutation.isPending}
+                >
+                  <RefreshCw className={`h-4 w-4 ${rotateTokenMutation.isPending ? "animate-spin" : ""}`} />
+                </Button>
               </div>
+              <p className="text-xs text-fg-3">
+                Rotating replaces the URL — you&apos;ll need to update the Delivery URL in WooCommerce&apos;s webhook settings.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -660,6 +697,38 @@ export default function WooCommerceSettingsPage() {
           </div>
         </FormSection>
       </SettingsCard>
+
+      {/* Rotate Webhook Token Dialog */}
+      <Dialog
+        open={rotateConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) setRotateConfirmOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rotate Webhook URL</DialogTitle>
+            <DialogDescription>
+              The current webhook URL will stop working immediately. You&apos;ll
+              need to paste the new URL into WooCommerce&apos;s webhook settings
+              (Delivery URL) right after — any orders sent before you update it
+              will fail delivery.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="line" onClick={() => setRotateConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={rotateTokenMutation.isPending}
+              onClick={() => rotateTokenMutation.mutate()}
+            >
+              {rotateTokenMutation.isPending ? "Rotating..." : "Rotate URL"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </FadeIn>
   );

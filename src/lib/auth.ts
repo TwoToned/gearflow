@@ -159,13 +159,24 @@ export const auth = betterAuth({
         // user's SOLE membership, exactly like OrgActivator's own "1 membership
         // → activate it" rule; with 0 or 2+ memberships we don't guess and mint
         // orgId: null, same as an unresolved active org today.
+        //
+        // `organization: { archivedAt: null }` on both queries is the second of
+        // three archived-org guards (#1075, A5 — the others are
+        // resolveActiveOrganizationId and getApiKeyActorContext). This is the
+        // one that matters most: it's the only chokepoint every Convex read/
+        // write ultimately trusts, so an archived org's `orgId` never gets
+        // minted into a claim at all — no per-query Convex-side check needed.
         definePayload: async ({ user, session }) => {
           const activeOrgId = (session as { activeOrganizationId?: string | null })
             .activeOrganizationId ?? null;
 
           if (activeOrgId) {
             const member = await prisma.member.findFirst({
-              where: { organizationId: activeOrgId, userId: user.id },
+              where: {
+                organizationId: activeOrgId,
+                userId: user.id,
+                organization: { archivedAt: null },
+              },
               select: { role: true },
             });
             if (member) {
@@ -174,7 +185,7 @@ export const auth = betterAuth({
           }
 
           const memberships = await prisma.member.findMany({
-            where: { userId: user.id },
+            where: { userId: user.id, organization: { archivedAt: null } },
             select: { organizationId: true, role: true },
             take: 2,
           });

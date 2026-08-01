@@ -23,6 +23,7 @@ export interface WooCommerceIntegrationRow {
   organizationId: string;
   isEnabled: boolean;
   webhookSecret: string;
+  webhookToken: string | null;
   storeUrl: string | null;
   productMatchField: string;
   customFieldKey: string | null;
@@ -50,6 +51,7 @@ export function mapWooCommerceIntegration(
     organizationId: d.organizationId,
     isEnabled: d.isEnabled ?? false,
     webhookSecret: d.webhookSecret ?? "",
+    webhookToken: d.webhookToken ?? null,
     storeUrl: d.storeUrl ?? null,
     productMatchField: d.productMatchField ?? "sku",
     customFieldKey: d.customFieldKey ?? null,
@@ -83,5 +85,21 @@ export async function getWooCommerceIntegrationByOrg(
     }),
   )) as RawWooCommerceIntegration[];
   const row = rows[0];
+  return row ? mapWooCommerceIntegration(row) : null;
+}
+
+/**
+ * The integration row for a given webhook token, or null (#1074, A4). This is
+ * the real webhook ingress lookup — the org id is never in the URL, only the
+ * opaque token; the caller resolves `organizationId` from the returned row.
+ */
+export async function getWooCommerceIntegrationByToken(
+  token: string,
+): Promise<WooCommerceIntegrationRow | null> {
+  const row = (await withConvexReadRetry(async () =>
+    (await getConvexClient()).query(api.wooCommerceIntegrations.getByWebhookToken, {
+      webhookToken: token,
+    }),
+  )) as RawWooCommerceIntegration | null;
   return row ? mapWooCommerceIntegration(row) : null;
 }

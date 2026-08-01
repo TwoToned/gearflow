@@ -117,6 +117,12 @@ model Organization {
   // regardless of per-key state (instant blast-radius containment).
   apiKillSwitchAt DateTime?
 
+  // Orgs are archived, never deleted (D12, #1075/A5) — reversible. Enforced at
+  // the identity chokepoints (resolveActiveOrganizationId, definePayload,
+  // getApiKeyActorContext), not per-query: an archived org's slug is released
+  // (rewritten) so a new org can claim it while archived.
+  archivedAt DateTime?
+
   members     Member[]
   invitations Invitation[]
 

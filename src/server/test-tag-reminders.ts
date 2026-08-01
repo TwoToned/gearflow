@@ -83,8 +83,12 @@ export async function sendTestTagReminderDigests(): Promise<{
 
   const convex = await getConvexClient();
 
-  // Get all organisations (org table stays Prisma).
+  // Get all LIVE organisations (org table stays Prisma). A cron sweep has no
+  // session, so it doesn't go through the identity chokepoints that already
+  // refuse an archived org (#1075, A5) — filter explicitly, or an archived
+  // org's members keep getting T&T digest emails forever.
   const orgs = await prisma.organization.findMany({
+    where: { archivedAt: null },
     select: { id: true, name: true, metadata: true },
   });
 

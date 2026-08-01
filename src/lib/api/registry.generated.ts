@@ -58755,10 +58755,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "webhookSecret",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "webhookToken",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "938288fc01dff846",
+    "argsSha": "49868f386e8d417f",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -58882,10 +58887,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "webhookSecret",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "webhookToken",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "938288fc01dff846",
+    "argsSha": "49868f386e8d417f",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -58919,7 +58929,34 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "danger": null,
     "mcpTier": null,
     "agentAccess": "denied",
-    "deniedReason": "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
+    "deniedReason": "Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
+  },
+  {
+    "operation": "wooCommerceIntegrations.getByWebhookToken",
+    "module": "wooCommerceIntegrations",
+    "fn": "getByWebhookToken",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "webhookToken",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6bcbe04bd3f51d01",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
   },
   {
     "operation": "wooCommerceIntegrations.list",
@@ -58946,7 +58983,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "danger": null,
     "mcpTier": null,
     "agentAccess": "denied",
-    "deniedReason": "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
+    "deniedReason": "Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
   },
   {
     "operation": "wooCommerceIntegrations.patchWooCommerceIntegration",
@@ -58976,7 +59013,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "4e5edb6129bbcb15",
+    "argsSha": "acf30cc2b2441702",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59035,7 +59072,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c716767df7ea8ec2",
+    "argsSha": "759447d43e526d18",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59914,9 +59951,9 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1148,
+  total: 1149,
   agentReachable: 562,
-  queries: 405,
+  queries: 406,
   mutations: 743,
   agentReachableQueries: 289,
   agentReachableMutations: 273,

@@ -71,6 +71,45 @@ creation is gated off, D7) — the "request to join" flow that resolves this
   `#1072`/A2 — not built yet; today switching means signing into a different
   session or using the picker above.
 
+### Org archiving (#1075, A5 — D12) — archived, never deleted, reversible
+- `Organization.archivedAt DateTime?` (Postgres — `apiKillSwitchAt`'s sibling column).
+  Deliberately **not** mirrored to Convex: unlike `apiKillSwitchAt` (moved to the
+  Convex `orgSettings` row in the Phase 1 inversion), nothing Convex-side needs to
+  check it directly — see the next bullet.
+- **Enforced at the identity chokepoints, not per-query.** Three guards, all with an
+  `organization: { archivedAt: null }` filter on their existing membership query (no
+  extra round trip): `resolveActiveOrganizationId` (`src/lib/auth-server.ts`),
+  `definePayload` (`src/lib/auth.ts`, the Convex JWT mint — this is the one every
+  Convex read/write ultimately trusts, so an archived org's `orgId` is never minted
+  into a claim at all), and `getApiKeyActorContext` (`src/lib/api-key.ts`, the agent/
+  API-key path, mirroring the `ORG_KILL_SWITCH` check next to it with a new
+  `ORG_ARCHIVED` `ApiKeyRejectionCode`). Better Auth's own `organization.setActive()`
+  has no archival concept (only checks membership) and can't be hooked, so archiving
+  can't be enforced there — it's enforced downstream instead, same as a removed
+  member.
+- **Non-chokepoint paths need their own explicit check** — anything resolving org
+  identity from a bare id, a public token, or an unauthenticated fallback doesn't go
+  through the chokepoints above: the WooCommerce webhook (`src/app/api/integrations/
+  woocommerce/webhook/route.ts`), the iCal feed (`src/app/api/calendar/[token]/
+  [feed]/route.ts`), and the outbound-email cron sweeps (`notification-email-
+  sender.ts`, `test-tag-reminders.ts`'s digest send) all filter `archivedAt: null`
+  explicitly. **Known gap:** background Xero push jobs weren't audited for the same
+  gap — spot-check before relying on this list being exhaustive.
+- `src/server/site-admin.ts`'s `adminArchiveOrganization`/`adminUnarchiveOrganization`
+  replace the old `adminDeleteOrganization`, which was a bare `prisma.organization.
+  delete()` — Postgres FKs cascade, but every model/asset/project/quote lives in
+  Convex now (no cascade), so a hard delete orphaned the entire domain dataset while
+  the orphaned docs kept their `organizationId` and stayed reachable by any
+  global-index read that skipped its org check. Archive releases the org's `slug`
+  (rewrites it to `<slug>-archived-<id>`, since `slug` is `@unique`) so a new org can
+  claim it immediately; **unarchive does NOT auto-restore the original slug** (it
+  could be taken by then) — an admin renames it back manually if wanted.
+- `getMyOrganizations()` (`src/server/public-org.ts`) filters archived orgs out, so
+  they never appear in the picker/switcher/`OrgActivator`.
+  `hasOnlyArchivedMemberships()` distinguishes "every org I'm in got archived" from
+  "never had one" for the `(app)` layout gate, which routes the former to
+  `/organization-archived` (an explanatory screen) instead of `/onboarding`.
+
 ## Better Auth Configuration (`src/lib/auth.ts`)
 - Plugins: `organization({...})` (no `organizationLimit` cap — creation is gated by
   `allowUserToCreateOrganization`, not a per-user limit), `twoFactor({ issuer: "RVLT Flow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`

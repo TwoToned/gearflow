@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query, type QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
-import { effectiveQuoteStatus } from "./lib/quoteState";
+import { effectiveQuoteStatus, projectLiveRevision } from "./lib/quoteState";
 import { QUOTE_EXPIRING_SOON_DAYS, daysUntilValidUntil } from "./lib/quoteDates";
 import type { Doc } from "./_generated/dataModel";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -206,7 +206,10 @@ function buildExpiring(
 }
 
 /** Never sent: DRAFT revisions on active (non-template, non-cancelled)
- *  projects — work sitting unfinished. */
+ *  projects — work sitting unfinished. Scoped to each project's LIVE
+ *  revision (#1085) — a non-live `DRAFT` (one `saveVersionNative` left
+ *  behind: a saved-but-never-sent version, or a recalled one) is a version
+ *  the operator deliberately moved past, not unfinished work. */
 function buildNeverSent(
   draftQuotes: Doc<"quotes">[],
   projectDocsById: Map<string, Doc<"projects">>,
@@ -216,6 +219,7 @@ function buildNeverSent(
     .map((quote) => {
       const project = projectDocsById.get(quote.projectId);
       if (!project || project.isTemplate === true || project.status === "CANCELLED") return null;
+      if (quote.version !== projectLiveRevision(project)) return null;
       return {
         quoteId: quote.id,
         version: quote.version,

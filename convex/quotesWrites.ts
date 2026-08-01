@@ -19,6 +19,7 @@ import {
   findQuoteAtRevision,
   isLiveQuoteStatus,
   listProjectQuotes,
+  projectLiveRevision,
   projectRevision,
   quoteLabel,
   requireProjectInOrg,
@@ -49,7 +50,12 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  *
  * - **Exactly one quote row per `(projectId, revision)`** — `by_projectId_version`
  *   is the uniqueness guard.
- * - **At most one `DRAFT`**, always at `projects.revision`.
+ * - **At most one LIVE `DRAFT`**, always at `projects.liveRevision` (#1085 —
+ *   this replaced "at most one `DRAFT` total" the moment
+ *   `projectVersionsWrites.saveVersionNative` shipped: saving a version while
+ *   the current live revision is itself a never-sent draft deliberately
+ *   leaves that row behind, orphaned and non-live. `deleteDraftNative` below
+ *   refuses to touch anything but the live one for exactly this reason).
  * - **At most one live (`SENT`/`ACCEPTED`) row** — the document the client is
  *   currently holding.
  * - **`projects.revision` is monotonic for any revision that was ever SENT** —
@@ -460,14 +466,21 @@ export const recallNative = mutation({
 });
 
 /**
- * NEW VERSION — the unlock. Increments `projects.revision` and opens a `DRAFT`
- * quote at the new number. The previous `SENT`/`ACCEPTED` row is deliberately
- * left alone: it stays the client's current document until the new revision is
+ * NEW VERSION — the unlock. Increments `projects.revision` (and moves
+ * `projects.liveRevision` alongside it, #1085) and opens a `DRAFT` quote at
+ * the new number. The previous `SENT`/`ACCEPTED` row is deliberately left
+ * alone: it stays the client's current document until the new revision is
  * actually sent.
  *
- * Requires the current revision to have been sent (in any terminal state) —
- * cutting v2 while v1 is still a draft would break "at most one DRAFT, always at
- * `projects.revision`". Edit the draft instead.
+ * Requires the current LIVE revision to have been sent (in any terminal
+ * state) — cutting v2 while v1 is still a draft would break "at most one live
+ * DRAFT, always at `projects.liveRevision`". Edit the draft instead.
+ *
+ * #1085 — before moving off it, captures the outgoing live revision as a
+ * `VERSION_SAVED` snapshot (same capture `projectVersionsWrites.saveVersionNative`
+ * makes explicitly), so a revision that's about to stop being live always has
+ * a fresh capture behind it, even one reached by this path rather than an
+ * explicit Save version.
  */
 export const newVersionNative = mutation({
   returns: v.object({ id: v.string(), version: v.number() }),
@@ -496,11 +509,12 @@ export const newVersionNative = mutation({
     await assertLifecycleGuard(ctx, project, { kind: "financial", bypassQuoteLock: true });
 
     const revision = projectRevision(project);
-    const current = await findQuoteAtRevision(ctx, organizationId, projectId, revision);
+    const liveRevision = projectLiveRevision(project);
+    const current = await findQuoteAtRevision(ctx, organizationId, projectId, liveRevision);
     if (!current || effectiveQuoteStatus(current, now) === "DRAFT") {
       throw new ConvexError({
         code: "QUOTE_DRAFT_OPEN",
-        message: `Quote v${revision} hasn't been sent yet — edit that draft instead of creating v${revision + 1}.`,
+        message: `Quote v${liveRevision} hasn't been sent yet — edit that draft instead of creating v${revision + 1}.`,
       });
     }
 
@@ -516,7 +530,19 @@ export const newVersionNative = mutation({
     const dup = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dup) throw new ConvexError({ code: "DUPLICATE", message: "Quote already exists" });
 
-    await ctx.db.patch(project._id, { revision: next, updatedAt: now });
+    // Capture the outgoing live revision before moving past it (#1085) — see
+    // the docstring above. `current` is guaranteed non-null and non-DRAFT here.
+    const snapshotId = await captureProjectSnapshot(ctx, {
+      orgId: organizationId,
+      project,
+      reason: "VERSION_SAVED",
+      revision: liveRevision,
+      actor,
+      now,
+    });
+    await ctx.db.patch(current._id, { snapshotId, updatedAt: now });
+
+    await ctx.db.patch(project._id, { revision: next, liveRevision: next, updatedAt: now });
     // A draft carries NO money snapshot — its figures are the project's live
     // totals until the moment it is sent. Freezing them now would be a lie that
     // drifts silently (`snapshot` is only ever written by `sendNative`).
@@ -543,7 +569,7 @@ export const newVersionNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Started quote ${label}`,
-      details: { version: next, previousVersion: revision },
+      details: { version: next, previousVersion: liveRevision, capturedSnapshotId: snapshotId },
       projectId,
       createdAt: now,
     });
@@ -614,6 +640,15 @@ async function computeRevisionRollback(
  * decremented, never reused": that invariant is about *sent* revisions, not a
  * number a draft merely reserved and discarded. The next "new version" reuses
  * the freed number, so a discarded draft never leaves a permanent gap.
+ * `projects.liveRevision` rolls back the same way, in lockstep — it's the
+ * counter this rollback is really undoing (#1085).
+ *
+ * May only ever target the LIVE draft (`quote.version === liveRevision`) — a
+ * non-live never-sent draft (one `saveVersionNative` left behind) is a
+ * legitimate saved version, not a fat-fingered mistake, and rolling back the
+ * project's counters over an unrelated deletion would orphan whatever IS
+ * currently live. Deleting one of those is a Phase 4 `deleteVersionNative`
+ * concern, not this mutation's.
  */
 export const deleteDraftNative = mutation({
   returns: v.object({ id: v.string(), deletedVersion: v.number(), revision: v.number() }),
@@ -637,12 +672,18 @@ export const deleteDraftNative = mutation({
         message: `${label} was sent at some point — recall it first, then delete, so the audit trail records what happened.`,
       });
     }
+    if (quote.version !== projectLiveRevision(project)) {
+      throw new ConvexError({
+        code: "NOT_LIVE_DRAFT",
+        message: `${label} is a saved version, not the live draft — deleting a saved version isn't supported yet.`,
+      });
+    }
 
     const rollbackTo = await computeRevisionRollback(ctx, organizationId, project.id, quote.id);
 
     await ctx.db.delete(quote._id);
     if (rollbackTo !== projectRevision(project)) {
-      await ctx.db.patch(project._id, { revision: rollbackTo, updatedAt: now });
+      await ctx.db.patch(project._id, { revision: rollbackTo, liveRevision: rollbackTo, updatedAt: now });
     }
 
     await writeActivityLog(ctx, {
@@ -687,6 +728,14 @@ export const deleteDraftNative = mutation({
  * written FIRST and deliberately over-detailed (project, version, label, prior
  * artifact ids, who, when) because it is the only record left once this
  * returns.
+ *
+ * #1085: the revision-counter rollback below only ever fires when the
+ * deleted quote IS the current live revision — same reasoning as
+ * `deleteDraftNative`'s live-only guard, just without refusing the call
+ * outright (this flow's audience/erase semantics are otherwise unchanged).
+ * Erasing an older, already-superseded sent-then-recalled revision removes
+ * the row and its artifacts but leaves `revision`/`liveRevision` exactly
+ * where they are — there is nothing to roll back to.
  */
 export const deleteRecalledNative = mutation({
   returns: v.object({ id: v.string(), deletedVersion: v.number(), revision: v.number() }),
@@ -709,7 +758,13 @@ export const deleteRecalledNative = mutation({
     const label = quoteLabel(project.projectNumber, quote.version);
     assertRecalledDeletable(quote, label, confirmLabel, now);
 
-    const rollbackTo = await computeRevisionRollback(ctx, organizationId, project.id, quote.id);
+    // Only the live revision's deletion rolls the counters back — an older,
+    // already-superseded revision (one a Save Version left the live pointer
+    // past) has nothing for the project's current numbers to roll back to.
+    const isLiveRevision = quote.version === projectLiveRevision(project);
+    const rollbackTo = isLiveRevision
+      ? await computeRevisionRollback(ctx, organizationId, project.id, quote.id)
+      : projectRevision(project);
     const erasedArtifactIds = [...(quote.pdfFileId ? [quote.pdfFileId] : []), ...(quote.recalledPdfFileIds ?? [])];
 
     // Audit FIRST — this is the only record left once the row and its
@@ -746,8 +801,8 @@ export const deleteRecalledNative = mutation({
     }
 
     await ctx.db.delete(quote._id);
-    if (rollbackTo !== projectRevision(project)) {
-      await ctx.db.patch(project._id, { revision: rollbackTo, updatedAt: now });
+    if (isLiveRevision && rollbackTo !== projectRevision(project)) {
+      await ctx.db.patch(project._id, { revision: rollbackTo, liveRevision: rollbackTo, updatedAt: now });
     }
 
     return { id: quote.id, deletedVersion: quote.version, revision: rollbackTo };
@@ -817,11 +872,12 @@ export const repriceFromRevisionNative = mutation({
     }
 
     const revision = projectRevision(project);
-    const current = await findQuoteAtRevision(ctx, organizationId, projectId, revision);
+    const liveRevision = projectLiveRevision(project);
+    const current = await findQuoteAtRevision(ctx, organizationId, projectId, liveRevision);
     if (!current || effectiveQuoteStatus(current, now) === "DRAFT") {
       throw new ConvexError({
         code: "QUOTE_DRAFT_OPEN",
-        message: `Quote v${revision} hasn't been sent yet — edit that draft instead of repricing into a new one.`,
+        message: `Quote v${liveRevision} hasn't been sent yet — edit that draft instead of repricing into a new one.`,
       });
     }
 
@@ -835,7 +891,7 @@ export const repriceFromRevisionNative = mutation({
     const dup = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dup) throw new ConvexError({ code: "DUPLICATE", message: "Quote already exists" });
 
-    await ctx.db.patch(project._id, { revision: next, updatedAt: now });
+    await ctx.db.patch(project._id, { revision: next, liveRevision: next, updatedAt: now });
     await ctx.db.insert("quotes", {
       id,
       organizationId,
@@ -873,7 +929,7 @@ export const repriceFromRevisionNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Started quote ${label} using ${sourceLabel}'s pricing`,
-      details: { version: next, sourceVersion: sourceQuote.version, previousVersion: revision, conflicts },
+      details: { version: next, sourceVersion: sourceQuote.version, previousVersion: liveRevision, conflicts },
       projectId,
       createdAt: now,
     });

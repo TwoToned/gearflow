@@ -123,13 +123,19 @@ export const listSnapshots = query({
     v.object({
       id: v.string(),
       // QUOTE_SENT (#986) — a snapshot taken when a quote revision was sent.
-      // These carry `revision`, which the Versions panel uses to label the row
-      // "as of quote v2" rather than by its status transition.
+      // VERSION_SAVED/PRE_PROMOTE (#1085) — the same "carries `revision`" shape,
+      // taken by an explicit Save version, by `newVersionNative` capturing the
+      // revision it moves past, and (Phase 2) by a promote's auto-capture. This
+      // union MUST stay in lockstep with `projectSnapshots.reason` in
+      // convex/schema.ts — a reason absent here throws at read time the moment
+      // any project has one (this query's `returns` validator is closed).
       reason: v.union(
         v.literal("CONFIRMED"),
         v.literal("COMPLETED"),
         v.literal("UNLOCK"),
         v.literal("QUOTE_SENT"),
+        v.literal("VERSION_SAVED"),
+        v.literal("PRE_PROMOTE"),
       ),
       revision: v.optional(v.number()),
       takenAt: v.number(),

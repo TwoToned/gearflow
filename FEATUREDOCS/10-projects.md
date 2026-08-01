@@ -609,9 +609,11 @@ HERO CARD (rounded-[--r-lg] border-2 bg-card, full width):
   category's mixed project+sub-hire group list; each group's/category's/
   Uncategorized's line items), not one flat context — `handleDragEnd`
   dispatches on the dragged sortable id's `cat-`/`grp-`/`shg-`/`li-` prefix
-  to one of three pure resolver functions. Long-press (mobile `TouchSensor`)
-  and keyboard (`KeyboardSensor`) both work; drag handles are gated on
-  `project:manage_line_items` and hidden at `HARD_LOCKED`. See
+  to one of three pure resolver functions. No dedicated handle — press and
+  hold anywhere on the row (one `PointerSensor` with a `{delay: 200,
+  tolerance: 8}` activation constraint covers mouse, touch/long-press, AND
+  pen alike); `KeyboardSensor` covers keyboard reordering. Dragging is gated
+  on `project:manage_line_items` and disabled at `HARD_LOCKED`. See
   [47-cross-type-equipment-unification.md](./47-cross-type-equipment-unification.md#reordering-drag-and-drop)
   for the full architecture.
 - Inline "Add Group" button in toolbar with template picker

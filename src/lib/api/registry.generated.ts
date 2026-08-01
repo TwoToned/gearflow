@@ -41130,6 +41130,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectVersionsRead.listVersions",
+    "module": "projectVersionsRead",
+    "fn": "listVersions",
+    "kind": "query",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8f3456c860a78207",
+    "returnsSha": "26d612adfd2e34b1",
+    "stability": "tracks-app",
+    "summary": "List a project's versions with state, date and total for the switcher.",
+    "danger": "low",
+    "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectVersionsWrites.saveVersionNative",
     "module": "projectVersionsWrites",
     "fn": "saveVersionNative",
@@ -59815,10 +59857,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1146,
-  agentReachable: 560,
-  queries: 404,
+  total: 1147,
+  agentReachable: 561,
+  queries: 405,
   mutations: 742,
-  agentReachableQueries: 288,
+  agentReachableQueries: 289,
   agentReachableMutations: 272,
 } as const;

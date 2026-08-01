@@ -201,6 +201,52 @@ describe("resolveLineItemDragAction", () => {
     });
   });
 
+  test("different container, dropped directly on ANOTHER CATEGORY's header row -> move to that category's standalone container, append order", () => {
+    // Regression: dropping a line item on a category's header row (cat-*)
+    // used to resolve to nothing (`resolveLineItemDropTarget` had no cat-
+    // branch), silently no-opping the drag instead of moving the item to
+    // that category's top level — the group-side equivalent already worked.
+    const catA = category("catA", { standalone: [li("a")] });
+    const catB = category("catB", { standalone: [li("b")] });
+    const ctx = buildContainerMap([catA, catB], [], []);
+    const action = resolveLineItemDragAction({
+      activeSortableId: "li-a",
+      overSortableId: "cat-catB",
+      ctx,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      lineItemId: "a",
+      fromContainerId: "standalone:catA",
+      toContainerId: "standalone:catB",
+      targetCategoryId: "catB",
+      targetGroupId: null,
+      resultingOrder: undefined,
+    });
+  });
+
+  test("different container, dropped on the Uncategorized zone's header/landing-zone row -> move, append order", () => {
+    // Regression: with nothing currently uncategorized, equipment-tab.tsx
+    // used to render no droppable at all for the Uncategorized zone — this
+    // is the "uncat-zone" landing-zone row that now always renders.
+    const catA = category("catA", { standalone: [li("a")] });
+    const ctx = buildContainerMap([catA], [], []);
+    const action = resolveLineItemDragAction({
+      activeSortableId: "li-a",
+      overSortableId: "uncat-zone",
+      ctx,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      lineItemId: "a",
+      fromContainerId: "standalone:catA",
+      toContainerId: "uncategorized-standalone",
+      targetCategoryId: null,
+      targetGroupId: null,
+      resultingOrder: undefined,
+    });
+  });
+
   test("Drop Matrix: a line item onto a sub-hire group is blocked", () => {
     const catA = category("catA", { standalone: [li("a")] });
     const action = resolveLineItemDragAction({
@@ -389,6 +435,56 @@ describe("resolveGroupDragAction", () => {
       toContainerId: "mixed:catA",
       targetCategoryId: "catA",
       resultingOrder: ["grp-g1", "shg-osh1", "shg-sh-existing"],
+    });
+  });
+
+  test("cross-category move: dropped directly on the DESTINATION category's header row -> move, append order", () => {
+    // Regression coverage for `resolveGroupDropTarget`'s cat- branch, which
+    // existed before this test did but was never actually exercised.
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      mixedGroups: [{ kind: "project", sortOrder: 0, projectGroupId: "g1" }],
+    });
+    const catB = category("catB", { groups: [], mixedGroups: [] });
+    const ctx = buildGroupContainerMap([catA, catB], [], []);
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "cat-catB",
+      ctx,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      groupKind: "project",
+      groupId: "g1",
+      fromContainerId: "mixed:catA",
+      toContainerId: "mixed:catB",
+      targetCategoryId: "catB",
+      resultingOrder: undefined,
+    });
+  });
+
+  test("move to Uncategorized via the zone's header/landing-zone row, even when nothing is uncategorized yet", () => {
+    // Regression: with no existing orphan group to drop onto, the
+    // Uncategorized zone previously had no droppable at all — this is the
+    // "uncat-zone" landing-zone row that now always renders.
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      mixedGroups: [{ kind: "project", sortOrder: 0, projectGroupId: "g1" }],
+    });
+    const ctx = groupCtxFor(catA);
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "uncat-zone",
+      ctx,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      groupKind: "project",
+      groupId: "g1",
+      fromContainerId: "mixed:catA",
+      toContainerId: "uncategorized-groups",
+      targetCategoryId: null,
+      resultingOrder: undefined,
     });
   });
 

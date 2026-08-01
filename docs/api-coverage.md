@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 405 | 288 | 115 | 1 | 1 |
-| Mutations | 742 | 272 | 461 | 0 | 9 |
-| **Total** | **1147** | **560** | **576** | **1** | **10** |
+| Queries | 405 | 289 | 114 | 1 | 1 |
+| Mutations | 743 | 273 | 461 | 0 | 9 |
+| **Total** | **1148** | **562** | **575** | **1** | **10** |
 
-<!-- reachability-floor: 560 -->
+<!-- reachability-floor: 562 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,7 +42,7 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 91 |
+| `high` | 92 |
 | `medium` | 142 |
 | `low` | 39 |
 
@@ -93,7 +93,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `warehouseDashboardTokens` | 7 |
 | `warehouseOps` | 24 |
 | `webhooks` | 14 |
-| `wooCommerceIntegrations` | 8 |
+| `wooCommerceIntegrations` | 7 |
 | `wooCommerceOrderLogs` | 7 |
 
 ## Deliberately denied (Phase 5 triage, #1001)
@@ -178,9 +178,8 @@ fails the build otherwise.
 | `warehouseDashboardTokens.getById` | Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material. |
 | `warehouseDashboardTokens.getByTokenHash` | Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material. |
 | `warehouseDashboardTokens.list` | Returns the plaintext kiosk dashboard `token` field, not just metadata — sensitive token material. |
-| `wooCommerceIntegrations.getById` | Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
-| `wooCommerceIntegrations.getByWebhookToken` | Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
-| `wooCommerceIntegrations.list` | Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
+| `wooCommerceIntegrations.getById` | Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
+| `wooCommerceIntegrations.list` | Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
 | `wooCommerceOrderLogs.findCompletedByOrder` | The raw `payload` field stores the full WooCommerce webhook order body, which includes customer billing PII (name/email/phone/address) per src/lib/validations/woocommerce.ts — not a credential, but real customer PII with no redacted projection available (R-8.12). |
 | `wooCommerceOrderLogs.getById` | The raw `payload` field stores the full WooCommerce webhook order body, which includes customer billing PII (name/email/phone/address) per src/lib/validations/woocommerce.ts — not a credential, but real customer PII with no redacted projection available (R-8.12). |
 | `wooCommerceOrderLogs.list` | The raw `payload` field stores the full WooCommerce webhook order body, which includes customer billing PII (name/email/phone/address) per src/lib/validations/woocommerce.ts — not a credential, but real customer PII with no redacted projection available (R-8.12). |

@@ -41130,6 +41130,105 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectVersionsRead.listVersions",
+    "module": "projectVersionsRead",
+    "fn": "listVersions",
+    "kind": "query",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8f3456c860a78207",
+    "returnsSha": "26d612adfd2e34b1",
+    "stability": "tracks-app",
+    "summary": "List a project's versions with state, date and total for the switcher.",
+    "danger": "low",
+    "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectVersionsWrites.promoteRevisionNative",
+    "module": "projectVersionsWrites",
+    "fn": "promoteRevisionNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "targetRevision",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7e9e6c1e98488e5b",
+    "returnsSha": "c7504c21da0eaf13",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectVersionsWrites.saveVersionNative",
     "module": "projectVersionsWrites",
     "fn": "saveVersionNative",
@@ -58656,15 +58755,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "webhookSecret",
         "optional": true,
         "type": "string"
-      },
-      {
-        "name": "webhookToken",
-        "optional": true,
-        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "49868f386e8d417f",
+    "argsSha": "938288fc01dff846",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -58788,15 +58882,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "webhookSecret",
         "optional": true,
         "type": "string"
-      },
-      {
-        "name": "webhookToken",
-        "optional": true,
-        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "49868f386e8d417f",
+    "argsSha": "938288fc01dff846",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -58830,34 +58919,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "danger": null,
     "mcpTier": null,
     "agentAccess": "denied",
-    "deniedReason": "Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
-  },
-  {
-    "operation": "wooCommerceIntegrations.getByWebhookToken",
-    "module": "wooCommerceIntegrations",
-    "fn": "getByWebhookToken",
-    "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "webhookToken",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "6bcbe04bd3f51d01",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": "denied",
-    "deniedReason": "Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
+    "deniedReason": "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
   },
   {
     "operation": "wooCommerceIntegrations.list",
@@ -58884,7 +58946,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "danger": null,
     "mcpTier": null,
     "agentAccess": "denied",
-    "deniedReason": "Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
+    "deniedReason": "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg)."
   },
   {
     "operation": "wooCommerceIntegrations.patchWooCommerceIntegration",
@@ -58914,7 +58976,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "acf30cc2b2441702",
+    "argsSha": "4e5edb6129bbcb15",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -58973,7 +59035,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "759447d43e526d18",
+    "argsSha": "c716767df7ea8ec2",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -59852,10 +59914,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1147,
-  agentReachable: 560,
+  total: 1148,
+  agentReachable: 562,
   queries: 405,
-  mutations: 742,
-  agentReachableQueries: 288,
-  agentReachableMutations: 272,
+  mutations: 743,
+  agentReachableQueries: 289,
+  agentReachableMutations: 273,
 } as const;

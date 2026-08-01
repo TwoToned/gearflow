@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
 import { logger } from "@/lib/logger";
 import { ConvexQueryCacheProvider } from "convex-helpers/react/cache";
-import { authClient } from "@/lib/auth-client";
+import { authClient, useActiveOrganization } from "@/lib/auth-client";
 import { fetchConvexAccessToken } from "@/lib/convex-token-fetch";
 
 /**
@@ -41,9 +41,29 @@ const CACHE_MAX_IDLE_ENTRIES = 250;
  * ES256 JWT (or null when logged out / on error); Convex calls it on mount and
  * refreshes it before expiry (forceRefreshToken just re-fetches — the endpoint
  * always mints a fresh token from the live session).
+ *
+ * The org switcher's sharp edge (design doc §4.3.1, A2): `organization.setActive()`
+ * updates the Better Auth session, but the JWT bakes `orgId` in as a claim
+ * (`definePayload`, src/lib/auth.ts) and Convex only refetches that token on its
+ * own schedule (mount + pre-expiry) — NOT on every render. Left alone, every live
+ * subscription would keep serving the PREVIOUS org's data until the token happened
+ * to expire: a cross-tenant read produced by the switcher itself.
+ *
+ * `ConvexProviderWithAuth` calls `client.setAuth(fetchAccessToken, ...)` inside a
+ * `useEffect` keyed on `fetchAccessToken`'s identity (convex/react's
+ * ConvexAuthState.js) — and `client.setAuth` unconditionally pauses the socket,
+ * force-fetches a fresh token, and re-authenticates (authentication_manager.js
+ * `setConfig`), which is exactly the reauth-and-resubscribe-everything sequence
+ * needed. So including `orgId` in this callback's deps is enough to trigger it:
+ * switching org changes `orgId` → `fetchAccessToken` gets a new identity → the
+ * provider's effect reruns → the client force-reauthenticates. No caller (the
+ * switcher, the select-organization page, OrgActivator) needs to orchestrate this
+ * itself — it's centralized here, the one place a Convex identity is minted.
  */
 function useBetterAuthForConvex() {
   const { data: session, isPending } = authClient.useSession();
+  const { data: activeOrg } = useActiveOrganization();
+  const orgId = activeOrg?.id;
 
   const fetchAccessToken = useCallback(
     // forceRefreshToken is ignored — /api/auth/token always mints a fresh token
@@ -51,8 +71,12 @@ function useBetterAuthForConvex() {
     // resilient: a TRANSIENT /api/auth/token failure is retried rather than
     // collapsed to null (null de-auths Convex and makes every live subscription
     // throw "Unauthorized" — the "random client crash"). See convex-token-fetch.ts.
+    // `orgId` is read only to force a new callback identity on org switch — it's
+    // not used in the body itself, fetchConvexAccessToken always reads the live
+    // session server-side.
     async (): Promise<string | null> => fetchConvexAccessToken(),
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- orgId intentionally unused in body, see comment above
+    [orgId],
   );
 
   return useMemo(

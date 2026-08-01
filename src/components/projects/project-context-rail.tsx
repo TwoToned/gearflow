@@ -8,57 +8,19 @@ import { ProjectManagersPanel } from "@/components/projects/project-managers-pan
 import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
 import { formatDate } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
+import {
+  projectScheduleRows,
+  directionsHref,
+  type ProjectContextProject,
+} from "@/lib/project-context";
 
-/**
- * The shape this rail reads off the project detail. Deliberately structural
- * rather than `Doc<"projects">` — the detail query returns a serialized,
- * relation-expanded row (dates as strings, `location`/`client` joined), which
- * is not the Convex document type.
- */
-export interface ProjectContextRailProject {
-  isTemplate?: boolean | null;
-  rentalStartDate?: string | null;
-  rentalEndDate?: string | null;
-  projectStartDate?: string | null;
-  projectEndDate?: string | null;
-  projectStartTime?: string | null;
-  projectEndTime?: string | null;
-  loadInDate?: string | null;
-  loadOutDate?: string | null;
-  loadInTime?: string | null;
-  loadOutTime?: string | null;
-  location?: {
-    name: string;
-    address?: string | null;
-    latitude?: number | null;
-    longitude?: number | null;
-  } | null;
-  siteContactName?: string | null;
-  siteContactPhone?: string | null;
-  siteContactEmail?: string | null;
-  client?: { id: string; name: string } | null;
-  projectManagers?: {
-    userId: string;
-    user: { id: string; name: string | null; email: string; image: string | null };
-  }[];
-}
+/** Kept as the rail's own prop name; the shape lives in `@/lib/project-context`
+ *  so the Overview cards and this sidebar read one definition (R-3.1). */
+export type ProjectContextRailProject = ProjectContextProject;
+
 
 function ScheduleSection({ project }: { project: ProjectContextRailProject }) {
-  // WS2 (#941) — the PROJECT window rows render only when set (no stack of "—"
-  // placeholders); loadIn/loadOut are the deprecated fallback for a project the
-  // backfill hasn't reached yet. If nothing is set at all, show one faint line.
-  const scheduleRows = [
-    {
-      label: "Project starts",
-      date: project.projectStartDate ?? project.loadInDate,
-      time: project.projectStartTime ?? project.loadInTime,
-    },
-    {
-      label: "Project ends",
-      date: project.projectEndDate ?? project.loadOutDate,
-      time: project.projectEndTime ?? project.loadOutTime,
-    },
-  ].filter((r) => r.date != null);
+  const scheduleRows = projectScheduleRows(project);
 
   return (
     <SidebarSection title="Schedule">
@@ -113,7 +75,7 @@ function SiteContact({ project }: { project: ProjectContextRailProject }) {
 
 function LocationSection({ project }: { project: ProjectContextRailProject }) {
   const loc = project.location;
-  const hasCoords = loc?.latitude != null && loc?.longitude != null;
+  const directions = directionsHref(project);
   return (
     <SidebarSection title="Location">
       <div className="space-y-1 text-ui-text">
@@ -124,9 +86,9 @@ function LocationSection({ project }: { project: ProjectContextRailProject }) {
               <span className="font-medium text-ink-2">{loc.name}</span>
             </div>
             {loc.address && <p className="text-muted pl-5.5">{loc.address}</p>}
-            {hasCoords && (
+            {directions && (
               <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${loc.latitude},${loc.longitude}`}
+                href={directions}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={cn(
@@ -149,15 +111,14 @@ function LocationSection({ project }: { project: ProjectContextRailProject }) {
 }
 
 /**
- * Schedule · Location · Team · Activity — the project's standing context
- * (#1061).
+ * Schedule · Location · Team · Activity — the project's standing context, as
+ * the page SIDEBAR (#1061, revised by #1063).
  *
- * This was the project detail's page-wide right sidebar, rendered alongside
- * EVERY tab. It now lives only in the Overview tab: on the home tab this
- * content IS the point, and on the Equipment tab it was a ~296px tax on the
- * one table that most needs the width. Extracted to its own component so the
- * move is a re-home rather than a rewrite — every section renders exactly what
- * it rendered in the sidebar.
+ * Rendered on every tab EXCEPT Overview. On Overview this same content is the
+ * point of the page, so it's woven into that tab's own card language instead
+ * (`overview/context-cards.tsx`) rather than bolted on as a rail — which is
+ * why the facts themselves are shaped once in `@/lib/project-context` and only
+ * the presentation differs here.
  */
 export function ProjectContextRail({
   projectId,

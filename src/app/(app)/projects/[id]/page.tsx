@@ -39,6 +39,14 @@ import {
   ProjectContextRail,
   type ProjectContextRailProject,
 } from "@/components/projects/project-context-rail";
+import {
+  OverviewScheduleCard,
+  OverviewLocationCard,
+  OverviewTeamCard,
+  OverviewActivityCard,
+} from "@/components/projects/overview/context-cards";
+import type { ProjectContextProject } from "@/lib/project-context";
+import { DetailLayout, DetailMain, DetailSidebar } from "@/components/layout/page-layouts";
 import { QuoteCard } from "@/components/projects/overview/quote-card";
 import { InvoicingCard } from "@/components/projects/overview/invoicing-card";
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
@@ -530,13 +538,18 @@ export default function ProjectDetailPage({
             />
           )}
 
-          {/* ── Tabs ───────────────────────────────────────────────────
-              #1061: FULL WIDTH. The 2-column DetailLayout that used to wrap
-              this put a ~296px sidebar (Schedule · Location · Team · Activity)
-              on EVERY tab — context the equipment table was paying for on every
-              row. Those sections now live in the Overview tab, which is the one
-              place that context is actually the content. */}
-          <div>
+          {/* ── Tabs + context sidebar ─────────────────────────────────
+              #1063: the sidebar (Schedule · Location · Team · Activity) rides
+              along on every tab EXCEPT Overview. On Overview that same content
+              is the point of the page, so it's composed into the tab's own
+              cards instead of arriving as a rail bolted to the side — see
+              `overview/context-cards.tsx`. Rendering both would show the same
+              facts twice on the one tab.
+
+              `DetailMain` is `flex-1`, so omitting the sidebar gives Overview
+              the full width for free — no separate layout branch needed. */}
+          <DetailLayout>
+            <DetailMain>
               <Tabs value={activeTab} onValueChange={setActiveTab}>
                 {/* Tab selector + the active tab's primary action share one row.
                     The Equipment tab portals its "Add ▾" menu into the right-hand
@@ -557,15 +570,15 @@ export default function ProjectDetailPage({
                   <div ref={setEquipmentAddSlot} className="flex items-center gap-2" />
                 </div>
 
-                {/* ── Overview Tab (#1061) — the project's home ───────────
-                    Read the state, then pick a tab to work in. Two columns:
-                    what needs doing (readiness → the live quote and invoice →
-                    money → tasks) on the left, and the context that used to be
-                    the page-wide sidebar on the right. Order is deliberate —
-                    readiness leads because it's the only section that can tell
-                    you to stop. */}
+                {/* ── Overview Tab (#1061, recomposed in #1063) ───────────
+                    The project's home: read the state, then pick a tab to work
+                    in. One column, ordered by what it asks of you — readiness
+                    leads because it's the only section that can tell you to
+                    stop; then the live quote and invoicing; then money; then
+                    the standing context (schedule, location, team, activity)
+                    as peer cards rather than a sidebar. */}
                 <TabsContent value="overview">
-                  <div className="grid gap-4 pt-4 lg:grid-cols-[minmax(0,1fr)_296px] lg:items-start">
+                  <div className="pt-4">
                     <div className="flex min-w-0 flex-col gap-4">
                       {!project.isTemplate && orgId && (
                         <ProjectReadinessPanel
@@ -607,16 +620,20 @@ export default function ProjectDetailPage({
                           total={project.total as number | null}
                         />
                       )}
-                    </div>
 
-                    {/* Context rail — the sections that used to ride along on
-                        every tab. Stacks under the main column below `lg`. */}
-                    <div className="flex min-w-0 flex-col gap-4">
-                      <ProjectContextRail
-                        projectId={id}
-                        orgId={orgId}
-                        project={project as ProjectContextRailProject}
-                      />
+                      {/* Standing context, as peer cards — the same facts the
+                          sidebar shows on every other tab, shaped once in
+                          `@/lib/project-context` so the two can't disagree. */}
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {!project.isTemplate && (
+                          <OverviewScheduleCard project={project as ProjectContextProject} />
+                        )}
+                        <OverviewLocationCard project={project as ProjectContextProject} />
+                        <OverviewTeamCard projectId={id} project={project as ProjectContextProject} />
+                        {orgId && !project.isTemplate && (
+                          <OverviewActivityCard projectId={id} orgId={orgId} />
+                        )}
+                      </div>
                     </div>
                   </div>
                 </TabsContent>
@@ -809,7 +826,19 @@ export default function ProjectDetailPage({
                   </div>
                 </TabsContent>
               </Tabs>
-          </div>
+            </DetailMain>
+
+            {/* Every tab but Overview, which composes this content itself. */}
+            {activeTab !== "overview" && (
+              <DetailSidebar>
+                <ProjectContextRail
+                  projectId={id}
+                  orgId={orgId}
+                  project={project as ProjectContextRailProject}
+                />
+              </DetailSidebar>
+            )}
+          </DetailLayout>
         </div>
       </FadeIn>
 

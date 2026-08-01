@@ -238,6 +238,28 @@ export async function liveStateMatchesCapturedSnapshot(
   return snapshotEntriesEqual(current, captured);
 }
 
+/** Delete a captured snapshot and every one of its entry rows — the
+ *  counterpart to `captureProjectSnapshot` (#1080/#1097 `deleteVersionNative`:
+ *  a saved-but-never-sent version's capture has no other consumer once the
+ *  version itself is deleted). Org-checked on both tables — `by_snapshotId`
+ *  and `by_cuid` are global indexes. A missing or cross-org snapshot is a
+ *  silent no-op rather than an error: `quote.snapshotId` can be absent (a
+ *  never-sent draft that was never itself the outgoing side of a save), and
+ *  the delete is best-effort cleanup, not the primary write. */
+export async function deleteSnapshotAndEntries(
+  ctx: MutationCtx,
+  orgId: string,
+  snapshotId: string,
+): Promise<void> {
+  const entries = (
+    await ctx.db.query("projectSnapshotEntries").withIndex("by_snapshotId", (q) => q.eq("snapshotId", snapshotId)).collect()
+  ).filter((e) => e.organizationId === orgId);
+  for (const e of entries) await ctx.db.delete(e._id);
+
+  const snapshot = await ctx.db.query("projectSnapshots").withIndex("by_cuid", (q) => q.eq("id", snapshotId)).first();
+  if (snapshot && snapshot.organizationId === orgId) await ctx.db.delete(snapshot._id);
+}
+
 /** Structural/workflow fields that reflect REAL warehouse state, never rewritten
  *  by a restore (asset/kit status is real-world truth — CLAUDE.md/#792 invariant). */
 const LINE_ITEM_WAREHOUSE_FIELDS = new Set([

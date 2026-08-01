@@ -171,6 +171,52 @@ At most one **OPEN** row per project (enforced in `openNative`).
     conflict for manual review rather than forced (`isWarehouseBacked` in
     `projectSnapshots.ts`). Asset/kit status fields are never rewritten by
     either scope (warehouse state is real-world truth).
+
+### A third restore scope: `PROMOTE` (#1080/#1089, Phase 2)
+
+`restoreProjectSnapshot`'s `scope` union gained a third member,
+`RestoreScope = "FINANCIAL" | "FULL" | "PROMOTE"` (renamed from `UnlockScope` —
+it's no longer only an unlock-session concern). `PROMOTE` is `convex/
+projectVersionsWrites.ts`'s `promoteRevisionNative` — "make an older (or
+newer, non-live) captured version live" — a THIRD caller of the same restore
+mechanism the unlock sessions above use, not new machinery.
+
+Structurally `PROMOTE` behaves exactly like `FULL` (same `isWarehouseBacked`
+conflict handling for groups/line items/services/crew — see above). It
+diverges in exactly one place: the **project row** restores every captured
+field EXCEPT identity (`id`/`organizationId`/`projectNumber`/`isTemplate`/
+`createdAt`), the counters themselves (`revision`/`liveRevision` — restoring
+them would undo the promote), `status` (lifecycle position is where the job
+actually IS, not what a version said), and the recalc-owned derived totals
+(`subtotal`/`total`/`taxAmount`/`margin`/`equipmentRevenue`/`saleRevenue`/
+`*CostTotal`/`invoicedTotal`/`depositPaid`) — recalc is the single writer for
+those (R-3.1), and `invoicedTotal`/`depositPaid` reflect real issued invoices,
+never rolled back. Everything else — dates, client, notes, duration-derived
+pricing overrides (`billingWeeksOverride`/`billingDaysOverride`) — restores
+from the snapshot, not recomputed (`PROMOTE_EXCLUDED_PROJECT_FIELDS` in
+`projectSnapshots.ts` is the authoritative list).
+
+`promoteRevisionNative`'s five preconditions reuse this file's existing
+vocabulary rather than adding a new gate: check 3 is `isHardLockOverrideAllowed`
+(the same admin/owner/PM audience FULL sessions already use); check 4 is
+`assertLifecycleGuard(ctx, project, { kind: "structural" })` with **no**
+justification argument — on a HARD_LOCKED project this means promote is
+unreachable without an already-open FULL session (its own justification is
+what satisfies the guard, exactly like the hard-lock-revert case below); on a
+JUSTIFY-tier project (ON_SITE/RETURNED) with no open session, the same call
+throws `JUSTIFICATION_REQUIRED` — pointing the caller at opening a session
+rather than growing promote a second justification surface (decision 17). A
+FINANCE_LOCKED-or-below project's structural gate passes ungated, same as
+every other structural call site.
+
+Before overwriting the live state, promote auto-captures it
+(`PRE_PROMOTE` reason, below) unless it's already snapshotted AND
+byte-identical to that snapshot (`liveStateMatchesCapturedSnapshot`) — nothing
+is at risk, so no number is allocated for a no-op copy. After restoring, a
+moved `rentalStartDate`/`rentalEndDate` triggers the SAME re-derive this
+file's hard-lock section (below) doesn't otherwise need: any resulting
+overbooking on another job is folded into the mutation's returned `conflicts`
+list, using the existing `overbookingBoard.ts` aggregation.
 - **`autoCommitOpenSession`** — called from `updateStatusNative` on every
   actual status change: a session never silently spans a status transition.
 
@@ -190,6 +236,14 @@ of a client-side JSON walk). Captured by `captureProjectSnapshot`
   advance OR a revert-then-re-advance "re-crossing" — each takes a NEW
   snapshot, versioned, never overwritten).
 - **`reason: "UNLOCK"`** — at every unlock-session open (the discard target).
+- **`reason: "QUOTE_SENT"`** — at every quote send (`quotesWrites.sendNative`),
+  carrying the `revision` it freezes. See FEATUREDOCS/66.
+- **`reason: "VERSION_SAVED"`** (#1085) — an explicit Save version
+  (`projectVersionsWrites.saveVersionNative`) or `newVersionNative` capturing
+  the revision it moves past. Also carries `revision`.
+- **`reason: "PRE_PROMOTE"`** (#1089, Phase 2) — the auto-capture of the live
+  state immediately before `promoteRevisionNative` overwrites it (see below).
+  Also carries `revision`.
 
 Entities captured: project (incl. computed totals), categories, groups, line
 items, services, crew assignments — the full project subtree, stripped of
@@ -421,6 +475,10 @@ Zod entirely (FEATUREDOCS/54's "write security bar"). All server-side
 rejections use `ConvexError({ code })` with a stable code the client branches
 on: `FINANCIALS_LOCKED`, `JUSTIFICATION_REQUIRED`, `PROJECT_LOCKED`,
 `SESSION_ALREADY_OPEN`, `NO_OPEN_SESSION`, `FORBIDDEN_HARD_LOCK_OVERRIDE`.
+`promoteRevisionNative` (below) adds its own precondition codes —
+`TEMPLATE_NO_VERSIONS`, `VERSION_NOT_RESTORABLE`, `FORBIDDEN`,
+`PROMOTE_BLOCKED_INVOICED` — ahead of the shared `PROJECT_LOCKED`/
+`JUSTIFICATION_REQUIRED` pair `assertLifecycleGuard` itself can still throw.
 
 ## Gate site coverage
 
@@ -436,7 +494,10 @@ snapshot/session cascade), `lineItemWrites.ts` (`addNative`, `addCustomNative`,
 `bulkUpdateServiceStatusNative`, `generateServicesNative`,
 `cloneServicesNative`, `convertLineItemToServiceNative`),
 `crewAssignmentsWrites.ts` (`createNative`, `updateNative`, `deleteNative`,
-`bulkDeleteNative`, `bulkStatusNative`, `generateShiftsNative`).
+`bulkDeleteNative`, `bulkStatusNative`, `generateShiftsNative`),
+`projectVersionsWrites.ts` (`promoteRevisionNative`, #1089, Phase 2 — `kind:
+"structural"`, no justification argument of its own; see "A third restore
+scope" above).
 
 That closes every site #791/#793's acceptance criteria asked for ("every gate
 site") — the bulk/generate/clone/reorder variants below were the deferred set;

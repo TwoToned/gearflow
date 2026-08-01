@@ -41130,6 +41130,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectVersionsWrites.promoteRevisionNative",
+    "module": "projectVersionsWrites",
+    "fn": "promoteRevisionNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "targetRevision",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7e9e6c1e98488e5b",
+    "returnsSha": "c7504c21da0eaf13",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectVersionsWrites.saveVersionNative",
     "module": "projectVersionsWrites",
     "fn": "saveVersionNative",
@@ -59815,10 +59872,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1146,
-  agentReachable: 560,
+  total: 1147,
+  agentReachable: 561,
   queries: 404,
-  mutations: 742,
+  mutations: 743,
   agentReachableQueries: 288,
-  agentReachableMutations: 272,
+  agentReachableMutations: 273,
 } as const;

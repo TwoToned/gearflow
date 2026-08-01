@@ -473,6 +473,74 @@ describe("invoicesWrites.createCreditNative", () => {
   });
 });
 
+describe("invoicesWrites — sourceRevision lineage (#1080/#1097)", () => {
+  test("createNative stamps the project's live revision at CREATE time", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { revision: 3, liveRevision: 3 });
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+
+    expect((await getInvoice(t, "i1"))?.sourceRevision).toBe(3);
+  });
+
+  test("sourceRevision is never updated by issueNative or voidNative — it survives a void", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { revision: 2, liveRevision: 2 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+    // The project moves to a different live revision AFTER the invoice exists —
+    // sourceRevision must reflect what it was at CREATE, not whatever's live now.
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { revision: 5, liveRevision: 5 });
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, { id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW });
+    expect((await getInvoice(t, "i1"))?.sourceRevision).toBe(2);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.voidNative, {
+      id: "i1", orgId: ORG, reason: "Client cancelled the job", actor, auditId: "a3", now: NOW + 1,
+    });
+    expect((await getInvoice(t, "i1"))?.sourceRevision).toBe(2); // untouched by the void
+  });
+
+  test("createCreditNative stamps its OWN sourceRevision — the version live when the credit was cut", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.issueNative, { id: "i1", orgId: ORG, autoNumber, actor, auditId: "a2", now: NOW });
+    expect((await getInvoice(t, "i1"))?.sourceRevision).toBe(1);
+
+    // A later promote (or any live-revision move) happens before the credit.
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { revision: 4, liveRevision: 4 });
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createCreditNative, {
+      id: "cr1", orgId: ORG, creditForInvoiceId: "i1", actor, auditId: "a3", now: NOW + 1,
+    });
+    expect((await getInvoice(t, "cr1"))?.sourceRevision).toBe(4); // its OWN moment, not i1's
+    expect((await getInvoice(t, "i1"))?.sourceRevision).toBe(1); // the original is untouched
+  });
+});
+
 async function setRole(t: ReturnType<typeof makeT>, role: string, orgId = ORG, userId = USER) {
   await t.run(async (ctx) => {
     const m = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId)).first();

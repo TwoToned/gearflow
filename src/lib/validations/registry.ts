@@ -35,6 +35,7 @@ import {
   quoteRecallFields,
   quoteAcceptFields,
   quoteDeclineFields,
+  quoteSetLabelFields,
 } from "../../../convex/quotesWrites";
 import { quoteSaveVersionFields } from "../../../convex/projectVersionsWrites";
 import { invoiceFields, invoiceIssueFields } from "../../../convex/invoicesWrites";
@@ -58,6 +59,7 @@ import {
   quoteAcceptSchema,
   quoteDeclineSchema,
   quoteSaveVersionSchema,
+  quoteSetLabelSchema,
 } from "./quote";
 import { invoiceSchema, invoiceIssueSchema } from "./invoice";
 import { paymentSchema } from "./payment";
@@ -169,6 +171,7 @@ export const VALIDATION_PAIRS: ValidationPair[] = [
   { name: "quoteAccept", zod: quoteAcceptSchema, convex: quoteAcceptFields },
   { name: "quoteDecline", zod: quoteDeclineSchema, convex: quoteDeclineFields },
   { name: "quoteSaveVersion", zod: quoteSaveVersionSchema, convex: quoteSaveVersionFields },
+  { name: "quoteSetLabel", zod: quoteSetLabelSchema, convex: quoteSetLabelFields },
   {
     name: "invoice",
     zod: invoiceSchema,

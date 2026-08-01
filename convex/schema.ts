@@ -2407,6 +2407,16 @@ export default defineSchema({
     // normalised to the org's calendar day like a quote's `quoteDate`.
     invoiceDate: v.optional(v.number()),
     dueDate: v.optional(v.number()),
+    // #1080/#1097 — the project's `liveRevision` at the moment this invoice was
+    // CREATE'd, stamped once and never updated (an invoice belongs to the
+    // version that produced its figures, even after a later promote moves the
+    // project's live version elsewhere). No index — invoices are already loaded
+    // per project via `by_organizationId_projectId` and filtered in memory; the
+    // volume is a handful of rows per project. Absent on every pre-#1097 row
+    // (best-effort backfilled, `backfillInvoiceSourceRevision.ts`) and on any
+    // row the backfill hasn't reached — those render with no version chip,
+    // which is accurate: we genuinely don't know which version produced them.
+    sourceRevision: v.optional(v.number()),
     pdfFileId: v.optional(v.string()),
     // Money snapshot, frozen at create/issue time (never recomputed from live
     // project pricing after issue — R-9.3 "server is the authority", but the

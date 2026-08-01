@@ -211,6 +211,53 @@ describe("quotesWrites.sendNative", () => {
     await expect(send(t, { validityDays: 400 })).rejects.toThrow(/at most 365/i);
     await expect(send(t, { validityDays: 1.5 })).rejects.toThrow(/whole number/i);
   });
+
+  test("sends the LIVE revision, not the allocator's high-water mark, when a promote left them apart (#1080/#1097)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    // Simulate the state right after a promote landed an older, never-sent
+    // PRE_PROMOTE draft as live: revision (allocator) stays ahead of
+    // liveRevision, and the live row is a DRAFT with no sentAt.
+    await t.run(async (ctx) => {
+      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(project!._id, { revision: 3, liveRevision: 1 });
+    });
+
+    const result = await send(t);
+    // Sends v1 (the LIVE revision) — not v3, and not a QUOTE_ALREADY_SENT/
+    // QUOTE_VERSION_CONFLICT throw from misreading the allocator.
+    expect(result.version).toBe(1);
+    const quotes = await getQuotes(t);
+    expect(quotes).toHaveLength(1);
+    expect(quotes[0]?.version).toBe(1);
+    expect(quotes[0]?.status).toBe("SENT");
+  });
+
+  test("labelOnDocument is stamped only when requested AND the revision already carries a label", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectVersionsWrites.saveVersionNative, {
+      id: "unused", organizationId: ORG, projectId: "p1", actor, auditId: "a0", now: NOW - 1,
+    });
+    // Requested but no label on the row — nothing to print, so nothing is stamped.
+    const noLabel = await send(t, { id: "q1", labelOnDocument: true });
+    expect(noLabel.version).toBe(2); // saveVersionNative already moved live to v2
+    expect((await getQuotes(t)).find((q) => q.version === 2)?.labelOnDocument).toBeUndefined();
+  });
+
+  test("labelOnDocument stamps true when the labelled revision opts in at send", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectVersionsWrites.saveVersionNative, {
+      id: "unused", organizationId: ORG, projectId: "p1", label: "Budget option", actor, auditId: "a0", now: NOW - 1,
+    });
+
+    const result = await send(t, { id: "q2", labelOnDocument: true });
+    expect((await getQuotes(t)).find((q) => q.id === result.id)?.labelOnDocument).toBe(true);
+  });
 });
 
 describe("quotesWrites.newVersionNative — monotonicity and the one-draft invariant", () => {
@@ -413,6 +460,152 @@ describe("quotesWrites.deleteDraftNative", () => {
     });
 
     await expect(del(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
+describe("quotesWrites.deleteVersionNative — the saved-but-never-sent version case (#1080/#1097)", () => {
+  const delVersion = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.deleteVersionNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a9", now: NOW + 10, ...over,
+    } as never);
+
+  const saveVersion = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.projectVersionsWrites.saveVersionNative, {
+      id: "qsave", organizationId: ORG, projectId: "p1", actor, auditId: "asave", now: NOW + 1, ...over,
+    } as never);
+
+  test("deletes a saved-but-never-sent version's quote row + its snapshot/entries, touching neither counter", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 SENT — live
+    await saveVersion(t, { id: "q2" }); // v2 DRAFT — now live; v1 non-live
+    const saved2 = await saveVersion(t, { id: "q3", auditId: "asave2", now: NOW + 2 }); // v3 live; v2 non-live, never sent
+    expect(saved2.version).toBe(3);
+
+    const snapshots = await t.run((ctx) => ctx.db.query("projectSnapshots").collect());
+    const v2Snapshot = snapshots.find((s) => s.revision === 2 && s.reason === "VERSION_SAVED");
+    expect(v2Snapshot).toBeTruthy();
+
+    const result = await delVersion(t, { id: "q2" });
+    expect(result.deletedVersion).toBe(2);
+
+    const quotes = await getQuotes(t);
+    expect(quotes.find((q) => q.id === "q2")).toBeUndefined();
+    const project = await getProject(t);
+    expect(project?.revision).toBe(3); // untouched — v2's number was already superseded
+    expect(project?.liveRevision).toBe(3); // untouched
+
+    const remainingEntries = await t.run((ctx) =>
+      ctx.db.query("projectSnapshotEntries").withIndex("by_snapshotId", (q) => q.eq("snapshotId", v2Snapshot!.id)).collect(),
+    );
+    expect(remainingEntries).toHaveLength(0);
+    const remainingSnapshot = await t.run((ctx) =>
+      ctx.db.query("projectSnapshots").withIndex("by_cuid", (q) => q.eq("id", v2Snapshot!.id)).first(),
+    );
+    expect(remainingSnapshot).toBeNull();
+  });
+
+  test("guard order: refuses the LIVE version first", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+    await saveVersion(t, { id: "q2" }); // v2 is now live
+
+    await expect(delVersion(t, { id: "q2" })).rejects.toThrow(/is live/i);
+  });
+
+  test("guard order: an ever-sent, non-live version points at recall-then-delete instead", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 sent
+    await saveVersion(t, { id: "q2" }); // v2 live now; v1 non-live but WAS sent
+
+    await expect(delVersion(t, { id: "q1" })).rejects.toThrow(/was sent at some point/i);
+  });
+
+  test("guard order: a protected, non-live, never-sent version refuses last", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 sent
+    await saveVersion(t, { id: "q2" }); // v2 live
+    await saveVersion(t, { id: "q3", auditId: "a3", now: NOW + 2 }); // v3 live; v2 non-live, never sent
+    await t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteProtectedNative, {
+      id: "q2", organizationId: ORG, protect: true, actor, auditId: "a4", now: NOW + 3,
+    });
+
+    await expect(delVersion(t, { id: "q2" })).rejects.toThrow(/protected/i);
+  });
+
+  test("a viewer is denied (invoice:publish)", async () => {
+    const t = makeT();
+    await seedMember(t, "viewer");
+    await seedProject(t, ORG, "QUOTING");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { revision: 2, liveRevision: 2 }); // v1 non-live
+    });
+
+    await expect(delVersion(t)).rejects.toThrow(/insufficient permissions/i);
+  });
+
+  test("rejects another org's quote (IDOR guard)", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedMember(t, "owner", OTHER, "user_2");
+    await seedProject(t, OTHER);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: OTHER, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(delVersion(t)).rejects.toThrow(/quote not found/i);
+  });
+});
+
+describe("quotesWrites.setQuoteLabelNative — rename a version from the row (#1080/#1097)", () => {
+  const setLabel = (t: ReturnType<typeof makeT>, over: Partial<Record<string, unknown>> = {}) =>
+    t.withIdentity(asUser(ORG)).mutation(api.quotesWrites.setQuoteLabelNative, {
+      id: "q1", organizationId: ORG, actor, auditId: "a2", now: NOW + 1, ...over,
+    } as never);
+
+  test("sets and clears a label, bounded to 60 chars", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t);
+
+    const result = await setLabel(t, { label: "Budget option" });
+    expect(result.label).toBe("Budget option");
+    expect((await getQuotes(t))[0]?.label).toBe("Budget option");
+
+    const cleared = await setLabel(t, { label: "", auditId: "a3", now: NOW + 2 });
+    expect(cleared.label).toBeNull();
+
+    await expect(setLabel(t, { label: "x".repeat(61), auditId: "a4" })).rejects.toThrow();
+  });
+
+  test("a viewer is denied (invoice:publish)", async () => {
+    const t = makeT();
+    await seedMember(t, "viewer");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "DRAFT",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    await expect(setLabel(t, { label: "x" })).rejects.toThrow(/insufficient permissions/i);
   });
 });
 

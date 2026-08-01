@@ -68,6 +68,10 @@ export const revisionStateForProject = query({
 
     return {
       revision,
+      // #1080/#1097 — exposed alongside `revision` (the allocator) so
+      // consumers can identify the LIVE row (`quote.version === liveRevision`)
+      // without re-deriving it from `draftQuoteId`/`liveQuote` (R-3.1).
+      liveRevision,
       hasAcceptedQuote: withStatus.some((r) => r.status === "ACCEPTED"),
       draftQuoteId: draft?.quote.id ?? null,
       liveQuote: live

@@ -16,6 +16,7 @@ import { renderProjectNumber, scopeKeyFor, type IncrementReset, type ProjectNumb
 import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
 import { computeDueDate } from "./lib/invoiceDates";
 import { startOfDayInTimezone } from "./lib/quoteDates";
+import { projectLiveRevision } from "./lib/quoteState";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -185,6 +186,8 @@ export const createNative = mutation({
       status: "DRAFT",
       invoiceNumber: undefined,
       dueDate: fields.dueDate,
+      // #1080/#1097 — stamped once here, never updated by issueNative/voidNative.
+      sourceRevision: projectLiveRevision(project),
       subtotal,
       taxAmount,
       total,
@@ -604,6 +607,9 @@ export const createCreditNative = mutation({
     const dup = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dup) throw new ConvexError("Invoice already exists");
 
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", original.projectId)).first();
+    if (!project) throw new ConvexError("Project not found: " + original.projectId);
+
     await ctx.db.insert("invoices", {
       id,
       organizationId: orgId,
@@ -616,6 +622,10 @@ export const createCreditNative = mutation({
       total: -original.total,
       notes,
       creditForInvoiceId,
+      // #1080/#1097 — the version live when the CREDIT was cut, not the
+      // original invoice's `sourceRevision` (a credit is its own act, possibly
+      // issued long after a promote moved the project's live version).
+      sourceRevision: projectLiveRevision(project),
       xeroSyncStatus: "NOT_SYNCED",
       createdById: actor.userId,
       createdAt: now,

@@ -37,6 +37,9 @@ const quoteBaseSchema = z.object({
   reason: z.string().max(1000).optional(),
   /** When the client accepted. Defaults to today. */
   acceptedAt: z.coerce.date().optional(),
+  /** #1080/#1097 — "Print this label on the document" checkbox at send. Off
+   *  by default (see `quoteSetLabelSchema`'s docstring for why). */
+  labelOnDocument: z.boolean().optional(),
 });
 
 /** Send — freezes the revision. */
@@ -45,6 +48,7 @@ export const quoteSendSchema = quoteBaseSchema.pick({
   quoteDate: true,
   validityDays: true,
   recipientContactId: true,
+  labelOnDocument: true,
 });
 
 /** Recall — un-send. Reuses #793's 10-character justification floor: this
@@ -74,10 +78,23 @@ export const quoteCorrectSchema = quoteBaseSchema
  *  against the revision's label); this only guards against submitting empty. */
 export const quoteDeleteRecalledSchema = z.object({ confirmLabel: z.string().min(1) });
 
+/** One shared shape for "an optional internal name for a version, ≤60 chars"
+ *  (R-3.1) — `saveVersionNative`'s create-time argument and
+ *  `setQuoteLabelNative`'s edit-from-the-row argument are the same field,
+ *  just at two different moments. */
+const quoteLabelSchema = z.object({ label: z.string().max(60).optional() });
+
 /** Save version (#1080/#1085) — an optional internal name for the version
  *  being saved. Never a monetary or structural field (R-9.3) — see
  *  `convex/projectVersionsWrites.ts`. */
-export const quoteSaveVersionSchema = z.object({ label: z.string().max(60).optional() });
+export const quoteSaveVersionSchema = quoteLabelSchema;
+
+/** Set label (#1080/#1097) — rename a version's internal name from the row,
+ *  any time after it's been created. Internal by default; printed on the
+ *  quote PDF header only when the send dialog's "Print this label on the
+ *  document" checkbox stamps `labelOnDocument` (see `convex/quotesWrites.ts`
+ *  `sendNative`). */
+export const quoteSetLabelSchema = quoteLabelSchema;
 
 export type QuoteSendValues = z.input<typeof quoteSendSchema>;
 export type QuoteRecallValues = z.input<typeof quoteRecallSchema>;
@@ -85,6 +102,7 @@ export type QuoteAcceptValues = z.input<typeof quoteAcceptSchema>;
 export type QuoteDeclineValues = z.input<typeof quoteDeclineSchema>;
 export type QuoteCorrectValues = z.input<typeof quoteCorrectSchema>;
 export type QuoteDeleteRecalledValues = z.input<typeof quoteDeleteRecalledSchema>;
+export type QuoteSetLabelValues = z.input<typeof quoteSetLabelSchema>;
 // No `QuoteSaveVersionValues` export yet — `saveVersionNative` has no UI/hook
 // consumer in this phase (see convex/projectVersionsWrites.ts); add one
 // alongside `use-quote-writes.ts`'s `saveVersion()` when Phase 3/4 wires it up.

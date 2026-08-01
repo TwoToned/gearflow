@@ -191,6 +191,7 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
         subtotal={subtotal}
         taxAmount={taxAmount}
         total={total}
+        invoices={invoices}
       />
 
       {/* Nudge chip — the SAME next-step rule the Overview tab's invoicing

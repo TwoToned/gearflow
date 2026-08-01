@@ -129,7 +129,7 @@ describe("VersionReadOnlyBar smoke", () => {
       liveRevision: 2,
       setViewingRevision: vi.fn(),
     });
-    const { container } = render(<VersionReadOnlyBar />);
+    const { container } = render(<VersionReadOnlyBar orgId="org1" />);
     expect(container.firstChild).toBeNull();
   });
 
@@ -142,7 +142,7 @@ describe("VersionReadOnlyBar smoke", () => {
       liveRevision: 2,
       setViewingRevision: vi.fn(),
     });
-    render(<VersionReadOnlyBar />);
+    render(<VersionReadOnlyBar orgId="org1" />);
     const status = screen.getByRole("status");
     expect(status.textContent).toMatch(/Viewing v1/);
     expect(status.textContent).toMatch(/read-only/);
@@ -158,7 +158,7 @@ describe("VersionReadOnlyBar smoke", () => {
       liveRevision: 2,
       setViewingRevision,
     });
-    render(<VersionReadOnlyBar />);
+    render(<VersionReadOnlyBar orgId="org1" />);
     fireEvent.click(screen.getByRole("button", { name: /back to live/i }));
     expect(setViewingRevision).toHaveBeenCalledWith(null);
   });
@@ -172,7 +172,7 @@ describe("VersionReadOnlyBar smoke", () => {
       liveRevision: 2,
       setViewingRevision: vi.fn(),
     });
-    render(<VersionReadOnlyBar />);
+    render(<VersionReadOnlyBar orgId="org1" />);
     expect(screen.getByText(/no captured state/i)).toBeTruthy();
     expect(screen.getByText(/pre-versioning/i)).toBeTruthy();
   });

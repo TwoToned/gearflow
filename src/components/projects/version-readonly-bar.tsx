@@ -1,9 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/formatters";
 import { useProjectVersion, type ProjectVersionListItem } from "@/components/projects/project-version-context";
+import { PromoteVersionDialog } from "@/components/projects/finance/promote-version-dialog";
+import { PromoteConflictsPanel } from "@/components/projects/finance/promote-conflicts-panel";
+import type { PromoteRevisionResult } from "@/hooks/use-project-version-writes";
 
 function formatFullDate(ms: number | undefined): string | null {
   if (!ms) return null;
@@ -25,6 +29,14 @@ function BackToLiveButton({ liveRevision, onClick }: { liveRevision: number | nu
   return (
     <Button variant="line" size="sm" onClick={onClick}>
       Back to live{liveRevision != null ? ` (v${liveRevision})` : ""}
+    </Button>
+  );
+}
+
+function MakeLiveButton({ onClick, revision }: { onClick: () => void; revision: number }) {
+  return (
+    <Button type="button" size="sm" onClick={onClick}>
+      Make v{revision} live…
     </Button>
   );
 }
@@ -63,11 +75,13 @@ function ViewingVersionBar({
   liveRevision,
   viewingVersion,
   onBackToLive,
+  onMakeLive,
 }: {
   viewingRevision: number | null;
   liveRevision: number | null;
   viewingVersion: ProjectVersionListItem | null;
   onBackToLive: () => void;
+  onMakeLive: (() => void) | null;
 }) {
   const dateBit = formatDateBit(viewingVersion);
   return (
@@ -83,24 +97,29 @@ function ViewingVersionBar({
         {viewingVersion?.total != null && <span>· {formatCurrency(viewingVersion.total)}</span>}
         <span>· read-only</span>
       </div>
-      <BackToLiveButton liveRevision={liveRevision} onClick={onBackToLive} />
+      <div className="flex shrink-0 items-center gap-2">
+        {onMakeLive && viewingRevision != null && <MakeLiveButton revision={viewingRevision} onClick={onMakeLive} />}
+        <BackToLiveButton liveRevision={liveRevision} onClick={onBackToLive} />
+      </div>
     </div>
   );
 }
 
 /**
  * Full-width read-only bar (design doc §4.2) — always mounted while `?v=` is
- * set to a real, non-live revision. "Make vN live…" (promote) is Phase 2/4
- * scope (#1089/#1097, not yet shipped) — deliberately absent here rather than
- * a dead button; the design doc's own out-of-scope note for #1093 excludes
- * the promote action and dialog.
+ * set to a real, non-live revision. "Make vN live…" (#1080/#1097, Phase 4)
+ * opens the same `PromoteVersionDialog` the Finance tab's version rail uses
+ * (R-3.1 — one dialog, two entry points) and, on success, returns to live
+ * viewing automatically since the version just promoted IS the new live one.
  *
  * `role="status"`/`aria-live="polite"` — the viewing-a-version state must be
  * ANNOUNCED, not colour-only (DESIGN.md, a11y-manual-checklist.md).
  */
-export function VersionReadOnlyBar() {
-  const { isViewingVersion, hasCapturedState, viewingVersion, viewingRevision, liveRevision, setViewingRevision } =
+export function VersionReadOnlyBar({ orgId }: { orgId: string }) {
+  const { projectId, versions, isViewingVersion, hasCapturedState, viewingVersion, viewingRevision, liveRevision, setViewingRevision } =
     useProjectVersion();
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const [promoteResult, setPromoteResult] = useState<PromoteRevisionResult | null>(null);
 
   if (!isViewingVersion) return null;
 
@@ -111,11 +130,31 @@ export function VersionReadOnlyBar() {
   }
 
   return (
-    <ViewingVersionBar
-      viewingRevision={viewingRevision}
-      liveRevision={liveRevision}
-      viewingVersion={viewingVersion}
-      onBackToLive={onBackToLive}
-    />
+    <div className="space-y-2">
+      <ViewingVersionBar
+        viewingRevision={viewingRevision}
+        liveRevision={liveRevision}
+        viewingVersion={viewingVersion}
+        onBackToLive={onBackToLive}
+        onMakeLive={viewingVersion?.snapshotId ? () => setPromoteOpen(true) : null}
+      />
+      <PromoteConflictsPanel result={promoteResult} onDismiss={() => setPromoteResult(null)} />
+      {viewingVersion?.snapshotId && liveRevision != null && (
+        <PromoteVersionDialog
+          open={promoteOpen}
+          onOpenChange={setPromoteOpen}
+          projectId={projectId}
+          orgId={orgId}
+          targetRevision={viewingVersion.revision}
+          targetSnapshotId={viewingVersion.snapshotId}
+          liveRevision={liveRevision}
+          liveHasSnapshot={versions.find((v) => v.revision === liveRevision)?.hasSnapshot ?? false}
+          onPromoted={(result) => {
+            setPromoteResult(result);
+            setViewingRevision(null);
+          }}
+        />
+      )}
+    </div>
   );
 }

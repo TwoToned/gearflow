@@ -25,6 +25,7 @@ import type * as assets from "../assets.js";
 import type * as availability from "../availability.js";
 import type * as availabilityCheck from "../availabilityCheck.js";
 import type * as backfillClientContacts from "../backfillClientContacts.js";
+import type * as backfillInvoiceSourceRevision from "../backfillInvoiceSourceRevision.js";
 import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as backfillMaintenanceSchedules from "../backfillMaintenanceSchedules.js";
 import type * as backfillProjectLiveRevision from "../backfillProjectLiveRevision.js";
@@ -301,6 +302,7 @@ declare const fullApi: ApiFromModules<{
   availability: typeof availability;
   availabilityCheck: typeof availabilityCheck;
   backfillClientContacts: typeof backfillClientContacts;
+  backfillInvoiceSourceRevision: typeof backfillInvoiceSourceRevision;
   backfillKitUnits: typeof backfillKitUnits;
   backfillMaintenanceSchedules: typeof backfillMaintenanceSchedules;
   backfillProjectLiveRevision: typeof backfillProjectLiveRevision;

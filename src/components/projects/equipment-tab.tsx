@@ -1266,12 +1266,11 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             if (!isRealKitChild(item as LineItemData)) allSortableIds.push(`li-${item.id}`);
           }
         }
-      } else {
+      } else if (slot.kind === "subHire") {
         allSortableIds.push(`shg-${slot.subHireGroupId}`);
+      } else {
+        allSortableIds.push(`li-${slot.lineItemId}`);
       }
-    }
-    for (const item of cat.lineItems ?? []) {
-      if (!(item as LineItemData).isKitChild) allSortableIds.push(`li-${item.id}`);
     }
   }
   for (const item of uncategorizedItems as LineItemData[]) {
@@ -1486,20 +1485,68 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         }}
                       />
 
-                      {/* Mixed groups within category (CategorySlot order; falls back
-                          to cat.groups when mixedGroups hasn't been computed).
+                      {/* Combined top-level list within category (CategorySlot order;
+                          falls back to cat.groups when mixedGroups hasn't been computed).
                           ONE SortableContext for the whole interleaved
-                          project-group + sub-hire-group list — a drag can
-                          reorder within it or move a group out to another
-                          category/Uncategorized (useEquipmentDnd's
-                          resolveGroupDragAction; container id `mixed:{cat.id}`). */}
+                          project-group + sub-hire-group + standalone-line-item
+                          list — a drag can reorder within it (groups and line
+                          items freely rearranged against each other) or move a
+                          group/item out to another category/Uncategorized
+                          (useEquipmentDnd's resolveGroupDragAction /
+                          resolveLineItemDragAction; container id `mixed:{cat.id}`
+                          for both). */}
                       <SortableContext
                         items={mixedSlots.map((slot) =>
-                          slot.kind === "project" ? `grp-${slot.projectGroupId}` : `shg-${slot.subHireGroupId}`,
+                          slot.kind === "project" ? `grp-${slot.projectGroupId}`
+                          : slot.kind === "subHire" ? `shg-${slot.subHireGroupId}`
+                          : `li-${slot.lineItemId}`,
                         )}
                         strategy={verticalListSortingStrategy}
                       >
                       {mixedSlots.map((slot) => {
+                        if (slot.kind === "lineItem") {
+                          const item = standaloneItems.find((i) => i.id === slot.lineItemId);
+                          if (!item) return null;
+                          return (
+                            <SortableLineItemRow
+                              key={item.id}
+                              sortableId={`li-${item.id}`}
+                              containerId={`mixed:${cat.id}`}
+                              dragDisabled={!canDragEquipment}
+                              item={item}
+                              indent="ml-3"
+                              orgId={orgId}
+                              projectId={projectId}
+                              markerByTarget={markerByTarget}
+                              overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
+                              isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
+                              showCostColumn={showCostColumn}
+                              isExpanded={expandedParents.has(item.id)}
+                              isSelected={selection.isSelected(`li-${item.id}`)}
+                              selectable={!item.isKitChild}
+                              selectionActive={someLiSelected}
+                              onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
+                              onClick={(e) => handleRowClick(item.id, e)}
+                              onToggle={() => toggleParent(item.id)}
+                              onEdit={() => {
+                                setEditLineItemPlacement({ categoryId: cat.id });
+                                setEditLineItem(item);
+                              }}
+                              onMoveToCategory={() => setMoveItemToCategory({
+                                lineItemId: item.id,
+                                initialCategoryId: cat.id,
+                              })}
+                              onMoveToGroup={() => setMoveItemToGroup({
+                                lineItemId: item.id,
+                              })}
+                              onRemove={() => handleRemoveItem(item.id)}
+                              onInlineUpdate={handleInlineLineItemUpdate}
+                              moneyLocked={moneyLocked}
+                              lockReason={lockReason}
+                              onUnlockExit={scrollToLockStrip}
+                            />
+                          );
+                        }
                         if (slot.kind === "subHire") {
                           const shGroup = (cat.subHireGroupTargets ?? []).find(
                             (g: SubHireGroupData) => g.id === slot.subHireGroupId,
@@ -1695,52 +1742,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           </React.Fragment>
                         );
                       })}
-                      </SortableContext>
-
-                      {/* Standalone line items in category */}
-                      <SortableContext
-                        items={standaloneItems.map((item) => `li-${item.id}`)}
-                        strategy={verticalListSortingStrategy}
-                      >
-                        {standaloneItems.map((item) => (
-                          <SortableLineItemRow
-                            key={item.id}
-                            sortableId={`li-${item.id}`}
-                            containerId={`standalone:${cat.id}`}
-                            dragDisabled={!canDragEquipment}
-                            item={item}
-                            indent="ml-3"
-                            orgId={orgId}
-                            projectId={projectId}
-                            markerByTarget={markerByTarget}
-                            overbookedInfo={item.subHireId != null ? undefined : (overbookedMap as Record<string, OverbookedInfo>)[item.id]}
-                            isUnconfirmed={!!item.subHireId && draftSubHireIds.has(item.subHireId)}
-                            showCostColumn={showCostColumn}
-                            isExpanded={expandedParents.has(item.id)}
-                            isSelected={selection.isSelected(`li-${item.id}`)}
-                            selectable={!item.isKitChild}
-                            selectionActive={someLiSelected}
-                            onSelectChange={(checked, shiftKey) => handleSelectChange(item.id, checked, shiftKey)}
-                            onClick={(e) => handleRowClick(item.id, e)}
-                            onToggle={() => toggleParent(item.id)}
-                            onEdit={() => {
-                              setEditLineItemPlacement({ categoryId: cat.id });
-                              setEditLineItem(item);
-                            }}
-                            onMoveToCategory={() => setMoveItemToCategory({
-                              lineItemId: item.id,
-                              initialCategoryId: cat.id,
-                            })}
-                            onMoveToGroup={() => setMoveItemToGroup({
-                              lineItemId: item.id,
-                            })}
-                            onRemove={() => handleRemoveItem(item.id)}
-                            onInlineUpdate={handleInlineLineItemUpdate}
-                            moneyLocked={moneyLocked}
-                            lockReason={lockReason}
-                            onUnlockExit={scrollToLockStrip}
-                          />
-                        ))}
                       </SortableContext>
                     </React.Fragment>
                   );

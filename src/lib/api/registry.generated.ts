@@ -41130,28 +41130,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "projectVersionsRead.listVersions",
-    "module": "projectVersionsRead",
-    "fn": "listVersions",
-    "kind": "query",
+    "operation": "projectVersionsWrites.promoteRevisionNative",
+    "module": "projectVersionsWrites",
+    "fn": "promoteRevisionNative",
+    "kind": "mutation",
     "guard": "orgPermission",
     "resource": "project",
-    "action": "read",
+    "action": "update",
     "scopePairs": [
       {
         "resource": "project",
-        "action": "read"
+        "action": "update"
       }
     ],
     "agentReachable": true,
     "args": [
       {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
         "name": "now",
-        "optional": true,
+        "optional": false,
         "type": "number"
       },
       {
-        "name": "orgId",
+        "name": "organizationId",
         "optional": false,
         "type": "string"
       },
@@ -41159,15 +41169,20 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "targetRevision",
+        "optional": false,
+        "type": "number"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "8f3456c860a78207",
-    "returnsSha": "26d612adfd2e34b1",
+    "argsSha": "7e9e6c1e98488e5b",
+    "returnsSha": "c7504c21da0eaf13",
     "stability": "tracks-app",
-    "summary": "List a project's versions with state, date and total for the switcher.",
-    "danger": "low",
-    "mcpTier": 1,
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -59859,8 +59874,8 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 export const REGISTRY_COUNTS = {
   total: 1147,
   agentReachable: 561,
-  queries: 405,
-  mutations: 742,
-  agentReachableQueries: 289,
-  agentReachableMutations: 272,
+  queries: 404,
+  mutations: 743,
+  agentReachableQueries: 288,
+  agentReachableMutations: 273,
 } as const;

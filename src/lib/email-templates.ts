@@ -59,35 +59,6 @@ export function invitationEmail({
   };
 }
 
-/**
- * Invitation that requires creating an account first (links to /register with
- * the invite token). Used by org-admin and site-admin invite flows.
- */
-export function invitationRegisterEmail({
-  orgName,
-  role,
-  registerUrl,
-  platformName = "RVLT Flow",
-}: {
-  orgName: string;
-  role: string;
-  registerUrl: string;
-  platformName?: string;
-}): EmailContent {
-  const safeOrgName = escapeHtml(orgName);
-  const safeRole = escapeHtml(role);
-  return {
-    subject: `You've been invited to ${orgName} on ${platformName}`,
-    html: emailShell(
-      `<h2>You've been invited to join ${safeOrgName}</h2>` +
-        `<p>You've been invited to join <strong>${safeOrgName}</strong> as a <strong>${safeRole}</strong> on ${platformName}.</p>` +
-        `<p>Click the button below to create your account and accept the invitation.</p>` +
-        emailButton({ href: registerUrl, label: "Create Account &amp; Join" }) +
-        emailMutedNote(EXPIRES_7_DAYS),
-    ),
-  };
-}
-
 /** Site-admin invitation to create a platform account (no specific org). */
 export function siteAdminInvitationEmail({
   registerUrl,

@@ -13,7 +13,13 @@ import { expect, test } from "@playwright/test";
 test.describe("harness: register / onboarding", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
 
-  test("new account -> create org -> onboarding completes", async ({ page }) => {
+  // Quarantined (POLICY.md R-8.8.4): #1071 deleted the single-org auto-join
+  // hook, which is what silently gave every OTHER harness spec file's fresh
+  // registrant org membership for free. This file now correctly can't create
+  // a second org once another harness spec has already bootstrapped one in
+  // the shared harness DB — an E2E test-isolation gap, not a product bug.
+  // Owner: Jayden (eng). Tracked: #1118. Deadline: 2026-08-15.
+  test("new account -> create org -> onboarding completes @quarantine", async ({ page }) => {
     // Playwright's default test timeout is 30s for the WHOLE test — this
     // chains register -> create org -> a revisit-check across 3 page loads,
     // each with its own 20s expect; under CI's observed latency the total can

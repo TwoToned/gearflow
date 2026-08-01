@@ -59,3 +59,37 @@ export function countUnconfirmedCrewForProject(assignments: BoardAssignment[]): 
     return status !== "CONFIRMED" && !EXCLUDED_ASSIGNMENT_STATUSES.has(status);
   }).length;
 }
+
+export interface PromoteOverbookingRow {
+  modelId: string;
+  modelName: string;
+  qty: number;
+  projectNumbers: string[];
+}
+
+/**
+ * "Given `projectId`'s date-restored window and its REAL current status (no
+ * CONFIRMED simulation — unlike `computeConfirmImpactModels`), did the move
+ * create a hard shortage on any model this project actually books?" — the
+ * #1089 (Phase 2 promote) rule that rolling the rental window back "can create
+ * or clear overbookings on other jobs" (design §5.2) surfaces in the
+ * post-promote conflict list, using this same aggregation core rather than a
+ * new check.
+ */
+export function computePromoteOverbookingConflicts(
+  projectId: string,
+  window: DateRange,
+  projects: BoardProject[],
+  lineItems: BoardLineItem[],
+  models: BoardModel[],
+  assets: BoardAsset[],
+  bulkAssets: BoardBulkAsset[],
+): PromoteOverbookingRow[] {
+  const ownModelIds = ownGearModelIds(projectId, lineItems);
+  if (ownModelIds.size === 0) return [];
+
+  const { hard } = computeGearShortageBoard(window, projects, lineItems, models, assets, bulkAssets);
+  return hard
+    .filter((r) => ownModelIds.has(r.modelId))
+    .map((r) => ({ modelId: r.modelId, modelName: r.modelName, qty: r.qty, projectNumbers: r.projects.map((p) => p.projectNumber) }));
+}

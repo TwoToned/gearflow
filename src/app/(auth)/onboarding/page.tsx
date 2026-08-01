@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { organization } from "@/lib/auth-client";
-import { getTheOrgId, invalidateTheOrgCache, mirrorMyMembership } from "@/server/public-org";
+import { getMyOrganizations, mirrorMyMembership } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,13 +25,13 @@ export default function OnboardingPage() {
   const [slug, setSlug] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Redirect away if an org already exists. Guard on a cancelled flag: if the user
-  // navigates away before this async check resolves, the late resolve must not fire
-  // router.replace and snap them back to /dashboard.
+  // Redirect away if the user already belongs to an org. Guard on a cancelled
+  // flag: if the user navigates away before this async check resolves, the
+  // late resolve must not fire router.replace and snap them back to /dashboard.
   useEffect(() => {
     let cancelled = false;
-    getTheOrgId().then((org) => {
-      if (!cancelled && org) router.replace("/dashboard");
+    getMyOrganizations().then((orgs) => {
+      if (!cancelled && orgs.length > 0) router.replace("/dashboard");
     });
     return () => {
       cancelled = true;
@@ -59,10 +59,6 @@ export default function OnboardingPage() {
         await organization.setActive({
           organizationId: result.data!.id,
         });
-        // Bust getTheOrg()'s 5-minute cache — the (app) layout's onboarding
-        // redirect gates on it, and would otherwise keep seeing "no org yet"
-        // for up to 5 minutes after this create.
-        await invalidateTheOrgCache();
         // The org plugin's own create path never mirrors the new owner's
         // membership into Convex (only src/server/site-admin.ts's admin-driven
         // path does) — without this, every Convex-authorized action afterward

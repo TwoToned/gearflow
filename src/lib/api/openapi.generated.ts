@@ -30905,11 +30905,11 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
-    "/api/v1/ops/projectVersionsRead.listVersions": {
+    "/api/v1/ops/projectVersionsWrites.promoteRevisionNative": {
       "post": {
-        "operationId": "projectVersionsRead.listVersions",
-        "summary": "projectVersionsRead.listVersions (query)",
-        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "operationId": "projectVersionsWrites.promoteRevisionNative",
+        "summary": "projectVersionsWrites.promoteRevisionNative (mutation)",
+        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
         "tags": [
           "project"
@@ -30926,16 +30926,27 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "projectId": {
                         "type": "string"
+                      },
+                      "targetRevision": {
+                        "type": "number"
                       }
                     },
                     "required": [
-                      "projectId"
+                      "projectId",
+                      "targetRevision"
                     ],
                     "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
                   }
                 },
                 "required": [
-                  "args"
+                  "args",
+                  "idempotencyKey"
                 ]
               }
             }

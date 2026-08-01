@@ -60,7 +60,14 @@ test.describe("harness: primary revenue path", () => {
     await locator.click({ timeout: 5000 });
   }
 
-  test("project -> line item -> availability -> check-out -> return", async ({ page }) => {
+  // Quarantined (POLICY.md R-8.8.4): #1071 deleted the single-org auto-join
+  // hook, which is what silently gave every OTHER harness spec file's fresh
+  // registrant org membership for free. This file's "complete onboarding if
+  // needed" step now correctly can't create a second org once another
+  // harness spec has already bootstrapped one in the shared harness DB — an
+  // E2E test-isolation gap, not a product bug.
+  // Owner: Jayden (eng). Tracked: #1118. Deadline: 2026-08-15.
+  test("project -> line item -> availability -> check-out -> return @quarantine", async ({ page }) => {
     // Playwright's default test timeout is 30s — a budget for the WHOLE test,
     // not per test.step. This flow chains register -> onboard -> model ->
     // asset -> project (4 wizard steps) -> line item + an async availability

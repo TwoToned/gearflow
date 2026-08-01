@@ -22,8 +22,8 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 405 | 289 | 114 | 1 | 1 |
-| Mutations | 742 | 272 | 461 | 0 | 9 |
+| Queries | 404 | 288 | 114 | 1 | 1 |
+| Mutations | 743 | 273 | 461 | 0 | 9 |
 | **Total** | **1147** | **561** | **575** | **1** | **10** |
 
 <!-- reachability-floor: 561 -->
@@ -42,7 +42,7 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 91 |
+| `high` | 92 |
 | `medium` | 142 |
 | `low` | 39 |
 

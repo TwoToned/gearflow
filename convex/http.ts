@@ -99,8 +99,9 @@ const wooWebhook = httpAction(async (ctx, request) => {
     return json({ ok: true, ping: true });
   }
 
-  // 5. Determine org — an explicit ?org= param, else the single org (mirrors the
-  // Next route's getTheOrg()). A missing single org → "No organization configured".
+  // 5. Determine org — an explicit ?org= param, else the oldest org (mirrors the
+  // Next route's inline fallback). Interim — #1074/A4 replaces both with an
+  // opaque per-org webhook token. No org found → "No organization configured".
   let orgId = new URL(request.url).searchParams.get("org");
   if (!orgId) {
     const org = await ctx.runQuery(internal.wooCommerceInternal.getSingleOrg, {});

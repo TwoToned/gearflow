@@ -100,6 +100,7 @@ export function GroupCard({
     <>
       <div
         ref={dragHandleRef}
+        data-drag-row="true"
         {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
         {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
         style={dragStyle}
@@ -158,6 +159,7 @@ export function CategoryCardHeading({
   return (
     <div
       ref={dragHandleRef}
+      data-drag-row="true"
       {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
       style={dragStyle}

@@ -454,6 +454,7 @@ export function GroupRow({
       className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing", isDragging && "opacity-40")}
       style={dragStyle}
       ref={dragHandleRef}
+      data-drag-row="true"
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...shortcuts}
@@ -729,6 +730,7 @@ export function SubHireGroupRow({
       className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing", isDragging && "opacity-40")}
       style={dragStyle}
       ref={dragHandleRef}
+      data-drag-row="true"
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...shortcuts}
@@ -942,6 +944,7 @@ export function CategoryRow({
       )}
       style={dragStyle}
       ref={dragHandleRef}
+      data-drag-row="true"
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
     >
@@ -1291,6 +1294,7 @@ export function LineItemRow({
       <div className={cn("space-y-1.5", nestInset)}>
         <div
           ref={dragHandleRef}
+          data-drag-row="true"
           {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
           {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
           style={dragStyle}
@@ -1435,6 +1439,7 @@ export function LineItemRow({
       style={dragStyle}
       onClick={onClick}
       ref={dragHandleRef}
+      data-drag-row="true"
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...shortcuts}

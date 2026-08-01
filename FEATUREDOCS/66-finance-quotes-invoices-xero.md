@@ -520,6 +520,34 @@ overflow menu (`invoiceRowMenuActions` in `project-finance-panel.tsx`).
 
 ## The Finance tab (#989 — Phase D of #985)
 
+> **#1061 update — the Finance tab is now the LEDGER, not the front door.**
+> The project's Overview tab carries a paired **Quote** / **Invoicing** card
+> pair showing the CURRENT position with only the single next action each
+> (send the open draft / record the client's answer; raise the next invoice /
+> record a payment). Everything else — the full revision rail, recall,
+> correction, delete, reprice, the revision viewer and diff, issuing, voiding,
+> crediting, Xero push, the invoice and payment lists, `FinancialSummary` and
+> `ProjectCostsPanel` — stays here, and this tab remains the single owner of
+> those workflows. The Overview cards open the SAME dialog components
+> `ProjectQuoteRail` uses, never reimplementations.
+>
+> Two rules the Overview cards inherit from this doc: a sent quote's displayed
+> amount is the **frozen snapshot total**, never live project pricing (only a
+> never-sent draft shows the current total, because that IS what sending would
+> freeze); and there is no accepted-quote gate on invoice creation, because
+> `invoicesWrites.ts` has none — the card must not claim one.
+>
+> The nudge chip below and the Overview card's "next invoice" button now read
+> ONE shared derivation, `deriveInvoicingState`
+> (`src/lib/project-invoicing-state.ts`), rather than two copies of the
+> deposit-before-balance conditions (R-3.1). The affordance is deliberately in
+> both places — someone working in the ledger shouldn't have to bounce to
+> Overview to raise the next invoice — but the RULE cannot drift.
+>
+> `StalePricingBanner`'s signal also moved: stale auto-pricing is now a row in
+> Overview's Readiness checklist, with the same inline "Recalculate" action.
+> See FEATUREDOCS/69.
+
 The structured workflow that replaces "press the Documents button and hope."
 `Finance` is now a top-level project tab (`Equipment · Labour & logistics ·
 Finance · Tasks · Notes · Files`) — the old `Financials` tab's content

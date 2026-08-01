@@ -544,7 +544,7 @@ descriptions *are* the docs, and they're generated from the registry.
   scope, latency, requestId, redacted args) for self-serve debugging. PII-scrubbed per
   R-8.12.4 / `docs/pii-inventory.md`; args are redacted, not stored raw.
 - **PostHog** — `api_request` / `mcp_tool_call` events with cuid-only props; p95 latency SLO
-  per R-9.11 registered in the README budget table; alert at 80% (R-9.2).
+  per R-9.11 registered in `docs/budgets.md`; alert at 80% (R-9.2).
 ### Compatibility policy (decisions 5 + 12)
 
 Third-party consumers don't ship in v1, but every v1 decision is made **as if they had**, so
@@ -830,7 +830,7 @@ build rather than before it:
    to calibrate.
 2. **Request-log retention.** R-8.12.2 requires a registered retention period (T-P2) for the
    per-key request log, since redacted args can still carry business context. Proposal: 30
-   days, aged out by a Convex cron. Needs registering in `docs/exceptions.md` / the README
+   days, aged out by a Convex cron. Needs registering in `docs/exceptions.md` / `docs/budgets.md`
    budget table.
 3. **Preset composition.** Which exact scope sets ship as `read_only_agent`,
    `warehouse_operator`, `finance_reader`, `full_agent` — a Phase 6 detail, but worth your eye

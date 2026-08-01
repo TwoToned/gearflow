@@ -174,7 +174,7 @@ env vars are no longer read. `UPLOAD_MAX_SIZE_MB` (default 50) caps upload size.
   needed for local dev (`pnpm dev`/`pnpm build` never require them). The real deploy build
   (Dockerfile) hardcodes `POSTHOG_SOURCEMAPS_REQUIRED=true`, so a missing token/env-id there
   fails the build loudly rather than silently skipping the upload (R-8.9.2).
-- Registered budgets/SLOs (README.md budget registry, R-0.4) are alerted through PostHog
+- Registered budgets/SLOs (`docs/budgets.md` registry, R-0.4) are alerted through PostHog
   where the underlying event exists today — Core Web Vitals (T-7) has three p75 alerts
   ("CWV p75 — LCP/INP/CLS" insights, R-8.1.5). The provider is PII-hardened (no
   autocapture/replay; cuid-only event props) — see `docs/pii-inventory.md`.
@@ -487,6 +487,34 @@ client a different document under the same name (#987). Three rules follow:
 - **When adding new providers or scripts to the root layout**: place them inside `<GlobalErrorBoundary>` to ensure coverage
 - **Never remove** `DomPatch`, `GlobalErrorBoundary`, or `OverlayLockReset` from `layout.tsx` — they are critical for navigation stability
 - **Dropdown/menu UI is Radix** (`@radix-ui/react-dropdown-menu`): `DropdownMenuItem` supports both `onSelect` and `onClick` (the codebase uses `onClick`). The codebase wraps `DropdownMenuLabel` in `<DropdownMenuGroup>` for consistency. Test menus by actually OPENING them, not just rendering the closed trigger.
+
+### The project detail's tabs are CONTROLLED, and Overview is the landing tab
+`/projects/[id]` opens on **Overview** — the project's home (#1061,
+FEATUREDOCS/69). Adding a tab means adding it to `VALID_TABS` in
+`src/app/(app)/projects/[id]/page.tsx`, or a `?tab=` deep link to it silently
+falls back to Overview. `Tabs` is controlled (`value`/`onValueChange`, not
+`defaultValue`) because the Overview readiness checklist navigates you to the
+tab that fixes a failing check — don't revert it to uncontrolled.
+
+Overview owns the project's **at-a-glance** state: the readiness checklist, the
+current quote + invoicing cards, and the money strip. The lifecycle stepper and
+lock strip stay ABOVE the tabs: they change what you can do in every tab, so
+they're page-level context.
+
+**The context sidebar (Schedule/Location/Team/Activity) renders on every tab
+EXCEPT Overview** (#1063). Overview composes the same content into its own
+Panel-with-header cards (`overview/context-cards.tsx`) — rendering both would
+show the same facts twice on one tab. The facts are shaped once in
+`src/lib/project-context.ts` and shared by both renderings; if you add a field,
+add it there, not in one renderer.
+
+A readiness check covering the WORK (services: still `PLANNED`, or below
+`crewCountRequired`) is separate from one covering the PEOPLE (crew assignments
+awaiting a yes) — don't merge them back into one row.
+
+A readiness check that can't run reports `unknown`, never a pass — a dateless
+project's gear check says "not checked" rather than a false all-clear, and
+`unknown` never counts toward "all clear".
 
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase

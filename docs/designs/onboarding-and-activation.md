@@ -598,12 +598,16 @@ would need an `orgId` that none of the three paths will issue.
   grows rather than being bounded. Acceptable at current scale, worth a size column on the
   admin list so it stays visible.
 
-##### One caveat, stated once
+##### Erasure — resolved by M5
 
-Archive defers erasure rather than providing it. If a customer ever invokes a
-right-to-erasure request (POLICY §8.12 is active for this profile), a real hard-delete path
-would still have to be built at that point. Not a reason to build it now — just a known
-gap rather than a surprise.
+Archive defers erasure rather than providing it. With EU customers in scope
+([`multi-tenant-and-international.md`](./multi-tenant-and-international.md) M1), that stopped
+being a deferred gap: **M5 adds a separate, explicitly-invoked hard-delete path that does
+cascade through Convex**, for a genuine right-to-erasure request (POLICY §8.12).
+
+D12 is unchanged and still governs everything automatic — the dormancy ladder archives and
+never destroys. Two operations with two different triggers, rather than weakening the
+automatic one into something that can delete.
 
 ---
 

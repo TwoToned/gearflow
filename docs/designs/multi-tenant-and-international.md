@@ -29,6 +29,49 @@ the cross-tenant audit **already has a working harness**.
 
 ---
 
+## 1a. Decisions (2026-08-01)
+
+| # | Decision | Rationale |
+|---|---|---|
+| **M1** | **Launch markets: AU, NZ, UK, US, and single-country EU** (IE, NL, DE first). | The US is a deliberate yes, not a dropdown side-effect. Single-country EU is nearly UK-cost. |
+| **M2** | **US sales tax = operator-set rate + per-client exemption + per-line override.** No in-house jurisdiction tables. An external provider (Avalara/TaxJar/Stripe Tax) is deferred until a real multi-state customer needs it. | Small/mid US rental firms know their own local rate. In-house rate tables across ~45 states with quarterly changes and rental-specific rules is a permanent maintenance liability, not a feature. |
+| **M3** | **EU = single-country VAT only.** No cross-border: no reverse charge, no OSS, no VIES validation. | Domestic-only VAT is one rate and one country — the same shape as the UK. Cross-border is a regulated program where being wrong has legal consequences for the customer. |
+| **M4** | **E-invoicing is a documented boundary, not built** (§3.4a). | We serve EU markets that still accept PDF invoices. Structured e-invoicing is a known future program, and the finance design should be written knowing a second output format is coming. |
+| **M5** | **Archive by default; hard-delete only on an explicit erasure request** (amends onboarding D12). | D12 stands for the dormancy ladder — nothing is destroyed automatically. Erasure is a separate, deliberately-invoked path that *does* cascade through Convex. Two operations, two triggers. |
+
+### The country table — one definition, many consumers
+
+This table is the **single source of truth** (R-3.1) feeding the setup wizard's country step
+(`onboarding-and-activation.md` §6.1), `formatters.ts` (§3.1), the document composer (§3.5),
+and the calendar/unit settings (§3.6). It is defined once, in a plain `src/lib/` module, or
+it will end up defined three times.
+
+| Country | Currency | Date order | Decimal | Week | Paper | Units | Tax label | Default rate | Business number |
+|---|---|---|---|---|---|---|---|---|---|
+| Australia | AUD | d/m/y | `.` | Mon | A4 | metric | GST | 10% | ABN |
+| New Zealand | NZD | d/m/y | `.` | Mon | A4 | metric | GST | 15% | NZBN |
+| United Kingdom | GBP | d/m/y | `.` | Mon | A4 | metric | VAT | 20% | VAT number |
+| **United States** | USD | **m/d/y** | `.` | **Sun** | **Letter** | **imperial** | Sales tax | **none — operator sets** | EIN |
+| Ireland | EUR | d/m/y | `.` | Mon | A4 | metric | VAT | 23% | VAT number |
+| Netherlands | EUR | d/m/y | **`,`** | Mon | A4 | metric | BTW | 21% | BTW-nummer |
+| Germany | EUR | **d.m.y** | **`,`** | Mon | A4 | metric | MwSt | 19% | USt-IdNr |
+
+Three things this table makes obvious that prose hid:
+
+1. **The US must have no default tax rate.** There is no national rate. The field ships empty
+   and the UI must not invent one — unlike every other row, where a default is safe and
+   helpful.
+2. **Decimal comma is a locale property, not a currency one.** Ireland and the Netherlands
+   both use EUR; only the Netherlands writes `1.234,56`. Keying formatting off currency would
+   get Ireland wrong.
+3. **Decimal comma is an *input* problem too.** A Dutch or German operator typing `1234,56`
+   into a price field must be parsed correctly. `toLocaleString` handles output; input parsing
+   is separate code that does not exist yet, and silently misreading a price by 100× is the
+   worst possible failure in a quoting tool. This is the single most dangerous item in the
+   whole international sweep.
+
+---
+
 ## 2. Multi-tenant — corrected picture
 
 ### 2.1 Correction to the onboarding doc
@@ -156,12 +199,43 @@ It does not survive contact with:
 | **EU cross-border** | Reverse charge — B2B cross-border is zero-rated with a legend on the invoice. |
 | **Mixed-rate lines** | Reduced/zero rates on some items. A per-line `taxRate` column exists in the schema but nothing drives it. |
 
-**This is a data-model decision, not a formatting one**, and it is the one item here that
-should get its own design doc rather than being folded into a sweep. A reasonable staged
-answer: keep the single-rate model, add a **per-client tax-exempt flag** and a **per-line
-rate override**, and explicitly declare US sales tax out of scope until there's a customer —
-correct multi-jurisdiction sales tax generally means an external service (Avalara/TaxJar),
-not in-house tables.
+**This is a data-model decision, not a formatting one**, and it still warrants its own design
+doc. M2/M3 set its boundaries:
+
+**Build (small, and mostly already scaffolded):**
+- **Per-client tax-exempt flag** — new field. `Client.taxId` already exists end-to-end
+  (`convex/schema.ts:1076`, `client-form.tsx:252`, `validations/client.ts:15`, and
+  `showClientTaxId` in the composer), so the exemption flag sits beside a field that is
+  already plumbed to the document.
+- **Per-line rate override** — `projectLineItems.taxRate` **already exists in the schema**
+  (`convex/schema.ts:1177`) and nothing drives it. `convex/lib/recalc.ts` applies a single
+  project-level rate. Wiring it is finishing an existing column, not adding one.
+- **Operator-set rate with no default for the US** — see the country table.
+
+**Do not build:** US jurisdiction tables (M2), reverse charge, OSS, VIES validation (M3).
+
+> **⚠️ Bug found during the sweep — `convex/lib/recalc.ts:237` opens with `let taxRate = 10;`.**
+> Project rate wins, then org default, and if both are unset it falls through to a **hardcoded
+> 10% Australian GST**. Harmless in a single-org AU deployment; under M1 it silently applies
+> Australian GST to a US or German org that hasn't set a rate. **Fix before any non-AU org
+> exists** — and note the US ships with no default rate by design, so it is exactly the market
+> that would hit this path.
+
+### 3.4a E-invoicing — the documented boundary (M4)
+
+France, Germany, Poland, Belgium, Spain and Italy are mandating **structured** e-invoicing
+(UBL / Factur-X / XRechnung / KSeF / SdI), with ViDA extending it EU-wide. A PDF is not a
+legally sufficient invoice in those markets.
+
+That collides directly with a deliberate design in this codebase: CLAUDE.md's rule that _"a
+client-facing finance document is STORED BYTES — never a fresh render"_. The bytes are a PDF.
+
+M4 is to **note it, not build it**: RVLT Flow serves EU markets that still accept PDF
+invoices, and single-country VAT (M3) does not require structured output today. The
+implication worth carrying forward is architectural rather than immediate — when the finance
+layer is next touched, prefer treating the invoice as **structured data that renders to a
+PDF** over a PDF that happens to contain data. That keeps a second renderer additive instead
+of a rewrite. No work now; a constraint on future finance work.
 
 ### 3.5 "ABN" and "GST" are hardcoded in documents
 
@@ -236,14 +310,26 @@ able to accept a non-Australian customer on day one instead of shipping a known 
 
 ## 6. Open questions
 
-1. **Which countries at launch?** AU + NZ + UK is nearly free (single-rate VAT/GST, A4,
-   day-first dates). Adding the **US** pulls in Letter paper, month-first dates, Sunday weeks,
-   imperial units and the whole sales-tax problem — it is by far the most expensive single
-   country, and it should be a deliberate yes, not a side effect of a dropdown.
-2. **Tax: staged or solved?** Per-client exemption + per-line override covers most of the
-   non-US world cheaply. Full US sales tax realistically means an external provider.
-3. **Is English-only a recorded decision?** (§3.7)
-4. **Does an org's country ever change?** Historical documents must keep the tax label, paper
-   size and currency they were issued under — the finance-document rule already says a
-   rendered document is stored bytes, which protects this, but a live re-render of an old
-   project would not be protected.
+### Resolved 2026-08-01
+
+| Q | Answer | Recorded |
+|---|---|---|
+| Which countries at launch? | AU, NZ, UK, **US**, and single-country EU (IE/NL/DE) | M1 |
+| US sales tax? | Operator-set rate + client exemption + per-line override; no jurisdiction tables | M2 |
+| EU depth? | Single-country VAT only — no cross-border | M3 |
+| EU e-invoicing? | Documented boundary, not built | M4 |
+| GDPR erasure vs archive? | Archive by default; explicit hard-delete path for a real request | M5 |
+| English-only? | Yes for M1's markets — recorded as a deliberate scope boundary (§3.7) | M1 |
+
+### Still open
+
+1. **Does an org's country ever change?** Historical documents must keep the tax label, paper
+   size and currency they were issued under. The stored-bytes rule protects *rendered* finance
+   documents, but a live re-render of an old project (warehouse docket, preview) is not
+   protected, and `buildDocumentData`'s `stampedDates` pattern is the precedent for how to fix
+   it — stamp locale onto the row, don't recompute it.
+2. **Which EU country is actually first?** The matrix lists IE, NL and DE, but Germany alone
+   pulls in dotted dates *and* decimal comma. If the first real EU customer is Irish, most of
+   the EU-specific work defers — Ireland is effectively UK-shaped.
+3. **US imperial units — how far?** Weights are the clear case (lb). Dimensions and rigging
+   loads are a bigger surface, and mixing units in a warehouse is its own hazard.

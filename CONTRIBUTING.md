@@ -10,7 +10,89 @@ and the FEATUREDOCS index.
 - **Package manager: pnpm only** (single committed `pnpm-lock.yaml`; CI installs
   `--frozen-lockfile`). Use `pnpm` / `pnpm exec` — never `npm`/`npx`.
 - **Convex:** always `pnpm exec convex …`, never `npx convex` (see CLAUDE.md).
-- Setup: `pnpm install` → `pnpm exec prisma generate` → `pnpm dev`.
+
+### First run
+
+You'll need Node.js 20+, pnpm, Docker (or your own Postgres), and a
+[Convex](https://convex.dev) project.
+
+```bash
+git clone https://github.com/TwoToned/gearflow.git
+cd gearflow
+pnpm install
+
+docker compose -f docker-db/docker-compose.yml up -d   # Postgres on :5432
+```
+
+Create `.env` in the project root:
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/gearflow"
+
+BETTER_AUTH_SECRET="change-me-to-a-random-64-char-string"
+BETTER_AUTH_URL="http://localhost:3000"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
+RESEND_API_KEY="re_your_api_key"          # unset = emails log to the console
+EMAIL_FROM="onboarding@resend.dev"
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="your-google-maps-api-key"
+
+CONVEX_DEPLOY_KEY="your-convex-deploy-key"
+NEXT_PUBLIC_CONVEX_URL="https://your-deployment.convex.cloud"
+
+SITE_ADMIN_REGISTRATION_ENABLED="true"
+SITE_ADMIN_SECRET_TOKEN="pick-a-secret-token"
+```
+
+Then push the backend, migrate Postgres, and go:
+
+```bash
+pnpm exec convex dev --once      # Convex schema + functions (domain data lives here)
+pnpm exec prisma migrate deploy  # Better Auth + activity log
+pnpm exec prisma generate
+pnpm dev
+```
+
+Open [localhost:3000](http://localhost:3000), register, then make yourself a site admin at
+`/register/admin?token=` + whatever you set as `SITE_ADMIN_SECRET_TOKEN`. Uploads go to
+Convex file storage — there's no bucket to create.
+
+The **full** environment variable reference (Xero, PostHog sourcemaps, DB connection
+hardening, passkey RP, upload caps) lives in
+[`CLAUDE.md`](./CLAUDE.md#environment-variables). Worktree and Convex-preview setup are
+documented there too.
+
+### Commands
+
+```bash
+pnpm dev              # Dev server (Turbopack)
+pnpm build            # Production build + type check
+pnpm lint             # ESLint
+pnpm test             # Unit tests (Vitest)
+pnpm test:coverage    # Unit tests + coverage ratchet
+pnpm test:integration # Integration tests
+
+pnpm exec prisma migrate dev --name <name>   # Create + apply a migration
+pnpm exec prisma studio                      # Browse the auth/audit tables
+pnpm run api:registry                        # Regenerate the API/MCP contract registry
+```
+
+### Layout
+
+```
+convex/            # Primary backend — schema, queries, *Writes.ts mutations
+src/
+├── app/
+│   ├── (auth)/    # Login, register, onboarding
+│   ├── (app)/     # The app — dashboard, assets, projects, warehouse, kits,
+│   │              #   maintenance, test-and-tag, clients, suppliers, crew, settings
+│   ├── (admin)/   # Site admin panel
+│   └── api/       # v1 agent API, MCP, OAuth, webhooks, document streaming
+├── components/    # React components
+├── lib/           # Auth, validation, API dispatcher, utilities
+├── server/        # Server actions — permanent carve-outs only, not domain CRUD
+└── generated/     # Prisma client (gitignored)
+```
 
 ## Branching & commits (POLICY.md §2.2)
 

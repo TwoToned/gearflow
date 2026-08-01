@@ -8,7 +8,7 @@ import { BrandingProvider } from "@/components/providers/branding-provider";
 import MiraContextProvider from "@/components/providers/mira-context-provider";
 import { MiraLauncher } from "@/components/mira/mira-launcher";
 import { getSession } from "@/lib/auth-server";
-import { getMyOrganizations } from "@/server/public-org";
+import { getMyOrganizations, hasOnlyArchivedMemberships } from "@/server/public-org";
 import { OrgActivator } from "@/components/providers/org-activator";
 import { PostHogIdentify } from "@/components/providers/posthog-identify";
 
@@ -19,10 +19,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  // If the user belongs to no org yet, redirect to onboarding (#1071, A1 — the
-  // org switcher / picker handles 2+ memberships client-side via OrgActivator).
+  // If the user belongs to no LIVE org, either they never had one (→
+  // onboarding, #1071 A1) or every one of theirs is archived (→ an
+  // explanatory screen, not the create-org form — #1075 A5). The org switcher
+  // / picker for 2+ memberships is handled client-side via OrgActivator.
   const myOrgs = await getMyOrganizations();
   if (myOrgs.length === 0) {
+    if (await hasOnlyArchivedMemberships()) {
+      redirect("/organization-archived");
+    }
     redirect("/onboarding");
   }
 

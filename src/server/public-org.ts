@@ -6,14 +6,17 @@ import { getSession } from "@/lib/auth-server";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 
 /**
- * The calling user's org memberships. Safe to call without an active org set
- * (session-only). This is the multi-tenant replacement for the single-org
- * `getTheOrgId()` — login/register/invite/onboarding/OrgActivator (#1071, A1)
- * all resolve "which org(s) does this user belong to" through here instead of
- * assuming there's exactly one.
+ * The calling user's LIVE (non-archived) org memberships. Safe to call
+ * without an active org set (session-only). This is the multi-tenant
+ * replacement for the single-org `getTheOrgId()` —
+ * login/register/invite/onboarding/OrgActivator (#1071, A1) all resolve
+ * "which org(s) does this user belong to" through here instead of assuming
+ * there's exactly one.
  *
  * Membership-derived, never a list of all orgs filtered client-side (R-9.3).
- * Org archiving (#1075, A5) hasn't landed yet — every membership is live.
+ * Archived orgs (#1075, A5) never appear here — the switcher/onboarding-gate
+ * treat a membership in one as no membership at all. Use
+ * `hasOnlyArchivedMemberships()` to tell that apart from having none ever.
  */
 export async function getMyOrganizations(): Promise<
   { id: string; name: string; slug: string; role: string }[]
@@ -22,7 +25,7 @@ export async function getMyOrganizations(): Promise<
   if (!session) return [];
 
   const memberships = await prisma.member.findMany({
-    where: { userId: session.user.id },
+    where: { userId: session.user.id, organization: { archivedAt: null } },
     include: { organization: { select: { id: true, name: true, slug: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -35,6 +38,28 @@ export async function getMyOrganizations(): Promise<
       role: m.role,
     })),
   );
+}
+
+/**
+ * True when the caller has at least one membership, but every one of them is
+ * in an archived org. Distinguishes "never had an org" (→ /onboarding) from
+ * "org(s) archived" (→ an explanatory screen, not the create-org form) for
+ * the `(app)` layout gate and `OrgActivator` — a user in this state gets
+ * neither a crash nor a silent empty dashboard (#1075, A5).
+ */
+export async function hasOnlyArchivedMemberships(): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+
+  const [anyMembership, liveMembership] = await Promise.all([
+    prisma.member.findFirst({ where: { userId: session.user.id }, select: { id: true } }),
+    prisma.member.findFirst({
+      where: { userId: session.user.id, organization: { archivedAt: null } },
+      select: { id: true },
+    }),
+  ]);
+
+  return !!anyMembership && !liveMembership;
 }
 
 /**

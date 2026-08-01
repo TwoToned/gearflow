@@ -1862,12 +1862,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     "Uncategorized" drop container (useEquipmentDnd's
                     "uncategorized-groups"), spanning BOTH maps below so a
                     group dragged out of any category can land among either
-                    kind. Every row here is a valid DROP TARGET but not
-                    itself draggable (`dragDisabled` — see
-                    SortableGroupRow/SortableSubHireGroupRow's doc comment):
-                    orphan groups have never had reorder buttons, and this
-                    doesn't add reordering among them, only makes the zone
-                    reachable by drag. */}
+                    kind. Every row here is a valid drop target AND (permission
+                    allowing) a valid drag origin — an orphan group can be
+                    dragged back into a category the same way a standalone
+                    line item already could. It still never reorders against
+                    ITS OWN Uncategorized siblings (`planGroupSameContainerReorder`
+                    treats "uncategorized-groups" as always a no-op internally
+                    — orphan groups have never had reorder buttons), only
+                    originates a move to a real category. */}
                 <SortableContext
                   items={[
                     ...orphanProjectGroups.map((g) => `grp-${g.id}`),
@@ -1889,7 +1891,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       <SortableGroupRow
                         sortableId={`grp-${group.id}`}
                         containerId="uncategorized-groups"
-                        dragDisabled
+                        dragDisabled={!canDragEquipment}
                         group={group}
                         isExpanded={isExpanded}
                         orgId={orgId}
@@ -2003,7 +2005,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       <SortableSubHireGroupRow
                         sortableId={`shg-${shGroup.id}`}
                         containerId="uncategorized-groups"
-                        dragDisabled
+                        dragDisabled={!canDragEquipment}
                         group={shGroup}
                         isExpanded={isExpanded}
                         showCostColumn={showCostColumn}

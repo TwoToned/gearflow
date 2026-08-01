@@ -34,15 +34,12 @@ export function InviteMember() {
 
   const addMutation = useServerMutation({
     mutationFn: () => addMemberByEmail(email, role),
-    onSuccess: (result) => {
+    onSuccess: () => {
+      // Membership always requires the recipient to accept (#1073, A3) — this
+      // only ever sends an invitation, never adds them directly.
       refreshOrgMembers(orgId);
       refreshPendingInvitations(orgId);
-      const data = result as { invited?: boolean };
-      if (data.invited) {
-        toast.success(`Invitation sent to ${email}`);
-      } else {
-        toast.success(`${email} added to your organization`);
-      }
+      toast.success(`Invitation sent to ${email}`);
       setEmail("");
     },
     onError: (e) => toast.error(e.message),
@@ -86,7 +83,7 @@ export function InviteMember() {
       </div>
       <Button onClick={() => addMutation.mutate()} disabled={addMutation.isPending || !email}>
         <UserPlus className="mr-2 h-4 w-4" />
-        Add
+        Invite
       </Button>
     </div>
   );

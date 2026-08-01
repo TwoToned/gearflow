@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   invitationEmail,
-  invitationRegisterEmail,
   passwordResetEmail,
   removedFromOrgEmail,
   roleChangedEmail,
@@ -18,7 +17,6 @@ describe("email templates", () => {
   it("all templates render the shared wrapper exactly once", () => {
     const rendered = [
       invitationEmail({ orgName: "Acme", role: "admin", acceptUrl: "https://x/accept" }),
-      invitationRegisterEmail({ orgName: "Acme", role: "member", registerUrl: "https://x/r" }),
       siteAdminInvitationEmail({ registerUrl: "https://x/r" }),
       passwordResetEmail({ resetUrl: "https://x/reset" }),
       verificationEmail({ verifyUrl: "https://x/verify" }),
@@ -75,16 +73,6 @@ describe("email templates", () => {
         inviterName: XSS_PAYLOAD,
         role: XSS_PAYLOAD,
         acceptUrl: "https://x/accept",
-      });
-      expect(email.html).not.toContain(XSS_PAYLOAD);
-      expect(email.html).toContain(ESCAPED_PAYLOAD);
-    });
-
-    it("escapes orgName and role in invitationRegisterEmail", () => {
-      const email = invitationRegisterEmail({
-        orgName: XSS_PAYLOAD,
-        role: XSS_PAYLOAD,
-        registerUrl: "https://x/r",
       });
       expect(email.html).not.toContain(XSS_PAYLOAD);
       expect(email.html).toContain(ESCAPED_PAYLOAD);

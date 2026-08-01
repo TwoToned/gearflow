@@ -4,10 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { sendEmail } from "@/lib/email";
-import { invitationRegisterEmail } from "@/lib/email-templates";
+import { invitationEmail } from "@/lib/email-templates";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
-import { upsertMemberMirrorById, removeMemberMirror } from "@/lib/member-mirror";
+import { removeMemberMirror } from "@/lib/member-mirror";
 import {
   readOrgSettings,
   readOrgSettingsBlob,
@@ -232,49 +232,24 @@ export async function addMemberByEmail(email: string, role: string) {
     throw new Error("An invitation has already been sent to this email.");
   }
 
-  // Find user by email
-  const user = await prisma.user.findFirst({
-    where: { email: normalizedEmail },
-  });
-
-  if (user) {
-    // Check if already a member
-    const existing = await prisma.member.findFirst({
-      where: { organizationId, userId: user.id },
+  // Every membership requires the recipient to accept (#1073, A3) — no
+  // direct-add for a known account. Anyone with an org can otherwise type any
+  // known email and pull that person's account into their org with no
+  // consent, putting an unwanted org in the victim's switcher. One invitation
+  // path either way; /invite/[id] itself handles "already have an account,
+  // sign in" vs "need to register" for whoever opens it.
+  if (await prisma.user.findFirst({ where: { email: normalizedEmail }, select: { id: true } })) {
+    const existingMember = await prisma.member.findFirst({
+      where: {
+        organizationId,
+        user: { email: normalizedEmail },
+      },
     });
-
-    if (existing) {
+    if (existingMember) {
       throw new Error("This person is already a member of your organization.");
     }
-
-    // User exists — add directly as member
-    const member = await prisma.member.create({
-      data: {
-        organizationId,
-        userId: user.id,
-        role,
-      },
-      include: { user: true },
-    });
-
-    await logActivity({
-      organizationId,
-      userId,
-      userName,
-      action: "CREATE",
-      entityType: "member",
-      entityId: member.id,
-      entityName: normalizedEmail,
-      summary: `Added member ${normalizedEmail} with role ${role}`,
-    });
-
-    // Additive: Prisma committed; mirror best-effort after (§3.3.4).
-    await upsertMemberMirrorById(member.id);
-
-    return serialize(member);
   }
 
-  // User doesn't exist — create invitation and send registration email
   const org = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: { name: true },
@@ -292,15 +267,16 @@ export async function addMemberByEmail(email: string, role: string) {
   });
 
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
-  const registerUrl = `${baseUrl}/register?invite=${invitation.id}`;
+  const acceptUrl = `${baseUrl}/invite/${invitation.id}`;
   const pName = await getPlatformName();
 
   await sendEmail({
     to: normalizedEmail,
-    ...invitationRegisterEmail({
+    ...invitationEmail({
       orgName: org?.name || "an organization",
+      inviterName: userName,
       role,
-      registerUrl,
+      acceptUrl,
       platformName: pName,
     }),
   });

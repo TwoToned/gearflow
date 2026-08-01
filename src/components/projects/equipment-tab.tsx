@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
+import { DndContext, DragOverlay, closestCenter, useDroppable } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -327,6 +327,60 @@ function SortableCategoryRow({
       dragStyle={buildDragStyle(transform, transition)}
       isDragging={isDragging}
     />
+  );
+}
+
+// ─── Uncategorized zone header / drop target ────────────────────────────────
+//
+// Previously this header (and any empty-state hint) only rendered once
+// something was ALREADY uncategorized (`hasUncategorized`) — but the two
+// `SortableContext`s beneath it (orphan items/groups) render no DOM node at
+// all when empty, so a project where everything currently lives in a
+// category had NO droppable anywhere for "drag this out to Uncategorized".
+// Always rendering this header (whenever the project has categories at all)
+// gives that drag a landing zone even on the very first use. Not a
+// `useSortable` — nothing reorders against this row itself, just a plain
+// `useDroppable` landing zone. Its id (`uncat-zone`) is resolved by both
+// `resolveLineItemDropTarget` and `resolveGroupDropTarget` in
+// use-equipment-dnd.ts, exactly like the `cat-` header-row branches — one
+// gesture, read differently depending on what's being dragged.
+function UncategorizedHeader({
+  isMobile,
+  colCount,
+  isEmpty,
+}: {
+  isMobile: boolean;
+  colCount: number;
+  isEmpty: boolean;
+}) {
+  const { setNodeRef } = useDroppable({ id: "uncat-zone" });
+  const hint = "Drag items or groups here to remove them from a category.";
+  if (isMobile) {
+    return (
+      <div ref={setNodeRef}>
+        <CategoryCardHeading name="Uncategorised" />
+        {isEmpty && <p className="px-3 py-2 text-caption text-muted">{hint}</p>}
+      </div>
+    );
+  }
+  return (
+    <>
+      <TableRow ref={setNodeRef} className="bg-paper-2/40 hover:bg-paper-2/40">
+        <TableCell colSpan={colCount} className="py-2 px-1">
+          <div className="flex items-center gap-1.5">
+            <div className="w-6" />
+            <h3 className="t-overline text-muted">Uncategorised</h3>
+          </div>
+        </TableCell>
+      </TableRow>
+      {isEmpty && (
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={colCount} className="py-3 text-center text-caption text-muted">
+            {hint}
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   );
 }
 
@@ -1748,20 +1802,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                 })}
                 </SortableContext>
 
-                {/* Uncategorized items */}
-                {hasCategories && hasUncategorized && (
-                  isMobile ? (
-                    <CategoryCardHeading name="Uncategorised" />
-                  ) : (
-                    <TableRow className="bg-paper-2/40 hover:bg-paper-2/40">
-                      <TableCell colSpan={colCount} className="py-2 px-1">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-6" />
-                          <h3 className="t-overline text-muted">Uncategorised</h3>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
+                {/* Uncategorized items — always rendered whenever the project
+                    has categories, even with nothing uncategorized yet, so
+                    there's always a droppable landing zone for a line item
+                    or group dragged out of a category (see
+                    UncategorizedHeader's doc comment). */}
+                {hasCategories && (
+                  <UncategorizedHeader isMobile={isMobile} colCount={colCount} isEmpty={!hasUncategorized} />
                 )}
                 {(() => {
                   const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));

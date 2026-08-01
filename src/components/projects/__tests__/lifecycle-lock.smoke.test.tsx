@@ -29,7 +29,6 @@ import { JustificationDialog } from "@/components/projects/justification-dialog"
 import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
 import { UnlockSessionBanner } from "@/components/projects/unlock-session-banner";
 import { UnpricedBadge } from "@/components/projects/unpriced-badge";
-import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
 
 describe("JustificationDialog smoke", () => {
   it("renders open, shows the status-aware copy, and requires 10+ characters before confirming", async () => {
@@ -103,12 +102,5 @@ describe("UnpricedBadge smoke", () => {
   it("renders with its own TooltipProvider (no global provider in this app)", async () => {
     render(<UnpricedBadge />);
     expect(screen.getByText("Unpriced")).toBeTruthy();
-  });
-});
-
-describe("ProjectVersionsPanel smoke", () => {
-  it("renders the loading state without throwing", () => {
-    render(<ProjectVersionsPanel open onOpenChange={() => {}} projectId="p1" orgId="org1" />);
-    expect(screen.getByText("Versions")).toBeTruthy();
   });
 });

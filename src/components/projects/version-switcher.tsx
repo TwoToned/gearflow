@@ -51,10 +51,13 @@ function formatShortDate(ms: number | undefined): string | null {
  * Header version switcher (design doc §4.1) — mounted next to the project
  * number/status chip, not inside a tab (this is project-wide). Lists every
  * revision with a quote row, its state, date and total, and updates `?v=`.
- * "Save version…" (creating a new version) is Phase 4 scope — out of scope
- * here (#1093's own out-of-scope note): the entry below opens nothing yet
- * and stays absent until that verb exists, rather than shipping a dead menu
- * item.
+ * Navigation only — "Make vN live…" (#1080/#1097) lives on the read-only bar
+ * that appears once you've switched to viewing that version
+ * (`<VersionReadOnlyBar>`) and on the Finance tab's version rail
+ * (`<ProjectQuoteRail>`), not as a second promote entry point inside this
+ * menu (R-3.1). "Save version…" (creating a new version from here) remains
+ * unbuilt — the entry below opens nothing yet and stays absent until that
+ * verb exists, rather than shipping a dead menu item.
  */
 export function ProjectVersionSwitcher() {
   const { versions, isLoadingVersions, liveRevision, viewingRevision, isViewingVersion, setViewingRevision } =
@@ -104,7 +107,7 @@ export function ProjectVersionSwitcher() {
         })}
         <DropdownMenuSeparator />
         <p className="px-2 py-1.5 text-caption text-muted">
-          Promoting an older version to live isn&apos;t available yet.
+          Switch to a version to make it live, or use the Finance tab&apos;s version list.
         </p>
       </DropdownMenuContent>
     </DropdownMenu>

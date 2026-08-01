@@ -15,8 +15,8 @@ import { SnapshotDiffSummary } from "@/components/projects/snapshot-diff-summary
  * unlocked by {name} — '{justification}'" + Save & relock / Discard. Both
  * actions show the diff against the OPEN session's snapshot FIRST (#990,
  * finance-workflow-ux.md §7.2 "committing blind is the one thing that turns
- * an audit trail into noise") — `SnapshotDiffSummary` reuses the exact diff
- * `project-versions-panel.tsx` already renders (POLICY.md R-3.1). Discard
+ * an audit trail into noise") — `SnapshotDiffSummary` is the shared diff
+ * renderer other snapshot-comparison UI reuses too (POLICY.md R-3.1). Discard
  * restores the pre-unlock snapshot (money-only for FINANCIAL scope, structure
  * + money for FULL) and reports any conflicts the restore couldn't safely
  * auto-resolve (warehouse-backed entities — see convex/lib/projectSnapshots.ts).

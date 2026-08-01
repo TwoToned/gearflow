@@ -28,7 +28,7 @@ const MAX_RANGE_DAYS = 366;
  * candidate sets are then refined by the PURE getProjectWindow overlap check
  * in `candidateBoardProjects`.
  */
-async function fetchCandidateProjects(ctx: QueryCtx, orgId: string, rangeEnd: number) {
+export async function fetchCandidateProjects(ctx: QueryCtx, orgId: string, rangeEnd: number) {
   const projectDocsById = new Map<string, Doc<"projects">>();
   for await (const p of ctx.db
     .query("projects")
@@ -45,7 +45,7 @@ async function fetchCandidateProjects(ctx: QueryCtx, orgId: string, rangeEnd: nu
 
 /** Line items for candidate projects only (referenced-only) + the models/assets/
  *  bulkAssets those line items reference (also referenced-only). */
-async function fetchGearData(ctx: QueryCtx, orgId: string, candidateProjectIds: string[]) {
+export async function fetchGearData(ctx: QueryCtx, orgId: string, candidateProjectIds: string[]) {
   const lineItemGroups = await Promise.all(
     candidateProjectIds.map((pid) => ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", pid)).collect()),
   );

@@ -157,6 +157,52 @@ Tracked under the same `#1118` as the other quarantined harness gaps.
   "never had one" for the `(app)` layout gate, which routes the former to
   `/organization-archived` (an explanatory screen) instead of `/onboarding`.
 
+### Tenancy hygiene (#1077, A7)
+
+- **Cron fairness.** `convex/maintenanceScheduleGeneration.ts`'s daily PM-cycle
+  generator bounds its platform-wide `serviceSchedules` scan with `collectCapped`
+  (R-9.8) — but a single global cap alone isn't FAIR across tenants: one org
+  supplying most of the rows within that budget could starve every other org's
+  schedules out of every run, forever (same table prefix read every tick).
+  `applyPerOrgFairnessCap` (`convex/lib/cronFairness.ts`) is a pure post-filter
+  capping how many rows any one `organizationId` contributes; capped rows are
+  picked up on a later run, same semantics as the overall cap.
+- **Rate-limit scope.** `enforceBrowserWriteLimit` (`convex/lib/rateLimiter.ts`)
+  keys the `browserWrite` token bucket on `(orgId, userId)`, not `userId` alone —
+  a multi-org user's write budget in one org must not bleed into their unrelated
+  activity in another (possible since A2's org switcher made real multi-org
+  membership normal). `agentWrite` stays keyed on the API key alone: a key
+  already belongs to exactly one org.
+- **Storage visibility.** No per-org storage quota exists, and an archived org
+  keeps its Convex `_storage` bytes (#1075) — an invisible, growing liability.
+  `files.ts`'s `getOrgStorageUsage(organizationId)` (SERVICE-gated) sums file
+  sizes for an org via `storedFiles`'s new `by_organizationId` index. Not a
+  quota system, just visibility — A8 wires it into the site-admin org list.
+- **Right-to-erasure hard-delete (M5).** Archiving (#1075, D12) is the automatic
+  terminal state and never destroys. `scripts/erase-org.ts` is the ONE thing
+  that can actually delete an org's data — a separate, explicitly-invoked CLI
+  tool for a genuine erasure request (POLICY §8.12), never a UI button. It
+  reuses `scripts/org-export-tables.ts`'s table classification verbatim (the
+  same DIRECT/FILTER/PARENT_JOIN buckets `scripts/export-org.ts`'s reader
+  already covers, so export and erasure coverage can never silently drift
+  apart), driving the four SERVICE-gated mutations in `convex/orgErasure.ts`.
+  Refuses to run unless the org is already archived, requires `--confirm <orgId>`
+  typed exactly, deletes storage blobs before the `storedFiles` records that
+  reference them, then deletes the Postgres `Organization` row last (cascading
+  `Member`/`Invitation` via the schema's own `onDelete: Cascade`).
+- **Seed-vs-operating tax rate.** `resolveOrgDefaultTaxRate`
+  (`convex/lib/orgSettings.ts`) already treats an org's own
+  `orgSettings.defaultTaxRate` as the sole operating value — `SiteSettings.
+  defaultTaxRate` was pure admin-UI decoration with no live-read path into any
+  org's actual tax math. `seedOrgDefaultTaxRate` (`src/server/public-org.ts`)
+  copies the platform's *current* default into a freshly-created org's own
+  settings once, at creation, wired into both org-creation paths (self-serve
+  onboarding and `adminCreateOrganization`) — never a live cross-org read.
+  `SiteSettings.defaultCurrency` gets no equivalent treatment: it has zero
+  consumers anywhere today (currency formatting is hardcoded, not
+  settings-driven), so there's no live read to fix — international currency
+  support is later epic work.
+
 ## Better Auth Configuration (`src/lib/auth.ts`)
 - Plugins: `organization({...})` (no `organizationLimit` cap — creation is gated by
   `allowUserToCreateOrganization`, not a per-user limit), `twoFactor({ issuer: "RVLT Flow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`

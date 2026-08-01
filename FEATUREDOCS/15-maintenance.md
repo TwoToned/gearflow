@@ -112,6 +112,12 @@ Convex tables (`serviceSchedules`/`models`/`assets`/`bulkAssets`/
 Next.js route for. Still **dormant until `ENABLE_CONVEX_CRONS=true`** on the
 Convex deployment, matching the rest of this file's off-by-default discipline.
 
+**Per-org fairness (#1077, A7):** the platform-wide `serviceSchedules` scan is
+bounded by `collectCapped` (R-9.8) then post-filtered by
+`applyPerOrgFairnessCap` (`convex/lib/cronFairness.ts`) so one high-volume org
+can't consume the whole scan budget and starve every other org's schedules out
+of every run — see FEATUREDOCS/04's "Tenancy hygiene" section.
+
 **Single open cycle per schedule (merge semantics, no stacking):** each run,
 per active schedule, resolves the current due date and either (a) no-ops if
 the schedule's one open (non-terminal) cycle already has that due date

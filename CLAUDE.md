@@ -410,10 +410,18 @@ treats expired quotes as live and pre-#986 rows as neither. Same reason `quotes`
 go through `listProjectQuotes`/`requireQuoteInOrg`: `by_projectId` is global, so the
 org check has to happen in the loader, not at the call site.
 
-`projects.revision` is the one version counter (project v2 == quote v2 == the snapshot
-taken at v2). It is server-owned — written only by `createNative` and
-`quotesWrites.newVersionNative`, and stripped from client patches the same way
-`PROJECT_MONEY_ANCHORS` are. See FEATUREDOCS/66.
+`projects.revision` is the ALLOCATOR — the highest version number ever handed out
+(project v2 == quote v2 == the snapshot taken at v2). `projects.liveRevision`
+(#1080/#1085) is the separate pointer at the version currently projected onto the
+live tables — absent ⇒ `revision`, via `projectLiveRevision()`. Both are
+server-owned — written only by `createNative`, `quotesWrites.newVersionNative` and
+`projectVersionsWrites.saveVersionNative` (Phase 1 never decouples them; only a
+future promote can point `liveRevision` at an older number than `revision`), and
+stripped from client patches the same way `PROJECT_MONEY_ANCHORS` are. The
+invariant is now "at most one **live** DRAFT, always at `liveRevision`" — a
+non-live DRAFT (one Save Version left behind) is a legitimate saved-but-never-sent
+version, not a bug; scan for "the draft" via `liveRevision`, never a bare `DRAFT`
+status match. See FEATUREDOCS/66.
 
 ### ⚠️ A client-facing finance document is STORED BYTES — never a fresh render
 A sent quote / issued invoice PDF is rendered **once** (`src/server/finance-documents.ts`)

@@ -70,14 +70,29 @@ export function isLiveQuoteStatus(status: EffectiveQuoteStatus): boolean {
   return LIVE_STATUSES.has(status);
 }
 
-/** A project's revision number. Absent ⇒ 1 — pre-#986 documents and any row the
- *  backfill hasn't reached read as v1 rather than `undefined` leaking into
+/** A project's revision number — the ALLOCATOR, the highest version number
+ *  ever handed out (#1080/#1085). Absent ⇒ 1 — pre-#986 documents and any row
+ *  the backfill hasn't reached read as v1 rather than `undefined` leaking into
  *  arithmetic (R-3.1: ONE coalesce, not one per call site). */
 export function projectRevision(project: Pick<Doc<"projects">, "revision">): number {
   const revision = project.revision;
   return typeof revision === "number" && Number.isFinite(revision) && revision >= 1
     ? Math.floor(revision)
     : 1;
+}
+
+/** A project's LIVE revision — the version currently projected onto the live
+ *  tables (#1080/#1085). Absent ⇒ `revision` (every pre-#1085 project — the
+ *  two numbers were the same field until this split). This is the number
+ *  Save version / New version bump together with `revision`; only a Phase 2
+ *  promote can point it at an OLDER number than `revision`. R-3.1: ONE
+ *  coalesce, not one per call site — always read the live revision through
+ *  this, never `project.liveRevision` directly. */
+export function projectLiveRevision(project: Pick<Doc<"projects">, "revision" | "liveRevision">): number {
+  const liveRevision = project.liveRevision;
+  return typeof liveRevision === "number" && Number.isFinite(liveRevision) && liveRevision >= 1
+    ? Math.floor(liveRevision)
+    : projectRevision(project);
 }
 
 /** Every quote row for a project, org-checked (`by_projectId` is global). */

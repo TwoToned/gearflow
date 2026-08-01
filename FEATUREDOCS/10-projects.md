@@ -103,6 +103,20 @@ from one starts its own count at 1 rather than inheriting a number. Absent reads
 as 1 via `projectRevision()` (`convex/lib/quoteState.ts`), so pre-#986 documents
 and any row the backfill hasn't reached behave as v1.
 
+### `projects.liveRevision` — split from the allocator (#1080/#1085)
+
+`projects.revision` above is now purely the ALLOCATOR (the highest version
+number ever handed out); `projects.liveRevision` (NEW) is the pointer at the
+version currently projected onto the live tables — same server-owned treatment,
+coalesced via `projectLiveRevision()`. Phase 1 (this backlog item) never
+decouples the two — every mutation that bumps one bumps the other in lockstep
+— only a later promote can point `liveRevision` at an older number than
+`revision`. Full model, the new `saveVersionNative` "Save version" verb and the
+resulting one-live-DRAFT invariant: see
+[FEATUREDOCS/66](./66-finance-quotes-invoices-xero.md#projectsliverevision--the-pointer-split-from-the-allocator-10801085)
+and [`docs/designs/project-version-switching.md`](../docs/designs/project-version-switching.md).
+No UI ships in this phase.
+
 ## Project Hierarchy
 ```
 Project

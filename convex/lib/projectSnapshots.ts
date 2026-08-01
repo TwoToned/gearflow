@@ -13,8 +13,11 @@ import { LOCKED_GROUP_FIELDS, LOCKED_LINE_ITEM_FIELDS, LOCKED_PROJECT_FIELDS, LO
  */
 
 /** #986 added QUOTE_SENT — the frozen entity state for a quote revision, taken by
- *  `quotesWrites.sendNative`. It is the only reason that carries a `revision`. */
-export type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT";
+ *  `quotesWrites.sendNative`. #1085 added VERSION_SAVED (an explicit Save
+ *  version, or `newVersionNative` capturing the revision it moves past) and
+ *  PRE_PROMOTE (Phase 2's auto-capture before a promote overwrites the live
+ *  state) — all three carry a `revision`, unlike the status-driven reasons. */
+export type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT" | "VERSION_SAVED" | "PRE_PROMOTE";
 export type SnapshotEntityType = "project" | "category" | "group" | "lineItem" | "service" | "crewAssignment";
 export type UnlockScope = "FINANCIAL" | "FULL";
 

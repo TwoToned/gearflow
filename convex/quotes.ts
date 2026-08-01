@@ -6,6 +6,7 @@ import {
   effectiveQuoteStatus,
   isLiveQuoteStatus,
   listProjectQuotes,
+  projectLiveRevision,
   projectRevision,
   requireProjectInOrg,
 } from "./lib/quoteState";
@@ -45,6 +46,11 @@ export const listForProject = query({
  * the open draft (if any) and the revision the client is currently holding.
  * Backs the Finance tab's lock strip and, in Phase C (#988), the quote input to
  * `resolveLockTier`.
+ *
+ * `draftQuoteId` is scoped to `liveRevision`, not `revision` (#1085) — since
+ * `saveVersionNative` shipped, a project can have a non-live `DRAFT` row left
+ * behind (a saved-but-never-sent version, or a recalled one), and that row
+ * must never surface as "the" open draft here.
  */
 export const revisionStateForProject = query({
   args: { orgId: v.string(), projectId: v.string(), now: v.optional(v.number()) },
@@ -53,10 +59,11 @@ export const revisionStateForProject = query({
     const at = now ?? 0;
     const project = await requireProjectInOrg(ctx, projectId, orgId);
     const revision = projectRevision(project);
+    const liveRevision = projectLiveRevision(project);
     const quotes = await listProjectQuotes(ctx, orgId, projectId);
 
     const withStatus = quotes.map((q) => ({ quote: q, status: effectiveQuoteStatus(q, at) }));
-    const draft = withStatus.find((r) => r.status === "DRAFT" && r.quote.version === revision);
+    const draft = withStatus.find((r) => r.status === "DRAFT" && r.quote.version === liveRevision);
     const live = withStatus.find((r) => isLiveQuoteStatus(r.status));
 
     return {

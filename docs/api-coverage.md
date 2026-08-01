@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 403 | 288 | 113 | 1 | 1 |
-| Mutations | 740 | 271 | 460 | 0 | 9 |
-| **Total** | **1143** | **559** | **573** | **1** | **10** |
+| Queries | 404 | 288 | 114 | 1 | 1 |
+| Mutations | 742 | 272 | 461 | 0 | 9 |
+| **Total** | **1146** | **560** | **575** | **1** | **10** |
 
-<!-- reachability-floor: 559 -->
+<!-- reachability-floor: 560 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -44,7 +44,7 @@ idempotency key, already required of every mutation) at the dispatcher — see
 |---|---|
 | `high` | 91 |
 | `medium` | 142 |
-| `low` | 38 |
+| `low` | 39 |
 
 ## Modules with no agent-reachable operation
 
@@ -62,6 +62,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `backfillClientContacts` | 1 |
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
+| `backfillProjectLiveRevision` | 2 |
 | `backfillProjectWindow` | 1 |
 | `backfillQuoteRevisions` | 2 |
 | `backfillStripProjectDepositPercent` | 1 |

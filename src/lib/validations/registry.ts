@@ -36,6 +36,7 @@ import {
   quoteAcceptFields,
   quoteDeclineFields,
 } from "../../../convex/quotesWrites";
+import { quoteSaveVersionFields } from "../../../convex/projectVersionsWrites";
 import { invoiceFields, invoiceIssueFields } from "../../../convex/invoicesWrites";
 import { paymentFields } from "../../../convex/paymentsWrites";
 
@@ -51,7 +52,13 @@ import { modelSchema } from "./model";
 import { supplierSchema } from "./supplier";
 import { subTestRecordSchema } from "./test-tag";
 import { supplierOrderUpdateSchema, supplierOrderItemSchema } from "./supplier-order";
-import { quoteSendSchema, quoteRecallSchema, quoteAcceptSchema, quoteDeclineSchema } from "./quote";
+import {
+  quoteSendSchema,
+  quoteRecallSchema,
+  quoteAcceptSchema,
+  quoteDeclineSchema,
+  quoteSaveVersionSchema,
+} from "./quote";
 import { invoiceSchema, invoiceIssueSchema } from "./invoice";
 import { paymentSchema } from "./payment";
 
@@ -161,6 +168,7 @@ export const VALIDATION_PAIRS: ValidationPair[] = [
   { name: "quoteRecall", zod: quoteRecallSchema, convex: quoteRecallFields },
   { name: "quoteAccept", zod: quoteAcceptSchema, convex: quoteAcceptFields },
   { name: "quoteDecline", zod: quoteDeclineSchema, convex: quoteDeclineFields },
+  { name: "quoteSaveVersion", zod: quoteSaveVersionSchema, convex: quoteSaveVersionFields },
   {
     name: "invoice",
     zod: invoiceSchema,
@@ -222,6 +230,7 @@ export const OPERATION_VALIDATION_PAIR: Readonly<Record<string, string>> = {
   "quotesWrites.recallNative": "quoteRecall",
   "quotesWrites.markAcceptedNative": "quoteAccept",
   "quotesWrites.markDeclinedNative": "quoteDecline",
+  "projectVersionsWrites.saveVersionNative": "quoteSaveVersion",
   "invoicesWrites.createNative": "invoice",
   "paymentsWrites.recordNative": "payment",
 };

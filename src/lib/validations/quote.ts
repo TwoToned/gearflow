@@ -74,9 +74,17 @@ export const quoteCorrectSchema = quoteBaseSchema
  *  against the revision's label); this only guards against submitting empty. */
 export const quoteDeleteRecalledSchema = z.object({ confirmLabel: z.string().min(1) });
 
+/** Save version (#1080/#1085) — an optional internal name for the version
+ *  being saved. Never a monetary or structural field (R-9.3) — see
+ *  `convex/projectVersionsWrites.ts`. */
+export const quoteSaveVersionSchema = z.object({ label: z.string().max(60).optional() });
+
 export type QuoteSendValues = z.input<typeof quoteSendSchema>;
 export type QuoteRecallValues = z.input<typeof quoteRecallSchema>;
 export type QuoteAcceptValues = z.input<typeof quoteAcceptSchema>;
 export type QuoteDeclineValues = z.input<typeof quoteDeclineSchema>;
 export type QuoteCorrectValues = z.input<typeof quoteCorrectSchema>;
 export type QuoteDeleteRecalledValues = z.input<typeof quoteDeleteRecalledSchema>;
+// No `QuoteSaveVersionValues` export yet — `saveVersionNative` has no UI/hook
+// consumer in this phase (see convex/projectVersionsWrites.ts); add one
+// alongside `use-quote-writes.ts`'s `saveVersion()` when Phase 3/4 wires it up.

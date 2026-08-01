@@ -390,6 +390,64 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
       expect(shgSlot.sortOrder).toBe(0);
     });
   });
+
+  // Line items sharing one order with groups (FEATUREDOCS/47's "share one order").
+  test("rewrites slot sortOrder for a mixed pg + li list, minting a slot for the line item", async () => {
+    const t = makeT();
+    await seedMixed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", description: "Standalone", quantity: 1 });
+    });
+    // Line item first, then the sub-hire group, then the project group.
+    await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
+      orgId: ORG, categoryId: "cat1",
+      items: [
+        { prefixedId: "li-li1", newSlotId: "nLi" },
+        { prefixedId: "shg-shg1", newSlotId: "n1" },
+        { prefixedId: "pg-g1", newSlotId: "n2" },
+      ],
+      now: NOW, actor: ACTOR,
+    });
+    await t.run(async (ctx) => {
+      const liSlot = await ctx.db.query("categorySlots").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "li1")).first();
+      const shgSlot = (await ctx.db.query("categorySlots").withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", "shg1")).collect())[0];
+      const pgSlot = (await ctx.db.query("categorySlots").withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", "g1")).collect())[0];
+      expect(liSlot?.sortOrder).toBe(0);
+      expect(shgSlot.sortOrder).toBe(1);
+      expect(pgSlot.sortOrder).toBe(2);
+    });
+  });
+
+  test("rejects a line item that belongs to a different category", async () => {
+    const t = makeT();
+    await seedMixed(t);
+    await seedCategory(t, "cat2");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat2", description: "Elsewhere", quantity: 1 });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
+        orgId: ORG, categoryId: "cat1",
+        items: [{ prefixedId: "li-li1", newSlotId: "n1" }],
+        now: NOW, actor: ACTOR,
+      }),
+    ).rejects.toThrow(/do not belong to this category/i);
+  });
+
+  test("rejects a line item that's actually a group's child, not standalone", async () => {
+    const t = makeT();
+    await seedMixed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", groupId: "g1", description: "Grouped", quantity: 1 });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
+        orgId: ORG, categoryId: "cat1",
+        items: [{ prefixedId: "li-li1", newSlotId: "n1" }],
+        now: NOW, actor: ACTOR,
+      }),
+    ).rejects.toThrow(/not standalone/i);
+  });
 });
 
 // ─── createCategoryAndPlaceGroup ──────────────────────────────────────────────

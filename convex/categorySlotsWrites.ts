@@ -53,14 +53,16 @@ function assertValidName(name: string) {
   if (name.length > NAME_MAX) throw new ConvexError("Name must be at most 100 characters");
 }
 
-// ─── Slot-id prefixes (parity with src/lib/validations/category-slot.ts) ──────
+// ─── Slot-id prefixes ──────────────────────────────────────────────────────
 const PG_PREFIX = "pg-";
 const SHG_PREFIX = "shg-";
+const LI_PREFIX = "li-";
 function parseSlotId(
   id: string,
-): { kind: "projectGroup"; id: string } | { kind: "subHireGroup"; id: string } | null {
+): { kind: "projectGroup"; id: string } | { kind: "subHireGroup"; id: string } | { kind: "lineItem"; id: string } | null {
   if (id.startsWith(PG_PREFIX)) return { kind: "projectGroup", id: id.slice(PG_PREFIX.length) };
   if (id.startsWith(SHG_PREFIX)) return { kind: "subHireGroup", id: id.slice(SHG_PREFIX.length) };
+  if (id.startsWith(LI_PREFIX)) return { kind: "lineItem", id: id.slice(LI_PREFIX.length) };
   return null;
 }
 
@@ -211,6 +213,47 @@ async function upsertSlotForSubHireGroup(
       id: newSlotId,
       projectCategoryId: destCategoryId,
       subHireGroupId,
+      sortOrder: maxSort + 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+/**
+ * As above, for a standalone (non-grouped) top-level line item. A line item
+ * only occupies a slot while it's a standalone member of a category —
+ * `moveLineItemNative` (projectGroupsWrites.ts) calls this on every move,
+ * with `destCategoryId: null` whenever the line item becomes grouped
+ * (targetGroupId set) or uncategorised, clearing any stale slot the same way
+ * a group leaving a category clears its own. Exported for that cross-file
+ * call — no circular import (projectGroupsWrites.ts doesn't export anything
+ * this file needs). Port pattern: upsertSlotForProjectGroup/
+ * upsertSlotForSubHireGroup above.
+ */
+export async function upsertSlotForLineItem(
+  ctx: MutationCtx,
+  lineItemId: string,
+  destCategoryId: string | null,
+  newSlotId: string,
+  now: number,
+): Promise<void> {
+  const existing = await ctx.db
+    .query("categorySlots")
+    .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId))
+    .collect();
+  for (const slot of existing) await ctx.db.delete(slot._id);
+  if (destCategoryId) {
+    const catSlots = await ctx.db
+      .query("categorySlots")
+      .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
+      .collect();
+    const maxSort = catSlots.reduce((m, s) => Math.max(m, s.sortOrder), -1);
+    await assertSlotIdFree(ctx, newSlotId);
+    await ctx.db.insert("categorySlots", {
+      id: newSlotId,
+      projectCategoryId: destCategoryId,
+      lineItemId,
       sortOrder: maxSort + 1,
       createdAt: now,
       updatedAt: now,
@@ -441,11 +484,12 @@ export const reorderMixedGroupsInCategory = mutation({
     // Parse every prefixed id up front (a bare/malformed id is a client bug).
     const parsed = a.items.map((item) => {
       const slot = parseSlotId(item.prefixedId);
-      if (!slot) throw new ConvexError("Slot ID must be prefixed with 'pg-' or 'shg-'");
+      if (!slot) throw new ConvexError("Slot ID must be prefixed with 'pg-', 'shg-', or 'li-'");
       return { ...slot, newSlotId: item.newSlotId };
     });
     const projectGroupIds = parsed.filter((s) => s.kind === "projectGroup").map((s) => s.id);
     const subHireGroupIds = parsed.filter((s) => s.kind === "subHireGroup").map((s) => s.id);
+    const lineItemIds = parsed.filter((s) => s.kind === "lineItem").map((s) => s.id);
 
     // Reject a duplicated group in the ordering: a slot-less group appearing twice would
     // otherwise insert TWO slots (the just-inserted _id isn't threaded back into the map),
@@ -473,6 +517,23 @@ export const reorderMixedGroupsInCategory = mutation({
       }
     }
 
+    // Validate: every line item belongs to this org, is standalone (no group/
+    // sub-hire-group), and already sits in THIS category — a reorder call
+    // only reshuffles the category's existing top-level members; moving a
+    // line item's category is `moveLineItemNative`'s job, not this one's.
+    if (lineItemIds.length > 0) {
+      for (const id of lineItemIds) {
+        const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+        if (!li || li.organizationId !== a.orgId) throw new ConvexError("Line item not found");
+        if (li.groupId || li.subHireGroupId) {
+          throw new ConvexError("One or more line items are not standalone in this category");
+        }
+        if (li.categoryId !== a.categoryId) {
+          throw new ConvexError("One or more line items do not belong to this category");
+        }
+      }
+    }
+
     // Rewrite slot sortOrder = position in `items` (missing slots are minted).
     const catSlots = await ctx.db
       .query("categorySlots")
@@ -480,40 +541,31 @@ export const reorderMixedGroupsInCategory = mutation({
       .collect();
     const slotByPg = new Map(catSlots.filter((s) => s.projectGroupId).map((s) => [s.projectGroupId!, s]));
     const slotByShg = new Map(catSlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]));
+    const slotByLi = new Map(catSlots.filter((s) => s.lineItemId).map((s) => [s.lineItemId!, s]));
 
     for (let i = 0; i < parsed.length; i++) {
       const item = parsed[i];
-      if (item.kind === "projectGroup") {
-        const existing = slotByPg.get(item.id);
-        if (existing) {
-          await ctx.db.patch(existing._id, { sortOrder: i, updatedAt: a.now });
-        } else {
-          await assertSlotIdFree(ctx, item.newSlotId);
-          await ctx.db.insert("categorySlots", {
-            id: item.newSlotId,
-            projectCategoryId: a.categoryId,
-            projectGroupId: item.id,
-            sortOrder: i,
-            createdAt: a.now,
-            updatedAt: a.now,
-          });
-        }
-      } else {
-        const existing = slotByShg.get(item.id);
-        if (existing) {
-          await ctx.db.patch(existing._id, { sortOrder: i, updatedAt: a.now });
-        } else {
-          await assertSlotIdFree(ctx, item.newSlotId);
-          await ctx.db.insert("categorySlots", {
-            id: item.newSlotId,
-            projectCategoryId: a.categoryId,
-            subHireGroupId: item.id,
-            sortOrder: i,
-            createdAt: a.now,
-            updatedAt: a.now,
-          });
-        }
+      const existing =
+        item.kind === "projectGroup" ? slotByPg.get(item.id)
+        : item.kind === "subHireGroup" ? slotByShg.get(item.id)
+        : slotByLi.get(item.id);
+      if (existing) {
+        await ctx.db.patch(existing._id, { sortOrder: i, updatedAt: a.now });
+        continue;
       }
+      await assertSlotIdFree(ctx, item.newSlotId);
+      await ctx.db.insert("categorySlots", {
+        id: item.newSlotId,
+        projectCategoryId: a.categoryId,
+        sortOrder: i,
+        createdAt: a.now,
+        updatedAt: a.now,
+        ...(item.kind === "projectGroup"
+          ? { projectGroupId: item.id }
+          : item.kind === "subHireGroup"
+            ? { subHireGroupId: item.id }
+            : { lineItemId: item.id }),
+      });
     }
 
     return { ok: true };

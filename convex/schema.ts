@@ -245,9 +245,10 @@ export default defineSchema({
     .index("by_refreshTokenHash", ["refreshTokenHash"]),
 
   // OAuthClient — a dynamically-registered MCP client (RFC 7591). Same-org-staff
-  // only (design §17): there is no per-org scoping on the client row itself
-  // because this is a single-org app (organizationLimit: 1) — the grant an
-  // authorization produces (an `apiKeys` row) is what carries `organizationId`.
+  // only (design §17): there is no per-org scoping on the client row itself —
+  // one registered client can be authorized against any org its user consents
+  // to — the grant an authorization produces (an `apiKeys` row) is what
+  // carries `organizationId`.
   oauthClients: defineTable({
     id: v.string(), // the public client_id
     clientName: v.optional(v.string()),

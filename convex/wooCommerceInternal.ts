@@ -23,12 +23,15 @@ import { projectWriteFields } from "./projects";
  * `recalcProjectTotals` (convex/lib/recalc.ts), so totals stay byte-identical.
  */
 
-// ─── organizations (mirror of src/lib/single-org.ts getTheOrg) ──────────────
+// ─── organizations ───────────────────────────────────────────────────────────
 
 /**
- * The single organization row (or null). This app enforces exactly one org
- * (src/lib/single-org.ts). Lets the webhook ingress distinguish "No organization
- * configured" from "Integration not enabled" the way the Next route does.
+ * The oldest organization row (or null) — the ?org=-less webhook fallback's
+ * Convex-side twin of the Next route's inline `prisma.organization.findFirst`
+ * (src/app/api/integrations/woocommerce/webhook/route.ts). Lets the webhook
+ * ingress distinguish "No organization configured" from "Integration not
+ * enabled" the way the Next route does. Interim — #1074/A4 replaces this
+ * fallback (and this query) with an opaque per-org webhook token.
  */
 export const getSingleOrg = internalQuery({
   args: {},

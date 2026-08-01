@@ -2,7 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { logger } from "@/lib/logger";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../../../../../convex/_generated/api";
-import { getTheOrg } from "@/lib/single-org";
+import { prisma } from "@/lib/prisma";
 import { verifyWebhookSignature } from "@/lib/woocommerce-utils";
 import { findCompletedOrderLog } from "@/lib/woocommerce-order-logs-read";
 import { getWooCommerceIntegrationByOrg } from "@/lib/woocommerce-integration-read";
@@ -48,10 +48,14 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, ping: true });
   }
 
-  // 5. Determine org — single-org mode uses the only org, or fallback to ?org= param
+  // 5. Determine org — an explicit ?org= param, else the oldest org (interim
+  //    fallback; #1074/A4 replaces both with an opaque per-org webhook token).
   let orgId = new URL(request.url).searchParams.get("org");
   if (!orgId) {
-    const org = await getTheOrg();
+    const org = await prisma.organization.findFirst({
+      select: { id: true },
+      orderBy: { createdAt: "asc" },
+    });
     if (!org) {
       return Response.json({ error: "No organization configured" }, { status: 404 });
     }

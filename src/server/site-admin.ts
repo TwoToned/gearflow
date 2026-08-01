@@ -18,7 +18,6 @@ import { invalidatePlatformNameCache } from "@/lib/platform";
 import { sendEmail } from "@/lib/email";
 import { siteAdminInvitationEmail } from "@/lib/email-templates";
 import { getPlatformName } from "@/lib/platform";
-import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
 import { env } from "@/env";
 import { logActivity } from "@/lib/activity-log";
 import { runWithConcurrency } from "@/lib/concurrency";
@@ -27,6 +26,22 @@ import { requireSiteAdmin, isSiteAdmin as checkIsSiteAdmin } from "@/lib/admin-a
 /** Check if the current user is a site admin */
 export async function isSiteAdmin(): Promise<boolean> {
   return checkIsSiteAdmin();
+}
+
+/**
+ * Best-effort "some organization" lookup for site-admin actions that are NOT
+ * scoped to a single org (ban/promote/demote/force-disable-2FA/delete-user)
+ * but still need an `organizationId` to satisfy `logActivity`'s schema.
+ * Arbitrary (oldest-created) — the choice only affects which org's activity
+ * feed shows the entry; these are platform-wide actions, not org actions.
+ * Real per-org attribution for site-wide audit entries is unresolved by
+ * Phase A (#1064) — flagged for a later platform-audit-log pass, not this one.
+ */
+async function getAnyOrgForAudit() {
+  return prisma.organization.findFirst({
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
 }
 
 // ─── Site Settings ─────────────────────────────────────────────────────────
@@ -59,7 +74,7 @@ export async function updateSiteSettings(data: {
   // Invalidate the cached platform name so it picks up changes immediately
   invalidatePlatformNameCache();
 
-  const theOrg = await getTheOrg();
+  const theOrg = await getAnyOrgForAudit();
   if (theOrg) {
     await logActivity({
       organizationId: theOrg.id,
@@ -81,19 +96,26 @@ export async function updateSiteSettings(data: {
 // ─── Org Creation Policy ──────────────────────────────────────────────────
 
 /** Check whether the current user is allowed to create organizations.
- * Single-org mode: only allowed if no org exists yet (bootstrap).
+ * Phase A (#1064, D7): only allowed if no org exists yet (bootstrap) — the
+ * real site-admin `allowOrgCreation` toggle + signup code (D6) is Phase B.
  */
 export async function checkOrgCreationAllowed(): Promise<{ allowed: boolean; isSiteAdmin: boolean }> {
   const admin = await checkIsSiteAdmin();
-  const org = await getTheOrg();
+  const org = await prisma.organization.findFirst({ select: { id: true } });
   // Only allow creation if no org exists (bootstrap)
   return { allowed: !org && admin, isSiteAdmin: admin };
 }
 
-/** Get the single organization for admin pages. */
+/**
+ * Get an organization for legacy single-org admin pages. Arbitrary
+ * (oldest-created) pending the real multi-org drill-down (#1078, A8).
+ */
 export async function adminGetTheOrg() {
   await requireSiteAdmin();
-  const org = await getTheOrg();
+  const org = await prisma.organization.findFirst({
+    select: { id: true, name: true, slug: true },
+    orderBy: { createdAt: "asc" },
+  });
   if (!org) return null;
   return serialize(org);
 }
@@ -216,8 +238,6 @@ export async function adminUpdateOrganization(
     where: { id: orgId },
     data,
   });
-
-  invalidateOrgCache();
 
   await logActivity({
     organizationId: orgId,
@@ -354,7 +374,7 @@ export async function promoteToSiteAdmin(userId: string) {
     data: { role: "admin" },
   });
 
-  const theOrg = await getTheOrg();
+  const theOrg = await getAnyOrgForAudit();
   if (theOrg) {
     await logActivity({
       organizationId: theOrg.id,
@@ -387,7 +407,7 @@ export async function demoteFromSiteAdmin(userId: string) {
     data: { role: "user" },
   });
 
-  const theOrg = await getTheOrg();
+  const theOrg = await getAnyOrgForAudit();
   if (theOrg) {
     await logActivity({
       organizationId: theOrg.id,
@@ -420,7 +440,7 @@ export async function banUser(userId: string) {
     data: { banned: true },
   });
 
-  const theOrg = await getTheOrg();
+  const theOrg = await getAnyOrgForAudit();
   if (theOrg) {
     await logActivity({
       organizationId: theOrg.id,
@@ -450,7 +470,7 @@ export async function unbanUser(userId: string) {
     data: { banned: false },
   });
 
-  const theOrg = await getTheOrg();
+  const theOrg = await getAnyOrgForAudit();
   if (theOrg) {
     await logActivity({
       organizationId: theOrg.id,
@@ -574,7 +594,7 @@ export async function adminDeleteUser(userId: string) {
   // gone from both stores after the sweep, so the erasure is auditable, not fire-and-forget.
   const verification = await verifyUserErased(userId);
 
-  const theOrg = await getTheOrg();
+  const theOrg = await getAnyOrgForAudit();
   if (theOrg) {
     await logActivity({
       organizationId: theOrg.id,
@@ -651,7 +671,7 @@ export async function forceDisable2FA(userId: string) {
     }),
   ]);
 
-  const theOrg = await getTheOrg();
+  const theOrg = await getAnyOrgForAudit();
   if (theOrg) {
     await logActivity({
       organizationId: theOrg.id,
@@ -885,7 +905,7 @@ export async function adminInviteUser(email: string) {
   }
 
   // We need an organizationId for the invitation record (Better Auth requires it).
-  const anyOrg = await getTheOrg();
+  const anyOrg = await getAnyOrgForAudit();
   if (!anyOrg) {
     throw new Error("No organization configured. Complete setup first.");
   }

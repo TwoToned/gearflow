@@ -2052,6 +2052,22 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         // instead of rendering as a small fixed-size chip inside it, which is
         // what keeps it tracking the exact point the user grabbed rather than
         // snapping to a corner.
+        //
+        // dnd-kit's <DragOverlay> renders IN PLACE (no portal of its own —
+        // confirmed reading @dnd-kit/core's source) and relies entirely on
+        // `position: fixed` to visually escape the layout. `<FadeIn>`
+        // (src/app/(app)/projects/[id]/page.tsx wraps the whole page in it)
+        // is a Framer Motion `motion.div` whose `animate={{ y: 0 }}` leaves a
+        // persistent (non-`none`) `transform` style on that ancestor even at
+        // rest — any non-`none` transform establishes a NEW containing block
+        // for `position: fixed` descendants, so the overlay was positioning
+        // itself relative to that page wrapper instead of the viewport. That
+        // silent coordinate-system mismatch (not the row-vs-handle sizing
+        // fixed above) is what made the dragged preview appear to "jump to
+        // the top" disconnected from the cursor. Portaling straight to
+        // `document.body` sidesteps this (and any other transformed
+        // ancestor) entirely, matching dnd-kit's own documented fix for this
+        // exact class of bug.
         return (
           <DndContext
             sensors={dnd.sensors}
@@ -2062,21 +2078,25 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             onDragEnd={dnd.handleDragEnd}
           >
             {content}
-            <DragOverlay>
-              {draggedLineItem ? (
-                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                  {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
-                </div>
-              ) : draggedGroupTitle ? (
-                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                  {draggedGroupTitle}
-                </div>
-              ) : draggedCategoryTitle ? (
-                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                  {draggedCategoryTitle}
-                </div>
-              ) : null}
-            </DragOverlay>
+            {typeof document !== "undefined" &&
+              createPortal(
+                <DragOverlay>
+                  {draggedLineItem ? (
+                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
+                    </div>
+                  ) : draggedGroupTitle ? (
+                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      {draggedGroupTitle}
+                    </div>
+                  ) : draggedCategoryTitle ? (
+                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      {draggedCategoryTitle}
+                    </div>
+                  ) : null}
+                </DragOverlay>,
+                document.body,
+              )}
           </DndContext>
         );
       })()}

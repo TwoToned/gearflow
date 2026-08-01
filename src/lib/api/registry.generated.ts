@@ -18713,6 +18713,33 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "files.getOrgStorageUsage",
+    "module": "files",
+    "fn": "getOrgStorageUsage",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b21345538722cfa9",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "files.getServeInfo",
     "module": "files",
     "fn": "getServeInfo",
@@ -31218,6 +31245,154 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "mcpTier": null,
     "agentAccess": "denied",
     "deniedReason": "OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list)."
+  },
+  {
+    "operation": "orgErasure.deleteChildRowsByParentIds",
+    "module": "orgErasure",
+    "fn": "deleteChildRowsByParentIds",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "indexName",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "parentField",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "parentIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "table",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "15869087e39d48e9",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
+  },
+  {
+    "operation": "orgErasure.deleteFilteredPage",
+    "module": "orgErasure",
+    "fn": "deleteFilteredPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "numItems",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgField",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "table",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b023c642f132116b",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
+  },
+  {
+    "operation": "orgErasure.deleteStorageBlobs",
+    "module": "orgErasure",
+    "fn": "deleteStorageBlobs",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "storageIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "34c96dc633ec8ec6",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
+  },
+  {
+    "operation": "orgErasure.deleteTablePage",
+    "module": "orgErasure",
+    "fn": "deleteTablePage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "numItems",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "table",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1c24442a3b1cae60",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
   },
   {
     "operation": "orgExport.childRowsByParentIds",
@@ -59951,10 +60126,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1149,
+  total: 1154,
   agentReachable: 562,
-  queries: 406,
-  mutations: 743,
+  queries: 407,
+  mutations: 747,
   agentReachableQueries: 289,
   agentReachableMutations: 273,
 } as const;

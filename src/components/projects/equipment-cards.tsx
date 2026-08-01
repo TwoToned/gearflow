@@ -70,6 +70,8 @@ export function GroupCard({
   dragHandleRef,
   dragAttributes,
   dragListeners,
+  dragStyle,
+  isDragging,
 }: {
   title: string;
   subtext?: React.ReactNode;
@@ -88,6 +90,11 @@ export function GroupCard({
   dragHandleRef?: (el: HTMLElement | null) => void;
   dragAttributes?: Record<string, unknown>;
   dragListeners?: Record<string, unknown>;
+  /** `useSortable()`'s `transform`/`transition` as an inline style, and
+   *  whether this is the ONE card currently being dragged — same contract as
+   *  equipment-rows.tsx's `DragHandleControls`. */
+  dragStyle?: React.CSSProperties;
+  isDragging?: boolean;
 }) {
   return (
     <>
@@ -95,7 +102,11 @@ export function GroupCard({
         ref={dragHandleRef}
         {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
         {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
-        className="flex min-h-11 touch-manipulation items-center gap-2 rounded-[var(--r)] bg-card px-3 py-2 ring-1 ring-line-2 active:cursor-grabbing md:cursor-grab"
+        style={dragStyle}
+        className={cn(
+          "flex min-h-11 touch-manipulation items-center gap-2 rounded-[var(--r)] bg-card px-3 py-2 ring-1 ring-line-2 active:cursor-grabbing md:cursor-grab",
+          isDragging && "opacity-40",
+        )}
       >
         <button
           type="button"
@@ -132,6 +143,8 @@ export function CategoryCardHeading({
   dragHandleRef,
   dragAttributes,
   dragListeners,
+  dragStyle,
+  isDragging,
 }: {
   name: string;
   action?: React.ReactNode;
@@ -139,13 +152,19 @@ export function CategoryCardHeading({
   dragHandleRef?: (el: HTMLElement | null) => void;
   dragAttributes?: Record<string, unknown>;
   dragListeners?: Record<string, unknown>;
+  dragStyle?: React.CSSProperties;
+  isDragging?: boolean;
 }) {
   return (
     <div
       ref={dragHandleRef}
       {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
-      className="flex touch-manipulation items-center justify-between gap-2 rounded-[var(--r)] px-1 pb-0.5 pt-3 active:cursor-grabbing md:cursor-grab"
+      style={dragStyle}
+      className={cn(
+        "flex touch-manipulation items-center justify-between gap-2 rounded-[var(--r)] px-1 pb-0.5 pt-3 active:cursor-grabbing md:cursor-grab",
+        isDragging && "opacity-40",
+      )}
     >
       <div className="flex items-center gap-1.5 text-caption font-semibold text-ink-2">
         <Container className="h-3.5 w-3.5" />

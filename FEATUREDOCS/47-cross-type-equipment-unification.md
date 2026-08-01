@@ -430,6 +430,24 @@ call it to short-circuit a disallowed drop with a toast. It has no
 category-vs-category rule — categories don't nest into anything, so no
 category drop needs blocking.
 
+### ⚠️ `<DragOverlay>` MUST be portaled to `document.body`
+
+dnd-kit's `<DragOverlay>` renders in place (no portal of its own) and relies
+entirely on `position: fixed` to visually escape the layout. `src/app/(app)/
+projects/[id]/page.tsx` wraps the whole page — including the equipment tab —
+in `<FadeIn>` (`src/components/ui/motion.tsx`), a Framer Motion `motion.div`
+whose `animate={{ y: 0 }}` leaves a persistent (non-`none`) `transform` style
+on that ancestor even at rest. ANY non-`none` `transform`/`filter`/
+`perspective`/`will-change: transform` on an ancestor establishes a NEW
+containing block for `position: fixed` descendants — so the overlay was
+positioning itself relative to that page wrapper instead of the viewport,
+making the dragged preview appear to snap to a fixed spot near the top of the
+page, completely disconnected from the cursor, regardless of how correctly
+the dragged node itself was measured. `equipment-tab.tsx` wraps its
+`<DragOverlay>` in `createPortal(..., document.body)` to sidestep this (and
+any other transformed ancestor) entirely — do not remove that portal, and if
+another `<DragOverlay>` is ever added elsewhere in the app, portal it too.
+
 ### Drop Matrix 8C summary
 
 | Source ↓ \ Dest → | ProjectCategory | ProjectGroup | SubHireGroup | Uncat | SubHire (top) |

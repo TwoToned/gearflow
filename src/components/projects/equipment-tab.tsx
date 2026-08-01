@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay, closestCenter } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { api } from "../../../convex/_generated/api";
@@ -114,6 +115,21 @@ interface EquipmentTabProps {
   addMenuSlot?: HTMLElement | null;
 }
 
+/** `useSortable()`'s `transform`/`transition` turned into an inline style —
+ *  applied to the row/card ROOT alongside `dragHandleRef`/`dragAttributes`/
+ *  `dragListeners` (see equipment-rows.tsx's `DragHandleControls` doc
+ *  comment). This is what makes OTHER rows slide out of the way live as a
+ *  drag passes over them (dnd-kit's `verticalListSortingStrategy` computes
+ *  the shift automatically from each row's position in its `SortableContext`
+ *  — no manual reorder-preview logic needed here). Without it, the list sat
+ *  frozen until drop then snapped to the new order all at once. */
+function buildDragStyle(
+  transform: ReturnType<typeof useSortable>["transform"],
+  transition: ReturnType<typeof useSortable>["transition"],
+): React.CSSProperties {
+  return { transform: CSS.Transform.toString(transform), transition };
+}
+
 // ─── Sortable line-item row wrapper ──────────────────────────────────────────
 //
 // Groups convert to drag below via SortableGroupRow/SortableSubHireGroupRow,
@@ -137,9 +153,9 @@ function SortableLineItemRow({
   dragDisabled?: boolean;
 } & Omit<
   React.ComponentProps<typeof LineItemRow>,
-  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled" | "dragStyle" | "isDragging"
 >) {
-  const { setNodeRef, attributes, listeners } = useSortable({
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: sortableId,
     data: { containerId },
     disabled: dragDisabled,
@@ -151,6 +167,8 @@ function SortableLineItemRow({
       dragAttributes={attributes as unknown as Record<string, unknown>}
       dragListeners={listeners as unknown as Record<string, unknown>}
       isDragDisabled={dragDisabled}
+      dragStyle={buildDragStyle(transform, transition)}
+      isDragging={isDragging}
     />
   );
 }
@@ -177,9 +195,9 @@ function SortableGroupRow({
   dragDisabled?: boolean;
 } & Omit<
   React.ComponentProps<typeof GroupRow>,
-  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled" | "dragStyle" | "isDragging"
 >) {
-  const { setNodeRef, attributes, listeners } = useSortable({
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: sortableId,
     data: { containerId },
     disabled: dragDisabled,
@@ -191,6 +209,8 @@ function SortableGroupRow({
       dragAttributes={attributes as unknown as Record<string, unknown>}
       dragListeners={listeners as unknown as Record<string, unknown>}
       isDragDisabled={dragDisabled}
+      dragStyle={buildDragStyle(transform, transition)}
+      isDragging={isDragging}
     />
   );
 }
@@ -206,9 +226,9 @@ function SortableSubHireGroupRow({
   dragDisabled?: boolean;
 } & Omit<
   React.ComponentProps<typeof SubHireGroupRow>,
-  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled" | "dragStyle" | "isDragging"
 >) {
-  const { setNodeRef, attributes, listeners } = useSortable({
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: sortableId,
     data: { containerId },
     disabled: dragDisabled,
@@ -220,6 +240,8 @@ function SortableSubHireGroupRow({
       dragAttributes={attributes as unknown as Record<string, unknown>}
       dragListeners={listeners as unknown as Record<string, unknown>}
       isDragDisabled={dragDisabled}
+      dragStyle={buildDragStyle(transform, transition)}
+      isDragging={isDragging}
     />
   );
 }
@@ -242,9 +264,9 @@ function SortableCategoryRow({
   dragDisabled?: boolean;
 } & Omit<
   React.ComponentProps<typeof CategoryRow>,
-  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled"
+  "dragHandleRef" | "dragAttributes" | "dragListeners" | "isDragDisabled" | "dragStyle" | "isDragging"
 >) {
-  const { setNodeRef, attributes, listeners } = useSortable({
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: sortableId,
     data: { containerId },
     disabled: dragDisabled,
@@ -256,6 +278,8 @@ function SortableCategoryRow({
       dragAttributes={attributes as unknown as Record<string, unknown>}
       dragListeners={listeners as unknown as Record<string, unknown>}
       isDragDisabled={dragDisabled}
+      dragStyle={buildDragStyle(transform, transition)}
+      isDragging={isDragging}
     />
   );
 }
@@ -2052,6 +2076,22 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         // instead of rendering as a small fixed-size chip inside it, which is
         // what keeps it tracking the exact point the user grabbed rather than
         // snapping to a corner.
+        //
+        // dnd-kit's <DragOverlay> renders IN PLACE (no portal of its own —
+        // confirmed reading @dnd-kit/core's source) and relies entirely on
+        // `position: fixed` to visually escape the layout. `<FadeIn>`
+        // (src/app/(app)/projects/[id]/page.tsx wraps the whole page in it)
+        // is a Framer Motion `motion.div` whose `animate={{ y: 0 }}` leaves a
+        // persistent (non-`none`) `transform` style on that ancestor even at
+        // rest — any non-`none` transform establishes a NEW containing block
+        // for `position: fixed` descendants, so the overlay was positioning
+        // itself relative to that page wrapper instead of the viewport. That
+        // silent coordinate-system mismatch (not the row-vs-handle sizing
+        // fixed above) is what made the dragged preview appear to "jump to
+        // the top" disconnected from the cursor. Portaling straight to
+        // `document.body` sidesteps this (and any other transformed
+        // ancestor) entirely, matching dnd-kit's own documented fix for this
+        // exact class of bug.
         return (
           <DndContext
             sensors={dnd.sensors}
@@ -2062,21 +2102,25 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             onDragEnd={dnd.handleDragEnd}
           >
             {content}
-            <DragOverlay>
-              {draggedLineItem ? (
-                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                  {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
-                </div>
-              ) : draggedGroupTitle ? (
-                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                  {draggedGroupTitle}
-                </div>
-              ) : draggedCategoryTitle ? (
-                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                  {draggedCategoryTitle}
-                </div>
-              ) : null}
-            </DragOverlay>
+            {typeof document !== "undefined" &&
+              createPortal(
+                <DragOverlay>
+                  {draggedLineItem ? (
+                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
+                    </div>
+                  ) : draggedGroupTitle ? (
+                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      {draggedGroupTitle}
+                    </div>
+                  ) : draggedCategoryTitle ? (
+                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      {draggedCategoryTitle}
+                    </div>
+                  ) : null}
+                </DragOverlay>,
+                document.body,
+              )}
           </DndContext>
         );
       })()}

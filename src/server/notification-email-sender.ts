@@ -385,7 +385,12 @@ export async function sendNotificationEmails(): Promise<SendNotificationEmailsRe
   const now = new Date();
   const soon = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
+  // A cron sweep has no session, so it doesn't go through the identity
+  // chokepoints that already refuse an archived org (#1075, A5) — filter
+  // explicitly here, or an archived org's members keep getting notification
+  // emails forever.
   const orgs = await prisma.organization.findMany({
+    where: { archivedAt: null },
     select: { id: true, name: true },
   });
 

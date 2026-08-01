@@ -50,9 +50,21 @@ export async function POST(request: Request) {
 
   // 5. Determine org — an explicit ?org= param, else the oldest org (interim
   //    fallback; #1074/A4 replaces both with an opaque per-org webhook token).
+  // This route has no session, so it doesn't go through the identity
+  // chokepoints that already refuse an archived org (#1075, A5) — check
+  // explicitly here instead, for both the param and fallback paths.
   let orgId = new URL(request.url).searchParams.get("org");
-  if (!orgId) {
+  if (orgId) {
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { archivedAt: true },
+    });
+    if (!org || org.archivedAt) {
+      return Response.json({ error: "No organization configured" }, { status: 404 });
+    }
+  } else {
     const org = await prisma.organization.findFirst({
+      where: { archivedAt: null },
       select: { id: true },
       orderBy: { createdAt: "asc" },
     });

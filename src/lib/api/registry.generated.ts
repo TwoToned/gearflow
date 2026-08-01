@@ -37092,6 +37092,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectReadiness.forProject",
+    "module": "projectReadiness",
+    "fn": "forProject",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f75cf9c7cfef7f2e",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines.",
+    "danger": "low",
+    "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projects.create",
     "module": "projects",
     "fn": "create",
@@ -59647,10 +59684,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1142,
-  agentReachable: 558,
-  queries: 402,
+  total: 1143,
+  agentReachable: 559,
+  queries: 403,
   mutations: 740,
-  agentReachableQueries: 287,
+  agentReachableQueries: 288,
   agentReachableMutations: 271,
 } as const;

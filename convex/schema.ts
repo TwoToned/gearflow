@@ -1461,6 +1461,14 @@ export default defineSchema({
     sortOrder: v.number(),
     projectGroupId: v.optional(v.string()),
     subHireGroupId: v.optional(v.string()),
+    // A standalone (non-grouped) top-level line item's slot — lets it share
+    // ONE combined order with project/sub-hire groups inside a category
+    // instead of the two structurally-separate lists this table's group-only
+    // slots used to leave line items in. Only present while the line item is
+    // a standalone member of `projectCategoryId` (moving into a group, or to
+    // a different category, clears this slot the same way a group leaving a
+    // category clears its own).
+    lineItemId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1468,6 +1476,7 @@ export default defineSchema({
     .index("by_projectCategoryId", ["projectCategoryId"])
     .index("by_projectGroupId", ["projectGroupId"])
     .index("by_subHireGroupId", ["subHireGroupId"])
+    .index("by_lineItemId", ["lineItemId"])
     .index("by_projectCategoryId_sortOrder", ["projectCategoryId", "sortOrder"]),
 
   // ProjectGroup

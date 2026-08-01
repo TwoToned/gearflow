@@ -202,6 +202,7 @@ main{max-width:1180px;margin:0 auto;padding:0 24px}
   border-left:3px solid var(--ok);background:var(--paper-2);border-radius:0 10px 10px 0;
   padding:13px 15px;margin:0 0 16px;
 }
+.af-last{margin-bottom:0}
 .autofill-head{
   display:flex;align-items:center;gap:8px;margin:0 0 12px;
   font-size:12px;font-weight:600;color:var(--ok);
@@ -621,7 +622,7 @@ main{max-width:1180px;margin:0 auto;padding:0 24px}
           <div class="autofill">
             <p class="autofill-head">
               <span class="tick" aria-hidden="true">✓</span>
-              We filled these in from Australia — change any of them.
+              Australia sets these — change any of them.
             </p>
             <div class="grid2">
               <div class="field"><label>Currency</label><div class="input input-filled">AUD — Australian dollar</div></div>
@@ -629,11 +630,16 @@ main{max-width:1180px;margin:0 auto;padding:0 24px}
               <div class="field"><label>Tax label</label><div class="input input-filled">GST</div></div>
               <div class="field"><label>Tax rate</label><div class="input input-filled num">10.00%</div></div>
             </div>
+            <div class="field af-last">
+              <label>ABN</label>
+              <input class="input mono" value="61 224 983 011" readonly>
+              <p class="hint">Your business number. Called an ABN here; in New Zealand this asks for an NZBN. Prints on every tax invoice.</p>
+            </div>
           </div>
 
           <div class="grid2">
-            <div class="field"><label>ABN</label><input class="input mono" value="61 224 983 011" readonly></div>
             <div class="field"><label>Phone</label><input class="input" value="(02) 9130 4488" readonly></div>
+            <div class="field"><label>Email on documents</label><input class="input" value="hire@northlight.com.au" readonly></div>
           </div>
           <div class="field">
             <label>Business address</label>
@@ -649,9 +655,10 @@ main{max-width:1180px;margin:0 auto;padding:0 24px}
       </div>
 
       <aside class="notes">
-        <p class="note-hand">One field fills four.</p>
+        <p class="note-hand">One field fills five.</p>
         <ul class="notelist">
-          <li><b>Country is the highest-leverage input in the wizard.</b> It sets currency, time zone, tax label and tax rate in one move.</li>
+          <li><b>Country is the highest-leverage input in the wizard.</b> It sets currency, time zone, tax label, tax rate — and what the business-number field is even called.</li>
+          <li><b>ABN is a label, not a field.</b> The stored value is already a generic business-registration id, so this is a UI change, not a schema one: New Zealand asks for an NZBN, the UK a company number.</li>
           <li>The filled values are <b>shown, editable, and announced</b>. Auto-fill that hides itself reads as a bug.</li>
           <li>Tax rate is <span class="mono">tabular-nums</span> — every number in this app lines up in its column.</li>
         </ul>

@@ -604,7 +604,7 @@ slog. Every screen after the first has **"Skip for now"**.
 | # | Screen | Contents | Blocking? |
 |---|---|---|---|
 | 0 | **Your company** | Name (+ auto-slug, editable). **Creates the org, sets active, mirrors membership.** | **Yes** |
-| 1 | **Where you operate** | Country → *auto-fills* currency, tax rate, tax label, timezone. Email, phone, website, ABN, address (Places autocomplete — `@vis.gl/react-google-maps` is already a dep). | No |
+| 1 | **Where you operate** | Country → *auto-fills* currency, tax rate, tax label, timezone, **and the business-number field's label** (see below). Email, phone, website, business number, address (Places autocomplete — `@vis.gl/react-google-maps` is already a dep). | No |
 | 2 | **Your brand** | Logo, icon, primary/accent/document colour, `documentLogoMode`. **Live quote-header preview** beside the fields. | No |
 | 3 | **How you work** | Project number format (live `peekNextProjectNumber` preview already exists), invoice number format, asset-tag prefix/digits; quote validity days, payment terms days, footer, T&Cs, payment details; **first location**. | No |
 | 4 | **Your team** | Invites with a plain-English role explainer (owner/admin/manager/member/warehouse/viewer). | No |
@@ -615,6 +615,16 @@ slog. Every screen after the first has **"Skip for now"**.
 - **Country is the highest-leverage field in the whole wizard.** One selection fills four
   others (AU → AUD, 10%, "GST", `Australia/Sydney`). Show them filled, editable, and say so
   — auto-fill that hides itself reads as a bug.
+- **ABN is a country-derived *label*, not a fixed field.** It belongs in the same
+  country-driven group: AU asks for an ABN, NZ an NZBN, the UK a company number. The
+  storage is already generic — `OrgSettings.abn`'s own doc comment reads _"Australian
+  Business Number (or local equivalent tax/business registration id)"_ — so this is a UI
+  change, not a schema one. The label (and its format hint/validation) comes from the same
+  country table that yields currency and tax label, which keeps it a single source of truth
+  rather than a second hand-maintained mapping (R-3.1).
+  **Do not** rename the stored field per country; only what the operator is asked for changes.
+- Distinguish the two visually: the four *derived values* render as filled/dimmed, the
+  business number renders as a normal empty input. The label is ours; the value is theirs.
 - **Screen 2 previews the actual document.** Brand settings are abstract until you see the
   quote header. The PDF pipeline is deterministic and layout is fixed per doc type
   (`document-layouts.ts`), so an HTML mock of the header block is honest and cheap.

@@ -337,20 +337,6 @@ export async function adminUnarchiveOrganization(orgId: string) {
   return serialize(updated);
 }
 
-/**
- * Per-org Convex storage usage (#1077, A7) — surfaced on the site-admin org
- * list/drill-down, not quota-enforced. Best-effort: `truncated` means the org
- * has more stored files than the bounded scan covers, so `totalBytes` is a
- * floor past that point (see convex/files.ts's getOrgStorageUsage).
- */
-export async function adminGetOrgStorageUsage(orgId: string) {
-  await requireSiteAdmin();
-  const usage = await (await getConvexClient()).query(api.files.getOrgStorageUsage, {
-    organizationId: orgId,
-  });
-  return serialize(usage);
-}
-
 export async function adminGetOrganizationDetails(orgId: string) {
   await requireSiteAdmin();
 

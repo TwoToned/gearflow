@@ -92,7 +92,11 @@ async function eraseChildren(table: string, indexName: string, parentField: stri
   return total;
 }
 
-async function main() {
+/** Parses argv, fails loudly on any unclassified schema table, and resolves +
+ *  validates the target org (must exist, must already be archived). Split out
+ *  of `main` to keep its own branch count under the R-3.6 ceiling — this is
+ *  every "should we even proceed" check, none of the actual erasure work. */
+async function resolveAndValidateTarget(): Promise<{ id: string; name: string; archivedAt: Date }> {
   const { orgId, confirm } = parseArgs(process.argv.slice(2));
   if (!orgId) {
     throw new Error("Usage: scripts/erase-org.ts <orgId> --confirm <orgId>");
@@ -103,7 +107,6 @@ async function main() {
     );
   }
 
-  // ---- Coverage guard (fail loudly on any unclassified schema table) --------
   const schemaTables = Object.keys(convexSchema.tables);
   assertCoverage(schemaTables);
   if (schemaTables.length !== EXPECTED_TABLE_COUNT) {
@@ -114,7 +117,6 @@ async function main() {
   }
   console.log(`Coverage OK: all ${schemaTables.length} schema tables classified.`);
 
-  // ---- Require the org to already be archived --------------------------------
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: { id: true, name: true, slug: true, archivedAt: true },
@@ -126,6 +128,12 @@ async function main() {
         `erasure only ever runs on something already retired.`,
     );
   }
+  return { id: org.id, name: org.name, archivedAt: org.archivedAt };
+}
+
+async function main() {
+  const org = await resolveAndValidateTarget();
+  const orgId = org.id;
   console.log(`Erasing organization: ${org.name} (${orgId}), archived ${org.archivedAt.toISOString()}`);
 
   // ---- Storage bytes: delete BEFORE the storedFiles records that reference them

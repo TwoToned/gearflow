@@ -19,7 +19,7 @@ import { FlowMascot } from "@/components/ui/flow-mascot";
 import { SearchInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { quoteStatusIntent } from "@/lib/status-colors";
+import { quoteStatusIntent, intentToBadgeStatus } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
 import {
   useNativeOrgFinance,
@@ -34,29 +34,6 @@ import {
 const TILE = "rounded-[var(--r-lg)] border border-line bg-card p-5 shadow-[var(--sh-card)]";
 const HARD_PILL = "bg-out-soft text-t-out";
 const SOFT_PILL = "bg-warn-soft text-warn";
-
-/** Bridge to `Badge`'s status vocabulary — same mapping as
- *  `project-quote-rail.tsx`'s `intentToBadgeStatus` (R-3.1's authoritative
- *  intent map lives in status-colors.ts; this is just the presentational
- *  bridge, kept local like its per-project sibling). */
-function intentToBadgeStatus(
-  intent: ReturnType<typeof quoteStatusIntent>,
-): "ok" | "warn" | "overbooked" | "info" | "primary" | "neutral" {
-  switch (intent) {
-    case "success":
-      return "ok";
-    case "warning":
-      return "warn";
-    case "error":
-      return "overbooked";
-    case "info":
-      return "info";
-    case "primary":
-      return "primary";
-    default:
-      return "neutral";
-  }
-}
 
 function financeTabHref(projectId: string) {
   return `/projects/${projectId}?tab=finance`;

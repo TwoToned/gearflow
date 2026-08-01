@@ -25,7 +25,7 @@ import { useQuoteWrites } from "@/hooks/use-quote-writes";
 import { generateQuoteArtifact } from "@/server/finance-documents";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { quoteStatusIntent } from "@/lib/status-colors";
+import { quoteStatusIntent, intentToBadgeStatus } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
 import { useCanDo, useIsOwner } from "@/lib/use-permissions";
 import { Button } from "@/components/ui/button";
@@ -731,26 +731,6 @@ function ValidityLabel({ validUntil, now }: { validUntil: number; now: number })
   return <span className="text-fg-4">Valid until {validUntilStr}</span>;
 }
 
-/** Bridge to the `Badge` component's `status` prop vocabulary — `info`/`primary`
- *  were added to `Badge` alongside this feature specifically so SENT/ACCEPTED
- *  render in status-colors.ts's own `ColorIntent` vocabulary rather than being
- *  lossily mapped onto the unrelated ok/warn/overbooked set. */
-function intentToBadgeStatus(intent: ReturnType<typeof quoteStatusIntent>): "ok" | "warn" | "overbooked" | "info" | "primary" | "neutral" {
-  switch (intent) {
-    case "success":
-      return "ok";
-    case "warning":
-      return "warn";
-    case "error":
-      return "overbooked";
-    case "info":
-      return "info";
-    case "primary":
-      return "primary";
-    default:
-      return "neutral";
-  }
-}
 
 /** Delete a never-sent draft (#1028) — a plain confirm, no text field, since
  *  nothing outside the company has ever seen this revision. Still a real

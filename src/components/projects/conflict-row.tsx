@@ -1,27 +1,30 @@
 "use client";
 
 /**
- * Reservation conflict banner for the project detail page (Wave 3).
+ * One double-booked asset, with the swap-to-a-free-asset action that resolves
+ * it (Wave 3; re-homed by #1061).
  *
- * Surfaces every double-booked asset on the project and lets the operator
- * resolve each one by swapping the conflicting line item onto a free
- * asset of the same model. Renders nothing when there are no conflicts —
- * zero noise on a clean project.
+ * A "conflict" is a serialized asset booked on this project AND on another
+ * live project whose rental window overlaps — see
+ * `convex/reservationConflicts.ts` for the precise definition.
  *
- * A "conflict" is a serialized asset booked on this project AND on
- * another live project whose rental window overlaps. See
- * src/lib/reservation-conflicts.ts for the precise definition.
+ * This used to be a standalone amber banner above the project tabs. It now
+ * renders inside the Overview tab's Readiness checklist, under the "assets
+ * double-booked" check, so a conflict is one of the project's readiness
+ * signals rather than a competing banner with its own heading. The row keeps
+ * owning the swap: the checklist reports that a problem exists, this component
+ * fixes it.
  */
 
 import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeftRight, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeftRight, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { useConvex, useConvexAuth } from "convex/react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useProjectConflicts, refreshProjectConflicts } from "@/hooks/use-project-conflicts";
+import { refreshProjectConflicts } from "@/hooks/use-project-conflicts";
 import { useReservationSwap } from "@/hooks/use-reservation-swap";
 import { api } from "../../../convex/_generated/api";
 import type {
@@ -30,11 +33,6 @@ import type {
 } from "@/lib/reservation-conflicts-types";
 import { Button } from "@/components/ui/button";
 import { showError } from "@/lib/show-error";
-import { cn } from "@/lib/utils";
-
-interface ProjectConflictsBannerProps {
-  projectId: string;
-}
 
 function SwapPicker({
   conflict,
@@ -116,7 +114,7 @@ function SwapPicker({
   );
 }
 
-function ConflictRow({ conflict, projectId }: { conflict: ReservationConflict; projectId: string }) {
+export function ConflictRow({ conflict, projectId }: { conflict: ReservationConflict; projectId: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="rounded-md border border-amber-500/30 bg-bg-surface">
@@ -148,33 +146,3 @@ function ConflictRow({ conflict, projectId }: { conflict: ReservationConflict; p
   );
 }
 
-export function ProjectConflictsBanner({ projectId }: ProjectConflictsBannerProps) {
-  const { data: conflicts } = useProjectConflicts(projectId);
-
-  const list = (conflicts ?? []) as ReservationConflict[];
-  if (list.length === 0) return null;
-
-  return (
-    <div
-      className={cn(
-        "rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 space-y-2",
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
-        <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
-          {list.length} booking conflict{list.length === 1 ? "" : "s"}
-        </span>
-        <span className="text-xs text-fg-3">
-          — {list.length === 1 ? "this asset is" : "these assets are"} double-booked
-          with an overlapping project
-        </span>
-      </div>
-      <div className="space-y-1.5">
-        {list.map((c) => (
-          <ConflictRow key={c.lineItemId} conflict={c} projectId={projectId} />
-        ))}
-      </div>
-    </div>
-  );
-}

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **#1061** — Projects now open on an **Overview** tab — the job's home page.
+  It leads with a **Readiness** checklist that tells you, in one place, whether
+  the job can actually go out: gear that's short for the window, assets
+  double-booked with another job, crew who haven't confirmed or services still
+  short-staffed, and lines nobody has priced. Every check stays visible, so a
+  clean project reads as verified rather than as a panel that didn't load, and
+  collapses to a single line when everything passes. Each problem carries its
+  own fix inline — swap a double-booked asset, recalculate stale rates, or jump
+  straight to the tab that resolves it.
+
+  The current **quote** and **invoicing** position now sit side by side on the
+  same page, each with just the one action you'd most likely take next: send the
+  open draft or record the client's answer; raise the next invoice or record a
+  payment. A sent quote always shows the frozen amount the client was given,
+  never live pricing, and the invoicing headline is what's actually outstanding
+  rather than the invoice total.
+
+  Schedule, location, team and activity moved off the page-wide sidebar into
+  this tab, so **Equipment and every other tab now run full width** — about
+  296px more room for the equipment table.
+
 - **#948** — Clients can now have multiple contacts (name/role/email/phone/notes,
   one exclusive primary), fully optional. Projects can select a specific contact
   (defaults to the client's primary) that PDFs, WooCommerce matching, and search
@@ -34,6 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validity days) on a new "Documents" card at `/settings/branding`. Quotes now show
   a T&Cs block (omitted when unset) and a real computed "valid until" date instead
   of a static "valid for 30 days" blurb.
+
+### Changed
+
+- **#1061** — The Finance tab is now the ledger rather than the front door: all
+  quote revisions, invoices, payments, the financial summary and operational
+  P&L still live there, and it remains the only place to recall, correct,
+  reprice, issue, void, credit or push to Xero. The reservation-conflict and
+  stale-pricing banners that used to sit above the tabs are now rows in the
+  Overview tab's Readiness checklist, carrying the same actions.
 
 ### Fixed
 

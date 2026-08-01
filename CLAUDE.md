@@ -488,6 +488,25 @@ client a different document under the same name (#987). Three rules follow:
 - **Never remove** `DomPatch`, `GlobalErrorBoundary`, or `OverlayLockReset` from `layout.tsx` — they are critical for navigation stability
 - **Dropdown/menu UI is Radix** (`@radix-ui/react-dropdown-menu`): `DropdownMenuItem` supports both `onSelect` and `onClick` (the codebase uses `onClick`). The codebase wraps `DropdownMenuLabel` in `<DropdownMenuGroup>` for consistency. Test menus by actually OPENING them, not just rendering the closed trigger.
 
+### The project detail's tabs are CONTROLLED, and Overview is the landing tab
+`/projects/[id]` opens on **Overview** — the project's home (#1061,
+FEATUREDOCS/69). Adding a tab means adding it to `VALID_TABS` in
+`src/app/(app)/projects/[id]/page.tsx`, or a `?tab=` deep link to it silently
+falls back to Overview. `Tabs` is controlled (`value`/`onValueChange`, not
+`defaultValue`) because the Overview readiness checklist navigates you to the
+tab that fixes a failing check — don't revert it to uncontrolled.
+
+Overview owns the project's **at-a-glance** state: the readiness checklist, the
+current quote + invoicing cards, the money strip, and the context rail
+(Schedule/Location/Team/Activity) that used to be a page-wide sidebar. Every
+other tab is **full width** — don't re-add a `DetailLayout`/`DetailSidebar`
+wrapper around the tab set. The lifecycle stepper and lock strip stay ABOVE the
+tabs: they change what you can do in every tab, so they're page-level context.
+
+A readiness check that can't run reports `unknown`, never a pass — a dateless
+project's gear check says "not checked" rather than a false all-clear, and
+`unknown` never counts toward "all clear".
+
 ### Select — pass explicit label children to `SelectValue`
 Radix `SelectValue` auto-mirrors the selected item's text, but the codebase
 convention is to **pass explicit children anyway** (belt-and-braces): it guarantees

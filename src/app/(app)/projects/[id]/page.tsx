@@ -14,16 +14,11 @@ import {
   Pencil,
   Archive,
   Trash2,
-  Mail,
-  Phone,
-  MapPin,
-  CalendarDays,
   FileText,
   ChevronDown,
   Copy,
   BookTemplate,
   MoreHorizontal,
-  Navigation,
   Warehouse,
   ChevronRight,
   ClipboardList,
@@ -39,9 +34,12 @@ import { ProjectLockChip } from "@/components/projects/project-lock-chip";
 import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
-import { ProjectConflictsBanner } from "@/components/projects/project-conflicts-banner";
+import { ProjectReadinessPanel, type ProjectTab } from "@/components/projects/project-readiness-panel";
+import {
+  ProjectContextRail,
+  type ProjectContextRailProject,
+} from "@/components/projects/project-context-rail";
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
-import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -76,11 +74,9 @@ import { ConfirmStatusImpactDialog } from "@/components/projects/confirm-status-
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
-import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
-import { ProjectActivityFeed } from "@/components/collaboration/activity-feed";
-import { formatCurrency, formatDate } from "@/lib/formatters";
+import { formatCurrency } from "@/lib/formatters";
 import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
 import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
 import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
@@ -149,11 +145,15 @@ export default function ProjectDetailPage({
   useMiraPageContext({ entityType: "project", entityId: id });
 
   // #992 (Phase F) — org Finance section rows deep-link here via `?tab=finance`.
-  // Uncontrolled `Tabs` (no onValueChange wiring needed elsewhere), so this only
-  // needs to seed the initial tab on mount.
-  const VALID_TABS = ["equipment", "labour", "finance", "tasks", "notes", "files"] as const;
+  // #1061 made `Tabs` CONTROLLED: the Overview tab's readiness checklist sends
+  // you to the tab that fixes a failing check ("Open crew" → labour), which
+  // needs a setter the uncontrolled form doesn't give.
+  const VALID_TABS = ["overview", "equipment", "labour", "finance", "tasks", "notes", "files"] as const;
   const requestedTab = searchParams.get("tab");
-  const initialTab = (VALID_TABS as readonly string[]).includes(requestedTab ?? "") ? requestedTab! : "equipment";
+  // Overview is always the landing tab (#1061) — the project's home. A `?tab=`
+  // deep link still wins, so the org Finance section's rows land where they meant to.
+  const initialTab = (VALID_TABS as readonly string[]).includes(requestedTab ?? "") ? requestedTab! : "overview";
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const [dupMode, setDupMode] = useState<"duplicate" | "template" | null>(null);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
@@ -504,17 +504,15 @@ export default function ProjectDetailPage({
             onCancel={confirmGate.cancelPending}
           />
 
-          {/* ── Summary Strip ──────────────────────────────────────── */}
-          {!project.isTemplate && (
-            <ProjectSummaryStrip
-              projectId={id}
-              equipmentRevenue={project.equipmentRevenue as number | null}
-              total={project.total as number | null}
-            />
-          )}
+          {/* #1061 — the summary strip moved into the Overview tab, where the
+              rest of the project's at-a-glance state now lives. Keeping it
+              above the tabs made every tab pay for context only the home tab
+              actually needs.
 
-          {/* Reservation conflict banner — hides itself when clean */}
-          {!project.isTemplate && <ProjectConflictsBanner projectId={id} />}
+              #1061 — the conflicts banner that used to sit here is now a row in
+              the Overview tab's Readiness checklist, alongside the gear, crew
+              and pricing checks. One place to look, and a clean project reads
+              as verified rather than as a banner that failed to appear. */}
 
           {/* #990 (Phase E) surface 2 — the shared lock strip, mounted ONCE at
               the top of the project detail (not inside a tab). Replaces the
@@ -530,17 +528,21 @@ export default function ProjectDetailPage({
             />
           )}
 
-          {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <DetailLayout>
-            {/* Main content */}
-            <DetailMain>
-              <Tabs defaultValue={initialTab}>
+          {/* ── Tabs ───────────────────────────────────────────────────
+              #1061: FULL WIDTH. The 2-column DetailLayout that used to wrap
+              this put a ~296px sidebar (Schedule · Location · Team · Activity)
+              on EVERY tab — context the equipment table was paying for on every
+              row. Those sections now live in the Overview tab, which is the one
+              place that context is actually the content. */}
+          <div>
+              <Tabs value={activeTab} onValueChange={setActiveTab}>
                 {/* Tab selector + the active tab's primary action share one row.
                     The Equipment tab portals its "Add ▾" menu into the right-hand
                     slot (mirrors how the services panel places its action inline
                     with the tabs). The slot stays empty for other tabs. */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <TabsList>
+                    <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="equipment">Equipment</TabsTrigger>
                     <TabsTrigger value="labour">Labour &amp; logistics</TabsTrigger>
                     {!project.isTemplate && (
@@ -552,6 +554,44 @@ export default function ProjectDetailPage({
                   </TabsList>
                   <div ref={setEquipmentAddSlot} className="flex items-center gap-2" />
                 </div>
+
+                {/* ── Overview Tab (#1061) — the project's home ───────────
+                    Read the state, then pick a tab to work in. Two columns:
+                    what needs doing (readiness → the live quote and invoice →
+                    money → tasks) on the left, and the context that used to be
+                    the page-wide sidebar on the right. Order is deliberate —
+                    readiness leads because it's the only section that can tell
+                    you to stop. */}
+                <TabsContent value="overview">
+                  <div className="grid gap-4 pt-4 lg:grid-cols-[minmax(0,1fr)_296px] lg:items-start">
+                    <div className="flex min-w-0 flex-col gap-4">
+                      {!project.isTemplate && orgId && (
+                        <ProjectReadinessPanel
+                          projectId={id}
+                          orgId={orgId}
+                          onNavigateTab={(tab: ProjectTab) => setActiveTab(tab)}
+                        />
+                      )}
+                      {!project.isTemplate && (
+                        <ProjectSummaryStrip
+                          projectId={id}
+                          equipmentRevenue={project.equipmentRevenue as number | null}
+                          total={project.total as number | null}
+                        />
+                      )}
+                    </div>
+
+                    {/* Context rail — the sections that used to ride along on
+                        every tab. Stacks under the main column below `lg`. */}
+                    <div className="flex min-w-0 flex-col gap-4">
+                      <ProjectContextRail
+                        projectId={id}
+                        orgId={orgId}
+                        project={project as ProjectContextRailProject}
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
 
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
@@ -741,148 +781,7 @@ export default function ProjectDetailPage({
                   </div>
                 </TabsContent>
               </Tabs>
-            </DetailMain>
-
-            {/* ── Sidebar (lean: Schedule · Location · Team · Activity) ─ */}
-            <DetailSidebar>
-                {/* Schedule */}
-                {!project.isTemplate && (
-                  <SidebarSection title="Schedule">
-                    <div className="space-y-1 text-ui-text">
-                      <div className="flex justify-between gap-2">
-                        <span className="text-muted flex items-center gap-1">
-                          <CalendarDays className="h-3.5 w-3.5" />
-                          Rental
-                        </span>
-                        <span className="font-medium text-ink-2 tabular-nums text-right">
-                          {formatDate(project.rentalStartDate as string | null)} &ndash;{" "}
-                          {formatDate(project.rentalEndDate as string | null)}
-                        </span>
-                      </div>
-                      {/* WS2 (#941) — the PROJECT window rows render only when set (no
-                          stack of "—" placeholders); loadIn/loadOut are the deprecated
-                          fallback for a project the backfill hasn't reached yet. If
-                          nothing is set at all, show one faint line instead. */}
-                      {(() => {
-                        const scheduleRows = [
-                          {
-                            label: "Project starts",
-                            date: project.projectStartDate ?? project.loadInDate,
-                            time: project.projectStartTime ?? project.loadInTime,
-                          },
-                          {
-                            label: "Project ends",
-                            date: project.projectEndDate ?? project.loadOutDate,
-                            time: project.projectEndTime ?? project.loadOutTime,
-                          },
-                        ].filter((r) => r.date != null);
-                        if (scheduleRows.length === 0) {
-                          return <p className="text-caption text-faint">No project window set — same as rental</p>;
-                        }
-                        return scheduleRows.map((r) => (
-                          <div key={r.label} className="flex justify-between gap-2">
-                            <span className="text-muted">{r.label}</span>
-                            <span className="font-medium text-ink-2 tabular-nums text-right">
-                              {formatDate(r.date as string | null)}
-                              {r.time ? ` ${r.time as string}` : ""}
-                            </span>
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  </SidebarSection>
-                )}
-
-                {/* Location & Site Contact */}
-                <SidebarSection title="Location">
-                  <div className="space-y-1 text-ui-text">
-                    {project.location ? (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-3.5 w-3.5 text-muted shrink-0" />
-                          <span className="font-medium text-ink-2">{project.location.name}</span>
-                        </div>
-                        {project.location.address && (
-                          <p className="text-muted pl-5.5">{project.location.address}</p>
-                        )}
-                        {project.location.latitude != null && project.location.longitude != null && (
-                          <a
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${project.location.latitude},${project.location.longitude}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={cn("inline-flex items-center gap-1.5 text-caption text-link hover:underline pl-5.5 rounded-sm", focusRing)}
-                          >
-                            <Navigation className="h-3 w-3" />
-                            Get directions
-                          </a>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-caption text-faint">No location set</p>
-                    )}
-                    {project.siteContactName && (
-                      <div className="mt-2 pt-2 border-t border-line">
-                        <p className="font-medium text-ink-2">{project.siteContactName}</p>
-                        {project.siteContactPhone && (
-                          <div className="flex items-center gap-2 text-muted">
-                            <Phone className="h-3.5 w-3.5 shrink-0" />
-                            <span>{project.siteContactPhone}</span>
-                          </div>
-                        )}
-                        {project.siteContactEmail && (
-                          <div className="flex items-center gap-2 text-muted">
-                            <Mail className="h-3.5 w-3.5 shrink-0" />
-                            <span>{project.siteContactEmail}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </SidebarSection>
-
-                {/* Team — client + project managers (drop the nested PM panel's
-                    own divider so only the section rule shows) */}
-                <SidebarSection title="Team" className="[&_>div:last-child]:border-b-0 [&_>div:last-child]:pb-0">
-                  {project.client ? (
-                    <Link
-                      href={`/clients/${project.client.id}`}
-                      className={cn("font-medium text-ink hover:text-link hover:underline rounded-sm text-ui-text", focusRing)}
-                    >
-                      {project.client.name}
-                    </Link>
-                  ) : (
-                    <p className="text-caption text-faint">No client</p>
-                  )}
-                  <ProjectManagersPanel
-                    projectId={id}
-                    managers={
-                      (project.projectManagers as {
-                        userId: string;
-                        user: {
-                          id: string;
-                          name: string | null;
-                          email: string;
-                          image: string | null;
-                        };
-                      }[]) ?? []
-                    }
-                  />
-                </SidebarSection>
-
-                {/* Activity — realtime collaboration feed */}
-                {orgId && !project.isTemplate && (
-                  <SidebarSection title="Activity" divider={false}>
-                    <ProjectActivityFeed
-                      orgId={orgId}
-                      entityType="project"
-                      entityId={id}
-                      limit={20}
-                      emptyText="No collaboration activity yet."
-                    />
-                  </SidebarSection>
-                )}
-            </DetailSidebar>
-          </DetailLayout>
+          </div>
         </div>
       </FadeIn>
 

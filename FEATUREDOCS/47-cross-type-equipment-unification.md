@@ -448,6 +448,44 @@ the dragged node itself was measured. `equipment-tab.tsx` wraps its
 any other transformed ancestor) entirely — do not remove that portal, and if
 another `<DragOverlay>` is ever added elsewhere in the app, portal it too.
 
+### The DragOverlay is a live DOM clone of the row, not a hand-built summary
+
+The floating preview shown while dragging is a genuine visual copy of the row
+you grabbed — same checkbox, name, type badge, qty/price/total cells — not a
+simplified "item name + qty + total" chip. Earlier iterations tried the chip
+approach and it read as "the drag lost the rest of the table info," which is
+the wrong tradeoff: the point of a drag preview is to look like the thing
+you're moving.
+
+`use-equipment-dnd.ts`'s `cloneDragRow` does this by deep-cloning the actual
+row/card DOM node (`event.activatorEvent.target.closest("[data-drag-row]")`)
+in `handleDragStart`, BEFORE `setActiveDragId` re-renders the source row into
+its dimmed `isDragging` state — cloning first is what captures the row at
+full opacity instead of already-dimmed. Every draggable row root
+(`GroupRow`/`SubHireGroupRow`/`CategoryRow`/`LineItemRow` in
+`equipment-rows.tsx`, `GroupCard`/`CategoryCardHeading` in
+`equipment-cards.tsx`) carries a `data-drag-row="true"` marker for this to
+find, tag-agnostic (`<tr>` on desktop, `<div>` on mobile cards).
+
+A cloned `<TableRow>` needs its per-`<td>` widths frozen explicitly:
+`equipment-tab.tsx`'s `DragRowOverlayContent` re-wraps the clone in its own
+one-row `<table>` (a bare `<tr>` can't render outside a table/tbody), but a
+standalone one-row table has no sibling rows to inform the browser's table
+layout algorithm — it would size each cell to that cell's own content alone,
+disagreeing with the live table's multi-row-informed column widths.
+`cloneDragRow` measures each source `<td>`'s `getBoundingClientRect().width`
+and sets it inline (`boxSizing: border-box`) on the matching cloned `<td>`
+BEFORE the source is detached from anything, sidestepping the mismatch
+entirely. The clone's own overall width is captured the same way (a detached
+node's `getBoundingClientRect()` is always zero, so the width has to travel
+alongside the node — see `DraggedRowClone`, not be re-measured after cloning).
+
+`onDragCancel` (window resize, Escape, tab visibility change — dnd-kit
+cancels the drag without ever calling `onDragEnd` for any of these) clears
+`activeDragId`/`draggedRowClone` the same as a normal drop; without it the
+DragOverlay would stay stuck open and the source row stuck dimmed until the
+next full remount.
+
 ### Drop Matrix 8C summary
 
 | Source ↓ \ Dest → | ProjectCategory | ProjectGroup | SubHireGroup | Uncat | SubHire (top) |

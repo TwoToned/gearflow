@@ -85,4 +85,6 @@ export type QuoteAcceptValues = z.input<typeof quoteAcceptSchema>;
 export type QuoteDeclineValues = z.input<typeof quoteDeclineSchema>;
 export type QuoteCorrectValues = z.input<typeof quoteCorrectSchema>;
 export type QuoteDeleteRecalledValues = z.input<typeof quoteDeleteRecalledSchema>;
-export type QuoteSaveVersionValues = z.input<typeof quoteSaveVersionSchema>;
+// No `QuoteSaveVersionValues` export yet — `saveVersionNative` has no UI/hook
+// consumer in this phase (see convex/projectVersionsWrites.ts); add one
+// alongside `use-quote-writes.ts`'s `saveVersion()` when Phase 3/4 wires it up.

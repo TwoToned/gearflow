@@ -41,14 +41,20 @@ describe("getActiveOrganizationId — re-validates the session's active org (#10
 
     expect(orgId).toBe("org_A");
     expect(memberFindFirst).toHaveBeenCalledWith({
-      where: { organizationId: "org_A", userId: "user_1" },
+      where: {
+        organizationId: "org_A",
+        userId: "user_1",
+        organization: { archivedAt: null },
+      },
       select: { id: true },
     });
   });
 
   it("never trusts activeOrganizationId alone (R-9.3) — no live Member row resolves to null", async () => {
-    // e.g. the session claims an org the caller was removed from, or an
-    // archived/forged value — activeOrganizationId being set is not enough.
+    // e.g. the session claims an org the caller was removed from, an archived
+    // org (#1075, A5 — the archivedAt: null filter is what makes the query
+    // itself return null for one), or a forged value — activeOrganizationId
+    // being set is not enough.
     getSession.mockResolvedValue(sessionWithActiveOrg("org_B"));
     memberFindFirst.mockResolvedValue(null);
 

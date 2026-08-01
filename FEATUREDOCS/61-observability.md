@@ -93,7 +93,7 @@ mount** (not a build-arg) so the write-scoped personal API key never lands in an
 
 ## Latency budgets (T-9 query timing, T-P6 per-endpoint SLOs)
 
-Two Prisma/Convex-level extensions time every call and report crossings of the README.md
+Two Prisma/Convex-level extensions time every call and report crossings of the `docs/budgets.md`
 R-0.4 budget registry thresholds through `captureServerEvent()` (`src/lib/posthog-server.ts`,
 a general-purpose sibling of `captureServerException`). Both share the same two-tier severity
 shape (structured log always; PostHog event only past the "slow" line; `incident: true` past
@@ -142,7 +142,7 @@ fix per #802's own triage; re-check all three alerts after a few days of traffic
 
 ## Vendor cost budget tracking (T-P4, R-9.12/#764, #831)
 
-The README.md R-0.4 budget registry registers a $15/mo ceiling each for Resend and Google
+The `docs/budgets.md` R-0.4 registry registers a $15/mo ceiling each for Resend and Google
 Maps (plus a Convex plan cap), but until #764 nothing measured usage against them — a Major
 compliance gap (zero enforcement/alerting). `src/lib/vendor-cost-tracking.ts` adds the
 `vendor_usage` PostHog event (`AnalyticsEvent.VendorUsage`, `{ vendor, operation, units }`) as
@@ -223,7 +223,7 @@ function-level log-stream (needs interactive Convex dashboard access).
 ## Crash-free sessions (T-13)
 
 A "Crash-free sessions (T-13)" PostHog insight (id `10376263`) computes
-`(1 - unique_session($exception) / unique_session($pageview)) * 100` — the README.md R-0.4
+`(1 - unique_session($exception) / unique_session($pageview)) * 100` — the `docs/budgets.md` R-0.4
 budget registry's ≥99.5% floor, with a paired alert (fires below 99.5%). Created 2026-07-23
 after retiring the never-fired T-P7 `queue_lag` alert to free a slot under the project's
 5-alert PostHog plan cap — see `docs/convex-observability-runbook.md` for the full slot

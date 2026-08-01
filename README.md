@@ -1,319 +1,112 @@
-<!-- Owner: Jayden Nawotka · Last reviewed: 2026-07-18 (review quarterly — POLICY.md R-5.5) -->
+<!-- Owner: Jayden Nawotka · Last reviewed: 2026-08-01 (review quarterly — POLICY.md R-5.5) -->
 <div align="center">
 
-# RVLT Flow
-[![Build & Deploy](https://github.com/RVLT-Labs/rvlt-flow/actions/workflows/build-image.yml/badge.svg)](https://github.com/RVLT-Labs/rvlt-flow/actions/workflows/build-image.yml)
+<br>
 
-### Equipment & Rental Management for Production Companies
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/rvlt-flow-wordmark-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/brand/rvlt-flow-wordmark-light.svg">
+  <img src="docs/brand/rvlt-flow-wordmark-dark.svg" alt="RVLT Flow" width="360">
+</picture>
 
-Stop wrestling with spreadsheets and generic inventory tools.\
-RVLT Flow is built from the ground up for AV, theatre, and live event companies\
-who need to track gear, manage projects, and run a warehouse — not fight their software.
+<br>
+<br>
 
-[Get Started](#-getting-started) · [Features](#-what-you-get) · [Tech Stack](#%EF%B8%8F-tech-stack) · [Environment Variables](#-environment-variables)
+### Ops software for live event production.
+
+Jobs, crew, warehouse, gear, compliance.\
+One system, built from the actual job flow.
+
+<br>
+
+[![flow.rvlt.app](https://img.shields.io/badge/live-flow.rvlt.app-E0363D?style=flat-square&labelColor=141210)](https://flow.rvlt.app)
+[![Build](https://img.shields.io/github/actions/workflow/status/TwoToned/gearflow/build-image.yml?branch=main&style=flat-square&labelColor=141210&color=4FD888&label=build)](https://github.com/TwoToned/gearflow/actions/workflows/build-image.yml)
+[![BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-9E9483?style=flat-square&labelColor=141210)](./LICENSE)
+
+<br>
 
 </div>
 
 ---
 
-## The Problem
+## What it is
 
-Production companies live and die by their gear. You need to know what's available, where it is, who has it, and when it's coming back — across dozens of projects running simultaneously. Most teams end up duct-taping together spreadsheets, whiteboards, and half-forgotten text messages.
+RVLT Flow tracks what you own, where it is, which job it's on, and when it's back. It quotes
+the job, picks it, sends it out, checks it in, tests it, and invoices it — off one gear list,
+so the docket and the quote can't disagree.
 
-RVLT Flow replaces all of that with a single platform that handles the **entire equipment lifecycle**: from the moment gear arrives in your warehouse to the moment it's checked back in, tested, and shelved for the next show.
+It's for AV, theatre and live event companies. Small to mid — the ones currently doing it on
+software written for warehouses full of identical boxes, or on a spreadsheet only one person
+understands.
 
----
+<br>
 
-## What You Get
+## The job
 
-### Inventory That Actually Works
-Track every piece of gear with auto-generated asset tags, QR codes, and full lifecycle status. Handle both **serialized assets** (individual items like a console or projector) and **bulk assets** (cables, clamps, gaff tape) with stock levels and reorder alerts. Group gear into **Kits** — road cases and racks that check out as a single unit with one scan. Attach photos, manuals, and documents to any item. Tag everything with free-form labels for fast filtering. Import and export via CSV when you need to move data in bulk.
+Every job runs the same track. Availability is checked against it before you commit, so a
+double-booking turns up at the quote instead of on the loading dock.
 
-### Project & Rental Lifecycle
-Take a project from **Enquiry → Quote → Confirmed → Checked Out → On Site → Returned → Invoiced**. Add line items for equipment, labour, transport, and services with per-day, weekly, flat, or hourly pricing. Drag-and-drop line item groups keep quotes organized. Real-time **availability checking** warns you before you double-book, with reduced-stock detection for gear that's in maintenance or marked lost. Overbooking is allowed with explicit confirmation when you need to make it work anyway. Save any project as a **template** to reuse equipment lists on future shows.
+```mermaid
+%%{init: {'theme':'base','fontFamily':'Segoe UI, Roboto, Helvetica Neue, Arial, Liberation Sans, sans-serif','themeVariables':{'background':'#141210','mainBkg':'#211C17','primaryColor':'#211C17','primaryTextColor':'#F5EFE2','primaryBorderColor':'#E0363D','lineColor':'#9E9483','edgeLabelBackground':'#141210','tertiaryTextColor':'#9E9483','fontSize':'16px'}}}%%
+flowchart LR
+    A(Enquiry) --> B(Quote) --> C(Confirmed) --> D(Checked out) --> E(On site) --> F(Returned) --> G(Invoiced)
+    G -. "tested, shelved, ready for the next show" .-> A
+```
 
-### Project Services & Scheduling
-Attach structured operational tasks to projects — **deliveries, pickups, bump in/out, labour calls, and more**. Each service has its own status flow, date/time, location, and crew assignments. Create service templates so your standard show workflow is one click away. Services auto-sync with line items and crew schedules.
+The quote, packing list, delivery docket, return sheet and invoice all come off that same list.
+Nothing gets retyped. Overbook it anyway if the job needs it — you just have to say so on the
+way past.
 
-### Crew Management
-Manage your team of **employees, freelancers, contractors, and volunteers** with roles, skills, and certification tracking. Assign crew to project services and see everyone's availability on a **14-day Gantt-style planner**. Send offers, track acceptances, log timesheets with approval workflows, and generate **Call Sheet PDFs**. Each crew member gets a personal **iCal feed** they can subscribe to. Expiring certifications trigger automatic notifications.
+<br>
 
-### Warehouse Floor, Meet Your Phone
-Your crew gets a **PWA with barcode scanning** — scan an asset tag, hear the chime, move on. Check out to projects, check in with condition tracking (Good / Damaged / Missing). Pull sheets give pickers an interactive checklist. Kit barcodes check out the entire container and all its contents in one scan. Conflict detection blocks checkout if an asset is already out on another project. Works on any phone with a camera — no app store required.
+## What's in it
 
-### Professional Documents in Seconds
-Generate **Quotes, Invoices, Packing Lists, Return Sheets, and Delivery Dockets** as polished PDFs with your org logo, grouped line items, kit breakdowns, line item notes, and overbooking badges. Kit contents render as indented children across all document types. Ready to email to clients or hand to the warehouse.
-
-### Test & Tag Compliance (AS/NZS 3760:2022)
-Full equipment register with visual inspection and electrical test records — earth continuity, insulation resistance, leakage current, polarity, and RCD trip time. Track test intervals per equipment class, get notified when items are due, and generate **10 report types** including full register, overdue items, test session logs, item history, due schedule, tester activity, and compliance certificates in PDF and CSV.
-
-### Maintenance & Repairs
-Schedule and track repairs, preventative maintenance, firmware updates, inspections, and cleaning across multiple assets in a single record. Track status from Scheduled through to Completed with pass/fail/conditional results. Overdue items surface automatically in your notification center.
-
-### Clients, Suppliers & Locations
-Manage **clients** (companies, individuals, venues, production houses) with contact details, billing info, and payment terms. Keep a **supplier directory** for purchase tracking and subhire, with full purchase order workflows from draft through to received. Organize **locations** in a hierarchy — warehouses, venues, vehicles, offsite storage — with address autocomplete, **interactive maps**, and get-directions links.
-
-### Teams & Permissions
-Multi-tenant from day one. Each organization gets isolated data, configurable branding, and a role hierarchy — **Owner, Admin, Manager, Member, Viewer** — with granular permissions across 14 resource types. Two-factor authentication with backup codes, passkey support, team invitations, and a full audit trail logging every write operation. Export and import entire organizations for backup or migration.
-
-### Dashboard & Notifications
-A live dashboard shows active projects, asset counts, upcoming shows, and recent activity. The **notification center** surfaces overdue returns, upcoming projects, maintenance due, low stock alerts, pending crew offers, expiring certifications, and submitted timesheets — so nothing slips through the cracks.
-
-### Search That Gets Out of Your Way
-A global command palette searches across every entity type. Type `@` to jump to any page with drill-down into children. Type a date to open the availability calendar. Use `/` for slash commands. Full keyboard navigation with `Shift+arrows`, `Tab`, and `Escape`.
-
-### Mobile-First PWA
-Installable on iOS and Android home screens. Proper safe area handling for notch, Dynamic Island, and home indicator. Bottom navigation with quick access to Home, Assets, Scan, Projects, and Warehouse. Touch-optimized with 44px minimum tap targets and responsive tables that progressively hide columns on smaller screens.
-
-### Site Administration
-A dedicated **admin panel** for platform-wide management — create and manage organizations, promote or ban users, force-disable 2FA, configure registration policies (open, invite-only, or disabled), set global tax rates and currency, and customize platform branding with your own name, icon, and logo.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
+|  |  |
 |---|---|
-| Framework | **Next.js 16** — App Router, Turbopack |
-| Language | **TypeScript** — strict mode |
-| UI | **Tailwind CSS v4** + **shadcn/ui** (Radix for overlays, Base UI for sidebar/breadcrumb) |
-| Database | **Convex** (sole copy of domain data) + **PostgreSQL/Prisma v7** for Better Auth + activity log |
-| Auth | **Better Auth** — Organizations, 2FA, Passkeys, Admin |
-| State | **Convex** `useQuery`/`useMutation` (reactive) + **React Hook Form** + **Zod** |
-| PDF | **pdfme** (`@pdfme/generator` + custom plugins) |
-| Storage | **Convex file storage** |
-| Email | **Resend** |
-| PWA | **@ducanh2912/next-pwa** |
-| Maps | **Google Maps** (`@vis.gl/react-google-maps`) |
+| **Inventory** | Serialised and bulk stock, auto asset tags, QR codes, kits that check out on one scan, photos and manuals on any item |
+| **Jobs** | Line items priced per day, week, flat or hour. Groups, discounts, sub-hire, templates for the shows you do every year |
+| **Warehouse** | Scan-based check-out and check-in on any phone with a camera. Pull sheets, condition on return, conflict blocking. No app store |
+| **Crew** | Staff, freelancers and contractors. Skills, certs, offers, timesheets, a 14-day planner, call sheets, personal iCal feeds |
+| **Scheduling** | Bump in and out, deliveries, pickups, labour calls. Each with its own times, location, status and crew |
+| **Documents** | Quotes, invoices, packing lists, return sheets, delivery dockets. Rendered once and stored — the copy you sent the client is the copy you keep |
+| **Test & tag** | AS/NZS 3760:2022 register, electrical test records, due schedules, 10 report types, compliance certificates |
+| **Maintenance** | Repairs, preventative work, firmware, inspections. Overdue items surface themselves |
+| **Money** | Costs, charges and margin on every line, visible to the people whose role says they can see it |
+| **Teams** | Multi-tenant. Five roles, granular permissions, 2FA, passkeys, and an audit trail on every write |
+| **Agents** | REST, MCP and OAuth 2.1, plus Mira in-app. An agent gets exactly the access the person asking already had |
 
----
+<br>
 
-## Getting Started
+## Under the hood
 
-### Prerequisites
-
-- **Node.js 20+**
-- **pnpm** (this repo is pnpm-only — a committed `pnpm-lock.yaml` is the single lockfile)
-- **Docker** (recommended — for PostgreSQL) or bring your own Postgres
-
-### 1. Clone & install
-
-```bash
-git clone https://github.com/RVLT-Labs/rvlt-flow.git
-cd rvlt-flow
-pnpm install
-```
-
-### 2. Start the database & file storage
-
-The included Docker Compose file spins up everything you need:
-
-```bash
-cd docker-db
-docker compose up -d
-cd ..
-```
-
-This gives you:
-
-| Service | URL | Credentials |
-|---|---|---|
-| PostgreSQL | `localhost:5432` | `postgres` / `postgres` / db: `gearflow` |
-
-File uploads are stored in **Convex file storage** — no S3/MinIO bucket to create.
-
-### 3. Configure your environment
-
-Create a `.env` file in the project root. Here's a working local setup:
-
-```env
-# ── Database ──────────────────────────────────────────────
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/gearflow"
-
-# ── Auth ──────────────────────────────────────────────────
-BETTER_AUTH_SECRET="change-me-to-a-random-64-char-string"
-BETTER_AUTH_URL="http://localhost:3000"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-
-# ── Email ─────────────────────────────────────────────────
-RESEND_API_KEY="re_your_api_key"
-EMAIL_FROM="onboarding@resend.dev"
-
-# ── Maps ──────────────────────────────────────────────────
-NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="your-google-maps-api-key"
-
-# ── Convex (primary backend for all domain data) ─────────
-CONVEX_DEPLOY_KEY="your-convex-deploy-key"
-NEXT_PUBLIC_CONVEX_URL="https://your-deployment.convex.cloud"
-
-# ── Admin Bootstrap ───────────────────────────────────────
-SITE_ADMIN_REGISTRATION_ENABLED="true"
-SITE_ADMIN_SECRET_TOKEN="pick-a-secret-token"
-```
-
-> **Tip:** Get a free Resend API key at [resend.com](https://resend.com). During development you can use their sandbox domain.
-
-### 4. Set up Convex
-
-RVLT Flow uses [Convex](https://convex.dev) as the primary datastore for all
-domain data (assets, projects, warehouse, etc.) — Postgres only holds Better
-Auth and the audit log. Create a Convex project, then push the schema/functions:
-
-```bash
-pnpm exec convex dev --once
-```
-
-### 5. Set up Postgres (Better Auth + activity log)
-
-```bash
-pnpm exec prisma migrate deploy
-pnpm exec prisma generate
-```
-
-### 6. Launch
-
-```bash
-pnpm dev
-```
-
-Open [localhost:3000](http://localhost:3000) and register your first account.
-
-To make yourself a **site admin**, visit:
-```
-http://localhost:3000/register/admin?token=pick-a-secret-token
-```
-(Use whatever token you set in `SITE_ADMIN_SECRET_TOKEN`.)
-
----
-
-## Environment Variables
-
-### Required
-
-| Variable | Description |
+|  |  |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `BETTER_AUTH_SECRET` | Session encryption key — use a long random string |
-| `BETTER_AUTH_URL` | Base URL for auth callbacks (`http://localhost:3000` for dev) |
-| `NEXT_PUBLIC_APP_URL` | Public-facing app URL |
-| `RESEND_API_KEY` | API key from [resend.com](https://resend.com) |
-| `EMAIL_FROM` | Sender email address |
-| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Maps API key (Maps JavaScript API + Places API (New)) |
-| `CONVEX_DEPLOY_KEY` | Convex Cloud deploy key |
-| `NEXT_PUBLIC_CONVEX_URL` | Convex deployment URL the app connects to |
+| **Next.js 16** · React 19 · TypeScript strict | App Router, Turbopack |
+| **Convex** | Sole copy of domain data. Reactive — the warehouse screen updates when the office edits the job |
+| **PostgreSQL + Prisma v7** | Auth and audit log only |
+| **Better Auth** | Organizations, 2FA, passkeys |
+| **Tailwind v4** + shadcn/ui | Dark espresso, one red accent, hard offset shadows |
+| **pdfme** · **Resend** · **Google Maps** · **PostHog** | Documents, email, addresses, observability |
 
-### Optional
+Governed by [`POLICY.md`](./POLICY.md) — numbered RFC-2119 rules. Coverage, bundle size, query
+latency and crash-free sessions are CI-enforced budgets that can only ratchet down.
 
-| Variable | Description |
-|---|---|
-| `UPLOAD_MAX_SIZE_MB` | Max file upload size (default: `50`) |
-| `PASSKEY_RP_ID` | WebAuthn relying party ID |
-| `PLATFORM_NAME` | Custom platform display name |
-| `SITE_ADMIN_REGISTRATION_ENABLED` | Enable admin registration route (`true` / `false`) |
-| `SITE_ADMIN_SECRET_TOKEN` | Token for `/register/admin?token=...` |
+<br>
 
 ---
 
-## Development Commands
+<div align="center">
 
-```bash
-pnpm dev                                  # Dev server with Turbopack
-pnpm build                                # Production build + type check
-pnpm lint                                 # ESLint
-pnpm test                                 # Run unit tests (Vitest)
-pnpm test:coverage                        # Unit tests with coverage report
-pnpm test:integration                     # Integration tests
+**[See it running →](https://flow.rvlt.app)**
 
-pnpm exec prisma migrate dev --name <name> # Create + apply a migration
-pnpm exec prisma generate                 # Regenerate Prisma client
-pnpm exec prisma studio                   # Browse your data in the browser
-```
+<br>
 
-### Project Structure
+*Building on it?* [Architecture](./ARCHITECTURE.md) · [Contributing](./CONTRIBUTING.md) · [Design system](./DESIGN.md) · [Feature docs](./FEATUREDOCS/) · [Budgets](./docs/budgets.md)
 
-```
-convex/                    # Primary backend — domain data, mutations, queries
-├── schema.ts              # Convex table definitions
-└── *.ts / *Writes.ts      # Queries + browser-direct mutations, per domain
+<br>
 
-src/
-├── app/
-│   ├── (auth)/            # Login, register, onboarding
-│   ├── (app)/             # Main app behind auth
-│   │   ├── dashboard/     # Overview & activity
-│   │   ├── assets/        # Inventory management
-│   │   ├── projects/      # Rental lifecycle
-│   │   ├── warehouse/     # Check out / check in
-│   │   ├── kits/          # Container management
-│   │   ├── maintenance/   # Repairs & scheduling
-│   │   ├── test-and-tag/  # Compliance testing
-│   │   ├── clients/       # Client directory
-│   │   ├── suppliers/     # Vendor directory
-│   │   ├── crew/          # Crew management
-│   │   └── settings/      # Org config & team
-│   └── (admin)/           # Site admin panel
-├── components/            # React components
-├── lib/                   # Auth, validation, utilities
-├── server/                # Server actions — permanent carve-outs only
-│                          # (auth, SSO, webhooks, site admin — not domain CRUD)
-└── generated/             # Prisma client (auto-generated, gitignored)
-```
+Source-available under the [Business Source License 1.1](./LICENSE). Use it, change it,
+self-host it, run your rental company on it. Don't resell it as a hosted service.\
+Each version goes Apache 2.0 four years after release.
 
----
-
-## Governance & Documentation
-
-This repository is governed by [`POLICY.md`](./POLICY.md) — the Codebase Management &
-Hygiene Policy (RFC-2119 rules, threshold registry, audit procedure).
-
-- **Policy profile: `WEB`** (R-0.1) — production web/app service. No payment provider,
-  so §8.5 Billing is N/A.
-- **Contributing:** see [`CONTRIBUTING.md`](./CONTRIBUTING.md) — toolchain, branching,
-  commit rules, and the declared naming conventions (R-3.9).
-- **Exceptions:** temporary, expiring deviations are recorded in
-  [`docs/exceptions.md`](./docs/exceptions.md) (§15).
-- **Audits:** compliance audits live in [`docs/audits/`](./docs/audits/) (R-14.2). The
-  current baseline is `docs/audits/2026-07-18-hygiene-policy-baseline-audit.md`.
-
-**Where further docs live:** [`ARCHITECTURE.md`](./ARCHITECTURE.md) (overview + links),
-[`FEATUREDOCS/`](./FEATUREDOCS/) (per-feature docs), [`CLAUDE.md`](./CLAUDE.md) (agent/dev
-conventions), [`DESIGN.md`](./DESIGN.md) (design system), and [`docs/`](./docs/) (designs,
-roadmap, runbooks, audits).
-
-### Budget registry (R-0.4)
-
-This repo **accepts the POLICY.md §13 threshold defaults**, with the following registered
-overrides and project-specific (§13B) values:
-
-| Threshold | Value | Rationale |
-|---|---|---|
-| T-5 Coverage | **48% floor** (default 80%) | Honest current baseline (~49–50%) over the declared scope, **enforced in CI as a ratchet** (`test:coverage`); climbing toward 80%. |
-| T-7 Core Web Vitals p75 | **default** (LCP ≤ 2.5 s, INP ≤ 200 ms, CLS ≤ 0.1) | Accept the §13 default. **Alerted in PostHog** at 80% of each bound (LCP 2000 ms / INP 160 ms / CLS 0.08) via the "CWV p75 — LCP/INP/CLS" insights + alerts on `$web_vitals`; bundle-size half of R-8.1.5 enforced in CI (`bundle-ratchet`, blocking). |
-| T-8 Route JS/CSS budget | **default** (≤ 170 KB soft, 300 KB hard) | Accept the §13 default. JS: **enforced in CI as a blocking regression ratchet** against the entry route (`bundle-ratchet.mjs`, R-8.1.5) — currently ~280 KB, under the 300 KB hard cap but over the 170 KB soft target (accepted gap, not yet worth a dedicated reduction project; the ratchet blocks it from growing further). CSS: **enforced in CI as a blocking 50 KB gzip cap** (`size-limit`, `.size-limit.json`, R-8.7.5) — currently ~29 KB, well under. |
-| T-9 Interactive query latency | **default** (p95 < 100 ms; > 1 s = incident) | Accept the §13 default for interactive request paths. Instrumented (`src/lib/prisma-query-timing.ts`, R-8.3.2/#623) — emits `slow_query` past 100 ms, flags `incident` past 1 s. **Alerted in PostHog**: "slow_query p95 above 1000ms" fires if the p95 duration of already-slow queries crosses the 1 s incident line. |
-| T-P1 Audit-log retention | **2 years** | Activity log (`activityLogs`) retained 24 months for operational/dispute history. |
-| T-P2 PII retention | **Active relationship + 12 months** *(confirmed 2026-07-22)* | Client/crew/user PII kept for the active business relationship, purged 12 months after account/org deletion. Deletion path tracked in R-8.12.2. |
-| T-P3 Backup retention | **90 days** | Daily Convex export retained 90 days (`.github/workflows/convex-backup.yml`). |
-| T-P4 Monthly cost budget (metered) | **Maps $15 · Resend $15 · Convex plan cap** *(confirmed 2026-07-22)* | Ceilings for the metered vendors. **Usage tracked on both Resend send paths** (2026-07-23 #764, extended 2026-07-24 #831): a `vendor_usage` PostHog event fires per billable Resend send — the direct path (`src/lib/email.ts`) and the Convex-scheduled path (`convex/emailActions.ts`'s `deliver`, via `convex/lib/vendorUsage.ts` since `convex/` can't import the Next-only PostHog client) — and per Maps Autocomplete/Place Details request (`src/components/ui/address-input.tsx`). The "Vendor usage (T-P4)" monthly-review insight (owner Jayden Nawotka) and **80%-alerting are both NOT yet wired** — covered by the dated §15 exception in `docs/exceptions.md` (R-9.12), pending live event volume and either a persistent monthly counter or a PostHog query-capable key (only the write-only ingestion key is configured); target lines worked out in `src/lib/vendor-cost-tracking.ts` (Resend 2,400 sends/mo, Maps $12/mo) for whichever lands first. The PostHog plan's 5-alert cap (see `docs/convex-observability-runbook.md`) is also already full. See FEATUREDOCS/61. |
-| T-P5 Max flaky-quarantine size | **10 tests** | Quarantine caps at 10; beyond that the suite is failing, not flaky. |
-| T-P6 Per-endpoint p95 SLOs | **300 ms API · 1 s page** | Interactive-endpoint targets. Instrumented (`src/lib/convex-op-timing.ts`, R-9.11/R-8.9.6/#623) — emits `convex_op_latency` past 300 ms, flags `incident` past 1 s. **Alerted in PostHog**: "convex_op_latency p95 above 1000ms" fires if the p95 duration of already-slow ops crosses the 1 s incident line. **The agent-accessible API (#998) inherits this SLO for free**: both Convex clients the dispatcher uses (`src/lib/api/agent-client.ts`'s per-request agent client, `src/lib/convex-client.ts`'s service client used for the idempotency ledger + request log) are `withConvexOpTiming`-wrapped, same as every other Convex call site — no separate instrumentation needed. **MCP (#999) inherits it too, transitively**: every MCP tool call ends at the SAME `dispatch()` the REST layer uses, so there is no third client to instrument. **The OAuth adapter (#1003) inherits it the same way**: `/oauth/authorize`, `/api/v1/oauth/{register,token,revoke}` all call Convex through the same `getConvexClient()` service client — no fourth client, no separate instrumentation. |
-| T-P7 Queue lag/age alert | **> 5 minutes** | Instrumented (`src/lib/queue-lag-timing.ts`, wired into the webhook delivery cron, R-9.10/#623) — emits `queue_lag` to PostHog past the 5-min threshold. **PostHog alert retired 2026-07-23** to free a slot for T-13 under the 5-alert plan cap (it had never fired) — the insight/event are unaffected, still measured and visible. See `docs/convex-observability-runbook.md` to restore it. |
-| T-13 Crash-free sessions | **default** (≥ 99.5%) | Accept the §13 default. **Measured and alerted** via the "Crash-free sessions (T-13)" PostHog insight (`(1 - unique_session($exception) / unique_session($pageview)) * 100`, R-8.9.4/#776) — alert fires below 99.5%, created 2026-07-23 after retiring the T-P7 alert to free a slot under the plan's 5-alert cap. |
-| T-P8 API/MCP per-key request-log retention | **30 days** *(Phase 2, #998)* | `apiRequestLog` rows are aged out by the daily `api-request-log-retention` cron (`convex/crons.ts` → `apiRequestLog.purgeOlderThan`, `REQUEST_LOG_RETENTION_MS` in `convex/apiRequestLog.ts`), bounded at 2000 rows/tick. Args are PII-redacted before they reach the table (R-8.12.4, `src/lib/api/request-log-redact.ts`) — this is a fixed retention window, not a continuous budget, so no R-9.2 80% alert applies (same as T-P1/T-P3's retention rows). |
-| T-P9 Agent API rate limits | **agentRead 600/min (burst 200) · agentWrite 60/min (burst 20)** *(Phase 1, #997)* | Deliberately below the human `browserWrite` 300/min (T-9's table) so a runaway agent is throttled long before a human notices — numbers live once in `convex/lib/rateLimits.ts` (R-3.1), read by both the rate limiter and `/api/v1/whoami`. A rejection fires the `api.rate_limited` webhook event (FEATUREDOCS/58, Phase 8 #1004) and is visible in the per-key request log with `errorCode: "RateLimited"` — no separate PostHog 80%-threshold alert is wired yet (open gap, tracked here per R-9.2 rather than silently omitted). |
-
-Values marked ⚠ *provisional* satisfy the R-0.4 registration requirement but carry business/legal
-judgment — the owner should confirm them. Registration binds the value; several rules still require
-the *enforcement* to be wired (alerting/monitoring), tracked as their own findings.
-
----
-
-## License
-
-RVLT Flow is source-available under the [Business Source License 1.1](./LICENSE).
-
-**You can** freely use, modify, and self-host RVLT Flow — including for commercial purposes (e.g., running your own rental business).
-
-**You cannot** offer RVLT Flow as a hosted or managed service to third parties.
-
-Each version converts to [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) four years after its release.
+</div>

@@ -58,6 +58,7 @@ import {
   type DragStartEvent,
   type DragOverEvent,
   type DragEndEvent,
+  type DragCancelEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers";
@@ -660,18 +661,69 @@ export interface UseEquipmentDndArgs {
  *  layout-agnostic. */
 const dragModifiers = [restrictToVerticalAxis, restrictToWindowEdges];
 
+/** A cloned drag-row DOM node plus its measured width — the clone itself is
+ *  detached (never mounted), so `getBoundingClientRect()` on it always
+ *  returns zeroes; the width has to be captured from the still-mounted
+ *  SOURCE at clone time and carried alongside it. */
+export interface DraggedRowClone {
+  node: HTMLElement;
+  width: number;
+}
+
+/**
+ * Clone the actual row/card DOM node being dragged, so the DragOverlay can
+ * render a pixel-accurate copy of the real thing instead of a hand-built
+ * summary chip (the "it should look exactly the same" ask). Walks up from
+ * the pointerdown target to the nearest `[data-drag-row]` ancestor
+ * (equipment-rows.tsx/equipment-cards.tsx tag every draggable row root with
+ * this) and deep-clones it BEFORE React re-renders the source row into its
+ * dimmed `isDragging` state, so the clone captures the row at full opacity.
+ *
+ * `<TableRow>` clones need their per-cell widths frozen explicitly: a
+ * standalone one-row `<table>` has no sibling rows to inform the browser's
+ * table layout algorithm, so it would size each `<td>` to that cell's own
+ * content instead of matching the live table's column widths. Locking each
+ * cloned cell's width (measured from the source, which is still mounted at
+ * clone time) to a `px` value sidesteps that entirely.
+ */
+function cloneDragRow(target: EventTarget | null): DraggedRowClone | null {
+  if (!(target instanceof Element)) return null;
+  const source = target.closest<HTMLElement>("[data-drag-row]");
+  if (!source) return null;
+  const clone = source.cloneNode(true) as HTMLElement;
+  const width = source.getBoundingClientRect().width;
+  if (source.tagName === "TR") {
+    const sourceCells = Array.from(source.children);
+    const clonedCells = Array.from(clone.children);
+    sourceCells.forEach((cell, i) => {
+      const clonedCell = clonedCells[i];
+      if (!(clonedCell instanceof HTMLElement)) return;
+      clonedCell.style.width = `${cell.getBoundingClientRect().width}px`;
+      clonedCell.style.boxSizing = "border-box";
+    });
+  }
+  return { node: clone, width };
+}
+
 export interface UseEquipmentDndResult {
   sensors: ReturnType<typeof useSensors>;
   /** Pass to `<DndContext modifiers={modifiers}>` — see `dragModifiers`'s
    *  doc comment for why these two, and why they apply uniformly. */
   modifiers: typeof dragModifiers;
   activeDragId: string | null;
+  /** A deep clone of the row/card DOM node being dragged, captured at
+   *  drag-start — render this inside `<DragOverlay>` (wrapped in a
+   *  matching-width `<table>` for `<tr>` clones) so the floating preview is
+   *  a pixel-accurate copy of the real row, not a hand-built summary. Null
+   *  when nothing is being dragged. */
+  draggedRowClone: DraggedRowClone | null;
   /** The `over.id` currently being hovered when the Drop Matrix disallows it
    *  — null otherwise. Lets the caller render invalid-drop styling. */
   invalidOverId: string | null;
   handleDragStart: (event: DragStartEvent) => void;
   handleDragOver: (event: DragOverEvent) => void;
   handleDragEnd: (event: DragEndEvent) => void;
+  handleDragCancel: (event: DragCancelEvent) => void;
   orderOverlay: ReadonlyMap<string, OptimisticOrderEdit>;
   /** Groups' sibling of `orderOverlay` — see `use-native-line-item-writes.ts`'s
    *  `GroupOrderEdit` / `applyGroupOrderOverlay`. */
@@ -718,6 +770,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
   const sensors = useSensors(pointerSensor, keyboardSensor);
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [draggedRowClone, setDraggedRowClone] = useState<DraggedRowClone | null>(null);
   const [invalidOverId, setInvalidOverId] = useState<string | null>(null);
   const [orderOverlay, setOrderOverlay] = useState<ReadonlyMap<string, OptimisticOrderEdit>>(
     () => new Map(),
@@ -809,6 +862,10 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    // Clone BEFORE flipping activeDragId — that state flip is what re-renders
+    // the source row into its dimmed `isDragging` state, so the clone must be
+    // taken first to capture the row at full opacity.
+    setDraggedRowClone(cloneDragRow(event.activatorEvent?.target ?? null));
     setActiveDragId(String(event.active.id));
   }, []);
 
@@ -988,9 +1045,20 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     [categoriesRef, uncategorizedItemsRef, uncategorizedProjectGroupsRef, justifiedReorder, justifiedMove, onSettled],
   );
 
+  // dnd-kit cancels a drag (Escape, window resize, tab visibility change)
+  // without ever calling onDragEnd — without this, activeDragId/
+  // draggedRowClone would stay stuck set, leaving the DragOverlay open and
+  // the source row dimmed indefinitely.
+  const handleDragCancel = useCallback(() => {
+    setActiveDragId(null);
+    setDraggedRowClone(null);
+    setInvalidOverId(null);
+  }, []);
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDragId(null);
+      setDraggedRowClone(null);
       setInvalidOverId(null);
 
       const activeSortableId = String(event.active.id);
@@ -1021,10 +1089,12 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     sensors,
     modifiers: dragModifiers,
     activeDragId,
+    draggedRowClone,
     invalidOverId,
     handleDragStart,
     handleDragOver,
     handleDragEnd,
+    handleDragCancel,
     orderOverlay,
     groupOrderOverlay,
     categoryOrderOverlay,

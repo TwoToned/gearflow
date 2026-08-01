@@ -5,7 +5,7 @@ import { captureServerEvent } from "@/lib/posthog-server";
 import { AnalyticsEvent } from "@/lib/analytics";
 
 /**
- * T-9 interactive-path latency budget (README.md R-0.4): p95 < 100ms is the
+ * T-9 interactive-path latency budget (docs/budgets.md, R-0.4): p95 < 100ms is the
  * "slow" line, > 1s is an incident. Analytics/batch/report paths register
  * their own budgets per R-0.4 — this extension has no way to distinguish an
  * interactive request from a batch job, so it flags every query against the

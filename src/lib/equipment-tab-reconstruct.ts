@@ -326,6 +326,17 @@ export function reconstructProjectCategories(bundle: EquipmentTabBundleData): Ca
   const slotBySubHireGroupId = new Map(
     bundle.categorySlots.filter((s) => s.subHireGroupId).map((s) => [s.subHireGroupId!, s]),
   );
+  const slotByLineItemId = new Map(
+    bundle.categorySlots.filter((s) => s.lineItemId).map((s) => [s.lineItemId!, s]),
+  );
+  // A standalone line item with no real CategorySlot yet (never explicitly
+  // reordered against a group) falls back to this offset + its own sortOrder
+  // — reliably bigger than any real slot's sortOrder (those are small
+  // per-category ints minted 0, 1, 2… by the reorder mutation), so an
+  // unslotted line item always renders AFTER every slotted group, matching
+  // today's "groups first, then standalone items" convention until a user
+  // actually drags one into a new combined position.
+  const LINE_ITEM_FALLBACK_OFFSET = 1_000_000;
 
   // Sub-hire groups (categorized) + their items, keyed for assembly.
   const subHireById = new Map(bundle.subHires.map((s) => [s.id, mapSubHire(s)]));
@@ -401,6 +412,8 @@ export function reconstructProjectCategories(bundle: EquipmentTabBundleData): Ca
         buildSubHireGroupData(sg, subHireById, itemsByGroupId, lineItemsBySubHireGroupId, ctx),
       );
 
+      const catStandaloneLineItems = lineItemsByCatId.get(cat.id) ?? [];
+
       const mixedGroups: MixedGroupSlot[] = [
         ...catGroups.map((g) => ({
           kind: "project" as const,
@@ -412,6 +425,11 @@ export function reconstructProjectCategories(bundle: EquipmentTabBundleData): Ca
           sortOrder: slotBySubHireGroupId.get(sg.id)?.sortOrder ?? sg.sortOrder ?? 0,
           subHireGroupId: sg.id,
         })),
+        ...catStandaloneLineItems.map((li) => ({
+          kind: "lineItem" as const,
+          sortOrder: slotByLineItemId.get(li.id)?.sortOrder ?? LINE_ITEM_FALLBACK_OFFSET + (li.sortOrder ?? 0),
+          lineItemId: li.id,
+        })),
       ].sort((a, b) => a.sortOrder - b.sortOrder);
 
       return {
@@ -420,7 +438,7 @@ export function reconstructProjectCategories(bundle: EquipmentTabBundleData): Ca
         sortOrder: cat.sortOrder,
         groups: catGroups,
         subHireGroupTargets: catSubHireGroups,
-        lineItems: attachScope(lineItemsByCatId.get(cat.id) ?? [], ctx),
+        lineItems: attachScope(catStandaloneLineItems, ctx),
         mixedGroups,
       };
     });

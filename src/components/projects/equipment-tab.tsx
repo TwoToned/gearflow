@@ -130,6 +130,26 @@ function buildDragStyle(
   return { transform: CSS.Transform.toString(transform), transition };
 }
 
+/** DragOverlay preview for a dragged project group — title/qty/total math
+ *  mirrors GroupRow's own display (equipment-rows.tsx) so the floating
+ *  preview agrees with the real row. Extracted out of the `draggedGroup`
+ *  lookup (equipment-tab.tsx render body) so ITS branch count stays low. */
+function previewProjectGroup(g: GroupData | undefined): { title: string; qty: number; total: number | null } | null {
+  if (!g) return null;
+  const priceVal = g.price != null ? Number(g.price) : null;
+  const discountVal = g.discount != null ? Number(g.discount) : 0;
+  const total = priceVal != null ? Math.max(0, priceVal * g.quantity - discountVal) : null;
+  return { title: g.title, qty: g.quantity, total };
+}
+
+/** Sibling of `previewProjectGroup` for a dragged sub-hire group — total
+ *  math mirrors SubHireGroupRow's own display. */
+function previewSubHireGroup(g: SubHireGroupData | undefined): { title: string; qty: number; total: number | null } | null {
+  if (!g) return null;
+  const chargeVal = g.charge != null ? Number(g.charge) : null;
+  return { title: g.title, qty: g.quantity, total: chargeVal != null ? chargeVal * g.quantity : null };
+}
+
 // ─── Sortable line-item row wrapper ──────────────────────────────────────────
 //
 // Groups convert to drag below via SortableGroupRow/SortableSubHireGroupRow,
@@ -1216,24 +1236,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
   })();
 
   // DragOverlay content for a dragged GROUP (project group or sub-hire
-  // group) — just its title, the simplest label consistent with the
-  // line-item overlay above. Looked up the same way, from the same
-  // reconstructed tree the rows render from.
-  const draggedGroupTitle = (() => {
+  // group) — title + qty/total, same "read as the real row" fidelity as
+  // draggedLineItem above (a name-only chip was the "loses the rest of the
+  // table info" complaint — the whole point of dragging IS to see what
+  // you're moving). Looked up the same way, from the same reconstructed tree
+  // the rows render from. Totals mirror GroupRow's/SubHireGroupRow's own
+  // display math (equipment-rows.tsx) so the preview agrees with the row —
+  // computed by previewProjectGroup/previewSubHireGroup (module scope, below
+  // the component) so this lookup's own branch count stays low.
+  const draggedGroup = (() => {
     const id = dnd.activeDragId;
     if (!id) return null;
     if (id.startsWith("grp-")) {
-      const bareId = id.slice(4);
       const allProjectGroups = [...typedCategories.flatMap((cat) => cat.groups), ...orphanProjectGroups];
-      return allProjectGroups.find((g) => g.id === bareId)?.title ?? null;
+      return previewProjectGroup(allProjectGroups.find((group) => group.id === id.slice(4)));
     }
     if (id.startsWith("shg-")) {
-      const bareId = id.slice(4);
       const allSubHireGroups: SubHireGroupData[] = [
         ...typedCategories.flatMap((cat) => cat.subHireGroupTargets ?? []),
         ...orphanSubHireGroups,
       ];
-      return allSubHireGroups.find((g) => g.id === bareId)?.title ?? null;
+      return previewSubHireGroup(allSubHireGroups.find((group) => group.id === id.slice(4)));
     }
     return null;
   })();
@@ -2106,12 +2129,26 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
               createPortal(
                 <DragOverlay>
                   {draggedLineItem ? (
-                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                      {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
+                    <div className="flex h-full w-full cursor-grabbing items-center justify-between gap-3 rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      <span className="min-w-0 truncate font-medium">
+                        {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 text-caption text-muted tabular-nums">
+                        <span>Qty {draggedLineItem.quantity}</span>
+                        {draggedLineItem.lineTotal != null && (
+                          <span className="t-mono text-ink-2">{formatCurrency(Number(draggedLineItem.lineTotal))}</span>
+                        )}
+                      </span>
                     </div>
-                  ) : draggedGroupTitle ? (
-                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                      {draggedGroupTitle}
+                  ) : draggedGroup ? (
+                    <div className="flex h-full w-full cursor-grabbing items-center justify-between gap-3 rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                      <span className="min-w-0 truncate font-medium">{draggedGroup.title}</span>
+                      <span className="flex shrink-0 items-center gap-2 text-caption text-muted tabular-nums">
+                        <span>Qty {draggedGroup.qty}</span>
+                        {draggedGroup.total != null && (
+                          <span className="t-mono text-ink-2">{formatCurrency(draggedGroup.total)}</span>
+                        )}
+                      </span>
                     </div>
                   ) : draggedCategoryTitle ? (
                     <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">

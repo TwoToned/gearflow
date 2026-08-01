@@ -4539,6 +4539,75 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "backfillProjectLiveRevision.backfillProjectLiveRevisionPage",
+    "module": "backfillProjectLiveRevision",
+    "fn": "backfillProjectLiveRevisionPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "335ee6659d6f036f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillProjectLiveRevision.verifyProjectLiveRevision",
+    "module": "backfillProjectLiveRevision",
+    "fn": "verifyProjectLiveRevision",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e9753884d189782",
+    "returnsSha": "78f77546a6eb9474",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "backfillProjectWindow.backfillProjectWindowPage",
     "module": "backfillProjectWindow",
     "fn": "backfillProjectWindowPage",
@@ -36004,7 +36073,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "10dcd4479672ec61",
+    "returnsSha": "72679d602255aaf2",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -41056,6 +41125,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectVersionsWrites.saveVersionNative",
+    "module": "projectVersionsWrites",
+    "fn": "saveVersionNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "label",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "04b4167687bfce0d",
+    "returnsSha": "a1b0844cadca4f9d",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -59684,10 +59815,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1143,
-  agentReachable: 559,
-  queries: 403,
-  mutations: 740,
+  total: 1146,
+  agentReachable: 560,
+  queries: 404,
+  mutations: 742,
   agentReachableQueries: 288,
-  agentReachableMutations: 271,
+  agentReachableMutations: 272,
 } as const;

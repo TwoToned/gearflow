@@ -19,6 +19,7 @@ function noopHandlers() {
     onDecline: vi.fn(),
     onRecall: vi.fn(),
     onDeleteDraft: vi.fn(),
+    onEditLabel: vi.fn(),
   };
 }
 
@@ -44,34 +45,34 @@ describe("quoteRowFlags", () => {
 });
 
 describe("standardQuoteRowActions", () => {
-  it("offers Mark accepted (only) on a SENT, unprotected revision", () => {
+  it("offers Mark accepted on a SENT, unprotected revision", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "SENT", sentAt: 1 });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["accept", "decline", "recall"]);
+    expect(keys(actions)).toEqual(["rename", "accept", "decline", "recall"]);
   });
 
   it("hides Recall (but keeps Decline) once the revision is protected", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "SENT", sentAt: 1, protected: true });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["accept", "decline"]);
+    expect(keys(actions)).toEqual(["rename", "accept", "decline"]);
   });
 
   it("offers Unapprove on an ACCEPTED revision, not Mark accepted again", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "ACCEPTED", sentAt: 1 });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["unaccept"]);
+    expect(keys(actions)).toEqual(["rename", "unaccept"]);
   });
 
-  it("offers only Delete draft on a never-sent draft", () => {
+  it("offers Delete draft on a never-sent draft", () => {
     const flags = quoteRowFlags({ id: "q1", version: 1, effectiveStatus: "DRAFT" });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["delete-draft"]);
-    expect(actions[0].destructive).toBe(true);
+    expect(keys(actions)).toEqual(["rename", "delete-draft"]);
+    expect(actions[1].destructive).toBe(true);
   });
 
-  it("offers nothing on a SUPERSEDED revision", () => {
+  it("offers only Rename version on a SUPERSEDED revision (#1097 — rename is unconditional)", () => {
     const flags = quoteRowFlags({ id: "q1", version: 1, effectiveStatus: "SUPERSEDED", sentAt: 1 });
-    expect(standardQuoteRowActions(flags, noopHandlers())).toEqual([]);
+    expect(keys(standardQuoteRowActions(flags, noopHandlers()))).toEqual(["rename"]);
   });
 });
 

@@ -189,6 +189,7 @@ import type * as notificationDismissalsWrites from "../notificationDismissalsWri
 import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as oauthAuthorizationCodes from "../oauthAuthorizationCodes.js";
 import type * as oauthClients from "../oauthClients.js";
+import type * as orgErasure from "../orgErasure.js";
 import type * as orgExport from "../orgExport.js";
 import type * as orgSettings from "../orgSettings.js";
 import type * as overbooking from "../overbooking.js";
@@ -466,6 +467,7 @@ declare const fullApi: ApiFromModules<{
   notificationEmailLogs: typeof notificationEmailLogs;
   oauthAuthorizationCodes: typeof oauthAuthorizationCodes;
   oauthClients: typeof oauthClients;
+  orgErasure: typeof orgErasure;
   orgExport: typeof orgExport;
   orgSettings: typeof orgSettings;
   overbooking: typeof overbooking;

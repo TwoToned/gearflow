@@ -372,7 +372,10 @@ export default defineSchema({
     fileName: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   })
-    .index("by_storageId", ["storageId"]),
+    .index("by_storageId", ["storageId"])
+    // Storage-visibility (#1077, A7): per-org byte usage on the site-admin org
+    // list — surfaced, not quota-enforced. See convex/files.ts's getOrgStorageUsage.
+    .index("by_organizationId", ["organizationId"]),
 
   // Webhook — outbound event endpoints (docs/designs/webhooks.md). The delivery
   // WORKER (HTTP send, HMAC signing, cron) stays in Next.js server code; only the

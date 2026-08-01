@@ -120,4 +120,34 @@ describe("enforceBrowserWriteLimit — per-user browser-direct budget", () => {
       .mutation(api.assetWrites.updateNotesNative, { ...notesArgs(999), actor: { userId: "user_2", userName: "Bob" } });
     expect(res.ok).toBe(true);
   });
+
+  // #1077 (A7): the bucket key was widened from bare userId to (orgId, userId) —
+  // a multi-org user (possible since A2's org switcher) must not have their
+  // budget bleed across orgs. Same person, same asset id coincidentally reused
+  // in a second org, drains ORG's bucket then proves ORG_2 is untouched.
+  test("the budget is per-(org,user) — the same user's burst in one org does not limit them in another", async () => {
+    const t = makeT();
+    const ORG_2 = "org_2";
+    await seedAssetAndMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", {
+        id: "a2", organizationId: ORG_2, modelId: "m1", assetTag: "TAG-2",
+        status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("members", { id: "mem3", organizationId: ORG_2, userId: USER, role: "member" });
+    });
+    // Drain the SAME user's bucket in ORG.
+    for (let i = 0; i < CAPACITY; i++) {
+      await t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(i));
+    }
+    await expectRateLimitedWithin(
+      (i) => t.withIdentity(asUser(ORG)).mutation(api.assetWrites.updateNotesNative, notesArgs(i)),
+      CAPACITY,
+    );
+    // The same user, switched to ORG_2, still has a full bucket.
+    const res = await t
+      .withIdentity(asUser(ORG_2))
+      .mutation(api.assetWrites.updateNotesNative, { ...notesArgs(999), id: "a2", orgId: ORG_2 });
+    expect(res.ok).toBe(true);
+  });
 });

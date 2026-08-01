@@ -213,3 +213,51 @@ describe("computeProjectPricingReadiness", () => {
     expect(r.unpricedCount).toBe(0);
   });
 });
+
+describe("service confirmation", () => {
+  const svc = (id: string, status?: string): BoardService => ({
+    id,
+    projectId: "p1",
+    title: "Svc " + id,
+    date: DAY,
+    crewCountRequired: null,
+    status,
+  });
+
+  test("PLANNED and status-less services count as not confirmed", () => {
+    const r = computeProjectCrewReadiness("p1", [], [svc("a", "PLANNED"), svc("b")], ME);
+    expect(r.unconfirmedServices.map((s) => s.id)).toEqual(["a", "b"]);
+    expect(r.activeServiceCount).toBe(2);
+  });
+
+  test("work already underway or finished is past confirmation, not a nag", () => {
+    const r = computeProjectCrewReadiness(
+      "p1",
+      [],
+      [svc("a", "CONFIRMED"), svc("b", "IN_PROGRESS"), svc("c", "COMPLETED")],
+      ME,
+    );
+    expect(r.unconfirmedServices).toHaveLength(0);
+    expect(r.activeServiceCount).toBe(3);
+  });
+
+  test("a CANCELLED service is settled-no — out of both the flag and the denominator", () => {
+    const r = computeProjectCrewReadiness("p1", [], [svc("a", "CANCELLED"), svc("b", "PLANNED")], ME);
+    expect(r.unconfirmedServices.map((s) => s.id)).toEqual(["b"]);
+    expect(r.activeServiceCount).toBe(1);
+  });
+
+  test("another project's services never leak in", () => {
+    const foreign: BoardService = { ...svc("x", "PLANNED"), projectId: "p2" };
+    const r = computeProjectCrewReadiness("p1", [], [foreign], ME);
+    expect(r.unconfirmedServices).toHaveLength(0);
+    expect(r.activeServiceCount).toBe(0);
+  });
+
+  test("unconfirmed services are ordered soonest-first", () => {
+    const later: BoardService = { ...svc("later", "PLANNED"), date: 9 * DAY };
+    const sooner: BoardService = { ...svc("sooner", "PLANNED"), date: 2 * DAY };
+    const r = computeProjectCrewReadiness("p1", [], [later, sooner], ME);
+    expect(r.unconfirmedServices.map((s) => s.id)).toEqual(["sooner", "later"]);
+  });
+});

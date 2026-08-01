@@ -109,7 +109,20 @@ export interface ReadinessCrewSection {
   servicesMissingCrew: MissingCrewRow[];
   /** Total heads still needed across those services. */
   crewShortfall: number;
+  /** Services still `PLANNED` — the work itself isn't locked in yet. */
+  unconfirmedServices: { id: string; title: string; date: number | null }[];
+  /** Services that count toward confirmation (excludes CANCELLED). */
+  activeServiceCount: number;
 }
+
+/**
+ * A service is "not confirmed" only while `PLANNED`. `IN_PROGRESS` and
+ * `COMPLETED` are past confirmation — flagging them would nag about work
+ * already underway — and `CANCELLED` is settled-no, so it drops out of both
+ * the flagged list and the denominator. An absent status is treated as
+ * `PLANNED`, the pre-status default.
+ */
+const SERVICE_SETTLED_STATUSES = new Set(["CONFIRMED", "IN_PROGRESS", "COMPLETED"]);
 
 /**
  * Crew readiness for one project: how many assigned people haven't said yes,
@@ -144,16 +157,25 @@ export function computeProjectCrewReadiness(
   // 30-day window — so an all-encompassing range is passed instead of
   // duplicating `missingCrewRowFor`'s shortfall rule here (R-3.1).
   const everything: DateRange = { start: -8_640_000_000_000_000, end: 8_640_000_000_000_000 };
+  const ownServices = services.filter((s) => s.projectId === projectId);
   const servicesMissingCrew = computeServicesMissingCrew(
     everything,
-    services.filter((s) => s.projectId === projectId),
+    ownServices,
     assignmentsByServiceId,
     new Map([[project.id, project]]),
   );
 
+  const liveServices = ownServices.filter((s) => (s.status ?? "PLANNED") !== "CANCELLED");
+  const unconfirmedServices = liveServices
+    .filter((s) => !SERVICE_SETTLED_STATUSES.has(s.status ?? "PLANNED"))
+    .map((s) => ({ id: s.id, title: s.title, date: s.date ?? null }))
+    .sort((a, b) => (a.date ?? 0) - (b.date ?? 0));
+
   return {
     unconfirmedCount,
     activeCount: active.length,
+    unconfirmedServices,
+    activeServiceCount: liveServices.length,
     servicesMissingCrew,
     crewShortfall: servicesMissingCrew.reduce((sum, r) => sum + r.shortfall, 0),
   };

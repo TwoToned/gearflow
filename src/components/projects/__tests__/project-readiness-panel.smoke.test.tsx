@@ -46,7 +46,7 @@ const CLEAN: Parameters<typeof buildReadinessChecks>[0] = {
   hasWindow: true,
   windowLabel: "12 – 16 Aug",
   gear: { hard: [], pencilled: [] },
-  crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0 },
+  crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
   pricing: { unpriced: [], unpricedCount: 0 },
   conflicts: [],
   staleLineCount: 0,
@@ -67,7 +67,7 @@ describe("ProjectReadinessPanel smoke", () => {
   it("collapses to a single line when every check passes", () => {
     mockReadiness.mockReturnValue(stateFrom(CLEAN));
     renderPanel();
-    expect(screen.getByText(/Ready — all 5 checks pass/)).toBeTruthy();
+    expect(screen.getByText(/Ready — all 6 checks pass/)).toBeTruthy();
     // The individual rows stay hidden until asked for.
     expect(screen.queryByText("Enough gear for this window")).toBeNull();
   });
@@ -86,7 +86,7 @@ describe("ProjectReadinessPanel smoke", () => {
       stateFrom({
         ...CLEAN,
         gear: { hard: [{ modelName: "Shure ULXD4Q", qty: 2 }], pencilled: [] },
-        crew: { unconfirmedCount: 3, activeCount: 11, servicesMissingCrew: [], crewShortfall: 0 },
+        crew: { unconfirmedCount: 3, activeCount: 11, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
       }),
     );
     renderPanel();
@@ -100,11 +100,11 @@ describe("ProjectReadinessPanel smoke", () => {
     mockReadiness.mockReturnValue(
       stateFrom({
         ...CLEAN,
-        crew: { unconfirmedCount: 2, activeCount: 4, servicesMissingCrew: [], crewShortfall: 0 },
+        crew: { unconfirmedCount: 2, activeCount: 4, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
       }),
     );
     const onNavigateTab = renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: "Open crew" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chase crew" }));
     expect(onNavigateTab).toHaveBeenCalledWith("labour");
   });
 

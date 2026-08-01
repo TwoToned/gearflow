@@ -33,6 +33,8 @@ import {
   Boxes,
   UserPlus,
   Trash2,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import {
   adminGetOrganizationDetails,
@@ -41,6 +43,8 @@ import {
   adminChangeMemberRole,
   adminTransferOwnership,
   adminUpdateOrganization,
+  adminArchiveOrganization,
+  adminUnarchiveOrganization,
 } from "@/server/site-admin";
 import { Label } from "@/components/ui/label";
 import { Pencil } from "lucide-react";
@@ -87,6 +91,8 @@ export default function AdminOrgDetailPage({
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editSlug, setEditSlug] = useState("");
+
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
 
   const { data: org, isLoading, refetch: refetchOrg } = useServerQuery({
     queryKey: ["admin-org-detail", orgId],
@@ -155,6 +161,25 @@ export default function AdminOrgDetailPage({
     onError: (e) => toast.error(e.message),
   });
 
+  const archiveMutation = useServerMutation({
+    mutationFn: () => adminArchiveOrganization(orgId),
+    onSuccess: () => {
+      refetchOrg();
+      toast.success("Organization archived");
+      setArchiveConfirmOpen(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const unarchiveMutation = useServerMutation({
+    mutationFn: () => adminUnarchiveOrganization(orgId),
+    onSuccess: () => {
+      refetchOrg();
+      toast.success("Organization unarchived");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const members: any[] = org?.members ?? [];
   // Domain counts (assets/projects/kits) are Convex-native now; only the KEPT
@@ -176,9 +201,12 @@ export default function AdminOrgDetailPage({
               </Link>
             </Button>
             <div className="min-w-0">
-              <h1 className="text-xl sm:t-title text-fg truncate">
-                {isLoading ? "Loading..." : org?.name}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:t-title text-fg truncate">
+                  {isLoading ? "Loading..." : org?.name}
+                </h1>
+                {org?.archivedAt && <Badge status="warn">Archived</Badge>}
+              </div>
               {org && (
                 <p className="text-fg-3 text-sm font-mono truncate">
                   {org.slug}
@@ -200,6 +228,27 @@ export default function AdminOrgDetailPage({
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </Button>
+              {org.archivedAt ? (
+                <Button
+                  variant="line"
+                  size="sm"
+                  disabled={unarchiveMutation.isPending}
+                  onClick={() => unarchiveMutation.mutate()}
+                >
+                  <ArchiveRestore className="mr-2 h-4 w-4" />
+                  {unarchiveMutation.isPending ? "Unarchiving..." : "Unarchive"}
+                </Button>
+              ) : (
+                <Button
+                  variant="line"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setArchiveConfirmOpen(true)}
+                >
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -565,6 +614,39 @@ export default function AdminOrgDetailPage({
               }
             >
               {updateOrgMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive Organization Dialog */}
+      <Dialog
+        open={archiveConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) setArchiveConfirmOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archive Organization</DialogTitle>
+            <DialogDescription>
+              Archive <strong>{org?.name}</strong>? Every member immediately
+              loses access — logins, the API, WooCommerce, and Xero sync all
+              stop. The org&apos;s data is kept and this is fully reversible
+              (Unarchive), but its URL slug is released for reuse by a new org
+              right away and is not automatically restored.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="line" onClick={() => setArchiveConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={archiveMutation.isPending}
+              onClick={() => archiveMutation.mutate()}
+            >
+              {archiveMutation.isPending ? "Archiving..." : "Archive Organization"}
             </Button>
           </DialogFooter>
         </DialogContent>

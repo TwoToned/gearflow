@@ -254,29 +254,82 @@ export async function adminUpdateOrganization(
   return serialize(updated);
 }
 
-export async function adminDeleteOrganization(orgId: string) {
+/**
+ * Archive an org (#1075, A5 — D12). Orgs are archived, never deleted: Postgres
+ * cascades would drop the auth rows, but every model/asset/project/quote lives
+ * in Convex now, which has no cascade — a hard delete orphans the entire
+ * domain dataset while the orphaned docs keep their `organizationId` and stay
+ * reachable by any global-index read that skips its org check. Disarming that
+ * defect (removing `adminDeleteOrganization`) is strictly less code than
+ * making a cascade correct.
+ *
+ * Enforced at the identity chokepoints (`resolveActiveOrganizationId`,
+ * `definePayload`, `getApiKeyActorContext`), not per-query — see their
+ * docstrings. This action only flips the switch.
+ */
+export async function adminArchiveOrganization(orgId: string) {
   const session = await requireSiteAdmin();
 
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, slug: true, archivedAt: true },
   });
   if (!org) throw new Error("Organization not found");
+  if (org.archivedAt) throw new Error("Organization is already archived.");
 
-  await prisma.organization.delete({ where: { id: orgId } });
+  // Release the slug so a new org can claim it while this one stays archived
+  // — `slug` is @unique, so the archived org keeps occupying it otherwise.
+  // Deliberately NOT auto-restored on unarchive (the original could be taken
+  // by then); an admin renames it back via adminUpdateOrganization if wanted.
+  const archivedSlug = `${org.slug}-archived-${createId()}`;
+
+  const updated = await prisma.organization.update({
+    where: { id: orgId },
+    data: { archivedAt: new Date(), slug: archivedSlug },
+  });
 
   await logActivity({
     organizationId: orgId,
     userId: session.user.id,
     userName: session.user.name,
-    action: "DELETE",
+    action: "UPDATE",
     entityType: "organization",
     entityId: orgId,
     entityName: org.name,
-    summary: `Deleted organization ${org.name}`,
+    summary: `Archived organization ${org.name}`,
   });
 
-  return { success: true };
+  return serialize(updated);
+}
+
+/** Reverse of `adminArchiveOrganization` — the whole point of D12. */
+export async function adminUnarchiveOrganization(orgId: string) {
+  const session = await requireSiteAdmin();
+
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { id: true, name: true, archivedAt: true },
+  });
+  if (!org) throw new Error("Organization not found");
+  if (!org.archivedAt) throw new Error("Organization is not archived.");
+
+  const updated = await prisma.organization.update({
+    where: { id: orgId },
+    data: { archivedAt: null },
+  });
+
+  await logActivity({
+    organizationId: orgId,
+    userId: session.user.id,
+    userName: session.user.name,
+    action: "UPDATE",
+    entityType: "organization",
+    entityId: orgId,
+    entityName: org.name,
+    summary: `Unarchived organization ${org.name}`,
+  });
+
+  return serialize(updated);
 }
 
 export async function adminGetOrganizationDetails(orgId: string) {

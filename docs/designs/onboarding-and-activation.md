@@ -89,7 +89,7 @@ test can currently catch. CLAUDE.md already names this class an R-8.4.3 IDOR **C
 Today they are unexploitable. The moment a second organisation exists, every gap is live.
 **This is the dominant cost and risk of the whole program** — not the wizard, not the tour.
 
-Mitigation is in §4.4 and it is cheap, because the API registry already enumerates every
+Mitigation is in §4.5 and it is cheap, because the API registry already enumerates every
 agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already proves the
 "invoke every operation and assert it rejects" harness works.
 
@@ -97,8 +97,9 @@ agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already p
 
 | Issue | Where | Severity when multi-tenant |
 |---|---|---|
+| `adminDeleteOrganization` is a bare `prisma.organization.delete` — it never touches Convex, where all domain data now lives, so deleting an org **orphans the entire dataset** | `src/server/site-admin.ts:246` | **High** — orphaned docs keep their `organizationId` and stay reachable by any global-index read that skips its org check (§2.3). See §5.4 |
 | `addMemberByEmail` adds an **existing** user to your org with no invitation and no consent | `src/server/settings.ts:240-258` | **High** — any owner can pull any known email into their org |
-| WooCommerce webhook resolves "the org" via a `getTheOrg` mirror; an inbound webhook carries no tenant identity | `convex/wooCommerceInternal.ts:26`, `convex/http.ts:103` | **Blocking** for that integration — needs a per-org webhook secret/path |
+| WooCommerce webhook falls back to `getTheOrg()` when `?org=` is absent, and the settings page hands out a URL with no org selector at all | `route.ts:52-59`, `settings/woocommerce/page.tsx:183`, `convex/wooCommerceInternal.ts:26` | **Blocking** for that integration — fixed in §4.4 |
 | `OrgActivator` heals a missing active-org by calling `getTheOrgId()` | `src/components/providers/org-activator.tsx` | Would silently activate an arbitrary org |
 | Site admin is built as a single-org view (11 `getTheOrg` uses) | `src/server/site-admin.ts` | Needs a real org list |
 | Registration policy (`OPEN`/`INVITE_ONLY`/`DISABLED`) is platform-global | `SiteSettings` | Now distinct from *per-org* join policy — both are needed |
@@ -134,6 +135,9 @@ agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already p
 | **D6** | **Org creation is gated by a site-admin toggle + signup code** (§5.3). | User decision, 2026-08-01. Keeps a public instance from accruing unbounded tenants, and lets Phase A ship with the door shut (§10.1). |
 | **D7** | **Phase A ships and soaks alone**, before any onboarding UI (§10.1). | User decision, 2026-08-01. All the security risk, none of the user-visible surface. |
 | **D8** | **Org logos stay two variants (wide + square), light only** (§6.2). | User decision, 2026-08-01, confirmed against consumers — org branding renders on PDFs only. |
+| **D9** | **WooCommerce is made properly multi-org** in Phase A, via an opaque per-org webhook token (§4.4). Not deferred, not flagged single-org. | User decision, 2026-08-01. Most of the tenancy already exists; the gap is the URL the settings page hands out. |
+| **D10** | **Abandonment is guarded, not automated** (§5.4): verified email + the signup code prevent, a derived "dormant" predicate detects, capped nudges recover, deletion stays admin-initiated. | User decision, 2026-08-01. Auto-deleting tenants is the one irreversible action here, so it stays human. |
+| **D11** | **Billing / trials are out of scope**, revisited after this program. | User decision, 2026-08-01. While creation is code-gated there is no self-serve growth to meter. |
 
 **D5 (mine, flagged for approval):** the wizard writes through the **same server actions the
 settings pages already use** (`saveOrgSettings`) and stores **no separate draft state**.
@@ -192,11 +196,63 @@ and no Convex one, and the app is unusable).
   every membership requires the recipient to accept.
 - **Per-org join policy** (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`) in org settings,
   distinct from the platform-global registration policy.
-- **WooCommerce webhook tenancy** — per-org webhook path or secret. Until then, that
-  integration is single-org and must be explicitly flagged as such.
-- **Site admin** — real org list, per-org drill-down.
+- **WooCommerce webhook tenancy** — opaque per-org token (§4.4).
+- **Org deletion must stop orphaning Convex data** (§5.4) — a prerequisite for offering
+  deletion at all, which the dormant-org cleanup path needs.
+- **Site admin** — real org list, per-org drill-down, dormant filter (§5.4).
 
-### 4.4 The audit gate (the expensive half)
+### 4.4 WooCommerce multi-org (decided 2026-08-01: fix it, don't defer it)
+
+Smaller than it looked. Most of the tenancy is already there:
+
+- **`WooCommerceIntegration` is already one row per org**, each with its **own
+  `webhookSecret`**, and HMAC verification already runs against that per-org secret.
+- **The route already accepts `?org=`** (`route.ts` step 5) — `getTheOrg()` is only the
+  *fallback* when the param is absent.
+- **Downstream is already scoped** — `processWooCommerceOrder(orgId, order, integration)`
+  takes the org explicitly and threads it through.
+
+So the multi-org gap is narrow: the settings UI builds the webhook URL **without** any org
+selector (`settings/woocommerce/page.tsx:183` — origin + path, nothing else), so every
+operator today pastes a URL that only resolves because there is one org.
+
+#### Design: an opaque per-org webhook token in the path
+
+`POST /api/integrations/woocommerce/webhook/<webhookToken>`, where `webhookToken` is a
+random unguessable value on `WooCommerceIntegration`, rotatable from the settings page.
+
+Rejected alternative: make `?org=<orgId>` required. It works, it is nearly free, and it is
+*secure* — the org id only selects which secret to verify against, so forging it gains
+nothing without that org's `webhookSecret`. It is a routing hint, not an authenticator.
+Two reasons to spend the extra half-day anyway:
+
+1. **It leaks internal org ids into a third party.** The webhook URL is pasted into a
+   customer's WooCommerce admin, and travels through their logs, their screenshots, and
+   their support tickets. An opaque token is the thing that belongs there.
+2. **`?org=` is an enumeration oracle.** Today step 6 returns `404 "Integration not
+   enabled"` *before* signature verification, so an unauthenticated caller can probe org
+   ids and learn which orgs have WooCommerce on. With a token, an unknown token and a
+   disabled integration must return the **same** response — no oracle.
+
+#### Work items
+
+- Add `webhookToken` to `WooCommerceIntegration` (Convex + settings UI), generated on
+  integration create, rotatable. Exactly one existing integration to migrate.
+- New route segment; resolve org from the token. Delete the `getTheOrg()` fallback and the
+  `?org=` param together — a clean cut, since there is one integration in existence.
+- **Delete `getSingleOrg` from `convex/wooCommerceInternal.ts`** (the `getTheOrg` mirror,
+  line 26) — it dies with `single-org.ts`.
+- Unknown token, disabled integration, and wrong-org token all return an identical
+  response.
+- Rate-limit the endpoint (`@convex-dev/rate-limiter` is already a dependency).
+- The ping path (accepted without HMAC, by design) must sit **behind** token resolution, so
+  it cannot be used to probe either.
+- Settings UI shows the full tokenised URL with copy-to-clipboard, plus "Rotate" with a
+  warning that the WooCommerce end must be updated.
+
+Everything downstream of org resolution is unchanged.
+
+### 4.5 The audit gate (the expensive half)
 
 > A guard that cannot fail is a guard that has never been tested.
 
@@ -317,6 +373,70 @@ Zod at the trust boundary (R-8.2.3/R-8.6.4) — the code arrives in an HTTP body
 route uses `withValidatedBody`, not a bare `request.json()`.
 
 **Effort: S** (folds into Phase B).
+
+### 5.4 Guards against org abandonment
+
+D3 deliberately lets a user skip the entire wizard, so half-configured orgs are a designed-in
+possibility, not an accident. Four layers, cheapest first. **Note that none of them delete
+anything automatically** — see the cleanup rule below.
+
+#### Prevention
+
+1. **The signup code already does most of the work.** Abandonment risk is proportional to
+   how open creation is, and D6 closes it: you cannot create an org without an
+   admin-issued code. Casual, accidental and drive-by orgs largely cannot happen. Worth
+   stating plainly so this section isn't over-engineered against a risk the gate already
+   absorbs — the remaining exposure is people who were *given* a code and drifted off.
+2. **Require a verified email before org creation.** Blocks throwaway tenants and pairs
+   with the domain-match join path (§5.2), which needs `emailVerified` anyway.
+3. The org isn't created until the name step is submitted — already true, nothing to do.
+
+#### Detection — derive "dormant", don't store it
+
+Same principle as D5 and §7.1. An org is **dormant** when all of:
+
+- exactly 1 member, and
+- zero activation milestones (no models, no assets, no projects), and
+- no activity-log entries since creation, and
+- created more than N days ago.
+
+Every one of those is already queryable — the activity log exists (FEATUREDOCS/24) and the
+milestone counts exist (§7.1). No new column, no cron to maintain a flag, nothing to drift.
+
+#### Surfacing
+
+**A "Dormant" filter on `/admin/organizations`** with age and owner contact. That is the
+whole feature: it converts an invisible accumulation into a list a human can act on.
+
+#### Recovery — nudge, then stop
+
+Resend is already wired (`RESEND_API_KEY`, `EMAIL_FROM`). Day 1 / day 3 / day 7:
+"You're two steps from your first quote", deep-linking to the resumable setup checklist —
+D3 is what makes that link land somewhere useful. **Hard cap at three, then never again.**
+An onboarding sequence that keeps nagging is worse than an abandoned org.
+
+#### Cleanup — admin-initiated only, and it needs a fix first
+
+**Never auto-delete a tenant.** Destroying a customer's org on a timer is exactly the
+irreversible action that should require a human. The flow is: admin sees the dormant list →
+exports (the export button already exists on `/admin/organizations/[id]`) → deletes behind
+a typed confirmation.
+
+> **⚠️ Blocking defect found — `adminDeleteOrganization` is Postgres-only.**
+> `src/server/site-admin.ts:246` is a bare `prisma.organization.delete({ where: { id } })`.
+> Since the Convex migration, **Postgres holds only Better-Auth + audit models** (CLAUDE.md)
+> — every model, asset, project, quote and file lives in Convex. Deleting an org today
+> removes the auth rows and **orphans the entire domain dataset in Convex**, unreachable
+> and uncounted.
+>
+> Today that is nearly harmless: one org, never deleted. Under multi-tenant it is a data
+> leak (orphaned docs still carry `organizationId` and are reachable by any global-index
+> read that skips its org check — precisely the §2.3 class) and an unbounded storage
+> liability. **Org deletion must not be offered as a workflow until this is fixed**, which
+> makes it Phase A work, not Phase B.
+
+Also worth doing while there: **slug reclamation**, so a squatted slug on a dormant org can
+be released without a full delete.
 
 ---
 
@@ -458,7 +578,7 @@ exists; setting a target before measuring would be invented.
 
 | Layer | Coverage |
 |---|---|
-| **Cross-tenant (Phase A gate)** | Two-org adversarial fixture over the full API registry — §4.4. **Blocking.** |
+| **Cross-tenant (Phase A gate)** | Two-org adversarial fixture over the full API registry — §4.5. **Blocking.** |
 | Unit | Country → currency/tax/timezone defaulting; milestone derivation; setup-progress derivation. |
 | jsdom smoke | Every new overlay/dialog actually **rendered** — CLAUDE.md's `TooltipProvider` crash passes typecheck, lint and build, and only fails when a user opens it. |
 | Anchor integrity | Every `data-tour-anchor` in the tour config exists in source (§7.3). |
@@ -474,8 +594,8 @@ written.**
 | Phase | Scope | Effort (human) | Gate to proceed |
 |---|---|---|---|
 | **A.0** | `definePayload` spike (§4.1) | 1 day | Must resolve to option 1 or 2 |
-| **A** | Multi-tenancy + cross-tenant audit | **L (3–4 wks)** | Two-org adversarial suite green **+ soak, see below** |
-| **B** | Signup fork, join paths, org-creation gate (§5.3) | S (< 1 wk) | — |
+| **A** | Multi-tenancy + cross-tenant audit + WooCommerce tokens (§4.4) + org-delete cascade (§5.4) | **L (3–4 wks)** | Two-org adversarial suite green **+ soak, see below** |
+| **B** | Signup fork, join paths, org-creation gate (§5.3), abandonment guards (§5.4) | S (< 1 wk) | — |
 | **C** | Setup wizard | M (1–2 wks) | — |
 | **D** | Activation tour | M (1–2 wks) | — |
 
@@ -510,25 +630,22 @@ review pipeline. Do not batch.
 
 | Q | Answer | Recorded |
 |---|---|---|
-| Logo variants? | No — two is correct, org logos are PDF-only | §6.2 |
-| Ship Phase A alone first? | Yes, with a production soak on a second real org | §10.1 |
-| Who may create an org? | Site-admin toggle + signup code, from `/admin/settings` | §5.3 |
+| Logo variants? | No — two is correct, org logos are PDF-only | §6.2, D8 |
+| Ship Phase A alone first? | Yes, with a production soak on a second real org | §10.1, D7 |
+| Who may create an org? | Site-admin toggle + signup code, from `/admin/settings` | §5.3, D6 |
+| WooCommerce tenancy? | Fix it — opaque per-org webhook token, in Phase A | §4.4, D9 |
+| Trials / billing? | Out of scope, revisit after this program | D11 |
+| Org abandonment? | Guarded, not automated; deletion stays admin-initiated | §5.4, D10 |
 
 ### Still open
 
-1. **WooCommerce tenancy** (§2.4) — an inbound webhook carries no tenant identity, and the
-   current resolver mirrors `getTheOrg()`. Fix in Phase A with a per-org webhook path or
-   secret, or accept the integration as single-org-only and flag it in FEATUREDOCS/35?
-   **Needs an answer during A**, because deleting `single-org.ts` breaks the current
-   resolver either way.
-2. **Trial / plan limits?** CLAUDE.md marks POLICY §8.5 Billing N/A ("no payment provider"),
-   yet `/settings/billing` exists as a route. Out of scope here, but it changes what the
-   fork screen can honestly promise a new org. The signup-code gate (§5.3) defers this
-   nicely — while org creation is code-gated, there is no self-serve growth to meter.
-3. **Org deletion / abandonment.** Multi-tenant means half-finished orgs will accumulate —
-   someone creates one, skips the wizard (D3 permits exactly that), and never returns.
-   No cleanup path exists today. Not blocking, but it is the predictable consequence of
-   D3 + open-ish creation and should not be discovered later.
+1. **Dormancy threshold `N`** (§5.4) — 14 days? 30? Only affects when an org appears on the
+   admin's dormant list, so it is safe to pick 30 and tune. Not blocking.
+2. **Does org deletion cascade into Convex, or archive?** §5.4 establishes that
+   `adminDeleteOrganization` must stop orphaning Convex data. Hard-delete every org-scoped
+   doc, or flip the org to an archived state and sweep later? Archive is safer and keeps
+   the export meaningful; hard delete is what a customer asking to be forgotten expects
+   (R-8.12). **Needs a decision during Phase A.**
 
 ---
 
@@ -538,7 +655,7 @@ review pipeline. Do not batch.
 - `FEATUREDOCS/69-onboarding-activation.md` — new; add to the `ARCHITECTURE.md` table.
 - `FEATUREDOCS/27-settings-admin.md` — wizard as an alternate entry to the same settings;
   document the `/admin/settings` org-creation toggle + signup code (§5.3).
-- `FEATUREDOCS/35-woocommerce-integration.md` — whichever way open question 1 resolves.
+- `FEATUREDOCS/35-woocommerce-integration.md` — tokenised per-org webhook URL (§4.4).
 - `CLAUDE.md` — the `by_cuid`/`requireOrgRead` note becomes live rather than latent.
 - `TODOS.md` — retire the "In-App Onboarding Tour" entry.
 - `docs/ROADMAP.md` — add the phases.

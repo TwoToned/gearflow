@@ -70,7 +70,7 @@ docker exec <app> pnpm exec tsx scripts/toggle-write-killswitch.ts status
   scope here.
 - **PostHog dashboards/insights/alerts, owner: Jayden Nawotka.** Covers the CWV
   (T-7), slow_query (T-9), convex_op_latency (T-P6), and crash-free-sessions
-  (T-13) insights/alerts referenced from README.md's budget registry.
+  (T-13) insights/alerts referenced from `docs/budgets.md`.
 - **Vendor cost usage (T-P4, R-9.12/#764) — tracked, not yet alerted.** A
   `vendor_usage` PostHog event fires per billable Resend send and per Maps
   Autocomplete/Place Details request (`src/lib/vendor-cost-tracking.ts` +

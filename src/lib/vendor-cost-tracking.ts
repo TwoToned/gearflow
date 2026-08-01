@@ -3,7 +3,7 @@ import { captureServerEvent } from "@/lib/posthog-server";
 import { AnalyticsEvent } from "@/lib/analytics";
 
 /**
- * T-P4 metered vendor cost budget (README.md R-0.4, R-9.12/#764): every billable
+ * T-P4 metered vendor cost budget (docs/budgets.md R-0.4, R-9.12/#764): every billable
  * unit against a metered vendor emits a `vendor_usage` PostHog event, so spend
  * driver volume is tracked (R-9.12 "cost per unit ... tracked for the top spend
  * drivers") and reviewable monthly on the "Vendor usage (T-P4)" PostHog insight.
@@ -13,7 +13,7 @@ import { AnalyticsEvent } from "@/lib/analytics";
  * read back, or (b) a PostHog query-capable API key (the app only holds the
  * public write-only ingestion key) — neither is wired today. The constants below
  * are the target reference lines for when that lands, derived from the
- * README-registered $15/mo ceilings using each vendor's PUBLIC list pricing as of
+ * Registry-declared $15/mo ceilings using each vendor's PUBLIC list pricing as of
  * writing (Resend's free-tier volume; Google Maps Platform's Places API
  * Essentials per-request SKU pricing) — re-verify against the actual plan/invoice
  * before wiring a real alert off these, they are estimates, not confirmed spend.

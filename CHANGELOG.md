@@ -58,6 +58,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The README is now a front door rather than a setup guide: the RVLT Flow wordmark
+  (theme-adaptive, `docs/brand/rvlt-flow-wordmark-{dark,light}.svg`), a rendered job
+  lifecycle diagram, and copy in the dry, industry-native voice DESIGN.md specifies —
+  320 lines down to 112. The clone/env/migrate walkthrough, command list and directory
+  layout moved to [`CONTRIBUTING.md`](./CONTRIBUTING.md), which previously carried only a
+  one-line setup note and covered neither the Postgres container, the `.env` contents, the
+  Convex push, nor the site-admin bootstrap. The R-0.4 budget & threshold registry moved
+  verbatim to [`docs/budgets.md`](./docs/budgets.md), with every "README budget registry"
+  citation in code comments, FEATUREDOCS and `docs/` repointed to match. Badge, clone and
+  security-advisory URLs now point at the live `TwoToned/gearflow` instead of the
+  never-completed `RVLT-Labs/rvlt-flow` rename, which had left the CI badge and the
+  private vulnerability-disclosure link both broken.
 - **#1061** — The Finance tab is now the ledger rather than the front door: all
   quote revisions, invoices, payments, the financial summary and operational
   P&L still live there, and it remains the only place to recall, correct,

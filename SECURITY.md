@@ -10,7 +10,7 @@ file) and supports §7 / §8.11.
 
 Report privately via one of:
 
-- **GitHub Security Advisories** — [Report a vulnerability](https://github.com/RVLT-Labs/rvlt-flow/security/advisories/new)
+- **GitHub Security Advisories** — [Report a vulnerability](https://github.com/TwoToned/gearflow/security/advisories/new)
   (preferred; keeps the report and fix coordination private).
 - **Email** — security@rvlt.app with a description, reproduction steps, and impact.
 

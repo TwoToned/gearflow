@@ -8,7 +8,7 @@ automatically to audit failures (R-15.2).
 
 This is **not** the place for:
 
-- **Budget overrides** → register in the README budget table (R-0.4).
+- **Budget overrides** → register in [`docs/budgets.md`](./budgets.md) (R-0.4).
 - **Permanent categorical carve-outs** (generated/vendored code) → tool-config exclusions (R-0.5).
 
 > Findings from the baseline audit (`docs/audits/2026-07-18-hygiene-policy-baseline-audit.md`)

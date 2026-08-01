@@ -595,6 +595,61 @@ describe("projectGroupsWrites.moveLineItemNative", () => {
       t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, { lineItemId: "li1", orgId: ORG, targetGroupId: null, targetCategoryId: null, now: NOW, actor: ACTOR, auditId: "log1" }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // categorySlot bookkeeping — a line item only shares the combined
+  // groups+line-items order (FEATUREDOCS/47) while it's standalone in a
+  // category, so every move must keep that slot in sync.
+  test("landing standalone in a category mints a categorySlot there", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProjectAndCategories(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
+      lineItemId: "li1", orgId: ORG, targetGroupId: null, targetCategoryId: "cat1", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.run(async (ctx) => {
+      const slot = await ctx.db.query("categorySlots").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "li1")).first();
+      expect(slot?.projectCategoryId).toBe("cat1");
+    });
+  });
+
+  test("landing inside a group clears any existing standalone categorySlot", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProjectAndCategories(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Dst", sortOrder: 0 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("categorySlots", { id: "slLi", projectCategoryId: "cat1", lineItemId: "li1", sortOrder: 0 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
+      lineItemId: "li1", orgId: ORG, targetGroupId: "g1", targetCategoryId: "cat1", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.run(async (ctx) => {
+      const slot = await ctx.db.query("categorySlots").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "li1")).first();
+      expect(slot).toBeNull();
+    });
+  });
+
+  test("moving between categories drops the old category's slot and mints one in the new category", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProjectAndCategories(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("categorySlots", { id: "slLi", projectCategoryId: "cat1", lineItemId: "li1", sortOrder: 0 });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.moveLineItemNative, {
+      lineItemId: "li1", orgId: ORG, targetGroupId: null, targetCategoryId: "cat2", now: NOW, actor: ACTOR, auditId: "log1",
+    });
+    await t.run(async (ctx) => {
+      const slots = await ctx.db.query("categorySlots").withIndex("by_lineItemId", (q) => q.eq("lineItemId", "li1")).collect();
+      expect(slots).toHaveLength(1);
+      expect(slots[0].projectCategoryId).toBe("cat2");
+    });
+  });
 });
 
 // ─── moveLineItemsNative (bulk) ───────────────────────────────────────────────

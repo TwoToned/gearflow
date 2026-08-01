@@ -1,4 +1,5 @@
 import { v, ConvexError } from "convex/values";
+import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -12,6 +13,7 @@ import { assertLifecycleGuard, lifecycleAuditMetadata, pricedUnderLockOnInsert }
 import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { upsertSlotForLineItem } from "./categorySlotsWrites";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -667,6 +669,19 @@ export const moveLineItemNative = mutation({
       updatedAt: a.now,
     });
 
+    // A line item only occupies a categorySlot while it's a STANDALONE
+    // top-level member of a category (shares the combined groups+line-items
+    // order there) — landing inside a group, or leaving every category,
+    // clears any existing slot instead. See upsertSlotForLineItem's doc
+    // comment (categorySlotsWrites.ts).
+    await upsertSlotForLineItem(
+      ctx,
+      a.lineItemId,
+      a.targetGroupId == null ? a.targetCategoryId : null,
+      createId(),
+      a.now,
+    );
+
     // ── Sub-hire write-back (mirrors moveSubHireGroupToCategory) ───────────────
     // The sub-hire group/item tables carry no organizationId — re-check org via the
     // parent subHire (which does), so a doctored line can't cross-tenant-write.
@@ -780,6 +795,16 @@ export const moveLineItemsNative = mutation({
         categoryId: a.targetCategoryId != null ? a.targetCategoryId : undefined,
         updatedAt: a.now,
       });
+      // Same slot bookkeeping as the single-item move above — a bulk move
+      // out of a category (or into a group) must not leave a stale slot
+      // behind pointing at the old category.
+      await upsertSlotForLineItem(
+        ctx,
+        id,
+        a.targetGroupId == null ? a.targetCategoryId : null,
+        createId(),
+        a.now,
+      );
       affectedProjectIds.add(line.projectId);
       moved++;
     }

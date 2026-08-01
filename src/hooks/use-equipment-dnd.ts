@@ -59,6 +59,7 @@ import {
   type DragOverEvent,
   type DragEndEvent,
   type DragCancelEvent,
+  type ClientRect,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates, arrayMove } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis, restrictToWindowEdges } from "@dnd-kit/modifiers";
@@ -381,9 +382,17 @@ export function buildGroupContainerMap(
 
   for (const cat of categories) {
     const containerId: GroupContainerId = `mixed:${cat.id}`;
-    const mixed: MixedGroupSlot[] =
+    // Line-item slots are filtered out here — this container map is grp-/shg-
+    // only (the sibling of `buildContainerMap`'s li-only one). A line item
+    // reordering against a group in the same category is resolved separately
+    // by `resolveCrossKindCategoryReorder`, ahead of both resolvers — see
+    // that section's doc comment.
+    const mixed = (
       cat.mixedGroups ??
-      cat.groups.map((g) => ({ kind: "project" as const, sortOrder: g.sortOrder, projectGroupId: g.id }));
+      cat.groups.map((g) => ({ kind: "project" as const, sortOrder: g.sortOrder, projectGroupId: g.id }))
+    ).filter(
+      (slot): slot is Extract<MixedGroupSlot, { kind: "project" | "subHire" }> => slot.kind !== "lineItem",
+    );
     const ids = mixed.map((slot) =>
       slot.kind === "project" ? `grp-${slot.projectGroupId}` : `shg-${slot.subHireGroupId}`,
     );
@@ -594,6 +603,130 @@ export function resolveCategoryDragAction(input: {
 
   const reordered = arrayMove([...allCategorySortableIds], fromIndex, toIndex);
   return { kind: "reorder", orderedIds: reordered.map((sid) => sid.slice(4)) };
+}
+
+// ─── Cross-kind same-category reorder (groups ↔ standalone line items) ─────
+//
+// Groups and standalone (non-grouped) top-level line items used to be two
+// structurally separate lists per category — a group and a line item could
+// never be dragged past each other at all. `cat.mixedGroups` (extended in
+// equipment-tab-reconstruct.ts to include a `lineItem` slot kind) is now the
+// single combined order for a category's whole top-level membership, so this
+// section resolves ONLY the narrow gap that unlocks: reordering a line item
+// and a group/sub-hire-group relative to each other WITHIN THE SAME
+// category. Everything else (group-vs-group reorder, line-item-vs-line-item
+// reorder, moving a line item into/out of a group, moving a group to another
+// category) is completely unchanged — still resolved by
+// `resolveLineItemDragAction`/`resolveGroupDragAction` exactly as before.
+//
+// This is deliberately NOT built by merging `ContainerId`/`GroupContainerId`
+// into one type. Doing that would make EVERY line-item/group container
+// concept (nested group children, Uncategorized, cross-category moves) have
+// to understand mixed-kind membership, for a gap that's actually much
+// narrower: only a category-level STANDALONE line item (never a grouped
+// child — those simply never appear in `cat.mixedGroups`) reordering against
+// a group already in the SAME category. Scanning `cat.mixedGroups` directly
+// for the category containing both dragged ids is enough on its own, and the
+// existing per-kind resolvers keep handling everything they always did.
+
+/** Every category's full combined top-level order (project groups, sub-hire
+ *  groups, AND standalone line items) as PREFIXED sortable ids, straight from
+ *  `cat.mixedGroups`. */
+export function buildCategoryTopLevelOrder(
+  categories: readonly CategoryData[],
+): ReadonlyMap<string, readonly string[]> {
+  const byCategory = new Map<string, readonly string[]>();
+  for (const cat of categories) {
+    const slots: MixedGroupSlot[] = cat.mixedGroups ?? [];
+    byCategory.set(
+      cat.id,
+      slots.map((slot) =>
+        slot.kind === "project" ? `grp-${slot.projectGroupId}`
+        : slot.kind === "subHire" ? `shg-${slot.subHireGroupId}`
+        : `li-${slot.lineItemId}`,
+      ),
+    );
+  }
+  return byCategory;
+}
+
+/** Where the ACTIVE item's center currently sits relative to the OVER
+ *  target's rect — the top/bottom quarter means "reorder before/after this
+ *  row", the middle half means "onto this row" (enter, when that's a valid
+ *  transition — e.g. a line item dropped onto a group). Falls back to
+ *  "middle" (today's existing behaviour) when either rect is unavailable, so
+ *  a measurement miss never surprises the user with a new reorder they
+ *  didn't ask for. */
+export function computeDropZone(
+  activeRect: ClientRect | null | undefined,
+  overRect: ClientRect | null | undefined,
+): "before" | "middle" | "after" {
+  if (!activeRect || !overRect || overRect.height <= 0) return "middle";
+  const activeCenterY = activeRect.top + activeRect.height / 2;
+  const relative = (activeCenterY - overRect.top) / overRect.height;
+  if (relative < 0.25) return "before";
+  if (relative > 0.75) return "after";
+  return "middle";
+}
+
+export type CrossKindReorderAction =
+  | { kind: "noop" }
+  | { kind: "reorder"; categoryId: string; orderedIds: string[] };
+
+/** True when exactly one side is a standalone line item and the other a
+ *  group/sub-hire-group — the only pairing `resolveCrossKindCategoryReorder`
+ *  handles (line-vs-line and group-vs-group reorders stay on their existing,
+ *  unrelated resolvers). */
+function isCrossKindPair(activeSortableId: string, overSortableId: string): boolean {
+  const isLine = (id: string) => id.startsWith("li-");
+  const isGroupish = (id: string) => id.startsWith("grp-") || id.startsWith("shg-");
+  return (
+    (isLine(activeSortableId) && isGroupish(overSortableId)) ||
+    (isGroupish(activeSortableId) && isLine(overSortableId))
+  );
+}
+
+/** Splice `activeSortableId` immediately before/after `overSortableId` within
+ *  `order`. Returns `null` when the result wouldn't actually change anything
+ *  (dropping right back where it already was). */
+function spliceCrossKind(
+  order: readonly string[],
+  activeSortableId: string,
+  overSortableId: string,
+  dropZone: "before" | "after",
+): string[] | null {
+  const withoutActive = order.filter((id) => id !== activeSortableId);
+  const overIdx = withoutActive.indexOf(overSortableId);
+  const insertAt = dropZone === "before" ? overIdx : overIdx + 1;
+  const reordered = [...withoutActive.slice(0, insertAt), activeSortableId, ...withoutActive.slice(insertAt)];
+  const unchanged = reordered.length === order.length && reordered.every((id, i) => id === order[i]);
+  return unchanged ? null : reordered;
+}
+
+/**
+ * Pure — resolves the "reorder a line item past a group in the same
+ * category" gap. Requires: an edge drop zone (not "middle" — that's still
+ * "enter", handled by `resolveLineItemDragAction` as before), one side a
+ * line item and the other a group/sub-hire-group, and BOTH ids present in
+ * the SAME category's combined order (a grouped line-item child never is,
+ * by construction — so this can never fire for "leave my group", only ever
+ * for two items already siblings at the top of one category).
+ */
+export function resolveCrossKindCategoryReorder(
+  activeSortableId: string,
+  overSortableId: string,
+  dropZone: "before" | "middle" | "after",
+  categoryTopLevelOrder: ReadonlyMap<string, readonly string[]>,
+): CrossKindReorderAction {
+  if (dropZone === "middle") return { kind: "noop" };
+  if (!isCrossKindPair(activeSortableId, overSortableId)) return { kind: "noop" };
+
+  for (const [categoryId, order] of categoryTopLevelOrder) {
+    if (!order.includes(activeSortableId) || !order.includes(overSortableId)) continue;
+    const orderedIds = spliceCrossKind(order, activeSortableId, overSortableId, dropZone);
+    return orderedIds ? { kind: "reorder", categoryId, orderedIds } : { kind: "noop" };
+  }
+  return { kind: "noop" };
 }
 
 // ─── Error classification (mirrors use-justified-mutation.ts's own helper) ──
@@ -1055,6 +1188,45 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     setInvalidOverId(null);
   }, []);
 
+  // Dispatch for `resolveCrossKindCategoryReorder`'s "reorder" result — a
+  // line item and a group/sub-hire-group swapping positions within one
+  // category. Reuses `justifiedGroupReorder`'s "mixed" mode (the SAME
+  // `categorySlotWrites.reorderMixed` mutation `planGroupReorder` already
+  // routes a sub-hire-inclusive group reorder through), translating `grp-`
+  // to categorySlot's `pg-` the same way — `li-` needs no translation, it's
+  // already the slot prefix `categorySlotWrites.ts` expects.
+  const runCrossKindReorder = useCallback(
+    (categoryId: string, orderedIds: string[]) => {
+      setOrderOverlay((prev) => {
+        const next = new Map(prev);
+        orderedIds.forEach((sid, idx) => {
+          if (sid.startsWith("li-")) next.set(sid.slice(3), { sortOrder: idx });
+        });
+        return next;
+      });
+      setGroupOrderOverlay((prev) => {
+        const next = new Map(prev);
+        orderedIds.forEach((sid, idx) => {
+          if (!sid.startsWith("li-")) next.set(bareGroupId(sid), { sortOrder: idx });
+        });
+        return next;
+      });
+      justifiedGroupReorder
+        .run({
+          kind: "mixed",
+          categoryId,
+          orderedIds: orderedIds.map((sid) => (sid.startsWith("grp-") ? `pg-${bareGroupId(sid)}` : sid)),
+        })
+        .catch(reportDragMutationError)
+        .finally(() => {
+          setOrderOverlay(new Map());
+          setGroupOrderOverlay(new Map());
+          onSettled?.();
+        });
+    },
+    [justifiedGroupReorder, onSettled],
+  );
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDragId(null);
@@ -1064,6 +1236,20 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
       const activeSortableId = String(event.active.id);
       const overSortableId = event.over ? String(event.over.id) : null;
 
+      // Cross-kind check FIRST, ahead of the per-kind dispatch below — see
+      // "Cross-kind same-category reorder" section's doc comment for why
+      // this narrow gap is resolved separately instead of folded into
+      // resolveLineItemDragAction/resolveGroupDragAction.
+      if (overSortableId && activeSortableId !== overSortableId) {
+        const dropZone = computeDropZone(event.active.rect.current.translated, event.over?.rect ?? null);
+        const categoryOrder = buildCategoryTopLevelOrder(categoriesRef.current ?? []);
+        const crossKind = resolveCrossKindCategoryReorder(activeSortableId, overSortableId, dropZone, categoryOrder);
+        if (crossKind.kind === "reorder") {
+          runCrossKindReorder(crossKind.categoryId, crossKind.orderedIds);
+          return;
+        }
+      }
+
       if (isGroupSortableId(activeSortableId)) {
         return handleGroupDrop(activeSortableId, overSortableId);
       }
@@ -1072,7 +1258,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
       }
       return handleLineItemDrop(activeSortableId, overSortableId);
     },
-    [handleGroupDrop, handleCategoryDrop, handleLineItemDrop],
+    [handleGroupDrop, handleCategoryDrop, handleLineItemDrop, categoriesRef, runCrossKindReorder],
   );
 
   const dialogs = React.createElement(

@@ -161,10 +161,13 @@ describe("reconstructProjectCategories", () => {
     expect(cat.subHireGroupTargets?.map((s) => s.id)).toEqual(["shg1"]);
     expect(cat.subHireGroupTargets?.[0].lineItems?.map((i) => i.id)).toEqual(["liInSHG"]);
     expect(cat.lineItems?.map((i) => i.id)).toEqual(["liDirect"]);
-    // mixedGroups ordered by slot.sortOrder (sub-hire 1, project 2).
+    // mixedGroups ordered by slot.sortOrder (sub-hire 1, project 2) — the
+    // standalone line item has no CategorySlot yet, so it falls back to the
+    // large offset + its own sortOrder, landing after both groups.
     expect(cat.mixedGroups).toEqual([
       { kind: "subHire", sortOrder: 1, subHireGroupId: "shg1" },
       { kind: "project", sortOrder: 2, projectGroupId: "g1" },
+      { kind: "lineItem", sortOrder: 1_000_000, lineItemId: "liDirect" },
     ]);
   });
 

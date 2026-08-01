@@ -490,9 +490,58 @@ next full remount.
 
 | Source ↓ \ Dest → | ProjectCategory | ProjectGroup | SubHireGroup | Uncat | SubHire (top) |
 |---|---|---|---|---|---|
-| ProjectLineItem (own/custom/kit) | ✓ standalone | ✓ enter group | ✗ toast | ✓ uncategorise | ✗ toast |
+| ProjectLineItem (own/custom/kit) | ✓ standalone | ✓ enter group (middle) / reorder past (edge) | ✗ toast | ✓ uncategorise | ✗ toast |
 | ProjectGroup | ✓ move cat | ✗ no nested | ✗ no nested | N/A | ✗ |
 | SubHireGroup | ✓ move cat | ✗ no nested | ✗ no nested | ✓ uncategorise | N/A |
+
+### Groups and standalone line items share one order
+
+A category's project groups, sub-hire groups, AND standalone (non-grouped)
+top-level line items now share ONE combined visual order — they used to be
+two structurally separate lists (all groups rendered first, then all
+standalone items, always, with no way to interleave them; equipment-tab.tsx
+had two separate `<SortableContext>`s for it). `cat.mixedGroups`
+(`MixedGroupSlot[]`, `equipment-row-types.ts`) gained a third `lineItem` kind
+alongside `project`/`subHire`, and is now the single source of truth for a
+category's whole top-level membership — `equipment-tab.tsx` renders it as
+ONE combined list, ONE `<SortableContext>`, branching per slot kind.
+
+**CategorySlot gained a `lineItemId` column** (optional, alongside the
+existing `projectGroupId`/`subHireGroupId`) — a line item only occupies a
+slot while it's a STANDALONE top-level member of a category; entering a
+group, or leaving every category, clears it (`upsertSlotForLineItem`,
+`categorySlotsWrites.ts` — same delete-then-insert pattern as
+`upsertSlotForProjectGroup`/`upsertSlotForSubHireGroup`). `moveLineItemNative`/
+`moveLineItemsNative` (`projectGroupsWrites.ts`) call it on every move — no
+backfill migration was needed: a standalone line item with no slot yet simply
+falls back to a large offset + its own `sortOrder`
+(`reconstructProjectCategories`'s `LINE_ITEM_FALLBACK_OFFSET`), which
+reliably sorts it after every REAL (small, per-category-int) group slot —
+matching the old "groups first" convention until a user actually drags one
+into a new combined position, at which point `reorderMixedGroupsInCategory`
+(now `li-`-aware too — `parseSlotId` grew a third prefix) rewrites the WHOLE
+category's slot list with fresh 0/1/2… values.
+
+**Drop-on-a-group is now position-sensitive.** Since a line item and a group
+now sit in the same list, dropping a line item exactly ON a group's row is
+ambiguous between two valid intents: "enter this group" (existing, shipped
+behaviour) and "reorder past this group" (the new capability). `handleDragEnd`
+resolves this via `computeDropZone` (`use-equipment-dnd.ts`): the dragged
+item's center within the TOP or BOTTOM quarter of the target's rect means
+"reorder before/after," the MIDDLE half means "enter" (or leave, unchanged).
+`resolveCrossKindCategoryReorder` handles the edge-drop case — deliberately
+NOT built by merging `ContainerId`/`GroupContainerId` into one type (that
+would make every OTHER container concept — nested group children,
+Uncategorized, cross-category moves — have to understand mixed-kind
+membership for a gap that's actually much narrower). It scans
+`buildCategoryTopLevelOrder` (built straight from `cat.mixedGroups`) for the
+category containing BOTH dragged ids; a grouped line-item CHILD is never a
+member of that list by construction, so this can never fire for "leave my
+group" — only for two items already siblings at the top of one category. The
+resulting reorder dispatches through the SAME `categorySlotWrites.reorderMixed`
+mutation `planGroupReorder`'s "mixed" branch already uses for a sub-hire-
+inclusive group reorder — `li-` ids need no prefix translation, only `grp-`
+does (→ `pg-`).
 
 ## Margin column toggle (8H)
 

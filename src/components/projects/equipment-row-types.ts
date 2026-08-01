@@ -151,12 +151,18 @@ export interface SubHireGroupData {
   lineItems?: LineItemData[];
 }
 
-/** Discriminated slot used by equipment-tab to iterate the mixed
- *  ProjectGroup + SubHireGroup list inside a category in CategorySlot
- *  order (Phase 5b). */
+/** Discriminated slot used by equipment-tab to iterate the combined
+ *  ProjectGroup + SubHireGroup + standalone-LineItem list inside a category,
+ *  in CategorySlot order (Phase 5b; `lineItem` added when groups and
+ *  standalone line items were unified onto one shared order — see
+ *  FEATUREDOCS/47's "Groups and standalone line items share one order"). A
+ *  `lineItem` slot's `sortOrder` falls back to a large offset + the item's
+ *  own `sortOrder` when it has no real CategorySlot row yet (never explicitly
+ *  reordered against a group) — see `reconstructProjectCategories`. */
 export type MixedGroupSlot =
   | { kind: "project"; sortOrder: number; projectGroupId: string }
-  | { kind: "subHire"; sortOrder: number; subHireGroupId: string };
+  | { kind: "subHire"; sortOrder: number; subHireGroupId: string }
+  | { kind: "lineItem"; sortOrder: number; lineItemId: string };
 
 export interface CategoryData {
   id: string;

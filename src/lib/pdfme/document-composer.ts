@@ -41,7 +41,7 @@ import {
   SECTION_GAP,
 } from "./template-constants";
 import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
-import { wrapRichText, richTextLineHeight, type RichLine, type RichTextFonts } from "./plugins/helpers";
+import { wrapRichText, richTextLineHeight, truncateText, type RichLine, type RichTextFonts } from "./plugins/helpers";
 import { isSubhireIndicatorVisible } from "./plugins/gearflow-table";
 
 // ─── Height constants (pt) — must match gearflow-table.ts's actual draw sizes ─
@@ -855,6 +855,7 @@ function buildEntryFields(
   docColor: string,
   filterByStatus: string[] | null,
   name: string,
+  fonts?: RichTextFonts,
 ): RenderedField[] {
   const { block, y, height } = entry;
 
@@ -875,7 +876,16 @@ function buildEntryFields(
       // header meta (with the doc number/date) — a simple "Expiry: <date>"
       // read right where the client is already looking, not a standalone
       // sentence buried at the end of a possibly multi-page document.
-      const docMetaLines = [data.project_number || "", data.document_date || ""];
+      // #1080/#1097 — `project_number` can carry a quote's version/label suffix
+      // (`v2 · Budget option`, stamped by `finance-documents.ts` only when
+      // `labelOnDocument` is set) — user-entered text, so it gets the SAME
+      // measured shrink-to-fit treatment `docTitle` already has, rather than
+      // trusting it to fit. `fonts` is optional (some composeDocument callers
+      // render without real font metrics) — skip the cap rather than guess.
+      const projectNumberLine = fonts
+        ? truncateText(data.project_number || "", fonts.regular, 9, CONTENT_WIDTH * 0.55)
+        : data.project_number || "";
+      const docMetaLines = [projectNumberLine, data.document_date || ""];
       if (docType === "quote" && data.quote_valid_until) docMetaLines.push(`Expiry: ${data.quote_valid_until}`);
 
       const config: PageHeaderConfig = {
@@ -1186,7 +1196,7 @@ export function composeDocument(
 
     pages[pageIdx].entries.forEach((entry, blockIdx) => {
       const name = `${entry.block.kind}_${blockIdx}_p${pageIdx}`;
-      const fields = buildEntryFields(entry, data, docType, docColor, layout.filterByStatus, name);
+      const fields = buildEntryFields(entry, data, docType, docColor, layout.filterByStatus, name, fonts);
       for (const field of fields) {
         pageSchemas.push(field.schema);
         mergedInputs[field.schema.name as string] = field.input;

@@ -177,6 +177,7 @@ describe("generateQuoteArtifact — stamped dates (the silent-validity-extension
 
     expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "quote", {
       stampedDates: { documentDate: QUOTE_DATE, quoteValidUntil: VALID_UNTIL },
+      versionSuffix: "v2",
     });
   });
 
@@ -189,7 +190,21 @@ describe("generateQuoteArtifact — stamped dates (the silent-validity-extension
 
     expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "quote", {
       stampedDates: { documentDate: SENT_AT, quoteValidUntil: undefined },
+      versionSuffix: "v2",
     });
+  });
+
+  test("versionSuffix includes the custom label only when labelOnDocument is set (#1080/#1097)", async () => {
+    (quoteRow as unknown as { customLabel?: string; labelOnDocument?: boolean }).customLabel = "Budget option";
+    (quoteRow as unknown as { customLabel?: string; labelOnDocument?: boolean }).labelOnDocument = true;
+    generatePdf.mockResolvedValue(new Uint8Array([1]));
+
+    await generateQuoteArtifact("q1");
+
+    expect(generatePdf).toHaveBeenCalledWith(
+      "p1", "org_1", "quote",
+      expect.objectContaining({ versionSuffix: "v2 · Budget option" }),
+    );
   });
 
   test("an issued invoice's document date is its issuedAt", async () => {

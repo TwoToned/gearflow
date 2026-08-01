@@ -32,6 +32,8 @@ export interface ProjectPdfOptions {
   stampedDates?: { documentDate?: number; quoteValidUntil?: number; invoiceDueDate?: number };
   /** Stamp the "DRAFT PREVIEW — NOT SENT" banner on every page. */
   draftPreview?: boolean;
+  /** #1080/#1097 — see `buildDocumentData`'s `versionSuffix`. */
+  versionSuffix?: string;
 }
 
 /**
@@ -53,6 +55,7 @@ export async function generatePdf(
   const data = await buildDocumentData(projectId, organizationId, docType, undefined, {
     expandProjectGroups: layout.expandProjectGroups,
     stampedDates: options?.stampedDates,
+    versionSuffix: options?.versionSuffix,
   });
 
   // Real font metrics for composeDocument's accurate text-wrap measurement

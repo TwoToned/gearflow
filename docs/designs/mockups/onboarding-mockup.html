@@ -182,6 +182,8 @@ main{max-width:1180px;margin:0 auto;padding:0 24px}
 .select>:first-child,.select{overflow:hidden;text-overflow:ellipsis}
 .caret{color:var(--faint);font-size:11px}
 .hint{margin:2px 0 0;font-size:11px;color:var(--faint);line-height:1.5}
+.hint-lock{display:flex;gap:6px;align-items:flex-start;color:var(--warn);margin-top:5px}
+.lock{font-size:10px;line-height:1.5}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .slugrow{display:flex;align-items:center;gap:8px}
 .slug-pre{
@@ -617,6 +619,11 @@ main{max-width:1180px;margin:0 auto;padding:0 24px}
           <div class="field">
             <label for="m-country">Country</label>
             <div class="select" id="m-country">Australia <span class="caret">▾</span></div>
+            <p class="hint hint-lock">
+              <span class="lock" aria-hidden="true">🔒</span>
+              Permanent. It sets your currency, tax, paper size and date format, so it can't
+              be changed once you're running. Everything else on this page can.
+            </p>
           </div>
 
           <div class="autofill">
@@ -659,6 +666,7 @@ main{max-width:1180px;margin:0 auto;padding:0 24px}
         <ul class="notelist">
           <li><b>Country is the highest-leverage input in the wizard.</b> It sets currency, time zone, tax label, tax rate — and what the business-number field is even called.</li>
           <li><b>ABN is a label, not a field.</b> The stored value is already a generic business-registration id, so this is a UI change, not a schema one: New Zealand asks for an NZBN, the UK a company number.</li>
+          <li><b>Country is permanent, and says so here.</b> That one constraint deletes a whole class of problem — no re-stamping old invoices, no currency drift, no "which paper size was this issued at". Picked wrong on an empty company? Archive it and start again; that's cheaper than an escape hatch.</li>
           <li>The filled values are <b>shown, editable, and announced</b>. Auto-fill that hides itself reads as a bug.</li>
           <li>Tax rate is <span class="mono">tabular-nums</span> — every number in this app lines up in its column.</li>
         </ul>

@@ -38,6 +38,8 @@ the cross-tenant audit **already has a working harness**.
 | **M3** | **EU = single-country VAT only.** No cross-border: no reverse charge, no OSS, no VIES validation. | Domestic-only VAT is one rate and one country — the same shape as the UK. Cross-border is a regulated program where being wrong has legal consequences for the customer. |
 | **M4** | **E-invoicing is a documented boundary, not built** (§3.4a). | We serve EU markets that still accept PDF invoices. Structured e-invoicing is a known future program, and the finance design should be written knowing a second output format is coming. |
 | **M5** | **Archive by default; hard-delete only on an explicit erasure request** (amends onboarding D12). | D12 stands for the dormancy ladder — nothing is destroyed automatically. Erasure is a separate, deliberately-invoked path that *does* cascade through Convex. Two operations, two triggers. |
+| **M6** | **An org's country is immutable after creation** (§1b). | User decision, 2026-08-01. Removes locale re-stamping, historical-document migration and currency drift as problem classes outright. |
+| **M7** | **Launch set is AU, NZ, UK, US, IE.** NL and DE stay in the table as documented-but-disabled rows, enabled when decimal-comma input parsing lands (§1c). | Ireland gives EU presence at essentially zero EU-specific cost. It defers the sweep's most dangerous item without deferring the EU. |
 
 ### The country table — one definition, many consumers
 
@@ -53,8 +55,8 @@ it will end up defined three times.
 | United Kingdom | GBP | d/m/y | `.` | Mon | A4 | metric | VAT | 20% | VAT number |
 | **United States** | USD | **m/d/y** | `.` | **Sun** | **Letter** | **imperial** | Sales tax | **none — operator sets** | EIN |
 | Ireland | EUR | d/m/y | `.` | Mon | A4 | metric | VAT | 23% | VAT number |
-| Netherlands | EUR | d/m/y | **`,`** | Mon | A4 | metric | BTW | 21% | BTW-nummer |
-| Germany | EUR | **d.m.y** | **`,`** | Mon | A4 | metric | MwSt | 19% | USt-IdNr |
+| Netherlands _(deferred, M7)_ | EUR | d/m/y | **`,`** | Mon | A4 | metric | BTW | 21% | BTW-nummer |
+| Germany _(deferred, M7)_ | EUR | **d.m.y** | **`,`** | Mon | A4 | metric | MwSt | 19% | USt-IdNr |
 
 Three things this table makes obvious that prose hid:
 
@@ -69,6 +71,50 @@ Three things this table makes obvious that prose hid:
    is separate code that does not exist yet, and silently misreading a price by 100× is the
    worst possible failure in a quoting tool. This is the single most dangerous item in the
    whole international sweep.
+
+### 1b. Country is immutable (M6)
+
+Chosen at org creation and never changed. That single constraint deletes a set of problems
+rather than solving them:
+
+- No re-stamping locale onto historical documents.
+- No migrating issued invoices between paper sizes or tax labels.
+- No "which currency was this project quoted in?" ambiguity.
+- §6's open question about live re-renders of old projects **disappears** — a re-render can
+  safely recompute locale, because the org's locale cannot have changed.
+
+**Enforcement follows an existing pattern.** `convex/projectWrites.ts:420` already defines
+`PROJECT_UPDATE_IMMUTABLE` (money anchors + server-owned `revision` + `isTemplate`) and
+strips those keys from client patches. Org country gets the same treatment: a named const,
+stripped server-side from every settings patch after creation. Not a disabled input — the
+input is UX, the strip is the enforcement (R-9.3).
+
+Surfacing:
+- **Wizard** — the country field says plainly that it is permanent, at the point of choice.
+- **Settings** — renders read-only, with a note rather than a disabled dropdown that looks
+  like a bug.
+
+**Wrong country on a fresh org?** Archive it and run setup again. The org is empty, archiving
+is one click (D12), and setup takes minutes. That needs no exception to M6 and no admin
+escape hatch — which is the point of keeping the rule absolute.
+
+### 1c. Which EU country — deliberately undecided (M7)
+
+There is no need to pick one. The costs are lopsided:
+
+| Country | EU-specific work |
+|---|---|
+| **Ireland** | Essentially none. EUR, decimal **point**, day-first dates, Monday weeks, A4, metric — UK-shaped in every respect except the currency code and the 23% rate. |
+| Netherlands | Decimal **comma** — output *and* input parsing. |
+| Germany | Decimal comma **and** dotted dates (`d.m.y`). Most expensive row in the table. |
+
+So: **ship Ireland with the launch set.** That is a real EU presence for the cost of one data
+row. NL and DE stay in the country table as documented rows, disabled in the wizard's
+dropdown until decimal-comma input parsing (§1a, item 3) is built and tested.
+
+This is the honest version of "we support the EU": five countries where every format is
+already correct, rather than seven where two can silently misparse a price. It also means the
+first real EU customer decides the order, instead of us guessing now.
 
 ---
 
@@ -320,16 +366,10 @@ able to accept a non-Australian customer on day one instead of shipping a known 
 | EU e-invoicing? | Documented boundary, not built | M4 |
 | GDPR erasure vs archive? | Archive by default; explicit hard-delete path for a real request | M5 |
 | English-only? | Yes for M1's markets — recorded as a deliberate scope boundary (§3.7) | M1 |
+| Can an org change country? | **No — immutable after creation** | M6, §1b |
+| Which EU country first? | Undecided by design — Ireland ships now, NL/DE gated | M7, §1c |
 
 ### Still open
 
-1. **Does an org's country ever change?** Historical documents must keep the tax label, paper
-   size and currency they were issued under. The stored-bytes rule protects *rendered* finance
-   documents, but a live re-render of an old project (warehouse docket, preview) is not
-   protected, and `buildDocumentData`'s `stampedDates` pattern is the precedent for how to fix
-   it — stamp locale onto the row, don't recompute it.
-2. **Which EU country is actually first?** The matrix lists IE, NL and DE, but Germany alone
-   pulls in dotted dates *and* decimal comma. If the first real EU customer is Irish, most of
-   the EU-specific work defers — Ireland is effectively UK-shaped.
-3. **US imperial units — how far?** Weights are the clear case (lb). Dimensions and rigging
+1. **US imperial units — how far?** Weights are the clear case (lb). Dimensions and rigging
    loads are a bigger surface, and mixing units in a warehouse is its own hazard.

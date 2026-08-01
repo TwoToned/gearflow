@@ -630,6 +630,10 @@ slog. Every screen after the first has **"Skip for now"**.
 - **Country is the highest-leverage field in the whole wizard.** One selection fills four
   others (AU → AUD, 10%, "GST", `Australia/Sydney`). Show them filled, editable, and say so
   — auto-fill that hides itself reads as a bug.
+- **Country is permanent** ([`multi-tenant-and-international.md`](./multi-tenant-and-international.md)
+  M6). The field says so at the point of choice, and the server strips `country` from every
+  post-creation settings patch — the same enforcement shape as `PROJECT_UPDATE_IMMUTABLE`
+  (`convex/projectWrites.ts:420`). Picked wrong on an empty org: archive and re-run setup.
 - **ABN is a country-derived *label*, not a fixed field.** It belongs in the same
   country-driven group: AU asks for an ABN, NZ an NZBN, the UK a company number. The
   storage is already generic — `OrgSettings.abn`'s own doc comment reads _"Australian

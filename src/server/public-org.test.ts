@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const memberFindMany = vi.fn();
+const memberFindFirst = vi.fn();
 const organizationFindMany = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    member: { findMany: (...a: unknown[]) => memberFindMany(...a) },
+    member: {
+      findMany: (...a: unknown[]) => memberFindMany(...a),
+      findFirst: (...a: unknown[]) => memberFindFirst(...a),
+    },
     organization: { findMany: (...a: unknown[]) => organizationFindMany(...a) },
   },
 }));
@@ -18,7 +22,7 @@ vi.mock("@/lib/member-mirror", () => ({
   upsertMemberMirrorByOrgUser: vi.fn(),
 }));
 
-import { getMyOrganizations, getSoloOrgBranding } from "./public-org";
+import { getMyOrganizations, getSoloOrgBranding, hasOnlyArchivedMemberships } from "./public-org";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -44,12 +48,45 @@ describe("getMyOrganizations — membership-derived, never all orgs (R-9.3)", ()
     const orgs = await getMyOrganizations();
 
     expect(memberFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: "user_1" } }),
+      expect.objectContaining({
+        where: { userId: "user_1", organization: { archivedAt: null } },
+      }),
     );
     expect(orgs).toEqual([
       { id: "org_A", name: "Acme", slug: "acme", role: "owner" },
       { id: "org_B", name: "Beta", slug: "beta", role: "member" },
     ]);
+  });
+});
+
+describe("hasOnlyArchivedMemberships — distinguishes archived-only from never-had-one (#1075, A5)", () => {
+  it("returns false with no session", async () => {
+    getSession.mockResolvedValue(null);
+
+    expect(await hasOnlyArchivedMemberships()).toBe(false);
+  });
+
+  it("returns false when the caller has no memberships at all", async () => {
+    getSession.mockResolvedValue({ user: { id: "user_1" } });
+    memberFindFirst.mockResolvedValue(null);
+
+    expect(await hasOnlyArchivedMemberships()).toBe(false);
+  });
+
+  it("returns false when at least one membership is live", async () => {
+    getSession.mockResolvedValue({ user: { id: "user_1" } });
+    memberFindFirst.mockResolvedValueOnce({ id: "m1" }).mockResolvedValueOnce({ id: "m1" });
+
+    expect(await hasOnlyArchivedMemberships()).toBe(false);
+  });
+
+  it("returns true when every membership is archived", async () => {
+    getSession.mockResolvedValue({ user: { id: "user_1" } });
+    // First call (any membership, no archivedAt filter) finds one; second
+    // call (archivedAt: null filter) finds none.
+    memberFindFirst.mockResolvedValueOnce({ id: "m1" }).mockResolvedValueOnce(null);
+
+    expect(await hasOnlyArchivedMemberships()).toBe(true);
   });
 });
 

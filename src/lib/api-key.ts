@@ -35,6 +35,7 @@ export type ApiKeyRejectionCode =
   | "KEY_INACTIVE"
   | "KEY_EXPIRED"
   | "ORG_KILL_SWITCH"
+  | "ORG_ARCHIVED"
   | "MISSING_SCOPE";
 
 export class ApiKeyAuthError extends Error {
@@ -168,7 +169,7 @@ export async function getApiKeyActorContext(
   const [org, actingUser, orgSettings] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: key.organizationId },
-      select: { id: true },
+      select: { id: true, archivedAt: true },
     }),
     prisma.user.findUnique({
       where: { id: key.actingUserId },
@@ -183,6 +184,17 @@ export async function getApiKeyActorContext(
   // than authenticate a phantom actor against a missing org/user.
   if (!org) {
     throw new ApiKeyAuthError("INVALID_KEY", "Invalid API key.");
+  }
+  // Third of three archived-org guards (#1075, A5 — the other two are
+  // resolveActiveOrganizationId and definePayload). The agent/API-key path
+  // mints its own token independent of the Better Auth session, so it needs
+  // its own check — same shape as the kill switch above, reusing the org row
+  // this function already fetches (no extra round trip).
+  if (org.archivedAt) {
+    throw new ApiKeyAuthError(
+      "ORG_ARCHIVED",
+      "This organization has been archived.",
+    );
   }
   if (orgSettings?.apiKillSwitchAt) {
     throw new ApiKeyAuthError(

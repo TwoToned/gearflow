@@ -44,7 +44,18 @@ import {
 
 export async function getWooCommerceIntegration() {
   const { organizationId } = await requirePermission("orgSettings", "read");
-  const integration = await getWooCommerceIntegrationByOrg(organizationId);
+  let integration = await getWooCommerceIntegrationByOrg(organizationId);
+  // Lazy backfill (#1074, A4): every pre-A4 row has no webhookToken, and there's
+  // no dedicated migration for a single per-org row — mint one on first read
+  // instead. The webhook URL is unusable until this happens, so do it on the
+  // settings page's own load rather than waiting for an explicit rotate.
+  if (integration && !integration.webhookToken) {
+    await (await getConvexClient()).mutation(api.wooCommerceIntegrations.update, {
+      id: integration.id,
+      patch: { webhookToken: generateWebhookToken(), updatedAt: Date.now() },
+    });
+    integration = await getWooCommerceIntegrationByOrg(organizationId);
+  }
   return integration ? serialize(integration) : null;
 }
 
@@ -97,6 +108,7 @@ export async function updateWooCommerceIntegration(data: WooCommerceIntegrationF
       id,
       organizationId,
       webhookSecret: generateSecret(),
+      webhookToken: generateWebhookToken(),
       isEnabled: parsed.isEnabled,
       productMatchField: parsed.productMatchField,
       dateFormat: parsed.dateFormat,
@@ -155,6 +167,7 @@ export async function regenerateWebhookSecret() {
       id,
       organizationId,
       webhookSecret: secret,
+      webhookToken: generateWebhookToken(),
       createdAt: now,
       updatedAt: now,
     });
@@ -173,6 +186,56 @@ export async function regenerateWebhookSecret() {
   });
 
   return { secret };
+}
+
+/**
+ * Rotate the org's webhook URL token (#1074, A4) — separate from
+ * regenerateWebhookSecret because the two protect different things: the
+ * secret verifies the HMAC on an already-addressed request, the token IS the
+ * address (unguessable path segment that selects the org's row). Rotating
+ * invalidates the old URL immediately — the operator must re-paste the new
+ * one into WooCommerce's webhook config, same UX as regenerating the secret.
+ */
+export async function rotateWebhookToken() {
+  const { organizationId, userId, userName } = await requirePermission("orgSettings", "update");
+
+  const token = generateWebhookToken();
+  const convex = await getConvexClient();
+  const existing = await getWooCommerceIntegrationByOrg(organizationId);
+
+  let entityId: string;
+  if (existing) {
+    await convex.mutation(api.wooCommerceIntegrations.update, {
+      id: existing.id,
+      patch: { webhookToken: token, updatedAt: Date.now() },
+    });
+    entityId = existing.id;
+  } else {
+    const id = createId();
+    const now = Date.now();
+    await convex.mutation(api.wooCommerceIntegrations.create, {
+      id,
+      organizationId,
+      webhookSecret: generateSecret(),
+      webhookToken: token,
+      createdAt: now,
+      updatedAt: now,
+    });
+    entityId = id;
+  }
+
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "wooCommerceIntegration",
+    entityId,
+    entityName: "WooCommerce Integration",
+    summary: "Rotated WooCommerce webhook URL token",
+  });
+
+  return { token };
 }
 
 export async function getWooCommerceOrderLogs(params?: {
@@ -440,6 +503,14 @@ export async function processWooCommerceOrder(
 
 function generateSecret(): string {
   return crypto.randomBytes(32).toString("hex");
+}
+
+/** Opaque per-org webhook URL token (#1074, A4) — same pattern as the
+ *  org-calendar/crew-communication/crew-calendar URL tokens. Unlike
+ *  webhookSecret (hex, verifies the HMAC), this is base64url so it drops
+ *  cleanly into a URL path segment with no encoding. */
+function generateWebhookToken(): string {
+  return crypto.randomBytes(32).toString("base64url");
 }
 
 /**

@@ -7,9 +7,11 @@ import { internal } from "./_generated/api";
  * Convex HTTP router — WooCommerce webhook ingress (Convex-native migration).
  *
  * Faithful port of the Next.js route `src/app/api/integrations/woocommerce/
- * webhook/route.ts`. Runs on Convex Cloud; the ORIGINAL Next route is left intact
- * for dual-accept during the URL swap — the shared Convex order-log dedup makes
- * running both safe.
+ * webhook/[token]/route.ts`. Runs on Convex Cloud; the ORIGINAL Next route is
+ * left intact for dual-accept during the URL swap — the shared Convex order-log
+ * dedup makes running both safe. The settings UI has only ever generated the
+ * Next route's URL (FEATUREDOCS/35), so this one is understood to be vestigial
+ * in production — kept working, not actively served.
  *
  * The HMAC scheme reproduces `verifyWebhookSignature` (src/lib/woocommerce-utils.ts)
  * exactly, in Web Crypto: HMAC-SHA-256 over the UTF-8 raw body bytes, keyed on the
@@ -74,17 +76,39 @@ const wooWebhook = httpAction(async (ctx, request) => {
     return json({ error: "Payload too large" }, 413);
   }
 
-  // 2. Read the raw body (needed for HMAC verification)
+  // 2. Resolve the org from the opaque path token (#1074, A4) — mirrors the
+  // Next route (src/app/api/integrations/woocommerce/webhook/[token]/route.ts),
+  // which is the real ingress; this httpAction is understood to be vestigial
+  // (no UI has ever generated a /webhooks/woo/* URL, see FEATUREDOCS/35) but is
+  // kept working rather than left referencing the now-deleted ?org=/getSingleOrg
+  // scheme. Resolved BEFORE the ping check below, and an unknown token / a
+  // disabled integration return the SAME 404 — no enumeration oracle.
+  //
+  // NOTE: unlike the Next route, this does NOT check Organization.archivedAt
+  // (#1075) — that lives on Postgres, unreachable from a Convex httpAction. A
+  // webhook hitting this vestigial path for an archived org's token is a known,
+  // documented gap (see getIntegrationByWebhookToken's doc comment).
+  const token = new URL(request.url).pathname.replace(/^\/webhooks\/woo\//, "");
+  const integration = await ctx.runQuery(internal.wooCommerceInternal.getIntegrationByWebhookToken, {
+    webhookToken: token,
+  });
+  if (!integration || (integration.isEnabled ?? false) !== true) {
+    return json({ error: "Not found" }, 404);
+  }
+  const orgId = integration.organizationId;
+  const webhookSecret = integration.webhookSecret ?? "";
+
+  // 3. Read the raw body (needed for HMAC verification)
   const rawBody = await request.text();
   if (rawBody.length > MAX_PAYLOAD_SIZE) {
     return json({ error: "Payload too large" }, 413);
   }
 
-  // 3. Get headers
+  // 4. Get headers
   const signature = request.headers.get("X-WC-Webhook-Signature");
   const topic = request.headers.get("X-WC-Webhook-Topic");
 
-  // 4. Handle WooCommerce ping (no signature check — no sensitive data).
+  // 5. Handle WooCommerce ping (no signature check — no sensitive data).
   if (topic === "action.woocommerce_webhook_delivery") {
     return json({ ok: true, ping: true });
   }
@@ -99,29 +123,7 @@ const wooWebhook = httpAction(async (ctx, request) => {
     return json({ ok: true, ping: true });
   }
 
-  // 5. Determine org — an explicit ?org= param, else the oldest org (mirrors the
-  // Next route's inline fallback). Interim — #1074/A4 replaces both with an
-  // opaque per-org webhook token. No org found → "No organization configured".
-  let orgId = new URL(request.url).searchParams.get("org");
-  if (!orgId) {
-    const org = await ctx.runQuery(internal.wooCommerceInternal.getSingleOrg, {});
-    if (!org) {
-      return json({ error: "No organization configured" }, 404);
-    }
-    orgId = org.id;
-  }
-
-  // 6. Load the org's integration; require it enabled (mapped isEnabled defaults to
-  // false when absent, matching mapWooCommerceIntegration).
-  const integration = await ctx.runQuery(internal.wooCommerceInternal.getIntegrationByOrg, {
-    orgId,
-  });
-  if (!integration || (integration.isEnabled ?? false) !== true) {
-    return json({ error: "Integration not enabled" }, 404);
-  }
-  const webhookSecret = integration.webhookSecret ?? "";
-
-  // 7. Verify HMAC-SHA256 signature
+  // 6. Verify HMAC-SHA256 signature
   if (!signature) {
     return json({ error: "Missing signature" }, 401);
   }
@@ -179,7 +181,7 @@ const wooWebhook = httpAction(async (ctx, request) => {
 const http = httpRouter();
 
 http.route({
-  path: "/webhooks/woo",
+  pathPrefix: "/webhooks/woo/",
   method: "POST",
   handler: wooWebhook,
 });

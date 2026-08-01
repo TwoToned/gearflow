@@ -178,6 +178,15 @@ describe("getApiKeyActorContext — validation + resolution", () => {
     await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "ORG_KILL_SWITCH" });
   });
 
+  it("rejects every key when the org is archived (ORG_ARCHIVED, #1075 A5)", async () => {
+    // Third of three archived-org guards — the agent/API-key path mints its
+    // own token independent of the Better Auth session, so archiving must be
+    // checked here too, not just at the session chokepoints.
+    getByTokenHash.mockResolvedValue(keyRow());
+    orgFindUnique.mockResolvedValue({ id: "org_1", archivedAt: new Date() });
+    await expect(getApiKeyActorContext("x")).rejects.toMatchObject({ code: "ORG_ARCHIVED" });
+  });
+
   it("fails closed when the key's org no longer exists (INVALID_KEY)", async () => {
     getByTokenHash.mockResolvedValue(keyRow());
     orgFindUnique.mockResolvedValue(null);

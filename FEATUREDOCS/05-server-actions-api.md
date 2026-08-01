@@ -73,7 +73,7 @@ logic is Convex queries/mutations now (`convex/<domain>.ts` /
 | `/api/registration-policy` | GET | Public registration policy only |
 | `/api/admin-register/verify` | GET | Verify admin registration token |
 | `/api/admin-register/promote` | POST | Promote user to site admin (token-gated) |
-| `/api/integrations/woocommerce/webhook` | POST | WooCommerce order webhook (public, HMAC verified). A Convex `httpAction` (`convex/http.ts`) is a faithful port of this route, running in parallel for dual-accept during a URL migration — both are live today, check `convex/http.ts`'s header comment for current status before assuming this route is the only ingress |
+| `/api/integrations/woocommerce/webhook/[token]` | POST | WooCommerce order webhook, addressed by an opaque per-org token (public, HMAC verified) (#1074, A4). A Convex `httpAction` (`convex/http.ts`) is a faithful port of this route, running in parallel for dual-accept during a URL migration — both are live today, check `convex/http.ts`'s header comment for current status before assuming this route is the only ingress |
 | `/api/warehouse/display/[token]` | GET | Token-based public warehouse display |
 | `/api/auditor/[token]` | GET | T&T auditor-token routes |
 | `/api/calendar/[token]/[feed]` | GET | Org iCal feed |

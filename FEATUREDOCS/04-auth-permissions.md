@@ -58,7 +58,7 @@ creation is gated off, D7) — the "request to join" flow that resolves this
   docstring — without it the bootstrap owner has a Postgres membership and no
   Convex one, and every Convex-authorized action fails).
 
-### The org switcher and picker
+### The org switcher and picker (#1072, A2 — D14)
 - `src/app/(auth)/select-organization/page.tsx` — the "never guess" picker: shown to
   a 2+-membership user post-login/post-SSO/via `OrgActivator`, lets them choose,
   then calls `organization.setActive()` and navigates to a tenant-neutral
@@ -67,9 +67,56 @@ creation is gated off, D7) — the "request to join" flow that resolves this
   missing active org on the client (mainly the SSO-redirect gap): 1 membership →
   activate it; 2+ → route to the picker; 0 → nothing to activate (the `(app)`
   layout's own guard handles 0 memberships).
-- A full org-switcher **dropdown** (D14, re-minting the Convex token on switch) is
-  `#1072`/A2 — not built yet; today switching means signing into a different
-  session or using the picker above.
+- **The switcher dropdown** (`UserNav`, `src/components/layout/user-nav.tsx`) adds an
+  "Organisations" group to the existing sidebar-footer menu — one item per
+  `getMyOrganizations()` membership (never a client-filtered list of all orgs), a
+  check against the active org, role as secondary text. Shown only with ≥2
+  memberships; the active org's name fills the trigger's second line regardless
+  (replacing what used to be a duplicate of the email shown two rows below).
+  Picking an org calls `organization.setActive()` then `router.push("/dashboard")` —
+  same tenant-neutral-root rule as the picker.
+
+#### The sharp edge: re-minting the Convex token on switch
+
+`organization.setActive()` updates the Better Auth session, but the Convex JWT bakes
+`orgId` in as a claim (`definePayload`, `src/lib/auth.ts`) — and Convex's
+`ConvexProviderWithAuth` only refetches that token on its own schedule (mount +
+pre-expiry), never merely because a render happened. Left alone, every live
+subscription would keep serving the **previous** org's data until the token
+happened to expire — a cross-tenant read produced by the switcher itself.
+
+Fixed centrally in `src/components/providers/convex-provider.tsx`, not in the
+switcher: `useBetterAuthForConvex`'s `fetchAccessToken` callback includes the
+active org id in its dependency array. Convex's own `ConvexAuthStateFirstEffect`
+calls `client.setAuth(fetchAccessToken, ...)` inside a `useEffect` keyed on that
+callback's identity — and `client.setAuth` (`AuthenticationManager.setConfig`,
+verified against the installed `convex` package source, not assumed from docs)
+unconditionally pauses the socket, force-fetches a fresh token, and
+re-authenticates. So switching org changes `orgId` → `fetchAccessToken` gets a new
+identity → the effect reruns → the client force-reauthenticates and every
+subscription re-evaluates under the new claim. No caller (switcher, picker,
+`OrgActivator`) has to orchestrate this itself — there's exactly one place a
+Convex identity is minted, and the reactivity lives there.
+
+`useServerQuery` reads (server-action-backed, not Convex subscriptions) invalidate
+correctly only when their `queryKey` includes `orgId` — `UserNav`'s own
+`my-crew-id`/`my-organizations` keys follow this. **Known gap**: no exhaustive
+sweep of every `useServerQuery` call site for a missing `orgId` key has been done
+yet — deferred to A6 (`#1076`), the registry-driven cross-tenant audit, rather than
+hand-checked here.
+
+**Known gap, E2E coverage**: the design called for an explicit E2E (a user in two
+orgs switches, asserts the second org's dashboard shows none of the first org's
+entities), but writing one hits the same root cause already blocking
+`harness-onboarding`/`harness-revenue-path`/`harness-sign-out` (`#1118`): the
+shared-DB harness can't create a second org once one exists in a run, and this
+scenario additionally needs invitation-acceptance across two accounts, which has
+no test-harness affordance for reading a sent invite without email delivery.
+Covered instead by a jsdom smoke test that actually opens the menu
+(`src/components/layout/__tests__/user-nav.test.tsx`) — proves the group's
+membership-count gating, the per-item render, and that a click fires
+`setActive()` + `push("/dashboard")`, but not live cross-tenant data isolation.
+Tracked under the same `#1118` as the other quarantined harness gaps.
 
 ### Org archiving (#1075, A5 — D12) — archived, never deleted, reversible
 - `Organization.archivedAt DateTime?` (Postgres — `apiKillSwitchAt`'s sibling column).

@@ -38,6 +38,7 @@ export const create = mutation({
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
     webhookSecret: v.optional(v.string()),
+    webhookToken: v.optional(v.string()),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),
@@ -68,6 +69,7 @@ export const createIfMissing = mutation({
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
     webhookSecret: v.optional(v.string()),
+    webhookToken: v.optional(v.string()),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),
@@ -102,6 +104,7 @@ export const update = mutation({
       organizationId: v.optional(v.string()),
       isEnabled: v.optional(v.boolean()),
       webhookSecret: v.optional(v.string()),
+      webhookToken: v.optional(v.string()),
       storeUrl: v.optional(v.string()),
       productMatchField: v.optional(v.string()),
       customFieldKey: v.optional(v.string()),
@@ -153,6 +156,7 @@ export const patchWooCommerceIntegration = mutation({
     set: v.object({
       isEnabled: v.optional(v.boolean()),
       webhookSecret: v.optional(v.string()),
+      webhookToken: v.optional(v.string()),
       storeUrl: v.optional(v.string()),
       productMatchField: v.optional(v.string()),
       customFieldKey: v.optional(v.string()),
@@ -183,10 +187,26 @@ export const patchWooCommerceIntegration = mutation({
   },
 });
 
+// Service-gated twin of wooCommerceInternal.ts's unguarded getIntegrationByWebhookToken
+// (#1074, A4) — this one is for the Next.js settings-page path (which calls Convex with a
+// service token); the httpAction webhook ingress has no service token and uses the
+// internalQuery twin instead. Same shape as by_cuid/by_organizationId lookups above.
+export const getByWebhookToken = query({
+  args: { webhookToken: v.string() },
+  handler: async (ctx, { webhookToken }) => {
+    await requireService(ctx);
+    return await ctx.db
+      .query("wooCommerceIntegrations")
+      .withIndex("by_webhookToken", (q) => q.eq("webhookToken", webhookToken))
+      .unique();
+  },
+});
+
 const wooCommerceIntegrationsDenyReason =
-  "Row includes webhookSecret (a live credential) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg).";
+  "Row includes webhookSecret and webhookToken (live credentials) in the raw shape; no redacted projection exists here (contrast xeroIntegrations.getForOrg).";
 
 export const agentOps: AgentOpsAnnotations = {
   list: { agentAccess: "denied", reason: wooCommerceIntegrationsDenyReason },
   getById: { agentAccess: "denied", reason: wooCommerceIntegrationsDenyReason },
+  getByWebhookToken: { agentAccess: "denied", reason: wooCommerceIntegrationsDenyReason },
 };

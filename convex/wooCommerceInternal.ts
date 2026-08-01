@@ -23,31 +23,31 @@ import { projectWriteFields } from "./projects";
  * `recalcProjectTotals` (convex/lib/recalc.ts), so totals stay byte-identical.
  */
 
-// ─── organizations ───────────────────────────────────────────────────────────
-
-/**
- * The oldest organization row (or null) — the ?org=-less webhook fallback's
- * Convex-side twin of the Next route's inline `prisma.organization.findFirst`
- * (src/app/api/integrations/woocommerce/webhook/route.ts). Lets the webhook
- * ingress distinguish "No organization configured" from "Integration not
- * enabled" the way the Next route does. Interim — #1074/A4 replaces this
- * fallback (and this query) with an opaque per-org webhook token.
- */
-export const getSingleOrg = internalQuery({
-  args: {},
-  handler: async (ctx) => await ctx.db.query("organizations").first(),
-});
-
 // ─── wooCommerceIntegrations ────────────────────────────────────────────────
 
-/** Twin of api.wooCommerceIntegrations.list(orgId)[0] / the getWooCommerceIntegrationByOrg helper. */
-export const getIntegrationByOrg = internalQuery({
-  args: { orgId: v.string() },
-  handler: async (ctx, { orgId }) =>
+/**
+ * Twin of api.wooCommerceIntegrations.getByWebhookToken (#1074, A4) — the org
+ * resolution step for BOTH webhook ingress points (this file's httpAction
+ * caller has no SERVICE token; the service-gated twin is for the Next.js
+ * settings-page path). Replaces the old getSingleOrg/?org= fallback: the
+ * token itself both selects the row AND is opaque/unguessable, so an unknown
+ * token and a disabled integration can return the identical response — no
+ * enumeration oracle, and no org id leaked into a URL pasted into a
+ * third-party admin panel.
+ *
+ * NOTE: does not check Organization.archivedAt (#1075) — that lives on
+ * Postgres, unreachable from here. See src/app/api/integrations/woocommerce/
+ * webhook/[token]/route.ts, which does check it, for the real ingress point;
+ * this httpAction (convex/http.ts) is understood to be vestigial — no UI has
+ * ever generated its URL, see FEATUREDOCS/35.
+ */
+export const getIntegrationByWebhookToken = internalQuery({
+  args: { webhookToken: v.string() },
+  handler: async (ctx, { webhookToken }) =>
     await ctx.db
       .query("wooCommerceIntegrations")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-      .first(),
+      .withIndex("by_webhookToken", (q) => q.eq("webhookToken", webhookToken))
+      .unique(),
 });
 
 /** Twin of api.wooCommerceIntegrations.getById. */

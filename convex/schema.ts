@@ -2574,6 +2574,11 @@ export default defineSchema({
     organizationId: v.string(),
     isEnabled: v.optional(v.boolean()),
     webhookSecret: v.optional(v.string()),
+    // Opaque per-org webhook token (#1074, A4) — the URL path segment that
+    // resolves the org, replacing the ?org=/single-org-fallback scheme.
+    // Distinct from webhookSecret: this selects the row, the secret verifies
+    // the HMAC. Rotatable.
+    webhookToken: v.optional(v.string()),
     storeUrl: v.optional(v.string()),
     productMatchField: v.optional(v.string()),
     customFieldKey: v.optional(v.string()),
@@ -2593,7 +2598,8 @@ export default defineSchema({
     updatedAt: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
-    .index("by_organizationId", ["organizationId"]),
+    .index("by_organizationId", ["organizationId"])
+    .index("by_webhookToken", ["webhookToken"]),
 
   // WooCommerceOrderLog
   wooCommerceOrderLogs: defineTable({

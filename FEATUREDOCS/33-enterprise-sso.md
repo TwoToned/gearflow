@@ -74,18 +74,17 @@ Priority order (in `resolveRoleFromGroups`):
 
 ## Login Flow
 
-### Single-Org Login (`/login`)
+### Login (`/login`) — multi-org domain lookup (#1071, A1)
 1. User enters email → "Continue"
-2. Login page calls `getSingleOrgSSOInfo()` to check if SSO is configured for the email domain
-3. If domain matches an SSO provider → `authClient.signIn.sso({ providerId, callbackURL: "/dashboard" })`
-4. If no match → show password form
+2. Login page `POST`s to `/api/auth/sso/org-lookup` (IP rate-limited, `withValidatedBody`) to find which org(s) have an SSO provider configured for the email domain
+3. Exactly one org matches → `getOrgLoginInfo(orgSlug)` resolves the specific provider, then `authClient.signIn.sso({ providerId, callbackURL: "/dashboard" })`
+4. No match, or 2+ orgs share the domain (ambiguous — not disambiguated without more context) → show password form
 5. Social login and passkey buttons also available
 
 ### Post-Login
-- `handlePostLogin` calls `getTheOrgId()` to get the single org
+- `handlePostLogin` calls `getMyOrganizations()` to resolve the user's memberships: 0 → `/onboarding`, 1 → activate it, 2+ → `/select-organization` (never guess)
 - Calls `organization.setActive()` for Better Auth compatibility
-- Redirects to `/dashboard`
-- If no org exists → redirects to `/onboarding`
+- Redirects to `/dashboard` (or the picker's `callbackUrl`)
 
 ## Settings UI (`/settings/sso`)
 

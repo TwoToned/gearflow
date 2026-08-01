@@ -23,7 +23,7 @@ Automatically creates RVLT Flow projects from WooCommerce orders via webhook.
 WooCommerce (order.created) → POST /api/integrations/woocommerce/webhook
   1. Ping detection (accept without HMAC for webhook creation)
   2. Parse JSON body (cheap `id` presence check only — shape not yet trusted)
-  3. Resolve organization (single-org auto-detect or ?org= param)
+  3. Resolve organization (?org= param, else the oldest org — interim fallback; #1074/A4 replaces both with an opaque per-org webhook token)
   4. Load integration config, verify enabled
   5. HMAC-SHA256 signature verification (timing-safe)
   6. Validate payload shape against `wooOrderSchema` (Zod, R-8.2.3) — 422 on failure

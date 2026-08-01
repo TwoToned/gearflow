@@ -1,27 +1,79 @@
-# Authentication, Single-Org & Permissions
+# Authentication, Multi-Tenancy & Permissions
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-29 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-08-01 (review quarterly — POLICY.md R-5.5)_
 
-## Single-Org Architecture
+## Multi-Tenant Architecture (#1064, Phase A)
 
-This instance runs in **single-org mode**: exactly one `Organization` row exists, and all users belong to it. The Better Auth Organization plugin is retained for its membership, invitation, and role infrastructure, but multi-org features (org switching, org creation beyond bootstrap, org-specific login routes) are removed.
+The app is multi-tenant: any number of `Organization` rows can exist, and a user's
+memberships determine which org(s) they belong to. Single-org mode (exactly one
+`Organization` row, every user auto-joined) was removed in Phase A (#1071, A1) —
+`src/lib/single-org.ts` and its `getTheOrg()` cached singleton no longer exist.
 
-### Core: `src/lib/single-org.ts`
-- `getTheOrg()` — Cached singleton returning the single org's `{ id, name, slug }` (5-minute TTL)
-- `invalidateOrgCache()` — Clears cache (called after import, rename, etc.)
-- All org resolution flows through this helper; session `activeOrganizationId` is no longer used for org lookup
+**Self-serve org creation is still gated off** (D7): `allowUserToCreateOrganization`
+in `src/lib/auth.ts` only permits creating an org while zero orgs exist system-wide
+(the one-time bootstrap, `src/app/(auth)/onboarding/page.tsx`). Phase B (#1067)
+replaces this interim gate with the real site-admin `allowOrgCreation` toggle +
+signup code (D6). Until then, additional orgs are created by a site admin
+(`adminCreateOrganization`, `src/server/site-admin.ts`).
 
-### Auto-Membership (`src/lib/auth.ts` database hook)
-- On user creation, the hook auto-adds the user as a member of the single org
-- First user (no existing owner) gets `"owner"` role; subsequent users get `"member"`
-- `organizationLimit: 1` in Better Auth config prevents creating additional orgs
+### Org resolution: the session, re-validated (`src/lib/auth-server.ts`)
+- `requireOrganization()` / `getActiveOrganizationId()` resolve the **active org from
+  the session** (`session.session.activeOrganizationId`, set by the client-callable
+  `organization.setActive()`), but **never trust it alone** (R-9.3) — every
+  resolution re-validates it against a live `Member` row. A removed member, an
+  archived membership, or a stale/forged session value resolves to `null`, not the
+  claimed org.
+- Memoized per-request with React `cache()` so every caller in the same request
+  shares one session fetch + one membership query.
+- The Convex JWT's `orgId`/`role` claims (`src/lib/auth.ts`'s `definePayload`) are
+  minted the same way — re-read from a live `Member` row at every mint, with a
+  same-request fallback to the user's SOLE membership if `activeOrganizationId` is
+  unset (e.g. the SSO-redirect race `OrgActivator` exists to heal). With 0 or 2+
+  memberships and no active org set, nothing is guessed — `orgId: null`.
 
-### Public Org Actions (`src/server/public-org.ts`)
-- `getTheOrgId()` — Returns `{ id }` for the single org (no session required, used by login/register/invite)
-- `getSingleOrgSSOInfo()` — Returns SSO config for the single org (used by login page for domain-based SSO detection)
+### Membership creation — invite/provisioning only, never auto-join
+Membership is only ever created by: invite-accept (`organization.acceptInvitation`),
+SSO auto-provisioning (`handleSSOProvisioning`, AUTO_CREATE mode), org-create
+(`creatorRole: "owner"`), or a site admin (`adminCreateOrganization`,
+`adminAddMemberToOrg`). The `user.create` database hook's old single-org auto-join
+(every new signup silently joined "the org") was deleted (#1071, A1) — a fresh
+signup with no invite and no org to bootstrap lands with **zero** memberships and is
+routed to `/onboarding`. **Known gap:** with `registrationPolicy: OPEN` and no
+pending invite, that onboarding visit dead-ends once an org already exists (org
+creation is gated off, D7) — the "request to join" flow that resolves this
+(`DOMAIN_REQUEST` join policy, design doc §4.3) hasn't landed yet.
+
+### Which org(s) does this user belong to? (`src/server/public-org.ts`)
+- `getMyOrganizations()` — the calling session's memberships (`{ id, name, slug,
+  role }[]`), membership-derived, never a list of all orgs filtered client-side
+  (R-9.3). The multi-tenant replacement for the single-org `getTheOrgId()` —
+  login/register/invite/onboarding/`OrgActivator`/the `(app)` layout gate all
+  resolve through here: **0 → `/onboarding`, 1 → activate it, 2+ → `/select-organization`
+  (never guess which one).**
+- `getSoloOrgBranding()` — best-effort org name for the pre-auth login page, returned
+  only when exactly one org exists system-wide (an anonymous visitor's org isn't
+  otherwise knowable pre-auth).
+- `mirrorMyMembership(organizationId)` — mirrors the calling session's own
+  membership into Convex; still required after `organization.create()` (see its
+  docstring — without it the bootstrap owner has a Postgres membership and no
+  Convex one, and every Convex-authorized action fails).
+
+### The org switcher and picker
+- `src/app/(auth)/select-organization/page.tsx` — the "never guess" picker: shown to
+  a 2+-membership user post-login/post-SSO/via `OrgActivator`, lets them choose,
+  then calls `organization.setActive()` and navigates to a tenant-neutral
+  `callbackUrl` (never a stale id from the previous context).
+- `OrgActivator` (`src/components/providers/org-activator.tsx`) heals a
+  missing active org on the client (mainly the SSO-redirect gap): 1 membership →
+  activate it; 2+ → route to the picker; 0 → nothing to activate (the `(app)`
+  layout's own guard handles 0 memberships).
+- A full org-switcher **dropdown** (D14, re-minting the Convex token on switch) is
+  `#1072`/A2 — not built yet; today switching means signing into a different
+  session or using the picker above.
 
 ## Better Auth Configuration (`src/lib/auth.ts`)
-- Plugins: `organization({ organizationLimit: 1 })`, `twoFactor({ issuer: "RVLT Flow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`
+- Plugins: `organization({...})` (no `organizationLimit` cap — creation is gated by
+  `allowUserToCreateOrganization`, not a per-user limit), `twoFactor({ issuer: "RVLT Flow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`
 - Social OAuth login (Google/Microsoft) was removed — only email/password, passkeys, and SSO remain. (Existing `account` rows for legacy google/microsoft links are left untouched.)
 - SSO: SAML 2.0 and OIDC via `@better-auth/sso` plugin — org provider configuration
 - Account linking: `accountLinking: { enabled: true, trustedProviders: ["sso"] }` — existing users with matching email auto-linked on SSO login
@@ -48,8 +100,8 @@ Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/au
 ## Session Helpers (`src/lib/auth-server.ts`)
 - `getSession()` — Returns session + user or null
 - `requireSession()` — Throws if not authenticated
-- `requireOrganization()` — Returns `{ session, organizationId }` using `getTheOrg()` (does NOT read session's `activeOrganizationId`)
-- `getActiveOrganizationId()` — Returns the single org's ID via `getTheOrg()`
+- `requireOrganization()` — Returns `{ session, organizationId }`, resolving the active org from `session.session.activeOrganizationId` and re-validating it against a live `Member` row (never trusted alone, R-9.3)
+- `getActiveOrganizationId()` — Same resolution, org id only. Both share one memoized (`cache()`) per-request lookup.
 
 ## Organization Context (`src/lib/org-context.ts`)
 - `getOrgContext()` — Returns `{ organizationId, userId, userName }` for the current request
@@ -57,11 +109,11 @@ Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/au
 - `requireRole(roles)` — Validates member has one of the specified roles
 - `requirePermission(resource, action)` — Checks permission map, throws 403 if denied
 
-## Single-Org Data Rules
-- Every database query MUST include `organizationId` in its WHERE clause (kept for schema consistency)
+## Multi-Tenant Data Rules
+- Every database query MUST include `organizationId` in its WHERE clause — the real tenancy boundary now that more than one org can exist (R-8.4.3)
 - Asset tags, project numbers, test tag IDs are unique per org (composite unique indexes)
 - File storage is org-prefixed: `{orgId}/{folder}/{entityId}/{filename}`
-- All users belong to the single org; `organization.setActive()` is called during login/register for Better Auth compatibility
+- A user's active org comes from their session, re-validated against a live membership on every resolution; `organization.setActive()` is called during login/register/invite-accept/org-create, and by the picker/`OrgActivator` when a session arrives with no (or an invalid) active org set
 
 ## Two-Tier Permission Model
 1. **Site-level**: `User.role` = `"user"` or `"admin"`. Admin gets access to `/admin` panel
@@ -132,8 +184,8 @@ consumer of this same identity kind — **FEATUREDOCS/68**.
 ### Invitations
 - **Invite-only registration**: Site admin can set registration policy to INVITE_ONLY.
 - **Invite signup**: Registration page prefills and locks email when `invite` query param is present.
-- **Server actions**: `src/server/invitations.ts` — `getMyPendingInvitations()`, `getInvitationEmail()`, `checkIsSiteAdmin()`.
-- All invitations target the single org.
+- **Server actions**: `src/server/invitations.ts` — `getMyPendingInvitations()`, `getInvitationEmail()`, `checkIsSiteAdmin()`, `getInvitationOrganizationId()`.
+- Each invitation targets a specific org (`Invitation.organizationId`) — the invite-accept page resolves which org to activate from the invitation row itself via `getInvitationOrganizationId()`, not a single-org assumption.
 
 ### Account Page Sections
 The `/account` page is organized into: Profile (avatar + name), Security (password, 2FA, passkeys, connected accounts), Active Sessions.
@@ -147,9 +199,8 @@ Per-org SAML 2.0 and OIDC SSO via `@better-auth/sso` plugin. Managed in `/settin
 - `src/lib/sso-types.ts` — `OrgSSOSettings` and `SSOGroupMapping` interfaces
 - `src/lib/sso-provisioning.ts` — `handleSSOProvisioning` hook (provisionUser)
 - `src/server/sso.ts` — SSO server actions (settings, providers, approvals)
-- `src/server/public-org.ts` — `getSingleOrgSSOInfo()` for login page SSO detection
+- `src/app/api/auth/sso/org-lookup/route.ts` — email-domain → org(s) lookup for login page SSO detection (IP rate-limited)
 - `src/app/(app)/settings/sso/page.tsx` — SSO settings UI
-- `src/app/api/auth/sso/org-lookup/route.ts` — Email domain → org lookup
 
 ### SSO Settings (stored in `Organization.metadata.sso`)
 - `enabled` — Master SSO toggle
@@ -172,7 +223,7 @@ Per-org SAML 2.0 and OIDC SSO via `@better-auth/sso` plugin. Managed in `/settin
 3. Default role fallback
 
 ### Login Flow
-- `/login` — Two-step: email first, then checks for SSO match via `getSingleOrgSSOInfo()` (domain-based detection)
+- `/login` — Two-step: email first, then checks for an SSO match via `POST /api/auth/sso/org-lookup` (domain-based, multi-org-aware detection; ambiguous across 2+ orgs falls through to password)
 - `/pending-approval` — Shown when user authenticated but not yet approved
 - No org-specific login route — SSO is triggered automatically from the main login page
 

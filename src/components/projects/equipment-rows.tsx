@@ -14,7 +14,6 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "../../../convex/_generated/api";
 import {
   ChevronRight,
-  GripVertical,
   Plus,
   Package,
   MoreHorizontal,
@@ -97,53 +96,32 @@ export function getDisallowedDropReason(
   return null;
 }
 
-// ─── Drag handle (every row kind) ────────────────────────────────────────────
+// ─── Drag entry point (every row kind) ───────────────────────────────────────
 //
-// The real @dnd-kit drag entry point, shared by LineItemRow, GroupRow,
-// SubHireGroupRow, and CategoryRow (the last to convert — categories used to
-// keep their ▲/▼ MoveButtons). Kept generic (`Record<string, unknown>` for
+// The real @dnd-kit wiring, shared by LineItemRow, GroupRow, SubHireGroupRow,
+// and CategoryRow. There is no dedicated drag handle — pressing and holding
+// ANYWHERE on the row/card starts the drag (a small delay-based activation
+// constraint on the sensor, see use-equipment-dnd.ts, distinguishes a quick
+// tap/click from a deliberate hold, so nested buttons/checkboxes/inputs keep
+// working normally). `dragHandleRef`/`dragAttributes`/`dragListeners` are
+// `useSortable()`'s `setNodeRef`/`attributes`/`listeners`, spread onto the
+// row's/card's ROOT element (the `<TableRow>` on desktop, the card container
+// on mobile) so dnd-kit measures and tracks the actual visible surface being
+// dragged — not a separate, differently-sized node — which is also what keeps
+// the drag preview tracking the exact point the user grabbed instead of
+// snapping to some other anchor. Kept generic (`Record<string, unknown>` for
 // attributes/listeners) so this file stays free of a hard `@dnd-kit` import —
 // the caller (equipment-tab.tsx, which DOES import dnd-kit) passes its
 // `useSortable()` return values straight through.
 
 export interface DragHandleControls {
-  /** `useSortable()`'s `setNodeRef`, attached to this handle button (not the
-   *  whole row) — the button is what dnd-kit measures/tracks for this item. */
+  /** `useSortable()`'s `setNodeRef` — attach to the row/card ROOT element. */
   dragHandleRef?: (el: HTMLElement | null) => void;
   dragAttributes?: Record<string, unknown>;
   dragListeners?: Record<string, unknown>;
   /** No drag entry point at all when true (e.g. sub-hire/kit group children,
    *  which aren't independently reorderable). */
   isDragDisabled?: boolean;
-}
-
-function DragHandle({
-  dragHandleRef,
-  dragAttributes,
-  dragListeners,
-  isDragDisabled,
-  className,
-}: DragHandleControls & { className?: string }) {
-  if (isDragDisabled) return null;
-  return (
-    // Same hover/focus-reveal treatment as the old MoveButtons — hidden by
-    // default on desktop, shown on row hover/keyboard focus, always visible on
-    // touch (no hover) via the `md:` gate.
-    <button
-      type="button"
-      aria-label="Reorder"
-      ref={dragHandleRef}
-      {...(dragAttributes as React.HTMLAttributes<HTMLButtonElement> | undefined)}
-      {...(dragListeners as React.HTMLAttributes<HTMLButtonElement> | undefined)}
-      className={cn(
-        "cursor-grab touch-none rounded-sm text-muted transition-opacity hover:text-ink active:cursor-grabbing md:opacity-0 md:group-hover/row:opacity-100 md:group-focus-within/row:opacity-100",
-        focusRing,
-        className,
-      )}
-    >
-      <GripVertical className="h-3.5 w-3.5" />
-    </button>
-  );
 }
 
 // Column count used for category-row + empty-state colSpans. Spans every
@@ -417,19 +395,11 @@ export function GroupRow({
         total={groupTotal}
         isExpanded={isExpanded}
         onToggle={onToggle}
+        dragHandleRef={dragHandleRef}
+        dragAttributes={dragAttributes}
+        dragListeners={dragListeners}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
-            {/* Mobile drag handle — mirrors LineItemRow's mobile treatment:
-                this row previously had ZERO reorder affordance on touch
-                (MoveButtons hid itself there too), long-press-to-drag
-                (TouchSensor) is the first reorder entry point here. */}
-            <DragHandle
-              dragHandleRef={dragHandleRef}
-              dragAttributes={dragAttributes}
-              dragListeners={dragListeners}
-              isDragDisabled={isDragDisabled}
-              className="inline-flex min-h-11 min-w-8 items-center justify-center"
-            />
             {orgId && projectId && (
               <CommentThreadPanel
                 orgId={orgId}
@@ -466,17 +436,14 @@ export function GroupRow({
   }
 
   return (
-    <TableRow className="group/row" {...shortcuts}>
-      <TableCell className="px-0">
-        <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <DragHandle
-            dragHandleRef={dragHandleRef}
-            dragAttributes={dragAttributes}
-            dragListeners={dragListeners}
-            isDragDisabled={isDragDisabled}
-          />
-        </div>
-      </TableCell>
+    <TableRow
+      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing")}
+      ref={dragHandleRef}
+      {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
+      {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
+      {...shortcuts}
+    >
+      <TableCell className="px-0" />
       <TableCell>
         <div className={`flex items-center gap-1.5 ${indented ? "ml-2" : ""}`}>
           <button
@@ -699,18 +666,11 @@ export function SubHireGroupRow({
         total={charge != null ? charge * group.quantity : null}
         isExpanded={isExpanded}
         onToggle={onToggle}
+        dragHandleRef={dragHandleRef}
+        dragAttributes={dragAttributes}
+        dragListeners={dragListeners}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
-            {/* Mobile drag handle — same treatment as GroupRow's mobile
-                card (see that component's comment); this row previously had
-                no reorder affordance on touch either. */}
-            <DragHandle
-              dragHandleRef={dragHandleRef}
-              dragAttributes={dragAttributes}
-              dragListeners={dragListeners}
-              isDragDisabled={isDragDisabled}
-              className="inline-flex min-h-11 min-w-8 items-center justify-center"
-            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="size-8">
@@ -746,17 +706,14 @@ export function SubHireGroupRow({
   }
 
   return (
-    <TableRow className="group/row" {...shortcuts}>
-      <TableCell className="px-0">
-        <div className={`flex justify-end ${indented ? "ml-3" : "px-1"}`}>
-          <DragHandle
-            dragHandleRef={dragHandleRef}
-            dragAttributes={dragAttributes}
-            dragListeners={dragListeners}
-            isDragDisabled={isDragDisabled}
-          />
-        </div>
-      </TableCell>
+    <TableRow
+      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing")}
+      ref={dragHandleRef}
+      {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
+      {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
+      {...shortcuts}
+    >
+      <TableCell className="px-0" />
       <TableCell>
         <div className={`flex items-start gap-1.5 ${indented ? "ml-2" : ""}`}>
           <button
@@ -939,18 +896,11 @@ export function CategoryRow({
     return (
       <CategoryCardHeading
         name={cat.name}
+        dragHandleRef={dragHandleRef}
+        dragAttributes={dragAttributes}
+        dragListeners={dragListeners}
         action={
           <div className="flex shrink-0 items-center gap-1">
-            {/* Mobile drag handle — same treatment as GroupRow/SubHireGroupRow's
-                mobile cards (see those components' comments); this heading
-                previously had zero reorder affordance on touch either. */}
-            <DragHandle
-              dragHandleRef={dragHandleRef}
-              dragAttributes={dragAttributes}
-              dragListeners={dragListeners}
-              isDragDisabled={isDragDisabled}
-              className="inline-flex min-h-11 min-w-8 items-center justify-center"
-            />
             {onAddEquipment && <CardAddButton onClick={onAddEquipment} />}
             {categoryMenu}
           </div>
@@ -960,16 +910,14 @@ export function CategoryRow({
   }
 
   return (
-    <TableRow className="group/cat border-b-0 bg-paper-2/50 hover:bg-elev">
+    <TableRow
+      className={cn("group/cat border-b-0 bg-paper-2/50 hover:bg-elev", !isDragDisabled && "cursor-grab active:cursor-grabbing")}
+      ref={dragHandleRef}
+      {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
+      {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
+    >
       <TableCell colSpan={columnCount} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
-          <DragHandle
-            dragHandleRef={dragHandleRef}
-            dragAttributes={dragAttributes}
-            dragListeners={dragListeners}
-            isDragDisabled={isDragDisabled}
-            className="px-1 md:group-hover/cat:opacity-100 md:group-focus-within/cat:opacity-100"
-          />
           <h3 className="t-overline text-muted">{cat.name}</h3>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1165,9 +1113,6 @@ export function LineItemRow({
     }
   };
 
-  // Map content indent to grip indent (margin-based to avoid affecting column width)
-  const gripIndent = indent === "ml-12" ? "ml-8" : indent === "ml-3" ? "ml-1" : "";
-
   // Deeper indent for child rows
   const childIndent = indent === "ml-12" ? "ml-16" : indent === "ml-3" ? "ml-8" : "ml-6";
 
@@ -1314,11 +1259,15 @@ export function LineItemRow({
     return (
       <div className={cn("space-y-1.5", nestInset)}>
         <div
+          ref={dragHandleRef}
+          {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
+          {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
           className={cn(
-            "flex min-h-11 items-start gap-2 rounded-[var(--r)] bg-card transition-colors",
+            "flex min-h-11 touch-manipulation items-start gap-2 rounded-[var(--r)] bg-card transition-colors",
             isContainer ? "px-3 py-2 ring-1 ring-line-2" : "px-3 py-2 ring-1 ring-line",
             isSelected && "ring-2 ring-red",
             justChanged && "collab-changed",
+            !isDragDisabled && "active:cursor-grabbing md:cursor-grab",
           )}
         >
           {selectable && (
@@ -1326,6 +1275,7 @@ export function LineItemRow({
               onMouseDown={(e) => {
                 shiftKeyRef.current = e.shiftKey;
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               className="inline-flex min-h-11 min-w-8 shrink-0 items-center justify-center"
             >
@@ -1354,17 +1304,6 @@ export function LineItemRow({
             <div className="min-w-0 flex-1">{bodyInner}</div>
           )}
           <div className="flex shrink-0 items-center gap-0.5">
-            {/* Mobile drag handle — this row type previously had ZERO reorder
-                affordance on touch (MoveButtons hid itself entirely there's no
-                up/down concept worth tapping on a phone); long-press-to-drag
-                (TouchSensor) is the first reorder entry point here. */}
-            <DragHandle
-              dragHandleRef={dragHandleRef}
-              dragAttributes={dragAttributes}
-              dragListeners={dragListeners}
-              isDragDisabled={isDragDisabled}
-              className="inline-flex min-h-11 min-w-8 items-center justify-center"
-            />
             {hasChildren && (
               <button
                 type="button"
@@ -1457,20 +1396,15 @@ export function LineItemRow({
         "group/row",
         isSelected && "bg-select",
         justChanged && "collab-changed",
+        !isDragDisabled && "cursor-grab active:cursor-grabbing",
       )}
       onClick={onClick}
+      ref={dragHandleRef}
+      {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
+      {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...shortcuts}
     >
-      <TableCell className="px-0">
-        <div className={`flex justify-end ${gripIndent || "px-1"}`}>
-          <DragHandle
-            dragHandleRef={dragHandleRef}
-            dragAttributes={dragAttributes}
-            dragListeners={dragListeners}
-            isDragDisabled={isDragDisabled}
-          />
-        </div>
-      </TableCell>
+      <TableCell className="px-0" />
       <TableCell>
         <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${indent}`}>
           {selectable && (
@@ -1482,6 +1416,7 @@ export function LineItemRow({
               onMouseDown={(e) => {
                 shiftKeyRef.current = e.shiftKey;
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               className={cn(
                 "shrink-0 transition-opacity",

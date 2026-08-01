@@ -194,6 +194,24 @@ function resolveLineItemDropTarget(
     const toContainerId = ctx.containerOf.get(overBareId);
     return toContainerId ? { toContainerId, overBareId } : null;
   }
+  // Dropping directly on a category row targets that category's own
+  // standalone container, append-only — mirrors `resolveGroupDropTarget`'s
+  // `cat-` branch. Without this branch the drop resolved to nothing (`target`
+  // stayed null below), silently no-opping a line item dragged onto a
+  // category header back to its original position instead of moving it out
+  // to that category's top level.
+  if (overSortableId.startsWith("cat-")) {
+    const candidate: ContainerId = `standalone:${overSortableId.slice(4)}`;
+    return ctx.itemsByContainer.has(candidate) ? { toContainerId: candidate } : null;
+  }
+  // The Uncategorized zone's header/landing-zone row (equipment-tab.tsx's
+  // `UncategorizedHeader`, always rendered whenever the project has
+  // categories, even with nothing uncategorized yet — see its doc comment).
+  // Same id is read by `resolveGroupDropTarget` for the group side of the
+  // same gesture.
+  if (overSortableId === "uncat-zone") {
+    return { toContainerId: "uncategorized-standalone" };
+  }
   // Dropping directly ON a group/sub-hire-group row (rather than on one of
   // its child line items) targets THAT group's own `items:{groupId}`
   // container, append-only — there's no specific sibling to land before.
@@ -453,12 +471,15 @@ function resolveGroupDropTarget(
   }
   if (overSortableId.startsWith("cat-")) {
     // Dropping directly on a category row targets that category's mixed
-    // container. Categories themselves still use ▲/▼ (not drag) — see this
-    // file's header — so `cat-*` isn't wired as a real sortable id YET, but
-    // the Drop Matrix explicitly allows this target, and resolving it here
-    // keeps this function correct (and testable) ahead of that later commit.
+    // container — the Drop Matrix explicitly allows this target (a group
+    // reparenting to a new category, landing at the end of its mixed list).
     const candidate: GroupContainerId = `mixed:${overSortableId.slice(4)}`;
     return ctx.itemsByContainer.has(candidate) ? { toContainerId: candidate } : null;
+  }
+  // The Uncategorized zone's header/landing-zone row — see
+  // `resolveLineItemDropTarget`'s matching branch.
+  if (overSortableId === "uncat-zone") {
+    return { toContainerId: "uncategorized-groups" };
   }
   // Hovering a container's own landing zone directly (e.g. an empty
   // Uncategorized zone) — same defensive branch `resolveLineItemDropTarget` has.

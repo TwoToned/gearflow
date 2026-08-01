@@ -53,7 +53,8 @@ import type { MarkerStatus } from "@/components/collaboration/review-marker-badg
 import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";
 import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { toast } from "sonner";
-import type { LineItemData, GroupData, SubHireGroupData, CategoryData } from "./equipment-row-types";
+import type { LineItemData, GroupData, SubHireGroupData, CategoryData, DropHighlight } from "./equipment-row-types";
+import { dropHighlightClass } from "./equipment-row-types";
 
 export type {
   LineItemData,
@@ -61,6 +62,7 @@ export type {
   SubHireGroupData,
   MixedGroupSlot,
   CategoryData,
+  DropHighlight,
 } from "./equipment-row-types";
 
 /**
@@ -132,6 +134,13 @@ export interface DragHandleControls {
   /** No drag entry point at all when true (e.g. sub-hire/kit group children,
    *  which aren't independently reorderable). */
   isDragDisabled?: boolean;
+  /** Set while another row is being dragged and the pointer is currently
+   *  over THIS row — "valid" rings the row to show it's a legitimate drop
+   *  target, "invalid" rings it to show the Drop Matrix rejects landing
+   *  here (equipment-tab.tsx compares `useEquipmentDnd`'s `hoveredOverId`/
+   *  `invalidOverId` against this row's own sortable id). Undefined the rest
+   *  of the time — never set on the row currently being dragged itself. */
+  dropHighlight?: DropHighlight;
 }
 
 // Column count used for category-row + empty-state colSpans. Spans every
@@ -305,6 +314,7 @@ export function GroupRow({
   dragStyle,
   isDragging,
   isDragDisabled,
+  dropHighlight,
   onInlinePriceUpdate,
   moneyLocked,
   lockReason,
@@ -412,6 +422,7 @@ export function GroupRow({
         dragListeners={dragListeners}
         dragStyle={dragStyle}
         isDragging={isDragging}
+        dropHighlight={dropHighlight}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
             {orgId && projectId && (
@@ -451,7 +462,12 @@ export function GroupRow({
 
   return (
     <TableRow
-      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing", isDragging && "opacity-40")}
+      className={cn(
+        "group/row",
+        !isDragDisabled && "cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-40",
+        dropHighlightClass(dropHighlight),
+      )}
       style={dragStyle}
       ref={dragHandleRef}
       data-drag-row="true"
@@ -638,6 +654,7 @@ export function SubHireGroupRow({
   dragStyle,
   isDragging,
   isDragDisabled,
+  dropHighlight,
   onInlinePriceUpdate,
 }: {
   group: SubHireGroupData;
@@ -689,6 +706,7 @@ export function SubHireGroupRow({
         dragListeners={dragListeners}
         dragStyle={dragStyle}
         isDragging={isDragging}
+        dropHighlight={dropHighlight}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
             <DropdownMenu>
@@ -727,7 +745,12 @@ export function SubHireGroupRow({
 
   return (
     <TableRow
-      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing", isDragging && "opacity-40")}
+      className={cn(
+        "group/row",
+        !isDragDisabled && "cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-40",
+        dropHighlightClass(dropHighlight),
+      )}
       style={dragStyle}
       ref={dragHandleRef}
       data-drag-row="true"
@@ -847,6 +870,7 @@ export function CategoryRow({
   dragStyle,
   isDragging,
   isDragDisabled,
+  dropHighlight,
 }: {
   cat: CategoryData;
   /** Total rendered column count (COL_COUNT + cost). The header cell spans this so it
@@ -925,6 +949,7 @@ export function CategoryRow({
         dragListeners={dragListeners}
         dragStyle={dragStyle}
         isDragging={isDragging}
+        dropHighlight={dropHighlight}
         action={
           <div className="flex shrink-0 items-center gap-1">
             {onAddEquipment && <CardAddButton onClick={onAddEquipment} />}
@@ -941,6 +966,7 @@ export function CategoryRow({
         "group/cat border-b-0 bg-paper-2/50 hover:bg-elev",
         !isDragDisabled && "cursor-grab active:cursor-grabbing",
         isDragging && "opacity-40",
+        dropHighlightClass(dropHighlight),
       )}
       style={dragStyle}
       ref={dragHandleRef}
@@ -1030,6 +1056,7 @@ export function LineItemRow({
   dragStyle,
   isDragging,
   isDragDisabled,
+  dropHighlight,
   onInlineUpdate,
   moneyLocked,
   lockReason,
@@ -1305,6 +1332,7 @@ export function LineItemRow({
             justChanged && "collab-changed",
             !isDragDisabled && "active:cursor-grabbing md:cursor-grab",
             isDragging && "opacity-40",
+            dropHighlightClass(dropHighlight),
           )}
         >
           {selectable && (
@@ -1435,6 +1463,7 @@ export function LineItemRow({
         justChanged && "collab-changed",
         !isDragDisabled && "cursor-grab active:cursor-grabbing",
         isDragging && "opacity-40",
+        dropHighlightClass(dropHighlight),
       )}
       style={dragStyle}
       onClick={onClick}

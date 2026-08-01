@@ -4,7 +4,7 @@ import * as React from "react";
 import { ChevronRight, Container, Handshake, Plus } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters";
-import { type LineItemData } from "./equipment-row-types";
+import { type LineItemData, type DropHighlight, dropHighlightClass } from "./equipment-row-types";
 
 /**
  * Presentational card primitives for the project equipment tab on mobile. Mirrors
@@ -72,6 +72,7 @@ export function GroupCard({
   dragListeners,
   dragStyle,
   isDragging,
+  dropHighlight,
 }: {
   title: string;
   subtext?: React.ReactNode;
@@ -95,6 +96,7 @@ export function GroupCard({
    *  equipment-rows.tsx's `DragHandleControls`. */
   dragStyle?: React.CSSProperties;
   isDragging?: boolean;
+  dropHighlight?: DropHighlight;
 }) {
   return (
     <>
@@ -107,6 +109,7 @@ export function GroupCard({
         className={cn(
           "flex min-h-11 touch-manipulation items-center gap-2 rounded-[var(--r)] bg-card px-3 py-2 ring-1 ring-line-2 active:cursor-grabbing md:cursor-grab",
           isDragging && "opacity-40",
+          dropHighlightClass(dropHighlight),
         )}
       >
         <button
@@ -146,6 +149,7 @@ export function CategoryCardHeading({
   dragListeners,
   dragStyle,
   isDragging,
+  dropHighlight,
 }: {
   name: string;
   action?: React.ReactNode;
@@ -155,6 +159,7 @@ export function CategoryCardHeading({
   dragListeners?: Record<string, unknown>;
   dragStyle?: React.CSSProperties;
   isDragging?: boolean;
+  dropHighlight?: DropHighlight;
 }) {
   return (
     <div
@@ -166,6 +171,7 @@ export function CategoryCardHeading({
       className={cn(
         "flex touch-manipulation items-center justify-between gap-2 rounded-[var(--r)] px-1 pb-0.5 pt-3 active:cursor-grabbing md:cursor-grab",
         isDragging && "opacity-40",
+        dropHighlightClass(dropHighlight),
       )}
     >
       <div className="flex items-center gap-1.5 text-caption font-semibold text-ink-2">

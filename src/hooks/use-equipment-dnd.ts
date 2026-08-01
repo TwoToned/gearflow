@@ -941,6 +941,12 @@ export interface UseEquipmentDndResult {
   /** The `over.id` currently being hovered when the Drop Matrix disallows it
    *  — null otherwise. Lets the caller render invalid-drop styling. */
   invalidOverId: string | null;
+  /** The `over.id` currently being hovered, valid or not — null when nothing
+   *  is being dragged or the pointer isn't over any droppable. Lets the
+   *  caller render a "you're about to drop here" highlight on whatever
+   *  category/group/line-item row the pointer is over, distinct from
+   *  `invalidOverId`'s narrower "and it's disallowed" signal. */
+  hoveredOverId: string | null;
   handleDragStart: (event: DragStartEvent) => void;
   handleDragOver: (event: DragOverEvent) => void;
   handleDragEnd: (event: DragEndEvent) => void;
@@ -993,6 +999,11 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [draggedRowClone, setDraggedRowClone] = useState<DraggedRowClone | null>(null);
   const [invalidOverId, setInvalidOverId] = useState<string | null>(null);
+  /** The `over.id` currently being hovered, valid or not — lets the caller
+   *  highlight whatever category/group/line-item row the pointer is over,
+   *  same idea as `invalidOverId` but unconditional (that one is a strict
+   *  subset, only set when the Drop Matrix disallows the hovered target). */
+  const [hoveredOverId, setHoveredOverId] = useState<string | null>(null);
   const [orderOverlay, setOrderOverlay] = useState<ReadonlyMap<string, OptimisticOrderEdit>>(
     () => new Map(),
   );
@@ -1092,6 +1103,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const overId = event.over ? String(event.over.id) : null;
+    setHoveredOverId(overId);
     if (!overId) {
       setInvalidOverId(null);
       return;
@@ -1113,7 +1125,8 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
         uncategorizedProjectGroupsRef.current ?? [],
         uncategorizedSubHireGroupsRef.current ?? [],
       );
-      const action = resolveGroupDragAction({ activeSortableId, overSortableId, ctx: groupCtx });
+      const lineItemCategoryIndex = buildLineItemCategoryIndex(categoriesRef.current ?? []);
+      const action = resolveGroupDragAction({ activeSortableId, overSortableId, ctx: groupCtx, lineItemCategoryIndex });
 
       if (action.kind === "noop") return;
       if (action.kind === "blocked") {
@@ -1274,6 +1287,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     setActiveDragId(null);
     setDraggedRowClone(null);
     setInvalidOverId(null);
+    setHoveredOverId(null);
   }, []);
 
   // Dispatch for `resolveCrossKindCategoryReorder`'s "reorder" result — a
@@ -1320,6 +1334,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
       setActiveDragId(null);
       setDraggedRowClone(null);
       setInvalidOverId(null);
+      setHoveredOverId(null);
 
       const activeSortableId = String(event.active.id);
       const overSortableId = event.over ? String(event.over.id) : null;
@@ -1365,6 +1380,7 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     activeDragId,
     draggedRowClone,
     invalidOverId,
+    hoveredOverId,
     handleDragStart,
     handleDragOver,
     handleDragEnd,

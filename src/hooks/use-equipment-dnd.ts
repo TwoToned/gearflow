@@ -192,6 +192,22 @@ function resolveLineItemDropTarget(
     const toContainerId = ctx.containerOf.get(overBareId);
     return toContainerId ? { toContainerId, overBareId } : null;
   }
+  // Dropping directly ON a group/sub-hire-group row (rather than on one of
+  // its child line items) targets THAT group's own `items:{groupId}`
+  // container, append-only — there's no specific sibling to land before.
+  // Drop Matrix 8C says li- onto grp- is a valid "enter group" move; without
+  // this branch the drop resolved to nothing (`target` stayed null below),
+  // which silently no-opped the drop back to its original position instead
+  // of moving the item into the group. `getDisallowedDropReason` (checked
+  // earlier in `resolveLineItemDragAction`) already rejects li- onto shg-
+  // before this runs, and `buildContainerMap` never registers an
+  // `items:{shgId}` container in the first place (sub-hire groups can't hold
+  // plain line items) — so the `has()` check below is a defensive no-op for
+  // shg-, not the thing actually blocking it.
+  if (overSortableId.startsWith("grp-") || overSortableId.startsWith("shg-")) {
+    const candidate: ContainerId = `items:${overSortableId.slice(4)}`;
+    return ctx.itemsByContainer.has(candidate) ? { toContainerId: candidate } : null;
+  }
   // Hovering an (empty) container's own landing zone directly.
   if (ctx.itemsByContainer.has(overSortableId as ContainerId)) {
     return { toContainerId: overSortableId as ContainerId };

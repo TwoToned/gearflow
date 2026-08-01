@@ -174,6 +174,30 @@ describe("resolveLineItemDragAction", () => {
     });
   });
 
+  test("different container, dropped directly ON the group's own row -> move into that group, append order", () => {
+    // Regression: dropping on the GROUP ROW itself (grp-g1), not one of its
+    // child line items or the empty-container landing zone, used to resolve
+    // to nothing (`resolveLineItemDropTarget` had no grp-/shg- branch) —
+    // silently no-opping the drop back to its original position even though
+    // the Drop Matrix allows a line item entering a project group.
+    const g1 = group("g1", [li("x")]);
+    const catA = category("catA", { standalone: [li("a")], groups: [g1] });
+    const action = resolveLineItemDragAction({
+      activeSortableId: "li-a",
+      overSortableId: "grp-g1",
+      ctx: ctxFor(catA),
+    });
+    expect(action).toEqual({
+      kind: "move",
+      lineItemId: "a",
+      fromContainerId: "standalone:catA",
+      toContainerId: "items:g1",
+      targetCategoryId: "catA",
+      targetGroupId: "g1",
+      resultingOrder: undefined,
+    });
+  });
+
   test("Drop Matrix: a line item onto a sub-hire group is blocked", () => {
     const catA = category("catA", { standalone: [li("a")] });
     const action = resolveLineItemDragAction({

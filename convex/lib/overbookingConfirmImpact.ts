@@ -16,6 +16,7 @@ import {
   type BoardBulkAsset,
   type BoardAssignment,
 } from "./overbookingBoard";
+import { ownGearModelIds } from "./projectReadiness";
 
 export interface ConfirmImpactModels {
   modelCount: number;
@@ -42,11 +43,7 @@ export function computeConfirmImpactModels(
   assets: BoardAsset[],
   bulkAssets: BoardBulkAsset[],
 ): ConfirmImpactModels {
-  const ownModelIds = new Set(
-    lineItems
-      .filter((li) => li.projectId === projectId && li.modelId && (li.status ?? "") !== "CANCELLED" && li.subHireId == null && li.isOptional !== true)
-      .map((li) => li.modelId!),
-  );
+  const ownModelIds = ownGearModelIds(projectId, lineItems);
   if (ownModelIds.size === 0) return { modelCount: 0, qty: 0 };
 
   const { hard } = computeGearShortageBoard(window, projects, lineItems, models, assets, bulkAssets);

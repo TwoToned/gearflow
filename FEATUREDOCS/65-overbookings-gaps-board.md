@@ -10,6 +10,19 @@ looking at?" — the per-project overbooking engine (FEATUREDOCS/11) only ever
 answers that question for one project's own window; this board rolls it up
 org-wide. Six sections, over a user-selected date range (default 30 days):
 
+> **Three questions, three surfaces (#1061).** This board asks "what's broken
+> ANYWHERE in the next 30 days". `overbookingBoard.confirmImpact` asks "what
+> WOULD break if I confirmed this project" (it simulates the project as
+> `CONFIRMED`). `projectReadiness.forProject` (FEATUREDOCS/69) asks "is THIS
+> project, as it stands right now, ready?" — real status, not simulated, and
+> rows rather than counts so each failing check can carry its own fix. All
+> three read the same aggregation core in `convex/lib/overbookingBoard.ts`, and
+> the confirm gate and the readiness checklist share one `ownGearModelIds`
+> definition, so they can't disagree about which shortages belong to a project.
+> A per-project gear shortage is surfaced on that project's Overview tab and
+> links here, because a shortage is only ever RESOLVED org-wide (sub-hire, swap,
+> or move the dates).
+
 1. **Overbooked gear (hard)** — a model whose HARD demand (see the two-layer
    split, FEATUREDOCS/11) across every project overlapping the range exceeds
    its effective stock. A real, already-committed problem. Red.

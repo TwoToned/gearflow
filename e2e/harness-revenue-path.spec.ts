@@ -170,6 +170,12 @@ test.describe("harness: primary revenue path", () => {
     const projectId = new URL(page.url()).pathname.split("/")[2]!;
 
     await test.step("add the model as a line item + pricing (flow 6)", async () => {
+      // #1061 — a project now lands on the Overview tab (its home), not
+      // Equipment. The "Add ▾" menu is portalled into the tab row BY the
+      // Equipment tab, so it only exists once that tab is selected. Clicking
+      // through is what a real operator does, and it keeps this step honest
+      // about the extra hop rather than hiding it behind a `?tab=` deep link.
+      await page.getByRole("tab", { name: "Equipment", exact: true }).click();
       await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByRole("menuitem", { name: "Add item" }).click();
       // WS3 (#942) added a persistent "Overbookings" sidebar nav item, which

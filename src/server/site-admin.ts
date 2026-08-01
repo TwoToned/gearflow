@@ -107,20 +107,6 @@ export async function checkOrgCreationAllowed(): Promise<{ allowed: boolean; isS
   return { allowed: !org && admin, isSiteAdmin: admin };
 }
 
-/**
- * Get an organization for legacy single-org admin pages. Arbitrary
- * (oldest-created) pending the real multi-org drill-down (#1078, A8).
- */
-export async function adminGetTheOrg() {
-  await requireSiteAdmin();
-  const org = await prisma.organization.findFirst({
-    select: { id: true, name: true, slug: true },
-    orderBy: { createdAt: "asc" },
-  });
-  if (!org) return null;
-  return serialize(org);
-}
-
 // ─── Organization Management ───────────────────────────────────────────────
 
 export async function adminCreateOrganization(data: {
@@ -179,13 +165,79 @@ export async function adminCreateOrganization(data: {
   return serialize(org);
 }
 
+/** exactly 1 member, never any Convex milestone, never any activity log
+ *  entry, and old enough that "still setting up" no longer explains it
+ *  (design doc §5.4's predicate — the Phase A slice: surfaced here as a
+ *  filter, not automated into a cron/email-ladder, which is Phase B). */
+const NEVER_ACTIVATED_MIN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function isNeverActivated(
+  memberCount: number,
+  createdAt: Date,
+  stats: { lastActivityAt: number | null; hasAnyMilestone: boolean } | undefined,
+): boolean {
+  if (!stats) return false;
+  return (
+    memberCount === 1 &&
+    !stats.hasAnyMilestone &&
+    stats.lastActivityAt === null &&
+    Date.now() - createdAt.getTime() > NEVER_ACTIVATED_MIN_AGE_MS
+  );
+}
+
+/** Batches the two Convex-side legs (activity/milestones, storage) for a page
+ *  of orgs in two round trips total, never N+1. Split out of
+ *  `getAllOrganizations` to keep that function's own line count down. */
+async function enrichOrgsWithConvexStats<T extends { id: string; createdAt: Date; _count: { members: number } }>(
+  orgs: T[],
+) {
+  if (!orgs.length) return orgs.map((org) => ({ ...org, ...emptyOrgStats() }));
+
+  const orgIds = orgs.map((o) => o.id);
+  const convex = await getConvexClient();
+  const [statsRows, storageRows] = await Promise.all([
+    convex.query(api.orgAdminStats.getBatchOrgStats, { organizationIds: orgIds }),
+    Promise.all(
+      orgIds.map((organizationId) =>
+        convex.query(api.files.getOrgStorageUsage, { organizationId }).then((usage) => [organizationId, usage] as const),
+      ),
+    ),
+  ]);
+  const statsByOrg = new Map(statsRows.map((s) => [s.organizationId, s]));
+  const storageByOrg = new Map(storageRows);
+
+  return orgs.map((org) => ({
+    ...org,
+    lastActivityAt: statsByOrg.get(org.id)?.lastActivityAt ?? null,
+    storageUsage: storageByOrg.get(org.id) ?? { fileCount: 0, totalBytes: 0, truncated: false },
+    neverActivated: isNeverActivated(org._count.members, org.createdAt, statsByOrg.get(org.id)),
+  }));
+}
+
+function emptyOrgStats() {
+  return {
+    lastActivityAt: null as number | null,
+    storageUsage: { fileCount: 0, totalBytes: 0, truncated: false },
+    neverActivated: false,
+  };
+}
+
+/**
+ * The real multi-org admin list (#1078, A8) — name, slug, members, created,
+ * last activity, storage size, archived state, and the "never activated"
+ * predicate. `archivedAt` comes through for free (Prisma returns every
+ * scalar column when the query uses `include`, not a narrowing `select`).
+ * The Convex-side legs (last activity, milestones, storage) are fetched in
+ * two batched calls for the whole visible page — never N+1 round trips.
+ */
 export async function getAllOrganizations(params?: {
   page?: number;
   pageSize?: number;
   search?: string;
+  neverActivatedOnly?: boolean;
 }) {
   await requireSiteAdmin();
-  const { page = 1, pageSize = 20, search } = params || {};
+  const { page = 1, pageSize = 20, search, neverActivatedOnly = false } = params || {};
 
   const where = search
     ? {
@@ -196,7 +248,14 @@ export async function getAllOrganizations(params?: {
       }
     : {};
 
-  const [organizations, total] = await Promise.all([
+  // The "never activated" filter depends on Convex-side data this query
+  // can't push down to Postgres — page over a wider Postgres window (capped,
+  // not unbounded) and narrow to the requested page AFTER computing the
+  // predicate, rather than trying to filter in SQL.
+  const fetchTake = neverActivatedOnly ? Math.min(500, pageSize * 25) : pageSize;
+  const fetchSkip = neverActivatedOnly ? 0 : (page - 1) * pageSize;
+
+  const [organizationsRaw, totalUnfiltered] = await Promise.all([
     prisma.organization.findMany({
       where,
       include: {
@@ -208,11 +267,20 @@ export async function getAllOrganizations(params?: {
         _count: { select: { members: true } },
       },
       orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: fetchSkip,
+      take: fetchTake,
     }),
     prisma.organization.count({ where }),
   ]);
+
+  let organizations = await enrichOrgsWithConvexStats(organizationsRaw);
+
+  let total = totalUnfiltered;
+  if (neverActivatedOnly) {
+    organizations = organizations.filter((o) => o.neverActivated);
+    total = organizations.length;
+    organizations = organizations.slice((page - 1) * pageSize, page * pageSize);
+  }
 
   return serialize({
     organizations,

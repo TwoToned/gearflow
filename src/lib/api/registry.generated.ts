@@ -31316,6 +31316,33 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list)."
   },
   {
+    "operation": "orgAdminStats.getBatchOrgStats",
+    "module": "orgAdminStats",
+    "fn": "getBatchOrgStats",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "organizationIds",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f0c43f982032c9d8",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Site-admin-only aggregate over every org's activity/milestones — not a per-caller-org read, no scope model."
+  },
+  {
     "operation": "orgErasure.deleteChildRowsByParentIds",
     "module": "orgErasure",
     "fn": "deleteChildRowsByParentIds",
@@ -60309,9 +60336,9 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1158,
+  total: 1159,
   agentReachable: 564,
-  queries: 408,
+  queries: 409,
   mutations: 750,
   agentReachableQueries: 289,
   agentReachableMutations: 275,

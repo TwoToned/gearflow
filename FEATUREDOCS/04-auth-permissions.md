@@ -203,6 +203,44 @@ Tracked under the same `#1118` as the other quarantined harness gaps.
   settings-driven), so there's no live read to fix — international currency
   support is later epic work.
 
+### Site admin: the real org list (#1078, A8)
+
+`/admin/organizations` (`src/server/site-admin.ts`'s `getAllOrganizations`)
+replaces the old single-org "the platform organization" view — `adminGetTheOrg`
+(a deliberate placeholder, per its own doc comment) is deleted along with it.
+Columns: name/slug, members, storage size (#1077's `getOrgStorageUsage`), last
+activity, created, archived/never-activated/active status, and a Manage link
+into the existing per-org drill-down (`[id]/page.tsx`, unchanged — it already
+had stats + export + archive/unarchive from A5).
+
+**Two Convex round trips for the whole visible page, never N+1**:
+`getBatchOrgStats` (`convex/orgAdminStats.ts`) batches last-activity +
+milestone existence for every org on the page in one call; per-org storage
+usage is fetched in parallel (bounded to page size, ~20 rows).
+
+**"Never activated" filter** reuses the design doc's §5.4 predicate — exactly
+1 member, zero milestones (no model/asset/real project, ever — a template
+project doesn't count), no activity-log entries, older than 30 days — computed
+from data that's already queryable, no new column. Only the Phase A slice
+ships here: a filter a human can act on. The full Phase B lifecycle (the
+`dormancyNoticedAt` field, the daily `org-dormancy-sweep` cron, the five-email
+ladder, auto-archiving at day 30) is out of scope — this just surfaces the
+list.
+
+Since the predicate depends on Convex data the Postgres query can't push a
+`WHERE` down to, `neverActivatedOnly` pages over a wider (capped at 500,
+not unbounded) Postgres window, filters in application code, then re-slices
+to the requested page. Fine for a list that's supposed to stay small — a
+platform with 500+ never-activated orgs needs the Phase B automation, not a
+bigger cap here.
+
+**Deliberately NOT in this PR**: the org-creation gate controls (`allowOrgCreation`
+toggle + signup code) that issue #1078 mentions living on this same page —
+that's B3 (#1095), a distinct Phase B issue with its own security requirements
+(constant-time comparison, rate limiting, the code must never reach a public
+read). Phase A ships with org creation gated off entirely (D7); there's
+nothing to control yet.
+
 ## Better Auth Configuration (`src/lib/auth.ts`)
 - Plugins: `organization({...})` (no `organizationLimit` cap — creation is gated by
   `allowUserToCreateOrganization`, not a per-user limit), `twoFactor({ issuer: "RVLT Flow" })`, `admin()`, `passkey()`, `sso()`, `jwt()`

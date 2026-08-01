@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 408 | 289 | 117 | 1 | 1 |
+| Queries | 409 | 289 | 118 | 1 | 1 |
 | Mutations | 750 | 275 | 466 | 0 | 9 |
-| **Total** | **1158** | **564** | **583** | **1** | **10** |
+| **Total** | **1159** | **564** | **584** | **1** | **10** |
 
 <!-- reachability-floor: 564 -->
 
@@ -79,6 +79,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `notificationDismissals` | 7 |
 | `oauthAuthorizationCodes` | 2 |
 | `oauthClients` | 3 |
+| `orgAdminStats` | 1 |
 | `orgErasure` | 4 |
 | `orgExport` | 6 |
 | `orgSettings` | 8 |
@@ -139,6 +140,7 @@ fails the build otherwise.
 | `oauthClients.getById` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
 | `oauthClients.listByIds` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
 | `oauthClients.register` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
+| `orgAdminStats.getBatchOrgStats` | Site-admin-only aggregate over every org's activity/milestones — not a per-caller-org read, no scope model. |
 | `orgErasure.deleteChildRowsByParentIds` | Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable. |
 | `orgErasure.deleteFilteredPage` | Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable. |
 | `orgErasure.deleteStorageBlobs` | Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable. |

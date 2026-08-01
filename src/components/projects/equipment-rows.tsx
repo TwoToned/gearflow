@@ -119,6 +119,16 @@ export interface DragHandleControls {
   dragHandleRef?: (el: HTMLElement | null) => void;
   dragAttributes?: Record<string, unknown>;
   dragListeners?: Record<string, unknown>;
+  /** `useSortable()`'s `transform`/`transition` turned into an inline style
+   *  (equipment-tab.tsx's `buildDragStyle`) — applied to the same ROOT
+   *  element as the ref/attributes/listeners above. This is what makes OTHER
+   *  rows slide out of the way live while something is dragged over them. */
+  dragStyle?: React.CSSProperties;
+  /** True for the ONE row currently being dragged. Dims it in place (rather
+   *  than leaving it fully visible while an unrelated floating preview
+   *  follows the cursor) so it reads as "this line lifted up", not "a new
+   *  one appeared". */
+  isDragging?: boolean;
   /** No drag entry point at all when true (e.g. sub-hire/kit group children,
    *  which aren't independently reorderable). */
   isDragDisabled?: boolean;
@@ -292,6 +302,8 @@ export function GroupRow({
   dragHandleRef,
   dragAttributes,
   dragListeners,
+  dragStyle,
+  isDragging,
   isDragDisabled,
   onInlinePriceUpdate,
   moneyLocked,
@@ -398,6 +410,8 @@ export function GroupRow({
         dragHandleRef={dragHandleRef}
         dragAttributes={dragAttributes}
         dragListeners={dragListeners}
+        dragStyle={dragStyle}
+        isDragging={isDragging}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
             {orgId && projectId && (
@@ -437,7 +451,8 @@ export function GroupRow({
 
   return (
     <TableRow
-      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing")}
+      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing", isDragging && "opacity-40")}
+      style={dragStyle}
       ref={dragHandleRef}
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
@@ -619,6 +634,8 @@ export function SubHireGroupRow({
   dragHandleRef,
   dragAttributes,
   dragListeners,
+  dragStyle,
+  isDragging,
   isDragDisabled,
   onInlinePriceUpdate,
 }: {
@@ -669,6 +686,8 @@ export function SubHireGroupRow({
         dragHandleRef={dragHandleRef}
         dragAttributes={dragAttributes}
         dragListeners={dragListeners}
+        dragStyle={dragStyle}
+        isDragging={isDragging}
         actions={
           <div className="flex shrink-0 items-center gap-0.5">
             <DropdownMenu>
@@ -707,7 +726,8 @@ export function SubHireGroupRow({
 
   return (
     <TableRow
-      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing")}
+      className={cn("group/row", !isDragDisabled && "cursor-grab active:cursor-grabbing", isDragging && "opacity-40")}
+      style={dragStyle}
       ref={dragHandleRef}
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
@@ -822,6 +842,8 @@ export function CategoryRow({
   dragHandleRef,
   dragAttributes,
   dragListeners,
+  dragStyle,
+  isDragging,
   isDragDisabled,
 }: {
   cat: CategoryData;
@@ -899,6 +921,8 @@ export function CategoryRow({
         dragHandleRef={dragHandleRef}
         dragAttributes={dragAttributes}
         dragListeners={dragListeners}
+        dragStyle={dragStyle}
+        isDragging={isDragging}
         action={
           <div className="flex shrink-0 items-center gap-1">
             {onAddEquipment && <CardAddButton onClick={onAddEquipment} />}
@@ -911,7 +935,12 @@ export function CategoryRow({
 
   return (
     <TableRow
-      className={cn("group/cat border-b-0 bg-paper-2/50 hover:bg-elev", !isDragDisabled && "cursor-grab active:cursor-grabbing")}
+      className={cn(
+        "group/cat border-b-0 bg-paper-2/50 hover:bg-elev",
+        !isDragDisabled && "cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-40",
+      )}
+      style={dragStyle}
       ref={dragHandleRef}
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
       {...(dragListeners as React.HTMLAttributes<HTMLTableRowElement> | undefined)}
@@ -995,6 +1024,8 @@ export function LineItemRow({
   dragHandleRef,
   dragAttributes,
   dragListeners,
+  dragStyle,
+  isDragging,
   isDragDisabled,
   onInlineUpdate,
   moneyLocked,
@@ -1262,12 +1293,14 @@ export function LineItemRow({
           ref={dragHandleRef}
           {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
           {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
+          style={dragStyle}
           className={cn(
             "flex min-h-11 touch-manipulation items-start gap-2 rounded-[var(--r)] bg-card transition-colors",
             isContainer ? "px-3 py-2 ring-1 ring-line-2" : "px-3 py-2 ring-1 ring-line",
             isSelected && "ring-2 ring-red",
             justChanged && "collab-changed",
             !isDragDisabled && "active:cursor-grabbing md:cursor-grab",
+            isDragging && "opacity-40",
           )}
         >
           {selectable && (
@@ -1397,7 +1430,9 @@ export function LineItemRow({
         isSelected && "bg-select",
         justChanged && "collab-changed",
         !isDragDisabled && "cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-40",
       )}
+      style={dragStyle}
       onClick={onClick}
       ref={dragHandleRef}
       {...(dragAttributes as React.HTMLAttributes<HTMLTableRowElement> | undefined)}

@@ -430,6 +430,27 @@ export function buildGroupContainerMap(
   return { containerOf, itemsByContainer, containerMeta };
 }
 
+/**
+ * Bare line-item id -> the categoryId it top-level belongs to (its own
+ * category if standalone, or its parent group's category if it's a group
+ * child) — used ONLY by `resolveGroupDropTarget`'s `li-` fallback branch
+ * below, to resolve a group dropped onto (or near) a line item in a
+ * DIFFERENT category. Deliberately NOT part of `GroupContainerContext`
+ * itself (see that type's doc comment on why line items and groups stay
+ * separate container systems) — this is a minimal, single-purpose lookup,
+ * not a merge of the two.
+ */
+export function buildLineItemCategoryIndex(categories: readonly CategoryData[]): ReadonlyMap<string, string> {
+  const index = new Map<string, string>();
+  for (const cat of categories) {
+    for (const item of cat.lineItems ?? []) index.set(item.id, cat.id);
+    for (const g of cat.groups ?? []) {
+      for (const item of g.lineItems ?? []) index.set(item.id, cat.id);
+    }
+  }
+  return index;
+}
+
 // ─── The pure "what should this drop do" decision (groups) ──────────────────
 
 export type GroupDragAction =
@@ -461,9 +482,36 @@ export type GroupDragAction =
  * ways a drop can resolve a target here (onto another group, onto a category
  * row, onto an empty container) vs. line items' two.
  */
+/**
+ * The `li-` branch of `resolveGroupDropTarget` — a group dropped on a LINE
+ * ITEM in a DIFFERENT category (the SAME-category case — reordering a group
+ * past a line item already sharing its top-level list — is intercepted
+ * earlier by `resolveCrossKindCategoryReorder`, so this only ever fires
+ * cross-category). Extracted for the same complexity-ratchet reason every
+ * other `plan*`/`resolve*` split in this file was.
+ *
+ * There's no specific-sibling positioning here (that would need the full
+ * interleaved order this container map deliberately doesn't track — see
+ * `buildLineItemCategoryIndex`'s doc comment) — append-only, same as
+ * dropping on that category's header, just a more discoverable gesture
+ * ("drop near any row in category B" instead of having to find its header
+ * specifically).
+ */
+function resolveGroupDropOnLineItem(
+  overBareLineItemId: string,
+  ctx: GroupContainerContext,
+  lineItemCategoryIndex: ReadonlyMap<string, string> | undefined,
+): { toContainerId: GroupContainerId } | null {
+  const categoryId = lineItemCategoryIndex?.get(overBareLineItemId);
+  if (!categoryId) return null;
+  const candidate: GroupContainerId = `mixed:${categoryId}`;
+  return ctx.itemsByContainer.has(candidate) ? { toContainerId: candidate } : null;
+}
+
 function resolveGroupDropTarget(
   overSortableId: string,
   ctx: GroupContainerContext,
+  lineItemCategoryIndex?: ReadonlyMap<string, string>,
 ): { toContainerId: GroupContainerId; overSlotId?: string } | null {
   if (overSortableId.startsWith("grp-") || overSortableId.startsWith("shg-")) {
     const toContainerId = ctx.containerOf.get(overSortableId);
@@ -475,6 +523,9 @@ function resolveGroupDropTarget(
     // reparenting to a new category, landing at the end of its mixed list).
     const candidate: GroupContainerId = `mixed:${overSortableId.slice(4)}`;
     return ctx.itemsByContainer.has(candidate) ? { toContainerId: candidate } : null;
+  }
+  if (overSortableId.startsWith("li-")) {
+    return resolveGroupDropOnLineItem(overSortableId.slice(3), ctx, lineItemCategoryIndex);
   }
   // The Uncategorized zone's header/landing-zone row — see
   // `resolveLineItemDropTarget`'s matching branch.
@@ -554,8 +605,12 @@ export function resolveGroupDragAction(input: {
   activeSortableId: string;
   overSortableId: string | null;
   ctx: GroupContainerContext;
+  /** See `buildLineItemCategoryIndex` — only needed to resolve a group
+   *  dropped on a line item in a different category. Omit in tests that
+   *  don't exercise that branch. */
+  lineItemCategoryIndex?: ReadonlyMap<string, string>;
 }): GroupDragAction {
-  const { activeSortableId, overSortableId, ctx } = input;
+  const { activeSortableId, overSortableId, ctx, lineItemCategoryIndex } = input;
 
   if (!isGroupSortableId(activeSortableId)) return { kind: "noop" };
   if (!overSortableId || activeSortableId === overSortableId) return { kind: "noop" };
@@ -566,7 +621,7 @@ export function resolveGroupDragAction(input: {
   const fromContainerId = ctx.containerOf.get(activeSortableId);
   if (!fromContainerId) return { kind: "noop" };
 
-  const target = resolveGroupDropTarget(overSortableId, ctx);
+  const target = resolveGroupDropTarget(overSortableId, ctx, lineItemCategoryIndex);
   if (!target) return { kind: "noop" };
   const { toContainerId, overSlotId } = target;
 
@@ -726,12 +781,21 @@ function spliceCrossKind(
 
 /**
  * Pure — resolves the "reorder a line item past a group in the same
- * category" gap. Requires: an edge drop zone (not "middle" — that's still
- * "enter", handled by `resolveLineItemDragAction` as before), one side a
- * line item and the other a group/sub-hire-group, and BOTH ids present in
- * the SAME category's combined order (a grouped line-item child never is,
- * by construction — so this can never fire for "leave my group", only ever
- * for two items already siblings at the top of one category).
+ * category" gap. Requires one side a line item and the other a
+ * group/sub-hire-group, and BOTH ids present in the SAME category's combined
+ * order (a grouped line-item child never is, by construction — so this can
+ * never fire for "leave my group", only ever for two items already siblings
+ * at the top of one category).
+ *
+ * A "middle" drop zone is ambiguous only in ONE direction: a LINE ITEM
+ * dropped in the middle of a GROUP/sub-hire-group row means "enter that
+ * group" (handled by `resolveLineItemDragAction` elsewhere, so this function
+ * stays a noop for that pairing). The reverse — a GROUP dropped in the
+ * middle of a LINE ITEM row — has no such "enter" interpretation (a group
+ * can never contain a line item), so there's nothing else to fall through
+ * to; treating it as a noop there just silently swallowed the drag. Collapse
+ * that one direction's "middle" to "before" instead, so hovering ANYWHERE
+ * over the line item's row reorders the group next to it.
  */
 export function resolveCrossKindCategoryReorder(
   activeSortableId: string,
@@ -739,12 +803,15 @@ export function resolveCrossKindCategoryReorder(
   dropZone: "before" | "middle" | "after",
   categoryTopLevelOrder: ReadonlyMap<string, readonly string[]>,
 ): CrossKindReorderAction {
-  if (dropZone === "middle") return { kind: "noop" };
   if (!isCrossKindPair(activeSortableId, overSortableId)) return { kind: "noop" };
+
+  const activeIsGroupish = activeSortableId.startsWith("grp-") || activeSortableId.startsWith("shg-");
+  const effectiveDropZone = dropZone === "middle" && activeIsGroupish ? "before" : dropZone;
+  if (effectiveDropZone === "middle") return { kind: "noop" };
 
   for (const [categoryId, order] of categoryTopLevelOrder) {
     if (!order.includes(activeSortableId) || !order.includes(overSortableId)) continue;
-    const orderedIds = spliceCrossKind(order, activeSortableId, overSortableId, dropZone);
+    const orderedIds = spliceCrossKind(order, activeSortableId, overSortableId, effectiveDropZone);
     return orderedIds ? { kind: "reorder", categoryId, orderedIds } : { kind: "noop" };
   }
   return { kind: "noop" };

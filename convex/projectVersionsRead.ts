@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { query, type QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission } from "./lib/auth";
 import {
   effectiveQuoteStatus,
@@ -73,6 +74,36 @@ interface VersionItem {
   total: number | null;
 }
 
+/** Org-checks the parent snapshot row before trusting anything off it — same
+ *  "snapshotId alone doesn't prove tenancy" rule as
+ *  `projectLocksRead.snapshotEntries` (R-8.4.3). The live revision's total is
+ *  always the live project row's (passed in as `liveTotal`); a non-live
+ *  revision's total is read off its snapshot's `project` entry. Split out of
+ *  the handler purely to keep both functions' branch count under R-3.6's
+ *  ceiling. */
+async function resolveVersionExtras(
+  ctx: QueryCtx,
+  orgId: string,
+  quote: Doc<"quotes">,
+  isLive: boolean,
+  liveTotal: number | null,
+): Promise<{ total: number | null; snapshotReason?: SnapshotReason }> {
+  const fallback = { total: isLive ? liveTotal : null };
+  if (!quote.snapshotId) return fallback;
+
+  const snapshot = await ctx.db.query("projectSnapshots").withIndex("by_cuid", (e) => e.eq("id", quote.snapshotId as string)).first();
+  if (!snapshot || snapshot.organizationId !== orgId) return fallback;
+  if (isLive) return { total: liveTotal, snapshotReason: snapshot.reason };
+
+  const projectEntry = await ctx.db
+    .query("projectSnapshotEntries")
+    .withIndex("by_snapshotId_entityType", (e) => e.eq("snapshotId", quote.snapshotId as string).eq("entityType", "project"))
+    .first();
+  const data = projectEntry && projectEntry.organizationId === orgId ? (projectEntry.data as Record<string, unknown>) : undefined;
+  const total = typeof data?.total === "number" ? data.total : null;
+  return { total, snapshotReason: snapshot.reason };
+}
+
 export const listVersions = query({
   args: { projectId: v.string(), orgId: v.string(), now: v.optional(v.number()) },
   returns: v.array(VERSION_ITEM),
@@ -82,35 +113,14 @@ export const listVersions = query({
     if (!project || project.organizationId !== orgId) return [];
 
     const liveRevision = projectLiveRevision(project);
+    const liveTotal = typeof project.total === "number" ? project.total : null;
     const at = now ?? 0;
     const quotes = await listProjectQuotes(ctx, orgId, projectId);
 
     const out: VersionItem[] = [];
     for (const q of quotes) {
       const isLive = q.version === liveRevision;
-      let total: number | null = isLive ? (typeof project.total === "number" ? project.total : null) : null;
-      let snapshotReason: SnapshotReason | undefined;
-
-      if (q.snapshotId) {
-        // Org-check the parent snapshot row before trusting anything off it —
-        // same "snapshotId alone doesn't prove tenancy" rule as
-        // `projectLocksRead.snapshotEntries` (R-8.4.3).
-        const snapshot = await ctx.db.query("projectSnapshots").withIndex("by_cuid", (e) => e.eq("id", q.snapshotId as string)).first();
-        if (snapshot && snapshot.organizationId === orgId) {
-          snapshotReason = snapshot.reason;
-          if (!isLive) {
-            const projectEntry = await ctx.db
-              .query("projectSnapshotEntries")
-              .withIndex("by_snapshotId_entityType", (e) => e.eq("snapshotId", q.snapshotId as string).eq("entityType", "project"))
-              .first();
-            if (projectEntry && projectEntry.organizationId === orgId) {
-              const data = projectEntry.data as Record<string, unknown>;
-              total = typeof data.total === "number" ? data.total : null;
-            }
-          }
-        }
-      }
-
+      const { total, snapshotReason } = await resolveVersionExtras(ctx, orgId, q, isLive, liveTotal);
       out.push({
         revision: q.version,
         quoteId: q.id,

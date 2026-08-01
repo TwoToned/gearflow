@@ -54,6 +54,45 @@ interface ProjectVersionContextValue {
 
 const ProjectVersionContext = createContext<ProjectVersionContextValue | null>(null);
 
+/** Digits only; anything else (a typo, a stray `?v=abc`) reads as "no version
+ *  requested" rather than a parse error. */
+function parseRequestedRevision(param: string | null): number | null {
+  if (param == null || !/^\d+$/.test(param)) return null;
+  return Number(param);
+}
+
+function resolveLiveRevision(versions: ProjectVersionListItem[]): number | null {
+  const live = versions.find((v) => v.isLive);
+  return live ? live.revision : null;
+}
+
+function resolveViewingVersion(
+  versions: ProjectVersionListItem[],
+  requestedRevision: number | null,
+): ProjectVersionListItem | null {
+  if (requestedRevision == null) return null;
+  return versions.find((v) => v.revision === requestedRevision) ?? null;
+}
+
+/** Only "viewing a version" once the list has actually loaded and confirmed
+ *  the requested revision isn't the live one — avoids a flash of read-only
+ *  chrome for the live revision while `versions` is still loading. */
+function resolveIsViewingVersion(
+  requestedRevision: number | null,
+  isLoadingVersions: boolean,
+  liveRevision: number | null,
+): boolean {
+  if (requestedRevision == null || isLoadingVersions || liveRevision == null) return false;
+  return requestedRevision !== liveRevision;
+}
+
+/** The design doc's "no captured state (pre-versioning)" case — true unless
+ *  actively viewing a version whose target revision has no snapshot. */
+function resolveHasCapturedState(isViewingVersion: boolean, viewingVersion: ProjectVersionListItem | null): boolean {
+  if (!isViewingVersion) return true;
+  return viewingVersion != null && viewingVersion.hasSnapshot;
+}
+
 export function ProjectVersionProvider({
   projectId,
   orgId,
@@ -75,20 +114,15 @@ export function ProjectVersionProvider({
   );
   const versions = useMemo<ProjectVersionListItem[]>(() => versionsRaw ?? [], [versionsRaw]);
   const isLoadingVersions = orgId != null && versionsRaw === undefined;
-  const liveRevision = useMemo(() => versions.find((v) => v.isLive)?.revision ?? null, [versions]);
 
-  const requestedParam = searchParams.get("v");
-  const requestedRevision = requestedParam != null && /^\d+$/.test(requestedParam) ? Number(requestedParam) : null;
+  const requestedRevision = parseRequestedRevision(searchParams.get("v"));
+  const liveRevision = useMemo(() => resolveLiveRevision(versions), [versions]);
   const viewingVersion = useMemo(
-    () => (requestedRevision != null ? (versions.find((v) => v.revision === requestedRevision) ?? null) : null),
+    () => resolveViewingVersion(versions, requestedRevision),
     [versions, requestedRevision],
   );
-  // Only "viewing a version" once the version list has actually loaded and
-  // confirmed the requested revision isn't the live one — avoids a flash of
-  // read-only chrome for the live revision while `versions` is still loading.
-  const isViewingVersion =
-    requestedRevision != null && !isLoadingVersions && liveRevision != null && requestedRevision !== liveRevision;
-  const hasCapturedState = !isViewingVersion || (viewingVersion?.hasSnapshot ?? false);
+  const isViewingVersion = resolveIsViewingVersion(requestedRevision, isLoadingVersions, liveRevision);
+  const hasCapturedState = resolveHasCapturedState(isViewingVersion, viewingVersion);
 
   const snapshotId = isViewingVersion ? viewingVersion?.snapshotId : undefined;
   const entriesRaw = useAuthedQuery(

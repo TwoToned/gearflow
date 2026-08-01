@@ -410,8 +410,17 @@ const PROJECT_MONEY_ANCHORS = [
  * to 1) and `quotesWrites.newVersionNative`. A client-settable revision would let
  * a browser caller renumber, skip or rewind versions, which breaks monotonicity
  * and would silently orphan the quote rows keyed to those numbers.
+ *
+ * `liveRevision` (#1080/#1085) is the NEW pointer at the version currently
+ * projected onto the live tables — `revision` stays the allocator (highest
+ * number ever handed out). Written only by `createNative` (seeded to 1) and the
+ * version mutations (`quotesWrites.newVersionNative`,
+ * `projectVersionsWrites.saveVersionNative`, and Phase 2's promote). A
+ * client-settable `liveRevision` would let a browser caller point the project at
+ * an arbitrary version with no restore, silently desyncing the live tables from
+ * what the pointer claims is live.
  */
-const PROJECT_SERVER_OWNED = ["revision"] as const;
+const PROJECT_SERVER_OWNED = ["revision", "liveRevision"] as const;
 
 /** Immutable on a general `updateNative` patch: the money anchors + the
  * server-owned fields + `isTemplate` (a project is never flipped to a template in
@@ -781,7 +790,12 @@ export const createNative = mutation({
     // #986 — every real project starts at revision 1 (its first quote is v1).
     // Templates carry no revision at all: they're never quoted, and a duplicate
     // made from one starts its own count at 1 rather than inheriting a number.
-    if (!fields.isTemplate) (insertFields as Record<string, unknown>).revision = 1;
+    // liveRevision (#1085) starts equal to revision — every new project's first
+    // version is, trivially, its live one.
+    if (!fields.isTemplate) {
+      (insertFields as Record<string, unknown>).revision = 1;
+      (insertFields as Record<string, unknown>).liveRevision = 1;
+    }
 
     await ctx.db.insert("projects", insertFields);
     await bumpProjectCounters(ctx, fields.organizationId, null, insertFields);

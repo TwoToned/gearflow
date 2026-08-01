@@ -466,9 +466,10 @@ export const createWithUniqueNumber = mutation({
       )
       .unique();
     if (clash) return { created: false, id: clash.id };
-    // #986 — a real project starts at revision 1 (its first quote is v1), same as
-    // projectWrites.createNative. Templates carry no revision at all.
-    await ctx.db.insert("projects", args.isTemplate ? args : { ...args, revision: 1 });
+    // #986/#1085 — a real project starts at revision 1 (its first quote is v1)
+    // AND liveRevision 1 (its first version is, trivially, its live one), same
+    // as projectWrites.createNative. Templates carry no revision at all.
+    await ctx.db.insert("projects", args.isTemplate ? args : { ...args, revision: 1, liveRevision: 1 });
     await bumpCountersForTable(ctx, "projects", null, args);
     return { created: true, id: args.id };
   },

@@ -1223,6 +1223,18 @@ export default defineSchema({
     // pre-#986 documents validate; absent ⇒ 1 via `projectRevision()`
     // (convex/lib/quoteState.ts), and `backfillQuoteRevisions.ts` stamps it.
     revision: v.optional(v.number()),
+    // #1080/#1085 — the version currently projected onto the live tables.
+    // `revision` above is now PURELY the allocator (highest number ever handed
+    // out); this is the pointer a promote (Phase 2) can point at an OLDER
+    // number without renumbering anything. SERVER-OWNED, same treatment as
+    // `revision`: written only by `createNative` (seeded to 1),
+    // `quotesWrites.newVersionNative` and `projectVersionsWrites.saveVersionNative`
+    // (Phase 2 adds `promoteRevisionNative`), stripped from every generic client
+    // patch. Absent ⇒ `revision` via `projectLiveRevision()` (convex/lib/quoteState.ts)
+    // — every pre-#1085 project. `backfillProjectLiveRevision.ts` stamps it
+    // (belt-and-braces, not a correctness dependency — the coalesce already
+    // makes every pre-existing project read correctly).
+    liveRevision: v.optional(v.number()),
     tags: v.optional(v.array(v.string())),
     isTemplate: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
@@ -2297,6 +2309,14 @@ export default defineSchema({
     // the same spirit as "nothing deletes one" above. #1027/#1031.
     recalledPdfFileIds: v.optional(v.array(v.string())),
     snapshotId: v.optional(v.string()),
+    // #1085 — optional internal name for the version ("with LED wall", "client's
+    // budget option"), settable via `saveVersionNative`. Never affects behaviour
+    // or numbering. Internal by default (bounded ≤60 chars server-side via
+    // `fieldGuards.ts`, mirroring the Zod bound) — printed on the quote PDF
+    // header only when `labelOnDocument` is set (stamped at send, Phase 4 —
+    // not yet consumed by the render pipeline in this phase).
+    label: v.optional(v.string()),
+    labelOnDocument: v.optional(v.boolean()),
     // Send (the freeze moment)
     quoteDate: v.optional(v.number()),
     validUntil: v.optional(v.number()),
@@ -3017,11 +3037,18 @@ export default defineSchema({
     // by quotesWrites.sendNative. Unlike the status-driven reasons it carries
     // `revision`, so "as of quote v2" and "the snapshot taken at v2" are the
     // same row (one shared counter — projects.revision).
+    // VERSION_SAVED (#1085) — the same "carries `revision`" shape as QUOTE_SENT,
+    // taken by `projectVersionsWrites.saveVersionNative` (an explicit user save)
+    // and by `quotesWrites.newVersionNative` (capturing the revision it moves
+    // past). PRE_PROMOTE (#1085, consumed starting Phase 2) — the auto-capture
+    // of the live state immediately before a promote overwrites it.
     reason: v.union(
       v.literal("CONFIRMED"),
       v.literal("COMPLETED"),
       v.literal("UNLOCK"),
       v.literal("QUOTE_SENT"),
+      v.literal("VERSION_SAVED"),
+      v.literal("PRE_PROMOTE"),
     ),
     revision: v.optional(v.number()),
     takenAt: v.number(),

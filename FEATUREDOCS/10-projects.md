@@ -16,6 +16,23 @@ page's project ids, unaffected by this change. `ClientsDashboard`'s own
 `useProjects` call (aggregate revenue/count stats, not a list) is a known,
 separate follow-up — not yet converted.
 
+## Project detail IA (#1061 — see FEATUREDOCS/69)
+
+`/projects/[id]` opens on an **Overview** tab (the project's home), not
+Equipment. The page-wide right sidebar (Schedule · Location · Team · Activity)
+moved into that tab as `<ProjectContextRail>`, so every other tab now renders
+**full width** — the equipment table used to pay ~296px for context it never
+needed. The summary strip moved into Overview too, and the reservation-conflicts
+banner became a row in Overview's Readiness checklist.
+
+Still page-level, above the tabs, visible from every tab: the **lifecycle
+stepper** and the **lock strip** (#990). Both change what you can DO in every
+tab, so they are page context rather than Overview content.
+
+`Tabs` is CONTROLLED (it was uncontrolled): a failing readiness check navigates
+you to the tab that fixes it. A `?tab=` deep link still overrides the Overview
+default, so #992's org-Finance deep links land where they meant to.
+
 ## Status Flow
 ```
 ENQUIRY → QUOTING → QUOTED → CONFIRMED → PREPPING → CHECKED_OUT → ON_SITE → RETURNED → COMPLETED → INVOICED

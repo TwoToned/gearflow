@@ -19,7 +19,11 @@ import { LOCKED_GROUP_FIELDS, LOCKED_LINE_ITEM_FIELDS, LOCKED_PROJECT_FIELDS, LO
  *  state) — all three carry a `revision`, unlike the status-driven reasons. */
 export type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT" | "VERSION_SAVED" | "PRE_PROMOTE";
 export type SnapshotEntityType = "project" | "category" | "group" | "lineItem" | "service" | "crewAssignment";
-export type UnlockScope = "FINANCIAL" | "FULL";
+/** `FINANCIAL`/`FULL` are the two unlock-session discard scopes (#791/#792).
+ *  `PROMOTE` (#1080/#1089, Phase 2) is a third caller of this same mechanism —
+ *  "make an older version live" — not an unlock at all, hence the type name
+ *  staying `RestoreScope` rather than `UnlockScope`. */
+export type RestoreScope = "FINANCIAL" | "FULL" | "PROMOTE";
 
 function stripDoc(doc: Record<string, unknown> & { _id: unknown; _creationTime: unknown }): Record<string, unknown> {
   const { _id, _creationTime, ...rest } = doc;
@@ -161,6 +165,79 @@ export async function loadSnapshotEntryMap(
   return map;
 }
 
+/** The most recent captured snapshot for a project at a specific revision, org-
+ *  checked. A single revision can accumulate more than one capture over its
+ *  lifetime (e.g. a `VERSION_SAVED` capture while still live, then `QUOTE_SENT`
+ *  once it's sent) — captures are a versioned list, never overwritten (see the
+ *  file header) — so "most recent" is the row reflecting the revision's state
+ *  at the moment it actually stopped being live. Null when this revision has
+ *  never been captured (not viewable, not restorable — #1080/#1085 §9). */
+export async function findSnapshotForRevision(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  projectId: string,
+  revision: number,
+): Promise<Doc<"projectSnapshots"> | null> {
+  const rows = (
+    await ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+  ).filter((r) => r.organizationId === orgId && r.revision === revision);
+  if (rows.length === 0) return null;
+  return rows.reduce((latest, r) => (r.takenAt > latest.takenAt ? r : latest));
+}
+
+/** Ignore bookkeeping fields not meaningful to an equality check — mirrors
+ *  `src/lib/project-snapshot-diff.ts`'s `hasChanged` (the Convex bundler can't
+ *  resolve the `@/` alias — same "duplicated byte-for-byte, pinned by a
+ *  cross-import equality test" pattern as `projectWindow.ts`; see
+ *  `projectSnapshots.test.ts`). EXPORTED for that pin test. */
+export function entryDataEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  keys.delete("updatedAt");
+  keys.delete("createdAt");
+  for (const k of keys) {
+    if (JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null)) return false;
+  }
+  return true;
+}
+
+/** Same comparison `diffSnapshotEntries` (`src/lib/project-snapshot-diff.ts`)
+ *  makes for the Versions UI, reduced to a boolean: are these two entry lists
+ *  identical? The "project" entity is excluded, matching that function —
+ *  project-row drift (dates, notes, etc.) doesn't by itself justify a fresh
+ *  PRE_PROMOTE capture; category/group/lineItem/service/crewAssignment drift
+ *  does. EXPORTED for the pin test (see `entryDataEqual` above). */
+export function snapshotEntriesEqual(a: SnapshotEntryLike[], b: SnapshotEntryLike[]): boolean {
+  const key = (e: SnapshotEntryLike) => `${e.entityType}:${e.entityId}`;
+  const aMap = new Map(a.filter((e) => e.entityType !== "project").map((e) => [key(e), e]));
+  const bMap = new Map(b.filter((e) => e.entityType !== "project").map((e) => [key(e), e]));
+  if (aMap.size !== bMap.size) return false;
+  for (const [k, entryA] of aMap) {
+    const entryB = bMap.get(k);
+    if (!entryB || !entryDataEqual(entryA.data, entryB.data)) return false;
+  }
+  return true;
+}
+
+/** Whether the project's CURRENT live state is byte-identical to an already-
+ *  captured snapshot — the Phase 2 promote auto-capture skip rule (§3.4
+ *  branch 3): nothing is at risk, so allocating a number for a byte-identical
+ *  copy would just be dead-row noise in the version list. */
+export async function liveStateMatchesCapturedSnapshot(
+  ctx: MutationCtx,
+  orgId: string,
+  project: Doc<"projects">,
+  snapshotId: string,
+): Promise<boolean> {
+  const current = await collectCurrentEntries(ctx, orgId, project);
+  const capturedMap = await loadSnapshotEntryMap(ctx, orgId, snapshotId);
+  const captured: SnapshotEntryLike[] = [...capturedMap.values()].map((e) => ({
+    entityType: e.entityType,
+    entityId: e.entityId,
+    data: e.data as Record<string, unknown>,
+  }));
+  return snapshotEntriesEqual(current, captured);
+}
+
 /** Structural/workflow fields that reflect REAL warehouse state, never rewritten
  *  by a restore (asset/kit status is real-world truth — CLAUDE.md/#792 invariant). */
 const LINE_ITEM_WAREHOUSE_FIELDS = new Set([
@@ -181,6 +258,29 @@ function isWarehouseBacked(data: Record<string, unknown>): boolean {
   return data.assetId != null || data.bulkAssetId != null || data.kitId != null;
 }
 
+/**
+ * Phase 2 (#1080/#1089) — `PROMOTE`'s project-row exclusion list (design
+ * §3.5). Every OTHER captured project field restores; these don't, because
+ * restoring them would undo the promote itself, contradict real-world state,
+ * or fight the recalc pipeline that already owns them as a single writer
+ * (R-3.1).
+ */
+const PROMOTE_EXCLUDED_PROJECT_FIELDS = new Set<string>([
+  // Identity — never version-scoped.
+  "id", "organizationId", "projectNumber", "isTemplate", "createdAt",
+  // The counters themselves — restoring them would undo the promote.
+  "revision", "liveRevision",
+  // Lifecycle position is where the job actually IS, not what a version said.
+  "status",
+  // Real issued invoices / real money received — never rolled back.
+  "invoicedTotal", "depositPaid",
+  // Derived — recalc owns these; restoring then recalculating is two writers
+  // for one value.
+  "subtotal", "total", "taxAmount", "margin",
+  "equipmentRevenue", "saleRevenue", "saleCostTotal",
+  "serviceCostTotal", "labourCostTotal", "subHireCostTotal",
+]);
+
 export interface RestoreResult {
   /** Human-readable descriptions of entities the restore deliberately left
    *  untouched because reconciling them could contradict live warehouse state. */
@@ -191,7 +291,7 @@ export interface RestoreArgs {
   orgId: string;
   project: Doc<"projects">;
   snapshotId: string;
-  scope: UnlockScope;
+  scope: RestoreScope;
   now: number;
 }
 
@@ -200,22 +300,38 @@ export interface RestoreArgs {
  * `scope: "FINANCIAL"` (#791 discard) touches ONLY the locked money fields —
  * structural changes made during the session (items added/removed) are never
  * rolled back; an item added during the session survives but its price fields
- * revert to $0/unset. `scope: "FULL"` (#792 discard) additionally reconciles
- * structure: patches changed entities, recreates removed ones, and removes
- * added ones — except where that would contradict live warehouse state (see
+ * revert to $0/unset. `scope: "FULL"` (#792 discard) and `scope: "PROMOTE"`
+ * (#1089, Phase 2 — "make an older version live") both additionally reconcile
+ * structure: patch changed entities, recreate removed ones, remove added ones
+ * — except where that would contradict live warehouse state (see
  * `isWarehouseBacked`), which is surfaced as a conflict instead of forced.
+ * `PROMOTE` differs from `FULL` in exactly one place: the PROJECT ROW restores
+ * the wide field set in `PROMOTE_EXCLUDED_PROJECT_FIELDS`'s complement (dates,
+ * client, notes, duration-derived pricing overrides…) rather than just
+ * `LOCKED_PROJECT_FIELDS` — every other entity type follows `FULL`'s rules
+ * unchanged.
  */
 export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs): Promise<RestoreResult> {
   const { orgId, project, snapshotId, scope, now } = args;
   const entries = await loadSnapshotEntryMap(ctx, orgId, snapshotId);
   const conflicts: string[] = [];
+  // PROMOTE reconciles structure the same way FULL does — everywhere below
+  // that branches on "structural restore", both scopes take the same path.
+  const structural = scope === "FULL" || scope === "PROMOTE";
 
   // ── Project fields ──
   const projectEntry = entries.get(`project:${project.id}`);
   if (projectEntry) {
     const data = projectEntry.data as Record<string, unknown>;
     const patch: Record<string, unknown> = { updatedAt: now };
-    for (const f of LOCKED_PROJECT_FIELDS) patch[f] = data[f];
+    if (scope === "PROMOTE") {
+      for (const [k, val] of Object.entries(data)) {
+        if (PROMOTE_EXCLUDED_PROJECT_FIELDS.has(k)) continue;
+        patch[k] = val;
+      }
+    } else {
+      for (const f of LOCKED_PROJECT_FIELDS) patch[f] = data[f];
+    }
     await ctx.db.patch(project._id, patch);
   }
 
@@ -227,7 +343,7 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
     const entry = entries.get(`group:${g.id}`);
     if (entry) {
       const data = entry.data as Record<string, unknown>;
-      if (scope === "FULL") {
+      if (structural) {
         const { _id: _dropId, _creationTime: _dropTime, id: _dropCuid, organizationId: _dropOrg, ...rest } = data as Record<string, unknown> & { id: string; organizationId: string };
         await ctx.db.replace(g._id, { ...rest, id: g.id, organizationId: orgId, updatedAt: now } as typeof g);
       } else {
@@ -240,14 +356,14 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
       // Added during the session, absent from the snapshot: same "not deliberately
       // priced" state `assertLifecycleGuard`'s `defaultToZero` produces on a locked
       // insert — flag it so the Unpriced badge points at the real cause.
-      if (scope === "FULL") {
+      if (structural) {
         await ctx.db.delete(g._id);
       } else {
         await ctx.db.patch(g._id, { price: undefined, discount: undefined, pricedUnderLock: true, updatedAt: now });
       }
     }
   }
-  if (scope === "FULL") {
+  if (structural) {
     const currentIds = new Set(currentGroups.map((g) => g.id));
     for (const [key, entry] of entries) {
       if (!key.startsWith("group:") || currentIds.has(entry.entityId)) continue;
@@ -265,7 +381,7 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
     const entry = entries.get(`lineItem:${li.id}`);
     if (entry) {
       const data = entry.data as Record<string, unknown>;
-      if (scope === "FULL") {
+      if (structural) {
         const patch: Record<string, unknown> = { updatedAt: now };
         for (const [k, v] of Object.entries(data)) {
           if (LINE_ITEM_WAREHOUSE_FIELDS.has(k) || k === "id" || k === "organizationId" || k === "projectId") continue;
@@ -282,7 +398,7 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
       // Added during the session, absent from the snapshot: same "not deliberately
       // priced" state `assertLifecycleGuard`'s `defaultToZero` produces on a locked
       // insert — flag it so the Unpriced badge points at the real cause.
-      if (scope === "FULL") {
+      if (structural) {
         if (isWarehouseBacked(li as unknown as Record<string, unknown>)) {
           conflicts.push(`Line item "${li.description ?? li.id}" was added during the session and references live warehouse stock — review and remove manually.`);
         } else {
@@ -293,7 +409,7 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
       }
     }
   }
-  if (scope === "FULL") {
+  if (structural) {
     const currentIds = new Set(currentLines.map((li) => li.id));
     for (const [key, entry] of entries) {
       if (!key.startsWith("lineItem:") || currentIds.has(entry.entityId)) continue;
@@ -323,7 +439,7 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
     const hasCrew = crewByService.has(s.id);
     if (entry) {
       const data = entry.data as Record<string, unknown>;
-      if (scope === "FULL") {
+      if (structural) {
         const patch: Record<string, unknown> = { updatedAt: now };
         for (const [k, v] of Object.entries(data)) {
           if (k === "id" || k === "organizationId" || k === "projectId") continue;
@@ -339,13 +455,13 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
         }
         await ctx.db.patch(s._id, patch);
       }
-    } else if (scope === "FULL") {
+    } else if (structural) {
       await ctx.db.delete(s._id);
     } else if (!hasCrew) {
       await ctx.db.patch(s._id, { costTotal: 0, updatedAt: now });
     }
   }
-  if (scope === "FULL") {
+  if (structural) {
     const currentIds = new Set(currentServices.map((s) => s.id));
     for (const [key, entry] of entries) {
       if (!key.startsWith("service:") || currentIds.has(entry.entityId)) continue;
@@ -356,7 +472,7 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
   }
 
   // ── Crew assignments ── (rate/hours only — never rewrite workflow status)
-  if (scope === "FULL") {
+  if (structural) {
     const currentCrew = (
       await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
     ).filter((c) => c.organizationId === orgId);

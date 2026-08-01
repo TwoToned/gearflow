@@ -12,10 +12,16 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 export const listForInvoice = query({
   args: { orgId: v.string(), invoiceId: v.string() },
   handler: async (ctx, { orgId, invoiceId }) => {
-    const invoice = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", invoiceId)).first();
-    if (!invoice) return [];
+    // Org membership MUST be checked before the invoice lookup, not after —
+    // a nonexistent invoiceId used to short-circuit to `[]` before
+    // requireOrgReadFor ever ran, so a caller from an unrelated org got a
+    // silent empty result instead of a rejection (#1076, A6's exhaustive
+    // sweep found this: it never leaked real data, since a real foreign-org
+    // invoice IS caught by the org-mismatch check below, but the guard
+    // wasn't unconditional the way every other org-scoped read's is).
     await requireOrgReadFor(ctx, orgId, "invoice");
-    if (invoice.organizationId !== orgId) return [];
+    const invoice = await ctx.db.query("invoices").withIndex("by_cuid", (q) => q.eq("id", invoiceId)).first();
+    if (!invoice || invoice.organizationId !== orgId) return [];
     return await ctx.db.query("invoiceLines").withIndex("by_invoiceId", (q) => q.eq("invoiceId", invoiceId)).collect();
   },
 });

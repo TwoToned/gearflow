@@ -403,3 +403,61 @@ Per-org SAML 2.0 and OIDC SSO via `@better-auth/sso` plugin. Managed in `/settin
 - `SSOProvider` (mapped to `sso_provider`) — Created by Better Auth SSO plugin
 - `PendingSSOApproval` (mapped to `pending_sso_approval`) — Pending approval records
 - `CustomRole.ssoGroupClaim` — Optional field for automatic IdP group matching
+
+## Cross-tenant audit: registry-driven exhaustive + ratcheted (#1076, A6)
+
+**The Phase A gate** — the last piece of the multi-tenancy epic (#1064), because it
+audits everything the earlier sections (A2/A7/A8) added. `convex/xtenantHardening.test.ts`
+already proved the cross-tenant guard pattern with a representative, hand-written sample
+("the fix is identical across all sites"); this extends that claim from a sample to the
+full surface, machine-checked, in three layers:
+
+1. **`scripts/xtenant-bycuid-ratchet.mjs`** — static backstop. Every public `query`/
+   `mutation` in `convex/*.ts` containing a `withIndex("by_cuid", ...)` read is checked
+   for a guard indicator (`requireOrgReadFor`/`requireOrgReadDoc`/`requireOrgPermission`/
+   an inline `organizationId !==` check/a local wrapper matching those names) ANYWHERE in
+   its body. Deliberately excludes `internalQuery`/`internalMutation` — those are reachable
+   only from first-party Convex code in the same deployment, never directly by a
+   user/agent/session identity, so they sit outside this trust boundary (a caller-side
+   org-scoping bug in whatever invokes them is a different, narrower risk this scan can't
+   see). Ratcheted like every other repo ratchet: baseline is 0, CI fails on the first new
+   unguarded site. `pnpm run xtenant-bycuid-ratchet`.
+
+2. **`convex/xtenantExhaustive.test.ts`, Sweep A (org-mismatch)** — every operation with
+   `guard: "orgReadFor" | "orgPermission"` that takes an `orgId`/`organizationId` arg
+   (~500 operations) is invoked with a session belonging to org A but the arg naming org
+   B, args synthesised from the function's own Convex validator (same technique as
+   `agentServiceUnreachable.test.ts`, so a new operation joins automatically — nothing to
+   add to a list). Asserts every single one rejects. Generalises the one hand-written case
+   in `xtenantHardening.test.ts` ("organizationId in the request naming the OTHER org
+   doesn't widen it") from 1 operation to all of them. Coverage floor ratcheted at 90% of
+   the operation count (today: 100%, 499/499) rather than the raw count, so the sweep
+   widens automatically as the registry grows.
+
+3. **`convex/xtenantExhaustive.test.ts`, Sweep B (FK-collision leak)** — the 72 `listBy*`
+   queries specifically. For each one whose module name is a real Convex table and whose
+   non-org required args are all scalars, seeds a row in org A and org B sharing the same
+   FK value (schema-driven synthesis — `tests/helpers/convex-schema-synthesis.ts` builds a
+   minimal valid document for ANY table from `schema.tables[name].validator`, so this
+   doesn't need per-table hand-written fixtures), calls the query as org A, and asserts
+   org B's row never comes back. Coverage floor is an absolute count (20) rather than a
+   percentage — batched `listByIds`-style array-arg queries are out of scope for this
+   sweep (single-FK collision doesn't apply; Sweep A still covers their org-mismatch
+   behaviour) and are filtered out, so the candidate pool itself is smaller (today: 32).
+
+**A real bug this sweep found on its first run**: `invoiceLines.listForInvoice` checked
+whether the requested `invoiceId` existed BEFORE checking whether the caller's org matched
+the requested `orgId` — a caller from an unrelated org got a silent `[]` instead of a
+rejection when probing a nonexistent id, rather than the unconditional rejection every
+other org-scoped read gives. Never an actual data leak (a REAL foreign-org invoice was
+still caught by the mismatch check that ran after the lookup), but exactly the
+order-of-operations inconsistency this class of sweep exists to catch. Fixed by moving the
+`requireOrgReadFor` call before the lookup, matching every other `getById`/`listBy*` guard
+in the codebase.
+
+Both sweeps only count an operation as "swept" when the guard actually got a chance to
+reject (an `ArgumentValidationError` — the call never reaching the handler — doesn't
+count), so a synthesis regression that silently narrowed the sweep still trips the
+coverage-floor assertion; one genuinely unsynthesisable validator or unseedable table
+doesn't turn a green suite red. See the file-level comment in `xtenantExhaustive.test.ts`
+for the full rationale.

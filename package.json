@@ -15,6 +15,7 @@
     "collect-ratchet": "node scripts/collect-ratchet.mjs",
     "knip-ratchet": "node scripts/knip-ratchet.mjs",
     "complexity-ratchet": "node scripts/complexity-ratchet.mjs",
+    "xtenant-bycuid-ratchet": "node scripts/xtenant-bycuid-ratchet.mjs",
     "hotspots": "node scripts/hotspots.mjs",
     "size": "size-limit",
     "test": "vitest run",

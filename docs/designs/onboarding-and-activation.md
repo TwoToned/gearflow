@@ -10,6 +10,8 @@ scoped this as "~3–4 days, no schema or server work beyond a tour-completed fl
 estimate assumed single-org and is wrong, see §2).
 **Mockup:** [`mockups/onboarding-mockup.html`](./mockups/onboarding-mockup.html) — eight
 annotated screens built against the live RVLT tokens (open in a browser).
+**Platform sweep:** [`multi-tenant-and-international.md`](./multi-tenant-and-international.md)
+— the multi-tenant + internationalisation gaps this program sits on top of.
 **Related:** [FEATUREDOCS/04](../../FEATUREDOCS/04-auth-permissions.md) (auth, single-org mode),
 [FEATUREDOCS/20](../../FEATUREDOCS/20-csv-import-export.md) (CSV import),
 [FEATUREDOCS/27](../../FEATUREDOCS/27-settings-admin.md) (org settings),
@@ -91,9 +93,14 @@ test can currently catch. CLAUDE.md already names this class an R-8.4.3 IDOR **C
 Today they are unexploitable. The moment a second organisation exists, every gap is live.
 **This is the dominant cost and risk of the whole program** — not the wizard, not the tour.
 
-Mitigation is in §4.5 and it is cheap, because the API registry already enumerates every
-agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already proves the
-"invoke every operation and assert it rejects" harness works.
+> **Corrected 2026-08-01** (see [`multi-tenant-and-international.md`](./multi-tenant-and-international.md) §2.1):
+> "unfalsifiable" is too strong. `convexTest` can hold two orgs even though production holds
+> one, and **`convex/xtenantHardening.test.ts` already exists** — 198 lines of exactly this
+> adversarial fixture, covering session identity, agent tokens, the #1001 unguarded reads and
+> create-time dup-guards. The guards are unfalsifiable **in production**, and today only
+> *representatively* tested — the file says so itself. The work in §4.5 is therefore
+> **extending a proven harness to exhaustive coverage**, not building one. Same effort,
+> materially less risk.
 
 ### 2.4 Other single-org assumptions found
 
@@ -324,13 +331,17 @@ Everything downstream of org resolution is unchanged.
 
 > A guard that cannot fail is a guard that has never been tested.
 
-**Gate: a two-org adversarial fixture, wired to the API registry, green before Phase B starts.**
+**Gate: the existing two-org fixture extended to registry-driven exhaustive coverage, green
+before Phase B starts.**
 
-Seed Org A and Org B with a full parallel entity set. Then, driven by
-`src/lib/api/registry.generated.ts` (which already enumerates every agent-reachable
-operation), invoke **every** operation with Org A's identity against Org B's entity ids and
-assert rejection. Model it on `convex/agentServiceUnreachable.test.ts`, which already proves
-this harness shape works across 602 functions.
+`convex/xtenantHardening.test.ts` already seeds `org_A` / `org_B`, plants colliding-FK rows in
+both, and asserts org A never sees org B's — for session *and* agent identities. It covers 8
+representative cases against a surface of **72 `listBy*` queries** and ~1,500 `by_cuid` reads.
+
+Extend it, driven by `src/lib/api/registry.generated.ts` (which already enumerates every
+agent-reachable operation), so **every** operation is invoked with Org A's identity against
+Org B's entity ids and asserted to reject. `convex/agentServiceUnreachable.test.ts` proves the
+registry-driven shape scales across 602 functions.
 
 Properties that make this the right gate:
 

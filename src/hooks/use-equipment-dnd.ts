@@ -52,7 +52,6 @@ import * as React from "react";
 import { useCallback, useState } from "react";
 import {
   PointerSensor,
-  TouchSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
@@ -687,10 +686,20 @@ export function useEquipmentDnd(args: UseEquipmentDndArgs): UseEquipmentDndResul
     onSettled,
   } = args;
 
-  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 4 } });
-  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } });
+  // ONE PointerSensor, not PointerSensor+TouchSensor: Pointer Events fire for
+  // mouse, touch, AND pen alike, so a touch interaction used to trigger BOTH
+  // sensors at once — PointerSensor's old 4px `distance` constraint won the
+  // race almost immediately (any touch jitter clears 4px well before
+  // TouchSensor's 250ms delay elapsed), hijacking the long-press gesture and
+  // fighting the browser's native scroll, which is what made drag "just not
+  // work" on phones. A single delay-based constraint applied to PointerSensor
+  // covers mouse/touch/pen uniformly (dnd-kit's own recommended pattern for
+  // combined pointer-type support) and IS the "press and hold, then drag"
+  // feel — no separate handle needed, and no dedicated touch-only sensor to
+  // race against.
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { delay: 200, tolerance: 8 } });
   const keyboardSensor = useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates });
-  const sensors = useSensors(pointerSensor, touchSensor, keyboardSensor);
+  const sensors = useSensors(pointerSensor, keyboardSensor);
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [invalidOverId, setInvalidOverId] = useState<string | null>(null);

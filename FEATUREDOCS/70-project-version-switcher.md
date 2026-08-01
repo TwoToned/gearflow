@@ -8,9 +8,10 @@ behind a read-only bar, switched via a header dropdown and a `?v=` URL param.
 
 **Depends on:** Phase 1 (#1085, merged) — `projects.liveRevision`, `saveVersionNative`,
 the `VERSION_SAVED`/`PRE_PROMOTE` snapshot reasons.
-**Does NOT depend on / does not include:** Phase 2's `promoteRevisionNative` (#1089,
-not yet shipped) — there is no "Make vN live" action anywhere in this phase. The
-switcher and read-only bar are look-only.
+**Does NOT include:** any promote UI. Phase 2 (`promoteRevisionNative`, #1089) landed
+on `main` while this phase was in review, but "Make vN live" as a user-facing action
+is Phase 4's dialog (#1097) — this phase's switcher and read-only bar stay look-only
+regardless of whether the underlying mutation exists.
 
 ## The model (unchanged from Phase 1, restated for this phase)
 
@@ -125,7 +126,8 @@ gracefully from.
 
 ## Out of scope (later phases)
 
-- The promote action / "Make vN live" (#1089, Phase 2) and its dialog (#1097, Phase 4).
+- The "Make vN live" dialog/button (#1097, Phase 4) — `promoteRevisionNative` itself
+  exists on `main` (#1089, Phase 2), but no UI in this phase calls it.
 - The version list becoming the Finance tab's primary rail, deletion, labels,
   retiring the old `⋯ Versions` panel (#1097, Phase 4).
 - Recall-to-edit (#1100, Phase 5).

@@ -4,6 +4,7 @@ import {
   resolveLineItemDragAction,
   buildGroupContainerMap,
   resolveGroupDragAction,
+  buildLineItemCategoryIndex,
   planGroupReorder,
   resolveCategoryDragAction,
   buildCategoryTopLevelOrder,
@@ -302,6 +303,21 @@ describe("buildGroupContainerMap", () => {
   });
 });
 
+describe("buildLineItemCategoryIndex", () => {
+  test("indexes standalone AND grouped line items by their top-level category", () => {
+    const g1 = group("g1", [li("gi1")]);
+    const catA = category("catA", { standalone: [li("s1")], groups: [g1] });
+    const catB = category("catB", { standalone: [li("s2")] });
+
+    const index = buildLineItemCategoryIndex([catA, catB]);
+
+    expect(index.get("s1")).toBe("catA");
+    expect(index.get("gi1")).toBe("catA");
+    expect(index.get("s2")).toBe("catB");
+    expect(index.has("ghost")).toBe(false);
+  });
+});
+
 describe("resolveGroupDragAction", () => {
   function groupCtxFor(catA: CategoryData, orphanGroups: GroupData[] = [], orphanSh: SubHireGroupData[] = []): GroupContainerContext {
     return buildGroupContainerMap([catA], orphanGroups, orphanSh);
@@ -501,6 +517,46 @@ describe("resolveGroupDragAction", () => {
     expect(action).toEqual({ kind: "noop" });
   });
 
+  test("cross-category move: dropped directly on a LINE ITEM in a different category -> move, append order", () => {
+    // Regression: resolveGroupDropTarget had no li- branch at all, so
+    // dropping a group anywhere near a standalone line item in another
+    // category (rather than precisely on that category's header, or on one
+    // of ITS groups) silently no-opped — the only way in was finding the
+    // category header specifically.
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      mixedGroups: [{ kind: "project", sortOrder: 0, projectGroupId: "g1" }],
+    });
+    const catB = category("catB", { standalone: [li("b1")], groups: [], mixedGroups: [] });
+    const ctx = buildGroupContainerMap([catA, catB], [], []);
+    const lineItemCategoryIndex = buildLineItemCategoryIndex([catA, catB]);
+    const action = resolveGroupDragAction({
+      activeSortableId: "grp-g1",
+      overSortableId: "li-b1",
+      ctx,
+      lineItemCategoryIndex,
+    });
+    expect(action).toEqual({
+      kind: "move",
+      groupKind: "project",
+      groupId: "g1",
+      fromContainerId: "mixed:catA",
+      toContainerId: "mixed:catB",
+      targetCategoryId: "catB",
+      resultingOrder: undefined,
+    });
+  });
+
+  test("dropped on a line item with no lineItemCategoryIndex supplied -> noop, not a crash", () => {
+    const catA = category("catA", {
+      groups: [group("g1", [])],
+      mixedGroups: [{ kind: "project", sortOrder: 0, projectGroupId: "g1" }],
+    });
+    const ctx = groupCtxFor(catA);
+    const action = resolveGroupDragAction({ activeSortableId: "grp-g1", overSortableId: "li-x", ctx });
+    expect(action).toEqual({ kind: "noop" });
+  });
+
   test("Drop Matrix: a project group onto a sub-hire group is blocked (no nested groups)", () => {
     const catA = category("catA", {
       groups: [group("g1", [])],
@@ -677,8 +733,32 @@ describe("computeDropZone", () => {
 describe("resolveCrossKindCategoryReorder", () => {
   const order = new Map([["catA", ["grp-g1", "li-a", "shg-shg1"]]]);
 
-  test("middle drop zone -> noop (that's still 'enter', handled elsewhere)", () => {
+  test("line item dropped in the middle of a group -> noop (that's still 'enter', handled elsewhere)", () => {
     expect(resolveCrossKindCategoryReorder("li-a", "grp-g1", "middle", order)).toEqual({ kind: "noop" });
+  });
+
+  test("group dropped in the middle of a line item -> reorders it before that line item, not a noop", () => {
+    // Regression: a group has no "enter this line item" interpretation the
+    // way a line item entering a group does, so "middle" used to silently
+    // swallow the drag entirely instead of falling back to an ordinary
+    // reorder. Collapses to "before" — see the doc comment above. Uses its
+    // own fixture (li-a first) since in the shared `order` above grp-g1 is
+    // ALREADY immediately before li-a — "before" would be a no-op there.
+    const orderLiFirst = new Map([["catA", ["li-a", "grp-g1", "shg-shg1"]]]);
+    expect(resolveCrossKindCategoryReorder("grp-g1", "li-a", "middle", orderLiFirst)).toEqual({
+      kind: "reorder",
+      categoryId: "catA",
+      orderedIds: ["grp-g1", "li-a", "shg-shg1"],
+    });
+  });
+
+  test("sub-hire group dropped in the middle of a line item -> also reorders, not a noop", () => {
+    const orderLiFirst = new Map([["catA", ["li-a", "grp-g1", "shg-shg1"]]]);
+    expect(resolveCrossKindCategoryReorder("shg-shg1", "li-a", "middle", orderLiFirst)).toEqual({
+      kind: "reorder",
+      categoryId: "catA",
+      orderedIds: ["shg-shg1", "li-a", "grp-g1"],
+    });
   });
 
   test("line item dropped on a group's top edge -> reorders it before the group", () => {

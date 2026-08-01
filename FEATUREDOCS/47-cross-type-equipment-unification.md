@@ -589,6 +589,53 @@ node at all and was unreachable by drag until something already lived there.
   landed in Uncategorized could never be dragged back into a category, only
   moved there via the "Move to category" dialog.
 
+### A group dropped on a LINE ITEM (not a group) — same-category vs. cross-category
+
+The Drop Matrix's "reorder past (edge)" cell only ever fired within the SAME
+category — `resolveCrossKindCategoryReorder` (see "Groups and standalone line
+items share one order" above) requires both the dragged id and the hovered id
+to already share one category's combined order. Two related gaps followed
+from that scope, both fixed together:
+
+- **Same-category, `middle` drop zone.** `resolveCrossKindCategoryReorder`
+  used to short-circuit to a noop whenever `dropZone === "middle"`, regardless
+  of direction — correct for a LINE ITEM hovering the middle of a GROUP (that's
+  "enter this group," resolved elsewhere), but wrong for the reverse: a GROUP
+  has no "enter this line item" interpretation, so "middle" there had nothing
+  else to fall through to and just swallowed the drag. It now collapses to
+  `"before"` specifically when the ACTIVE side is the group/sub-hire-group —
+  hovering ANYWHERE over a line item's row (not just its top/bottom edge) now
+  reorders the group next to it.
+- **Cross-category, any zone.** `resolveGroupDropTarget` had no `li-` branch
+  at all, so a group dragged near a standalone line item in a DIFFERENT
+  category didn't resolve to anything — the only way to move a group into
+  that category was finding its header specifically. `resolveGroupDropOnLineItem`
+  (a new small helper, extracted to keep `resolveGroupDropTarget` under the
+  complexity ratchet) resolves the hovered line item's owning category via
+  `buildLineItemCategoryIndex` (bare lineItemId → categoryId, built fresh from
+  `categoriesRef.current` — a deliberately minimal, single-purpose lookup, NOT
+  a merge of the line-item/group container systems `buildContainerMap` /
+  `buildGroupContainerMap` stay deliberately separate) and lands the group
+  there, append-only — same result as dropping on that category's header, just
+  a more discoverable gesture ("drop near any row in category B").
+
+### Drop-target highlighting
+
+Every draggable row (`DragHandleControls.dropHighlight`, `equipment-rows.tsx`)
+now rings itself when it's the CURRENT hover target of an in-progress drag —
+`ring-ok` (green) when the Drop Matrix allows landing there, `ring-destructive`
+(red) when it doesn't. `use-equipment-dnd.ts`'s `handleDragOver` already
+tracked `invalidOverId`; this adds the unconditional `hoveredOverId` sibling
+(a strict superset) so a valid target can be highlighted too, not just an
+invalid one. `equipment-tab.tsx`'s `dropHighlightFor(sortableId, hoveredOverId,
+invalidOverId)` compares each row's own sortable id against both and resolves
+`"valid"` / `"invalid"` / `undefined`. `dropHighlightClass` lives in
+`equipment-row-types.ts` (not `equipment-rows.tsx`) specifically so
+`equipment-cards.tsx`'s mobile card primitives (`GroupCard`,
+`CategoryCardHeading`) can share it without creating an import edge back into
+the row-rendering component — the same reason that file's types live there in
+the first place (see its header comment).
+
 ## Margin column toggle (8H)
 
 Toolbar button "Show margin" / "Hide margin" toggles a conditional Cost

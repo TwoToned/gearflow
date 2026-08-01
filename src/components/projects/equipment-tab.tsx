@@ -93,7 +93,9 @@ import {
   type MixedGroupSlot,
   type OverbookedInfo,
   type GroupInlinePricePatch,
+  type DropHighlight,
 } from "./equipment-rows";
+import { dropHighlightClass } from "./equipment-row-types";
 import { ReassignProvider, type ReassignTarget, type ReassignSerial } from "./reassign-context";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useSelection } from "./use-selection";
@@ -330,6 +332,23 @@ function SortableCategoryRow({
   );
 }
 
+/**
+ * Whether THIS row should show a drop-target ring right now — "valid" while
+ * something else is being dragged and the pointer is over this exact
+ * sortable id, "invalid" when that hover ALSO trips the Drop Matrix
+ * (`useEquipmentDnd`'s `invalidOverId` is a strict subset of `hoveredOverId`
+ * for exactly that reason). Undefined otherwise, including for the row
+ * currently being dragged itself (dnd-kit's `over` never equals `active`).
+ */
+function dropHighlightFor(
+  sortableId: string,
+  hoveredOverId: string | null,
+  invalidOverId: string | null,
+): DropHighlight | undefined {
+  if (hoveredOverId !== sortableId) return undefined;
+  return invalidOverId === sortableId ? "invalid" : "valid";
+}
+
 // ─── Uncategorized zone header / drop target ────────────────────────────────
 //
 // Previously this header (and any empty-state hint) only rendered once
@@ -348,24 +367,26 @@ function UncategorizedHeader({
   isMobile,
   colCount,
   isEmpty,
+  dropHighlight,
 }: {
   isMobile: boolean;
   colCount: number;
   isEmpty: boolean;
+  dropHighlight?: DropHighlight;
 }) {
   const { setNodeRef } = useDroppable({ id: "uncat-zone" });
   const hint = "Drag items or groups here to remove them from a category.";
   if (isMobile) {
     return (
       <div ref={setNodeRef}>
-        <CategoryCardHeading name="Uncategorised" />
+        <CategoryCardHeading name="Uncategorised" dropHighlight={dropHighlight} />
         {isEmpty && <p className="px-3 py-2 text-caption text-muted">{hint}</p>}
       </div>
     );
   }
   return (
     <>
-      <TableRow ref={setNodeRef} className="bg-paper-2/40 hover:bg-paper-2/40">
+      <TableRow ref={setNodeRef} className={cn("bg-paper-2/40 hover:bg-paper-2/40", dropHighlightClass(dropHighlight))}>
         <TableCell colSpan={colCount} className="py-2 px-1">
           <div className="flex items-center gap-1.5">
             <div className="w-6" />
@@ -1513,6 +1534,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                       {/* Category label row */}
                       <SortableCategoryRow
                         sortableId={`cat-${cat.id}`}
+                        dropHighlight={dropHighlightFor(`cat-${cat.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                         containerId="categories"
                         dragDisabled={!canDragEquipment}
                         cat={cat}
@@ -1565,6 +1587,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             <SortableLineItemRow
                               key={item.id}
                               sortableId={`li-${item.id}`}
+                              dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                               containerId={`mixed:${cat.id}`}
                               dragDisabled={!canDragEquipment}
                               item={item}
@@ -1615,6 +1638,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                             <React.Fragment key={`shg-${shGroup.id}`}>
                               <SortableSubHireGroupRow
                                 sortableId={`shg-${shGroup.id}`}
+                                dropHighlight={dropHighlightFor(`shg-${shGroup.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                                 containerId={`mixed:${cat.id}`}
                                 dragDisabled={!canDragEquipment}
                                 group={shGroup}
@@ -1688,6 +1712,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           <React.Fragment key={group.id}>
                             <SortableGroupRow
                               sortableId={`grp-${group.id}`}
+                              dropHighlight={dropHighlightFor(`grp-${group.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                               containerId={`mixed:${cat.id}`}
                               dragDisabled={!canDragEquipment}
                               group={group}
@@ -1756,6 +1781,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 <SortableLineItemRow
                                   key={item.id}
                                   sortableId={`li-${item.id}`}
+                                  dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                                   containerId={`items:${group.id}`}
                                   dragDisabled={!canDragEquipment}
                                   item={item}
@@ -1808,7 +1834,12 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     or group dragged out of a category (see
                     UncategorizedHeader's doc comment). */}
                 {hasCategories && (
-                  <UncategorizedHeader isMobile={isMobile} colCount={colCount} isEmpty={!hasUncategorized} />
+                  <UncategorizedHeader
+                    isMobile={isMobile}
+                    colCount={colCount}
+                    isEmpty={!hasUncategorized}
+                    dropHighlight={dropHighlightFor("uncat-zone", dnd.hoveredOverId, dnd.invalidOverId)}
+                  />
                 )}
                 {(() => {
                   const uncatVisible = (uncategorizedItems as LineItemData[]).filter((i) => !isHiddenFromList(i) && !pendingRemovalIds.has(i.id));
@@ -1821,6 +1852,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                         <SortableLineItemRow
                           key={item.id}
                           sortableId={`li-${item.id}`}
+                          dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                           containerId="uncategorized-standalone"
                           dragDisabled={!canDragEquipment}
                           item={item}
@@ -1890,6 +1922,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     <React.Fragment key={`pg-${group.id}`}>
                       <SortableGroupRow
                         sortableId={`grp-${group.id}`}
+                        dropHighlight={dropHighlightFor(`grp-${group.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                         containerId="uncategorized-groups"
                         dragDisabled={!canDragEquipment}
                         group={group}
@@ -1955,6 +1988,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           <SortableLineItemRow
                             key={item.id}
                             sortableId={`li-${item.id}`}
+                            dropHighlight={dropHighlightFor(`li-${item.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                             containerId={`items:${group.id}`}
                             dragDisabled={!canDragEquipment}
                             item={item}
@@ -2004,6 +2038,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                     <React.Fragment key={`shg-${shGroup.id}`}>
                       <SortableSubHireGroupRow
                         sortableId={`shg-${shGroup.id}`}
+                        dropHighlight={dropHighlightFor(`shg-${shGroup.id}`, dnd.hoveredOverId, dnd.invalidOverId)}
                         containerId="uncategorized-groups"
                         dragDisabled={!canDragEquipment}
                         group={shGroup}

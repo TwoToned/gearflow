@@ -173,3 +173,22 @@ export interface CategoryData {
   mixedGroups?: MixedGroupSlot[];
   lineItems?: LineItemData[];
 }
+
+/** "Valid"/"invalid" drop-target ring state — see `DragHandleControls`'s
+ *  `dropHighlight` doc comment (equipment-rows.tsx). Lives here (not in
+ *  equipment-rows.tsx itself) so equipment-cards.tsx's mobile card
+ *  primitives can share the exact same styling without creating an import
+ *  edge into the row-rendering component (the same reason this whole file
+ *  exists — see the file header). */
+export type DropHighlight = "valid" | "invalid";
+
+/** Shared ring classes for a `DropHighlight` — same treatment on every
+ *  draggable row kind (desktop `<tr>` and mobile card root alike) so a
+ *  category, group, sub-hire group, or line item all read identically as
+ *  "you're about to drop here" / "that drop isn't allowed". `ring-inset`
+ *  keeps the ring from clipping against neighbouring rows in a table. */
+export function dropHighlightClass(dropHighlight: DropHighlight | undefined): string | undefined {
+  if (dropHighlight === "valid") return "ring-2 ring-inset ring-ok";
+  if (dropHighlight === "invalid") return "ring-2 ring-inset ring-destructive";
+  return undefined;
+}

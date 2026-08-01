@@ -29,6 +29,20 @@ Values marked ⚠ *provisional* satisfy the R-0.4 registration requirement but c
 judgment — the owner should confirm them. Registration binds the value; several rules still require
 the *enforcement* to be wired (alerting/monitoring), tracked as their own findings.
 
+## Quarantine log (T-P5 / R-8.8.4)
+
+Currently-quarantined tests, tagged `@quarantine` (`playwright.config.ts`'s `grepInvert`
+excludes them from every automated run). Each needs an owner, ticket, and deadline; fixed or
+deleted within one sprint.
+
+| Test | Reason | Owner | Ticket | Deadline |
+|---|---|---|---|---|
+| `e2e/harness-onboarding.spec.ts` — "new account -> create org -> onboarding completes" | #1071 deleted the single-org auto-join hook; this harness spec can no longer create a second org once another harness spec file has already bootstrapped one in the shared harness DB (E2E test-isolation gap, not a product bug) | Jayden (eng) | #1118 | 2026-08-15 |
+| `e2e/harness-revenue-path.spec.ts` — "project -> line item -> availability -> check-out -> return" | Same root cause as above | Jayden (eng) | #1118 | 2026-08-15 |
+| `e2e/harness-sign-out.spec.ts` — "authenticated -> sign out -> session invalidated" | Same root cause as above | Jayden (eng) | #1118 | 2026-08-15 |
+
+3 / 10 (T-P5 cap).
+
 ## Related
 
 - [`POLICY.md`](../POLICY.md) §13 — the threshold defaults this table overrides.

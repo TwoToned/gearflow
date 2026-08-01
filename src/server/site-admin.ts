@@ -22,6 +22,7 @@ import { env } from "@/env";
 import { logActivity } from "@/lib/activity-log";
 import { runWithConcurrency } from "@/lib/concurrency";
 import { requireSiteAdmin, isSiteAdmin as checkIsSiteAdmin } from "@/lib/admin-auth";
+import { seedOrgDefaultTaxRate } from "@/server/public-org";
 
 /** Check if the current user is a site admin */
 export async function isSiteAdmin(): Promise<boolean> {
@@ -159,6 +160,10 @@ export async function adminCreateOrganization(data: {
 
   // Additive (org + owner created): mirror best-effort after the transaction.
   await upsertMemberMirrorByOrgUser(org.id, ownerId);
+  // Seed the new org's tax rate from the platform's current default (#1077, A7)
+  // — copied once, at creation, never a live read — same as the self-serve
+  // onboarding path.
+  await seedOrgDefaultTaxRate(org.id);
 
   await logActivity({
     organizationId: org.id,
@@ -330,6 +335,20 @@ export async function adminUnarchiveOrganization(orgId: string) {
   });
 
   return serialize(updated);
+}
+
+/**
+ * Per-org Convex storage usage (#1077, A7) — surfaced on the site-admin org
+ * list/drill-down, not quota-enforced. Best-effort: `truncated` means the org
+ * has more stored files than the bounded scan covers, so `totalBytes` is a
+ * floor past that point (see convex/files.ts's getOrgStorageUsage).
+ */
+export async function adminGetOrgStorageUsage(orgId: string) {
+  await requireSiteAdmin();
+  const usage = await (await getConvexClient()).query(api.files.getOrgStorageUsage, {
+    organizationId: orgId,
+  });
+  return serialize(usage);
 }
 
 export async function adminGetOrganizationDetails(orgId: string) {

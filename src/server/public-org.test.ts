@@ -22,7 +22,22 @@ vi.mock("@/lib/member-mirror", () => ({
   upsertMemberMirrorByOrgUser: vi.fn(),
 }));
 
-import { getMyOrganizations, getSoloOrgBranding, hasOnlyArchivedMemberships } from "./public-org";
+const saveOrgSettings = vi.fn();
+vi.mock("@/lib/org-settings-read", () => ({
+  saveOrgSettings: (...a: unknown[]) => saveOrgSettings(...a),
+}));
+
+const getSiteSettingsFromConvex = vi.fn();
+vi.mock("@/lib/site-settings-read", () => ({
+  getSiteSettingsFromConvex: (...a: unknown[]) => getSiteSettingsFromConvex(...a),
+}));
+
+import {
+  getMyOrganizations,
+  getSoloOrgBranding,
+  hasOnlyArchivedMemberships,
+  seedOrgDefaultTaxRate,
+} from "./public-org";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -107,5 +122,15 @@ describe("getSoloOrgBranding — only when exactly one org exists system-wide", 
     organizationFindMany.mockResolvedValue([{ name: "Acme" }, { name: "Beta" }]);
 
     expect(await getSoloOrgBranding()).toBeNull();
+  });
+});
+
+describe("seedOrgDefaultTaxRate — seed at creation, never a live read (#1077, A7)", () => {
+  it("copies the platform's CURRENT defaultTaxRate into the new org's own settings", async () => {
+    getSiteSettingsFromConvex.mockResolvedValue({ defaultCurrency: "AUD", defaultTaxRate: 15 });
+
+    await seedOrgDefaultTaxRate("org_new");
+
+    expect(saveOrgSettings).toHaveBeenCalledWith("org_new", {}, 15);
   });
 });

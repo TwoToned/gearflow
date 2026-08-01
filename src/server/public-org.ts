@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
 import { getSession } from "@/lib/auth-server";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
+import { saveOrgSettings } from "@/lib/org-settings-read";
+import { getSiteSettingsFromConvex } from "@/lib/site-settings-read";
 
 /**
  * The calling user's LIVE (non-archived) org memberships. Safe to call
@@ -98,4 +100,29 @@ export async function mirrorMyMembership(organizationId: string): Promise<void> 
   const session = await getSession();
   if (!session) return;
   await upsertMemberMirrorByOrgUser(organizationId, session.user.id);
+}
+
+/**
+ * Seed a freshly-created org's `defaultTaxRate` from the platform's CURRENT
+ * `SiteSettings.defaultTaxRate` (#1077, A7). Copies the value once, at
+ * creation — never a live read.
+ *
+ * Why this matters: `resolveOrgDefaultTaxRate` (convex/lib/orgSettings.ts)
+ * already treats an org's own `orgSettings.defaultTaxRate` as the sole
+ * operating value (falling to a hardcoded default, never to the platform
+ * setting, when unset) — so `SiteSettings.defaultTaxRate` was previously
+ * pure admin-UI decoration with no effect on any org's actual tax math. This
+ * seed step is what makes changing the platform default meaningful: it sets
+ * the STARTING POINT for orgs created from now on, without retroactively
+ * reaching into already-existing orgs (whose own configured or seeded value
+ * stays exactly as an admin left it) — "orgs differ" is the point, not a bug
+ * to route around with a live cross-org read.
+ *
+ * Best-effort: called right after org creation, same posture as
+ * `mirrorMyMembership` — a transient Convex hiccup here shouldn't fail
+ * onboarding itself (the org already exists in Postgres by this point).
+ */
+export async function seedOrgDefaultTaxRate(organizationId: string): Promise<void> {
+  const { defaultTaxRate } = await getSiteSettingsFromConvex();
+  await saveOrgSettings(organizationId, {}, defaultTaxRate);
 }

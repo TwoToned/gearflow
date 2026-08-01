@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireService, requireOrgReadDocFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { collectCapped } from "./lib/pagination";
 
 /**
  * Convex file storage (replaces the self-hosted Garage/S3 box). The bytes live in
@@ -85,6 +86,30 @@ export const deleteFile = mutation({
     } catch {
       // already gone — idempotent
     }
+  },
+});
+
+/**
+ * Storage visibility (#1077, A7): per-org Convex `_storage` usage for the
+ * site-admin org list/drill-down. Deliberately NOT a quota system — archived
+ * orgs retain their storage (#1075), and this exists only to make that
+ * liability visible to a human, not to enforce anything. Best-effort:
+ * `truncated` means the org has more stored files than the bounded scan
+ * covers (R-9.8), so `totalBytes` is a floor, not exact, past that point.
+ */
+export const getOrgStorageUsage = query({
+  args: { organizationId: v.string() },
+  handler: async (ctx, { organizationId }) => {
+    await requireService(ctx);
+    const { rows, truncated } = await collectCapped(
+      ctx.db.query("storedFiles").withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId)),
+    );
+    let totalBytes = 0;
+    for (const row of rows) {
+      const meta = await ctx.db.system.get(row.storageId as Id<"_storage">);
+      if (meta) totalBytes += meta.size;
+    }
+    return { fileCount: rows.length, totalBytes, truncated };
   },
 });
 

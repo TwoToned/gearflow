@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { organization } from "@/lib/auth-client";
-import { getMyOrganizations, mirrorMyMembership } from "@/server/public-org";
+import { getMyOrganizations, mirrorMyMembership, seedOrgDefaultTaxRate } from "@/server/public-org";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,6 +64,9 @@ export default function OnboardingPage() {
         // path does) — without this, every Convex-authorized action afterward
         // fails with "not a member of this organization".
         await mirrorMyMembership(result.data!.id);
+        // Seed the new org's tax rate from the platform's current default
+        // (#1077, A7) — copied once, at creation, never a live read.
+        await seedOrgDefaultTaxRate(result.data!.id);
         toast.success("Organization created!");
         router.push("/dashboard");
       }

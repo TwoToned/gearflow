@@ -97,7 +97,7 @@ agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already p
 
 | Issue | Where | Severity when multi-tenant |
 |---|---|---|
-| `adminDeleteOrganization` is a bare `prisma.organization.delete` — it never touches Convex, where all domain data now lives, so deleting an org **orphans the entire dataset** | `src/server/site-admin.ts:246` | **High** — orphaned docs keep their `organizationId` and stay reachable by any global-index read that skips its org check (§2.3). See §5.4 |
+| `adminDeleteOrganization` is a bare `prisma.organization.delete` — it never touches Convex, where all domain data now lives, so calling it **orphans the entire dataset** | `src/server/site-admin.ts:246` | **High** — orphaned docs keep their `organizationId` and stay reachable by any global-index read that skips its org check (§2.3). **Resolved by D12: the action is removed, not fixed** (§5.4) |
 | `addMemberByEmail` adds an **existing** user to your org with no invitation and no consent | `src/server/settings.ts:240-258` | **High** — any owner can pull any known email into their org |
 | WooCommerce webhook falls back to `getTheOrg()` when `?org=` is absent, and the settings page hands out a URL with no org selector at all | `route.ts:52-59`, `settings/woocommerce/page.tsx:183`, `convex/wooCommerceInternal.ts:26` | **Blocking** for that integration — fixed in §4.4 |
 | `OrgActivator` heals a missing active-org by calling `getTheOrgId()` | `src/components/providers/org-activator.tsx` | Would silently activate an arbitrary org |
@@ -138,6 +138,7 @@ agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already p
 | **D9** | **WooCommerce is made properly multi-org** in Phase A, via an opaque per-org webhook token (§4.4). Not deferred, not flagged single-org. | User decision, 2026-08-01. Most of the tenancy already exists; the gap is the URL the settings page hands out. |
 | **D10** | **Abandonment is guarded, not automated** (§5.4): verified email + the signup code prevent, a derived "dormant" predicate detects, capped nudges recover, deletion stays admin-initiated. | User decision, 2026-08-01. Auto-deleting tenants is the one irreversible action here, so it stays human. |
 | **D11** | **Billing / trials are out of scope**, revisited after this program. | User decision, 2026-08-01. While creation is code-gated there is no self-serve growth to meter. |
+| **D12** | **Orgs are archived, never deleted** (§5.4). `archivedAt` enforced at the three identity chokepoints; `adminDeleteOrganization` is removed rather than fixed. | User decision, 2026-08-01. Reversible, and it turns a Convex-orphaning defect into deleted code. |
 
 **D5 (mine, flagged for approval):** the wizard writes through the **same server actions the
 settings pages already use** (`saveOrgSettings`) and stores **no separate draft state**.
@@ -197,8 +198,8 @@ and no Convex one, and the app is unusable).
 - **Per-org join policy** (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`) in org settings,
   distinct from the platform-global registration policy.
 - **WooCommerce webhook tenancy** — opaque per-org token (§4.4).
-- **Org deletion must stop orphaning Convex data** (§5.4) — a prerequisite for offering
-  deletion at all, which the dormant-org cleanup path needs.
+- **Org archiving** (§5.4) — `archivedAt` + the three chokepoint guards; remove
+  `adminDeleteOrganization`.
 - **Site admin** — real org list, per-org drill-down, dormant filter (§5.4).
 
 ### 4.4 WooCommerce multi-org (decided 2026-08-01: fix it, don't defer it)
@@ -415,28 +416,67 @@ Resend is already wired (`RESEND_API_KEY`, `EMAIL_FROM`). Day 1 / day 3 / day 7:
 D3 is what makes that link land somewhere useful. **Hard cap at three, then never again.**
 An onboarding sequence that keeps nagging is worse than an abandoned org.
 
-#### Cleanup — admin-initiated only, and it needs a fix first
+#### Cleanup — archive, never delete (decided 2026-08-01)
 
-**Never auto-delete a tenant.** Destroying a customer's org on a timer is exactly the
-irreversible action that should require a human. The flow is: admin sees the dormant list →
-exports (the export button already exists on `/admin/organizations/[id]`) → deletes behind
-a typed confirmation.
+**D12: organisations are archived, not deleted.** The flow is: admin sees the dormant list →
+exports (the export button already exists on `/admin/organizations/[id]`) → archives behind
+a typed confirmation. Reversible.
 
-> **⚠️ Blocking defect found — `adminDeleteOrganization` is Postgres-only.**
-> `src/server/site-admin.ts:246` is a bare `prisma.organization.delete({ where: { id } })`.
-> Since the Convex migration, **Postgres holds only Better-Auth + audit models** (CLAUDE.md)
-> — every model, asset, project, quote and file lives in Convex. Deleting an org today
-> removes the auth rows and **orphans the entire domain dataset in Convex**, unreachable
-> and uncounted.
+That decision also disarms a defect found while designing this path:
+
+> **`adminDeleteOrganization` is Postgres-only.** `src/server/site-admin.ts:246` is a bare
+> `prisma.organization.delete({ where: { id } })`. Since the Convex migration **Postgres
+> holds only Better-Auth + audit models** (CLAUDE.md) — every model, asset, project, quote
+> and file lives in Convex. Calling it removes the auth rows and **orphans the entire domain
+> dataset in Convex**, unreachable and uncounted, while orphaned docs keep their
+> `organizationId` and stay reachable by any global-index read that skips its org check
+> (the §2.3 class).
 >
-> Today that is nearly harmless: one org, never deleted. Under multi-tenant it is a data
-> leak (orphaned docs still carry `organizationId` and are reachable by any global-index
-> read that skips its org check — precisely the §2.3 class) and an unbounded storage
-> liability. **Org deletion must not be offered as a workflow until this is fixed**, which
-> makes it Phase A work, not Phase B.
+> Under D12 the fix is to **remove the action**, not to build a cascade. It is currently
+> unreferenced by any UI. Deleting the delete is strictly less code than making it correct.
 
-Also worth doing while there: **slug reclamation**, so a squatted slug on a dormant org can
-be released without a full delete.
+##### Design
+
+`Organization.archivedAt DateTime?`, mirrored to Convex `organizations.archivedAt`. This
+deliberately copies the shape of the existing **`apiKillSwitchAt`** field on the same model
+— an org-wide, timestamp-valued containment switch is already an established pattern here.
+
+**Enforce at the identity chokepoints, not per-read.** Exactly the property that makes
+§4.2's swap cheap: every org-scoped read in the app derives its `organizationId` from one
+of three places, so three guards cover the whole surface.
+
+| Chokepoint | Behaviour on an archived org |
+|---|---|
+| `requireOrganization()` (§4.2 A1) | Throws — the entire server-action surface closes at once |
+| `definePayload` (§4.2 A2) | Refuses to mint `orgId` — every Convex read/write closes |
+| **API-key / agent-token path** | Rejected. **This one is easy to miss**: the dispatcher mints agent tokens from `apiKeys`, *not* from a session, so it bypasses both guards above. Archiving must also trip `apiKillSwitchAt`, which already rejects all of an org's keys unconditionally. |
+
+No per-query `archivedAt` filter anywhere. A read that could see an archived org's data
+would need an `orgId` that none of the three paths will issue.
+
+##### The rest of the surface
+
+- **`organization.setActive()` must refuse** an archived org, and the switcher hides them.
+  A user whose *only* org is archived logs in to an explanatory screen — not an empty
+  dashboard, and not a crash.
+- **Slug is released on archive**: rewrite to `<slug>-archived-<shortid>` in both Postgres
+  (`slug @unique`) and Convex, freeing the original for reuse. This is the slug-reclamation
+  item, folded in.
+- **Unarchive exists** — that is the whole point of D12. It fails cleanly if the original
+  slug has since been taken, prompting for a new one.
+- **Outbound activity must stop**, or an archived org keeps emitting: iCal feeds
+  (`icalEnabled`/`icalToken`), the WooCommerce webhook (returns the same opaque response as
+  an unknown token — §4.4), Xero sync, and notification emails.
+- **Storage is retained.** Archived orgs keep their Convex `_storage` files; the liability
+  grows rather than being bounded. Acceptable at current scale, worth a size column on the
+  admin list so it stays visible.
+
+##### One caveat, stated once
+
+Archive defers erasure rather than providing it. If a customer ever invokes a
+right-to-erasure request (POLICY §8.12 is active for this profile), a real hard-delete path
+would still have to be built at that point. Not a reason to build it now — just a known
+gap rather than a surprise.
 
 ---
 
@@ -594,7 +634,7 @@ written.**
 | Phase | Scope | Effort (human) | Gate to proceed |
 |---|---|---|---|
 | **A.0** | `definePayload` spike (§4.1) | 1 day | Must resolve to option 1 or 2 |
-| **A** | Multi-tenancy + cross-tenant audit + WooCommerce tokens (§4.4) + org-delete cascade (§5.4) | **L (3–4 wks)** | Two-org adversarial suite green **+ soak, see below** |
+| **A** | Multi-tenancy + cross-tenant audit + WooCommerce tokens (§4.4) + org archiving (§5.4) | **L (3–4 wks)** | Two-org adversarial suite green **+ soak, see below** |
 | **B** | Signup fork, join paths, org-creation gate (§5.3), abandonment guards (§5.4) | S (< 1 wk) | — |
 | **C** | Setup wizard | M (1–2 wks) | — |
 | **D** | Activation tour | M (1–2 wks) | — |
@@ -635,17 +675,16 @@ review pipeline. Do not batch.
 | Who may create an org? | Site-admin toggle + signup code, from `/admin/settings` | §5.3, D6 |
 | WooCommerce tenancy? | Fix it — opaque per-org webhook token, in Phase A | §4.4, D9 |
 | Trials / billing? | Out of scope, revisit after this program | D11 |
-| Org abandonment? | Guarded, not automated; deletion stays admin-initiated | §5.4, D10 |
+| Org abandonment? | Guarded, not automated; admin-initiated | §5.4, D10 |
+| Delete or archive? | Archive — reversible, and `adminDeleteOrganization` gets removed | §5.4, D12 |
 
 ### Still open
 
 1. **Dormancy threshold `N`** (§5.4) — 14 days? 30? Only affects when an org appears on the
    admin's dormant list, so it is safe to pick 30 and tune. Not blocking.
-2. **Does org deletion cascade into Convex, or archive?** §5.4 establishes that
-   `adminDeleteOrganization` must stop orphaning Convex data. Hard-delete every org-scoped
-   doc, or flip the org to an archived state and sweep later? Archive is safer and keeps
-   the export meaningful; hard delete is what a customer asking to be forgotten expects
-   (R-8.12). **Needs a decision during Phase A.**
+2. **Retention of archived orgs.** D12 keeps archived orgs (and their Convex `_storage`
+   files) indefinitely. No action needed now — flagged so the storage line item is a known
+   cost rather than a surprise.
 
 ---
 

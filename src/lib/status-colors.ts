@@ -418,3 +418,36 @@ export function intentBorderClass(intent: ColorIntent): string {
 export function quoteStatusIntent(status: string): ColorIntent {
   return getStatusIntent("quote", status);
 }
+
+/** The `status` values `<Badge>` accepts — the presentational vocabulary. */
+export type BadgeStatus = "ok" | "warn" | "overbooked" | "info" | "primary" | "neutral";
+
+/**
+ * Bridge a `ColorIntent` to `<Badge>`'s own status vocabulary.
+ *
+ * `ColorIntent` is the semantic layer (what a status MEANS); `BadgeStatus` is
+ * the presentational one (which pill to draw). This function is the single
+ * crossing between them — it used to exist as two byte-identical private
+ * copies in `project-quote-rail.tsx` and `finance/page.tsx`, whose own comments
+ * acknowledged the duplication. Adding a third for the Overview quote card is
+ * what finally made it worth extracting (R-3.1).
+ *
+ * @example
+ * intentToBadgeStatus("error") // → "overbooked"
+ */
+export function intentToBadgeStatus(intent: ColorIntent): BadgeStatus {
+  switch (intent) {
+    case "success":
+      return "ok";
+    case "warning":
+      return "warn";
+    case "error":
+      return "overbooked";
+    case "info":
+      return "info";
+    case "primary":
+      return "primary";
+    default:
+      return "neutral";
+  }
+}

@@ -30,6 +30,7 @@ import { CreateDepositInvoiceDialog } from "@/components/projects/finance/create
 import { RecordPaymentDialog } from "@/components/projects/finance/record-payment-dialog";
 import { DeleteVoidInvoiceDialog } from "@/components/projects/finance/delete-void-invoice-dialog";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payment-method-labels";
+import { deriveInvoicingState, type InvoiceLike } from "@/lib/project-invoicing-state";
 
 interface ProjectFinancePanelProps {
   projectId: string;
@@ -114,11 +115,10 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
   const paymentProfile = (client?.paymentProfile as string | undefined) ?? "FULL_UPFRONT";
   const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
 
-  const nonVoidInvoices = invoices.filter((inv) => inv.status !== "VOID");
-  const hasDeposit = nonVoidInvoices.some((inv) => inv.kind === "DEPOSIT");
-  const hasBalance = nonVoidInvoices.some((inv) => inv.kind === "BALANCE");
-  const hasFull = nonVoidInvoices.some((inv) => inv.kind === "FULL");
-  const depositIssued = nonVoidInvoices.some((inv) => inv.kind === "DEPOSIT" && inv.status === "ISSUED");
+  // One derivation, shared with the Overview tab's invoicing card (R-3.1) —
+  // these used to be five hand-rolled `.some()` predicates here and a second
+  // set of the same conditions inline in the nudge-chip JSX.
+  const { nextStep } = deriveInvoicingState(invoices as InvoiceLike[], paymentProfile, depositPercent, total);
 
   async function createInvoice(kind: "FULL" | "BALANCE") {
     try {
@@ -193,22 +193,21 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
         total={total}
       />
 
-      {/* Nudge chips */}
-      {paymentProfile === "DEPOSIT_BALANCE" ? (
+      {/* Nudge chip — the SAME next-step rule the Overview tab's invoicing
+          card offers (`deriveInvoicingState`, R-3.1), not a second copy of the
+          deposit-before-balance conditions. The affordance is deliberately in
+          both places: someone working in the ledger shouldn't have to bounce
+          to Overview to raise the next invoice. */}
+      {nextStep.kind !== "NONE" && (
         <div className="flex flex-wrap gap-2">
-          {!hasDeposit && (
-            <NudgeChip label={`Deposit not yet invoiced (${depositPercent}%)`} action="Create deposit invoice" onAction={() => setDepositDialogOpen(true)} />
-          )}
-          {depositIssued && !hasBalance && (
-            <NudgeChip label="Balance not yet invoiced" action="Create balance invoice" onAction={() => void createInvoice("BALANCE")} />
-          )}
+          <NudgeChip
+            label={nextStep.kind === "DEPOSIT" ? `Deposit not yet invoiced (${depositPercent}%)` : "Not yet invoiced"}
+            action={nextStep.label}
+            onAction={() =>
+              nextStep.kind === "DEPOSIT" ? setDepositDialogOpen(true) : void createInvoice(nextStep.kind)
+            }
+          />
         </div>
-      ) : (
-        !hasFull && (
-          <div className="flex flex-wrap gap-2">
-            <NudgeChip label="Not yet invoiced" action="Create invoice" onAction={() => void createInvoice("FULL")} />
-          </div>
-        )
       )}
 
       {/* Invoices list */}

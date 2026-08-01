@@ -39,6 +39,8 @@ import {
   ProjectContextRail,
   type ProjectContextRailProject,
 } from "@/components/projects/project-context-rail";
+import { QuoteCard } from "@/components/projects/overview/quote-card";
+import { InvoicingCard } from "@/components/projects/overview/invoicing-card";
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
 import { ProjectCommentsButton } from "@/components/collaboration/project-comments-button";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -571,6 +573,32 @@ export default function ProjectDetailPage({
                           orgId={orgId}
                           onNavigateTab={(tab: ProjectTab) => setActiveTab(tab)}
                         />
+                      )}
+                      {/* The live quote and the invoicing position, as peers.
+                          Each carries only the ONE action you'd most likely
+                          take next; the full revision rail and invoice list
+                          stay in the Finance tab (#1061). */}
+                      {!project.isTemplate && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <QuoteCard
+                            projectId={id}
+                            orgId={orgId}
+                            projectNumber={project.projectNumber}
+                            clientId={project.clientId as string | null | undefined}
+                            projectStatus={project.status as string | null | undefined}
+                            subtotal={project.subtotal as number | null}
+                            taxAmount={project.taxAmount as number | null}
+                            total={project.total as number | null}
+                            onOpenLedger={() => setActiveTab("finance")}
+                          />
+                          <InvoicingCard
+                            projectId={id}
+                            orgId={orgId}
+                            clientId={project.clientId as string | null | undefined}
+                            total={project.total as number | null}
+                            onOpenLedger={() => setActiveTab("finance")}
+                          />
+                        </div>
                       )}
                       {!project.isTemplate && (
                         <ProjectSummaryStrip

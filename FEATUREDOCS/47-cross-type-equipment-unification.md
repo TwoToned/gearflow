@@ -112,10 +112,15 @@ Reordering is real **drag-and-drop** again (`@dnd-kit`, re-added after the
 `chore/remove-pdf-builder-and-dnd` removal) — see
 [Reordering](#reordering-drag-and-drop) below. Each row takes
 `dragHandleRef`/`dragAttributes`/`dragListeners`/`isDragDisabled`
-(`DragHandleControls`, `equipment-rows.tsx`); the shared `DragHandle` helper
-renders a `GripVertical` grab handle and renders nothing when
-`isDragDisabled`. The `cat-`/`grp-`/`shg-`/`li-` id prefixes referenced below
-are real `useSortable()` ids, not just historical scope labels.
+(`DragHandleControls`, `equipment-rows.tsx`), spread onto the row's/card's
+ROOT element — there is no dedicated grab handle. Pressing and holding
+anywhere on the row starts the drag; a delay-based sensor activation
+constraint (not a drag-handle button) is what lets a normal click/tap on the
+row's own buttons/checkboxes/inputs still work. `useSortable({disabled: true})`
+already makes `listeners` a no-op, so a row with `isDragDisabled` simply never
+activates a drag — no separate handle-hiding logic needed. The
+`cat-`/`grp-`/`shg-`/`li-` id prefixes referenced below are real
+`useSortable()` ids, not just historical scope labels.
 
 - **`CategoryRow`** — ProjectCategory header. Kebab:
   Add Equipment / Add Kit / Add Custom Item / Rename / Delete. The three
@@ -375,7 +380,21 @@ tracking, a per-row-kind optimistic `sortOrder`/placement overlay applied to
 the `equipmentTab.bundle` bundle BEFORE reconstruction (so a drop updates
 instantly, cleared once the real write settles), and the justified-mutation
 wrappers (`useJustifiedMutation` — #990's justify-tier prompt) that fire the
-real reorder/move mutations. A single `DndContext` in
+real reorder/move mutations.
+
+Sensors are ONE `PointerSensor` (not `PointerSensor`+`TouchSensor` — Pointer
+Events fire for both mouse and touch, so the two used to race for the same
+gesture, with `PointerSensor`'s old distance-based constraint winning almost
+instantly on touch and hijacking the long-press) with a single
+`{delay: 200, tolerance: 8}` activation constraint covering mouse/touch/pen
+uniformly, plus `KeyboardSensor` for accessibility. There is no dedicated drag
+handle — every row's `useSortable()` ref/listeners are spread onto the
+row's/card's own root element, so pressing and holding ANYWHERE on the row
+starts the drag; the delay is what lets a quick tap on a nested
+button/checkbox/input still work normally instead of a separate handle button
+being the only pointer-capture target.
+
+A single `DndContext` in
 [`src/components/projects/equipment-tab.tsx`](../src/components/projects/equipment-tab.tsx)
 wraps the whole tree; `handleDragEnd` dispatches on the active sortable id's
 prefix to one of three pure, unit-tested decision functions:

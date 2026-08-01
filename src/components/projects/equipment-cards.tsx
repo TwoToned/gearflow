@@ -67,6 +67,9 @@ export function GroupCard({
   onToggle,
   children,
   actions,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
 }: {
   title: string;
   subtext?: React.ReactNode;
@@ -77,10 +80,23 @@ export function GroupCard({
   onToggle?: () => void;
   children?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Real @dnd-kit drag entry point for the whole card — pressing/holding
+   *  anywhere on the card body (not a dedicated handle) starts the drag; see
+   *  equipment-rows.tsx's `DragHandleControls` doc comment. Spread onto this
+   *  root div rather than the inner toggle button so dragging isn't scoped
+   *  to just the title/chevron area. */
+  dragHandleRef?: (el: HTMLElement | null) => void;
+  dragAttributes?: Record<string, unknown>;
+  dragListeners?: Record<string, unknown>;
 }) {
   return (
     <>
-      <div className="flex min-h-11 items-center gap-2 rounded-[var(--r)] bg-card px-3 py-2 ring-1 ring-line-2">
+      <div
+        ref={dragHandleRef}
+        {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
+        {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
+        className="flex min-h-11 touch-manipulation items-center gap-2 rounded-[var(--r)] bg-card px-3 py-2 ring-1 ring-line-2 active:cursor-grabbing md:cursor-grab"
+      >
         <button
           type="button"
           aria-expanded={isExpanded}
@@ -113,12 +129,24 @@ export function GroupCard({
 export function CategoryCardHeading({
   name,
   action,
+  dragHandleRef,
+  dragAttributes,
+  dragListeners,
 }: {
   name: string;
   action?: React.ReactNode;
+  /** Same whole-surface drag entry point as `GroupCard` — see its doc comment. */
+  dragHandleRef?: (el: HTMLElement | null) => void;
+  dragAttributes?: Record<string, unknown>;
+  dragListeners?: Record<string, unknown>;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 px-1 pb-0.5 pt-3">
+    <div
+      ref={dragHandleRef}
+      {...(dragAttributes as React.HTMLAttributes<HTMLDivElement> | undefined)}
+      {...(dragListeners as React.HTMLAttributes<HTMLDivElement> | undefined)}
+      className="flex touch-manipulation items-center justify-between gap-2 rounded-[var(--r)] px-1 pb-0.5 pt-3 active:cursor-grabbing md:cursor-grab"
+    >
       <div className="flex items-center gap-1.5 text-caption font-semibold text-ink-2">
         <Container className="h-3.5 w-3.5" />
         {name}

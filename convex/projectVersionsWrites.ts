@@ -54,8 +54,11 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
 /** Mirrors `quoteSaveVersionSchema`'s bound in `src/lib/validations/quote.ts` —
  *  the client Zod parse is UX only and bypassable by any caller with a valid
- *  session hitting the mutation directly (FEATUREDOCS/54). */
-const LABEL_BOUNDS = { max: 60 } as const;
+ *  session hitting the mutation directly (FEATUREDOCS/54). Exported so
+ *  `quotesWrites.setQuoteLabelNative` (#1097 — editing a label after the fact,
+ *  not just at save time) shares the one bound rather than duplicating it
+ *  (R-3.1). */
+export const LABEL_BOUNDS = { max: 60 } as const;
 
 /**
  * SAVE VERSION — freeze a copy of the current live revision and carry on

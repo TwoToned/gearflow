@@ -38,6 +38,10 @@ interface SendQuoteDialogProps {
   clientId?: string | null;
   /** The revision this send will freeze — `projects.revision` before the send. */
   revision: number;
+  /** #1080/#1097 — the outgoing draft's internal label, if one was set (via
+   *  "Rename version" on the row, or carried over from `saveVersionNative`).
+   *  Drives the "print this label on the document" checkbox below. */
+  currentLabel?: string;
   subtotal: number | null;
   taxAmount: number | null;
   total: number | null;
@@ -70,6 +74,7 @@ export function SendQuoteDialog({
   orgId,
   clientId,
   revision,
+  currentLabel,
   subtotal,
   taxAmount,
   total,
@@ -84,6 +89,7 @@ export function SendQuoteDialog({
   const [validityDays, setValidityDays] = useState<number | null>(null);
   const [recipientContactId, setRecipientContactId] = useState("");
   const [notes, setNotes] = useState("");
+  const [labelOnDocument, setLabelOnDocument] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<SentState | null>(null);
@@ -100,6 +106,7 @@ export function SendQuoteDialog({
     setValidityDays(null);
     setRecipientContactId("");
     setNotes("");
+    setLabelOnDocument(false);
     setError(null);
     setSent(null);
     setStatusMoved(false);
@@ -119,6 +126,7 @@ export function SendQuoteDialog({
         validityDays: resolvedValidityDays,
         recipientContactId: recipientContactId || undefined,
         notes: notes || undefined,
+        labelOnDocument,
       });
       setSent({
         version: result.version,
@@ -171,6 +179,9 @@ export function SendQuoteDialog({
         {!sent ? (
           <SendQuoteForm
             revision={revision}
+            currentLabel={currentLabel}
+            labelOnDocument={labelOnDocument}
+            onLabelOnDocumentChange={setLabelOnDocument}
             projectId={projectId}
             clientId={clientId}
             quoteDateStr={quoteDateStr}
@@ -208,6 +219,9 @@ export function SendQuoteDialog({
 
 interface SendQuoteFormProps {
   revision: number;
+  currentLabel?: string;
+  labelOnDocument: boolean;
+  onLabelOnDocumentChange: (value: boolean) => void;
   projectId: string;
   clientId?: string | null;
   quoteDateStr: string;
@@ -231,6 +245,9 @@ interface SendQuoteFormProps {
 
 function SendQuoteForm({
   revision,
+  currentLabel,
+  labelOnDocument,
+  onLabelOnDocumentChange,
   projectId,
   clientId,
   quoteDateStr,
@@ -317,6 +334,23 @@ function SendQuoteForm({
             maxLength={2000}
           />
         </div>
+
+        {currentLabel && (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={labelOnDocument}
+              onChange={(e) => onLabelOnDocumentChange(e.target.checked)}
+            />
+            <span>
+              Print this label on the document —{" "}
+              <span className="font-medium text-fg">&ldquo;{currentLabel}&rdquo;</span> will appear next to the version
+              number in the PDF header. Off by default: an unexplained label on a client document invites the
+              obvious question about what the other options were.
+            </span>
+          </label>
+        )}
 
         <div className="space-y-1 rounded-[var(--radius)] border border-line px-3 py-2.5 text-sm">
           <p className="t-overline text-fg-3">Summary</p>

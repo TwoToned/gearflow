@@ -142,16 +142,19 @@ projects.liveRevision  : number   ← the version projected onto the live tables
                                     Absent ⇒ equals `revision` (every pre-#1085 project).
 ```
 
-Phase 1 never decouples them — `saveVersionNative` and `newVersionNative` bump
-both together, every time, so `liveRevision === revision` for the whole of this
-phase. Only Phase 2's promote (not yet built) can point `liveRevision` at an
-OLDER number than `revision`, which is the entire point of the split: "make an
-older version live" has nowhere to go while one field tries to mean both
-things. Both fields are server-owned, coalesced via `projectRevision()`/
-`projectLiveRevision()` (`convex/lib/quoteState.ts`) — never read directly off
-the document.
+Phase 1 never decoupled them by itself — `saveVersionNative` and
+`newVersionNative` bump both together, every time, so `liveRevision ===
+revision` throughout that phase alone. Phase 2's `promoteRevisionNative`
+(`convex/projectVersionsWrites.ts`, merged) is the mutation that actually
+points `liveRevision` at an OLDER number than `revision`, which is the entire
+point of the split: "make an older version live" has nowhere to go while one
+field tries to mean both things. Both fields are server-owned, coalesced via
+`projectRevision()`/`projectLiveRevision()` (`convex/lib/quoteState.ts`) —
+never read directly off the document. **Full promote/projection/UI story:
+[`FEATUREDOCS/70`](./70-project-version-switcher.md)** — this section stays
+scoped to the counter split and the two creation-path mutations.
 
-**`saveVersionNative`** (`convex/projectVersionsWrites.ts`) is the new explicit
+**`saveVersionNative`** (`convex/projectVersionsWrites.ts`) is the explicit
 "Save version" creation path, reachable from ANY live-revision state (including
 a never-sent `DRAFT` — unlike `newVersionNative`, which requires the current
 revision to already be sent): it captures the live state as a `VERSION_SAVED`
@@ -160,9 +163,10 @@ revision to already be sent): it captures the live state as a `VERSION_SAVED`
 moves `liveRevision` there with a fresh `DRAFT`. **The live tables are never
 touched** — saving a version freezes a copy of where you are and carries on; it
 is not a checkpoint you restore from. Optional `quotes.label` (≤60 chars,
-bounded server-side) names the version internally; `labelOnDocument` (stamped
-at send, not yet consumed by the render pipeline) prints it on the PDF header
-in a later phase. `newVersionNative` gained the same capture step onto the
+bounded server-side, also editable after the fact via `setQuoteLabelNative`,
+#1097) names the version internally; `labelOnDocument` (stamped at send)
+prints it on the PDF header's `project_number` line as a `v2 · <label>` suffix
+(`FEATUREDOCS/70`). `newVersionNative` gained the same capture step onto the
 revision it moves past, so a revision that's about to stop being live always
 has a fresh snapshot behind it.
 
@@ -175,18 +179,17 @@ scanned for "the draft" project-wide (not scoped to `liveRevision`) had to be
 found and fixed: `quotes.revisionStateForProject`'s `draftQuoteId`,
 `financeOrg.ts`'s "Never sent" org dashboard section, and
 `quotesWrites.deleteDraftNative` (which now refuses to touch anything but the
-live draft — deleting an orphaned saved version needs a different mutation,
-not yet built). `deleteRecalledNative`'s revision-counter rollback is similarly
+live draft — deleting an orphaned saved version is `deleteVersionNative`,
+#1097). `deleteRecalledNative`'s revision-counter rollback is similarly
 now conditional on the deleted quote being the live revision, so erasing an
 older, already-superseded sent-then-recalled row never corrupts the counters
 of whatever IS currently live.
 
-No UI ships in this phase — the existing ⋯ Versions panel and quote rail
-render exactly as before. Phase 1 also added a backfill
-(`convex/backfillProjectLiveRevision.ts`) stamping `liveRevision` onto every
-pre-existing project (belt-and-braces; the coalesce already makes it correct
-without one), and two new `projectSnapshots.reason` values, `VERSION_SAVED` and
-`PRE_PROMOTE` (the latter reserved for Phase 2's promote auto-capture) — both
+Phase 1 also added a backfill (`convex/backfillProjectLiveRevision.ts`)
+stamping `liveRevision` onto every pre-existing project (belt-and-braces; the
+coalesce already makes it correct without one), and two new
+`projectSnapshots.reason` values, `VERSION_SAVED` and `PRE_PROMOTE` (the
+auto-capture immediately before a promote overwrites the live state) — both
 had to be added to `convex/projectLocksRead.ts`'s `listSnapshots` return
 validator too, since it's a closed union that would otherwise throw the moment
 any project produced one of these new reasons.
@@ -426,6 +429,19 @@ uses the same component: Document + the one contextual "next step" action
 Delete draft/Void move into the menu via `invoiceRowMenuActions()`. Unit tests
 for the action-list logic: `quote-row-actions.test.ts`, `invoice-row-actions.test.ts`;
 smoke test for the shared menu: `row-actions-menu.smoke.test.tsx`.
+
+**Phase 4 additions (#1097, full story in `FEATUREDOCS/70`):** a "Make live"
+button next to any non-live revision with captured state (opens
+`PromoteVersionDialog`); a "Rename version" action in the `invoice:publish`
+cluster (`setQuoteLabelNative`, reachable on any revision); a "Live" pill and
+the row's `label` in `RevisionMeta`; and a per-row invoice-lineage line
+(`InvoiceLineageNote`) filtering the `invoices` prop — passed down from
+`ProjectFinancePanel`'s existing query, not a second fetch — by
+`sourceRevision === quote.version`. `standardQuoteRowActions()`'s
+"Delete draft" entry now routes to `deleteVersionNative` instead of
+`deleteDraftNative` when the target isn't the live revision (`DeleteDraftDialog`
+picks based on `target.version === liveRevision`) — the retired old ⋯ Versions
+panel is gone; this rail is now the project's one version list.
 
 ### Acceptance gate on CONFIRMED
 
@@ -1256,7 +1272,9 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | File | Purpose |
 |------|---------|
 | `convex/schema.ts` | `quotes`, `invoices`, `invoiceLines`, `xeroIntegrations`, `xeroSyncLogs` tables; Xero coding fields on `categories`/`models`/`kits`/`projectLineItems`/`projectServices`; `clients.paymentProfile`/`profileDepositPercent`/`xeroContactId`/`xeroContactName` |
-| `convex/quotesWrites.ts` | The five quote verbs: `sendNative`/`recallNative`/`newVersionNative`/`markAcceptedNative`/`markDeclinedNative` |
+| `convex/quotesWrites.ts` | The five quote verbs: `sendNative`/`recallNative`/`newVersionNative`/`markAcceptedNative`/`markDeclinedNative`; also `deleteVersionNative`/`setQuoteLabelNative` (#1097) |
+| `convex/projectVersionsWrites.ts` | `saveVersionNative` (#1085) / `promoteRevisionNative` (#1089) — full story `FEATUREDOCS/70` |
+| `convex/backfillInvoiceSourceRevision.ts` / `scripts/convex-backfill-invoice-source-revision.ts` | Best-effort forward migration for `invoices.sourceRevision` (#1097) |
 | `convex/quotes.ts` | `listForProject` (with derived `effectiveStatus`) / `revisionStateForProject` |
 | `convex/lib/quoteState.ts` | Derived `EXPIRED`, `PUBLISHED`→`SENT` normalisation, `hasAcceptedQuote`, org-checked quote/project loaders |
 | `convex/lib/quoteDates.ts` / `src/lib/quote-validity.ts` | Validity default + bounds + timezone-correct `validUntil`/expiry (mirrored pair) |
@@ -1297,6 +1315,11 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | `src/app/(app)/finance/page.tsx` | The `/finance` page — six sections, client-name filter, deep links to `?tab=finance` (#992) |
 
 ## Testing
+
+Version-switching tests (`deleteVersionNative`, `setQuoteLabelNative`,
+`sendNative`'s `liveRevision` targeting, `invoices.sourceRevision`, the
+promote dialog) live under `FEATUREDOCS/70`'s own Testing section rather than
+duplicated here.
 
 - `convex/lib/xeroAccountCascade.test.ts` — 24 tests, every cascade level +
   rental-vs-sale + service-type branches.

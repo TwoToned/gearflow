@@ -4460,6 +4460,75 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "backfillInvoiceSourceRevision.backfillInvoiceSourceRevisionPage",
+    "module": "backfillInvoiceSourceRevision",
+    "fn": "backfillInvoiceSourceRevisionPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "c852c9a8a685bcbf",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillInvoiceSourceRevision.verifyInvoiceSourceRevision",
+    "module": "backfillInvoiceSourceRevision",
+    "fn": "verifyInvoiceSourceRevision",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e9753884d189782",
+    "returnsSha": "09d65ddb358fc291",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "backfillKitUnits.backfillKitUnitsPage",
     "module": "backfillKitUnits",
     "fn": "backfillKitUnitsPage",
@@ -18713,33 +18782,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "files.getOrgStorageUsage",
-    "module": "files",
-    "fn": "getOrgStorageUsage",
-    "kind": "query",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "b21345538722cfa9",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "files.getServeInfo",
     "module": "files",
     "fn": "getServeInfo",
@@ -31247,154 +31289,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list)."
   },
   {
-    "operation": "orgErasure.deleteChildRowsByParentIds",
-    "module": "orgErasure",
-    "fn": "deleteChildRowsByParentIds",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "indexName",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "parentField",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "parentIds",
-        "optional": false,
-        "type": "array"
-      },
-      {
-        "name": "table",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "15869087e39d48e9",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": "denied",
-    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
-  },
-  {
-    "operation": "orgErasure.deleteFilteredPage",
-    "module": "orgErasure",
-    "fn": "deleteFilteredPage",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "numItems",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgField",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "table",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "b023c642f132116b",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": "denied",
-    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
-  },
-  {
-    "operation": "orgErasure.deleteStorageBlobs",
-    "module": "orgErasure",
-    "fn": "deleteStorageBlobs",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "storageIds",
-        "optional": false,
-        "type": "array"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "34c96dc633ec8ec6",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": "denied",
-    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
-  },
-  {
-    "operation": "orgErasure.deleteTablePage",
-    "module": "orgErasure",
-    "fn": "deleteTablePage",
-    "kind": "mutation",
-    "guard": "service",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "numItems",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "table",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "1c24442a3b1cae60",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": "denied",
-    "deniedReason": "Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable."
-  },
-  {
     "operation": "orgExport.childRowsByParentIds",
     "module": "orgExport",
     "fn": "childRowsByParentIds",
@@ -42501,6 +42395,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "quotesWrites.deleteVersionNative",
+    "module": "quotesWrites",
+    "fn": "deleteVersionNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5cb77faf3d5db168",
+    "returnsSha": "5de9f2996360adc4",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "quotesWrites.markAcceptedNative",
     "module": "quotesWrites",
     "fn": "markAcceptedNative",
@@ -42827,6 +42773,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "labelOnDocument",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "notes",
         "optional": true,
         "type": "string"
@@ -42863,11 +42814,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "b39c2c5b21415429",
+    "argsSha": "7aded01b9d5488ea",
     "returnsSha": "ca599837ab6ba347",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "quotesWrites.setQuoteLabelNative",
+    "module": "quotesWrites",
+    "fn": "setQuoteLabelNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "invoice",
+    "action": "publish",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "publish"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "label",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "de830b31dcf7ec35",
+    "returnsSha": "b8b294c68b6639e1",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -60126,10 +60134,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1154,
-  agentReachable: 562,
+  total: 1153,
+  agentReachable: 564,
   queries: 407,
-  mutations: 747,
+  mutations: 746,
   agentReachableQueries: 289,
-  agentReachableMutations: 273,
+  agentReachableMutations: 275,
 } as const;

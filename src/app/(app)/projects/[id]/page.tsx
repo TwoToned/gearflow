@@ -91,7 +91,6 @@ import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock
 import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
 import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
 import { JustificationDialog } from "@/components/projects/justification-dialog";
-import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
 import { ProjectVersionProvider, useProjectVersion } from "@/components/projects/project-version-context";
 import { ProjectVersionSwitcher } from "@/components/projects/version-switcher";
 import { VersionReadOnlyBar } from "@/components/projects/version-readonly-bar";
@@ -181,16 +180,15 @@ export default function ProjectDetailPage({
   // plain ref) so EquipmentTab re-renders its portal once the node mounts.
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
-  // #957 lifecycle lock — reactive tier/session status, the unlock-session
-  // open action, and the Versions panel. `lockNow` is frozen at mount (like
-  // `project-quote-rail.tsx`'s own `now`) — it only drives derived display
-  // (elapsed-session timers, EXPIRED resolution), not query identity.
+  // #957 lifecycle lock — reactive tier/session status and the unlock-session
+  // open action. `lockNow` is frozen at mount (like `project-quote-rail.tsx`'s
+  // own `now`) — it only drives derived display (elapsed-session timers,
+  // EXPIRED resolution), not query identity.
   const [lockNow] = useState(() => Date.now());
   const lockStatus = useProjectLockStatus(id, orgId, lockNow);
   const unlockSession = useUnlockSession(id, orgId);
   const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
   const [unlockPending, setUnlockPending] = useState(false);
-  const [versionsOpen, setVersionsOpen] = useState(false);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
@@ -459,10 +457,6 @@ export default function ProjectDetailPage({
                           Runsheet
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setVersionsOpen(true)}>
-                        <FileText className="mr-2 h-4 w-4" />
-                        Versions
-                      </DropdownMenuItem>
                       <CanDo resource="project" action="create">
                         <DropdownMenuItem onClick={() => setDupMode("duplicate")}>
                           <Copy className="mr-2 h-4 w-4" />
@@ -551,7 +545,7 @@ export default function ProjectDetailPage({
 
           {/* Phase 3 (#1080/#1093) — mounted once above the tabs, visible on
               every tab, whenever `?v=` points at a real non-live version. */}
-          {!project.isTemplate && <VersionReadOnlyBar />}
+          {!project.isTemplate && orgId && <VersionReadOnlyBar orgId={orgId} />}
 
           {/* ── Tabs + context sidebar ─────────────────────────────────
               #1063: the sidebar (Schedule · Location · Team · Activity) rides
@@ -867,12 +861,6 @@ export default function ProjectDetailPage({
                 setUnlockPending(false);
               }
             }}
-          />
-          <ProjectVersionsPanel
-            open={versionsOpen}
-            onOpenChange={setVersionsOpen}
-            projectId={id}
-            orgId={orgId}
           />
         </>
       )}

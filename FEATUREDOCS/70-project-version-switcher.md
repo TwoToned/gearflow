@@ -1,17 +1,21 @@
-# Project Version Switcher (Phase 3 projection)
+# Project Version Switcher (Phase 3 projection + Phase 4 promote/list)
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-08-01 (review quarterly — POLICY.md R-5.5)_
 
 Phase 3 of #1080 (issue #1093) — the read path that lets a project's Equipment,
 Labour & logistics and Finance tabs render a **past version's** captured state
 behind a read-only bar, switched via a header dropdown and a `?v=` URL param.
+Phase 4 (issue #1097) landed on top of it: "Make vN live" is now a real,
+user-facing action — the promote dialog wired into both the read-only bar and
+the Finance tab's version rail — and the version rail itself (`ProjectQuoteRail`)
+is now the project's ONE version list, with the old `⋯ Versions` panel retired.
 
 **Depends on:** Phase 1 (#1085, merged) — `projects.liveRevision`, `saveVersionNative`,
-the `VERSION_SAVED`/`PRE_PROMOTE` snapshot reasons.
-**Does NOT include:** any promote UI. Phase 2 (`promoteRevisionNative`, #1089) landed
-on `main` while this phase was in review, but "Make vN live" as a user-facing action
-is Phase 4's dialog (#1097) — this phase's switcher and read-only bar stay look-only
-regardless of whether the underlying mutation exists.
+the `VERSION_SAVED`/`PRE_PROMOTE` snapshot reasons. Phase 2 (#1089, merged) —
+`promoteRevisionNative`, `scope: "PROMOTE"`.
+**Still out of scope:** Recall-to-edit (#1100, Phase 5) — a promoted SENT
+revision can be made live, but editing it afterwards is still refused by the
+existing quote-derived lock until that phase lands.
 
 ## The model (unchanged from Phase 1, restated for this phase)
 
@@ -124,13 +128,86 @@ gracefully from.
   `invoices.sourceRevision` display (lineage labelling per version) is Phase 4
   scope (#1097), not this phase.
 
+## Phase 4 — promote UI, version list, invoice lineage, labels (#1097)
+
+**Two entry points, one dialog.** `PromoteVersionDialog`
+(`src/components/projects/finance/promote-version-dialog.tsx`) is mounted from
+both `VersionReadOnlyBar` ("Make vN live…", shown while actively viewing that
+version) and each row in `ProjectQuoteRail` (a "Make live" button next to any
+non-live revision that has captured state) — R-3.1, one confirm surface, not
+two hand-built ones. It states what changes BEFORE it runs: counts of the
+target's line items/groups/services, the rental-window move (if any), and a
+CLIENT-SIDE PREDICTED conflict list computed from the same
+`snapshotEntries`/`currentEntries` pair `RepriceFromRevisionDialog` already
+uses (no new read path) — the prediction mirrors `isWarehouseBacked`
+(`convex/lib/projectSnapshots.ts`) but the mutation's own returned `conflicts`
+array is the authoritative one, rendered after the fact in
+`PromoteConflictsPanel` (a PERSISTENT panel, not a toast — mounted at both
+promote entry points, dismissed explicitly).
+
+**The version rail is the Finance tab's ONE version list.** `ProjectQuoteRail`
+(`src/components/projects/project-quote-rail.tsx`) already existed pre-Phase-4
+as the quote-verb workflow; it queries `quotes` (not `projectSnapshots`), so it
+was already "revisions only" without further filtering. Phase 4 added: a
+"Live" pill and the version's `label` on the row (`RevisionMeta`); a "Rename
+version" action (`setQuoteLabelNative`) reachable on any revision; a "Make
+live" button on any non-live revision with a snapshot; and a per-row invoice
+lineage line (`InvoiceLineageNote`) filtering the `invoices` array — passed
+down from `ProjectFinancePanel`'s existing `invoices.listForProject` query,
+not a second fetch — by `sourceRevision === quote.version`.
+
+**Deletion — three cases** (`convex/quotesWrites.ts`): `deleteDraftNative`
+(the LIVE draft, unchanged from #1028 except it now rolls `liveRevision` back
+alongside `revision`) vs. the NEW `deleteVersionNative` (a non-live,
+never-sent saved version — deletes the quote row and its
+`projectSnapshots`/`projectSnapshotEntries` rows, touches neither counter) vs.
+the unchanged recall-then-delete flow (anything ever sent, #1029). The rail's
+`DeleteDraftDialog` picks between the first two based on
+`target.version === liveRevision`; guard order for the new mutation is live →
+ever-sent → protected (`assertVersionDeletable`), mirroring
+`assertRecalledDeletable`'s precedent.
+
+**`sendNative` now targets the LIVE revision, not the allocator.** A latent
+gap from Phase 1/2: `prepareSend` used to key off `projects.revision` (the
+high-water mark), which was harmless before Phase 2 shipped (the two numbers
+were always equal) but wrong the moment a promote can point `liveRevision` at
+an older number — sending would misidentify which row to freeze. Fixed to key
+off `projectLiveRevision(project)`, matching `newVersionNative`/
+`repriceFromRevisionNative`'s existing pattern.
+
+**Labels on the document.** `sendNative` gained `labelOnDocument` (only
+stamped `true` when the revision already carries a `label` — nothing to print
+otherwise). `generateQuoteArtifact` (`src/server/finance-documents.ts`) builds
+a `versionSuffix` (`v2` or `v2 · Budget option`) passed through
+`generatePdf`/`buildDocumentData` into `project_number` — an existing string
+field, not a `DocumentLineItem` shape change or a new `LayoutBlock` kind, so
+it doesn't trigger the PDF pipeline's three-consumer audit (CLAUDE.md). The
+composed line gets the SAME measured shrink-to-fit `docTitle` already has
+(`truncateText`, `src/lib/pdfme/plugins/helpers.ts`) — user-entered text,
+Helvetica-only, single line, no other cap existed on that draw call.
+
+**`invoices.sourceRevision`** (`convex/schema.ts`) is stamped once by
+`invoicesWrites.createNative`/`createCreditNative` at CREATE time (the
+project's THEN-live revision) and never updated — a void doesn't touch it, and
+a CREDIT invoice gets its OWN stamp, not a copy of the invoice it credits.
+Backfilled best-effort (`convex/backfillInvoiceSourceRevision.ts`, driver
+`scripts/convex-backfill-invoice-source-revision.ts`) from the project's
+CURRENT `revision` — pre-#1097 rows have no true historical record, so an
+un-attributable invoice legitimately keeps `sourceRevision` absent rather than
+guessing.
+
+**The old `⋯ Versions` panel is retired** — `project-versions-panel.tsx`,
+its mount, and its menu entry are deleted (`src/app/(app)/projects/[id]/page.tsx`).
+`captureProjectSnapshot` keeps firing for `CONFIRMED`/`COMPLETED`/`UNLOCK` —
+`UNLOCK` is load-bearing for unlock-session discard — those rows just never
+appeared in this panel's list to begin with (it queries `quotes`, not
+`projectSnapshots`).
+
 ## Out of scope (later phases)
 
-- The "Make vN live" dialog/button (#1097, Phase 4) — `promoteRevisionNative` itself
-  exists on `main` (#1089, Phase 2), but no UI in this phase calls it.
-- The version list becoming the Finance tab's primary rail, deletion, labels,
-  retiring the old `⋯ Versions` panel (#1097, Phase 4).
-- Recall-to-edit (#1100, Phase 5).
+- Recall-to-edit (#1100, Phase 5) — editing a promoted SENT revision is still
+  refused by the existing quote-derived lock until that phase lands.
+- Org-level version reporting — not planned.
 
 ## Testing
 
@@ -147,3 +224,17 @@ gracefully from.
   and its "no captured state" fallback.
 - `src/components/projects/__tests__/version-projected-views.smoke.test.tsx` —
   each projected surface renders from a fixture, including the "not versioned" note.
+- `convex/quotesWrites.test.ts` (Phase 4) — `deleteVersionNative`'s guard order
+  (live → ever-sent → protected) and that it touches neither counter;
+  `setQuoteLabelNative`; `sendNative` targeting `liveRevision` when it's
+  behind the allocator (the promote-created-drift regression) and its
+  `labelOnDocument` stamping rule.
+- `convex/invoicesWrites.test.ts` (Phase 4) — `sourceRevision` stamped once at
+  CREATE, surviving a void, and a CREDIT invoice getting its own stamp rather
+  than copying the credited invoice's.
+- `convex/backfillInvoiceSourceRevision.test.ts` — the best-effort backfill,
+  mirroring `backfillProjectLiveRevision.test.ts`'s shape.
+- `src/components/projects/finance/__tests__/promote-version-dialog.smoke.test.tsx` —
+  opens the dialog, renders the predicted-conflict list, and confirms.
+- `src/components/projects/finance/__tests__/promote-conflicts-panel.test.tsx` —
+  the persistent post-promote panel.

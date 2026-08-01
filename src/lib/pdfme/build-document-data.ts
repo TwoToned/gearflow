@@ -95,6 +95,17 @@ export async function buildDocumentData(
      * quote moved the expiry date the client had been given.
      */
     stampedDates?: { documentDate?: number; quoteValidUntil?: number; invoiceDueDate?: number };
+    /**
+     * #1080/#1097 — a quote revision's `v2` (or `v2 · Budget option` when
+     * `labelOnDocument` was stamped at send) appended to `project_number` in
+     * the header. Only ever set by `finance-documents.ts` for a SENT quote's
+     * stored artifact — a draft preview shows no version at all (the
+     * DRAFT PREVIEW watermark already says enough), and no other doc type
+     * carries a comparable per-revision label. Not a `DocumentLineItem` shape
+     * change and not a new `LayoutBlock` kind, so it doesn't trigger the PDF
+     * pipeline's three-consumer audit (CLAUDE.md).
+     */
+    versionSuffix?: string;
   }
 ): Promise<DocumentData> {
   const expandProjectGroups = options?.expandProjectGroups ?? false;
@@ -732,7 +743,7 @@ export async function buildDocumentData(
     org_document_color: docColor,
 
     // Project
-    project_number: serialized.projectNumber,
+    project_number: options?.versionSuffix ? `${serialized.projectNumber} ${options.versionSuffix}` : serialized.projectNumber,
     project_name: serialized.name,
     project_status: serialized.status,
     project_type: serialized.type || "",

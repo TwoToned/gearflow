@@ -23,10 +23,10 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 407 | 289 | 116 | 1 | 1 |
-| Mutations | 747 | 273 | 465 | 0 | 9 |
-| **Total** | **1154** | **562** | **581** | **1** | **10** |
+| Mutations | 746 | 275 | 462 | 0 | 9 |
+| **Total** | **1153** | **564** | **578** | **1** | **10** |
 
-<!-- reachability-floor: 562 -->
+<!-- reachability-floor: 564 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,9 +42,9 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 92 |
+| `high` | 93 |
 | `medium` | 142 |
-| `low` | 39 |
+| `low` | 40 |
 
 ## Modules with no agent-reachable operation
 
@@ -60,6 +60,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `apiRequestLog` | 3 |
 | `availabilityCheck` | 1 |
 | `backfillClientContacts` | 1 |
+| `backfillInvoiceSourceRevision` | 2 |
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
 | `backfillProjectLiveRevision` | 2 |
@@ -78,7 +79,6 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `notificationDismissals` | 7 |
 | `oauthAuthorizationCodes` | 2 |
 | `oauthClients` | 3 |
-| `orgErasure` | 4 |
 | `orgExport` | 6 |
 | `orgSettings` | 8 |
 | `parity` | 1 |
@@ -138,10 +138,6 @@ fails the build otherwise.
 | `oauthClients.getById` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
 | `oauthClients.listByIds` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
 | `oauthClients.register` | OAuth client registration storage is trusted-backend infrastructure, not agent-reachable (same posture as apiKeys.list). |
-| `orgErasure.deleteChildRowsByParentIds` | Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable. |
-| `orgErasure.deleteFilteredPage` | Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable. |
-| `orgErasure.deleteStorageBlobs` | Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable. |
-| `orgErasure.deleteTablePage` | Hard-deletes an org's Convex domain data — the genuine right-to-erasure path (#1077, M5). Script-only (scripts/erase-org.ts), never agent-reachable. |
 | `orgExport.childRowsByParentIds` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |
 | `orgExport.countTable` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |
 | `orgExport.exportTablePage` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |

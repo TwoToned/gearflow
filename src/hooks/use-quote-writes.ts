@@ -12,12 +12,14 @@ import {
   quoteDeleteRecalledSchema,
   quoteRecallSchema,
   quoteSendSchema,
+  quoteSetLabelSchema,
   type QuoteAcceptValues,
   type QuoteCorrectValues,
   type QuoteDeclineValues,
   type QuoteDeleteRecalledValues,
   type QuoteRecallValues,
   type QuoteSendValues,
+  type QuoteSetLabelValues,
 } from "@/lib/validations/quote";
 
 /**
@@ -44,8 +46,10 @@ export function useQuoteWrites() {
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
   const repriceFromRevisionM = useMutation(api.quotesWrites.repriceFromRevisionNative);
   const deleteDraftM = useMutation(api.quotesWrites.deleteDraftNative);
+  const deleteVersionM = useMutation(api.quotesWrites.deleteVersionNative);
   const deleteRecalledM = useMutation(api.quotesWrites.deleteRecalledNative);
   const setProtectedM = useMutation(api.quotesWrites.setQuoteProtectedNative);
+  const setLabelM = useMutation(api.quotesWrites.setQuoteLabelNative);
   const correctM = useMutation(api.quotesWrites.correctQuoteNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
@@ -86,6 +90,7 @@ export function useQuoteWrites() {
         validityDays: parsed.validityDays,
         recipientContactId: parsed.recipientContactId || undefined,
         notes: parsed.notes || undefined,
+        labelOnDocument: parsed.labelOnDocument || undefined,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),
@@ -209,6 +214,39 @@ export function useQuoteWrites() {
       return await deleteDraftM({
         id: quoteId,
         organizationId: org,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Delete a saved-but-never-sent version (#1080/#1097) — the version-list
+     *  counterpart to `deleteDraft` above for a NON-live never-sent row (one
+     *  `saveVersion`/an auto-capture left behind). Touches neither
+     *  `revision` nor `liveRevision`. */
+    deleteVersion: async (quoteId: string): Promise<{ id: string; deletedVersion: number }> => {
+      const org = requireOrg();
+      return await deleteVersionM({
+        id: quoteId,
+        organizationId: org,
+        actor: actor(),
+        auditId: createId(),
+        now: Date.now(),
+      });
+    },
+
+    /** Rename a version's internal label from the row (#1080/#1097) — never a
+     *  behavioural switch, reachable on any revision. */
+    setLabel: async (
+      quoteId: string,
+      data: QuoteSetLabelValues,
+    ): Promise<{ id: string; version: number; label: string | null }> => {
+      const org = requireOrg();
+      const parsed = quoteSetLabelSchema.parse(data);
+      return await setLabelM({
+        id: quoteId,
+        organizationId: org,
+        label: parsed.label || undefined,
         actor: actor(),
         auditId: createId(),
         now: Date.now(),

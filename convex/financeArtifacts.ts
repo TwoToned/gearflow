@@ -103,6 +103,12 @@ export const quoteArtifactContext = query({
       version: quote.version,
       effectiveStatus: effectiveQuoteStatus(quote, now ?? 0),
       label: quoteLabel(project.projectNumber, quote.version),
+      // #1080/#1097 — the INTERNAL custom name (distinct from `label` above,
+      // which is the derived "<projectNumber> vN" display string) and whether
+      // it should be printed on the document header. `generateQuoteArtifact`
+      // reads these to build the header's version suffix.
+      customLabel: quote.label ?? null,
+      labelOnDocument: quote.labelOnDocument ?? false,
       pdfFileId: quote.pdfFileId ?? null,
       // `sentAt || publishedAt` — a pre-#986 row the backfill hasn't reached
       // still counts as sent (convex/lib/quoteState.ts normalises the same way).

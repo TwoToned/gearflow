@@ -100,10 +100,10 @@ function useQuoteRevisionDiff({
 
 /**
  * The read-only "as of v N" view + diff (#989 §8), reusing the existing
- * snapshot/diff plumbing (`project-snapshot-diff.ts`,
- * `convex/projectLocksRead.ts`) that `ProjectVersionsPanel` already exercises —
+ * snapshot/diff plumbing (`project-snapshot-diff.ts`, `convex/projectLocksRead.ts`)
+ * — the same pair the retired `⋯ Versions` panel used to exercise (#1097) —
  * scoped to ONE quote revision instead of every whole-project snapshot, and
- * reachable from the Finance tab's workflow instead of only the `⋯` menu.
+ * reachable from the Finance tab's workflow instead of a separate menu.
  *
  * Trimmed to two comparisons (D5): vs the previous revision, and vs the job
  * right now. Highlighting is always on — a toggle that turns off the reason

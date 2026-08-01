@@ -73,6 +73,10 @@ export async function generateQuoteArtifact(quoteId: string): Promise<ArtifactRe
       documentDate: quote.quoteDate ?? quote.sentAt,
       quoteValidUntil: quote.validUntil ?? undefined,
     },
+    // #1080/#1097 — the label is printed only when explicitly opted into at
+    // send (`labelOnDocument`); off by default (design §4.4's "invites the
+    // obvious question" reasoning).
+    versionSuffix: quote.labelOnDocument && quote.customLabel ? `v${quote.version} · ${quote.customLabel}` : `v${quote.version}`,
   });
 
   const fileName = quoteArtifactFileName(quote.projectNumber, quote.version);

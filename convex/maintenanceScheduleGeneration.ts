@@ -4,6 +4,7 @@ import { internalMutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { collectCapped } from "./lib/pagination";
+import { applyPerOrgFairnessCap } from "./lib/cronFairness";
 import { resolveCurrentDueDate } from "./lib/serviceScheduleCore";
 import { resolveModelAssetType } from "./lib/availabilityCore";
 
@@ -51,6 +52,12 @@ import { resolveModelAssetType } from "./lib/availabilityCore";
  *      computed `poolQuantitySnapshot`.
  */
 
+// Per-org fairness bound (#1077, A7): well above any realistic single-org
+// schedule count (one row per model+cadence), but bounded so one high-volume
+// tenant can never fully consume the shared collectCapped budget below and
+// starve every other org's cycle generation out of every run.
+const MAX_SCHEDULES_PER_ORG_PER_TICK = 500;
+
 const TERMINAL_STATUSES = new Set(["COMPLETED", "CANCELLED"]);
 
 function isOpenStatus(status: string | undefined): boolean {
@@ -79,6 +86,35 @@ async function computePoolQuantitySnapshot(ctx: MutationCtx, model: Doc<"models"
   return activeAssets.length;
 }
 
+/**
+ * Bounded, fair read of due-cycle candidates (#1077, A7). serviceSchedules is
+ * a small, admin-created catalog table (one row per model+cadence) with no
+ * per-cron orgId to scope by — collectCapped bounds the platform-wide sweep
+ * instead of an unindexed full collect (R-9.8). A single global cap alone
+ * isn't FAIR across tenants though: if one org supplies most of the rows
+ * within that budget, every other org's schedules get starved out of every
+ * run, forever (same prefix read every tick). applyPerOrgFairnessCap
+ * post-filters so no one org can contribute more than its share — capped
+ * rows are picked up next run, same "truncated, retried later" semantics as
+ * the overall cap. Split out of the handler to keep its own branch count
+ * under the R-3.6 ceiling.
+ */
+async function readSchedulesFairly(ctx: MutationCtx) {
+  const { rows: rawSchedules, truncated } = await collectCapped(ctx.db.query("serviceSchedules"));
+  const { rows: schedules, cappedOrgIds } = applyPerOrgFairnessCap(rawSchedules, MAX_SCHEDULES_PER_ORG_PER_TICK);
+  if (truncated) {
+    console.warn(
+      "[maintenance-schedule-generation] serviceSchedules truncated at the collect cap — some schedules were skipped this run and will be picked up on a later run.",
+    );
+  }
+  if (cappedOrgIds.size > 0) {
+    console.warn(
+      `[maintenance-schedule-generation] per-org fairness cap hit for ${cappedOrgIds.size} org(s) — some of their schedules were skipped this run and will be picked up on a later run.`,
+    );
+  }
+  return schedules;
+}
+
 export const generateDueCycles = internalMutation({
   args: {},
   returns: v.object({
@@ -95,15 +131,7 @@ export const generateDueCycles = internalMutation({
     }
 
     const now = Date.now();
-    // serviceSchedules is a small, admin-created catalog table (one row per
-    // model+cadence) with no per-cron orgId to scope by — collectCapped bounds
-    // the platform-wide sweep instead of an unindexed full collect (R-9.8).
-    const { rows: schedules, truncated } = await collectCapped(ctx.db.query("serviceSchedules"));
-    if (truncated) {
-      console.warn(
-        "[maintenance-schedule-generation] serviceSchedules truncated at the collect cap — some schedules were skipped this run and will be picked up on a later run.",
-      );
-    }
+    const schedules = await readSchedulesFairly(ctx);
 
     let created = 0;
     let merged = 0;

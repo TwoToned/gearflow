@@ -203,6 +203,43 @@ describe("generateDueCycles — enabled", () => {
   });
 });
 
+describe("generateDueCycles — per-org fairness (#1077, A7)", () => {
+  beforeEach(() => { process.env.ENABLE_CONVEX_CRONS = "true"; });
+
+  // The bug this guards: a single global collectCapped bound alone doesn't
+  // guarantee FAIRNESS across tenants — one org's schedules could dominate
+  // the scan and starve every other org's cycle generation. A single run
+  // seeding two distinct orgs must generate a cycle for BOTH, not just
+  // whichever org happened to be read first.
+  test("both orgs get a cycle generated in the same run", async () => {
+    const t = makeT();
+    const ORG_B = "org_2";
+    await seedOrg(t);
+    await seedSerializedModel(t, "modelA", 3);
+    await seedSchedule(t, "sched1", "modelA", 6, Date.UTC(2026, 0, 1));
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m2", organizationId: ORG_B, userId: "user_2", role: "warehouse" });
+      await ctx.db.insert("models", {
+        id: "modelB", organizationId: ORG_B, name: "Other Org Light", assetType: "SERIALIZED",
+      });
+      await ctx.db.insert("assets", {
+        id: "modelB-a0", organizationId: ORG_B, assetTag: "OTH-0", modelId: "modelB",
+        status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("serviceSchedules", {
+        id: "sched2", organizationId: ORG_B, modelId: "modelB", name: "6-month service",
+        intervalMonths: 6, anchorDate: Date.UTC(2026, 0, 1), isActive: true, createdAt: NOW, updatedAt: NOW,
+      });
+    });
+
+    const res = await t.mutation(internal.maintenanceScheduleGeneration.generateDueCycles, {});
+    expect(res.created).toBe(2);
+    expect(await cyclesFor(t, "sched1")).toHaveLength(1);
+    expect(await cyclesFor(t, "sched2")).toHaveLength(1);
+  });
+});
+
 describe("WS6 non-blocking invariant — full generate -> check-off -> complete cycle", () => {
   beforeEach(() => { process.env.ENABLE_CONVEX_CRONS = "true"; });
 

@@ -128,6 +128,69 @@ from every generic client patch alongside `PROJECT_MONEY_ANCHORS`
 (`PROJECT_SERVER_OWNED` in `convex/projectWrites.ts`). Absent reads as 1 via
 `projectRevision()` — one coalesce, not one per call site.
 
+### `projects.liveRevision` — the pointer, split from the allocator (#1080/#1085)
+
+`projects.revision` above does two jobs at once historically: "the highest
+version number ever handed out" AND "which version is current". `liveRevision`
+(NEW, Phase 1 of the project-version-switching program,
+[`docs/designs/project-version-switching.md`](../docs/designs/project-version-switching.md))
+splits them:
+
+```
+projects.revision      : number   ← the ALLOCATOR. Highest version number ever handed out.
+projects.liveRevision  : number   ← the version projected onto the live tables.
+                                    Absent ⇒ equals `revision` (every pre-#1085 project).
+```
+
+Phase 1 never decouples them — `saveVersionNative` and `newVersionNative` bump
+both together, every time, so `liveRevision === revision` for the whole of this
+phase. Only Phase 2's promote (not yet built) can point `liveRevision` at an
+OLDER number than `revision`, which is the entire point of the split: "make an
+older version live" has nowhere to go while one field tries to mean both
+things. Both fields are server-owned, coalesced via `projectRevision()`/
+`projectLiveRevision()` (`convex/lib/quoteState.ts`) — never read directly off
+the document.
+
+**`saveVersionNative`** (`convex/projectVersionsWrites.ts`) is the new explicit
+"Save version" creation path, reachable from ANY live-revision state (including
+a never-sent `DRAFT` — unlike `newVersionNative`, which requires the current
+revision to already be sent): it captures the live state as a `VERSION_SAVED`
+`projectSnapshots` row on the current live revision, points that revision's
+`quotes.snapshotId` at the fresh capture, then allocates the next number and
+moves `liveRevision` there with a fresh `DRAFT`. **The live tables are never
+touched** — saving a version freezes a copy of where you are and carries on; it
+is not a checkpoint you restore from. Optional `quotes.label` (≤60 chars,
+bounded server-side) names the version internally; `labelOnDocument` (stamped
+at send, not yet consumed by the render pipeline) prints it on the PDF header
+in a later phase. `newVersionNative` gained the same capture step onto the
+revision it moves past, so a revision that's about to stop being live always
+has a fresh snapshot behind it.
+
+**The invariant changed.** Before: "at most one `DRAFT` quote per project,
+always at `projects.revision`." Now: "at most one **live** `DRAFT`, always at
+`projects.liveRevision`." Calling Save Version while the current live revision
+is itself a never-sent draft deliberately leaves that row behind — an orphaned,
+non-live, saved-but-never-sent version, not a bug. Every existing call site that
+scanned for "the draft" project-wide (not scoped to `liveRevision`) had to be
+found and fixed: `quotes.revisionStateForProject`'s `draftQuoteId`,
+`financeOrg.ts`'s "Never sent" org dashboard section, and
+`quotesWrites.deleteDraftNative` (which now refuses to touch anything but the
+live draft — deleting an orphaned saved version needs a different mutation,
+not yet built). `deleteRecalledNative`'s revision-counter rollback is similarly
+now conditional on the deleted quote being the live revision, so erasing an
+older, already-superseded sent-then-recalled row never corrupts the counters
+of whatever IS currently live.
+
+No UI ships in this phase — the existing ⋯ Versions panel and quote rail
+render exactly as before. Phase 1 also added a backfill
+(`convex/backfillProjectLiveRevision.ts`) stamping `liveRevision` onto every
+pre-existing project (belt-and-braces; the coalesce already makes it correct
+without one), and two new `projectSnapshots.reason` values, `VERSION_SAVED` and
+`PRE_PROMOTE` (the latter reserved for Phase 2's promote auto-capture) — both
+had to be added to `convex/projectLocksRead.ts`'s `listSnapshots` return
+validator too, since it's a closed union that would otherwise throw the moment
+any project produced one of these new reasons.
+
 ### State machine
 
 ```
@@ -181,8 +244,10 @@ standing precedent).
 
 - Exactly one quote row per `(projectId, revision)` — `by_projectId_version` is
   the uniqueness guard.
-- At most one `DRAFT`, always at `projects.revision`. Cutting v2 while v1 is
-  still a draft is refused; edit the draft instead.
+- At most one LIVE `DRAFT`, always at `projects.liveRevision` (#1085 — see
+  above; a non-live never-sent draft, left behind by Save Version, is a
+  legitimate saved version). Cutting v2 while v1 is still the live draft is
+  refused; edit the draft instead.
 - At most one live (`SENT`/`ACCEPTED`) row — the document the client is holding.
 - `projects.revision` is monotonic. Never decremented, never reused — a
   recalled-then-re-sent revision keeps its number.
@@ -193,7 +258,8 @@ standing precedent).
 |---|---|
 | **Send** (`sendNative`) | Freezes the revision: `buildFinanceLines` money snapshot + a `QUOTE_SENT` `captureProjectSnapshot` at the same revision, stamps `quoteDate`/`validUntil`/recipient, sets `SENT`, supersedes the previous live row, offers `ENQUIRY/QUOTING → QUOTED`. Creates the `DRAFT` row when the revision has none yet. |
 | **Recall** (`recallNative`) | `SENT`/`EXPIRED` → `DRAFT` on the same revision, with a bounded reason. Restores the row this send superseded. The attached artifact is **retained, never deleted** — moved to `recalledPdfFileIds` and unlinked from `pdfFileId`, so a resend of the same revision is forced through a real render instead of `attachQuoteArtifact`'s "already attached" guard silently keeping the pre-recall bytes (#1027). |
-| **New version** (`newVersionNative`) | Increments `projects.revision` and inserts a `DRAFT` at the new number. The previous live row is untouched until the new one sends. A draft carries `snapshot: null` — its figures are the project's live totals until it is sent. |
+| **New version** (`newVersionNative`) | Increments `projects.revision` (and `liveRevision`, #1085) and inserts a `DRAFT` at the new number, after capturing the outgoing revision as a `VERSION_SAVED` snapshot. The previous live row is untouched until the new one sends. A draft carries `snapshot: null` — its figures are the project's live totals until it is sent. |
+| **Save version** (`projectVersionsWrites.saveVersionNative`, #1085) | The same "freeze and move `liveRevision` forward" shape as New version, but reachable from ANY live-revision state, including a never-sent draft. See the `liveRevision` section above. |
 | **Accept** (`markAcceptedNative`) | `SENT → ACCEPTED` + acceptance date + optional reference (PO number, email subject). An `EXPIRED` revision cannot be accepted without an explicit re-send. Unblocks `CONFIRMED`. |
 | **Decline** (`markDeclinedNative`) | `SENT`/`EXPIRED` → `DECLINED` + bounded reason. Offers `CANCELLED`, never forces it. |
 
@@ -239,13 +305,17 @@ using the model: undoing a mistaken action, and locking down an accepted
 revision. Design: `docs/designs/quote-version-management-extensions.md`.
 
 - **`deleteDraftNative`** (#1028) — deletes a `DRAFT` that has **never** been
-  sent (`sentAt`/`publishedAt` both unset). Rolls `projects.revision` back to
-  the highest revision that was ever actually sent (or `1` if none was) — the
-  one deliberate exception to "never decremented, never reused": that
-  invariant protects *sent* revisions, not a number a discarded draft merely
-  reserved. Same `invoice:publish` audience as Send/New version. Refuses
-  anything that was ever sent, even a quote currently `DRAFT` via Recall —
-  that needs the (separate, stricter) recall-then-delete flow, #1029.
+  sent (`sentAt`/`publishedAt` both unset). Rolls `projects.revision` (and
+  `liveRevision`, #1085) back to the highest revision that was ever actually
+  sent (or `1` if none was) — the one deliberate exception to "never
+  decremented, never reused": that invariant protects *sent* revisions, not a
+  number a discarded draft merely reserved. Same `invoice:publish` audience as
+  Send/New version. Refuses anything that was ever sent, even a quote
+  currently `DRAFT` via Recall — that needs the (separate, stricter)
+  recall-then-delete flow, #1029. **May only ever target the LIVE draft**
+  (#1085) — a non-live never-sent draft (one Save Version left behind) is a
+  saved version, not a fat-fingered mistake, and rolling the project's counters
+  back over an unrelated deletion would orphan whatever IS currently live.
 - **`setQuoteProtectedNative`** (#1030) — a soft lock independent of quote
   status. **Owner-only** (`requireQuoteOwnerOnly` in `convex/lib/quoteState.ts`
   — stricter than Recall's audience; a resource/action permission check can't

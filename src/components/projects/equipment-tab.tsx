@@ -18,7 +18,7 @@ import {
   computeLineTotal,
   type OptimisticLineEdit,
 } from "@/hooks/use-native-line-item-writes";
-import { useEquipmentDnd } from "@/hooks/use-equipment-dnd";
+import { useEquipmentDnd, type DraggedRowClone } from "@/hooks/use-equipment-dnd";
 import { useCanDo } from "@/lib/use-permissions";
 import { Plus, FolderPlus, FolderTree, Pencil, Trash2, ChevronDown as ChevronDownIcon } from "lucide-react";
 import {
@@ -130,24 +130,50 @@ function buildDragStyle(
   return { transform: CSS.Transform.toString(transform), transition };
 }
 
-/** DragOverlay preview for a dragged project group — title/qty/total math
- *  mirrors GroupRow's own display (equipment-rows.tsx) so the floating
- *  preview agrees with the real row. Extracted out of the `draggedGroup`
- *  lookup (equipment-tab.tsx render body) so ITS branch count stays low. */
-function previewProjectGroup(g: GroupData | undefined): { title: string; qty: number; total: number | null } | null {
-  if (!g) return null;
-  const priceVal = g.price != null ? Number(g.price) : null;
-  const discountVal = g.discount != null ? Number(g.discount) : 0;
-  const total = priceVal != null ? Math.max(0, priceVal * g.quantity - discountVal) : null;
-  return { title: g.title, qty: g.quantity, total };
-}
+/**
+ * Mounts `use-equipment-dnd.ts`'s `draggedRowClone` — a deep clone of the
+ * ACTUAL row/card DOM node being dragged — inside the DragOverlay, so the
+ * floating preview is a pixel-accurate copy of the real row instead of a
+ * hand-built summary ("it should look exactly the same" — a name-only or
+ * qty/total-only chip was the earlier, explicitly rejected attempt at this).
+ * `appendChild`s the raw node imperatively (a cloned DOM node, not a React
+ * element/JSX, can't be returned from render) into a plain wrapper div; a
+ * `<tr>` clone is re-wrapped in its own `<table>` so it renders as a table
+ * row would (browsers refuse to render a bare `<tr>` outside a table/tbody).
+ * `cloneDragRow` already freezes each `<td>`'s width inline before handing it
+ * here, so this one-row table doesn't get re-sized by the browser's table
+ * layout algorithm (which would otherwise size columns from this row's own
+ * content alone, disagreeing with the live table's multi-row-informed
+ * widths).
+ */
+function DragRowOverlayContent({ clone }: { clone: DraggedRowClone }) {
+  const { node, width } = clone;
+  const containerRef = React.useRef<HTMLElement>(null);
 
-/** Sibling of `previewProjectGroup` for a dragged sub-hire group — total
- *  math mirrors SubHireGroupRow's own display. */
-function previewSubHireGroup(g: SubHireGroupData | undefined): { title: string; qty: number; total: number | null } | null {
-  if (!g) return null;
-  const chargeVal = g.charge != null ? Number(g.charge) : null;
-  return { title: g.title, qty: g.quantity, total: chargeVal != null ? chargeVal * g.quantity : null };
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    container.replaceChildren(node);
+    return () => {
+      container.replaceChildren();
+    };
+  }, [node]);
+
+  const isRow = node.tagName === "TR";
+  return (
+    <div
+      className="cursor-grabbing overflow-hidden rounded-[var(--r)] shadow-[var(--sh-card)]"
+      style={{ width }}
+    >
+      {isRow ? (
+        <table className="w-full border-collapse bg-card">
+          <tbody ref={containerRef as React.Ref<HTMLTableSectionElement>} />
+        </table>
+      ) : (
+        <div ref={containerRef as React.Ref<HTMLDivElement>} className="bg-card" />
+      )}
+    </div>
+  );
 }
 
 // ─── Sortable line-item row wrapper ──────────────────────────────────────────
@@ -1219,57 +1245,6 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     if (sh.status === "DRAFT") draftSubHireIds.add(sh.id as string);
   }
 
-  // DragOverlay content (see the DndContext wrap below) — a small floating
-  // label naming whatever line item is currently being dragged. Looked up
-  // from the same reconstructed tree the rows render from; a plain O(n) scan
-  // is fine at this scale (one drag at a time, small trees).
-  const draggedLineItem = (() => {
-    const bareId = dnd.activeDragId?.startsWith("li-") ? dnd.activeDragId.slice(3) : null;
-    if (!bareId) return null;
-    const allLineItems: LineItemData[] = [
-      ...typedCategories.flatMap((cat) => cat.lineItems ?? []),
-      ...typedCategories.flatMap((cat) => cat.groups.flatMap((g) => g.lineItems ?? [])),
-      ...(uncategorizedItems as LineItemData[]),
-      ...orphanProjectGroups.flatMap((g) => g.lineItems ?? []),
-    ];
-    return allLineItems.find((li) => li.id === bareId) ?? null;
-  })();
-
-  // DragOverlay content for a dragged GROUP (project group or sub-hire
-  // group) — title + qty/total, same "read as the real row" fidelity as
-  // draggedLineItem above (a name-only chip was the "loses the rest of the
-  // table info" complaint — the whole point of dragging IS to see what
-  // you're moving). Looked up the same way, from the same reconstructed tree
-  // the rows render from. Totals mirror GroupRow's/SubHireGroupRow's own
-  // display math (equipment-rows.tsx) so the preview agrees with the row —
-  // computed by previewProjectGroup/previewSubHireGroup (module scope, below
-  // the component) so this lookup's own branch count stays low.
-  const draggedGroup = (() => {
-    const id = dnd.activeDragId;
-    if (!id) return null;
-    if (id.startsWith("grp-")) {
-      const allProjectGroups = [...typedCategories.flatMap((cat) => cat.groups), ...orphanProjectGroups];
-      return previewProjectGroup(allProjectGroups.find((group) => group.id === id.slice(4)));
-    }
-    if (id.startsWith("shg-")) {
-      const allSubHireGroups: SubHireGroupData[] = [
-        ...typedCategories.flatMap((cat) => cat.subHireGroupTargets ?? []),
-        ...orphanSubHireGroups,
-      ];
-      return previewSubHireGroup(allSubHireGroups.find((group) => group.id === id.slice(4)));
-    }
-    return null;
-  })();
-
-  // DragOverlay content for a dragged CATEGORY — just its name, same simple
-  // label treatment as the line-item/group overlays above.
-  const draggedCategoryTitle = (() => {
-    const id = dnd.activeDragId;
-    if (!id?.startsWith("cat-")) return null;
-    const bareId = id.slice(4);
-    return typedCategories.find((cat) => cat.id === bareId)?.name ?? null;
-  })();
-
   // Build flat list of all line-item IDs in visual order. Used by
   // shift-click range selection (handleRowClick). Walks each category's
   // mixed group list in canonical (CategorySlot) order. Falls back to
@@ -2123,38 +2098,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             onDragStart={dnd.handleDragStart}
             onDragOver={dnd.handleDragOver}
             onDragEnd={dnd.handleDragEnd}
+            onDragCancel={dnd.handleDragCancel}
           >
             {content}
             {typeof document !== "undefined" &&
               createPortal(
                 <DragOverlay>
-                  {draggedLineItem ? (
-                    <div className="flex h-full w-full cursor-grabbing items-center justify-between gap-3 rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                      <span className="min-w-0 truncate font-medium">
-                        {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2 text-caption text-muted tabular-nums">
-                        <span>Qty {draggedLineItem.quantity}</span>
-                        {draggedLineItem.lineTotal != null && (
-                          <span className="t-mono text-ink-2">{formatCurrency(Number(draggedLineItem.lineTotal))}</span>
-                        )}
-                      </span>
-                    </div>
-                  ) : draggedGroup ? (
-                    <div className="flex h-full w-full cursor-grabbing items-center justify-between gap-3 rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                      <span className="min-w-0 truncate font-medium">{draggedGroup.title}</span>
-                      <span className="flex shrink-0 items-center gap-2 text-caption text-muted tabular-nums">
-                        <span>Qty {draggedGroup.qty}</span>
-                        {draggedGroup.total != null && (
-                          <span className="t-mono text-ink-2">{formatCurrency(draggedGroup.total)}</span>
-                        )}
-                      </span>
-                    </div>
-                  ) : draggedCategoryTitle ? (
-                    <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
-                      {draggedCategoryTitle}
-                    </div>
-                  ) : null}
+                  {dnd.draggedRowClone ? <DragRowOverlayContent clone={dnd.draggedRowClone} /> : null}
                 </DragOverlay>,
                 document.body,
               )}

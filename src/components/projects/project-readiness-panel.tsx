@@ -162,7 +162,9 @@ function CheckAction({
     );
   }
 
-  const tab: ProjectTab | null = check.id === "crew" ? "labour" : check.id === "pricing" ? "equipment" : null;
+  // Crew and services both live on Labour & logistics; pricing on Equipment.
+  const tab: ProjectTab | null =
+    check.id === "crew" || check.id === "services" ? "labour" : check.id === "pricing" ? "equipment" : null;
   if (!tab) return null;
   return (
     <Button variant="line" size="sm" className="h-7 shrink-0" onClick={() => onNavigateTab(tab)}>
@@ -178,7 +180,7 @@ function AllClearPanel({ total, onShowAll }: { total: number; onShowAll: () => v
       <CheckMark severity="pass" />
       <p className="min-w-0 flex-1 text-ui-text">
         <span className="font-semibold text-ink">Ready — all {total} checks pass</span>
-        <span className="text-muted"> · gear, conflicts, crew, staffing, pricing</span>
+        <span className="text-muted"> · gear, conflicts, services, crew, pricing</span>
       </p>
       <Button variant="line" size="sm" className="h-7 shrink-0" onClick={onShowAll}>
         Show checks

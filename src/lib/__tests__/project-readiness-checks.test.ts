@@ -12,7 +12,7 @@ function input(over: Partial<BuildChecksInput> = {}): BuildChecksInput {
     hasWindow: true,
     windowLabel: "12 – 16 Aug",
     gear: { hard: [], pencilled: [] },
-    crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0 },
+    crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
     pricing: { unpriced: [], unpricedCount: 0 },
     conflicts: [],
     staleLineCount: 0,
@@ -84,29 +84,11 @@ describe("conflicts check", () => {
 describe("crew check", () => {
   test("warns on unconfirmed crew", () => {
     const c = byId(
-      buildReadinessChecks(input({ crew: { unconfirmedCount: 3, activeCount: 11, servicesMissingCrew: [], crewShortfall: 0 } })),
+      buildReadinessChecks(input({ crew: { unconfirmedCount: 3, activeCount: 11, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 } })),
       "crew",
     );
     expect(c.severity).toBe("warning");
     expect(c.title).toBe("3 of 11 crew unconfirmed");
-  });
-
-  test("warns on an understaffed service even when everyone assigned has confirmed", () => {
-    const c = byId(
-      buildReadinessChecks(
-        input({
-          crew: {
-            unconfirmedCount: 0,
-            activeCount: 2,
-            servicesMissingCrew: [{ title: "Bump-in", shortfall: 2 }],
-            crewShortfall: 2,
-          },
-        }),
-      ),
-      "crew",
-    );
-    expect(c.severity).toBe("warning");
-    expect(c.title).toBe("1 service understaffed");
   });
 
   test("an empty roster passes without claiming everyone confirmed", () => {
@@ -117,10 +99,121 @@ describe("crew check", () => {
 
   test("a full confirmed roster says so", () => {
     const c = byId(
-      buildReadinessChecks(input({ crew: { unconfirmedCount: 0, activeCount: 6, servicesMissingCrew: [], crewShortfall: 0 } })),
+      buildReadinessChecks(input({ crew: { unconfirmedCount: 0, activeCount: 6, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 } })),
       "crew",
     );
     expect(c.title).toBe("All crew confirmed");
+  });
+});
+
+describe("services check", () => {
+  test("flags services still PLANNED as not confirmed", () => {
+    const c = byId(
+      buildReadinessChecks(
+        input({
+          crew: {
+            unconfirmedCount: 0,
+            activeCount: 0,
+            servicesMissingCrew: [],
+            crewShortfall: 0,
+            unconfirmedServices: [{ title: "Bump-in" }, { title: "Bump-out" }],
+            activeServiceCount: 3,
+          },
+        }),
+      ),
+      "services",
+    );
+    expect(c.severity).toBe("warning");
+    expect(c.title).toBe("2 of 3 services not confirmed");
+    expect(c.detail).toContain("Bump-in");
+  });
+
+  test("flags an understaffed service even when every service is confirmed", () => {
+    const c = byId(
+      buildReadinessChecks(
+        input({
+          crew: {
+            unconfirmedCount: 0,
+            activeCount: 2,
+            servicesMissingCrew: [{ title: "Bump-in", shortfall: 2 }],
+            crewShortfall: 2,
+            unconfirmedServices: [],
+            activeServiceCount: 1,
+          },
+        }),
+      ),
+      "services",
+    );
+    expect(c.severity).toBe("warning");
+    expect(c.title).toBe("1 service short of crew");
+    expect(c.detail).toContain("2 people");
+  });
+
+  test("reports both problems on one row when a service is unconfirmed AND short", () => {
+    const c = byId(
+      buildReadinessChecks(
+        input({
+          crew: {
+            unconfirmedCount: 0,
+            activeCount: 1,
+            servicesMissingCrew: [{ title: "FOH", shortfall: 1 }],
+            crewShortfall: 1,
+            unconfirmedServices: [{ title: "FOH" }],
+            activeServiceCount: 2,
+          },
+        }),
+      ),
+      "services",
+    );
+    expect(c.detail).toContain("not confirmed: FOH");
+    expect(c.detail).toContain("short 1 person");
+  });
+
+  test("no services at all passes without implying any exist", () => {
+    const c = byId(buildReadinessChecks(input()), "services");
+    expect(c.severity).toBe("pass");
+    expect(c.title).toBe("No services scheduled");
+  });
+
+  test("confirmed and staffed says so", () => {
+    const c = byId(
+      buildReadinessChecks(
+        input({
+          crew: {
+            unconfirmedCount: 0,
+            activeCount: 4,
+            servicesMissingCrew: [],
+            crewShortfall: 0,
+            unconfirmedServices: [],
+            activeServiceCount: 2,
+          },
+        }),
+      ),
+      "services",
+    );
+    expect(c.severity).toBe("pass");
+    expect(c.title).toBe("All services confirmed and staffed");
+  });
+
+  test("a CANCELLED service is settled-no — never flagged, never counted", () => {
+    // The lib drops CANCELLED before this point, so the check only ever sees
+    // live services; this pins the contract the lib relies on.
+    const c = byId(
+      buildReadinessChecks(
+        input({
+          crew: {
+            unconfirmedCount: 0,
+            activeCount: 0,
+            servicesMissingCrew: [],
+            crewShortfall: 0,
+            unconfirmedServices: [],
+            activeServiceCount: 0,
+          },
+        }),
+      ),
+      "services",
+    );
+    expect(c.severity).toBe("pass");
   });
 });
 
@@ -154,7 +247,7 @@ describe("ordering and summary", () => {
     const messy = buildReadinessChecks(
       input({ conflicts: [{ assetTag: "A", modelName: "M", conflictingProject: { projectNumber: "P-1" } }] }),
     ).map((c) => c.id);
-    expect(clean).toEqual(["gear", "conflicts", "crew", "pricing", "staleness"]);
+    expect(clean).toEqual(["gear", "conflicts", "services", "crew", "pricing", "staleness"]);
     expect(messy).toEqual(clean);
   });
 

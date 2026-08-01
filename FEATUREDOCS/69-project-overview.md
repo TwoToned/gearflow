@@ -26,17 +26,27 @@ hadn't loaded looked identical.
 ## Layout
 
 ```
-Page header · lifecycle stepper · lock strip        ← stays page-level (every tab)
-└── Tabs: Overview | Equipment | Labour & logistics | Finance | Tasks | Notes | Files
-     └── Overview
-          ├── main column            ├── context rail (lg+)
-          │   ├── Readiness          │   ├── Schedule
-          │   ├── Quote │ Invoicing  │   ├── Location
-          │   └── Money strip        │   ├── Team
-          │                          │   └── Activity
+Page header · lifecycle stepper · lock strip        ← page-level (every tab)
+└── DetailLayout
+     ├── Tabs: Overview | Equipment | Labour & logistics | Finance | Tasks | Notes | Files
+     │    └── Overview          ← one column, composes its own context cards
+     │         ├── Readiness
+     │         ├── Quote │ Invoicing
+     │         ├── Money strip
+     │         └── Schedule │ Location │ Team │ Activity   (peer cards)
+     └── Sidebar (Schedule · Location · Team · Activity)   ← every tab EXCEPT Overview
 ```
 
-Every other tab now renders **full width**.
+**The sidebar rides along on every tab except Overview** (#1063). On Overview
+that same content IS the page, so it's composed into the tab's own
+Panel-with-header card language rather than bolted on as a rail; rendering both
+would show the same facts twice on the one tab. `DetailMain` is `flex-1`, so
+omitting the sidebar gives Overview full width with no second layout branch.
+
+The facts themselves are shaped once in `src/lib/project-context.ts`
+(`projectScheduleRows`, `directionsHref`) and shared by both renderings, so the
+sidebar and the Overview cards can't disagree about whether a project has a
+window or a map pin (R-3.1). Only the presentation differs.
 
 **The lifecycle stepper and lock strip deliberately stay above the tabs.**
 Status and lock state change what you can do in *every* tab, so they're
@@ -49,21 +59,29 @@ check navigates you to the tab that fixes it.
 
 ## Readiness
 
-Five checks, always rendered — including the passing ones. This is a departure
+Six checks, always rendered — including the passing ones. This is a departure
 from the banners it replaces (`ProjectConflictsBanner`, `StalePricingBanner`),
 and the reason is worth keeping: a hide-when-clean banner gives zero noise but
 also zero reassurance, and a component that appears and disappears makes the
 page jump. When every check passes the panel collapses to a single line with a
-"Show checks" toggle, so the five rows only cost anything when they have
-something to say.
+"Show checks" toggle, so the rows only cost anything when they have something
+to say.
 
 | Check | Source | Severity |
 |---|---|---|
 | Gear short for this window | `projectReadiness.forProject` | `blocking` (hard) / `warning` (pencilled) |
 | Assets double-booked | `reservationConflicts.projectConflicts` | `blocking` |
-| Crew unconfirmed / services understaffed | `projectReadiness.forProject` | `warning` |
+| Services not confirmed / short of crew | `projectReadiness.forProject` | `warning` |
+| Crew unconfirmed | `projectReadiness.forProject` | `warning` |
 | Lines unpriced | `projectReadiness.forProject` | `warning` |
 | Pricing stale for these dates | `lineItemWrites.projectPricingStaleness` | `warning` |
+
+**Services and crew are separate checks** (#1063). "The bump-in isn't locked in"
+and "Dave hasn't replied to the offer" are different problems with different
+fixes, and one row carrying unconfirmed-services + understaffed-services +
+unconfirmed-people was unreadable at three dimensions. Services is the WORK
+(still `PLANNED`, or below `crewCountRequired`); Crew is the PEOPLE (assignments
+awaiting a yes).
 
 ### Rules that are load-bearing, not cosmetic
 
@@ -79,13 +97,17 @@ something to say.
 - **`DECLINED`/`CANCELLED` are settled-no, not unconfirmed.** A decline shrinks
   the active count (the service is a head short) rather than inflating the
   chase-up count — there's nobody left to chase on that row.
+- **A service is "not confirmed" only while `PLANNED`.** `IN_PROGRESS` and
+  `COMPLETED` are past confirmation, so flagging them would nag about work
+  already underway; `CANCELLED` drops out of both the flagged list and the
+  denominator. An absent status reads as `PLANNED` (the pre-status default).
 - **Order is fixed, not severity-sorted**, so rows don't reshuffle under the
   cursor as problems resolve. Only the marks change.
 
 Each failing row carries the action that fixes it: gear → `/overbookings`
 (where a shortage is actually resolved), conflicts → expands **inline** to the
-swap-to-a-free-asset picker, crew → the Labour tab, unpriced → Equipment,
-stale → an inline "Recalculate".
+swap-to-a-free-asset picker, services and crew → the Labour tab, unpriced →
+Equipment, stale → an inline "Recalculate".
 
 ## Finance cards
 
@@ -119,9 +141,10 @@ src/lib/project-readiness-checks.ts  — severity/wording/ordering (plain module
 src/lib/project-invoicing-state.ts   — invoicing position + next step
 src/hooks/use-project-readiness.ts   — fans three sources into one check list
 src/components/projects/project-readiness-panel.tsx
-src/components/projects/project-context-rail.tsx     — the re-homed sidebar
+src/lib/project-context.ts           — schedule rows + directions, shared by BOTH renderings
+src/components/projects/project-context-rail.tsx     — the sidebar (every tab but Overview)
 src/components/projects/conflict-row.tsx             — was project-conflicts-banner.tsx
-src/components/projects/overview/{quote-card,invoicing-card,card-parts}.tsx
+src/components/projects/overview/{quote-card,invoicing-card,card-parts,context-cards}.tsx
 ```
 
 ### One rule, one home (R-3.1)

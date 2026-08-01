@@ -23,7 +23,7 @@
  */
 export type ReadinessSeverity = "blocking" | "warning" | "pass" | "unknown";
 
-export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "pricing" | "staleness";
+export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "services" | "pricing" | "staleness";
 
 export interface ReadinessCheck {
   id: ReadinessCheckId;
@@ -46,6 +46,8 @@ export interface ReadinessCrewInput {
   activeCount: number;
   servicesMissingCrew: { title: string; shortfall: number }[];
   crewShortfall: number;
+  unconfirmedServices: { title: string }[];
+  activeServiceCount: number;
 }
 
 export interface ReadinessPricingInput {
@@ -134,18 +136,15 @@ function conflictsCheck(conflicts: ReadinessConflictInput[]): ReadinessCheck {
   };
 }
 
+/**
+ * PEOPLE, not work. Whether the humans you've asked have said yes — service
+ * confirmation and staffing gaps are the `services` check below, because
+ * "Dave hasn't replied" and "the bump-in isn't locked in" are different
+ * problems with different fixes, and cramming both into one row made it
+ * unreadable at three dimensions.
+ */
 function crewCheck(crew: ReadinessCrewInput): ReadinessCheck {
-  const understaffed = crew.servicesMissingCrew;
-  const parts: string[] = [];
-  if (crew.unconfirmedCount > 0) {
-    parts.push(`${crew.unconfirmedCount} of ${crew.activeCount} haven't responded`);
-  }
-  if (understaffed.length > 0) {
-    parts.push(
-      `${understaffed.length} ${plural(understaffed.length, "service")} still ${plural(understaffed.length, "needs", "need")} ${crew.crewShortfall} more`,
-    );
-  }
-  if (parts.length === 0) {
+  if (crew.unconfirmedCount === 0) {
     // "Nobody assigned" is not the same as "everyone confirmed" — a project
     // with no crew reads as a pass only because nothing is outstanding, and
     // the wording should not imply a roster exists.
@@ -156,11 +155,43 @@ function crewCheck(crew: ReadinessCrewInput): ReadinessCheck {
       detail: crew.activeCount === 0 ? "Nothing outstanding — add services on Labour & logistics." : undefined,
     };
   }
+  return {
+    id: "crew",
+    severity: "warning",
+    title: `${crew.unconfirmedCount} of ${crew.activeCount} crew unconfirmed`,
+    detail: `${crew.unconfirmedCount} ${plural(crew.unconfirmedCount, "person", "people")} ${plural(crew.unconfirmedCount, "hasn't", "haven't")} responded to the offer`,
+    actionLabel: "Chase crew",
+  };
+}
+
+/** The WORK: services nobody has confirmed, and services short of people. */
+function servicesCheck(crew: ReadinessCrewInput): ReadinessCheck {
+  const unconfirmed = crew.unconfirmedServices;
+  const understaffed = crew.servicesMissingCrew;
+  const parts: string[] = [];
+  if (unconfirmed.length > 0) {
+    parts.push(`not confirmed: ${unconfirmed.slice(0, 3).map((s) => s.title).join(", ")}`);
+  }
+  if (understaffed.length > 0) {
+    parts.push(
+      `${understaffed.length} short ${crew.crewShortfall} ${plural(crew.crewShortfall, "person", "people")} between ${plural(understaffed.length, "it", "them")}`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return {
+      id: "services",
+      severity: "pass",
+      title: crew.activeServiceCount === 0 ? "No services scheduled" : "All services confirmed and staffed",
+      detail: crew.activeServiceCount === 0 ? "Add services on Labour & logistics." : undefined,
+    };
+  }
+
   const title =
-    crew.unconfirmedCount > 0
-      ? `${crew.unconfirmedCount} of ${crew.activeCount} crew unconfirmed`
-      : `${understaffed.length} ${plural(understaffed.length, "service")} understaffed`;
-  return { id: "crew", severity: "warning", title, detail: parts.join(" · "), actionLabel: "Open crew" };
+    unconfirmed.length > 0
+      ? `${unconfirmed.length} of ${crew.activeServiceCount} ${plural(crew.activeServiceCount, "service")} not confirmed`
+      : `${understaffed.length} ${plural(understaffed.length, "service")} short of crew`;
+  return { id: "services", severity: "warning", title, detail: parts.join(" · "), actionLabel: "Open services" };
 }
 
 function pricingCheck(pricing: ReadinessPricingInput): ReadinessCheck {
@@ -191,14 +222,15 @@ function stalenessCheck(staleLineCount: number): ReadinessCheck {
 
 /**
  * Fixed order, worst-first within it: gear and conflicts can stop a job going
- * out, crew and pricing cost money but not the load-out. The order is stable
- * regardless of severity so the panel doesn't reshuffle under the user as
- * problems resolve — only the marks change.
+ * out, services and crew are the people side, pricing costs money but not the
+ * load-out. The order is stable regardless of severity so the panel doesn't
+ * reshuffle under the user as problems resolve — only the marks change.
  */
 export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] {
   return [
     gearCheck(input),
     conflictsCheck(input.conflicts),
+    servicesCheck(input.crew),
     crewCheck(input.crew),
     pricingCheck(input.pricing),
     stalenessCheck(input.staleLineCount),

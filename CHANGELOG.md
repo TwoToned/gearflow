@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **#1063** — The project Readiness checklist now flags **services that aren't
+  confirmed**, not just ones short of crew. A bump-in still sitting at "planned"
+  with a full roster used to read as a clean pass. Services and crew are now
+  separate checks: Services covers the work (not confirmed, or short of people),
+  Crew covers the people (assignments nobody has said yes to yet).
+
 - **#1061** — Projects now open on an **Overview** tab — the job's home page.
   It leads with a **Readiness** checklist that tells you, in one place, whether
   the job can actually go out: gear that's short for the window, assets
@@ -57,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of a static "valid for 30 days" blurb.
 
 ### Changed
+
+- **#1063** — The project sidebar (schedule, location, team, activity) is back on
+  every tab, so you keep the site contact and dates in view while working in
+  Equipment or Labour. On the Overview tab that same information is now built
+  into the page as proper cards instead of sitting off to one side.
 
 - The README is now a front door rather than a setup guide: the RVLT Flow wordmark
   (theme-adaptive, `docs/brand/rvlt-flow-wordmark-{dark,light}.svg`), a rendered job

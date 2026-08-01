@@ -1,12 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, User, ChevronsUpDown, Shield, HardHat } from "lucide-react";
+import { LogOut, User, ChevronsUpDown, Shield, HardHat, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isSiteAdminRole } from "@/lib/admin-role";
-import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
+import { useSession, signOut, useActiveOrganization, organization } from "@/lib/auth-client";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useProfile } from "@/hooks/use-profile";
+import { getMyOrganizations } from "@/server/public-org";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -51,6 +53,33 @@ export function UserNav() {
     enabled: !!orgId && isAuthenticated,
   });
 
+  // Org switcher (design doc §4.3.1, A2) — membership-derived, never a client-
+  // filtered list of all orgs. Shown only when there are ≥2 memberships; the
+  // active org's name still fills the trigger's second line for everyone,
+  // since that's context, not the switcher UI itself.
+  const { data: myOrgs } = useServerQuery({
+    queryKey: ["my-organizations", user?.id],
+    queryFn: () => getMyOrganizations(),
+    enabled: !!user?.id,
+  });
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
+
+  async function switchOrganization(targetOrgId: string) {
+    if (targetOrgId === orgId || switchingId) return;
+    setSwitchingId(targetOrgId);
+    try {
+      await organization.setActive({ organizationId: targetOrgId });
+      // Always land on a tenant-neutral root — never carry an id belonging to
+      // the previous org into the newly-activated one (design doc §4.3.1). The
+      // Convex client re-authenticates for free (src/components/providers/
+      // convex-provider.tsx reacts to the orgId change), so nothing else here
+      // needs to force a token refresh or drop a cache.
+      router.push("/dashboard");
+    } finally {
+      setSwitchingId(null);
+    }
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -72,7 +101,9 @@ export function UserNav() {
             <>
               <span className="grid flex-1 text-left leading-tight">
                 <span className="truncate text-[13px] font-medium text-ink">{user?.name || "User"}</span>
-                <span className="truncate text-[11px] text-muted">{user?.email}</span>
+                <span className="truncate text-[11px] text-muted">
+                  {activeOrg?.name ?? user?.email}
+                </span>
               </span>
               <ChevronsUpDown className="ml-auto size-4 shrink-0 text-muted" />
             </>
@@ -85,6 +116,39 @@ export function UserNav() {
         side={collapsed ? "right" : "top"}
         sideOffset={collapsed ? 8 : 4}
       >
+        {myOrgs && myOrgs.length >= 2 && (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="font-normal text-[11px] text-muted">
+                Organisations
+              </DropdownMenuLabel>
+              {myOrgs.map((org) => (
+                <DropdownMenuItem
+                  key={org.id}
+                  disabled={switchingId !== null}
+                  onClick={() => switchOrganization(org.id)}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {switchingId === org.id ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                    ) : (
+                      <Check
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          org.id === orgId ? "opacity-100" : "opacity-0",
+                        )}
+                      />
+                    )}
+                    <span className="truncate">{org.name}</span>
+                  </span>
+                  <span className="shrink-0 text-[11px] text-muted">{org.role}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col space-y-1">

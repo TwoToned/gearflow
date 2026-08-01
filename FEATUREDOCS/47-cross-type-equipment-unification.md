@@ -419,9 +419,16 @@ Cross-container moves (and uncategorise) for line items/groups are also
 reachable through the kebab "Move to category" / "Move to group" dialogs
 (`moveLineItemToGroup`, `moveSubHireGroupToCategory`,
 `moveProjectGroupToCategory`) — both paths call the same underlying
-mutations. Orphan (uncategorised) groups and sub-hire group children are
-valid drop *targets* but can't originate a drag themselves
-(`isDragDisabled`) — they were never independently reorderable.
+mutations. Orphan (uncategorised) groups CAN originate a drag now (permission
+allowing, same `dragDisabled={!canDragEquipment}` gate every other row uses) —
+dragging one back into a category is symmetric with dragging a line item back
+in. They still never reorder against their OWN Uncategorized siblings
+(`planGroupSameContainerReorder` treats `"uncategorized-groups"` as always a
+no-op internally — that zone was never independently reorderable and doesn't
+need to be). Sub-hire group CHILDREN (the kit-style line items nested under an
+expanded sub-hire group) are the one row kind that's still permanently
+non-draggable (`isDragDisabled`) — they aren't independent rows at all, only
+ever move as part of their parent sub-hire group.
 
 `getDisallowedDropReason` (the Drop Matrix 8C predicate, `equipment-rows.tsx`)
 IS wired into the live UI again — `handleDragOver` calls it to style an
@@ -491,8 +498,14 @@ next full remount.
 | Source ↓ \ Dest → | ProjectCategory | ProjectGroup | SubHireGroup | Uncat | SubHire (top) |
 |---|---|---|---|---|---|
 | ProjectLineItem (own/custom/kit) | ✓ standalone | ✓ enter group (middle) / reorder past (edge) | ✗ toast | ✓ uncategorise | ✗ toast |
-| ProjectGroup | ✓ move cat | ✗ no nested | ✗ no nested | N/A | ✗ |
+| ProjectGroup | ✓ move cat | ✗ no nested | ✗ no nested | ✓ uncategorise | ✗ |
 | SubHireGroup | ✓ move cat | ✗ no nested | ✗ no nested | ✓ uncategorise | N/A |
+
+Every "✓" above works both as a drop onto a SPECIFIC sibling row already in
+the destination AND as a drop onto that destination's own always-rendered
+header/landing-zone row (`cat-{id}` for a category, `uncat-zone` for the
+Uncategorized zone) — the latter is what makes an EMPTY destination reachable.
+See "Landing zones for empty destinations" below.
 
 ### Groups and standalone line items share one order
 
@@ -542,6 +555,39 @@ resulting reorder dispatches through the SAME `categorySlotWrites.reorderMixed`
 mutation `planGroupReorder`'s "mixed" branch already uses for a sub-hire-
 inclusive group reorder — `li-` ids need no prefix translation, only `grp-`
 does (→ `pg-`).
+
+### Landing zones for empty destinations
+
+A drop resolves against a SPECIFIC sibling row (there's another `li-`/`grp-`/
+`shg-` already at the destination to land next to) or against the
+destination's own header/landing-zone row when there's nothing else there yet
+— without the latter, a destination with zero members had no droppable DOM
+node at all and was unreachable by drag until something already lived there.
+
+- **`resolveLineItemDropTarget`'s `cat-` branch** (`use-equipment-dnd.ts`) —
+  dropping a line item directly on a category's header row resolves to that
+  category's `standalone:{catId}` container, append-only. Mirrors
+  `resolveGroupDropTarget`'s pre-existing `cat-` branch (a group dropped on a
+  category header → `mixed:{catId}`), which covered the group side of this
+  but not line items — a line item dragged onto a category header used to
+  silently no-op back to its original position.
+- **The Uncategorized zone's header is now ALWAYS rendered** whenever the
+  project has categories at all — previously gated on `hasUncategorized`
+  (something already being uncategorized), so a project where everything
+  currently lives in a category had no droppable anywhere for "drag this out
+  to Uncategorized," not even a visible zone to aim at. `equipment-tab.tsx`'s
+  `UncategorizedHeader` is a plain `useDroppable({id: "uncat-zone"})` landing
+  zone (not a `useSortable` — nothing reorders against the header itself), and
+  shows an explicit hint ("Drag items or groups here to remove them from a
+  category.") when empty. Both `resolveLineItemDropTarget` and
+  `resolveGroupDropTarget` resolve `"uncat-zone"` to `"uncategorized-standalone"`
+  / `"uncategorized-groups"` respectively — same one-gesture-two-meanings
+  pattern as the `cat-` branches.
+- **Orphan groups can now originate a drag** (`dragDisabled={!canDragEquipment}`
+  instead of a hardcoded `true`) — see the reordering section above. Without
+  this, the `uncat-zone` fix only helped line items: a group that had already
+  landed in Uncategorized could never be dragged back into a category, only
+  moved there via the "Move to category" dialog.
 
 ## Margin column toggle (8H)
 

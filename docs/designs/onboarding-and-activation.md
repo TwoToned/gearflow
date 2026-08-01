@@ -8,6 +8,8 @@
 **Supersedes:** the "In-App Onboarding Tour" P3 entry in [`TODOS.md`](../../TODOS.md) (which
 scoped this as "~3–4 days, no schema or server work beyond a tour-completed flag" — that
 estimate assumed single-org and is wrong, see §2).
+**Mockup:** [`mockups/onboarding-mockup.html`](./mockups/onboarding-mockup.html) — eight
+annotated screens built against the live RVLT tokens (open in a browser).
 **Related:** [FEATUREDOCS/04](../../FEATUREDOCS/04-auth-permissions.md) (auth, single-org mode),
 [FEATUREDOCS/20](../../FEATUREDOCS/20-csv-import-export.md) (CSV import),
 [FEATUREDOCS/27](../../FEATUREDOCS/27-settings-admin.md) (org settings),

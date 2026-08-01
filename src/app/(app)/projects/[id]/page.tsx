@@ -92,6 +92,13 @@ import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog
 import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
 import { JustificationDialog } from "@/components/projects/justification-dialog";
 import { ProjectVersionsPanel } from "@/components/projects/project-versions-panel";
+import { ProjectVersionProvider, useProjectVersion } from "@/components/projects/project-version-context";
+import { ProjectVersionSwitcher } from "@/components/projects/version-switcher";
+import { VersionReadOnlyBar } from "@/components/projects/version-readonly-bar";
+import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
+import { VersionProjectedEquipment } from "@/components/projects/version-projected-equipment";
+import { VersionProjectedLabour } from "@/components/projects/version-projected-labour";
+import { VersionProjectedFinance } from "@/components/projects/version-projected-finance";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
@@ -296,6 +303,7 @@ export default function ProjectDetailPage({
     <RequirePermission resource="project" action="read">
       <PageMeta title={`${project.projectNumber} ${project.name}`} />
       <FadeIn>
+        <ProjectVersionProvider projectId={id} orgId={orgId} now={lockNow}>
         <div className="space-y-6">
           {/* ── Hero card (breadcrumb + identity/actions + lifecycle) ─ */}
           <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] space-y-4 sm:p-5">
@@ -333,6 +341,9 @@ export default function ProjectDetailPage({
                   {/* #990 (Phase E) surface 1 — always-mounted header chip, the
                       same `lockStatus` subscription the strip below renders from. */}
                   {!project.isTemplate && <ProjectLockChip status={lockStatus} now={lockNow} />}
+                  {/* Phase 3 (#1080/#1093) — project-wide, so it lives here
+                      rather than inside any one tab. */}
+                  {!project.isTemplate && <ProjectVersionSwitcher />}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
@@ -538,6 +549,10 @@ export default function ProjectDetailPage({
             />
           )}
 
+          {/* Phase 3 (#1080/#1093) — mounted once above the tabs, visible on
+              every tab, whenever `?v=` points at a real non-live version. */}
+          {!project.isTemplate && <VersionReadOnlyBar />}
+
           {/* ── Tabs + context sidebar ─────────────────────────────────
               #1063: the sidebar (Schedule · Location · Team · Activity) rides
               along on every tab EXCEPT Overview. On Overview that same content
@@ -641,7 +656,7 @@ export default function ProjectDetailPage({
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <EquipmentTab projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} addMenuSlot={equipmentAddSlot} />
+                    <EquipmentTabSlot projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} addMenuSlot={equipmentAddSlot} />
                   </div>
                 </TabsContent>
 
@@ -650,7 +665,7 @@ export default function ProjectDetailPage({
                     crew list itself (see FEATUREDOCS/31, issue #796). */}
                 <TabsContent value="labour">
                   <div className="space-y-6 pt-4">
-                    <ServicesPanel
+                    <LabourTabSlot
                       projectId={id}
                       projectAddress={project.location?.address || ""}
                       projectLatitude={project.location?.latitude ?? null}
@@ -701,113 +716,60 @@ export default function ProjectDetailPage({
                 {!project.isTemplate && (
                   <TabsContent value="finance">
                     <div className="space-y-6 pt-4">
-                      <StalePricingBanner projectId={project.id} orgId={orgId} />
-                      <ProjectFinancePanel
+                      <FinanceTabSlot
                         projectId={project.id}
+                        orgId={orgId}
                         projectNumber={project.projectNumber}
                         clientId={project.clientId as string | null | undefined}
                         projectStatus={project.status as string | null | undefined}
                         subtotal={project.subtotal as number | null}
                         taxAmount={project.taxAmount as number | null}
                         total={project.total as number | null}
-                      />
-                      <div className="h-px bg-line" />
-                      <BillingSummaryRow
-                        projectId={project.id}
-                        orgId={orgId}
                         rentalStartDate={rentalStart}
                         rentalEndDate={rentalEnd}
                         billingWeeksOverride={project.billingWeeksOverride as number | null}
                         billingDaysOverride={project.billingDaysOverride as number | null}
+                        categories={project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined}
+                        equipmentRevenue={project.equipmentRevenue as number | null}
+                        serviceCostTotal={project.serviceCostTotal as number | null}
+                        labourCostTotal={project.labourCostTotal as number | null}
+                        subHireCostTotal={project.subHireCostTotal as number | null}
+                        discountPercent={project.discountPercent as number | null}
+                        discountAmount={project.discountAmount as number | null}
+                        taxRate={project.taxRate as number | null}
+                        margin={project.margin as number | null}
+                        depositPaid={project.depositPaid as number | null}
+                        invoicedTotal={project.invoicedTotal as number | null}
                       />
-                      {(() => {
-                        // Compute group pricing stats from categories
-                        const allGroups = (project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined)
-                          ?.flatMap((c) => c.groups) ?? [];
-                        const totalGroupCount = allGroups.length;
-                        const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
-                        const groupBreakdown = allGroups
-                          .filter((g) => g.price != null && Number(g.price) > 0)
-                          .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
-
-                        return (
-                          <FinancialSummary
-                            equipmentRevenue={project.equipmentRevenue as number | null}
-                            serviceChargeTotal={
-                              project.subtotal != null && project.equipmentRevenue != null
-                                ? Number(project.subtotal) - Number(project.equipmentRevenue)
-                                : null
-                            }
-                            serviceCostTotal={project.serviceCostTotal as number | null}
-                            labourCostTotal={project.labourCostTotal as number | null}
-                            subHireCostTotal={project.subHireCostTotal as number | null}
-                            subtotal={project.subtotal as number | null}
-                            discountPercent={project.discountPercent as number | null}
-                            discountAmount={project.discountAmount as number | null}
-                            taxRate={project.taxRate as number | null}
-                            taxAmount={project.taxAmount as number | null}
-                            total={project.total as number | null}
-                            margin={project.margin as number | null}
-                            depositPaid={project.depositPaid as number | null}
-                            invoicedTotal={project.invoicedTotal as number | null}
-                            pricedGroupCount={pricedGroupCount}
-                            totalGroupCount={totalGroupCount}
-                            groupBreakdown={groupBreakdown}
-                          />
-                        );
-                      })()}
-                      <div className="h-px bg-line" />
-                      <ProjectCostsPanel projectId={project.id} />
                     </div>
                   </TabsContent>
                 )}
 
-                {/* Tasks Tab */}
+                {/* Tasks Tab — projectTasks isn't in the snapshot; stays live. */}
                 <TabsContent value="tasks">
                   <div className="pt-4">
+                    <VersionNotTrackedNote what="Tasks" />
                     <TasksPanel projectId={id} />
                   </div>
                 </TabsContent>
 
-                {/* Notes Tab */}
+                {/* Notes Tab — crewNotes/internalNotes/clientNotes ARE captured
+                    (the whole project row is snapshotted), so a viewed version
+                    shows its own captured text, read-only. */}
                 <TabsContent value="notes">
-                  <div className="grid gap-4 pt-4">
-                    <NotesEditor
-                      title="Crew notes"
-                      initialNotes={project.crewNotes || ""}
-                      onChanged={() =>
-                        refreshProjectDetail(id)
-                      }
-                      onSave={(notes) => saveProjectNotes("crewNotes", notes)}
-                      placeholder="Notes for crew members..."
-                      rows={4}
-                    />
-                    <NotesEditor
-                      title="Internal notes"
-                      initialNotes={project.internalNotes || ""}
-                      onChanged={() =>
-                        refreshProjectDetail(id)
-                      }
-                      onSave={(notes) => saveProjectNotes("internalNotes", notes)}
-                      placeholder="Internal notes (not visible to client)..."
-                      rows={4}
-                    />
-                    <NotesEditor
-                      title="Client notes"
-                      initialNotes={project.clientNotes || ""}
-                      onChanged={() =>
-                        refreshProjectDetail(id)
-                      }
-                      onSave={(notes) => saveProjectNotes("clientNotes", notes)}
-                      placeholder="Notes visible to client on documents... supports **bold**, *italic*, and '- ' bullets."
-                      rows={4}
-                    />
-                  </div>
+                  <NotesTabSlot
+                    liveCrewNotes={project.crewNotes || ""}
+                    liveInternalNotes={project.internalNotes || ""}
+                    liveClientNotes={project.clientNotes || ""}
+                    onChanged={() => refreshProjectDetail(id)}
+                    onSave={saveProjectNotes}
+                  />
                 </TabsContent>
 
-                {/* Files Tab */}
+                {/* Files Tab — projectMedia isn't in the snapshot; stays live. */}
                 <TabsContent value="files">
                   <div className="pt-4">
+                    <VersionNotTrackedNote what="Files" />
                     <MediaUploader
                       entityType="project"
                       entityId={id}
@@ -840,6 +802,7 @@ export default function ProjectDetailPage({
             )}
           </DetailLayout>
         </div>
+        </ProjectVersionProvider>
       </FadeIn>
 
       {dupMode && (
@@ -995,6 +958,185 @@ function ProjectSummaryStrip({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Phase 3 (#1080/#1093) tab slots — one per versioned tab. Each reads
+ * `useProjectVersion()` (rendered inside `ProjectVersionProvider`, mounted
+ * around the whole page body) and swaps the live component for the read-only
+ * projection while a non-live version is being viewed. Kept as thin
+ * switches, not full rewrites of the live tabs — see FEATUREDOCS/70 for why
+ * the live components themselves aren't threaded with a version prop.
+ */
+
+function EquipmentTabSlot(props: React.ComponentProps<typeof EquipmentTab>) {
+  const { isViewingVersion, hasCapturedState } = useProjectVersion();
+  if (isViewingVersion) return hasCapturedState ? <VersionProjectedEquipment /> : null;
+  return <EquipmentTab {...props} />;
+}
+
+function LabourTabSlot(props: React.ComponentProps<typeof ServicesPanel>) {
+  const { isViewingVersion, hasCapturedState } = useProjectVersion();
+  if (isViewingVersion) return hasCapturedState ? <VersionProjectedLabour /> : null;
+  return <ServicesPanel {...props} />;
+}
+
+interface FinanceTabSlotProps {
+  projectId: string;
+  orgId: string | undefined;
+  projectNumber: string;
+  clientId: string | null | undefined;
+  projectStatus: string | null | undefined;
+  subtotal: number | null;
+  taxAmount: number | null;
+  total: number | null;
+  rentalStartDate: Date | null;
+  rentalEndDate: Date | null;
+  billingWeeksOverride: number | null;
+  billingDaysOverride: number | null;
+  categories: { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined;
+  equipmentRevenue: number | null;
+  serviceCostTotal: number | null;
+  labourCostTotal: number | null;
+  subHireCostTotal: number | null;
+  discountPercent: number | null;
+  discountAmount: number | null;
+  taxRate: number | null;
+  margin: number | null;
+  depositPaid: number | null;
+  invoicedTotal: number | null;
+}
+
+function FinanceTabSlot(props: FinanceTabSlotProps) {
+  const { isViewingVersion } = useProjectVersion();
+  const allGroups = props.categories?.flatMap((c) => c.groups) ?? [];
+  const totalGroupCount = allGroups.length;
+  const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
+  const groupBreakdown = allGroups
+    .filter((g) => g.price != null && Number(g.price) > 0)
+    .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
+
+  return (
+    <>
+      {/* Recalculate is a live-data write action — not meaningful while
+          viewing a read-only historical version. */}
+      {!isViewingVersion && <StalePricingBanner projectId={props.projectId} orgId={props.orgId} />}
+      {/* The invoice ledger is project-level, never per-version (design doc
+          decision 3 — invoices are lineage-labelled, not per-version
+          ledgers), so it stays live regardless of the viewed version. */}
+      <ProjectFinancePanel
+        projectId={props.projectId}
+        projectNumber={props.projectNumber}
+        clientId={props.clientId}
+        projectStatus={props.projectStatus}
+        subtotal={props.subtotal}
+        taxAmount={props.taxAmount}
+        total={props.total}
+      />
+      <div className="h-px bg-line" />
+      {isViewingVersion ? (
+        <VersionProjectedFinance />
+      ) : (
+        <>
+          <BillingSummaryRow
+            projectId={props.projectId}
+            orgId={props.orgId}
+            rentalStartDate={props.rentalStartDate}
+            rentalEndDate={props.rentalEndDate}
+            billingWeeksOverride={props.billingWeeksOverride}
+            billingDaysOverride={props.billingDaysOverride}
+          />
+          <FinancialSummary
+            equipmentRevenue={props.equipmentRevenue}
+            serviceChargeTotal={
+              props.subtotal != null && props.equipmentRevenue != null
+                ? props.subtotal - props.equipmentRevenue
+                : null
+            }
+            serviceCostTotal={props.serviceCostTotal}
+            labourCostTotal={props.labourCostTotal}
+            subHireCostTotal={props.subHireCostTotal}
+            subtotal={props.subtotal}
+            discountPercent={props.discountPercent}
+            discountAmount={props.discountAmount}
+            taxRate={props.taxRate}
+            taxAmount={props.taxAmount}
+            total={props.total}
+            margin={props.margin}
+            depositPaid={props.depositPaid}
+            invoicedTotal={props.invoicedTotal}
+            pricedGroupCount={pricedGroupCount}
+            totalGroupCount={totalGroupCount}
+            groupBreakdown={groupBreakdown}
+          />
+          <div className="h-px bg-line" />
+          <ProjectCostsPanel projectId={props.projectId} />
+        </>
+      )}
+    </>
+  );
+}
+
+interface NotesTabSlotProps {
+  liveCrewNotes: string;
+  liveInternalNotes: string;
+  liveClientNotes: string;
+  onChanged: () => void;
+  onSave: (field: "crewNotes" | "internalNotes" | "clientNotes", notes: string) => Promise<unknown>;
+}
+
+function ReadOnlyNoteBlock({ title, value }: { title: string; value: string | null }) {
+  return (
+    <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4">
+      <h3 className="text-card-title font-bold text-ink">{title}</h3>
+      <p className="mt-2 whitespace-pre-wrap text-ui-text text-ink-2">{value || "—"}</p>
+    </div>
+  );
+}
+
+function NotesTabSlot({ liveCrewNotes, liveInternalNotes, liveClientNotes, onChanged, onSave }: NotesTabSlotProps) {
+  const { isViewingVersion, hasCapturedState, projected, viewingRevision } = useProjectVersion();
+
+  if (isViewingVersion) {
+    if (!hasCapturedState || !projected) return null;
+    return (
+      <div className="grid gap-4 pt-4">
+        <p className="text-caption text-muted">Notes as captured in v{viewingRevision} — read-only.</p>
+        <ReadOnlyNoteBlock title="Crew notes" value={projected.notes.crewNotes} />
+        <ReadOnlyNoteBlock title="Internal notes" value={projected.notes.internalNotes} />
+        <ReadOnlyNoteBlock title="Client notes" value={projected.notes.clientNotes} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 pt-4">
+      <NotesEditor
+        title="Crew notes"
+        initialNotes={liveCrewNotes}
+        onChanged={onChanged}
+        onSave={(notes) => onSave("crewNotes", notes)}
+        placeholder="Notes for crew members..."
+        rows={4}
+      />
+      <NotesEditor
+        title="Internal notes"
+        initialNotes={liveInternalNotes}
+        onChanged={onChanged}
+        onSave={(notes) => onSave("internalNotes", notes)}
+        placeholder="Internal notes (not visible to client)..."
+        rows={4}
+      />
+      <NotesEditor
+        title="Client notes"
+        initialNotes={liveClientNotes}
+        onChanged={onChanged}
+        onSave={(notes) => onSave("clientNotes", notes)}
+        placeholder="Notes visible to client on documents... supports **bold**, *italic*, and '- ' bullets."
+        rows={4}
+      />
     </div>
   );
 }

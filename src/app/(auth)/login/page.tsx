@@ -5,7 +5,8 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn, organization, authClient } from "@/lib/auth-client";
-import { getTheOrgId, getTheOrgInfo, getSingleOrgSSOInfo } from "@/server/public-org";
+import { getMyOrganizations, getSoloOrgBranding } from "@/server/public-org";
+import { getOrgLoginInfo } from "@/server/sso";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,13 +26,19 @@ function safeCallbackUrl(raw: string | null): string | null {
 }
 
 async function handlePostLogin(router: ReturnType<typeof useRouter>, callbackUrl: string | null) {
-  const orgData = await getTheOrgId();
-  if (!orgData) {
+  const orgs = await getMyOrganizations();
+  if (orgs.length === 0) {
     router.push("/onboarding");
     return;
   }
-  await organization.setActive({ organizationId: orgData.id });
-  router.push(callbackUrl ?? "/dashboard");
+  if (orgs.length === 1) {
+    await organization.setActive({ organizationId: orgs[0].id });
+    router.push(callbackUrl ?? "/dashboard");
+    return;
+  }
+  // 2+ memberships: never guess which one — route to the picker (#1071, A1).
+  const target = callbackUrl ?? "/dashboard";
+  router.push(`/select-organization?callbackUrl=${encodeURIComponent(target)}`);
 }
 
 export default function LoginPage() {
@@ -57,7 +64,7 @@ function LoginForm() {
   const [orgName, setOrgName] = useState<string | null>(null);
 
   useEffect(() => {
-    getTheOrgInfo().then((info) => {
+    getSoloOrgBranding().then((info) => {
       if (info) setOrgName(info.name);
     });
   }, []);
@@ -75,14 +82,25 @@ function LoginForm() {
 
     setCheckingSSO(true);
     try {
-      // Single-org: check if the org has SSO configured for this email domain
-      const ssoInfo = await getSingleOrgSSOInfo();
-      if (ssoInfo && ssoInfo.ssoEnabled && ssoInfo.providers.length > 0) {
-        const domain = email.split("@")[1]?.toLowerCase();
-        const matchingProvider = ssoInfo.providers.find(
-          (p: { domain: string }) => p.domain === domain
-        );
-        if (matchingProvider) {
+      // Resolve which org(s) have SSO configured for this email domain
+      // (#1071, A1 — the login page can no longer assume "the org"). Ambiguous
+      // across orgs (2+ matches) falls through to password login rather than
+      // guess which org's SSO to trigger.
+      const domain = email.split("@")[1]?.toLowerCase();
+      const lookupRes = await fetch("/api/auth/sso/org-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const lookup = lookupRes.ok
+        ? ((await lookupRes.json()) as { orgs: { orgSlug: string; hasSSO: boolean }[] })
+        : { orgs: [] };
+      const ssoOrgs = lookup.orgs.filter((o) => o.hasSSO);
+
+      if (ssoOrgs.length === 1) {
+        const ssoInfo = await getOrgLoginInfo(ssoOrgs[0].orgSlug);
+        const matchingProvider = ssoInfo?.providers.find((p) => p.domain === domain);
+        if (ssoInfo?.ssoEnabled && matchingProvider) {
           await authClient.signIn.sso({
             providerId: matchingProvider.providerId,
             callbackURL: callbackUrl ?? "/dashboard",
@@ -92,7 +110,7 @@ function LoginForm() {
         }
       }
 
-      // No SSO match — show password form
+      // No SSO match (or ambiguous across orgs) — show password form
       setStep("password");
     } catch {
       setStep("password");

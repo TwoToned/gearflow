@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient, organization } from "@/lib/auth-client";
-import { getTheOrgId } from "@/server/public-org";
+import { getInvitationOrganizationId } from "@/server/invitations";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
@@ -49,10 +49,10 @@ export default function InviteAcceptPage({
       }
       setAccepted(true);
       toast.success("Invitation accepted!");
-      // Set the single org as active and redirect
-      const orgData = await getTheOrgId();
-      if (orgData) {
-        await organization.setActive({ organizationId: orgData.id });
+      // Resolve the org from the invitation row itself, not a guess (#1071, A1).
+      const orgId = await getInvitationOrganizationId(id);
+      if (orgId) {
+        await organization.setActive({ organizationId: orgId });
       }
       redirectTimerRef.current = setTimeout(() => router.push("/dashboard"), 1500);
     } catch {

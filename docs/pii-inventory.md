@@ -56,7 +56,7 @@ occasionally contain user input), but no locals, cookies, or auth headers.
 
 ## Retention periods (T-P2)
 
-Registered per PII class. Owner-confirmed 2026-07-22 (README.md R-0.4 budget registry).
+Registered per PII class. Owner-confirmed 2026-07-22 (`docs/budgets.md` R-0.4 registry).
 
 | PII class | Store | Retention | Erasure path |
 |---|---|---|---|

@@ -14,7 +14,7 @@
 
 /** Canonical event names. Add here, reference by constant — never inline a string. */
 export const AnalyticsEvent = {
-  // Performance / latency budget instrumentation (README.md budget registry).
+  // Performance / latency budget instrumentation (docs/budgets.md registry).
   // WebVital -> T-7 (Core Web Vitals). SlowQuery -> T-9 (interactive query
   // latency, R-8.3.2/#643), emitted by src/lib/prisma-query-timing.ts.
   // ConvexOpLatency -> T-P6 (per-endpoint SLOs, R-8.9.6/#651): emitted

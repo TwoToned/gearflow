@@ -53,6 +53,34 @@ function moneyRows(state: InvoicingState) {
   ];
 }
 
+interface InvoicingView {
+  state: InvoicingState;
+  paymentProfile: string;
+  depositPercent: number;
+  clientName: string | undefined;
+}
+
+/**
+ * The card's inputs, resolved from the two reads. `null` while either is still
+ * loading. The profile defaults mirror `project-finance-panel.tsx`'s — a client
+ * with no stated profile is invoiced in full, and 25% is the deposit default.
+ */
+function deriveInvoicingView(
+  invoices: unknown[] | undefined,
+  client: { paymentProfile?: unknown; profileDepositPercent?: unknown; name?: unknown } | null | undefined,
+  total: number | null,
+): InvoicingView | null {
+  if (invoices === undefined || client === undefined) return null;
+  const paymentProfile = (client?.paymentProfile as string | undefined) ?? "FULL_UPFRONT";
+  const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
+  return {
+    state: deriveInvoicingState(invoices as InvoiceLike[], paymentProfile, depositPercent, total),
+    paymentProfile,
+    depositPercent,
+    clientName: client?.name as string | undefined,
+  };
+}
+
 /** Quotes and invoices are addressed to somebody — without a client there is
  *  no card to show, only the thing to fix. */
 function NoClientPanel() {
@@ -221,11 +249,10 @@ export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger 
   const invoiceWrites = useInvoiceWrites();
 
   if (!clientId) return <NoClientPanel />;
-  if (invoices === undefined || client === undefined) return <LoadingPanel />;
+  const view = deriveInvoicingView(invoices, client, total);
+  if (!view) return <LoadingPanel />;
 
-  const paymentProfile = (client?.paymentProfile as string | undefined) ?? "FULL_UPFRONT";
-  const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
-  const state = deriveInvoicingState(invoices as InvoiceLike[], paymentProfile, depositPercent, total);
+  const { state, paymentProfile, depositPercent, clientName } = view;
   const { nextStep } = state;
 
   return (
@@ -237,7 +264,7 @@ export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger 
 
       <InvoicingCardBody
         state={state}
-        clientName={client?.name as string | undefined}
+        clientName={clientName}
         paymentProfile={paymentProfile}
         depositPercent={depositPercent}
       />

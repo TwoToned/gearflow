@@ -40,6 +40,51 @@ type LiveQuote = {
   snapshotId: string | null;
 } | null;
 
+interface QuoteView {
+  live: LiveQuote;
+  status: string;
+  amount: number | null;
+  /** Set only when a STORED artifact exists — see `QuoteActions`. */
+  pdfQuoteId: string | null;
+  revision: number;
+}
+
+/**
+ * What the card displays, derived from the two reads. `null` while either is
+ * still loading.
+ *
+ * The amount rule is the load-bearing one: a live quote shows its FROZEN
+ * snapshot total, never current project pricing — that freeze is the whole
+ * point of sending (FEATUREDOCS/66). Only a never-sent draft shows the
+ * project's live total, because that IS what sending would freeze.
+ */
+type QuoteRow = { id: string; snapshot?: unknown; pdfFileId?: string };
+
+function resolveAmount(live: LiveQuote, liveRow: QuoteRow | undefined, projectTotal: number | null): number | null {
+  if (!live) return projectTotal;
+  const frozenTotal = (liveRow?.snapshot as { total?: number } | null | undefined)?.total;
+  return frozenTotal ?? null;
+}
+
+function deriveQuoteView(
+  revisionState: { revision: number; liveQuote: LiveQuote } | undefined,
+  quotes: QuoteRow[] | undefined,
+  projectTotal: number | null,
+): QuoteView | null {
+  if (revisionState === undefined || quotes === undefined) return null;
+  const live = revisionState.liveQuote;
+  const liveRow = live ? quotes.find((q) => q.id === live.id) : undefined;
+  return {
+    live,
+    status: live?.status ?? "DRAFT",
+    amount: resolveAmount(live, liveRow, projectTotal),
+    // No regeneration fallback exists (#987), so a revision whose render failed
+    // has no stored bytes and therefore offers no link.
+    pdfQuoteId: liveRow?.pdfFileId ? liveRow.id : null,
+    revision: revisionState.revision,
+  };
+}
+
 function QuoteCardBody({
   amount,
   revision,
@@ -189,13 +234,12 @@ export function QuoteCard({
   const [sendOpen, setSendOpen] = useState(false);
   const [acceptOpen, setAcceptOpen] = useState(false);
 
-  const revisionState = useAuthedQuery(
-    api.quotes.revisionStateForProject,
-    orgId ? { orgId, projectId, now } : "skip",
-  );
-  const quotes = useAuthedQuery(api.quotes.listForProject, orgId ? { orgId, projectId, now } : "skip");
+  const args = orgId ? { orgId, projectId, now } : "skip";
+  const revisionState = useAuthedQuery(api.quotes.revisionStateForProject, args);
+  const quotes = useAuthedQuery(api.quotes.listForProject, args);
 
-  if (!orgId || revisionState === undefined || quotes === undefined) {
+  const view = deriveQuoteView(revisionState, quotes, total);
+  if (!orgId || !view) {
     return (
       <Panel className="p-4">
         <p className="text-caption text-muted">Loading quote…</p>
@@ -203,15 +247,7 @@ export function QuoteCard({
     );
   }
 
-  const live = revisionState.liveQuote;
-  const liveRow = live ? quotes.find((q) => q.id === live.id) : undefined;
-  // A sent quote's amount is the FROZEN snapshot total, never live project
-  // pricing — the whole point of the freeze. Only a never-sent draft shows the
-  // project's current total, because that IS what sending would freeze.
-  const frozenTotal = (liveRow?.snapshot as { total?: number } | null | undefined)?.total;
-  const amount = live ? frozenTotal ?? null : total;
-
-  const status = live?.status ?? "DRAFT";
+  const { live, status, amount, pdfQuoteId, revision } = view;
   const intent = quoteStatusIntent(status);
 
   return (
@@ -223,7 +259,7 @@ export function QuoteCard({
 
       <QuoteCardBody
         amount={amount}
-        revision={revisionState.revision}
+        revision={revision}
         live={live}
         projectId={projectId}
         orgId={orgId}
@@ -233,7 +269,7 @@ export function QuoteCard({
       <QuoteActions
         live={live}
         status={status}
-        pdfQuoteId={liveRow?.pdfFileId ? liveRow.id : null}
+        pdfQuoteId={pdfQuoteId}
         onSend={() => setSendOpen(true)}
         onAccept={() => setAcceptOpen(true)}
         onOpenLedger={onOpenLedger}
@@ -249,7 +285,7 @@ export function QuoteCard({
         projectNumber={projectNumber}
         orgId={orgId}
         clientId={clientId}
-        revision={revisionState.revision}
+        revision={revision}
         subtotal={subtotal}
         taxAmount={taxAmount}
         total={total}

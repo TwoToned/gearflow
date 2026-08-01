@@ -25,6 +25,34 @@ function safeCallbackUrl(raw: string | null): string | null {
   return raw;
 }
 
+/**
+ * Resolve the single SSO provider matching this email's domain, or null if
+ * there's no match — or 2+ orgs share the domain, which we can't disambiguate
+ * without more context and treat the same as no match (#1071, A1).
+ */
+async function resolveSSOProviderForEmail(
+  email: string,
+): Promise<{ providerId: string } | null> {
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return null;
+
+  const lookupRes = await fetch("/api/auth/sso/org-lookup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!lookupRes.ok) return null;
+
+  const lookup = (await lookupRes.json()) as { orgs: { orgSlug: string; hasSSO: boolean }[] };
+  const ssoOrgs = lookup.orgs.filter((o) => o.hasSSO);
+  if (ssoOrgs.length !== 1) return null;
+
+  const ssoInfo = await getOrgLoginInfo(ssoOrgs[0].orgSlug);
+  if (!ssoInfo?.ssoEnabled) return null;
+
+  return ssoInfo.providers.find((p) => p.domain === domain) ?? null;
+}
+
 async function handlePostLogin(router: ReturnType<typeof useRouter>, callbackUrl: string | null) {
   const orgs = await getMyOrganizations();
   if (orgs.length === 0) {
@@ -82,32 +110,14 @@ function LoginForm() {
 
     setCheckingSSO(true);
     try {
-      // Resolve which org(s) have SSO configured for this email domain
-      // (#1071, A1 — the login page can no longer assume "the org"). Ambiguous
-      // across orgs (2+ matches) falls through to password login rather than
-      // guess which org's SSO to trigger.
-      const domain = email.split("@")[1]?.toLowerCase();
-      const lookupRes = await fetch("/api/auth/sso/org-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const lookup = lookupRes.ok
-        ? ((await lookupRes.json()) as { orgs: { orgSlug: string; hasSSO: boolean }[] })
-        : { orgs: [] };
-      const ssoOrgs = lookup.orgs.filter((o) => o.hasSSO);
-
-      if (ssoOrgs.length === 1) {
-        const ssoInfo = await getOrgLoginInfo(ssoOrgs[0].orgSlug);
-        const matchingProvider = ssoInfo?.providers.find((p) => p.domain === domain);
-        if (ssoInfo?.ssoEnabled && matchingProvider) {
-          await authClient.signIn.sso({
-            providerId: matchingProvider.providerId,
-            callbackURL: callbackUrl ?? "/dashboard",
-            loginHint: email,
-          });
-          return;
-        }
+      const matchingProvider = await resolveSSOProviderForEmail(email);
+      if (matchingProvider) {
+        await authClient.signIn.sso({
+          providerId: matchingProvider.providerId,
+          callbackURL: callbackUrl ?? "/dashboard",
+          loginHint: email,
+        });
+        return;
       }
 
       // No SSO match (or ambiguous across orgs) — show password form

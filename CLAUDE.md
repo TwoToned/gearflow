@@ -261,7 +261,18 @@ index. To add a table: generate into a scratch dir, diff, hand-merge the stanza.
 
 Related: `by_cuid` and `by_modelId` are **global** Convex indexes, and `requireOrgRead`
 authorises the *caller's* org, not the *row's*. Any doc fetched by cuid or modelId must
-be checked against `organizationId`, or you have a cross-tenant read.
+be checked against `organizationId`, or you have a cross-tenant read. **This is no
+longer a rule you have to remember — it's live-checked (#1076, A6, "the phase gate"):**
+`scripts/xtenant-bycuid-ratchet.mjs` statically ratchets every public `query`/`mutation`
+containing a `withIndex("by_cuid", ...)` read with no org-check indicator anywhere in its
+body (baseline currently 0 — CI fails on the first new one), and
+`convex/xtenantExhaustive.test.ts` drives `src/lib/api/registry.generated.ts` to prove it
+at runtime: every org-scoped operation rejects a caller whose own org doesn't match the
+requested `orgId`/`organizationId` (~500 operations, not a sample), and every `listBy*`
+query is proven, by seeding a same-FK row in two orgs, to exclude the foreign one. Both
+sweeps are registry-driven, so a new operation joins automatically — nothing to add to a
+list. See `convex/xtenantHardening.test.ts` for the original hand-written representative
+cases these generalise.
 
 ### The agent (API/MCP) auth kind — three rules when touching `convex/*.ts`
 

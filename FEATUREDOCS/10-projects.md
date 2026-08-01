@@ -19,11 +19,14 @@ separate follow-up — not yet converted.
 ## Project detail IA (#1061 — see FEATUREDOCS/69)
 
 `/projects/[id]` opens on an **Overview** tab (the project's home), not
-Equipment. The page-wide right sidebar (Schedule · Location · Team · Activity)
-moved into that tab as `<ProjectContextRail>`, so every other tab now renders
-**full width** — the equipment table used to pay ~296px for context it never
-needed. The summary strip moved into Overview too, and the reservation-conflicts
+Equipment. The summary strip moved into Overview, and the reservation-conflicts
 banner became a row in Overview's Readiness checklist.
+
+The context sidebar (Schedule · Location · Team · Activity, `<ProjectContextRail>`)
+still renders on every tab EXCEPT Overview (#1063). Overview composes the same
+content into its own cards, so the one tab where that context IS the page reads
+as a single composition rather than page-plus-rail. Both renderings read
+`src/lib/project-context.ts`, so they can't disagree about the facts.
 
 Still page-level, above the tabs, visible from every tab: the **lifecycle
 stepper** and the **lock strip** (#990). Both change what you can DO in every

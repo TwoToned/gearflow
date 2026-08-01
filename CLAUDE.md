@@ -497,11 +497,20 @@ falls back to Overview. `Tabs` is controlled (`value`/`onValueChange`, not
 tab that fixes a failing check — don't revert it to uncontrolled.
 
 Overview owns the project's **at-a-glance** state: the readiness checklist, the
-current quote + invoicing cards, the money strip, and the context rail
-(Schedule/Location/Team/Activity) that used to be a page-wide sidebar. Every
-other tab is **full width** — don't re-add a `DetailLayout`/`DetailSidebar`
-wrapper around the tab set. The lifecycle stepper and lock strip stay ABOVE the
-tabs: they change what you can do in every tab, so they're page-level context.
+current quote + invoicing cards, and the money strip. The lifecycle stepper and
+lock strip stay ABOVE the tabs: they change what you can do in every tab, so
+they're page-level context.
+
+**The context sidebar (Schedule/Location/Team/Activity) renders on every tab
+EXCEPT Overview** (#1063). Overview composes the same content into its own
+Panel-with-header cards (`overview/context-cards.tsx`) — rendering both would
+show the same facts twice on one tab. The facts are shaped once in
+`src/lib/project-context.ts` and shared by both renderings; if you add a field,
+add it there, not in one renderer.
+
+A readiness check covering the WORK (services: still `PLANNED`, or below
+`crewCountRequired`) is separate from one covering the PEOPLE (crew assignments
+awaiting a yes) — don't merge them back into one row.
 
 A readiness check that can't run reports `unknown`, never a pass — a dateless
 project's gear check says "not checked" rather than a false all-clear, and

@@ -131,6 +131,9 @@ agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already p
 | **D2** | **Coached real work**, not seeded demo data. Milestones derived by querying real org state. | Nothing to clean up; the user ends with real inventory; deviation-tolerant. |
 | **D3** | **Only the org name blocks.** Everything else is skippable and resumable via a "Finish setup" checklist that deep-links into the real settings pages. | A first-run wall is the top cause of setup abandonment, and every deferred field has a safe default. |
 | **D4** | Wizard also covers **locations + asset-tag scheme**, **CSV import**, and **document identity** (footer, T&Cs, payment details, invoice numbering). Business-profile/vertical question dropped. | The first two are hard prerequisites for the tour; the third is a prerequisite for the first quote. |
+| **D6** | **Org creation is gated by a site-admin toggle + signup code** (§5.3). | User decision, 2026-08-01. Keeps a public instance from accruing unbounded tenants, and lets Phase A ship with the door shut (§10.1). |
+| **D7** | **Phase A ships and soaks alone**, before any onboarding UI (§10.1). | User decision, 2026-08-01. All the security risk, none of the user-visible surface. |
+| **D8** | **Org logos stay two variants (wide + square), light only** (§6.2). | User decision, 2026-08-01, confirmed against consumers — org branding renders on PDFs only. |
 
 **D5 (mine, flagged for approval):** the wizard writes through the **same server actions the
 settings pages already use** (`saveOrgSettings`) and stores **no separate draft state**.
@@ -260,6 +263,61 @@ reads that are not immediately followed by an org check.
 
 **Effort: S.**
 
+### 5.3 Gating org creation — the signup code
+
+**Decision (2026-08-01): site admins can require a signup code before anyone may create an
+organisation, and set that code, from `/admin/settings`.**
+
+Half of this already exists and is currently vestigial. `SiteSettings.allowOrgCreation`
+(migration `20260316000000_add_allow_org_creation`) is present in the Prisma schema, the
+Convex schema, `convex/siteSettings.ts` mutation args, the `site-admin.ts` input type, and
+is even classified as a privileged arg (`src/lib/api/privileged-args.ts:106`) — but **it is
+read by nothing, enforced nowhere, and has no admin UI.** It predates single-org mode. This
+phase wakes it up and adds the code beside it.
+
+#### Two independent gates — do not conflate them
+
+| Gate | Field | Controls |
+|---|---|---|
+| **Account signup** | `SiteSettings.registrationPolicy` (`OPEN` / `INVITE_ONLY` / `DISABLED`) — already enforced in `src/app/(auth)/register/page.tsx` via `/api/registration-policy` | Whether a stranger may create a *user account* |
+| **Org creation** | `allowOrgCreation` + the new `orgCreationCode` | Whether an authenticated user may create an *organisation* |
+
+They compose: `registrationPolicy: OPEN` + org creation code required is the expected
+public-instance posture — anyone may sign up and join a team they were invited to, but
+standing up a new tenant needs the code.
+
+#### Admin surface (`/admin/settings`)
+
+- **Allow organisation creation** — toggle (`allowOrgCreation`). Off ⇒ the "Set up a new
+  company" branch of the fork is hidden entirely and the server refuses regardless.
+- **Require a signup code** — toggle (`orgCreationCodeEnabled`).
+- **Signup code** — text field (`orgCreationCode`), with copy-to-clipboard and a regenerate
+  button. Readable back in plaintext by design: the admin has to be able to hand it out,
+  which is what separates it from a password.
+
+#### Four security requirements, all non-negotiable
+
+1. **Server is the authority (R-9.3).** The code is verified inside the org-create path,
+   server-side. The client never receives the code to compare against, and hiding the fork
+   branch in the UI is cosmetic only.
+2. **It must never enter any public read.** `SiteSettingsRow` is a flat blob and
+   `usePlatformBranding()` pulls site settings into the browser. Today `/api/registration-policy`
+   is careful — it returns `{ policy }` and nothing else — and `/api/platform-name` must be
+   checked the same way. **`orgCreationCode` must be excluded from `SiteSettingsRow`
+   entirely** and read only through a dedicated admin-gated accessor. A field that reaches
+   `mapDoc()` reaches every browser on the instance.
+3. **Rate-limit attempts.** A shared static code is brute-forceable. `@convex-dev/rate-limiter`
+   is already a dependency; limit per-session and per-IP, and log failures to the activity
+   log.
+4. **Constant-time comparison.** Cheap, removes a timing oracle.
+
+#### Validation
+
+Zod at the trust boundary (R-8.2.3/R-8.6.4) — the code arrives in an HTTP body, so the
+route uses `withValidatedBody`, not a bare `request.json()`.
+
+**Effort: S** (folds into Phase B).
+
 ---
 
 ## 6. Phase C — The org setup wizard
@@ -294,15 +352,24 @@ slog. Every screen after the first has **"Skip for now"**.
   `Location`? has ≥2 members?). The only persisted bit is `setupDismissedAt`, per-user.
   A derived checklist cannot go stale against reality; a stored one can.
 
-### 6.2 A gap worth deciding on
+### 6.2 Logo variants — resolved: two is correct, no dark variant needed
 
-You said "add logo **(and variants)**". Today there are exactly two: `branding.logoUrl`
-(wide) and `branding.iconUrl` (square). Both render on **dark espresso** in-app and on
-**white** in PDFs. A logo authored for one is usually wrong on the other.
+**Decision (2026-08-01): keep `branding.logoUrl` (wide) + `branding.iconUrl` (square).
+No dark-surface variants.**
 
-Proposal: add `branding.logoDarkUrl` (+ `iconDarkUrl`), falling back to the light variant
-when unset, with the wizard showing both preview surfaces side by side. Small change,
-prevents a very visible first-impression failure. **Needs your call** — see §11.
+Verified against the consumers rather than assumed. `branding.logoUrl` / `iconUrl` are read
+by **only** the PDF pipeline (`src/lib/pdfme/build-document-data.ts`, the ten
+`src/lib/pdfme/templates/tt-*.ts` report templates, and the test-tag report route) plus the
+settings editor that writes them. Every one of those renders onto **white paper**, so there
+is exactly one background to design for and a second variant would never be shown.
+
+The dark-surface marks in the app — sidebar, login, favicon — come from a *different*
+field: `SiteSettings.platformLogo`, platform-level and set by site admins
+(`src/lib/site-settings-read.ts`, `dynamic-favicon.tsx`). That is not org branding and is
+correctly out of scope for org onboarding.
+
+Worth keeping the boundary crisp in the wizard's copy, since "logo" means two different
+things in this codebase: screen 2 is uploading **the logo that prints on your documents**.
 
 **Effort: M.**
 
@@ -401,16 +468,36 @@ exists; setting a target before measuring would be invented.
 
 ## 10. Sequencing and effort
 
+**Decision (2026-08-01): Phase A ships and soaks on its own, before any onboarding UI is
+written.**
+
 | Phase | Scope | Effort (human) | Gate to proceed |
 |---|---|---|---|
 | **A.0** | `definePayload` spike (§4.1) | 1 day | Must resolve to option 1 or 2 |
-| **A** | Multi-tenancy + cross-tenant audit | **L (3–4 wks)** | Two-org adversarial suite green |
-| **B** | Signup fork + join paths | S (< 1 wk) | — |
+| **A** | Multi-tenancy + cross-tenant audit | **L (3–4 wks)** | Two-org adversarial suite green **+ soak, see below** |
+| **B** | Signup fork, join paths, org-creation gate (§5.3) | S (< 1 wk) | — |
 | **C** | Setup wizard | M (1–2 wks) | — |
 | **D** | Activation tour | M (1–2 wks) | — |
 
-Phases B–D are roughly the 3–4 week feature the request describes. Phase A is a
-comparable-or-larger program underneath it that exists only because of D1.
+### 10.1 Why A soaks alone
+
+Phase A is invisible to users and carries essentially all of the program's security risk.
+Shipping it behind no new UI means the only organisations on the instance are ours, so a
+cross-tenant leak surfaces against our own data instead of a customer's.
+
+Concretely, "soak" means: land Phase A, stand up a **second real organisation** on
+production, and run both for a period with the adversarial suite in CI. That second org is
+what converts every §2.3 guard from unfalsifiable to tested *in production conditions* —
+the suite proves the code paths reject, the soak proves nothing in the live system depends
+on them not rejecting.
+
+Two consequences worth planning for:
+
+- **A ships with `allowOrgCreation` off.** The multi-tenant machinery is live; the door
+  stays shut until B adds the gated fork (§5.3). That is the cleanest possible staging —
+  full capability, zero exposure.
+- **The org switcher is the only user-visible artifact of A**, and only for accounts in
+  ≥2 orgs, which during the soak is just us.
 
 Per `docs/ROADMAP.md`, each phase is its own `/autoplan` run — one feature, one plan, one
 review pipeline. Do not batch.
@@ -419,16 +506,29 @@ review pipeline. Do not batch.
 
 ## 11. Open questions
 
-1. **Logo variants** — add dark-surface variants (§6.2), or keep the two we have?
-2. **Should Phase A ship alone first?** It is invisible to users and carries the entire
-   security risk of the program. Landing and soaking it before any onboarding UI means a
-   cross-tenant bug surfaces while the only orgs are ours.
-3. **Who may create an organisation?** Any signup, or gated by the platform registration
-   policy? Open creation on a public instance means unbounded org growth.
-4. **Trial / limits?** CLAUDE.md marks POLICY §8.5 Billing N/A ("no payment provider"),
-   but `/settings/billing` exists as a route. Multi-tenant SaaS usually implies plans —
-   out of scope here, but it changes what the fork screen promises.
-5. **WooCommerce** (§2.4) — accept as single-org-only for now, or fix in Phase A?
+### Resolved 2026-08-01
+
+| Q | Answer | Recorded |
+|---|---|---|
+| Logo variants? | No — two is correct, org logos are PDF-only | §6.2 |
+| Ship Phase A alone first? | Yes, with a production soak on a second real org | §10.1 |
+| Who may create an org? | Site-admin toggle + signup code, from `/admin/settings` | §5.3 |
+
+### Still open
+
+1. **WooCommerce tenancy** (§2.4) — an inbound webhook carries no tenant identity, and the
+   current resolver mirrors `getTheOrg()`. Fix in Phase A with a per-org webhook path or
+   secret, or accept the integration as single-org-only and flag it in FEATUREDOCS/35?
+   **Needs an answer during A**, because deleting `single-org.ts` breaks the current
+   resolver either way.
+2. **Trial / plan limits?** CLAUDE.md marks POLICY §8.5 Billing N/A ("no payment provider"),
+   yet `/settings/billing` exists as a route. Out of scope here, but it changes what the
+   fork screen can honestly promise a new org. The signup-code gate (§5.3) defers this
+   nicely — while org creation is code-gated, there is no self-serve growth to meter.
+3. **Org deletion / abandonment.** Multi-tenant means half-finished orgs will accumulate —
+   someone creates one, skips the wizard (D3 permits exactly that), and never returns.
+   No cleanup path exists today. Not blocking, but it is the predictable consequence of
+   D3 + open-ish creation and should not be discovered later.
 
 ---
 
@@ -436,7 +536,9 @@ review pipeline. Do not batch.
 
 - `FEATUREDOCS/04-auth-permissions.md` — rewrite; single-org mode is gone.
 - `FEATUREDOCS/69-onboarding-activation.md` — new; add to the `ARCHITECTURE.md` table.
-- `FEATUREDOCS/27-settings-admin.md` — wizard as an alternate entry to the same settings.
+- `FEATUREDOCS/27-settings-admin.md` — wizard as an alternate entry to the same settings;
+  document the `/admin/settings` org-creation toggle + signup code (§5.3).
+- `FEATUREDOCS/35-woocommerce-integration.md` — whichever way open question 1 resolves.
 - `CLAUDE.md` — the `by_cuid`/`requireOrgRead` note becomes live rather than latent.
 - `TODOS.md` — retire the "In-App Onboarding Tour" entry.
 - `docs/ROADMAP.md` — add the phases.

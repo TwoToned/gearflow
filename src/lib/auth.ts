@@ -6,7 +6,6 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { env } from "@/env";
 import { prisma } from "@/lib/prisma";
 import { mirrorUserToConvex } from "@/lib/user-mirror";
-import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { sendEmail } from "./email";
 import {
   invitationEmail,
@@ -17,7 +16,6 @@ import { getPlatformName } from "./platform";
 import { getSiteSettingsFromConvex } from "./site-settings-read";
 import { readOrgSettingsBlob, saveOrgSettings } from "./org-settings-read";
 import { handleSSOProvisioning } from "./sso-provisioning";
-import { getTheOrg } from "./single-org";
 import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL, JWKS_ALG } from "./convex-auth-constants";
 import { shouldUseSecureCookies } from "./cookie-security";
 
@@ -85,12 +83,13 @@ export const auth = betterAuth({
   },
   plugins: [
     organization({
-      // Single-org app (organizationLimit below): self-serve org creation is
-      // only for the one-time bootstrap (src/app/(auth)/onboarding/page.tsx),
-      // never for adding a second org once one exists — otherwise no user
-      // could ever get past onboarding on a fresh deployment (R-8.4 auth).
-      allowUserToCreateOrganization: async () => !(await getTheOrg()),
-      organizationLimit: 1,
+      // Phase A (#1064) ships with self-serve org creation gated off
+      // (allowOrgCreation, D7) — this is the interim, pre-Phase-B gate: only the
+      // one-time bootstrap (src/app/(auth)/onboarding/page.tsx) may create an
+      // org, and only while zero orgs exist system-wide. Phase B (#1067)
+      // replaces this with the real site-admin toggle + signup code (D6).
+      allowUserToCreateOrganization: async () =>
+        !(await prisma.organization.findFirst({ select: { id: true } })),
       creatorRole: "owner",
       memberRoleHierarchy: ["owner", "admin", "manager", "member", "warehouse", "viewer"],
       sendInvitationEmail: async (data) => {
@@ -149,21 +148,41 @@ export const auth = betterAuth({
         audience: CONVEX_JWT_AUDIENCE,
         expirationTime: USER_TOKEN_TTL,
         // Re-read org membership at every mint so orgId/role can't be elevated by
-        // stale or client-controlled session metadata (codex review). Single-org
-        // app: the one org + this user's member row. NEVER set `svc` here — that
-        // claim is reserved for the in-process service token.
-        definePayload: async ({ user }) => {
-          const org = await getTheOrg();
-          const orgId = org?.id ?? null;
-          let role: string | null = null;
-          if (orgId) {
+        // stale or client-controlled session metadata (codex review). NEVER set
+        // `svc` here — that claim is reserved for the in-process service token.
+        //
+        // `session.activeOrganizationId` is set by the client-callable
+        // `organization.setActive()` — never trust it alone (R-9.3): it is
+        // re-validated here against a live Member row before being minted into
+        // the claim. If it's unset or stale (e.g. the SSO-redirect race
+        // OrgActivator exists to heal — see its docstring) fall back to the
+        // user's SOLE membership, exactly like OrgActivator's own "1 membership
+        // → activate it" rule; with 0 or 2+ memberships we don't guess and mint
+        // orgId: null, same as an unresolved active org today.
+        definePayload: async ({ user, session }) => {
+          const activeOrgId = (session as { activeOrganizationId?: string | null })
+            .activeOrganizationId ?? null;
+
+          if (activeOrgId) {
             const member = await prisma.member.findFirst({
-              where: { organizationId: orgId, userId: user.id },
+              where: { organizationId: activeOrgId, userId: user.id },
               select: { role: true },
             });
-            role = member?.role ?? null;
+            if (member) {
+              return { orgId: activeOrgId, role: member.role };
+            }
           }
-          return { orgId, role };
+
+          const memberships = await prisma.member.findMany({
+            where: { userId: user.id },
+            select: { organizationId: true, role: true },
+            take: 2,
+          });
+          if (memberships.length === 1) {
+            return { orgId: memberships[0].organizationId, role: memberships[0].role };
+          }
+
+          return { orgId: null, role: null };
         },
       },
     }),
@@ -235,38 +254,14 @@ export const auth = betterAuth({
             });
           }
 
-          // Single-org: auto-add new users as members of the org
-          try {
-            const org = await prisma.organization.findFirst({
-              select: { id: true },
-              orderBy: { createdAt: "asc" },
-            });
-            if (org) {
-              const existing = await prisma.member.findFirst({
-                where: { organizationId: org.id, userId: user.id },
-              });
-              if (!existing) {
-                // First user (owner) gets owner role, others get member
-                const hasOwner = await prisma.member.findFirst({
-                  where: { organizationId: org.id, role: "owner" },
-                });
-                await prisma.member.create({
-                  data: {
-                    organizationId: org.id,
-                    userId: user.id,
-                    role: hasOwner ? "member" : "owner",
-                  },
-                });
-                // Additive (auto-create on registration): mirror best-effort.
-                await upsertMemberMirrorByOrgUser(org.id, user.id);
-              }
-            }
-          } catch {
-            // Non-critical — don't block registration
-          }
+          // No auto-join (#1071, A1/A3): membership is only ever created by
+          // invite-accept, request-approval, or org-create (creatorRole above).
+          // A fresh signup with no invite and no org to bootstrap lands with
+          // zero memberships and is routed to /onboarding, same as a 0-org
+          // login (src/app/(auth)/onboarding/page.tsx).
 
-          // Mirror the new user into Convex (best-effort; runs after the role +
-          // org-membership writes above so the mirror captures the final role).
+          // Mirror the new user into Convex (best-effort; runs after the role
+          // write above so the mirror captures the final role).
           await mirrorUserToConvex(user.id);
         },
       },

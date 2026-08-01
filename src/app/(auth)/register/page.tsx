@@ -5,7 +5,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signUp, organization } from "@/lib/auth-client";
-import { getTheOrgId } from "@/server/public-org";
+import { getMyOrganizations } from "@/server/public-org";
 import { usePlatformBranding } from "@/lib/use-platform-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,12 +66,15 @@ function RegisterContent() {
         if (inviteId) {
           router.push(`/invite/${inviteId}`);
         } else {
-          // Activate the single org (auto-member hook added them during signup)
-          const orgData = await getTheOrgId();
-          if (orgData) {
-            await organization.setActive({ organizationId: orgData.id });
+          // No auto-join (#1071, A1) — a fresh signup has zero memberships
+          // unless this is the bootstrap owner creating the very first org.
+          const orgs = await getMyOrganizations();
+          if (orgs.length === 1) {
+            await organization.setActive({ organizationId: orgs[0].id });
+            router.push("/dashboard");
+          } else {
+            router.push("/onboarding");
           }
-          router.push("/dashboard");
         }
       }
     } catch {

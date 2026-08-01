@@ -1,51 +1,53 @@
 "use server";
 
-import { getTheOrg, invalidateOrgCache } from "@/lib/single-org";
+import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
-import { getOrgLoginInfo } from "./sso";
 import { getSession } from "@/lib/auth-server";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 
 /**
- * Returns the single org's ID. Safe to call without session context.
- * Used by login/invite pages to call organization.setActive().
+ * The calling user's org memberships. Safe to call without an active org set
+ * (session-only). This is the multi-tenant replacement for the single-org
+ * `getTheOrgId()` — login/register/invite/onboarding/OrgActivator (#1071, A1)
+ * all resolve "which org(s) does this user belong to" through here instead of
+ * assuming there's exactly one.
+ *
+ * Membership-derived, never a list of all orgs filtered client-side (R-9.3).
+ * Org archiving (#1075, A5) hasn't landed yet — every membership is live.
  */
-export async function getTheOrgId(): Promise<{ id: string } | null> {
-  const org = await getTheOrg();
-  if (!org) return null;
-  return serialize({ id: org.id });
+export async function getMyOrganizations(): Promise<
+  { id: string; name: string; slug: string; role: string }[]
+> {
+  const session = await getSession();
+  if (!session) return [];
+
+  const memberships = await prisma.member.findMany({
+    where: { userId: session.user.id },
+    include: { organization: { select: { id: true, name: true, slug: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return serialize(
+    memberships.map((m) => ({
+      id: m.organization.id,
+      name: m.organization.name,
+      slug: m.organization.slug,
+      role: m.role,
+    })),
+  );
 }
 
 /**
- * Returns the single org's public info (name, slug). Safe to call without session context.
- * Used by the login page to show org branding.
+ * Best-effort org branding for the pre-auth login page. Returns a name only
+ * when exactly one organization exists system-wide — with multiple orgs, an
+ * anonymous visitor's org isn't knowable pre-auth, so no branding is shown.
+ * Preserves today's "Sign in to {orgName}" UX for the current single-org
+ * deployment without assuming it stays single-org.
  */
-export async function getTheOrgInfo(): Promise<{ id: string; name: string; slug: string } | null> {
-  const org = await getTheOrg();
-  if (!org) return null;
-  return serialize(org);
-}
-
-/**
- * Returns SSO login info for the single org. Safe to call without session context.
- * Used by the login page to initiate SSO directly.
- */
-export async function getSingleOrgSSOInfo() {
-  const org = await getTheOrg();
-  if (!org) return null;
-  const info = await getOrgLoginInfo(org.slug);
-  return info ? serialize(info) : null;
-}
-
-/**
- * Bust the 5-minute in-process `getTheOrg()` cache. Called by the onboarding
- * page right after the bootstrap org is created — without this, `getTheOrg()`
- * (and everything that gates on it, e.g. the (app) layout's onboarding
- * redirect) can keep serving the cached "no org yet" null for up to 5 minutes
- * after a successful create.
- */
-export async function invalidateTheOrgCache(): Promise<void> {
-  invalidateOrgCache();
+export async function getSoloOrgBranding(): Promise<{ name: string } | null> {
+  const orgs = await prisma.organization.findMany({ select: { name: true }, take: 2 });
+  if (orgs.length !== 1) return null;
+  return serialize({ name: orgs[0].name });
 }
 
 /**

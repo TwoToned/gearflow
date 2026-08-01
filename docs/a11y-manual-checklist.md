@@ -177,3 +177,34 @@ flows — flows 1-2 (2026-07-23 entry above) plus flows 3-10 (this entry). Two W
 logged from this pass and both are now fixed: flow 6 labels (fixed in this PR) and flow 5 focus
 loss ([#894](https://github.com/TwoToned/gearflow/issues/894), fixed in a follow-up PR). Closing
 #858 and #870.
+
+### 2026-08-01 — project version switcher (#1080/#1093), component-level only — NOT a full pass
+
+The version switcher (header dropdown), the read-only bar, and the projected Equipment/Labour/
+Finance surfaces (FEATUREDOCS/70) are a new UI added inside the existing project-detail flow —
+not on the [critical-flows.md](./critical-flows.md) list itself (this is a read/view surface, not
+part of auth or the primary revenue path 5→9), so a live-browser walkthrough of it wasn't run as
+part of this checklist's normal per-release cadence. Recording what WAS verified instead of
+silently skipping the gap (R-14.4):
+
+- The switcher is a Radix dropdown, keyboard-operable (opens on `Enter`/focus, not a bare click —
+  same pattern already verified for the account/"Add item" menus above), asserted by actually
+  *opening* it in a jsdom smoke test
+  (`src/components/projects/__tests__/project-version-switcher.smoke.test.tsx`), not just
+  rendering the closed trigger.
+- The read-only bar announces via `role="status"`/`aria-live="polite"` — the viewing-a-version
+  state is programmatically announced, not colour-only (criterion 4) — asserted in the same
+  smoke suite.
+- Every projected surface (Equipment/Labour/Finance/Notes) is READ-ONLY by construction — no
+  interactive mutating control exists in that render path to audit for keyboard operability or
+  focus order, by design (see FEATUREDOCS/70's "deliberate scope decision" section). The
+  live-tab lifecycle lock's existing `GatedButton`/`LockedField` primitives (already covered by
+  prior passes on this checklist) are unchanged.
+
+**Not yet verified by a real keyboard/screen-reader walkthrough against a running instance**:
+focus order when the switcher's dropdown opens/closes relative to the read-only bar's "Back to
+live" button, and screen-reader announcement wording on Firefox/Safari (this checklist's
+criterion 4/5 in the strict sense — jsdom asserts the DOM shape, not what an actual AT reads
+aloud). Tracked for the next scheduled full pass rather than blocking this PR — the feature ships
+without a promote/write action (Phase 2, #1089, is unshipped), so the blast radius of a live-only
+a11y gap here is a missed announcement, not a stuck or lost keyboard user on a destructive action.

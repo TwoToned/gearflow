@@ -139,6 +139,8 @@ agent-reachable operation and `convex/agentServiceUnreachable.test.ts` already p
 | **D10** | **Abandonment is guarded, not automated** (§5.4): verified email + the signup code prevent, a derived "dormant" predicate detects, capped nudges recover, deletion stays admin-initiated. | User decision, 2026-08-01. Auto-deleting tenants is the one irreversible action here, so it stays human. |
 | **D11** | **Billing / trials are out of scope**, revisited after this program. | User decision, 2026-08-01. While creation is code-gated there is no self-serve growth to meter. |
 | **D12** | **Orgs are archived, never deleted** (§5.4). `archivedAt` enforced at the three identity chokepoints; `adminDeleteOrganization` is removed rather than fixed. | User decision, 2026-08-01. Reversible, and it turns a Convex-orphaning defect into deleted code. |
+| **D13** | **Dormancy threshold is 30 days**, with a warn-at-23 / final-at-29 / archive-at-30 email ladder, **automated** (§5.4). Amends D10. | User decision, 2026-08-01. Automation is licensed by D12's reversibility, not by the warnings alone. |
+| **D14** | **Org switcher in the user panel** (`user-nav.tsx`), with a mandatory Convex token re-mint on switch (§4.3.1). | User decision, 2026-08-01. Multi-org is unusable without it, and the naive implementation causes cross-tenant reads. |
 
 **D5 (mine, flagged for approval):** the wizard writes through the **same server actions the
 settings pages already use** (`saveOrgSettings`) and stores **no separate draft state**.
@@ -191,8 +193,7 @@ and no Convex one, and the app is unusable).
 
 ### 4.3 Also required
 
-- **Org switcher** in the sidebar for users with ≥2 memberships; `setActive` + a hard
-  refresh of Convex auth (the JWT carries `orgId`, so switching org must re-mint).
+- **Org switcher** in the user panel — see §4.3.1, it has a sharp edge.
 - **`addMemberByEmail` becomes invite-only.** Adding an existing user directly is removed;
   every membership requires the recipient to accept.
 - **Per-org join policy** (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`) in org settings,
@@ -201,6 +202,70 @@ and no Convex one, and the app is unusable).
 - **Org archiving** (§5.4) — `archivedAt` + the three chokepoint guards; remove
   `adminDeleteOrganization`.
 - **Site admin** — real org list, per-org drill-down, dormant filter (§5.4).
+
+### 4.3.1 The org switcher (D14)
+
+Goes in the existing user panel — `src/components/layout/user-nav.tsx`, the sidebar-footer
+dropdown. It already has the right affordance: avatar, name, email, and a `ChevronsUpDown`
+chevron, which is the conventional switcher glyph. The menu simply has nothing to switch yet.
+
+#### Anatomy
+
+Add an **Organisations** group at the top of the existing `DropdownMenuContent`: one item
+per non-archived membership, a check against the active one, and the user's role as
+secondary text. Below it, the existing account / crew / admin / sign-out groups, unchanged.
+
+- It is a **Radix** `DropdownMenu`, so triggers compose with **`asChild`**, never `render`
+  (CLAUDE.md). The file already follows the repo's `DropdownMenuLabel`-inside-
+  `DropdownMenuGroup` convention — keep it.
+- **Show the group only when the user has ≥2 memberships.** One-org users get no clutter.
+- **Put the active org name in the trigger** regardless, as the second line. Today that
+  line is the user's email, which is already duplicated in the menu header two rows below —
+  so this removes a duplication and adds the missing context rather than growing the panel.
+- **Archived orgs never appear** (D12).
+- Needs a `getMyOrganizations()` read returning the caller's non-archived memberships. It
+  must be membership-derived, never a list of all orgs filtered client-side.
+
+#### The sharp edge: switching org must re-mint the Convex token
+
+`organization.setActive()` updates the Better Auth session — but **the Convex JWT carries
+`orgId` as a claim** (§4.2 A2), and the browser's Convex client keeps using the token it
+already holds. Without an explicit re-mint, every live Convex subscription keeps serving the
+**previous org's data** until the token happens to expire. That is a cross-tenant read
+produced by the switcher itself, and it would look exactly like a caching bug.
+
+The switch is therefore a sequence, not a call:
+
+1. `organization.setActive({ organizationId })`
+2. Force a fresh token mint (`/api/auth/token`)
+3. Re-authenticate the Convex client so every subscription re-subscribes under the new claim
+4. Drop client caches
+5. **Navigate to `/dashboard`** — never stay put
+
+Step 5 matters more than it looks. Staying on `/projects/<id>` after a switch carries an id
+belonging to the *old* org into the new one. Best case a 404; worst case it is an IDOR probe
+fired by our own UI at exactly the surface §4.5 exists to protect. Always land on a
+tenant-neutral root.
+
+Step 4 is mostly free: `useServerQuery` keys already include `orgId`
+(`["my-crew-id", orgId, isAuthenticated]` in `user-nav.tsx` is the established pattern), so
+correctly-keyed queries re-fetch on their own. Any key *missing* `orgId` is a bug the
+switcher will expose — worth a sweep during Phase A.
+
+#### `OrgActivator` must stop guessing
+
+`src/components/providers/org-activator.tsx` currently heals a missing active org by calling
+`getTheOrgId()`. With multiple orgs, guessing is unacceptable. It becomes: **1 membership** →
+activate it; **≥2** → route to a picker; **0** → route to the fork (§5.1). Archived
+memberships don't count toward any of those.
+
+#### Testing
+
+The switcher is the one piece of UI that can *cause* a cross-tenant read, so it gets an
+explicit E2E: a user in two orgs switches, and the assertion is that the second org's
+dashboard shows **none** of the first org's entities. Plus a jsdom smoke test that actually
+**opens** the menu — a closed-trigger render proves nothing (CLAUDE.md, "Test menus by
+actually OPENING them").
 
 ### 4.4 WooCommerce multi-org (decided 2026-08-01: fix it, don't defer it)
 
@@ -392,29 +457,78 @@ anything automatically** — see the cleanup rule below.
    with the domain-match join path (§5.2), which needs `emailVerified` anyway.
 3. The org isn't created until the name step is submitted — already true, nothing to do.
 
-#### Detection — derive "dormant", don't store it
+#### Detection — "never activated", derived, at 30 days
 
-Same principle as D5 and §7.1. An org is **dormant** when all of:
+Same principle as D5 and §7.1. An org qualifies when **all** of:
 
 - exactly 1 member, and
-- zero activation milestones (no models, no assets, no projects), and
+- **zero activation milestones — no models, no assets, no projects, ever**, and
 - no activity-log entries since creation, and
-- created more than N days ago.
+- created more than **30 days** ago (D13).
 
-Every one of those is already queryable — the activity log exists (FEATUREDOCS/24) and the
-milestone counts exist (§7.1). No new column, no cron to maintain a flag, nothing to drift.
+Every one is already queryable: the activity log exists (FEATUREDOCS/24) and the milestone
+counts exist (§7.1). No new column, no flag to maintain, nothing to drift.
+
+> **The predicate is "never activated", not "currently inactive" — and that distinction is
+> what makes automating this safe.** A seasonal rental company that set up properly in
+> March and goes quiet over winter has models, assets and projects, so it can **never**
+> match, no matter how long it idles. The only orgs that qualify are ones that did
+> genuinely nothing from the day they were created. Anything else is a bug in the
+> predicate, not a judgement call about the customer.
+
+#### The email ladder
+
+Resend is already wired (`RESEND_API_KEY`, `EMAIL_FROM`), and `email-templates.ts` /
+`email-layout.ts` are the existing composition helpers. All of these go to the owner:
+
+| Day | Email | Tone |
+|---|---|---|
+| 1, 3, 7 | **Activation nudge** — "You're two steps from your first quote", deep-linked to the resumable setup checklist (D3 makes that link land somewhere useful) | Encouraging |
+| **23** | **Archive warning** — "We'll archive *&lt;Org&gt;* in 7 days. Add anything at all and we won't." | Plain, no alarm |
+| **29** | **Final warning** — 24 hours' notice | Plain |
+| **30** | **Archived** — confirms it happened, with a one-click reactivation link | Reassuring, not final |
+
+**Any qualifying activity cancels the ladder permanently.** Because the predicate is
+"never activated", creating a single model exits it forever — there is no re-entry.
+
+Two rules the copy must follow: the day-30 email is **not** a goodbye (archive is
+reversible, and saying otherwise would be untrue), and the ladder never exceeds these five
+sends. An onboarding sequence that keeps nagging is worse than an abandoned org.
+
+#### Automation — permitted here, because archive is reversible
+
+D10 said "guarded, not automated". That was about *deletion*. Under D12 the terminal action
+is a reversible archive, preceded by two warnings and followed by one-click reactivation,
+so **auto-archiving at day 30 is safe** and D10 is amended accordingly (D13). Nothing
+irreversible is ever automated.
+
+#### Implementation
+
+A `crons.daily("org-dormancy-sweep", …)` job in `convex/crons.ts`, following the
+conventions already established there:
+
+- **Gated behind `ENABLE_CONVEX_CRONS`** — the off-by-default rollout discipline every job
+  in that file uses.
+- **Bounded per tick**, the way `apiRequestLog.purgeOlderThan` caps at 2000 rows: a backlog
+  drains over extra days rather than blowing one mutation's read/time limits.
+- Native Convex `internalMutation` where possible; the emails need the Next.js side, so
+  those follow the HTTP-hop pattern the other jobs use.
+
+**Store the sends, derive the state.** The dormancy *predicate* stays derived — but "did we
+already email them?" cannot be derived from anything, and without a marker the cron re-sends
+daily. A `dormancyNoticedAt` timestamp on the org is therefore legitimate storage: it
+records an **outbound side effect**, not a duplicate of business state. That is the line —
+D5 forbids storing what you can compute, not recording what you did.
+
+Deriving from `createdAt` alone (fire when age is exactly 23 days) would avoid the field but
+silently skips a warning whenever a cron tick is missed to a deploy or outage. Not worth it
+for a warning that precedes an automated action.
 
 #### Surfacing
 
-**A "Dormant" filter on `/admin/organizations`** with age and owner contact. That is the
-whole feature: it converts an invisible accumulation into a list a human can act on.
-
-#### Recovery — nudge, then stop
-
-Resend is already wired (`RESEND_API_KEY`, `EMAIL_FROM`). Day 1 / day 3 / day 7:
-"You're two steps from your first quote", deep-linking to the resumable setup checklist —
-D3 is what makes that link land somewhere useful. **Hard cap at three, then never again.**
-An onboarding sequence that keeps nagging is worse than an abandoned org.
+**A "Never activated" filter on `/admin/organizations`**, with age, owner contact, and
+where each org sits in the ladder. Converts an invisible accumulation into a list a human
+can act on — and lets an admin archive early or exempt an org before day 30.
 
 #### Cleanup — archive, never delete (decided 2026-08-01)
 
@@ -677,12 +791,12 @@ review pipeline. Do not batch.
 | Trials / billing? | Out of scope, revisit after this program | D11 |
 | Org abandonment? | Guarded, not automated; admin-initiated | §5.4, D10 |
 | Delete or archive? | Archive — reversible, and `adminDeleteOrganization` gets removed | §5.4, D12 |
+| Dormancy threshold? | 30 days, with a warn/final/archive email ladder, automated | §5.4, D13 |
+| Org switcher? | In the user panel, with a token re-mint on switch | §4.3.1, D14 |
 
 ### Still open
 
-1. **Dormancy threshold `N`** (§5.4) — 14 days? 30? Only affects when an org appears on the
-   admin's dormant list, so it is safe to pick 30 and tune. Not blocking.
-2. **Retention of archived orgs.** D12 keeps archived orgs (and their Convex `_storage`
+1. **Retention of archived orgs.** D12 keeps archived orgs (and their Convex `_storage`
    files) indefinitely. No action needed now — flagged so the storage line item is a known
    cost rather than a surprise.
 

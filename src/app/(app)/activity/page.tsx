@@ -62,6 +62,7 @@ const actionLabels: Record<string, string> = {
   QUOTE_UNPROTECTED: "Quote Unprotected",
   QUOTE_CORRECTED: "Quote Corrected",
   QUOTE_DOCUMENT_STORED: "Quote PDF Stored",
+  QUOTE_VERSION_SAVED: "Version Saved",
   // Finance — invoices (convex/invoicesWrites.ts / convex/xeroPush.ts)
   INVOICE_CREATED: "Invoice Created",
   INVOICE_ISSUED: "Invoice Issued",

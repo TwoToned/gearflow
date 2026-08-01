@@ -50,16 +50,25 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
 
 /**
  * Enforce the per-actor write budget. USER tokens spend `browserWrite` keyed on
- * the verified subject; AGENT tokens spend `agentWrite` keyed on the API key.
- * No-op for service/anonymous (service = trusted backend; anonymous is rejected by
- * the mutation's own auth guard). Keyed on VERIFIED token claims — a client
- * can't dodge its budget by supplying a different id. Throws when the budget is
- * exceeded. Call it FIRST in every browser-direct mutation, alongside
- * `assertWritesEnabled`.
+ * `(orgId, userId)`; AGENT tokens spend `agentWrite` keyed on the API key (which
+ * is itself already org-scoped — one key belongs to exactly one org — so no
+ * further widening is needed there). No-op for service/anonymous (service =
+ * trusted backend; anonymous is rejected by the mutation's own auth guard).
+ * Keyed on VERIFIED token claims — a client can't dodge its budget by supplying
+ * a different id. Throws when the budget is exceeded. Call it FIRST in every
+ * browser-direct mutation, alongside `assertWritesEnabled`.
  *
  * Named for its original browser-only role; it is now the single write-budget
  * entry point for every non-service caller, so agents inherit it at all ~272
  * existing call sites with no per-mutation change.
+ *
+ * #1077 (A7): keying `browserWrite` on `userId` ALONE was per-user, not
+ * per-tenant — safe against one user's writes throttling a DIFFERENT user
+ * (different key regardless of org), but it let a single multi-org user's
+ * budget bleed across their own orgs (heavy writes in org A could throttle the
+ * same person's unrelated activity in org B). Composing the key with `orgId`
+ * gives every (user, org) pair its own independent bucket, matching how a
+ * membership is scoped everywhere else.
  */
 export async function enforceBrowserWriteLimit(ctx: MutationCtx): Promise<void> {
   const auth = await getAuthContext(ctx);
@@ -69,7 +78,7 @@ export async function enforceBrowserWriteLimit(ctx: MutationCtx): Promise<void> 
     return;
   }
   if (auth.kind !== "user") return;
-  await rateLimiter.limit(ctx, "browserWrite", { key: auth.userId, throws: true });
+  await rateLimiter.limit(ctx, "browserWrite", { key: `${auth.orgId ?? "no-org"}:${auth.userId}`, throws: true });
 }
 
 /**

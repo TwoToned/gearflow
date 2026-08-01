@@ -6,6 +6,9 @@ import {
   resolveGroupDragAction,
   planGroupReorder,
   resolveCategoryDragAction,
+  buildCategoryTopLevelOrder,
+  computeDropZone,
+  resolveCrossKindCategoryReorder,
   type ContainerContext,
   type GroupContainerContext,
 } from "./use-equipment-dnd";
@@ -527,5 +530,88 @@ describe("resolveCategoryDragAction", () => {
     expect(
       resolveCategoryDragAction({ activeSortableId: "cat-a", overSortableId: "li-x", allCategorySortableIds }),
     ).toEqual({ kind: "noop" });
+  });
+});
+
+describe("buildCategoryTopLevelOrder", () => {
+  test("combines project groups, sub-hire groups, and standalone line items in slot order", () => {
+    const catA = category("catA", {
+      mixedGroups: [
+        { kind: "subHire", sortOrder: 0, subHireGroupId: "shg1" },
+        { kind: "lineItem", sortOrder: 1, lineItemId: "a" },
+        { kind: "project", sortOrder: 2, projectGroupId: "g1" },
+      ],
+    });
+    expect(buildCategoryTopLevelOrder([catA])).toEqual(
+      new Map([["catA", ["shg-shg1", "li-a", "grp-g1"]]]),
+    );
+  });
+
+  test("falls back to an empty order when mixedGroups is absent (HMR-stale cache)", () => {
+    const catA = category("catA");
+    expect(buildCategoryTopLevelOrder([catA])).toEqual(new Map([["catA", []]]));
+  });
+});
+
+function rect(top: number, height: number) {
+  return { top, height, left: 0, width: 100, right: 100, bottom: top + height };
+}
+
+describe("computeDropZone", () => {
+  test("active centered in the top quarter of over's rect -> before", () => {
+    // over spans y=0..100 (center 50); active center at y=10 -> relative 0.1
+    expect(computeDropZone(rect(0, 20), rect(0, 100))).toBe("before");
+  });
+
+  test("active centered in the bottom quarter of over's rect -> after", () => {
+    expect(computeDropZone(rect(80, 20), rect(0, 100))).toBe("after");
+  });
+
+  test("active centered in the middle half of over's rect -> middle", () => {
+    expect(computeDropZone(rect(45, 10), rect(0, 100))).toBe("middle");
+  });
+
+  test("missing rect data falls back to middle (today's existing enter/reorder behaviour)", () => {
+    expect(computeDropZone(null, rect(0, 100))).toBe("middle");
+    expect(computeDropZone(rect(0, 20), null)).toBe("middle");
+    expect(computeDropZone(rect(0, 20), rect(0, 0))).toBe("middle");
+  });
+});
+
+describe("resolveCrossKindCategoryReorder", () => {
+  const order = new Map([["catA", ["grp-g1", "li-a", "shg-shg1"]]]);
+
+  test("middle drop zone -> noop (that's still 'enter', handled elsewhere)", () => {
+    expect(resolveCrossKindCategoryReorder("li-a", "grp-g1", "middle", order)).toEqual({ kind: "noop" });
+  });
+
+  test("line item dropped on a group's top edge -> reorders it before the group", () => {
+    expect(resolveCrossKindCategoryReorder("li-a", "grp-g1", "before", order)).toEqual({
+      kind: "reorder",
+      categoryId: "catA",
+      orderedIds: ["li-a", "grp-g1", "shg-shg1"],
+    });
+  });
+
+  test("group dropped on a line item's bottom edge -> reorders the group after it", () => {
+    expect(resolveCrossKindCategoryReorder("grp-g1", "li-a", "after", order)).toEqual({
+      kind: "reorder",
+      categoryId: "catA",
+      orderedIds: ["li-a", "grp-g1", "shg-shg1"],
+    });
+  });
+
+  test("same-kind pairs (line-vs-line, group-vs-group) -> noop (unrelated resolvers own those)", () => {
+    expect(resolveCrossKindCategoryReorder("li-a", "li-b", "before", order)).toEqual({ kind: "noop" });
+    expect(resolveCrossKindCategoryReorder("grp-g1", "shg-shg1", "before", order)).toEqual({ kind: "noop" });
+  });
+
+  test("no-op when the result wouldn't change anything (already adjacent on that side)", () => {
+    // "li-a" is already immediately before "shg-shg1" — dropping it "before" shg-shg1 again changes nothing.
+    expect(resolveCrossKindCategoryReorder("li-a", "shg-shg1", "before", order)).toEqual({ kind: "noop" });
+  });
+
+  test("neither id in the same category's order -> noop", () => {
+    expect(resolveCrossKindCategoryReorder("li-ghost", "grp-ghost", "before", order)).toEqual({ kind: "noop" });
   });
 });

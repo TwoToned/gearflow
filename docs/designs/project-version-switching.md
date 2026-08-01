@@ -101,6 +101,34 @@ creation has to grow a capture step (§3.3).
     `UNLOCK` snapshots keep being taken — `UNLOCK` is load-bearing for unlock-session discard and
     cannot be removed — but they stop being user-facing. One version concept, one UI.
 
+Second pass (2026-08-01, same session):
+
+13. **"Live" is the word.** `v2 · Live`, `Back to live (v4)`, `Make v2 live`. Not "Latest" — a
+    promoted v2 sits visibly below v4 in the list, so a recency word would fight what's on screen.
+    "Live" also says the true thing: this is the version the warehouse, availability and invoices
+    are working from.
+14. **The auto-capture is skipped when there is nothing to preserve** — i.e. when the live
+    revision already has a snapshot and the live state is identical to it (§3.4). Allocating a
+    version number for a byte-identical copy is dead-row noise.
+15. **Deletion covers the live draft and never-sent saved versions** (§3.7). Anything ever sent
+    still goes through the existing owner-only recall-then-delete flow.
+16. **Tasks, Notes (comments) and Files are not versioned.** They stay live while you view an
+    older version, labelled as such (§4.2). The project's own `clientNotes`/`internalNotes`/
+    `crewNotes` fields *are* captured, since the whole project row is snapshotted.
+17. **A written reason is required only when the project is locked** — in which case the promote
+    already needs an unlock session, which carries a bounded justification. On an open project the
+    permission check plus the audit entry is the gate. No new justification plumbing.
+18. **Version labels are internal by default, printable per send.** The send dialog offers a
+    checkbox to print the label on that document, for when you genuinely are giving a client a
+    named option (§3.3).
+19. **Duplicates start fresh; templates carry nothing.** A duplicated project begins at v1 with a
+    new draft quote and copies no versions, snapshots or invoices. `newVersionNative` already
+    throws `TEMPLATE_QUOTE`.
+20. **Variant quotes stay out of scope, and are considered covered.** Save version → change the
+    gear → save again → promote whichever the client picks reaches the same outcome without a
+    second live equipment list, which the warehouse model cannot represent anyway (two lists
+    cannot both be the real booking for the same physical gear).
+
 ### 2.7 Refinement to decision 5 — recall takes one confirmation, not zero
 
 A bare "auto-recall on first edit" cannot be implemented as stated, because it contradicts
@@ -178,7 +206,16 @@ ever set, exactly as `deleteDraftNative`/`deleteRecalledNative` already do.
    carries on; it is not a checkpoint you have to restore from to keep working.
 
 Optional `label: string` (≤ 60 chars) on the version — "with LED wall", "client's budget option".
-Purely descriptive; it never affects behaviour or numbering.
+It never affects behaviour or numbering. **Internal by default** (decision 18): the quote PDF
+header reads `RVLT-2026-0087 v2` unless the send dialog's _"Print this label on the document"_
+checkbox is ticked, which stamps `quotes.labelOnDocument` on that revision and renders
+`RVLT-2026-0087 v2 · Budget option`. Off by default because an unexplained label on a client
+document invites the obvious question about what the other options were and what they cost.
+
+That header is an existing string field in `build-document-data.ts`, not a `DocumentLineItem`
+shape change and not a new `LayoutBlock` kind — so it does not trigger the three-consumer PDF
+audit (CLAUDE.md). It does need a width check: the label is user-entered and the header is
+Helvetica-only, single line.
 
 `newVersionNative` (the post-send path) gains the same step 1 capture. Its existing
 `QUOTE_DRAFT_OPEN` guard stays: after a send, "new version" is still the sanctioned unlock.
@@ -196,6 +233,11 @@ Preconditions, checked in this order so the first rejection is the real blocker 
 | 4 | `assertLifecycleGuard(ctx, project, { kind: "structural" })` — a locked project needs an open `FULL`-scope unlock session | `PROJECT_LOCKED` |
 | 5 | **No non-VOID `ISSUED` invoice on the project** (decision 10) | `PROMOTE_BLOCKED_INVOICED` |
 
+**No separate justification argument** (decision 17). On an open project, check 3 plus the audit
+entry is the gate. On a locked one, check 4 forces an unlock session, which already carries a
+bounded 10–1000 character justification — so a written reason is captured exactly when the act is
+consequential, reusing #793's bounds rather than adding a second justification surface (R-3.1).
+
 Then, in one transaction:
 
 1. **Auto-capture** (decision 2):
@@ -206,10 +248,11 @@ Then, in one transaction:
      evidence of what was sent and must not be overwritten. Allocate `M = revision + 1`, capture
      the live state there with `reason: "PRE_PROMOTE"` and a `DRAFT` quote labelled
      _"Auto-saved before switching to v2"_.
-   - Skipped only when the live revision already has a snapshot and `diffSnapshotEntries` finds
-     the live state identical to it — there is nothing to preserve, and allocating a number for a
-     byte-identical copy is dead-row noise. Flagged in §8 as the one place this deviates from a
-     literal reading of "always capture first".
+   - **Skipped** when the live revision already has a snapshot and `diffSnapshotEntries` finds the
+     live state identical to it (decision 14). Nothing is at risk, and allocating a number for a
+     byte-identical copy is dead-row noise — promote v2 from an untouched, already-sent v4 and the
+     list stays `v1 v2(Live) v3 v4` rather than growing a v5 that duplicates v4. The diff already
+     runs to render the promote dialog, so this costs nothing.
 2. `restoreProjectSnapshot(ctx, { scope: "PROMOTE", snapshotId: target.snapshotId })` (§3.5).
 3. `projects.liveRevision = K` (`revision` is untouched — it stays the high-water mark).
 4. Recalculate project totals through the existing recalc path, and re-derive availability
@@ -262,6 +305,24 @@ _"no invoices issued from this version"_.
 
 No index needed — invoices are already loaded per project by `by_organizationId_projectId` and
 filtered in memory; the volume is a handful of rows per project.
+
+### 3.7 Deleting a version (decision 15)
+
+Three cases, three bars — the split is "has anyone outside the company ever seen this?"
+
+| Case | Who | What happens |
+|---|---|---|
+| **The live draft** | The existing draft-delete bar | `deleteDraftNative`, unchanged, except it now rolls `liveRevision` back alongside `revision` — both land on the highest revision this project ever actually sent (or 1). It may only ever target the **live** draft; a non-live draft is the row below. |
+| **A saved-but-never-sent version** (`sentAt`/`publishedAt` both unset — a Save version, or an auto-capture) | Same bar as a draft delete | New `deleteVersionNative`. Deletes the quote row **and** its `projectSnapshots` + `projectSnapshotEntries` rows. Never touches `revision` or `liveRevision` — this version isn't live and its number was already superseded, so rolling anything back would reopen a number that later revisions have moved past. |
+| **Anything ever sent** | Owner only | Unchanged: the existing recall-then-delete flow (#1029) with its typed confirmation and surviving audit entry. |
+
+Guard order matters, mirroring `assertRecalledDeletable` (`convex/quotesWrites.ts:618`): reject a
+live version first ("this version is live — switch to another before deleting it"), then
+ever-sent, then protected. A caller fixing one rejection at a time should see the real blocker
+first, not a confirmation prompt for an action that was never going to be allowed.
+
+The live version can never be deleted while it is live, which means a project always has at least
+one version and `liveRevision` can never dangle.
 
 ---
 
@@ -389,7 +450,9 @@ Requirements, non-negotiable:
 liveRevision: v.optional(v.number()),      // NEW. absent ⇒ revision. Server-owned.
 
 // quotes
-label: v.optional(v.string()),             // NEW. optional human name for the version, ≤60 chars
+label: v.optional(v.string()),             // NEW. optional human name for the version, ≤60 chars,
+                                           //   internal unless labelOnDocument is set
+labelOnDocument: v.optional(v.boolean()),  // NEW. stamped at send — print `label` on the PDF header
 snapshotId: v.optional(v.string()),        // EXISTS — now written by saveVersion/newVersion too,
                                            //   not only by sendNative
 
@@ -429,7 +492,7 @@ is hand-maintained — never regenerate (CLAUDE.md).
 | 1 | **Model** | `liveRevision`, `label`, new snapshot reasons, `saveVersionNative`, capture-on-`newVersionNative`, the invariant change, backfill, server tests | — |
 | 2 | **Promote** | `scope: "PROMOTE"`, `promoteRevisionNative`, auto-capture rule, invoice block, permission + lock gates, conflict return, availability re-derive | 1 |
 | 3 | **Projection** | `ProjectVersionContext`, snapshot→DTO mappers, `?v=` routing, header switcher, read-only bar, `aria-disabled` sweep across tabs | 1 |
-| 4 | **Version list + lineage** | The version list as the Finance tab's primary rail, `invoices.sourceRevision` display, promote dialog, conflict panel, retire `ProjectVersionsPanel` | 2, 3 |
+| 4 | **Version list + lineage** | The version list as the Finance tab's primary rail, `invoices.sourceRevision` display, promote dialog, conflict panel, `deleteVersionNative` + the three-bar delete UI (§3.7), label + print-on-document checkbox, retire `ProjectVersionsPanel` | 2, 3 |
 | 5 | **Recall-to-edit** | §2.7's lock-strip affordance and confirm dialog, protected/ACCEPTED path | 2 |
 
 Phases 1–2 are shippable without any UI (the version list keeps working as it does today).
@@ -463,28 +526,45 @@ Phase 3 is the big one and is independently reviewable.
 
 ---
 
-## 9. Open questions
+## 9. Resolved questions
 
-- **The dead-row skip (§3.4).** Skipping the auto-capture when live is byte-identical to the live
-  revision's existing snapshot is a deviation from a literal "always capture first". It preserves
-  nothing because there is nothing to preserve — but confirm you want it, or every promote from a
-  sent-and-untouched revision allocates a number for an exact duplicate.
-- **Does `deleteDraftNative`'s revision rollback need to move `liveRevision` too?** It rolls
-  `projects.revision` back to the highest ever-sent revision (`convex/quotesWrites.ts:618`).
-  Proposed: it may only delete the **live** draft, and rolls `liveRevision` with it — deleting a
-  non-live saved version is a separate, later action with its own confirm.
-- **Can a saved-but-never-sent version be deleted?** Proposed yes, with the ordinary draft-delete
-  bar (never sent = nobody outside the company saw it). Its snapshot rows go with it.
-- **Version labels on the PDF?** Proposed no. The quote header stays `RVLT-2026-0087 v2`; a label
-  like "budget option" is an internal note and putting it on a client document invites questions
-  about which other options exist.
-- **Duplicated projects and templates.** Assumed: a duplicate starts at `revision: 1`,
-  `liveRevision: 1`, with a fresh `DRAFT` v1 and no version history; a template carries no
-  revisions at all (`newVersionNative` already throws `TEMPLATE_QUOTE`). Say so if that's wrong.
-- **Multiple concurrently-editable versions** (comparing "with and without the LED wall" side by
-  side) stays out of scope, as in both parent docs. One live equipment list, one counter. Save
-  version + promote gets close enough to the workflow that it may be worth revisiting whether the
-  variant feature is still wanted at all.
+Every question this design opened has been answered (§2, decisions 1–20). For the record:
+
+- **Does a promoted version keep its number?** Yes — `liveRevision` is a pointer, v2 stays v2.
+- **Is the live state preserved before a promote overwrites it?** Yes, unless it is byte-identical
+  to a snapshot that already exists.
+- **Per-version invoices?** Lineage labels on one project-level ledger, not separate ledgers.
+- **Warehouse-backed gear?** Surfaced as conflicts, never forced.
+- **The sent PDF of a promoted version?** Editing recalls the revision and unlinks the PDF, behind
+  one confirmation (§2.7).
+- **How much of the app shows the version?** The whole project, minus Tasks/Notes/Files, which are
+  not versioned and say so.
+- **Promote permission?** `isHardLockOverrideAllowed`, blocked by the lifecycle lock.
+- **Rental dates?** Restored with everything else, with availability re-derived and the change
+  stated up front.
+- **Issued invoices?** Promote is blocked until they are voided or credited.
+- **Accepted/protected versions?** Viewable and promotable; editing needs an owner to un-protect.
+- **The old ⋯ Versions panel?** Retired; its captures continue internally.
+- **Wording?** "Live".
+- **Deleting versions?** Live draft and never-sent saved versions; anything sent keeps the
+  owner-only flow.
+- **Written reason for a promote?** Only when the project is locked, via the unlock session that
+  is already required.
+- **Labels?** Internal, printable per send.
+- **Duplicates and templates?** Fresh start, no history.
+- **Variant quotes?** Out of scope, considered covered by save + promote.
+
+### Still to settle during implementation
+
+Not product decisions — things to confirm against the code as each phase starts:
+
+- **The projection seam.** Whether `ProjectVersionContext` can cleanly wrap every tab's existing
+  data hook, or whether some tabs read Convex directly in components and need lifting first. This
+  determines phase 3's real size and should be spiked before the phase is estimated.
+- **The availability re-derive entry point.** §5.2 requires bookings to be re-derived in the same
+  transaction as a date-restoring promote; the exact function to call has not been pinned down.
+- **Label width on the PDF header.** Helvetica-only, single line, user-entered text — needs a
+  measured cap, not a character count.
 
 ---
 

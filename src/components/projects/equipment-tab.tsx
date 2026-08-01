@@ -121,10 +121,11 @@ interface EquipmentTabProps {
 // header). One `useSortable()` call per row, kept in a small wrapper (rather
 // than inline in the .map() callbacks below) so the hook isn't called from a
 // plain callback, which would trip react-hooks/rules-of-hooks. `dragHandleRef`
-// is `useSortable`'s `setNodeRef` (NOT `setActivatorNodeRef`) attached to the
-// handle button itself, so that small button is the only DOM node dnd-kit
-// measures/tracks for this row —
-// see equipment-rows.tsx's `DragHandleControls` doc comment.
+// is `useSortable`'s `setNodeRef`, attached to the row's/card's ROOT element —
+// there is no dedicated handle; pressing and holding anywhere on the row
+// starts the drag (a delay-based activation constraint distinguishes a quick
+// click from a hold — see use-equipment-dnd.ts's sensor setup) — see
+// equipment-rows.tsx's `DragHandleControls` doc comment.
 function SortableLineItemRow({
   sortableId,
   containerId,
@@ -161,9 +162,10 @@ function SortableLineItemRow({
 // (Uncategorized-zone) groups — they're still registered as sortable items
 // (so the Uncategorized zone resolves as a valid drop container/target for a
 // group leaving a category — see use-equipment-dnd.ts's
-// `buildGroupContainerMap`) but can't originate a drag themselves, matching
-// their existing no-reorder-affordance behaviour (`DragHandle` renders
-// nothing when `isDragDisabled`).
+// `buildGroupContainerMap`) but can't originate a drag themselves: dnd-kit's
+// own `useSortable({disabled: true})` already makes `listeners` a no-op (see
+// equipment-rows.tsx's `DragHandleControls` doc comment), so the row simply
+// never activates a drag — no separate handle-hiding logic needed.
 function SortableGroupRow({
   sortableId,
   containerId,
@@ -2042,12 +2044,14 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         );
         // Drag-and-drop for LINE ITEMS, GROUPS, and CATEGORIES (see
         // use-equipment-dnd.ts). A single DndContext wraps both the desktop
-        // table and mobile card shells; DragOverlay renders a small floating
-        // label for whatever's being dragged (dragHandleRef only registers
-        // the tiny handle button with dnd-kit — not the whole row — as a
-        // drop-target/measured node, so this overlay is the user's main
-        // "something is being dragged" feedback; see equipment-rows.tsx's
-        // DragHandleControls doc comment).
+        // table and mobile card shells. `dragHandleRef` now registers the
+        // WHOLE row/card as dnd-kit's measured/dragged node (equipment-rows.tsx's
+        // `DragHandleControls` doc comment), so dnd-kit's own <DragOverlay>
+        // wrapper is sized and positioned to exactly match the row the user
+        // grabbed — this floating label fills that wrapper (`h-full w-full`)
+        // instead of rendering as a small fixed-size chip inside it, which is
+        // what keeps it tracking the exact point the user grabbed rather than
+        // snapping to a corner.
         return (
           <DndContext
             sensors={dnd.sensors}
@@ -2060,15 +2064,15 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
             {content}
             <DragOverlay>
               {draggedLineItem ? (
-                <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
                   {draggedLineItem.model?.name ?? draggedLineItem.description ?? "Item"}
                 </div>
               ) : draggedGroupTitle ? (
-                <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
                   {draggedGroupTitle}
                 </div>
               ) : draggedCategoryTitle ? (
-                <div className="rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
+                <div className="flex h-full w-full cursor-grabbing items-center rounded-[var(--r)] border border-line bg-card px-3 py-1.5 text-table-cell shadow-[var(--sh-card)]">
                   {draggedCategoryTitle}
                 </div>
               ) : null}

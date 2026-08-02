@@ -27,6 +27,7 @@ function deriveLockStatus(status: ProjectLockStatus) {
     canOverrideHardLock = false,
     reason = "STATUS",
     revision = 1,
+    liveRevision = revision,
     quoteState = null,
   } = status ?? {};
   return {
@@ -37,6 +38,7 @@ function deriveLockStatus(status: ProjectLockStatus) {
     canOverrideHardLock,
     reason,
     revision,
+    liveRevision,
     quoteState,
   };
 }

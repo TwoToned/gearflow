@@ -157,6 +157,24 @@ describe("recalcProjectTotals — totals parity", () => {
     expect(p?.total).toBe(120);
   });
 
+  // #1088 (T1) — no hardcoded tax-rate fallback. An org with neither a
+  // project-level nor an org-default rate must yield zero tax, never an
+  // invented Australian GST rate. This is exactly the path a US org (which
+  // ships with no default rate by design) hits.
+  test("yields zero tax when neither the project nor the org has a rate set (#1088)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, discountPercent: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      // project.taxRate is null AND orgDefaultTaxRate is null.
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.subtotal).toBe(100);
+    expect(p?.taxAmount).toBe(0);
+    expect(p?.total).toBe(100);
+  });
+
   // WS1 (#940) — depositPaid/invoicedTotal are DERIVED from this project's
   // Invoice rows, never hand-typed. See the schema.ts field comment + the
   // "6b." block in recalc.ts.

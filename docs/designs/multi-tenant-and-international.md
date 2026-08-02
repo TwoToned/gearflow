@@ -260,12 +260,11 @@ doc. M2/M3 set its boundaries:
 
 **Do not build:** US jurisdiction tables (M2), reverse charge, OSS, VIES validation (M3).
 
-> **⚠️ Bug found during the sweep — `convex/lib/recalc.ts:237` opens with `let taxRate = 10;`.**
-> Project rate wins, then org default, and if both are unset it falls through to a **hardcoded
-> 10% Australian GST**. Harmless in a single-org AU deployment; under M1 it silently applies
-> Australian GST to a US or German org that hasn't set a rate. **Fix before any non-AU org
-> exists** — and note the US ships with no default rate by design, so it is exactly the market
-> that would hit this path.
+> **✅ Fixed (#1088, T1) — `convex/lib/recalc.ts:237` used to open with `let taxRate = 10;`.**
+> Project rate wins, then org default, and if both are unset it now falls through to **zero
+> tax**, not a hardcoded 10% Australian GST. An org — the US ships with no default rate by
+> design — that hasn't set a rate produces a visibly-unset $0 tax line instead of a silently
+> wrong Australian one.
 
 ### 3.4a E-invoicing — the documented boundary (M4)
 

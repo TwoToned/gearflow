@@ -255,7 +255,7 @@ saleCostTotal = SUM(SALE line COGS) where status != CANCELLED and not optional  
 
 subtotal = equipmentRevenue + serviceRevenue + saleRevenue
 discountAmount = subtotal × discountPercent / 100
-taxRate = project.taxRate ?? org.defaultTaxRate ?? 10
+taxRate = project.taxRate ?? org.defaultTaxRate ?? 0
 taxableAmount = subtotal - discountAmount
 taxAmount = taxableAmount × taxRate / 100
 total = taxableAmount + taxAmount
@@ -267,7 +267,11 @@ marginPercent = margin / total × 100
 ### Tax Rate Cascade
 - Per-project `taxRate` (Decimal, nullable) takes priority
 - Falls back to `Organization.defaultTaxRate` (configurable in Settings)
-- Falls back to 10% (GST default)
+- Falls back to **0** — no hardcoded rate (#1088). An org with neither value
+  set produces zero tax, never an invented Australian GST rate. This is
+  deliberate: the US ships with no default tax rate by design (there is no
+  national rate — see `docs/designs/multi-tenant-and-international.md` §3.4),
+  so a US org is exactly the case that used to reach this fallback.
 
 ### Derived Billing Weeks/Days + Best-Price Capping (#943)
 > **Correction to earlier drafts of this doc:** a "Billing Weeks/Days Pricing"

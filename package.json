@@ -34,6 +34,8 @@
     "api:mcp": "tsx scripts/generate-mcp-manifest.mts",
     "api:mcp:check": "tsx scripts/generate-mcp-manifest.mts --check",
     "mcp:stdio-proxy": "tsx scripts/mcp-stdio-proxy.mts",
+    "mira:feature-map": "tsx scripts/generate-mira-feature-map.mts",
+    "mira:feature-map:check": "tsx scripts/generate-mira-feature-map.mts --check",
     "seed": "tsx --env-file=.env prisma/seed.ts",
     "convex:schema": "node scripts/generate-convex-schema.cjs .",
     "convex:crud": "node scripts/generate-convex-crud.cjs .",

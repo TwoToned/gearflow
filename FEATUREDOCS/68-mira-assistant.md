@@ -183,6 +183,25 @@ turns out to matter for answer quality, the right fix is a real structured field
 `Organization` (and a settings-page control for it) — not stuffing free text into the
 system prompt from `metadata`.
 
+**A generated feature map + an authored workflow narrative** round out the picture (so
+Mira can answer "how do I do X" / "how does Y work" without a tool call, not just
+execute tool calls and report raw data back). `scripts/generate-mira-feature-map.mts`
+parses ARCHITECTURE.md's FEATUREDOCS table — the single source of truth for "what
+features exist" — into `src/lib/mira/feature-map.generated.ts` (`pnpm run
+mira:feature-map`, CI-staleness-gated like the API registry/MCP manifest generators),
+so this never becomes a second, driftable copy of that table. The system prompt also
+carries a short, hand-authored "how a job flows end to end" narrative (the
+ENQUIRY→QUOTING→QUOTED→CONFIRMED→PREPPING→CHECKED_OUT→ON_SITE→RETURNED→COMPLETED→INVOICED
+lifecycle, lock tiers, kits/sub-hire/sales/crew/Xero) — the connective tissue individual
+tool descriptions and the bare feature-map one-liners don't provide on their own.
+
+**Deliberately NOT included**: the full ~120,000-word FEATUREDOCS corpus. Embedding it
+wholesale would blow well past a re-sent-every-message/every-tool-round-trip budget on
+the org's own OpenRouter key for very little benefit — most of it is implementation
+detail (PDF pagination internals, migration history) irrelevant to answering a user's
+question. If a question genuinely needs FEATUREDOCS-level depth on one specific system,
+the answer is a future on-demand "fetch this one doc" tool, not a bigger system prompt.
+
 ## Page context
 
 `src/hooks/use-mira-page-context.ts`'s `useMiraPageContext(context)` publishes "what the

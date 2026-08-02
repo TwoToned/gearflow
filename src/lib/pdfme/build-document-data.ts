@@ -38,6 +38,7 @@ import type { DocumentData, DocumentLineItem, CrewEntry, CallSheetDayData, Docum
 import type { OrgDocumentSettings } from "@/lib/org-settings-types";
 import { computeValidUntil, resolveQuoteValidityDays } from "@/lib/quote-validity";
 import { resolvePaymentTermsDays } from "@/lib/invoice-terms";
+import { getCountry } from "@/lib/countries";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
@@ -133,6 +134,10 @@ export async function buildDocumentData(
     showOrgNameOnDocuments?: boolean;
   } | undefined;
   const documentSettings = orgSettings.documents as OrgDocumentSettings | undefined;
+  // I4 (#1083) — the output side of the I1 country table. No country set
+  // (org not onboarded through the wizard yet) falls back to the AU labels
+  // every document has always shown — same posture as DEFAULT_FORMAT_CONFIG.
+  const country = getCountry(orgSettings.country as string | undefined);
 
   // Load logo/icon as base64
   const [logoData, iconData] = await Promise.all([
@@ -735,10 +740,12 @@ export async function buildDocumentData(
     org_address: (orgSettings.address as string) || "",
     org_website: (orgSettings.website as string) || "",
     org_abn: (orgSettings.abn as string) || "",
+    org_business_number_label: country?.businessNumberLabel ?? "ABN",
     org_logo: logoData,
     org_icon: iconData,
     org_tax_rate: (orgSettings.taxRate as number) || 10,
-    org_tax_label: (orgSettings.taxLabel as string) || "GST",
+    org_tax_label: (orgSettings.taxLabel as string) || (country?.taxLabel ?? "GST"),
+    org_invoice_heading: country?.invoiceHeading ?? "TAX INVOICE",
     org_branding: branding,
     org_document_color: docColor,
 
@@ -780,7 +787,7 @@ export async function buildDocumentData(
     subtotal: Number(serialized.subtotal) || 0,
     discount_percent: Number(serialized.discountPercent) || 0,
     discount_amount: Number(serialized.discountAmount) || 0,
-    tax_label: (orgSettings.taxLabel as string) || "GST",
+    tax_label: (orgSettings.taxLabel as string) || (country?.taxLabel ?? "GST"),
     tax_amount: Number(serialized.taxAmount) || 0,
     total: totalNum,
     deposit_paid: depositNum,

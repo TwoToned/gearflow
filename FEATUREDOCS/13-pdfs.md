@@ -191,9 +191,22 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 | `delivery-docket` | header, client+project details (+ site contact), table (checkboxes, row numbers, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT` |
 
 The `header` block itself is the SAME across all 5 doc types (`document-composer.ts`'s
-one `case "header"` in both `estimateBlockHeight` and `buildEntryFields`) — the org's ABN
-(when set) renders under the address/phone/email lines on **every** doc type, not just
-the invoice. Only the "Expiry"/"Due" meta lines next to the doc number are doc-type-gated.
+one `case "header"` in both `estimateBlockHeight` and `buildEntryFields`) — the org's
+business-registration number (when set) renders under the address/phone/email lines on
+**every** doc type, not just the invoice. Only the "Expiry"/"Due" meta lines next to the
+doc number are doc-type-gated.
+
+**Labels are country-derived, not hardcoded (I4, #1083).** `data.org_business_number_label`
+(from `src/lib/countries.ts` via `build-document-data.ts`) replaces the literal `"ABN"` for
+BOTH the org's own number (header) and the client's (`detailsRow`'s `showClientTaxId`
+line) — one label, since it names the org's home-jurisdiction registration-number format
+("VAT number" for GB/IE, "EIN" for US, …), not a per-party thing. `data.tax_label`/
+`org_tax_label` fall back to the country's `taxLabel` (not a literal `"GST"`) when
+`OrgSettings.taxLabel` is unset. `data.org_invoice_heading` overrides the invoice layout's
+static `"TAX INVOICE"` title (`document-layouts.ts`) for any non-AU/NZ org — "Tax Invoice"
+is an AU/NZ GST-system legal term, not a global one; every other market gets "INVOICE".
+None of this touches `OrgSettings.abn`/`Client.taxId` themselves (still generic storage,
+per their own doc comments) — this is a render-layer change only.
 
 Call sheets are a 6th `DocumentType` value but are **not** in
 `DOCUMENT_LAYOUTS` — they render via `templates/call-sheet-services.ts`
@@ -258,13 +271,18 @@ identity, edited on the General settings page next to address/email/phone).
 Rendered in the PDF header, under the org's address/phone/email lines, on
 **every** doc type — Tax Invoices legally require it, but it's shown wherever
 the org details block itself renders rather than singled out to that one
-type. Omitted when unset.
+type. Omitted when unset. The printed LABEL next to it is country-derived
+("ABN" only for AU; see the I4 note above) — the stored field name/comment
+stays generic on purpose.
 
 `build-document-data.ts` computes these `DocumentData` fields from the settings
 above each time a document is built: `document_footer_text`,
 `document_footer_second_line`, `terms_and_conditions` (gated by the invoice
 toggle above when `docType === "invoice"`), `quote_valid_until`,
-`invoice_due_date`, `payment_details`, `org_abn`.
+`invoice_due_date`, `payment_details`, `org_abn`, `org_business_number_label`,
+`org_invoice_heading` (I4, #1083 — both derived from `src/lib/countries.ts`
+via `OrgSettings.country`, defaulting to the AU labels for an org that hasn't
+set one).
 
 ### Quote/invoice layout refinements (2026-07-27)
 

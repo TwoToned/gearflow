@@ -181,10 +181,20 @@ export interface DocumentData {
   /** Australian Business Number (or local equivalent). Rendered in the
    *  header, under the org's address/email, on every doc type. */
   org_abn: string;
+  /** I4 (#1083) — the country-derived label for `org_abn`/`client_tax_id`
+   *  ("ABN", "VAT number", "EIN", …), from `src/lib/countries.ts`. Both the
+   *  org's own number (header) and the client's (details row) use this ONE
+   *  label — it names the org's home-jurisdiction registration-number
+   *  format, not a per-party thing. */
+  org_business_number_label: string;
   org_logo: string | null;
   org_icon: string | null;
   org_tax_rate: number;
   org_tax_label: string;
+  /** I4 (#1083) — country-derived invoice document heading ("TAX INVOICE"
+   *  for AU/NZ, "INVOICE" elsewhere — "Tax Invoice" is an Australian/NZ
+   *  legal term, not a global one). Only the invoice layout uses this. */
+  org_invoice_heading: string;
   org_branding: PdfBranding | undefined;
   org_document_color: string;
 

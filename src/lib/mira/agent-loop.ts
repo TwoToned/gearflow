@@ -96,6 +96,14 @@ function toOpenRouterTools(tools: readonly MiraTool[]): OpenRouterToolDef[] | un
   return tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
 }
 
+/** User-facing text for a loop-ending error — split out so the ternary chain
+ *  scores its own (small) complexity instead of stacking onto the loop's. */
+function describeLoopError(err: unknown, aborted: boolean): string {
+  if (err instanceof OpenRouterError) return `I hit an error talking to the language model: ${err.message}`;
+  if (aborted) return "That took too long, so I stopped — try a narrower question.";
+  return `Something went wrong: ${err instanceof Error ? err.message : String(err)}`;
+}
+
 /** Run every tool call in one assistant turn, appending a `tool` result
  *  message per call (required by the chat-completions contract — one result
  *  per tool_call_id) and returning the first confirmation this turn hit, if
@@ -180,13 +188,7 @@ export async function runMiraAgentLoop(params: RunAgentLoopParams): Promise<RunA
     });
     return { appended, pendingConfirmation: null };
   } catch (err) {
-    const content =
-      err instanceof OpenRouterError
-        ? `I hit an error talking to the language model: ${err.message}`
-        : controller.signal.aborted
-          ? "That took too long, so I stopped — try a narrower question."
-          : `Something went wrong: ${err instanceof Error ? err.message : String(err)}`;
-    appended.push({ role: "assistant", content });
+    appended.push({ role: "assistant", content: describeLoopError(err, controller.signal.aborted) });
     return { appended, pendingConfirmation: null };
   } finally {
     clearTimeout(timer);

@@ -1,4 +1,4 @@
-import { CURATED_TOOL_DEFS } from "@/lib/api/mcp/curated-tool-defs";
+import { CURATED_TOOL_DEFS, type CuratedToolDef } from "@/lib/api/mcp/curated-tool-defs";
 import { MCP_TOOLS_BY_NAME, MCP_NAMESPACE } from "@/lib/api/mcp-manifest.generated";
 import { API_REGISTRY_BY_OPERATION } from "@/lib/api/registry.generated";
 import type { JsonSchema } from "@/lib/api/json-schema";
@@ -61,25 +61,40 @@ export interface BuildMiraToolsOptions {
   grantedScopes: ReadonlySet<string>;
 }
 
+/** Is a write tool actually usable this call — writes on org-wide AND (no
+ *  scope requirement, or the preset covers every scope it needs)? */
+function writeToolUsable(op: { scopePairs: readonly { resource: string; action: string }[] } | null, opts: BuildMiraToolsOptions): boolean {
+  if (!opts.includeWrites) return false;
+  return !op || scopesCovered(op.scopePairs, opts.grantedScopes);
+}
+
+/** One curated def → a MiraTool, or null if it shouldn't be offered this
+ *  call (no manifest entry, writes off, or the preset doesn't cover its
+ *  required scopes). Split out so the decision chain scores its own
+ *  complexity instead of stacking onto the loop in buildMiraTools. */
+function resolveMiraTool(def: CuratedToolDef, opts: BuildMiraToolsOptions): MiraTool | null {
+  const manifestEntry = MCP_TOOLS_BY_NAME.get(`${MCP_NAMESPACE}.${def.name}`);
+  if (!manifestEntry) return null; // generator invariant — every curated def has a manifest entry
+  const op = def.operation ? API_REGISTRY_BY_OPERATION.get(def.operation) : null;
+  const isWrite = op?.kind === "mutation";
+
+  if (isWrite && !writeToolUsable(op, opts)) return null;
+
+  return {
+    name: def.name,
+    description: manifestEntry.description,
+    operation: def.operation,
+    isWrite,
+    danger: op?.danger ?? null,
+    parameters: stripKeys(manifestEntry.inputSchema as JsonSchema, ["idempotencyKey", "confirm"]),
+  };
+}
+
 export function buildMiraTools(opts: BuildMiraToolsOptions): MiraTool[] {
   const tools: MiraTool[] = [];
   for (const def of CURATED_TOOL_DEFS) {
-    const manifestEntry = MCP_TOOLS_BY_NAME.get(`${MCP_NAMESPACE}.${def.name}`);
-    if (!manifestEntry) continue; // generator invariant — every curated def has a manifest entry
-    const op = def.operation ? API_REGISTRY_BY_OPERATION.get(def.operation) : null;
-    const isWrite = op?.kind === "mutation";
-
-    if (isWrite && !opts.includeWrites) continue;
-    if (isWrite && op && !scopesCovered(op.scopePairs, opts.grantedScopes)) continue;
-
-    tools.push({
-      name: def.name,
-      description: manifestEntry.description,
-      operation: def.operation,
-      isWrite,
-      danger: op?.danger ?? null,
-      parameters: stripKeys(manifestEntry.inputSchema as JsonSchema, ["idempotencyKey", "confirm"]),
-    });
+    const tool = resolveMiraTool(def, opts);
+    if (tool) tools.push(tool);
   }
   return tools;
 }

@@ -115,24 +115,15 @@ export function MiraPanel() {
       </div>
 
       <div ref={scrollRef} className="max-h-[28rem] min-h-[10rem] space-y-3 overflow-y-auto p-3">
-        {!isLoadingConversation && messages.length === 0 && (
-          <p className="text-xs text-muted">Ask about the project you&apos;re viewing, or say &ldquo;list assets&rdquo;.</p>
-        )}
-        {messages.map((m) => (
-          <MiraMessageRow
-            key={m.id}
-            message={m}
-            onConfirm={() => confirm.mutate(m.id)}
-            onDismiss={() => dismiss.mutate(m.id)}
-            actionPending={confirm.isPending || dismiss.isPending}
-          />
-        ))}
-        {ask.isPending && (
-          <div className="flex items-center gap-1.5 text-xs text-muted">
-            <Loader2 className="h-3 w-3 animate-spin" /> Mira is thinking…
-          </div>
-        )}
-        {ask.error && <p className="text-xs text-t-out">{ask.error.message}</p>}
+        <MiraMessageList
+          isLoadingConversation={isLoadingConversation}
+          messages={messages}
+          askPending={ask.isPending}
+          askError={ask.error}
+          onConfirm={(id) => confirm.mutate(id)}
+          onDismiss={(id) => dismiss.mutate(id)}
+          actionPending={confirm.isPending || dismiss.isPending}
+        />
       </div>
 
       <div className="flex items-center gap-2 border-t border-border p-3">
@@ -151,6 +142,43 @@ export function MiraPanel() {
         </Button>
       </div>
     </div>
+  );
+}
+
+/** The scrollable transcript body — split out from MiraPanel so its several
+ *  independent conditional sections (empty state, thinking indicator, error)
+ *  score their own (low) complexity instead of stacking onto the panel's. */
+function MiraMessageList({
+  isLoadingConversation,
+  messages,
+  askPending,
+  askError,
+  onConfirm,
+  onDismiss,
+  actionPending,
+}: {
+  isLoadingConversation: boolean;
+  messages: MiraMessage[];
+  askPending: boolean;
+  askError: Error | null;
+  onConfirm: (messageId: string) => void;
+  onDismiss: (messageId: string) => void;
+  actionPending: boolean;
+}) {
+  const isEmpty = !isLoadingConversation && messages.length === 0;
+  return (
+    <>
+      {isEmpty && <p className="text-xs text-muted">Ask about the project you&apos;re viewing, or say &ldquo;list assets&rdquo;.</p>}
+      {messages.map((m) => (
+        <MiraMessageRow key={m.id} message={m} onConfirm={() => onConfirm(m.id)} onDismiss={() => onDismiss(m.id)} actionPending={actionPending} />
+      ))}
+      {askPending && (
+        <div className="flex items-center gap-1.5 text-xs text-muted">
+          <Loader2 className="h-3 w-3 animate-spin" /> Mira is thinking…
+        </div>
+      )}
+      {askError && <p className="text-xs text-t-out">{askError.message}</p>}
+    </>
   );
 }
 

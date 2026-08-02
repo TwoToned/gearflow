@@ -89,6 +89,26 @@ async function getMiraLlmConfig(organizationId: string): Promise<MiraLlmConfig |
   };
 }
 
+/** A dispatch() response → a ToolExecResult, including the
+ *  CONFIRMATION_REQUIRED → needsConfirmation mapping. Split out from
+ *  createExecuteTool's returned closure so this decision chain scores its
+ *  own complexity instead of stacking onto it. */
+function toToolExecResult(status: number, rawBody: unknown, operation: string, args: Record<string, unknown>, idempotencyKey: string | undefined) {
+  if (status < 400) return { ok: true as const, data: (rawBody as { data: unknown }).data };
+
+  const err = (rawBody as ApiErrorEnvelope).error;
+  const isConfirmationRequired = err?.code === "CONFIRMATION_REQUIRED" && idempotencyKey;
+  if (isConfirmationRequired) {
+    const details = err.details as { summary?: string } | null;
+    return {
+      ok: false as const,
+      needsConfirmation: true as const,
+      pending: { operation, args, idempotencyKey, summary: details?.summary ?? err.message },
+    };
+  }
+  return { ok: false as const, error: { message: err?.message ?? "Unknown error", code: err?.code } };
+}
+
 function createExecuteTool(tools: ReturnType<typeof buildMiraTools>, authorizationHeader: string): ExecuteTool {
   return async (toolName, args) => {
     const tool = findMiraTool(tools, toolName);
@@ -99,22 +119,7 @@ function createExecuteTool(tools: ReturnType<typeof buildMiraTools>, authorizati
     const idempotencyKey = tool.isWrite ? createId() : undefined;
     const requestId = createId();
     const result = await dispatch(tool.operation, { args, idempotencyKey }, authorizationHeader, requestId);
-
-    if (result.status < 400) {
-      const body = result.body as { data: unknown };
-      return { ok: true, data: body.data };
-    }
-
-    const body = result.body as ApiErrorEnvelope;
-    if (body.error?.code === "CONFIRMATION_REQUIRED" && idempotencyKey) {
-      const details = body.error.details as { summary?: string } | null;
-      return {
-        ok: false,
-        needsConfirmation: true,
-        pending: { operation: tool.operation, args, idempotencyKey, summary: details?.summary ?? body.error.message },
-      };
-    }
-    return { ok: false, error: { message: body.error?.message ?? "Unknown error", code: body.error?.code } };
+    return toToolExecResult(result.status, result.body, tool.operation, args, idempotencyKey);
   };
 }
 

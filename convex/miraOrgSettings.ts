@@ -1,5 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 
 /**
@@ -57,6 +58,39 @@ export const create = mutation({
  * after an admin turns write access on (or, worse, keep a full_agent key's
  * scopes cached after an admin turns it back off).
  */
+type PatchArgs = {
+  openRouterKeyEncrypted?: string;
+  model?: string;
+  writeAccessEnabled?: boolean;
+  updatedById?: string;
+};
+
+function buildSettingsPatch(args: PatchArgs): Record<string, unknown> {
+  const patch: Record<string, unknown> = { updatedAt: Date.now() };
+  if (args.openRouterKeyEncrypted !== undefined) patch.openRouterKeyEncrypted = args.openRouterKeyEncrypted;
+  if (args.model !== undefined) patch.model = args.model;
+  if (args.updatedById !== undefined) patch.updatedById = args.updatedById;
+  if (args.writeAccessEnabled !== undefined) patch.writeAccessEnabled = args.writeAccessEnabled;
+  return patch;
+}
+
+/** Revoke + delete every already-provisioned miraKeys row for the org, so the
+ *  next question re-provisions with whichever preset now matches
+ *  `writeAccessEnabled`. Bounded by org membership (one row per member), not
+ *  an unbounded org-wide scan — a capped take, not a full-table read, so this
+ *  stays outside the R-9.8 unbounded-read count (POLICY.md). */
+async function revokeStaleMiraKeys(ctx: MutationCtx, organizationId: string): Promise<void> {
+  const staleKeys = await ctx.db
+    .query("miraKeys")
+    .withIndex("by_organizationId_userId", (q) => q.eq("organizationId", organizationId))
+    .take(500);
+  for (const mk of staleKeys) {
+    const apiKeyDoc = await ctx.db.query("apiKeys").withIndex("by_cuid", (q) => q.eq("id", mk.apiKeyId)).unique();
+    if (apiKeyDoc) await ctx.db.patch(apiKeyDoc._id, { isActive: false, revokedAt: Date.now() });
+    await ctx.db.delete(mk._id);
+  }
+}
+
 export const patch = mutation({
   args: {
     id: v.string(),
@@ -73,29 +107,9 @@ export const patch = mutation({
       throw new ConvexError("miraOrgSettings not found: " + args.id);
     }
 
-    const patch: Record<string, unknown> = { updatedAt: Date.now() };
-    if (args.openRouterKeyEncrypted !== undefined) patch.openRouterKeyEncrypted = args.openRouterKeyEncrypted;
-    if (args.model !== undefined) patch.model = args.model;
-    if (args.updatedById !== undefined) patch.updatedById = args.updatedById;
     const writeAccessChanged = args.writeAccessEnabled !== undefined && args.writeAccessEnabled !== doc.writeAccessEnabled;
-    if (args.writeAccessEnabled !== undefined) patch.writeAccessEnabled = args.writeAccessEnabled;
-
-    await ctx.db.patch(doc._id, patch);
-
-    if (writeAccessChanged) {
-      // Bounded by org membership (one miraKeys row per member), not an
-      // unbounded org-wide scan — a capped take, not a full-table read, so
-      // this stays outside the R-9.8 unbounded-read count (POLICY.md).
-      const staleKeys = await ctx.db
-        .query("miraKeys")
-        .withIndex("by_organizationId_userId", (q) => q.eq("organizationId", args.organizationId))
-        .take(500);
-      for (const mk of staleKeys) {
-        const apiKeyDoc = await ctx.db.query("apiKeys").withIndex("by_cuid", (q) => q.eq("id", mk.apiKeyId)).unique();
-        if (apiKeyDoc) await ctx.db.patch(apiKeyDoc._id, { isActive: false, revokedAt: Date.now() });
-        await ctx.db.delete(mk._id);
-      }
-    }
+    await ctx.db.patch(doc._id, buildSettingsPatch(args));
+    if (writeAccessChanged) await revokeStaleMiraKeys(ctx, args.organizationId);
   },
 });
 

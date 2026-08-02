@@ -116,6 +116,29 @@ goods are handed over at the docket, not pulled/returned through the
 warehouse flow. See the regression tests pinning this in
 `line-item-count-read.test.ts` and `warehouse-detail-reconstruct.test.ts`.
 
+## On-project equipment table
+
+Until the sales-items expansion (2026-08), a SALE line rendered identically to a
+rental EQUIPMENT line on the project's own equipment tab — the badge described
+below existed only in generated PDFs (see "PDF pipeline"). `describeRow()`
+(`equipment-row-descriptors.ts`) now adds `"sale"` as a fourth `RowSource`
+(alongside `owned`/`subhire`/`custom`) and an `isSale` boolean, computed from
+`item.type === "SALE"`. `equipment-rows.tsx` renders one of two badges next to
+the line name (desktop row and mobile card, same as Kit/Subhire/Custom):
+
+- `saleMode === "NEW_STOCK"` → green **"Sale · New stock"** badge (`status="ok"`)
+- `saleMode === "FROM_RENTAL_STOCK"` → amber **"Sale · From fleet"** badge
+  (`status="warn"`) — a visual cue that this line is an actual serialised
+  asset/bulk unit leaving the rental fleet for good, not a shelf pick.
+
+`saleMode` previously wasn't selected by either `mapLineItemDoc` implementation
+that feeds this tree (`project-line-item-read.ts`'s server-bundle path and
+`project-equipment-reconstruct.ts`'s client-safe native-cutover path — see that
+file's header comment on why two copies exist) — both now map it through. If a
+future edit to either mapper's field list is made, `saleMode` must stay listed
+or the badge silently stops rendering (nothing else would fail — the field is
+optional at the type level, so a dropped mapping is not a compile error).
+
 ## PDF pipeline (see also FEATUREDOCS/13)
 
 - Quote/invoice: SALE lines included, with a green "SALE" badge

@@ -85,6 +85,7 @@ export type MappedLineItem = Omit<
   | "_id"
   | "_creationTime"
   | "type"
+  | "saleMode"
   | "modelId"
   | "assetId"
   | "bulkAssetId"
@@ -140,6 +141,8 @@ export type MappedLineItem = Omit<
   | "updatedAt"
 > & {
   type: string;
+  /** Set only when `type === "SALE"` — which stock pool the sale drew from. */
+  saleMode: "NEW_STOCK" | "FROM_RENTAL_STOCK" | null;
   modelId: string | null;
   assetId: string | null;
   bulkAssetId: string | null;
@@ -207,6 +210,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     organizationId: d.organizationId,
     projectId: d.projectId,
     type: d.type ?? "EQUIPMENT",
+    saleMode: d.saleMode ?? null,
     modelId: d.modelId ?? null,
     assetId: d.assetId ?? null,
     bulkAssetId: d.bulkAssetId ?? null,

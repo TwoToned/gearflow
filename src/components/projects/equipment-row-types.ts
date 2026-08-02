@@ -22,6 +22,9 @@ export interface LineItemData {
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
+  /** Set only when `type === "SALE"` — which stock pool the sale drew from.
+   *  Drives the Sale badge's sub-label (equipment-row-descriptors.ts). */
+  saleMode?: string | null;
   priceBreakdown?: string | null;
   priceOverridden?: boolean;
   /** True when `unitPrice`/`discount` were forced to $0/unset by the server's

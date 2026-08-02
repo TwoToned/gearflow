@@ -46,6 +46,24 @@ describe("describeRow", () => {
     expect(d.source).toBe("subhire");
   });
 
+  it("sale item (type SALE) → sale source, isSale true", () => {
+    const d = describeRow(item({ type: "SALE", saleMode: "NEW_STOCK" }));
+    expect(d.isSale).toBe(true);
+    expect(d.source).toBe("sale");
+    expect(d.isSubhire).toBe(false);
+    expect(d.isKit).toBe(false);
+  });
+
+  it("non-sale item → isSale false", () => {
+    const d = describeRow(item({ type: "EQUIPMENT" }));
+    expect(d.isSale).toBe(false);
+  });
+
+  it("custom item takes priority over sale source (shouldn't co-occur, but source is unambiguous)", () => {
+    const d = describeRow(item({ type: "SALE", isCustomItem: true }));
+    expect(d.source).toBe("custom");
+  });
+
   it("kit parent (kitId, not child, with children) → owned / parent / isKit", () => {
     const d = describeRow(
       item({ kitId: "k1", childLineItems: [item({ id: "c1", isKitChild: true })] }),

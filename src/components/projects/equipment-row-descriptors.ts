@@ -19,11 +19,11 @@ import type { LineItemData } from "./equipment-row-types";
 // from the item alone. Each field preserves the EXACT boolean expression the row
 // previously used inline, so rendering is unchanged.
 
-export type RowSource = "owned" | "subhire" | "custom";
+export type RowSource = "owned" | "subhire" | "custom" | "sale";
 export type RowRole = "parent" | "child" | "standalone";
 
 export interface RowDescriptor {
-  /** owned stock / sub-hire / ad-hoc custom — drives the leading kind icon. */
+  /** owned stock / sub-hire / ad-hoc custom / sale — drives the leading kind icon. */
   source: RowSource;
   /** parent (has expandable children) / child / standalone. */
   role: RowRole;
@@ -31,6 +31,9 @@ export interface RowDescriptor {
   isKit: boolean;
   /** sub-hire line: `subHireId` set OR legacy `type === "SUBHIRE"`. */
   isSubhire: boolean;
+  /** `type === "SALE"` — this line sells stock rather than renting it out.
+   *  Read `item.saleMode` alongside this for which pool it drew from. */
+  isSale: boolean;
   /** show the expand chevron (kit parent or sub-hire group parent with children). */
   hasChildren: boolean;
   /** A plain serialised line whose per-unit assets expand into their own rows
@@ -45,6 +48,7 @@ export function taggedUnitCount(item: LineItemData): number {
 
 export function describeRow(item: LineItemData): RowDescriptor {
   const isSubhire = item.subHireId != null || item.type === "SUBHIRE";
+  const isSale = item.type === "SALE";
   const isKit = !!item.kitId && !item.isKitChild;
   // An accessory parent is a plain top-level asset line (no kitId, no sub-hire)
   // whose children are permanently-attached accessories — they expand the same
@@ -63,9 +67,15 @@ export function describeRow(item: LineItemData): RowDescriptor {
   // single tagged unit stays inline (rendered next to the name). Kit children
   // themselves never expand their units.
   const hasExpandableUnits = !hasChildren && !item.isKitChild && taggedUnitCount(item) > 1;
-  const source: RowSource = item.isCustomItem ? "custom" : isSubhire ? "subhire" : "owned";
+  const source: RowSource = item.isCustomItem
+    ? "custom"
+    : isSubhire
+      ? "subhire"
+      : isSale
+        ? "sale"
+        : "owned";
   const role: RowRole = item.isKitChild ? "child" : hasChildren ? "parent" : "standalone";
-  return { source, role, isKit, isSubhire, hasChildren, hasExpandableUnits };
+  return { source, role, isKit, isSubhire, isSale, hasChildren, hasExpandableUnits };
 }
 
 /**

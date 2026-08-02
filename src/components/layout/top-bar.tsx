@@ -22,6 +22,7 @@ const segmentLabels: Record<string, string> = {
   assets: "Assets",
   registry: "Registry",
   models: "Models",
+  "sales-stock": "Sales Stock",
   availability: "Availability",
   kits: "Kits",
   projects: "Projects",

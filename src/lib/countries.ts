@@ -36,6 +36,14 @@ export interface CountryDefinition {
   name: string;
   /** ISO 4217 currency code. */
   currency: string;
+  /** BCP-47 locale tag — the country's OWN locale, i.e. how an org based
+   *  there formats its own documents (not the viewer's browser locale).
+   *  Drives `Intl`-backed formatting in `formatters.ts` (I2): passing a
+   *  country's own locale + currency to `Intl.NumberFormat`/`toLocaleDateString`
+   *  reproduces dateOrder/decimalSeparator for free — they're kept as
+   *  explicit fields too because non-Intl consumers (PDF layout math) need
+   *  them without invoking `Intl`. */
+  locale: string;
   dateOrder: DateOrder;
   dateSeparator: DateSeparator;
   /** Keyed off locale, not currency — IE and NL both use EUR, only NL writes
@@ -63,6 +71,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     code: "AU",
     name: "Australia",
     currency: "AUD",
+    locale: "en-AU",
     dateOrder: "DMY",
     dateSeparator: "/",
     decimalSeparator: ".",
@@ -78,6 +87,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     code: "NZ",
     name: "New Zealand",
     currency: "NZD",
+    locale: "en-NZ",
     dateOrder: "DMY",
     dateSeparator: "/",
     decimalSeparator: ".",
@@ -93,6 +103,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     code: "GB",
     name: "United Kingdom",
     currency: "GBP",
+    locale: "en-GB",
     dateOrder: "DMY",
     dateSeparator: "/",
     decimalSeparator: ".",
@@ -108,6 +119,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     code: "US",
     name: "United States",
     currency: "USD",
+    locale: "en-US",
     dateOrder: "MDY",
     dateSeparator: "/",
     decimalSeparator: ".",
@@ -123,6 +135,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     code: "IE",
     name: "Ireland",
     currency: "EUR",
+    locale: "en-IE",
     dateOrder: "DMY",
     dateSeparator: "/",
     decimalSeparator: ".",
@@ -138,6 +151,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     code: "NL",
     name: "Netherlands",
     currency: "EUR",
+    locale: "nl-NL",
     dateOrder: "DMY",
     dateSeparator: "/",
     decimalSeparator: ",",
@@ -153,6 +167,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     code: "DE",
     name: "Germany",
     currency: "EUR",
+    locale: "de-DE",
     dateOrder: "DMY",
     dateSeparator: ".",
     decimalSeparator: ",",

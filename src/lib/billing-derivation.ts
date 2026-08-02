@@ -26,6 +26,7 @@
  * identical output across the full derivation matrix.
  */
 import { z } from "zod";
+import { formatCurrency, DEFAULT_FORMAT_CONFIG, type FormatConfig } from "./formatters";
 
 const MS_PER_DAY = 86_400_000;
 
@@ -137,15 +138,19 @@ export function computeBlendedCharge(params: {
 }
 
 /** Human-readable breakdown for UI/PDF, e.g. "2 wk @ $150.00 + 3 d @ $30.00" or
- *  "charged as 1 wk (capped)". */
-export function formatPriceBreakdown(b: PriceBreakdown): string {
+ *  "charged as 1 wk (capped)". Routes through `formatCurrency` (I2, #1081)
+ *  rather than a hand-rolled `$${n.toFixed(2)}` — an inline formatter here
+ *  was exactly the kind of bypass #1081 called out to fix. `config` is
+ *  optional so every existing call site keeps the current AU rendering
+ *  until it's threaded a real one. */
+export function formatPriceBreakdown(b: PriceBreakdown, config: FormatConfig = DEFAULT_FORMAT_CONFIG): string {
   if (b.capped) return `charged as ${b.weeks} wk (capped)`;
   if (b.weeklyRate == null) {
-    return b.dailyRate != null ? `${b.days} d @ $${b.dailyRate.toFixed(2)}` : "";
+    return b.dailyRate != null ? `${b.days} d @ ${formatCurrency(b.dailyRate, config)}` : "";
   }
   const parts: string[] = [];
-  if (b.weeks > 0) parts.push(`${b.weeks} wk @ $${b.weeklyRate.toFixed(2)}`);
-  if (b.days > 0 && b.dailyRate != null) parts.push(`${b.days} d @ $${b.dailyRate.toFixed(2)}`);
+  if (b.weeks > 0) parts.push(`${b.weeks} wk @ ${formatCurrency(b.weeklyRate, config)}`);
+  if (b.days > 0 && b.dailyRate != null) parts.push(`${b.days} d @ ${formatCurrency(b.dailyRate, config)}`);
   return parts.length > 0 ? parts.join(" + ") : "0 d";
 }
 

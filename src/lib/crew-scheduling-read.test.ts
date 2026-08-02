@@ -287,6 +287,14 @@ describe("project crew", () => {
     expect(aggregateProjectLabourCost(list)).toEqual({ totalLabourCost: 150, assignmentCount: 3 });
   });
 
+  it("aggregateProjectLabourCost: excludes service-linked assignments (already counted in serviceCostTotal)", () => {
+    const list = [
+      mAssign({ status: "CONFIRMED", estimatedCost: 100, serviceId: null }),
+      mAssign({ status: "CONFIRMED", estimatedCost: 500, serviceId: "svc1" }),
+    ];
+    expect(aggregateProjectLabourCost(list)).toEqual({ totalLabourCost: 100, assignmentCount: 1 });
+  });
+
   it("shiftsForAssignmentSortedAsc filters by assignment and sorts date asc", () => {
     const shifts = [
       mapShift({ id: "s1", assignmentId: "a1", date: ms("2026-06-09T00:00:00Z") } as ConvexCrewShift),

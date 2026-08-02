@@ -468,12 +468,16 @@ export function sortProjectCrew<
   });
 }
 
-/** getProjectLabourCost aggregate: sum estimatedCost + count, over status not in CANCELLED|DECLINED. */
+/** getProjectLabourCost aggregate: sum estimatedCost + count, over status not in
+ *  CANCELLED|DECLINED, excluding service-linked assignments — their cost already
+ *  rolled into the owning service's `costTotal` (convex/lib/serviceCost.ts), so
+ *  counting it again here would double it. Mirrors recalcProjectTotals's
+ *  `labourCostTotal` exclusion (convex/lib/recalc.ts, issue #796). */
 export function aggregateProjectLabourCost(assignments: MappedCrewAssignment[]): {
   totalLabourCost: number;
   assignmentCount: number;
 } {
-  const eligible = assignments.filter((a) => !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status));
+  const eligible = assignments.filter((a) => !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status) && a.serviceId == null);
   return {
     totalLabourCost: eligible.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0),
     assignmentCount: eligible.length,

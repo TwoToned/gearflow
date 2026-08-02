@@ -360,7 +360,7 @@ export async function checkKitAvailability(
  *   subtotal         = equipmentRevenue + serviceRevenue + saleRevenue
  *   discountAmount   = subtotal × discountPercent / 100
  *   taxableAmount    = subtotal - discountAmount
- *   taxRate          = project.taxRate ?? org.defaultTaxRate ?? 10
+ *   taxRate          = project.taxRate ?? org.defaultTaxRate ?? 0
  *   taxAmount        = taxableAmount × taxRate / 100
  *   total            = taxableAmount + taxAmount
  *   subHireCostTotal = SUM(subHire.totalCost) WHERE status NOT IN (CANCELLED, DRAFT)

@@ -32,7 +32,7 @@ async function seedProject(t: T, id = "p1", orgId = ORG, extra: Record<string, u
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-      total: 0, ...extra,
+      total: 0, taxRate: 10, ...extra,
     });
   });
 }

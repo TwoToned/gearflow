@@ -233,8 +233,11 @@ export async function recalcProjectTotals(
   const discountAmount = round(subtotal * (discountPercent / 100));
   const taxableAmount = round(subtotal - discountAmount);
 
-  // Tax rate: project override → org default (Postgres, passed in) → 10%.
-  let taxRate = 10;
+  // Tax rate: project override → org default (Postgres, passed in) → zero.
+  // No hardcoded fallback rate (#1088) — a US org ships with no default tax
+  // rate by design (there is no national rate), and an org with neither
+  // value set must produce zero tax, not an invented Australian GST rate.
+  let taxRate = 0;
   if (project.taxRate != null) taxRate = Number(project.taxRate);
   else if (orgDefaultTaxRate != null) taxRate = Number(orgDefaultTaxRate);
 

@@ -227,7 +227,7 @@ describe("groupTemplatesWrites.applyNative", () => {
       await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "p1", name: "Cat", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED",
-        total: 999,
+        total: 999, taxRate: 10,
         ...(opts.projectDates ? { rentalStartDate: NOW, rentalEndDate: NOW + 86_400_000 } : {}),
       });
       // Pre-existing standalone (ungrouped) line — bills into equipmentRevenue so

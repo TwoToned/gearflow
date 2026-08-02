@@ -116,6 +116,37 @@ goods are handed over at the docket, not pulled/returned through the
 warehouse flow. See the regression tests pinning this in
 `line-item-count-read.test.ts` and `warehouse-detail-reconstruct.test.ts`.
 
+**2026-08 partial reversal — NEW_STOCK only.** The "no warehouse involvement"
+decision above turned out to undercount real prep work: a NEW_STOCK sale item
+still has to be physically pulled off a shelf before a job goes out, so it
+belongs on someone's pick list. `reconstructSaleItemsToPrep()`
+(`warehouse-detail-reconstruct.ts`) adds a SEPARATE list — deliberately not
+merged into the `type === "EQUIPMENT"` scan/kit tree above — of NEW_STOCK sale
+lines (`status !== "CANCELLED"`), each carrying its model's `sku` and a
+`picked` flag (`salePickedAt != null`). The warehouse page's Pick tab renders
+this as its own "Sale items to prepare" section
+(`src/components/warehouse/sale-items-to-prep.tsx`), picked by **SKU**, not
+asset tag — a NEW_STOCK line has no underlying asset/bulk record to scan.
+`convex/warehouseWrites.ts`'s `setSalePicked` mutation (`danger: "low"`,
+`warehouse:check_out`) is the only writer of `projectLineItems.salePickedAt`;
+it explicitly re-checks `type === "SALE" && saleMode === "NEW_STOCK"` server-side
+so it can never be pointed at an EQUIPMENT line or a FROM_RENTAL_STOCK sale line.
+
+**FROM_RENTAL_STOCK sale lines are still fully excluded from the warehouse
+page** — the original decision stands for that half. A FROM_RENTAL_STOCK sale
+already IS a specific serialised asset or bulk unit; threading it into the
+scan/kit-cascade tree (`flipLineUnits` and friends) is a separate, larger
+piece of work than this pass took on, deliberately deferred. Don't reuse
+`salePickedAt` for it — it means "grab this off the shelf," which a
+FROM_RENTAL_STOCK line never is.
+
+Do NOT reuse the scan-driven `prepStatus`/`projectLineItemUnits` unit system
+for NEW_STOCK sale-item picking. `prepStatus` is explicitly barred from the
+generic `patchNative` client mutation (`LINE_IMMUTABLE_ON_PATCH` in
+`lineItemWrites.ts`) precisely because it's owned by that asset-scan machinery
+— a NEW_STOCK sale line has no asset/bulk unit to scan, so `salePickedAt` is a
+deliberately separate, much simpler field.
+
 ## On-project equipment table
 
 Until the sales-items expansion (2026-08), a SALE line rendered identically to a

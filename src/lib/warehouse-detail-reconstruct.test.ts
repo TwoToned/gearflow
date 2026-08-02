@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   reconstructWarehouseProject,
+  reconstructSaleItemsToPrep,
   type WarehouseBundleData,
 } from "./warehouse-detail-reconstruct";
 
@@ -51,9 +52,9 @@ describe("reconstructWarehouseProject", () => {
         lineItems: [
           d({ id: "li1", organizationId: ORG, projectId: PROJ, type: "EQUIPMENT", modelId: "m1", kitId: "k1", assetId: "a1", quantity: 1, status: "CHECKED_OUT" }),
           d({ id: "svc1", organizationId: ORG, projectId: PROJ, type: "SERVICE", quantity: 1, status: "QUOTED" }), // dropped (not EQUIPMENT)
-          // WS11 (#950) — a SALE line is invisible to the warehouse detail page for
-          // free (not EQUIPMENT); no new filter logic was added for this, this case
-          // pins that as a regression guard rather than an accident of the type check.
+          // WS11 (#950) — a SALE line stays out of the EQUIPMENT scan/kit tree
+          // (not EQUIPMENT type); it's picked up separately by
+          // reconstructSaleItemsToPrep instead (2026-08 warehouse sales-prep split).
           d({ id: "sale1", organizationId: ORG, projectId: PROJ, type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 2, status: "CONFIRMED" }),
         ],
         units: [
@@ -78,5 +79,54 @@ describe("reconstructWarehouseProject", () => {
     expect(li.asset?.assetTag).toBe("TAG-A1"); // asset on the line
     expect(li.units).toHaveLength(1);
     expect(li.units[0].asset?.assetTag).toBe("TAG-A2"); // asset on the unit
+
+    // The SALE line is excluded from the EQUIPMENT tree above but DOES surface
+    // in the separate sale-items-to-prep list, with its model's SKU attached.
+    expect(res.saleItemsToPrep).toHaveLength(1);
+    expect(res.saleItemsToPrep[0].id).toBe("sale1");
+    expect(res.saleItemsToPrep[0].quantity).toBe(2);
+    expect(res.saleItemsToPrep[0].modelName).toBe("SM58");
+    expect(res.saleItemsToPrep[0].picked).toBe(false);
+  });
+});
+
+describe("reconstructSaleItemsToPrep", () => {
+  it("includes only NEW_STOCK, non-cancelled SALE lines, with SKU + picked state", () => {
+    const res = reconstructSaleItemsToPrep(
+      makeBundle({
+        lineItems: [
+          d({ id: "sale-new", organizationId: ORG, projectId: PROJ, type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 3, status: "CONFIRMED", salePickedAt: 12345 }),
+          // FROM_RENTAL_STOCK sale — excluded (2026-08 split kept this half out of the warehouse tree).
+          d({ id: "sale-fleet", organizationId: ORG, projectId: PROJ, type: "SALE", saleMode: "FROM_RENTAL_STOCK", modelId: "m1", quantity: 1, status: "CONFIRMED" }),
+          // Cancelled NEW_STOCK sale — excluded, nothing left to pick.
+          d({ id: "sale-cancelled", organizationId: ORG, projectId: PROJ, type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", quantity: 1, status: "CANCELLED" }),
+          // Rental EQUIPMENT line — excluded, not a sale.
+          d({ id: "li-rental", organizationId: ORG, projectId: PROJ, type: "EQUIPMENT", modelId: "m1", quantity: 1, status: "CONFIRMED" }),
+        ],
+        models: [d({ id: "m1", organizationId: ORG, name: "SM58", sku: "SKU-SM58", categoryId: "cat1" })],
+      }),
+    );
+    expect(res).toHaveLength(1);
+    expect(res[0]).toEqual({
+      id: "sale-new",
+      description: null,
+      quantity: 3,
+      sku: "SKU-SM58",
+      modelName: "SM58",
+      picked: true,
+    });
+  });
+
+  it("falls back to null sku/modelName when the model has no SKU or is missing", () => {
+    const res = reconstructSaleItemsToPrep(
+      makeBundle({
+        lineItems: [
+          d({ id: "sale-no-model", organizationId: ORG, projectId: PROJ, type: "SALE", saleMode: "NEW_STOCK", description: "Custom cable", quantity: 1, status: "CONFIRMED" }),
+        ],
+      }),
+    );
+    expect(res).toEqual([
+      { id: "sale-no-model", description: "Custom cable", quantity: 1, sku: null, modelName: null, picked: false },
+    ]);
   });
 });

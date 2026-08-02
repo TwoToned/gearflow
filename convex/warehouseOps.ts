@@ -1530,6 +1530,26 @@ export const clearPrepContainer = mutation({
   },
 });
 
+export type SetSalePickedArgs = { organizationId: string; lineItemId: string; picked: boolean; now: number };
+
+/**
+ * NEW_STOCK sale-item pick checklist toggle (2026-08 warehouse sales-prep split).
+ * Deliberately NOT the scan-driven `flipLineUnits`/prepStatus family below — a
+ * NEW_STOCK sale line has no asset/bulk unit to flip. Callers (warehouseWrites.ts)
+ * are responsible for confirming the line is actually a NEW_STOCK sale line before
+ * calling this — it re-checks here too so a bad caller can't flip the field on an
+ * EQUIPMENT line and confuse it with real prep status.
+ */
+export async function setSalePickedCore(ctx: Ctx, a: SetSalePickedArgs): Promise<{ id: string }> {
+  const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.lineItemId)).first();
+  if (!line || line.organizationId !== a.organizationId) throw new ConvexError("Line item not found");
+  if (line.type !== "SALE" || line.saleMode !== "NEW_STOCK") {
+    throw new ConvexError("Only NEW_STOCK sale line items can be marked picked");
+  }
+  await ctx.db.patch(line._id, { salePickedAt: a.picked ? a.now : undefined, updatedAt: a.now });
+  return { id: a.lineItemId };
+}
+
 /**
  * Batch container roll-up (bulk single-call invariant, Phase 3): sync N containers
  * in ONE array mutation instead of the client firing one `syncContainerStatus` per

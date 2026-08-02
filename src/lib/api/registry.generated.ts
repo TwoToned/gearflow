@@ -57927,6 +57927,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "warehouseWrites.setSalePicked",
+    "module": "warehouseWrites",
+    "fn": "setSalePicked",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "check_out",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "check_out"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "lineItemId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "picked",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "adf71fca9aed0793",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "warehouseWrites.syncContainersBatch",
     "module": "warehouseWrites",
     "fn": "syncContainersBatch",
@@ -60336,10 +60393,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1159,
-  agentReachable: 564,
+  total: 1160,
+  agentReachable: 565,
   queries: 409,
-  mutations: 750,
+  mutations: 751,
   agentReachableQueries: 289,
-  agentReachableMutations: 275,
+  agentReachableMutations: 276,
 } as const;

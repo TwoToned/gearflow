@@ -79,6 +79,44 @@ formatting regardless of the org's real country, and needs its own pass with
 the per-doc-type integration tests CLAUDE.md's PDF rule requires for a
 pagination-adjacent change.
 
+### Named date-format roles + the inline-format ratchet (I3, #1082)
+
+Beyond `formatDate`'s hardcoded locale (fixed by I2), `date-fns` `format(date,
+"…")` calls were scattered across ~20 files and **contradicted each other at
+the same AU locale** — some screens used day-first ("d MMM"), others
+month-first ("MMM d, yyyy") for the same kind of field. `src/lib/formatters.ts`
+adds four named roles alongside `formatDate` (the "short" role), all built on
+one shared `formatDateWithOptions` (`Intl`-backed, so date order/separator
+comes free per locale — no per-country date logic needed):
+
+- `formatDateDayMonth` — no year (compact range/relative labels)
+- `formatDateLong` — weekday + full month + year (always includes the year;
+  some pre-#1082 call sites dropped it inconsistently)
+- `formatDateWithTime` — the short role + a 24-hour clock, **pinned** with
+  `hour12: false` (date-fns's `"HH:mm"` was always 24-hour regardless of
+  locale; `Intl`'s default isn't, so it's forced explicitly)
+- `formatMonthYear` — month + year only (calendar headers)
+
+All four are exposed on `useFormatters()` too. Migrated in #1082: the
+concrete month-first-vs-day-first contradiction (`activity/page.tsx`,
+`maintenance/page.tsx` ×2, `maintenance/due/page.tsx` ×2, `dashboard/page.tsx`
+×2) — the Maintenance section + Activity log were the month-first outliers
+against day-first everywhere else. **Not migrated**: the remaining ~15 inline
+`format()` calls with word-based date tokens (booking calendar, availability
+page, `range-calendar.tsx`, `project-wizard.tsx`, `my-work-section.tsx`) —
+left for incremental follow-up. `"yyyy-MM-dd"`/`"yyyy-MM"` MACHINE formats
+(keys, query params, filenames, ical) are correctly locale-independent and
+were never in scope.
+
+**The ratchet** (`scripts/date-format-ratchet.sh`, `pnpm run
+date-format-ratchet`, wired into CI's `hygiene` job): counts inline `format(x,
+"…")` calls whose format string contains a word-based month/weekday token
+(`MMM`/`MMMM`/`EEE`/`EEEE` — the exact axis that reorders per locale). The
+count is a ratchet baseline (`.date-format-ratchet-baseline`, currently 15)
+like `any-ratchet`/`knip-ratchet`/`complexity-ratchet` — it can only go down;
+a new inline display-date format string fails CI, forcing new dates through a
+named role instead.
+
 `OrgSettings.country` (the field above) is **immutable after creation
 (M6)** — `src/server/settings.ts`'s `updateOrganization` enforces it
 server-side via `withImmutableCountry()`, which forces the persisted value

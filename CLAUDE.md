@@ -379,16 +379,23 @@ NO grace window, verified inside one Convex transaction so a concurrent replay o
 same (now-superseded) credential always loses the race — do not add a grace window to
 either, unlike the manual-key `rotate` mutation's deliberate one.
 
-### Mira (in-app assistant) — a first-party MCP consumer, not a special case
-Mira answers a question by calling `dispatch()` — the SAME function REST/MCP use —
-never a separate code path (`src/server/mira.ts`). It acts as the asking user via a
-per-(org, user) `apiKeys` row it provisions itself (`miraKeys` table, secret
-encrypted with `src/lib/crypto/secret-vault.ts`, the same vault trusted for Xero
-tokens), using the `read_only_agent` preset — never a fixed "system" identity, so a
-member can never get more access through Mira than their own role already grants.
-The question → operation mapping (`src/lib/mira/intent-router.ts`) is a small
-deterministic router today, not an LLM — see FEATUREDOCS/68 before wiring a new
-Mira route or swapping in a real model.
+### Mira (in-app assistant) — a real LLM tool-calling loop, still one dispatch() consumer
+Mira answers a question with a real LLM tool-calling loop (OpenRouter — each org brings
+its OWN API key + model, `/settings/mira`, `src/server/mira-settings.ts`) that calls
+`dispatch()` — the SAME function REST/MCP use — never a separate code path
+(`src/server/mira.ts`, `src/lib/mira/agent-loop.ts`). It acts as the asking user via a
+per-(org, user) `apiKeys` row it provisions itself (`miraKeys` table, secret encrypted
+with `src/lib/crypto/secret-vault.ts`, the same vault trusted for Xero tokens and each
+org's OpenRouter key) — never a fixed "system" identity, so a member can never get more
+access through Mira than their own role already grants. Which preset it provisions
+(`read_only_agent` vs `full_agent`) is an admin-controlled org setting
+(`miraOrgSettings.writeAccessEnabled`, default off) — flipping it revokes every
+member's cached Mira key so the change takes effect immediately. The model is NEVER
+given a `confirm` parameter (`src/lib/mira/tool-defs.ts`): a `danger:"high"` tool call
+always stops and asks a human to click Confirm in the chat UI
+(`confirmMiraPendingAction`), which replays the exact stored call server-side — the LLM
+can explain what it's about to do, but cannot approve it itself. See FEATUREDOCS/68
+before wiring a new Mira tool or changing the confirmation flow.
 
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved

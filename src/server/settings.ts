@@ -43,6 +43,16 @@ export async function getOrganization() {
   return serialize({ ...org, defaultTaxRate, settings });
 }
 
+/** M6 — Organization.country is immutable after creation. Enforced by
+ *  forcing the persisted value back onto the patch server-side (the
+ *  PROJECT_UPDATE_IMMUTABLE pattern, convex/projectWrites.ts:420) — never a
+ *  disabled input alone, since `settings` is a client-supplied blob R-9.3
+ *  has to re-check regardless of what the UI sent. Only a still-unset
+ *  country (first save) may be written. */
+function withImmutableCountry(existing: OrgSettings, incoming: OrgSettings): OrgSettings {
+  return existing.country ? { ...incoming, country: existing.country } : incoming;
+}
+
 export async function updateOrganization(data: {
   name: string;
   settings: OrgSettings;
@@ -76,13 +86,16 @@ export async function updateOrganization(data: {
     }
   }
 
+  const existingSettings = await readOrgSettingsBlob(organizationId);
+  const settings = withImmutableCountry(existingSettings, data.settings);
+
   // Identity (name) stays on the Better Auth org row; business settings + tax
   // rate go to Convex (source of truth).
   const updated = await prisma.organization.update({
     where: { id: organizationId },
     data: { name: data.name },
   });
-  await saveOrgSettings(organizationId, data.settings, data.defaultTaxRate);
+  await saveOrgSettings(organizationId, settings, data.defaultTaxRate);
 
   await logActivity({
     organizationId,
@@ -95,7 +108,7 @@ export async function updateOrganization(data: {
     summary: `Updated organization settings`,
   });
 
-  return serialize({ ...updated, settings: data.settings, defaultTaxRate: data.defaultTaxRate });
+  return serialize({ ...updated, settings, defaultTaxRate: data.defaultTaxRate });
 }
 
 /** Get org-level T&T settings (for fallback defaults). */

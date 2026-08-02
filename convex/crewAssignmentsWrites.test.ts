@@ -187,14 +187,17 @@ describe("crewAssignments reads", () => {
       await ctx.db.insert("crewAssignments", { id: "a3", organizationId: ORG, projectId: "p1", crewMemberId: "c1", status: "CANCELLED", estimatedCost: 999 });
       await ctx.db.insert("crewShifts", { id: "sh1", assignmentId: "a1", date: NOW });
       await ctx.db.insert("crewAssignments", { id: "aX", organizationId: OTHER, projectId: "p1", crewMemberId: "c1", status: "CONFIRMED", estimatedCost: 777 });
+      // Service-linked — its cost already lives in the service's own costTotal, so
+      // projectLabourCost must not sum it again (issue #796 / the crew-tab double-count bug).
+      await ctx.db.insert("crewAssignments", { id: "a4", organizationId: ORG, projectId: "p1", crewMemberId: "c1", serviceId: "s1", status: "CONFIRMED", estimatedCost: 5000 });
     });
     const crew = await t.withIdentity(asUser).query(api.crewAssignments.projectCrew, { projectId: "p1", orgId: ORG });
-    expect(crew.map((a) => a.id)).toEqual(["a2", "a1", "a3"]); // PM first (a2), then non-PM
+    expect(crew.map((a) => a.id)).toEqual(["a2", "a1", "a3", "a4"]); // PM first (a2), then non-PM
     expect(crew.find((a) => a.id === "a1")?.crewMember.lastName).toBe("Ryan");
     expect(crew.find((a) => a.id === "a1")?.crewRole?.name).toBe("Rigger");
     expect(crew.find((a) => a.id === "a1")?.shifts).toHaveLength(1);
     const labour = await t.withIdentity(asUser).query(api.crewAssignments.projectLabourCost, { projectId: "p1", orgId: ORG });
-    expect(labour.totalLabourCost).toBe(1500); // a1+a2, excludes CANCELLED a3 + foreign aX
+    expect(labour.totalLabourCost).toBe(1500); // a1+a2, excludes CANCELLED a3, foreign aX, and service-linked a4
     expect(labour.assignmentCount).toBe(2);
   });
 

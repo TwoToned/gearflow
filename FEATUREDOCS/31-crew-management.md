@@ -206,7 +206,12 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
   (`convex/lib/recalc.ts`) only sums assignments with **no** `serviceId` — a
   service-linked assignment's cost is already inside `serviceCostTotal` via the
   service's own `costTotal`. Standalone assignments (rare now — see below) still
-  roll up through `labourCostTotal` as before.
+  roll up through `labourCostTotal` as before. The SAME exclusion applies to
+  `crewAssignments.projectLabourCost` (the "Crew" tile in `ProjectSummaryStrip`
+  and the "Est. labour" figure in `CrewPanel`'s summary bar) and its pure
+  counterpart `aggregateProjectLabourCost` — both were fixed to exclude
+  service-linked assignments after they were found double-displaying a
+  service's crew cost as a second, separate "Crew" total.
 - A **crew-less** service keeps whatever `costTotal` was last set manually (e.g. a
   vehicle/transport-only service with no crew) — `recalcServiceCostFromCrew()` only
   takes over once the service has 1+ crew.

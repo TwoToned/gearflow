@@ -131,8 +131,14 @@ export const projectLabourCost = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
+    // A service-linked assignment's cost is already rolled into its service's
+    // `costTotal` (convex/lib/serviceCost.ts recalcServiceCostFromCrew), which
+    // feeds `serviceCostTotal` — summing it again here would double it against
+    // that. Mirrors recalcProjectTotals's `labourCostTotal` exclusion exactly
+    // (convex/lib/recalc.ts, issue #796) so this display total and the real P&L
+    // total never disagree.
     const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
-      .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? ""));
+      .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? "") && a.serviceId == null);
     return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };
   },
 });

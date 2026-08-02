@@ -868,8 +868,9 @@ function buildEntryFields(
       // Business registration id, shown wherever the org address/phone/email
       // block renders — every doc type, not just Tax Invoices (AU Tax
       // Invoices require it, but there's no reason to hide it elsewhere).
-      // Placed under the address/email lines already above it.
-      if (data.org_abn) orgDetailParts.push(`ABN: ${data.org_abn}`);
+      // Placed under the address/email lines already above it. Label is
+      // country-derived (I4, #1083) — "ABN" is Australian, not global.
+      if (data.org_abn) orgDetailParts.push(`${data.org_business_number_label}: ${data.org_abn}`);
       if (data.org_website) orgDetailParts.push(data.org_website);
 
       // Quote expiry moves from its own bottom-of-document line into the
@@ -888,10 +889,16 @@ function buildEntryFields(
       const docMetaLines = [projectNumberLine, data.document_date || ""];
       if (docType === "quote" && data.quote_valid_until) docMetaLines.push(`Expiry: ${data.quote_valid_until}`);
 
+      // I4 (#1083) — "TAX INVOICE" is an AU/NZ legal term, not a global one.
+      // Only the invoice layout's static block.title needs a country-derived
+      // override; every other doc type's heading (QUOTE, PULL SLIP, …) is a
+      // generic business term that doesn't vary per country.
+      const docTitle = docType === "invoice" ? data.org_invoice_heading || block.title : block.title;
+
       const config: PageHeaderConfig = {
         orgName: data.org_name || "",
         orgDetails: orgDetailParts.join("\n"),
-        docTitle: block.title,
+        docTitle,
         docMeta: docMetaLines.join("\n"),
         logoData: data.org_logo,
         iconData: data.org_icon,
@@ -931,7 +938,12 @@ function buildEntryFields(
       if (block.client.showClientContact && data.client_contact) clientLines.push(`Attn: ${data.client_contact}`);
       if (block.client.showClientEmail && data.client_email) clientLines.push(data.client_email);
       if (block.client.showClientAddress && data.client_billing_address) clientLines.push(data.client_billing_address);
-      if (block.client.showClientTaxId && data.client_tax_id) clientLines.push(`ABN: ${data.client_tax_id}`);
+      // Same country-derived label as the org's own number above (I4,
+      // #1083) — it names the org's home-jurisdiction registration-number
+      // format, not a per-party thing.
+      if (block.client.showClientTaxId && data.client_tax_id) {
+        clientLines.push(`${data.org_business_number_label}: ${data.client_tax_id}`);
+      }
 
       // The event/project name leads the column — bolded via the shared
       // markdown-lite renderer (gearflowRichText) rather than a separate

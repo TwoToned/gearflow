@@ -59,6 +59,11 @@ export interface CountryDefinition {
    *  against repeating). */
   defaultTaxRate: number | null;
   businessNumberLabel: string;
+  /** I4 (#1083) — the invoice document's printed heading. "TAX INVOICE" is
+   *  a legal requirement specific to AU/NZ's GST system, not a global term —
+   *  every other market gets the generic "INVOICE" (M1: no i18n framework,
+   *  so this stays hardcoded English everywhere, never translated). */
+  invoiceHeading: string;
   /** M7 — ships in this table but excluded from any country-selecting UI
    *  (wizard, settings) until decimal-comma input parsing (#1087) lands.
    *  Misreading a typed price by 100x is the worst failure available in a
@@ -81,6 +86,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "GST",
     defaultTaxRate: 10,
     businessNumberLabel: "ABN",
+    invoiceHeading: "TAX INVOICE",
     enabled: true,
   },
   {
@@ -97,6 +103,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "GST",
     defaultTaxRate: 15,
     businessNumberLabel: "NZBN",
+    invoiceHeading: "TAX INVOICE",
     enabled: true,
   },
   {
@@ -113,6 +120,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "VAT",
     defaultTaxRate: 20,
     businessNumberLabel: "VAT number",
+    invoiceHeading: "INVOICE",
     enabled: true,
   },
   {
@@ -129,6 +137,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "Sales tax",
     defaultTaxRate: null,
     businessNumberLabel: "EIN",
+    invoiceHeading: "INVOICE",
     enabled: true,
   },
   {
@@ -145,6 +154,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "VAT",
     defaultTaxRate: 23,
     businessNumberLabel: "VAT number",
+    invoiceHeading: "INVOICE",
     enabled: true,
   },
   {
@@ -161,6 +171,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "BTW",
     defaultTaxRate: 21,
     businessNumberLabel: "BTW-nummer",
+    invoiceHeading: "INVOICE",
     enabled: false,
   },
   {
@@ -177,6 +188,7 @@ export const COUNTRIES: readonly CountryDefinition[] = [
     taxLabel: "MwSt",
     defaultTaxRate: 19,
     businessNumberLabel: "USt-IdNr",
+    invoiceHeading: "INVOICE",
     enabled: false,
   },
 ] as const;

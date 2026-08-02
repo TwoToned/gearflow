@@ -127,6 +127,38 @@ describe("routeToolCall — curated tools", () => {
     expect((result.structuredContent as { error: { code: string } }).error.code).toBe("UNKNOWN_OPERATION");
     expect(dispatchMock).not.toHaveBeenCalled();
   });
+
+  test("confirm:true is hoisted to the dispatch envelope's TOP LEVEL, not left nested in args", async () => {
+    // Regression test: a previous version of handleCuratedTool only destructured
+    // idempotencyKey out of the raw tool args, leaving `confirm` inside `opArgs`
+    // — so `envelope.confirm` was always undefined and a danger:"high" curated
+    // tool could never satisfy dispatcher.ts's CONFIRMATION_REQUIRED gate no
+    // matter what the caller passed.
+    dispatchMock.mockResolvedValueOnce({ status: 200, body: { data: {}, requestId: "req_1" } });
+    const tool = MCP_CURATED_TOOLS.find((t) => t.operation !== null)!;
+    await routeToolCall(tool.name, { idempotencyKey: "idem-1", confirm: true, foo: "bar" }, opts);
+    expect(dispatchMock).toHaveBeenCalledWith(
+      tool.operation,
+      { args: { foo: "bar" }, idempotencyKey: "idem-1", confirm: true },
+      opts.authorizationHeader,
+      opts.requestId,
+    );
+  });
+
+  test("call_operation also hoists a top-level confirm:true to the dispatch envelope", async () => {
+    dispatchMock.mockResolvedValueOnce({ status: 200, body: { data: {}, requestId: "req_1" } });
+    await routeToolCall(
+      `${MCP_NAMESPACE}.call_operation`,
+      { operation: "assetWrites.deleteNative", args: { id: "asset_1" }, idempotencyKey: "idem-key-12345", confirm: true },
+      opts,
+    );
+    expect(dispatchMock).toHaveBeenCalledWith(
+      "assetWrites.deleteNative",
+      { args: { id: "asset_1" }, idempotencyKey: "idem-key-12345", confirm: true },
+      opts.authorizationHeader,
+      opts.requestId,
+    );
+  });
 });
 
 describe("routeToolCall — get_project_document (the other operation:null special tool)", () => {

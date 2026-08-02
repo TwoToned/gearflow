@@ -55,6 +55,11 @@ src/components/projects/sale-add-form.tsx    — the "Sale" kind in UnifiedAddDi
 src/components/projects/unified-add-dialog.tsx
 src/hooks/use-line-item-writes.ts            — add()/unsell() wrappers
 
+src/app/(app)/assets/sales-stock/page.tsx    — Assets -> Sales Stock tab (2026-08)
+src/components/assets/sales-stock-table.tsx  — the table + restock dialog
+convex/modelWrites.ts                        — adjustSaleStockNative (manual restock mutation)
+src/hooks/use-model-writes.ts                — adjustSaleStock() wrapper
+
 src/server/csv.ts               — salePrice/saleStockQuantity CSV columns
 src/lib/rate-import.ts          — salePrice in the narrow rate-only CSV import
 ```
@@ -169,6 +174,43 @@ file's header comment on why two copies exist) — both now map it through. If a
 future edit to either mapper's field list is made, `saleMode` must stay listed
 or the badge silently stops rendering (nothing else would fail — the field is
 optional at the type level, so a dropped mapping is not a compile error).
+
+## Sales Stock tab (Assets, 2026-08)
+
+Every model is sellable, but until now there was no UI to VIEW or SET
+`Model.saleStockQuantity` outside the model edit form's single number input
+(and CSV bulk-edit). **Assets → Sales Stock** (`/assets/sales-stock`,
+sidebar sub-nav next to Fleet ROI, gated on `model:read` like Fleet ROI) lists
+every active model with its `salePrice`/`saleStockQuantity`, sorted lowest
+stock first by default so a negative (oversold) pool sorts to the top, badged
+`status="overbooked"` — the same "oversold" vocabulary the Overbookings board
+uses. Deliberately lists the WHOLE catalogue, not just models with stock
+already set — the point of the tab is to let an operator set it in the first
+place.
+
+Each row's **Restock** button (gated `model:update`, matches the
+`asset:update`-free NEW_STOCK write bar — no asset is touched) opens a dialog
+taking a signed integer delta (positive = stock received, negative = a
+stocktake/damage correction) and an optional free-text reason, calling
+`modelWrites.adjustSaleStockNative`. That mutation is a thin wrapper: it does
+its OWN existence/org check (a manual action should 404 loudly, unlike a
+line-item side effect) and then defers the patch + audit-log write to
+`saleStock.ts`'s `adjustModelSaleStock` — the SAME primitive the four
+line-item write paths use (R-3.1, one authoritative place that touches
+`saleStockQuantity`). `projectId`/`lineItemId` are now optional on that
+primitive: omitted, the audit summary reads "Added N to sale stock" /
+"Removed N from sale stock" (plus the reason) instead of "Sold"/"Restored" —
+the caller distinguishes a manual adjustment from a line-item-driven one by
+whether `projectId` is present, not by a separate flag. No floor on the
+negative side — oversell here is the same warn-never-block posture as
+everywhere else in this workstream.
+
+Complements, doesn't duplicate, the Overbookings board's "Sale stock to
+procure" section (`overbookingBoard.ts`'s `computeSaleStockToProcure`): that's
+a reactive, oversold-only alert pointing at the contributing projects: this is
+the general-purpose view + the only UI restock action. The two now cross-link
+— the board's model rows link to `/assets/models/{id}`, and the section header
+links to `/assets/sales-stock`.
 
 ## PDF pipeline (see also FEATUREDOCS/13)
 

@@ -35,7 +35,10 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
    gone negative — sold below what was ever added as stock. Each row lists the
    contributing NEW_STOCK sale lines (project + qty) that drew the pool down.
    Supersedes the original pre-WS11 stub (a negative `bulkAssets.saleStockQuantity`
-   on any bulk row), which nothing ever wrote — see FEATUREDOCS/67.
+   on any bulk row), which nothing ever wrote — see FEATUREDOCS/67. Each model
+   name links to `/assets/models/{id}`, and the section header links to
+   **Assets → Sales Stock** (2026-08, FEATUREDOCS/67) — the general-purpose
+   view + restock action this section's alert points at.
 4. **Services missing crew** — a `projectService` in range whose FILLED crew
    count (excluding `DECLINED`/`CANCELLED` assignments) is below
    `crewCountRequired`. `crewCountRequired` of `null`/`0` is explicitly

@@ -29982,6 +29982,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "modelWrites.adjustSaleStockNative",
+    "module": "modelWrites",
+    "fn": "adjustSaleStockNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "delta",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reason",
+        "optional": true,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "dbc5f6494e54e311",
+    "returnsSha": "908da116fbb272d0",
+    "stability": "tracks-app",
+    "summary": "Adjust a model's new-stock sale-stock pool by a delta (restock or correction).",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "modelWrites.archiveNative",
     "module": "modelWrites",
     "fn": "archiveNative",
@@ -60393,10 +60455,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1160,
-  agentReachable: 565,
+  total: 1161,
+  agentReachable: 566,
   queries: 409,
-  mutations: 751,
+  mutations: 752,
   agentReachableQueries: 289,
-  agentReachableMutations: 276,
+  agentReachableMutations: 277,
 } as const;

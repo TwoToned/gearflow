@@ -17,8 +17,8 @@ import { formatDate } from "@/lib/formatters";
  * FINANCE_LOCKED before any auto-recall could fire), so the lock learns this
  * one-click confirm instead of a bare toast.
  *
- * Calls the EXISTING `recallNative` unchanged (out of scope: any change to
- * recall itself) — this is decision 5's behaviour with one confirmation in
+ * Calls the EXISTING `recallNative` unchanged (changing recall itself is
+ * out of scope here) — this is decision 5's behaviour with one confirmation in
  * front of it, not a second recall path. The reason text is a fixed string
  * rather than a free-text field: the whole point is "one click", and every
  * other un-send path already requires an explicit reason — this dialog IS

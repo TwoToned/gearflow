@@ -154,6 +154,35 @@ assistant/tool exchange is never split across the cap boundary (a `tool` message
 matching preceding `tool_calls` is an invalid message sequence for the chat-completions
 API).
 
+## System prompt — domain vocabulary + a live org snapshot
+
+Beyond the safety rules above, `src/lib/mira/system-prompt.ts` gives the model two things
+so it can actually make sense of what tools return, not just call them mechanically:
+
+- **A condensed domain-vocabulary primer** (kept in sync with `docs/glossary.md`'s Core
+  entities / Warehouse & lifecycle sections) — Asset vs bulk asset vs kit vs model,
+  deploy/return, client (never "customer"), and the project lock-tier lifecycle. Without
+  this, a tool result's bare field names (`bulkQuantity`, `CHECKED_OUT`) have no reason
+  to map onto the terms this org's users actually use, and a write blocked by a lock
+  tier would read as a mystery error rather than "this project is past the stage where
+  that edit is normally allowed."
+- **A live org snapshot** (`src/lib/mira/org-snapshot.ts`) — active project/asset/crew
+  counts, overdue returns, maintenance due — fetched via the SAME `dashboardStats.bundle`
+  operation the app's own dashboard tiles use, one more `dispatch()` call under Mira's
+  own token (so it's bounded by that user's RBAC same as everything else) BEFORE the
+  first model call, not something the model has to think to ask for. Best-effort: a
+  fetch failure (counters not yet seeded, insufficient role) just omits the section
+  rather than blocking the conversation.
+
+There is deliberately **no separate "org profile" (industry, region, specialty, etc.)**
+fed into the prompt — the `Organization` model has no such structured fields today (just
+`name`/`slug`/`logo`/a free-form `metadata` JSON blob), so beyond the org's name, Mira's
+picture of "what kind of business this is" comes entirely from the live data she reads
+via tools (project types, client list, asset catalog), not a hand-typed bio. If that
+turns out to matter for answer quality, the right fix is a real structured field on
+`Organization` (and a settings-page control for it) — not stuffing free text into the
+system prompt from `metadata`.
+
 ## Page context
 
 `src/hooks/use-mira-page-context.ts`'s `useMiraPageContext(context)` publishes "what the

@@ -14,6 +14,7 @@ import { serialize } from "@/lib/serialize";
 import type { MiraPageContext } from "@/lib/mira/types";
 import { buildMiraSystemPrompt } from "@/lib/mira/system-prompt";
 import { buildMiraTools, findMiraTool } from "@/lib/mira/tool-defs";
+import { formatOrgSnapshot, type DashboardStatsBundle } from "@/lib/mira/org-snapshot";
 import { runMiraAgentLoop, type ExecuteTool, type ToolExecOk, type ToolExecError, type PendingConfirmation } from "@/lib/mira/agent-loop";
 import type { OpenRouterMessage } from "@/lib/mira/openrouter-client";
 import { DEFAULT_MIRA_MODEL } from "@/lib/validations/mira-settings";
@@ -203,10 +204,34 @@ async function persistMessage(input: PersistMessageInput): Promise<MiraMessageRo
   return row;
 }
 
-async function buildSystemPromptFor(organizationId: string, userId: string, userName: string, canWrite: boolean, pageContext: MiraPageContext | null) {
-  const [org, role] = await Promise.all([
+/** Best-effort — a snapshot fetch failure (e.g. counters not yet seeded, or
+ *  this user's role can't read `project`) should never block the conversation,
+ *  it just means the prompt goes out without that section. */
+async function fetchOrgSnapshot(authorizationHeader: string): Promise<string> {
+  try {
+    // `now`/`orgId` are auto-injected by the dispatcher from the token itself
+    // (src/lib/api/arg-normalizer.ts) — never supplied by the caller.
+    const result = await dispatch("dashboardStats.bundle", { args: {} }, authorizationHeader, createId());
+    if (result.status >= 400) return "";
+    const stats = (result.body as { data: DashboardStatsBundle }).data;
+    return formatOrgSnapshot(stats);
+  } catch {
+    return "";
+  }
+}
+
+async function buildSystemPromptFor(
+  organizationId: string,
+  userId: string,
+  userName: string,
+  canWrite: boolean,
+  pageContext: MiraPageContext | null,
+  authorizationHeader: string,
+) {
+  const [org, role, orgSnapshot] = await Promise.all([
     prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true } }),
     getCurrentRole(),
+    fetchOrgSnapshot(authorizationHeader),
   ]);
   return buildMiraSystemPrompt({
     organizationName: org?.name ?? "your org",
@@ -214,6 +239,7 @@ async function buildSystemPromptFor(organizationId: string, userId: string, user
     userRole: role ?? "member",
     canWrite,
     pageContext,
+    orgSnapshot,
   });
 }
 
@@ -264,7 +290,7 @@ export async function sendMiraMessage(question: string, pageContext: MiraPageCon
     organizationId,
   })) as MiraMessageRow[];
 
-  const systemPrompt = await buildSystemPromptFor(organizationId, userId, userName, config.writeAccessEnabled, pageContext);
+  const systemPrompt = await buildSystemPromptFor(organizationId, userId, userName, config.writeAccessEnabled, pageContext, `Bearer ${rawToken}`);
   const userMessage: OpenRouterMessage = { role: "user", content: trimmed };
 
   const messages: OpenRouterMessage[] = [
@@ -339,7 +365,7 @@ export async function confirmMiraPendingAction(messageId: string): Promise<SendM
   const preset = findApiKeyPreset(config.writeAccessEnabled ? "full_agent" : "read_only_agent")!;
   const tools = buildMiraTools({ includeWrites: config.writeAccessEnabled, grantedScopes: new Set(preset.scopes) });
   const priorRows = (await convex.query(api.miraMessages.listForConversation, { conversationId: conversation.id, organizationId })) as MiraMessageRow[];
-  const systemPrompt = await buildSystemPromptFor(organizationId, userId, userName, config.writeAccessEnabled, null);
+  const systemPrompt = await buildSystemPromptFor(organizationId, userId, userName, config.writeAccessEnabled, null, `Bearer ${rawToken}`);
 
   const messages: OpenRouterMessage[] = [{ role: "system", content: systemPrompt }, ...capHistory(priorRows).map(rowToModelMessage), noteMessage];
   const executeTool = createExecuteTool(tools, `Bearer ${rawToken}`);

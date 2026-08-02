@@ -1,21 +1,18 @@
 "use client";
-// use-client: interactive — expand/collapse state + a recalculate mutation (R-8.1.1)
+// use-client: interactive — expand/collapse state (R-8.1.1)
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, AlertTriangle, CircleAlert, CircleHelp, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { Check, AlertTriangle, CircleAlert, CircleHelp, ChevronDown, ChevronRight } from "lucide-react";
 
 import { useProjectReadiness } from "@/hooks/use-project-readiness";
 import { useProjectConflicts } from "@/hooks/use-project-conflicts";
-import { useRecalcAutoPricedLines } from "@/hooks/use-billing-summary";
 import { ConflictRow } from "@/components/projects/conflict-row";
 import type { ReadinessCheck, ReadinessSeverity } from "@/lib/project-readiness-checks";
 import type { ReservationConflict } from "@/lib/reservation-conflicts-types";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { showError } from "@/lib/show-error";
 import { cn, focusRing } from "@/lib/utils";
 
 /** Which project tab a check's action sends you to, when it sends you anywhere. */
@@ -101,36 +98,6 @@ function CheckRow({
   );
 }
 
-/** Inline "Recalculate" for the stale-rates check — the write side of #943. */
-function RecalculateAction({ projectId, orgId }: { projectId: string; orgId: string | undefined }) {
-  const [pending, setPending] = useState(false);
-  const { recalc } = useRecalcAutoPricedLines(orgId);
-  return (
-    <Button
-      variant="line"
-      size="sm"
-      className="h-7 shrink-0"
-      disabled={pending}
-      onClick={async () => {
-        setPending(true);
-        try {
-          const { linesUpdated } = await recalc(projectId);
-          toast.success("Pricing recalculated", {
-            description: `Updated ${linesUpdated} line item${linesUpdated === 1 ? "" : "s"} for the current rental dates.`,
-          });
-        } catch (e) {
-          showError(e);
-        } finally {
-          setPending(false);
-        }
-      }}
-    >
-      {pending && <Loader2 className="mr-1 size-3 animate-spin" />}
-      Recalculate
-    </Button>
-  );
-}
-
 /**
  * The action a failing check offers. Conflicts deliberately have none — they
  * resolve inline via the row's expander, where the swap picker lives.
@@ -138,16 +105,13 @@ function RecalculateAction({ projectId, orgId }: { projectId: string; orgId: str
 function CheckAction({
   check,
   projectId,
-  orgId,
   onNavigateTab,
 }: {
   check: ReadinessCheck;
   projectId: string;
-  orgId: string | undefined;
   onNavigateTab: (tab: ProjectTab) => void;
 }) {
   if (!check.actionLabel) return null;
-  if (check.id === "staleness") return <RecalculateAction projectId={projectId} orgId={orgId} />;
 
   // A gear shortage is resolved on the org board (sub-hire, swap, or move the
   // dates) — a project-local view can't show what else is competing for the
@@ -173,14 +137,26 @@ function CheckAction({
   );
 }
 
-/** Every check ran and passed — one line, not five green ticks. */
-function AllClearPanel({ total, onShowAll }: { total: number; onShowAll: () => void }) {
+const CHECK_LABEL: Record<ReadinessCheck["id"], string> = {
+  gear: "gear",
+  conflicts: "conflicts",
+  services: "services",
+  crew: "crew",
+  pricing: "pricing",
+};
+
+/**
+ * Every applicable check ran and passed — one line, not five green ticks.
+ * Named from the actual `checks` list (not a hardcoded string) because
+ * `services`/`crew` may not be present at all for this project.
+ */
+function AllClearPanel({ checks, onShowAll }: { checks: ReadinessCheck[]; onShowAll: () => void }) {
   return (
     <Panel padding="default" className="flex items-center gap-2.5 p-3.5">
       <CheckMark severity="pass" />
       <p className="min-w-0 flex-1 text-ui-text">
-        <span className="font-semibold text-ink">Ready — all {total} checks pass</span>
-        <span className="text-muted"> · gear, conflicts, services, crew, pricing</span>
+        <span className="font-semibold text-ink">Ready — all {checks.length} checks pass</span>
+        <span className="text-muted"> · {checks.map((c) => CHECK_LABEL[c.id]).join(", ")}</span>
       </p>
       <Button variant="line" size="sm" className="h-7 shrink-0" onClick={onShowAll}>
         Show checks
@@ -193,12 +169,18 @@ function AllClearPanel({ total, onShowAll }: { total: number; onShowAll: () => v
  * The project's readiness checklist — the lead section of the Overview tab
  * (#1061).
  *
- * ALWAYS renders every check, passing ones included. This is a deliberate
- * departure from the hide-when-clean banners it replaces (`ProjectConflictsBanner`,
- * `StalePricingBanner`): those gave zero noise but also zero reassurance, and a
- * banner that appears and disappears makes the page jump. A checklist that says
- * "checked, all good" is worth the five rows — and when everything passes it
- * collapses to one line anyway.
+ * Renders every check that APPLIES to this project, passing ones included —
+ * a deliberate departure from the hide-when-clean banner it replaces
+ * (`ProjectConflictsBanner`): that gave zero noise but also zero reassurance,
+ * and a banner that appears and disappears makes the page jump. A checklist
+ * that says "checked, all good" is worth the row — and when everything
+ * passes it collapses to one line anyway.
+ *
+ * "Applies" is narrower than "ran": `crew`/`services` drop out entirely
+ * (not even as a pass) when the project has no crew assigned or no services
+ * scheduled — see `project-readiness-checks.ts`. Unlike a hide-when-clean
+ * banner, this isn't ambiguous with "not checked yet", because the row never
+ * existed for a project with nothing to check there.
  *
  * Severity, wording and ordering come from `project-readiness-checks.ts` (a
  * plain, unit-tested module); this component only renders them and attaches the
@@ -220,7 +202,7 @@ export function ProjectReadinessPanel({ projectId, orgId, onNavigateTab }: Proje
   }
 
   if (summary.allClear && !showAll) {
-    return <AllClearPanel total={summary.total} onShowAll={() => setShowAll(true)} />;
+    return <AllClearPanel checks={checks} onShowAll={() => setShowAll(true)} />;
   }
 
   const conflictList = (conflicts ?? []) as ReservationConflict[];
@@ -243,7 +225,7 @@ export function ProjectReadinessPanel({ projectId, orgId, onNavigateTab }: Proje
           <CheckRow
             key={check.id}
             check={check}
-            action={<CheckAction check={check} projectId={projectId} orgId={orgId} onNavigateTab={onNavigateTab} />}
+            action={<CheckAction check={check} projectId={projectId} onNavigateTab={onNavigateTab} />}
             expandable={isConflicts}
             expanded={isConflicts && expandedId === check.id}
             onToggle={() => setExpandedId((cur) => (cur === check.id ? null : check.id))}

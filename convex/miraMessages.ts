@@ -13,9 +13,8 @@ export const listForConversation = query({
   handler: async (ctx, { conversationId, organizationId }) => {
     await requireService(ctx);
     // A "Clear conversation" archive caps how long any one thread can grow —
-    // bounded by how much one person chats with Mira before starting fresh,
-    // same class of bound as apiKeys.list's per-org set (r9.8-ok, see
-    // docs/exceptions.md R-8.3.3).
+    // bounded by how much one person chats with Mira before starting fresh.
+    // A capped take, not a full-table read — outside R-9.8's scope either way.
     const rows = await ctx.db
       .query("miraMessages")
       .withIndex("by_conversationId", (q) => q.eq("conversationId", conversationId))

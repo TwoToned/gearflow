@@ -14,10 +14,13 @@ export const getActiveForUser = query({
   args: { organizationId: v.string(), userId: v.string() },
   handler: async (ctx, { organizationId, userId }) => {
     await requireService(ctx);
+    // Bounded by how many conversations one person starts+clears over the
+    // org's lifetime (small) — a capped take, not a full-table read, so this
+    // stays outside the R-9.8 unbounded-read count (POLICY.md).
     const conversations = await ctx.db
       .query("miraConversations")
       .withIndex("by_organizationId_userId", (q) => q.eq("organizationId", organizationId).eq("userId", userId))
-      .collect();
+      .take(200);
     return conversations.find((c) => c.archivedAt == null) ?? null;
   },
 });

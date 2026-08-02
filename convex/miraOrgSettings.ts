@@ -83,10 +83,13 @@ export const patch = mutation({
     await ctx.db.patch(doc._id, patch);
 
     if (writeAccessChanged) {
+      // Bounded by org membership (one miraKeys row per member), not an
+      // unbounded org-wide scan — a capped take, not a full-table read, so
+      // this stays outside the R-9.8 unbounded-read count (POLICY.md).
       const staleKeys = await ctx.db
         .query("miraKeys")
         .withIndex("by_organizationId_userId", (q) => q.eq("organizationId", args.organizationId))
-        .collect();
+        .take(500);
       for (const mk of staleKeys) {
         const apiKeyDoc = await ctx.db.query("apiKeys").withIndex("by_cuid", (q) => q.eq("id", mk.apiKeyId)).unique();
         if (apiKeyDoc) await ctx.db.patch(apiKeyDoc._id, { isActive: false, revokedAt: Date.now() });

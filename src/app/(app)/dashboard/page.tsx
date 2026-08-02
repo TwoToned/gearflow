@@ -38,9 +38,10 @@ import { FlowMascot } from "@/components/ui/flow-mascot";
 import { PageHeader } from "@/components/layout/page-header";
 import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
+import { formatDateLong, formatDateDayMonth } from "@/lib/formatters";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
 import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import type { LucideIcon } from "lucide-react";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -122,7 +123,7 @@ export default function DashboardPage() {
       <FadeIn>
         <PageHeader
           title={`${greeting}${firstName ? `, ${firstName}` : ""}`}
-          description={format(now, "EEEE, d MMMM yyyy")}
+          description={formatDateLong(now)}
           meta={aside && (asideOverdue
             ? <p className="text-ui-text font-medium text-t-out">{aside}</p>
             : <p className="font-hand text-[15px] text-t-out">{aside}</p>)}
@@ -236,7 +237,7 @@ export default function DashboardPage() {
                           <ProjectLockGlyph status={p.status as string | null | undefined} />
                           {start && (
                             <span className={`text-[11px] font-medium ${hueText[intent === "primary" ? "red" : (intent as Hue)] ?? "text-muted"}`}>
-                              {format(start, "MMM d")}
+                              {formatDateDayMonth(start)}
                             </span>
                           )}
                         </div>

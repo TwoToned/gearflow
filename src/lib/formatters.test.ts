@@ -2,6 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   formatCurrency,
   formatDate,
+  formatDateDayMonth,
+  formatDateLong,
+  formatDateWithTime,
+  formatMonthYear,
   formatLabel,
   roundCurrency,
   formatConfigFromOrgSettings,
@@ -151,6 +155,52 @@ describe("formatConfigFromOrgSettings", () => {
 
   it("falls back to DEFAULT_FORMAT_CONFIG for an unknown country code", () => {
     expect(formatConfigFromOrgSettings({ country: "ZZ" })).toEqual(DEFAULT_FORMAT_CONFIG);
+  });
+});
+
+describe("named date-format roles (I3, #1082)", () => {
+  const d = new Date("2024-07-15T14:32:00Z");
+
+  it("formatDateDayMonth omits the year", () => {
+    expect(formatDateDayMonth(d)).not.toMatch(/2024/);
+    expect(formatDateDayMonth(d)).toMatch(/15/);
+    const us = formatDateDayMonth(d, { locale: "en-US", currency: "USD" });
+    // US month-first: "Jul" precedes "15".
+    expect(us.indexOf("Jul")).toBeLessThan(us.indexOf("15"));
+  });
+
+  it("formatDateLong includes the weekday and always includes the year", () => {
+    const result = formatDateLong(d);
+    expect(result).toMatch(/Monday/);
+    expect(result).toMatch(/15/);
+    expect(result).toMatch(/2024/);
+  });
+
+  it("formatDateWithTime is pinned to a 24-hour clock regardless of locale", () => {
+    // 14:32 UTC — never rendered as "2:32 PM" even for en-US, which
+    // defaults to 12-hour without an explicit hour12 override.
+    expect(formatDateWithTime(d)).toMatch(/14:32/);
+    expect(formatDateWithTime(d, { locale: "en-US", currency: "USD" })).toMatch(/14:32/);
+    expect(formatDateWithTime(d)).not.toMatch(/pm|PM/);
+  });
+
+  it("formatMonthYear has no day", () => {
+    const result = formatMonthYear(d);
+    expect(result).not.toMatch(/15/);
+    expect(result).toMatch(/2024/);
+    expect(result).toMatch(/Jul/); // substring of "July" too
+  });
+
+  it("every role returns the em dash for null/undefined, matching formatDate", () => {
+    for (const fn of [formatDateDayMonth, formatDateLong, formatDateWithTime, formatMonthYear]) {
+      expect(fn(null)).toBe("—");
+      expect(fn(undefined)).toBe("—");
+    }
+  });
+
+  it("every role accepts a string date the same way formatDate does", () => {
+    expect(formatDateDayMonth("2024-12-25")).toMatch(/25/);
+    expect(formatMonthYear("2024-12-25")).toMatch(/2024/);
   });
 });
 

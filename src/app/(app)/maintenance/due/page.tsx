@@ -4,7 +4,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { formatDate } from "@/lib/formatters";
 import {
   AlertTriangle,
   Clock,
@@ -170,7 +170,7 @@ function WorklistSectionCard({ section }: { section: WorklistSection }) {
             variant="pill"
           />
           {isOverdue ? <Badge status="overbooked">Overdue</Badge> : null}
-          <span className="text-caption text-muted">Due {format(new Date(section.dueDate), "MMM d, yyyy")}</span>
+          <span className="text-caption text-muted">Due {formatDate(new Date(section.dueDate))}</span>
         </div>
       </div>
       {section.isBulk ? <BulkSection section={section} /> : <SerializedSection section={section} />}
@@ -223,7 +223,7 @@ function SchedulesManager({ schedules, loading }: { schedules: ServiceScheduleRo
                   <td className="px-4 py-2 text-ink">{s.modelName}</td>
                   <td className="px-4 py-2 text-ink-2">{s.name}</td>
                   <td className="px-4 py-2 text-ink-2 tabular-nums">{s.intervalMonths} mo</td>
-                  <td className="px-4 py-2 text-ink-2 tabular-nums">{format(new Date(s.anchorDate), "MMM d, yyyy")}</td>
+                  <td className="px-4 py-2 text-ink-2 tabular-nums">{formatDate(new Date(s.anchorDate))}</td>
                   <td className="px-4 py-2">
                     <Badge status={s.isActive ? "ok" : "neutral"}>{s.isActive ? "Active" : "Inactive"}</Badge>
                   </td>

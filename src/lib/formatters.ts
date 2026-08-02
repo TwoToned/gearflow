@@ -65,17 +65,81 @@ export function formatCurrency(
   return `${symbol}${Number(value).toLocaleString(config.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatDateWithOptions(
+  date: string | Date | null | undefined,
+  config: FormatConfig,
+  options: Intl.DateTimeFormatOptions,
+): string {
+  if (!date) return "\u2014";
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toLocaleDateString(config.locale, options);
+}
+
+/** The "short" date role \u2014 day, short month, year (e.g. AU "15 Jul 2024",
+ *  US "Jul 15, 2024"). Original `formatDate`; unchanged signature/behaviour. */
 export function formatDate(
   date: string | Date | null | undefined,
   config: FormatConfig = DEFAULT_FORMAT_CONFIG,
 ): string {
-  if (!date) return "\u2014";
-  const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleDateString(config.locale, {
+  return formatDateWithOptions(date, config, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/**
+ * I3 (#1082) \u2014 named date-format ROLES, built on the one shared
+ * `formatDateWithOptions` implementation, so a display date is one of a
+ * small closed set of locale-correct shapes instead of an ad-hoc inline
+ * `date-fns format(date, "\u2026")` string. Before this, the app used both
+ * day-first ("d MMM") and month-first ("MMM d, yyyy") for what was
+ * conceptually the same kind of date field, AT THE SAME (AU) LOCALE \u2014 a
+ * consolidation bug independent of internationalisation, which gets worse
+ * per country. `"yyyy-MM-dd"`/`"yyyy-MM"` MACHINE formats (keys, query
+ * params, filenames, ical) are correctly locale-independent and are not
+ * migrated to a role \u2014 those are a different concern from a display date.
+ */
+
+/** No year \u2014 a compact range/relative label (e.g. AU "15 Jul", US "Jul 15"). */
+export function formatDateDayMonth(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { day: "numeric", month: "short" });
+}
+
+/** Weekday + full month + year \u2014 a page-header-style date (e.g. US "Monday,
+ *  July 15, 2024"), always with the year (some pre-#1082 call sites dropped
+ *  it inconsistently; the role always includes it). */
+export function formatDateLong(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+/** The "short" role plus a 24-hour clock time (e.g. "15 Jul 2024, 14:32") —
+ *  `hour12: false` pins the clock to 24-hour everywhere, matching the
+ *  pre-#1082 `date-fns` `"HH:mm"` this replaces (date-fns's `HH` is always
+ *  24-hour regardless of locale; `Intl`'s default isn't, so this is pinned
+ *  explicitly rather than left to vary per locale). */
+export function formatDateWithTime(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, {
     day: "numeric",
     month: "short",
     year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
+}
+
+/** Month + year only \u2014 calendar headers (e.g. "July 2024"). */
+export function formatMonthYear(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { month: "long", year: "numeric" });
 }
 
 export function formatLabel(value: string): string {

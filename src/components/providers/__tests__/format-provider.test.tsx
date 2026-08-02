@@ -25,11 +25,13 @@ vi.mock("@/hooks/use-organization", () => ({
 import { FormatProvider, useFormatters } from "../format-provider";
 
 function Probe() {
-  const { formatCurrency, formatDate, config } = useFormatters();
+  const { formatCurrency, formatDate, formatDateWithTime, formatMonthYear, config } = useFormatters();
   return (
     <div>
       <span data-testid="currency">{formatCurrency(1234.5)}</span>
       <span data-testid="date">{formatDate("2024-07-15")}</span>
+      <span data-testid="date-with-time">{formatDateWithTime("2024-07-15T14:32:00Z")}</span>
+      <span data-testid="month-year">{formatMonthYear("2024-07-15")}</span>
       <span data-testid="locale">{config.locale}</span>
     </div>
   );
@@ -75,5 +77,19 @@ describe("FormatProvider / useFormatters", () => {
     render(<Probe />);
     expect(screen.getByTestId("currency").textContent).toBe("$1,234.50");
     expect(screen.getByTestId("locale").textContent).toBe("en-AU");
+  });
+
+  it("exposes the I3 named date-format roles bound to the same locale", () => {
+    orgData = { settings: { country: "US" } };
+    render(
+      <FormatProvider>
+        <Probe />
+      </FormatProvider>,
+    );
+    // en-US: month-first, and pinned to a 24-hour clock regardless of locale.
+    expect(screen.getByTestId("date-with-time").textContent).toMatch(/14:32/);
+    expect(screen.getByTestId("date-with-time").textContent).not.toMatch(/pm|PM/);
+    expect(screen.getByTestId("month-year").textContent).not.toMatch(/15/);
+    expect(screen.getByTestId("month-year").textContent).toMatch(/2024/);
   });
 });

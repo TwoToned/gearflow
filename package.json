@@ -12,6 +12,7 @@
     "depcruise": "depcruise src convex --config .dependency-cruiser.cjs --ignore-known",
     "depcruise-ratchet": "node scripts/depcruise-ratchet.mjs",
     "any-ratchet": "bash scripts/any-ratchet.sh",
+    "date-format-ratchet": "bash scripts/date-format-ratchet.sh",
     "collect-ratchet": "node scripts/collect-ratchet.mjs",
     "knip-ratchet": "node scripts/knip-ratchet.mjs",
     "complexity-ratchet": "node scripts/complexity-ratchet.mjs",

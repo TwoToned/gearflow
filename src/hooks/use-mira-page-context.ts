@@ -2,12 +2,12 @@
 
 import { useEffect } from "react";
 import { useMira } from "@/components/providers/mira-context-provider";
-import type { MiraPageContext } from "@/lib/mira/intent-router";
+import type { MiraPageContext } from "@/lib/mira/types";
 
 /**
  * Publish "what the user is currently looking at" into Mira's context so its
- * question router (src/lib/mira/intent-router.ts) can narrow a question to
- * the entity on screen without the user having to name it (Phase 8, #1004:
+ * system prompt (src/lib/mira/system-prompt.ts) can point the model at the
+ * entity on screen without the user having to name it (Phase 8, #1004:
  * "page context (route, current entity) flows into the agent's tool calls
  * automatically"). Clears itself on unmount so navigating away doesn't leave
  * a stale entity behind for the next question.

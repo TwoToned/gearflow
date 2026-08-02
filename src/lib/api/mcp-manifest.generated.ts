@@ -395,6 +395,10 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
           "minLength": 8,
           "maxLength": 200,
           "description": "Required for writes. A retry with the same key replays the first result instead of double-writing."
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "Required (must be `true`) to actually run this call — it is classified HIGH danger. Omit it first: the call fails with `CONFIRMATION_REQUIRED` and a human-legible summary of what it would do; show that to a human, then re-send the identical call with `confirm: true`."
         }
       },
       "required": [
@@ -491,6 +495,10 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
           "minLength": 8,
           "maxLength": 200,
           "description": "Required for writes. A retry with the same key replays the first result instead of double-writing."
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "Required (must be `true`) to actually run this call — it is classified HIGH danger. Omit it first: the call fails with `CONFIRMATION_REQUIRED` and a human-legible summary of what it would do; show that to a human, then re-send the identical call with `confirm: true`."
         }
       },
       "required": [
@@ -526,6 +534,10 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
           "minLength": 8,
           "maxLength": 200,
           "description": "Required for writes. A retry with the same key replays the first result instead of double-writing."
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "Required (must be `true`) to actually run this call — it is classified HIGH danger. Omit it first: the call fails with `CONFIRMATION_REQUIRED` and a human-legible summary of what it would do; show that to a human, then re-send the identical call with `confirm: true`."
         }
       },
       "required": [

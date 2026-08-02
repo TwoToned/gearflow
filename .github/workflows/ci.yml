@@ -414,6 +414,13 @@ jobs:
       - name: MCP tool manifest staleness gate (#999)
         run: pnpm run api:mcp:check
 
+      # Mira's feature-map staleness gate (FEATUREDOCS/68) — the feature list in
+      # her system prompt is a pure derivation of ARCHITECTURE.md's FEATUREDOCS
+      # table (not a hand-copied second list), so it can only drift if someone
+      # edits the committed output by hand instead of adding a feature doc row.
+      - name: Mira feature-map staleness gate
+        run: pnpm run mira:feature-map:check
+
       - name: Print API coverage table
         if: always()
         run: sed -n '/## Totals/,/reachability-floor/p' docs/api-coverage.md >> "$GITHUB_STEP_SUMMARY"

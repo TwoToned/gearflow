@@ -27,7 +27,7 @@
 
 export const SCHEMA_VERSION = "1";
 
-/** 77 tables, each with a `by_organizationId` index. */
+/** 78 tables, each with a `by_organizationId` index. */
 export const DIRECT_TABLES = [
   "activityLogs",
   "apiKeys",
@@ -55,6 +55,11 @@ export const DIRECT_TABLES = [
   "groupTemplates",
   "invitations",
   "invoices",
+  // #1004 follow-up — per-org Mira LLM settings (OpenRouter key, encrypted at
+  // rest, + model + writeAccessEnabled). Same posture as xeroIntegrations/
+  // wooCommerceIntegrations: real admin-configured integration state worth
+  // restoring, even though the secret itself is encrypted ciphertext.
+  "miraOrgSettings",
   "kitBulkItems",
   "kitCheckItems",
   "kitMedia",
@@ -172,6 +177,12 @@ export const EXCLUDED = {
   // credential outside the vault's own org/key context; restoring it into a
   // fresh org would let stale ciphertext authenticate against a key row that no
   // longer matches it. Re-provisions itself lazily on next use either way.
+  // miraConversations/miraMessages (#1004 follow-up — Mira LLM tool-calling)
+  // are a live chat transcript, not restore-critical business data: neither
+  // has a `by_organizationId` index (miraConversations is keyed
+  // organizationId+userId, miraMessages by conversationId only), and — like
+  // miraKeys — a member's Mira thread regenerates itself on next use, so
+  // there's nothing lost by leaving it out of a semantic org export.
   ephemeral: [
     "activityEvents",
     "userNotificationPreferences",
@@ -179,6 +190,8 @@ export const EXCLUDED = {
     "apiRequestLog",
     "oauthAuthorizationCodes",
     "miraKeys",
+    "miraConversations",
+    "miraMessages",
   ],
 } as const;
 
@@ -219,7 +232,10 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // (EXCLUDED/ephemeral, the one-shot authorization_code hop).
 // #1004: +1 — miraKeys (EXCLUDED/ephemeral, Mira's own encrypted-at-rest apiKeys binding).
 // #1055: +1 — payments (DIRECT, org-scoped bookkeeping rows against an invoice).
-export const EXPECTED_TABLE_COUNT = 113;
+// #1004 follow-up (Mira LLM tool-calling): +3 — miraOrgSettings (DIRECT, per-org
+// OpenRouter key + model settings), miraConversations/miraMessages (EXCLUDED/
+// ephemeral, live chat transcript).
+export const EXPECTED_TABLE_COUNT = 116;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

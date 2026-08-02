@@ -84,9 +84,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **#1061** — The Finance tab is now the ledger rather than the front door: all
   quote revisions, invoices, payments, the financial summary and operational
   P&L still live there, and it remains the only place to recall, correct,
-  reprice, issue, void, credit or push to Xero. The reservation-conflict and
-  stale-pricing banners that used to sit above the tabs are now rows in the
-  Overview tab's Readiness checklist, carrying the same actions.
+  reprice, issue, void, credit or push to Xero. The reservation-conflict
+  banner that used to sit above the tabs is now a row in the Overview tab's
+  Readiness checklist, carrying the same action. (The stale-pricing banner
+  stayed put on the Finance tab — see below.)
+
+- The Overview Readiness checklist now only shows the **Services** and
+  **Crew** rows for projects that actually have services scheduled or crew
+  assigned — a job with neither no longer carries a permanent "No services
+  scheduled" / "No crew assigned yet" line. The "Pricing is current for these
+  dates" row is gone entirely: it duplicated the Finance tab's
+  `StalePricingBanner`, which remains the one place that surfaces stale
+  auto-pricing.
 
 ### Fixed
 

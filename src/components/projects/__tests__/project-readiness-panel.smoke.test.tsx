@@ -23,10 +23,6 @@ vi.mock("@/hooks/use-project-conflicts", () => ({
   useProjectConflicts: () => mockConflicts(),
   refreshProjectConflicts: vi.fn(),
 }));
-vi.mock("@/hooks/use-billing-summary", () => ({
-  useRecalcAutoPricedLines: () => ({ recalc: vi.fn() }),
-  useProjectPricingStaleness: () => 0,
-}));
 // The permission gate is exercised elsewhere; here it must not swallow the
 // actions the panel is being asserted on.
 vi.mock("@/components/auth/permission-gate", () => ({
@@ -49,7 +45,6 @@ const CLEAN: Parameters<typeof buildReadinessChecks>[0] = {
   crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
   pricing: { unpriced: [], unpricedCount: 0 },
   conflicts: [],
-  staleLineCount: 0,
 };
 
 function renderPanel(onNavigateTab = vi.fn()) {
@@ -64,10 +59,12 @@ describe("ProjectReadinessPanel smoke", () => {
     mockConflicts.mockReturnValue({ data: [], isLoading: false });
   });
 
-  it("collapses to a single line when every check passes", () => {
+  it("collapses to a single line when every applicable check passes", () => {
     mockReadiness.mockReturnValue(stateFrom(CLEAN));
     renderPanel();
-    expect(screen.getByText(/Ready — all 6 checks pass/)).toBeTruthy();
+    // CLEAN has no crew and no services, so those two rows don't even count
+    // toward the total — only gear, conflicts and pricing apply.
+    expect(screen.getByText(/Ready — all 3 checks pass/)).toBeTruthy();
     // The individual rows stay hidden until asked for.
     expect(screen.queryByText("Enough gear for this window")).toBeNull();
   });
@@ -78,7 +75,15 @@ describe("ProjectReadinessPanel smoke", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show checks" }));
     expect(screen.getByText("Enough gear for this window")).toBeTruthy();
     expect(screen.getByText("No assets double-booked")).toBeTruthy();
-    expect(screen.getByText("Pricing is current for these dates")).toBeTruthy();
+    expect(screen.getByText("Every line is priced")).toBeTruthy();
+  });
+
+  it("drops the crew and services rows entirely when the project has neither", () => {
+    mockReadiness.mockReturnValue(stateFrom(CLEAN));
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Show checks" }));
+    expect(screen.queryByText(/crew/i)).toBeNull();
+    expect(screen.queryByText(/service/i)).toBeNull();
   });
 
   it("shows blocking and warning counts, and renders every row, when things are wrong", () => {

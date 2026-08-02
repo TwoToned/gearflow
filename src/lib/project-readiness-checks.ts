@@ -7,11 +7,14 @@
  * severity of a check decides whether the panel shouts or whispers, which is
  * exactly the kind of rule that rots silently if it only exists inside JSX.
  *
- * Three sources feed in, deliberately kept separate (R-3.1 — each rule has
+ * Two sources feed in, deliberately kept separate (R-3.1 — each rule has
  * exactly one home):
  *   - `projectReadiness.forProject`         → gear, crew, unpriced
  *   - `reservationConflicts.projectConflicts` → double-booked assets
- *   - `lineItemWrites.projectPricingStaleness` → stale auto-pricing
+ *
+ * Stale auto-pricing (`lineItemWrites.projectPricingStaleness`) is NOT one of
+ * these checks — it's already surfaced by `StalePricingBanner` on the Finance
+ * tab, and duplicating it here just repeated the same fact in two places.
  */
 
 /**
@@ -23,7 +26,7 @@
  */
 export type ReadinessSeverity = "blocking" | "warning" | "pass" | "unknown";
 
-export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "services" | "pricing" | "staleness";
+export type ReadinessCheckId = "gear" | "conflicts" | "crew" | "services" | "pricing";
 
 export interface ReadinessCheck {
   id: ReadinessCheckId;
@@ -69,7 +72,6 @@ export interface BuildChecksInput {
   crew: ReadinessCrewInput;
   pricing: ReadinessPricingInput;
   conflicts: ReadinessConflictInput[];
-  staleLineCount: number;
 }
 
 const plural = (n: number, one: string, many = one + "s") => (n === 1 ? one : many);
@@ -142,18 +144,15 @@ function conflictsCheck(conflicts: ReadinessConflictInput[]): ReadinessCheck {
  * "Dave hasn't replied" and "the bump-in isn't locked in" are different
  * problems with different fixes, and cramming both into one row made it
  * unreadable at three dimensions.
+ *
+ * Returns `null` — the row doesn't render at all — when nobody's assigned
+ * yet: there's nothing to chase, so "No crew assigned yet" was noise a job
+ * with no crew requirement would carry forever.
  */
-function crewCheck(crew: ReadinessCrewInput): ReadinessCheck {
+function crewCheck(crew: ReadinessCrewInput): ReadinessCheck | null {
+  if (crew.activeCount === 0) return null;
   if (crew.unconfirmedCount === 0) {
-    // "Nobody assigned" is not the same as "everyone confirmed" — a project
-    // with no crew reads as a pass only because nothing is outstanding, and
-    // the wording should not imply a roster exists.
-    return {
-      id: "crew",
-      severity: "pass",
-      title: crew.activeCount === 0 ? "No crew assigned yet" : "All crew confirmed",
-      detail: crew.activeCount === 0 ? "Nothing outstanding — add services on Labour & logistics." : undefined,
-    };
+    return { id: "crew", severity: "pass", title: "All crew confirmed" };
   }
   return {
     id: "crew",
@@ -164,8 +163,15 @@ function crewCheck(crew: ReadinessCrewInput): ReadinessCheck {
   };
 }
 
-/** The WORK: services nobody has confirmed, and services short of people. */
-function servicesCheck(crew: ReadinessCrewInput): ReadinessCheck {
+/**
+ * The WORK: services nobody has confirmed, and services short of people.
+ *
+ * Returns `null` when the project has no services scheduled at all — same
+ * reasoning as `crewCheck`: a job that doesn't need services shouldn't carry
+ * a permanent "No services scheduled" row.
+ */
+function servicesCheck(crew: ReadinessCrewInput): ReadinessCheck | null {
+  if (crew.activeServiceCount === 0) return null;
   const unconfirmed = crew.unconfirmedServices;
   const understaffed = crew.servicesMissingCrew;
   const parts: string[] = [];
@@ -179,12 +185,7 @@ function servicesCheck(crew: ReadinessCrewInput): ReadinessCheck {
   }
 
   if (parts.length === 0) {
-    return {
-      id: "services",
-      severity: "pass",
-      title: crew.activeServiceCount === 0 ? "No services scheduled" : "All services confirmed and staffed",
-      detail: crew.activeServiceCount === 0 ? "Add services on Labour & logistics." : undefined,
-    };
+    return { id: "services", severity: "pass", title: "All services confirmed and staffed" };
   }
 
   const title =
@@ -207,24 +208,16 @@ function pricingCheck(pricing: ReadinessPricingInput): ReadinessCheck {
   };
 }
 
-function stalenessCheck(staleLineCount: number): ReadinessCheck {
-  if (staleLineCount === 0) {
-    return { id: "staleness", severity: "pass", title: "Pricing is current for these dates" };
-  }
-  return {
-    id: "staleness",
-    severity: "warning",
-    title: "Rates derived from old dates",
-    detail: `${staleLineCount} ${plural(staleLineCount, "line item")} ${plural(staleLineCount, "needs", "need")} recalculating for the current rental window`,
-    actionLabel: "Recalculate",
-  };
-}
-
 /**
  * Fixed order, worst-first within it: gear and conflicts can stop a job going
  * out, services and crew are the people side, pricing costs money but not the
  * load-out. The order is stable regardless of severity so the panel doesn't
  * reshuffle under the user as problems resolve — only the marks change.
+ *
+ * `services` and `crew` can each come back `null` (nothing scheduled /
+ * nobody assigned) — those rows are dropped rather than rendered as a
+ * permanent pass, so a job that doesn't need crew or services doesn't carry
+ * checks for facts that were never true.
  */
 export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] {
   return [
@@ -233,8 +226,7 @@ export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] 
     servicesCheck(input.crew),
     crewCheck(input.crew),
     pricingCheck(input.pricing),
-    stalenessCheck(input.staleLineCount),
-  ];
+  ].filter((c): c is ReadinessCheck => c !== null);
 }
 
 export interface ReadinessSummary {

@@ -15,7 +15,6 @@ function input(over: Partial<BuildChecksInput> = {}): BuildChecksInput {
     crew: { unconfirmedCount: 0, activeCount: 0, servicesMissingCrew: [], crewShortfall: 0, unconfirmedServices: [], activeServiceCount: 0 },
     pricing: { unpriced: [], unpricedCount: 0 },
     conflicts: [],
-    staleLineCount: 0,
     ...over,
   };
 }
@@ -91,10 +90,9 @@ describe("crew check", () => {
     expect(c.title).toBe("3 of 11 crew unconfirmed");
   });
 
-  test("an empty roster passes without claiming everyone confirmed", () => {
-    const c = byId(buildReadinessChecks(input()), "crew");
-    expect(c.severity).toBe("pass");
-    expect(c.title).toBe("No crew assigned yet");
+  test("an empty roster drops the row entirely — nothing to chase, nothing to show", () => {
+    const checks = buildReadinessChecks(input());
+    expect(checks.some((c) => c.id === "crew")).toBe(false);
   });
 
   test("a full confirmed roster says so", () => {
@@ -169,10 +167,9 @@ describe("services check", () => {
     expect(c.detail).toContain("short 1 person");
   });
 
-  test("no services at all passes without implying any exist", () => {
-    const c = byId(buildReadinessChecks(input()), "services");
-    expect(c.severity).toBe("pass");
-    expect(c.title).toBe("No services scheduled");
+  test("no services at all drops the row entirely — nothing scheduled, nothing to show", () => {
+    const checks = buildReadinessChecks(input());
+    expect(checks.some((c) => c.id === "services")).toBe(false);
   });
 
   test("confirmed and staffed says so", () => {
@@ -196,28 +193,26 @@ describe("services check", () => {
   });
 
   test("a CANCELLED service is settled-no — never flagged, never counted", () => {
-    // The lib drops CANCELLED before this point, so the check only ever sees
-    // live services; this pins the contract the lib relies on.
-    const c = byId(
-      buildReadinessChecks(
-        input({
-          crew: {
-            unconfirmedCount: 0,
-            activeCount: 0,
-            servicesMissingCrew: [],
-            crewShortfall: 0,
-            unconfirmedServices: [],
-            activeServiceCount: 0,
-          },
-        }),
-      ),
-      "services",
+    // The lib drops CANCELLED before this point, so `activeServiceCount` is
+    // 0 and the row doesn't render at all — this pins the contract the lib
+    // relies on.
+    const checks = buildReadinessChecks(
+      input({
+        crew: {
+          unconfirmedCount: 0,
+          activeCount: 0,
+          servicesMissingCrew: [],
+          crewShortfall: 0,
+          unconfirmedServices: [],
+          activeServiceCount: 0,
+        },
+      }),
     );
-    expect(c.severity).toBe("pass");
+    expect(checks.some((c) => c.id === "services")).toBe(false);
   });
 });
 
-describe("pricing and staleness checks", () => {
+describe("pricing check", () => {
   test("unpriced lines warn and are named", () => {
     const c = byId(
       buildReadinessChecks(input({ pricing: { unpriced: [{ label: "Truss bracket" }], unpricedCount: 1 } })),
@@ -227,31 +222,41 @@ describe("pricing and staleness checks", () => {
     expect(c.detail).toContain("Truss bracket");
   });
 
-  test("stale rates are a separate check with their own action", () => {
-    const c = byId(buildReadinessChecks(input({ staleLineCount: 4 })), "staleness");
-    expect(c.severity).toBe("warning");
-    expect(c.actionLabel).toBe("Recalculate");
-    expect(c.detail).toContain("4 line items need recalculating");
-  });
-
-  test("both pass on a clean project", () => {
+  test("passes on a clean project", () => {
     const checks = buildReadinessChecks(input());
     expect(byId(checks, "pricing").severity).toBe("pass");
-    expect(byId(checks, "staleness").severity).toBe("pass");
   });
 });
 
 describe("ordering and summary", () => {
   test("order is stable regardless of severity so rows don't reshuffle", () => {
+    // Default crew/services are both empty, so those two rows drop out —
+    // only gear, conflicts and pricing survive on a clean, crewless project.
     const clean = buildReadinessChecks(input()).map((c) => c.id);
     const messy = buildReadinessChecks(
       input({ conflicts: [{ assetTag: "A", modelName: "M", conflictingProject: { projectNumber: "P-1" } }] }),
     ).map((c) => c.id);
-    expect(clean).toEqual(["gear", "conflicts", "services", "crew", "pricing", "staleness"]);
+    expect(clean).toEqual(["gear", "conflicts", "pricing"]);
     expect(messy).toEqual(clean);
   });
 
-  test("all-clear only when every check actually ran and passed", () => {
+  test("services and crew rejoin the (still fixed) order once they're relevant", () => {
+    const checks = buildReadinessChecks(
+      input({
+        crew: {
+          unconfirmedCount: 0,
+          activeCount: 4,
+          servicesMissingCrew: [],
+          crewShortfall: 0,
+          unconfirmedServices: [],
+          activeServiceCount: 2,
+        },
+      }),
+    ).map((c) => c.id);
+    expect(checks).toEqual(["gear", "conflicts", "services", "crew", "pricing"]);
+  });
+
+  test("all-clear only when every applicable check actually ran and passed", () => {
     expect(summariseReadiness(buildReadinessChecks(input())).allClear).toBe(true);
   });
 
@@ -267,7 +272,7 @@ describe("ordering and summary", () => {
         input({
           gear: { hard: [{ modelName: "A", qty: 1 }], pencilled: [] },
           conflicts: [{ assetTag: "A", modelName: "M", conflictingProject: { projectNumber: "P-1" } }],
-          staleLineCount: 2,
+          pricing: { unpriced: [{ label: "Truss bracket" }], unpricedCount: 1 },
         }),
       ),
     );

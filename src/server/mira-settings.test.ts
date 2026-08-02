@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const ctx = { organizationId: "org_1", userId: "user_1", userName: "Ada" };
-vi.mock("@/lib/org-context", () => ({ requirePermission: vi.fn(async () => ctx) }));
+vi.mock("@/lib/org-context", () => ({
+  requirePermission: vi.fn(async () => ctx),
+  getOrgContext: vi.fn(async () => ctx),
+}));
 
 vi.mock("../../convex/_generated/api", () => ({
   api: {
@@ -21,12 +24,29 @@ vi.mock("@/lib/crypto/secret-vault", () => ({ encryptSecret: (raw: string) => `e
 
 vi.mock("@/lib/activity-log", () => ({ logActivity: vi.fn(async () => {}) }));
 
-const { getMiraSettings, saveMiraSettings, disconnectMiraOpenRouter } = await import("@/server/mira-settings");
+const { getMiraSettings, saveMiraSettings, disconnectMiraOpenRouter, isMiraConfigured } = await import("@/server/mira-settings");
 
 beforeEach(() => {
   vi.clearAllMocks();
   convexMock.query.mockResolvedValue(null);
   convexMock.mutation.mockResolvedValue(undefined);
+});
+
+describe("isMiraConfigured", () => {
+  it("needs no permission — every member gets a boolean, never the key", async () => {
+    convexMock.query.mockResolvedValue({ openRouterKeyEncrypted: "enc(secret)" });
+    const res = await isMiraConfigured();
+    expect(res).toEqual({ configured: true });
+    expect(JSON.stringify(res)).not.toContain("secret");
+  });
+
+  it("is false when nothing is configured, or the row has no key", async () => {
+    convexMock.query.mockResolvedValue(null);
+    expect(await isMiraConfigured()).toEqual({ configured: false });
+
+    convexMock.query.mockResolvedValue({ openRouterKeyEncrypted: undefined });
+    expect(await isMiraConfigured()).toEqual({ configured: false });
+  });
 });
 
 describe("getMiraSettings", () => {

@@ -18,6 +18,19 @@ request log (Settings → API keys → request log) like any other API traffic.
 Each org brings its **own** OpenRouter API key and picks its **own** model
 (`/settings/mira`) — the platform never sees or pays for a shared LLM credential.
 
+**Mira is disabled for an org until an admin connects a key.** `MiraLauncher`
+(`src/components/mira/mira-launcher.tsx`) calls `isMiraConfigured()`
+(`src/server/mira-settings.ts`) and renders NOTHING — no button, no panel — until it
+returns `configured: true`. That check deliberately carries no permission gate (unlike
+`getMiraSettings`, which needs `orgSettings:update` — most non-admin roles get
+`orgSettings: []`, no read at all): every member has to be able to ask "is Mira even
+on," so the check itself only ever reveals a boolean, never the key/model/write-access
+setting. Same "hidden while loading, never flash in and disappear" posture as the Xero
+nav link's deployment-config gate (`src/app/(app)/settings/layout.tsx`). `sendMiraMessage`
+still has its own not-configured fallback message as a defense-in-depth backstop (a
+direct server-action call, or a stale client that hasn't re-checked) — the launcher gate
+is what a real user actually sees.
+
 ## Architecture
 
 ```

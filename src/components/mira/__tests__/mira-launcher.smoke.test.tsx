@@ -14,6 +14,9 @@ vi.mock("@/server/mira", () => ({
   clearMiraConversation: vi.fn(),
 }));
 
+const isMiraConfigured = vi.hoisted(() => vi.fn());
+vi.mock("@/server/mira-settings", () => ({ isMiraConfigured: (...args: unknown[]) => isMiraConfigured(...args) }));
+
 import MiraContextProvider from "@/components/providers/mira-context-provider";
 import { MiraLauncher } from "@/components/mira/mira-launcher";
 
@@ -28,6 +31,8 @@ describe("MiraLauncher + MiraPanel", () => {
   beforeEach(() => {
     getMiraConversation.mockReset();
     sendMiraMessage.mockReset();
+    isMiraConfigured.mockReset();
+    isMiraConfigured.mockResolvedValue({ configured: true });
     getMiraConversation.mockResolvedValue({ conversationId: null, messages: [] });
     sendMiraMessage.mockResolvedValue({
       conversationId: "conv_1",
@@ -38,6 +43,18 @@ describe("MiraLauncher + MiraPanel", () => {
     });
   });
 
+  it("renders nothing — no button, no panel — when the org has no OpenRouter key configured", async () => {
+    isMiraConfigured.mockResolvedValue({ configured: false });
+    render(
+      <MiraContextProvider>
+        <MiraLauncher />
+      </MiraContextProvider>,
+    );
+
+    await waitFor(() => expect(isMiraConfigured).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /ask mira/i })).toBeNull();
+  });
+
   it("opens the panel, asks a question, and renders the answer", async () => {
     const user = userEvent.setup();
     render(
@@ -46,7 +63,7 @@ describe("MiraLauncher + MiraPanel", () => {
       </MiraContextProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: /ask mira/i }));
+    await user.click(await screen.findByRole("button", { name: /ask mira/i }));
 
     const input = await screen.findByPlaceholderText(/ask a question/i);
     await user.type(input, "list assets");
@@ -64,7 +81,7 @@ describe("MiraLauncher + MiraPanel", () => {
       </MiraContextProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: /ask mira/i }));
+    await user.click(await screen.findByRole("button", { name: /ask mira/i }));
     await screen.findByText("Ask Mira");
 
     await user.click(screen.getByRole("button", { name: /close mira/i }));

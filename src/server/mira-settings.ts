@@ -3,7 +3,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { requirePermission } from "@/lib/org-context";
+import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { encryptSecret } from "@/lib/crypto/secret-vault";
@@ -29,6 +29,22 @@ interface MiraSettingsView {
   model: string;
   writeAccessEnabled: boolean;
   updatedAt: number | null;
+}
+
+/**
+ * Whether Mira is usable AT ALL for the current org — no permission gate
+ * (unlike `getMiraSettings`, which needs `orgSettings:read` and most
+ * non-admin roles don't have it: `member`/`warehouse`/`viewer` all get
+ * `orgSettings: []`). Every member needs to be able to check this so the
+ * launcher can hide itself when an org hasn't configured Mira, without
+ * requiring org-settings access just to know that. Reveals nothing beyond a
+ * boolean — never the key, model, or write-access setting.
+ */
+export async function isMiraConfigured(): Promise<{ configured: boolean }> {
+  const { organizationId } = await getOrgContext();
+  const convex = await getConvexClient();
+  const existing = await convex.query(api.miraOrgSettings.getForOrg, { organizationId });
+  return serialize({ configured: !!existing?.openRouterKeyEncrypted });
 }
 
 export async function getMiraSettings(): Promise<MiraSettingsView> {

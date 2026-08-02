@@ -182,6 +182,80 @@ describe("modelWrites", () => {
       ).rejects.toThrow(/maintenanceIntervalDays/);
     });
   });
+
+  // Sales Stock tab's manual restock action — a thin wrapper over
+  // saleStock.ts's adjustModelSaleStock shared primitive (R-3.1).
+  describe("adjustSaleStockNative", () => {
+    test("positive delta restocks; negative delta corrects down; writes an audit log", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "SM58", saleStockQuantity: 5 }); });
+
+      const res1 = await t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, {
+        id: "mdl1", orgId: ORG, delta: 20, reason: "Received PO #1", now: NOW, actor, auditId: "a1",
+      });
+      expect(res1.saleStockQuantity).toBe(25);
+      expect((await model(t, "mdl1"))?.saleStockQuantity).toBe(25);
+
+      const res2 = await t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, {
+        id: "mdl1", orgId: ORG, delta: -3, now: NOW + 1, actor, auditId: "a2",
+      });
+      expect(res2.saleStockQuantity).toBe(22);
+
+      const logs = await t.run(async (ctx) => (await ctx.db.query("activityLogs").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect()).filter((l) => l.entityId === "mdl1"));
+      const restockLog = logs.find((l) => l.summary.includes("Added 20"));
+      expect(restockLog?.summary).toContain("Received PO #1");
+      expect(logs.find((l) => l.summary.includes("Removed 3"))).toBeTruthy();
+    });
+
+    test("allows an oversell-style negative pool (no floor)", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "SM58", saleStockQuantity: 2 }); });
+      const res = await t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, {
+        id: "mdl1", orgId: ORG, delta: -5, now: NOW, actor, auditId: "a1",
+      });
+      expect(res.saleStockQuantity).toBe(-3);
+    });
+
+    test("defaults an unset pool to 0 before applying the delta", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "SM58" }); });
+      const res = await t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, {
+        id: "mdl1", orgId: ORG, delta: 10, now: NOW, actor, auditId: "a1",
+      });
+      expect(res.saleStockQuantity).toBe(10);
+    });
+
+    test("rejects a zero or non-integer delta", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "SM58" }); });
+      await expect(t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, { id: "mdl1", orgId: ORG, delta: 0, now: NOW, actor, auditId: "a1" })).rejects.toThrow(/nonzero/i);
+      await expect(t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, { id: "mdl1", orgId: ORG, delta: 1.5, now: NOW, actor, auditId: "a2" })).rejects.toThrow(/whole number/i);
+    });
+
+    test("rejects a reason over the 500-char bound", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "SM58" }); });
+      await expect(
+        t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, { id: "mdl1", orgId: ORG, delta: 1, reason: "x".repeat(501), now: NOW, actor, auditId: "a1" }),
+      ).rejects.toThrow(/reason/i);
+    });
+
+    test("cross-tenant target rejected", async () => {
+      const t = makeT(); await seedMember(t);
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mX", organizationId: OTHER, name: "Foreign" }); });
+      await expect(
+        t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockNative, { id: "mX", orgId: ORG, delta: 5, now: NOW, actor, auditId: "a1" }),
+      ).rejects.toThrow(/not found/i);
+    });
+
+    test("RBAC: a viewer cannot restock", async () => {
+      const t = makeT(); await seedMember(t, "viewer");
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "SM58" }); });
+      await expect(
+        t.withIdentity({ subject: USER, orgId: ORG, role: "viewer" }).mutation(api.modelWrites.adjustSaleStockNative, { id: "mdl1", orgId: ORG, delta: 5, now: NOW, actor, auditId: "a1" }),
+      ).rejects.toThrow(/Forbidden|permission/i);
+    });
+  });
 });
 
 describe("models.detail", () => {

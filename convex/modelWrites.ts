@@ -9,6 +9,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { adjustModelSaleStock } from "./lib/saleStock";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -329,11 +330,60 @@ export const bulkUpdateRatesNative = mutation({
   },
 });
 
+export const adjustSaleStockNative = mutation({
+  returns: v.object({ id: v.string(), saleStockQuantity: v.number() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    // Positive = stock received (restock); negative = a manual correction
+    // (stocktake, damage write-off). Zero is rejected — there's nothing to log.
+    delta: v.number(),
+    reason: v.optional(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    if (a.delta === 0 || !Number.isInteger(a.delta)) {
+      throw new ConvexError("Adjustment must be a nonzero whole number");
+    }
+    assertStrLen(a.reason, "reason", { max: 500 });
+
+    const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");
+
+    // auditId is caller-minted for the create/update/archive mutations above (one
+    // predictable id per user action); this write's audit row is instead minted
+    // inside adjustModelSaleStock (shared with the line-item call sites, which
+    // each need their OWN id per delta) — a.auditId is accepted for API-contract
+    // consistency with the rest of this module but isn't threaded through.
+    const { to } = await adjustModelSaleStock(ctx, {
+      modelId: a.id,
+      orgId: a.orgId,
+      delta: a.delta,
+      reason: a.reason,
+      actor,
+      now: a.now,
+    });
+    return { id: a.id, saleStockQuantity: to };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
   // Delete/archive tier (§9) — also cascade-DELETES every asset + bulkAsset of
   // this model (not just a soft archive of the model itself), so it's high on
   // both grounds.
   archiveNative: { danger: "high" },
+  // A single model's stock count, reversible by an equal-and-opposite
+  // adjustment — no asset/availability impact (that's `saleStock.ts`'s
+  // FROM_RENTAL_STOCK primitives, which touch real assets and aren't
+  // reachable through this mutation).
+  adjustSaleStockNative: { danger: "low", summary: "Adjust a model's new-stock sale-stock pool by a delta (restock or correction).", mcpTier: 2 },
   // Rate metadata only (dailyRate/weeklyRate/monthlyRate/salePrice) — no
   // status/availability change at scale, so medium per the bulk-rate carve-out.
   bulkUpdateRatesNative: { danger: "medium" },

@@ -28,7 +28,14 @@ export interface LockCopyOpenSession {
 export interface LockCopyStatus {
   tier: LockTier;
   reason?: LockReason;
+  /** The allocator — the highest version number ever handed out. Used for the
+   *  "Create quote v(N+1)" exit, since that's what `newVersionNative` actually
+   *  allocates off. */
   revision?: number;
+  /** The version currently projected onto the live tables (#1080/#1085) — the
+   *  one a QUOTE_SENT reason is actually describing. Absent ⇒ `revision`
+   *  (every pre-#1085 project, where the two numbers were the same field). */
+  liveRevision?: number;
   hasOpenSession?: boolean;
   openSession?: LockCopyOpenSession | null;
 }
@@ -127,7 +134,12 @@ function sessionOpenCopy(intent: ColorIntent, session: LockCopyOpenSession, now:
 /** The FINANCE_LOCKED branch — split out for the same reason as `sessionOpenCopy`. */
 function financeLockedCopy(intent: ColorIntent, status: LockCopyStatus, revision: number): LockCopy {
   if (status.reason === "QUOTE_SENT") {
-    const detail = `Quote v${revision} is with the client.`;
+    // The sentence is about the LIVE revision (the one actually with the
+    // client) — "Create v(N+1)" still allocates off the counter (`revision`),
+    // since that's what `newVersionNative` does regardless of which version
+    // is live (#1080/#1100).
+    const liveRevision = status.liveRevision ?? revision;
+    const detail = `Quote v${liveRevision} is with the client.`;
     const exitLabel = `Create quote v${revision + 1}`;
     return {
       intent,

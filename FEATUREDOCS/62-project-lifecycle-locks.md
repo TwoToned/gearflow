@@ -99,6 +99,60 @@ quote it's about to move past). Both pass `bypassQuoteLock: true` to
 deliberate opt-out `LifecycleGuardOptions` exposes, and the only two call
 sites that should ever set it.
 
+**The quote-sent escalation checks the LIVE revision, not the allocator
+(#1080/#1100, Phase 5 fix).** `assertLifecycleGuard` and
+`projectLocksRead.status` resolve `currentRevisionQuoteStatus` against
+`projectLiveRevision(project)`, never `projectRevision(project)`. Before a
+promote (#1080/#1089) could leave the two apart, they were always the same
+number, so reading either worked; once `liveRevision` can sit BEHIND
+`revision` (a promoted v2 live while v3/v4 exist as saved-but-never-sent
+drafts ahead of it), checking the allocator would read v4's still-`DRAFT`
+quote and wrongly resolve `OPEN` even though the live v2 is out with the
+client — the exact scenario recall-to-edit (below) exists to gate correctly.
+`projectLocksRead.status` now returns both `revision` (the allocator, what
+"Create quote v(N+1)" allocates off) and `liveRevision` (the one a
+`QUOTE_SENT` reason is actually describing) — see
+`convex/projectLifecycleLocks.test.ts`'s `#1080/#1100` describe block for the
+regression coverage (a SENT row at the allocator's max must never leak the
+lock onto a still-DRAFT live revision, and vice versa).
+
+### Recall-to-edit — the lock's second exit from QUOTE_SENT (#1080/#1100, Phase 5)
+
+`newVersionNative` ("Create quote v(N+1)") was, until this phase, the ONLY
+exit from a `QUOTE_SENT` lock — which is exactly wrong for a promoted SENT
+revision (#1080/#1089's decision 1: a promoted version keeps its own number,
+so abandoning it to a fresh vN+1 defeats the whole point of promoting it).
+The lock strip (`project-lock-strip.tsx`) now offers a second, PRIMARY exit
+when `reason === "QUOTE_SENT"`: **"Recall vN to edit"**, alongside the
+existing "Create quote v(N+1)" (now secondary).
+
+Clicking it opens `<RecallToEditDialog>`
+(`src/components/projects/finance/recall-to-edit-dialog.tsx`) — a one-click
+confirm, not a bare toast, because un-sending a document a client already
+holds is not something to do as a side effect of a keystroke:
+
+- **Plain SENT/ACCEPTED-but-unprotected revision** — "v2 was sent to the
+  client on 19 Jul. Editing it recalls the quote — the PDF they're holding
+  will no longer match v2. The old document is kept in the audit trail,"
+  with `[ Recall v2 and edit ]` / `[ Create v(N+1) instead ]` / `[ Cancel ]`.
+  Confirming calls the EXISTING `recallNative` unchanged (no new mutation, no
+  second recall path) with a fixed reason string — the dialog itself IS the
+  explicit act every other un-send path already requires, so it doesn't also
+  make the user type one.
+- **Protected (auto-protected on ACCEPTED, #1030)** — the SAME dialog
+  reports the real situation instead of letting a raw `QUOTE_PROTECTED` error
+  surface: "v1 was accepted on 21 Jul and is protected. An owner must
+  unprotect it before it can be edited," offering only
+  `[ Create v(N+1) instead ]` / `[ Cancel ]` — never a recall button the
+  caller can't use. A race (someone else protects it between the strip
+  rendering and the confirm click) is caught and flips the dialog to the same
+  explanation rather than a bare toast.
+
+`LockTier` values, `FINANCIALS_LOCKED`/`PROJECT_LOCKED` codes and their toast
+mappings are unchanged — this is a new client-side exit, not a new server
+gate. Out of scope, deliberately: any change to `recallNative` itself
+(#1032's shipped recall/resend behaviour is depended on, not modified here).
+
 ## The shared guard: `assertLifecycleGuard`
 
 One function every gate site calls, encoding the full precedence table:
@@ -363,10 +417,11 @@ surfaces, one shared source per surface (POLICY.md R-3.1):
    mounted ONCE at `id="lock-strip"` above the tabs (not inside Finance),
    replacing Phase D's Finance-tab-only `QuoteLockStrip`. Renders
    `<UnlockSessionBanner>` while a session is open; otherwise the
-   `resolveLockCopy` line plus the exit that matches `reason` — "Create
-   quote v(N+1)" + "Recall" for `QUOTE_SENT` (reusing `project-quote-rail.tsx`'s
-   exported `<ReasonDialog>` rather than a second recall dialog), or the
-   existing unlock-session flow for `STATUS`.
+   `resolveLockCopy` line plus the exit that matches `reason` — for
+   `QUOTE_SENT`, "Recall vN to edit" (primary, opens
+   `<RecallToEditDialog>` — `src/components/projects/finance/recall-to-edit-dialog.tsx`,
+   #1080/#1100 Phase 5) + "Create quote v(N+1)" (secondary) — or the existing
+   unlock-session flow for `STATUS`.
 4. **`src/components/ui/locked-field.tsx`** — the field-level wrapper. Uses a
    native `<fieldset disabled>` around the child rather than cloning
    `disabled`/`readOnly` onto it: a fieldset cascades to every descendant

@@ -36423,7 +36423,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f3456c860a78207",
-    "returnsSha": "9deebb65ff588551",
+    "returnsSha": "ea61ad99a75567c7",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,

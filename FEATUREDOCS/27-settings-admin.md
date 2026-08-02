@@ -34,6 +34,31 @@ type). `abn` is edited on the General settings page (`/settings`, next to
 address/email/phone); the `documents` fields are edited on the "Documents"
 card at `/settings/branding` (`document-settings.tsx`).
 
+### The country table (I1, #1079)
+
+`src/lib/countries.ts` is the single source of truth (POLICY.md R-3.1) for
+every country-derived property — currency, date order/separator, decimal
+separator, week start, paper size, unit system, tax label, default tax rate,
+and the business-number label — for the launch markets (M1: AU/NZ/UK/US/IE)
+plus NL/DE, which ship in the table but are excluded from
+`listEnabledCountries()` until decimal-comma input parsing (#1087, M7) lands.
+Adding a country is a data row there, not code. The US row's
+`defaultTaxRate` is genuinely `null` (no national rate) — never invent one
+(see #1088). Consumers: `formatters.ts` (I2, locale-aware formatting), the
+document composer (I4/I5, doc labels + paper size), and calendar/unit
+settings (I6) — none wired yet; this issue only lands the table.
+
+`OrgSettings.country` (the field above) is **immutable after creation
+(M6)** — `src/server/settings.ts`'s `updateOrganization` enforces it
+server-side via `withImmutableCountry()`, which forces the persisted value
+back onto any patch once one is set, the same "strip on the server" posture
+as `PROJECT_UPDATE_IMMUTABLE` (`convex/projectWrites.ts:420`). This is
+independent of the pre-existing, broader `COUNTRIES` picker on the General
+settings page (`settings/page.tsx`) — that one biases Places-autocomplete
+address lookups across ~19 countries and is a different concern from the
+7-row operational table above; Phase C's wizard country step is what wires
+the two together.
+
 ## Platform Branding (`SiteSettings`)
 - `platformName` — Displayed in sidebar, page titles, emails
 - `platformIcon` — Lucide icon name, rendered via `DynamicIcon`

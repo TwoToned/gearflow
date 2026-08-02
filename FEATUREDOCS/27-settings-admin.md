@@ -44,9 +44,40 @@ plus NL/DE, which ship in the table but are excluded from
 `listEnabledCountries()` until decimal-comma input parsing (#1087, M7) lands.
 Adding a country is a data row there, not code. The US row's
 `defaultTaxRate` is genuinely `null` (no national rate) — never invent one
-(see #1088). Consumers: `formatters.ts` (I2, locale-aware formatting), the
-document composer (I4/I5, doc labels + paper size), and calendar/unit
-settings (I6) — none wired yet; this issue only lands the table.
+(see #1088). Each row also carries a `locale` (BCP-47, e.g. `"en-GB"`) — the
+country's OWN locale, driving `Intl`-backed formatting for free. Consumers:
+`formatters.ts` (I2, wired below), the document composer (I4/I5, doc labels
++ paper size) and calendar/unit settings (I6) — still unwired.
+
+### Locale-aware formatting (I2, #1081)
+
+`formatCurrency`/`formatDate` (`src/lib/formatters.ts`) take an **optional**
+`FormatConfig` (`{ locale, currency }`) — omit it and you get the exact
+pre-#1081 AU rendering, so every one of the 241 pre-existing call sites keeps
+working unchanged until it migrates. `formatConfigFromOrgSettings()` derives
+one from `OrgSettings.country` (via the I1 table above) with
+`OrgSettings.currency` as an explicit override of just the currency (the
+locale, i.e. date order, still comes from the country). Two consumers:
+
+- **Client** — `FormatProvider` (`src/components/providers/format-provider.tsx`)
+  is mounted in the app layout next to `BrandingProvider` (same `useOrganization`
+  store, no extra fetch) and exposes `useFormatters()` → locale-bound
+  `formatCurrency`/`formatDate`. A component must explicitly call the hook to
+  render in the org's own country/currency — mounting the provider alone
+  changes nothing for the plain imported functions.
+- **Server/PDF** — call `formatConfigFromOrgSettings(orgSettings)` directly
+  wherever `orgSettings` is already in hand (e.g. `build-document-data.ts`)
+  and pass the result as `formatCurrency`'s/`formatDate`'s second arg.
+
+**Not done in #1081**: migrating the 241 call sites (only
+`src/lib/billing-derivation.ts`'s inline `$${n.toFixed(2)}` — the one
+offender the issue named explicitly — was routed through `formatCurrency`),
+or threading a `FormatConfig` through the PDF pipeline (`gearflow-table.ts`,
+`document-composer.ts`, the 11 other pdfme files that call these two
+functions) — that pipeline still renders every org's documents in AU
+formatting regardless of the org's real country, and needs its own pass with
+the per-doc-type integration tests CLAUDE.md's PDF rule requires for a
+pagination-adjacent change.
 
 `OrgSettings.country` (the field above) is **immutable after creation
 (M6)** — `src/server/settings.ts`'s `updateOrganization` enforces it

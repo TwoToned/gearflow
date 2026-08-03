@@ -288,6 +288,82 @@ describe("ensureContainerOnProject", () => {
   });
 });
 
+// ─── setSalePicked ──────────────────────────────────────────────────────────────
+describe("setSalePicked", () => {
+  async function seed(t: T) {
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("sale1", { type: "SALE", saleMode: "NEW_STOCK" }));
+      await ctx.db.insert("projectLineItems", baseLine("fleet1", { type: "SALE", saleMode: "FROM_RENTAL_STOCK" }));
+      await ctx.db.insert("projectLineItems", baseLine("li1", {}));
+    });
+  }
+
+  test("marks a NEW_STOCK sale line picked, then un-picks it", async () => {
+    const t = makeT();
+    await seed(t);
+    const r1 = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.setSalePicked, {
+      orgId: ORG, projectId: "p1", lineItemId: "sale1", picked: true, now: NOW, actor: SPOOF,
+    });
+    expect(r1).toEqual({ id: "sale1" });
+    expect((await lineById(t, "sale1"))?.salePickedAt).toBe(NOW);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.setSalePicked, {
+      orgId: ORG, projectId: "p1", lineItemId: "sale1", picked: false, now: NOW + 1, actor: SPOOF,
+    });
+    expect((await lineById(t, "sale1"))?.salePickedAt).toBeUndefined();
+  });
+
+  test("rejects a FROM_RENTAL_STOCK sale line (must stay in the existing asset-tag flow)", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.setSalePicked, {
+        orgId: ORG, projectId: "p1", lineItemId: "fleet1", picked: true, now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/Only NEW_STOCK sale line items/i);
+  });
+
+  test("rejects a plain rental EQUIPMENT line", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.setSalePicked, {
+        orgId: ORG, projectId: "p1", lineItemId: "li1", picked: true, now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/Only NEW_STOCK sale line items/i);
+  });
+
+  test("cross-org line item rejected", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("sale-other", { type: "SALE", saleMode: "NEW_STOCK" }, OTHER));
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.setSalePicked, {
+        orgId: ORG, projectId: "p1", lineItemId: "sale-other", picked: true, now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/not found/i);
+  });
+
+  test("viewer denied", async () => {
+    const t = makeT();
+    await member(t, "viewer");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("sale1", { type: "SALE", saleMode: "NEW_STOCK" }));
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.setSalePicked, {
+        orgId: ORG, projectId: "p1", lineItemId: "sale1", picked: true, now: NOW, actor: SPOOF,
+      }),
+    ).rejects.toThrow(/insufficient permissions/i);
+  });
+});
+
 // ─── syncContainersBatch ────────────────────────────────────────────────────────
 describe("syncContainersBatch", () => {
   async function seedContainers(t: T) {

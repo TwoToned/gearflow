@@ -72,6 +72,28 @@ describe("VersionProjectedFinance smoke", () => {
     render(<VersionProjectedFinance />);
     expect(screen.getByText(/Invoices aren't versioned/)).toBeTruthy();
   });
+
+  // WS11 (#950) regression: serviceChargeTotal used to be derived as
+  // subtotal - equipmentRevenue only, silently folding saleRevenue into
+  // "Services". With equipmentRevenue=700, saleRevenue=200 and subtotal=1000,
+  // the correct Services figure is 100 (1000 - 700 - 200), not 300.
+  it("doesn't fold saleRevenue into Services, and renders its own Sale items row", () => {
+    mockUseProjectVersion.mockReturnValue({
+      projected: projectSnapshotEntries([
+        { entityType: "project", entityId: "p1", data: { name: "Big Gig", total: 1050, subtotal: 1000, taxAmount: 50, equipmentRevenue: 700, saleRevenue: 200 } },
+      ]),
+      isLoadingProjection: false,
+      viewingRevision: 1,
+    });
+    render(<VersionProjectedFinance />);
+    expect(screen.getByText("Sale items")).toBeTruthy();
+    expect(screen.getByText("$200.00")).toBeTruthy();
+    expect(screen.getByText("Services")).toBeTruthy();
+    // subtotal(1000) - equipmentRevenue(700) - saleRevenue(200) = 100 — not 300,
+    // which is what the pre-fix (equipmentRevenue-only) subtraction would show.
+    expect(screen.getByText("$100.00")).toBeTruthy();
+    expect(screen.queryByText("$300.00")).toBeNull();
+  });
 });
 
 describe("VersionNotTrackedNote smoke", () => {

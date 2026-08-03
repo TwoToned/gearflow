@@ -36,6 +36,14 @@ export interface SaleActor {
  * model lookup miss (deleted mid-flight, cross-org) is swallowed rather than
  * thrown — this runs as a side effect of a line-item write that has already
  * committed; a dangling model reference shouldn't roll back the whole write.
+ *
+ * `projectId`/`lineItemId` are omitted for a MANUAL adjustment (the Assets ->
+ * Sales Stock tab's restock action, `modelWrites.ts`'s `adjustSaleStockNative`)
+ * — there's no line item driving it, just an operator correcting the pool
+ * (received shipment, stocktake correction). That caller does its own
+ * existence/org check up front (a manual action should 404 loudly, unlike a
+ * line-item side effect), so the swallow-on-missing branch above is only ever
+ * exercised by the line-item call sites.
  */
 export async function adjustModelSaleStock(
   ctx: MutationCtx,
@@ -43,21 +51,22 @@ export async function adjustModelSaleStock(
     modelId: string;
     orgId: string;
     delta: number;
-    projectId: string;
-    lineItemId: string;
+    projectId?: string;
+    lineItemId?: string;
+    /** Free-text audit note for a manual adjustment (no projectId). */
+    reason?: string;
     actor: SaleActor;
     now: number;
   },
-): Promise<void> {
-  if (args.delta === 0) return;
+): Promise<{ from: number; to: number }> {
   const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", args.modelId)).first();
-  if (!model || model.organizationId !== args.orgId) return;
+  if (!model || model.organizationId !== args.orgId) return { from: 0, to: 0 };
 
   const from = model.saleStockQuantity ?? 0;
+  if (args.delta === 0) return { from, to: from };
   const to = from + args.delta;
   await ctx.db.patch(model._id, { saleStockQuantity: to, updatedAt: args.now });
 
-  const qty = Math.abs(args.delta);
   await writeActivityLog(ctx, {
     id: createId(),
     organizationId: args.orgId,
@@ -67,14 +76,32 @@ export async function adjustModelSaleStock(
     entityName: model.name,
     userId: args.actor.userId,
     userName: args.actor.userName,
-    summary:
-      args.delta < 0
-        ? `Sold ${qty} of ${model.name} from new stock (sale stock ${from} -> ${to})`
-        : `Restored ${qty} of ${model.name} to sale stock (${from} -> ${to})`,
-    details: { saleStock: { from, to, projectId: args.projectId, lineItemId: args.lineItemId } },
+    summary: saleStockSummary(model.name, args, from, to),
+    details: { saleStock: { from, to, projectId: args.projectId, lineItemId: args.lineItemId, reason: args.reason } },
     projectId: args.projectId,
     createdAt: args.now,
   });
+  return { from, to };
+}
+
+/** A line-item-driven adjustment reads "sold"/"restored"; a manual one (no
+ *  `projectId`) reads "added"/"removed" and carries the free-text reason. */
+function saleStockSummary(
+  modelName: string,
+  args: { delta: number; projectId?: string; reason?: string },
+  from: number,
+  to: number,
+): string {
+  const qty = Math.abs(args.delta);
+  if (args.projectId) {
+    return args.delta < 0
+      ? `Sold ${qty} of ${modelName} from new stock (sale stock ${from} -> ${to})`
+      : `Restored ${qty} of ${modelName} to sale stock (${from} -> ${to})`;
+  }
+  const noteSuffix = args.reason ? ` — ${args.reason}` : "";
+  return args.delta > 0
+    ? `Added ${qty} to ${modelName} sale stock (${from} -> ${to})${noteSuffix}`
+    : `Removed ${qty} from ${modelName} sale stock (${from} -> ${to})${noteSuffix}`;
 }
 
 /**

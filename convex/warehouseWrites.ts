@@ -25,6 +25,7 @@ import {
   checkinKitFull,
   checkinKitsBatchCore,
   clearPrepContainerCore,
+  setSalePickedCore,
   ensureContainerOnProjectCore,
   syncContainersBatchCore,
   reassignSerialisedUnitCore,
@@ -588,6 +589,29 @@ export const clearPrepContainer = mutation({
 
     return clearPrepContainerCore(ctx, {
       organizationId: a.orgId, projectId: a.projectId, containerName: a.containerName, now: a.now,
+    });
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// setSalePicked — NEW_STOCK sale-item pick checklist toggle (2026-08 warehouse
+// sales-prep split). warehouse:check_out (same tier as the rest of the pick-prep
+// tab's actions). No audit row — a checklist toggle, not a physical stock movement
+// (the stock deduction already happened when the sale line was added).
+// ─────────────────────────────────────────────────────────────────────────────
+export const setSalePicked = mutation({
+  args: { orgId: v.string(), projectId: v.string(), lineItemId: v.string(), picked: v.boolean(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "warehouse");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "warehouse", "check_out");
+    await resolveActor(ctx, a.actor);
+
+    await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    await requireLineInProject(ctx, a.lineItemId, a.orgId, a.projectId);
+
+    return setSalePickedCore(ctx, {
+      organizationId: a.orgId, lineItemId: a.lineItemId, picked: a.picked, now: a.now,
     });
   },
 });
@@ -1209,6 +1233,9 @@ export const agentOps: AgentOpsAnnotations = {
   reassignKitMemberSerial: { danger: "medium" },
   // Repoints a unit to a different line in the same project — no physical movement.
   reassignLineItemUnit: { danger: "medium" },
+  // NEW_STOCK sale-item pick checklist toggle — no stock/asset movement (the sale
+  // stock deduction already happened when the line was added), no audit row.
+  setSalePicked: { danger: "low" },
   // Rolls up a container's own status/asset flag from its (already-moved) contents.
   syncContainersBatch: { danger: "medium" },
   undeployItems: { danger: "high" }, // physical un-deploy (Deployed -> Prepped)

@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   Undo2,
   Landmark,
+  PackagePlus,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -130,6 +131,8 @@ const RAIL: RailItem[] = [
       { title: "Categories", url: "/assets/categories", icon: Tags, resource: "model" },
       { title: "Kits", url: "/kits", icon: Container, resource: "kit" },
       { title: "Fleet ROI", url: "/assets/roi", icon: TrendingUp, resource: "model" },
+      // WS11 (#950) follow-up — manage the NEW_STOCK sale-stock pool per model.
+      { title: "Sales Stock", url: "/assets/sales-stock", icon: PackagePlus, resource: "model" },
     ],
   },
   {

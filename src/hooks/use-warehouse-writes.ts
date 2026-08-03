@@ -39,6 +39,7 @@ export function useWarehouseWrites() {
   const checkInKitM = useMutation(api.warehouseWrites.checkInKit);
   const checkInKitsBatchM = useMutation(api.warehouseWrites.checkInKitsBatch);
   const clearPrepContainerM = useMutation(api.warehouseWrites.clearPrepContainer);
+  const setSalePickedM = useMutation(api.warehouseWrites.setSalePicked);
   const ensureContainerOnProjectM = useMutation(api.warehouseWrites.ensureContainerOnProject);
   const syncContainersBatchM = useMutation(api.warehouseWrites.syncContainersBatch);
   const reassignLineItemUnitM = useMutation(api.warehouseWrites.reassignLineItemUnit);
@@ -243,6 +244,10 @@ export function useWarehouseWrites() {
 
     clearPrepContainer: async (projectId: string, containerName: string): Promise<{ success: true }> => {
       return clearPrepContainerM({ orgId: requireOrg(), projectId, containerName, now: Date.now(), actor: actor() });
+    },
+
+    setSalePicked: async (projectId: string, lineItemId: string, picked: boolean): Promise<{ id: string }> => {
+      return setSalePickedM({ orgId: requireOrg(), projectId, lineItemId, picked, now: Date.now(), actor: actor() });
     },
 
     ensureContainerOnProject: async (

@@ -272,6 +272,12 @@ function SaleStockSection({ rows }: { rows: OverbookingSaleStockRow[] }) {
   return (
     <div className={TILE}>
       <SectionHeader icon={Boxes} title="Sale stock to procure" subtitle="Models sold below their new-stock sale pool" count={rows.length} pillClass={SOFT_PILL} />
+      <Link
+        href="/assets/sales-stock"
+        className={cn("-mt-3 mb-3 inline-block text-caption text-muted hover:text-link hover:underline rounded-sm", focusRing)}
+      >
+        Manage stock →
+      </Link>
       {rows.length === 0 ? (
         <p className="t-micro text-faint">No sale stock to procure.</p>
       ) : (
@@ -279,7 +285,12 @@ function SaleStockSection({ rows }: { rows: OverbookingSaleStockRow[] }) {
           {rows.map((row) => (
             <div key={row.modelId} className="flex flex-col gap-1.5 rounded-[var(--r)] border border-line p-3">
               <div className="flex items-center justify-between">
-                <p className="truncate text-[14px] font-medium text-ink">{row.modelName}</p>
+                <Link
+                  href={`/assets/models/${row.modelId}`}
+                  className={cn("truncate text-[14px] font-medium text-ink hover:underline hover:text-link rounded-sm", focusRing)}
+                >
+                  {row.modelName}
+                </Link>
                 <span className={cn("rounded-full px-2 py-0.5 text-badge font-medium", SOFT_PILL)}>{row.shortfallQty} to procure</span>
               </div>
               {row.contributingSaleLines.length > 0 && (

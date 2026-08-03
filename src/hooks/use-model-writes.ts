@@ -24,6 +24,7 @@ export function useModelWrites() {
   const updateM = useMutation(api.modelWrites.updateNative);
   const archiveM = useMutation(api.modelWrites.archiveNative);
   const bulkRatesM = useMutation(api.modelWrites.bulkUpdateRatesNative);
+  const adjustSaleStockM = useMutation(api.modelWrites.adjustSaleStockNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -58,6 +59,10 @@ export function useModelWrites() {
     ): Promise<{ count: number }> => {
       const org = requireOrg();
       return await bulkRatesM({ orgId: org, modelIds, rateType, operation, value, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    adjustSaleStock: async (id: string, delta: number, reason?: string): Promise<{ id: string; saleStockQuantity: number }> => {
+      const org = requireOrg();
+      return await adjustSaleStockM({ id, orgId: org, delta, reason, now: Date.now(), actor: actor(), auditId: createId() });
     },
   };
 }

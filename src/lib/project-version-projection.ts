@@ -105,6 +105,10 @@ interface ProjectedFinance {
   discountAmount: number | null;
   margin: number | null;
   equipmentRevenue: number | null;
+  // WS11 (#950) — standalone SALE lines' revenue/COGS, excluded from
+  // equipmentRevenue (convex/lib/recalc.ts).
+  saleRevenue: number | null;
+  saleCostTotal: number | null;
   serviceCostTotal: number | null;
   labourCostTotal: number | null;
   subHireCostTotal: number | null;
@@ -282,6 +286,8 @@ export function projectSnapshotEntries(entries: SnapshotEntryLike[]): ProjectedV
       discountAmount: num(project.discountAmount),
       margin: num(project.margin),
       equipmentRevenue: num(project.equipmentRevenue),
+      saleRevenue: num(project.saleRevenue),
+      saleCostTotal: num(project.saleCostTotal),
       serviceCostTotal: num(project.serviceCostTotal),
       labourCostTotal: num(project.labourCostTotal),
       subHireCostTotal: num(project.subHireCostTotal),

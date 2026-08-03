@@ -30,12 +30,17 @@ export function VersionProjectedFinance() {
   if (!projected) return null;
 
   const f = projected.finance;
-  const serviceChargeTotal = f.subtotal != null && f.equipmentRevenue != null ? f.subtotal - f.equipmentRevenue : null;
+  const serviceChargeTotal =
+    f.subtotal != null && f.equipmentRevenue != null
+      ? f.subtotal - f.equipmentRevenue - (f.saleRevenue ?? 0)
+      : null;
 
   return (
     <div className="space-y-4">
       <FinancialSummary
         equipmentRevenue={f.equipmentRevenue}
+        saleRevenue={f.saleRevenue}
+        saleCostTotal={f.saleCostTotal}
         serviceChargeTotal={serviceChargeTotal}
         serviceCostTotal={f.serviceCostTotal}
         labourCostTotal={f.labourCostTotal}

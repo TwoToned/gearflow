@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (564 agent-reachable)
+## Operations (566 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -308,6 +308,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `models.detail` (query, scope: model:read)
 - `models.getById` (query, scope: model:read)
 - `models.list` (query, scope: model:read)
+- `modelWrites.adjustSaleStockNative` (mutation, scope: model:update)
 - `modelWrites.archiveNative` (mutation, scope: model:delete)
 - `modelWrites.bulkUpdateRatesNative` (mutation, scope: model:update)
 - `modelWrites.createNative` (mutation, scope: model:create)
@@ -613,6 +614,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `warehouseWrites.quickAddAndCheckOut` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.reassignKitMemberSerial` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.reassignLineItemUnit` (mutation, scope: warehouse:check_out)
+- `warehouseWrites.setSalePicked` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.syncContainersBatch` (mutation, scope: warehouse:check_out)
 - `warehouseWrites.undeployItems` (mutation, scope: warehouse:check_in)
 - `warehouseWrites.undeployKit` (mutation, scope: warehouse:check_in)

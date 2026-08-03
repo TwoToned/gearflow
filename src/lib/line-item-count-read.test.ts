@@ -29,6 +29,8 @@ function li(over: Partial<MappedLineItem>): MappedLineItem {
     organizationId: "org1",
     projectId: "p1",
     type: "EQUIPMENT",
+    saleMode: null,
+    salePickedAt: null,
     modelId: null,
     assetId: null,
     bulkAssetId: null,

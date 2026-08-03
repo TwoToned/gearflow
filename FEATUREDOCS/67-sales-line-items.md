@@ -55,6 +55,11 @@ src/components/projects/sale-add-form.tsx    — the "Sale" kind in UnifiedAddDi
 src/components/projects/unified-add-dialog.tsx
 src/hooks/use-line-item-writes.ts            — add()/unsell() wrappers
 
+src/app/(app)/assets/sales-stock/page.tsx    — Assets -> Sales Stock tab (2026-08)
+src/components/assets/sales-stock-table.tsx  — the table + restock dialog
+convex/modelWrites.ts                        — adjustSaleStockNative (manual restock mutation)
+src/hooks/use-model-writes.ts                — adjustSaleStock() wrapper
+
 src/server/csv.ts               — salePrice/saleStockQuantity CSV columns
 src/lib/rate-import.ts          — salePrice in the narrow rate-only CSV import
 ```
@@ -116,6 +121,97 @@ goods are handed over at the docket, not pulled/returned through the
 warehouse flow. See the regression tests pinning this in
 `line-item-count-read.test.ts` and `warehouse-detail-reconstruct.test.ts`.
 
+**2026-08 partial reversal — NEW_STOCK only.** The "no warehouse involvement"
+decision above turned out to undercount real prep work: a NEW_STOCK sale item
+still has to be physically pulled off a shelf before a job goes out, so it
+belongs on someone's pick list. `reconstructSaleItemsToPrep()`
+(`warehouse-detail-reconstruct.ts`) adds a SEPARATE list — deliberately not
+merged into the `type === "EQUIPMENT"` scan/kit tree above — of NEW_STOCK sale
+lines (`status !== "CANCELLED"`), each carrying its model's `sku` and a
+`picked` flag (`salePickedAt != null`). The warehouse page's Pick tab renders
+this as its own "Sale items to prepare" section
+(`src/components/warehouse/sale-items-to-prep.tsx`), picked by **SKU**, not
+asset tag — a NEW_STOCK line has no underlying asset/bulk record to scan.
+`convex/warehouseWrites.ts`'s `setSalePicked` mutation (`danger: "low"`,
+`warehouse:check_out`) is the only writer of `projectLineItems.salePickedAt`;
+it explicitly re-checks `type === "SALE" && saleMode === "NEW_STOCK"` server-side
+so it can never be pointed at an EQUIPMENT line or a FROM_RENTAL_STOCK sale line.
+
+**FROM_RENTAL_STOCK sale lines are still fully excluded from the warehouse
+page** — the original decision stands for that half. A FROM_RENTAL_STOCK sale
+already IS a specific serialised asset or bulk unit; threading it into the
+scan/kit-cascade tree (`flipLineUnits` and friends) is a separate, larger
+piece of work than this pass took on, deliberately deferred. Don't reuse
+`salePickedAt` for it — it means "grab this off the shelf," which a
+FROM_RENTAL_STOCK line never is.
+
+Do NOT reuse the scan-driven `prepStatus`/`projectLineItemUnits` unit system
+for NEW_STOCK sale-item picking. `prepStatus` is explicitly barred from the
+generic `patchNative` client mutation (`LINE_IMMUTABLE_ON_PATCH` in
+`lineItemWrites.ts`) precisely because it's owned by that asset-scan machinery
+— a NEW_STOCK sale line has no asset/bulk unit to scan, so `salePickedAt` is a
+deliberately separate, much simpler field.
+
+## On-project equipment table
+
+Until the sales-items expansion (2026-08), a SALE line rendered identically to a
+rental EQUIPMENT line on the project's own equipment tab — the badge described
+below existed only in generated PDFs (see "PDF pipeline"). `describeRow()`
+(`equipment-row-descriptors.ts`) now adds `"sale"` as a fourth `RowSource`
+(alongside `owned`/`subhire`/`custom`) and an `isSale` boolean, computed from
+`item.type === "SALE"`. `equipment-rows.tsx` renders one of two badges next to
+the line name (desktop row and mobile card, same as Kit/Subhire/Custom):
+
+- `saleMode === "NEW_STOCK"` → green **"Sale · New stock"** badge (`status="ok"`)
+- `saleMode === "FROM_RENTAL_STOCK"` → amber **"Sale · From fleet"** badge
+  (`status="warn"`) — a visual cue that this line is an actual serialised
+  asset/bulk unit leaving the rental fleet for good, not a shelf pick.
+
+`saleMode` previously wasn't selected by either `mapLineItemDoc` implementation
+that feeds this tree (`project-line-item-read.ts`'s server-bundle path and
+`project-equipment-reconstruct.ts`'s client-safe native-cutover path — see that
+file's header comment on why two copies exist) — both now map it through. If a
+future edit to either mapper's field list is made, `saleMode` must stay listed
+or the badge silently stops rendering (nothing else would fail — the field is
+optional at the type level, so a dropped mapping is not a compile error).
+
+## Sales Stock tab (Assets, 2026-08)
+
+Every model is sellable, but until now there was no UI to VIEW or SET
+`Model.saleStockQuantity` outside the model edit form's single number input
+(and CSV bulk-edit). **Assets → Sales Stock** (`/assets/sales-stock`,
+sidebar sub-nav next to Fleet ROI, gated on `model:read` like Fleet ROI) lists
+every active model with its `salePrice`/`saleStockQuantity`, sorted lowest
+stock first by default so a negative (oversold) pool sorts to the top, badged
+`status="overbooked"` — the same "oversold" vocabulary the Overbookings board
+uses. Deliberately lists the WHOLE catalogue, not just models with stock
+already set — the point of the tab is to let an operator set it in the first
+place.
+
+Each row's **Restock** button (gated `model:update`, matches the
+`asset:update`-free NEW_STOCK write bar — no asset is touched) opens a dialog
+taking a signed integer delta (positive = stock received, negative = a
+stocktake/damage correction) and an optional free-text reason, calling
+`modelWrites.adjustSaleStockNative`. That mutation is a thin wrapper: it does
+its OWN existence/org check (a manual action should 404 loudly, unlike a
+line-item side effect) and then defers the patch + audit-log write to
+`saleStock.ts`'s `adjustModelSaleStock` — the SAME primitive the four
+line-item write paths use (R-3.1, one authoritative place that touches
+`saleStockQuantity`). `projectId`/`lineItemId` are now optional on that
+primitive: omitted, the audit summary reads "Added N to sale stock" /
+"Removed N from sale stock" (plus the reason) instead of "Sold"/"Restored" —
+the caller distinguishes a manual adjustment from a line-item-driven one by
+whether `projectId` is present, not by a separate flag. No floor on the
+negative side — oversell here is the same warn-never-block posture as
+everywhere else in this workstream.
+
+Complements, doesn't duplicate, the Overbookings board's "Sale stock to
+procure" section (`overbookingBoard.ts`'s `computeSaleStockToProcure`): that's
+a reactive, oversold-only alert pointing at the contributing projects: this is
+the general-purpose view + the only UI restock action. The two now cross-link
+— the board's model rows link to `/assets/models/{id}`, and the section header
+links to `/assets/sales-stock`.
+
 ## PDF pipeline (see also FEATUREDOCS/13)
 
 - Quote/invoice: SALE lines included, with a green "SALE" badge
@@ -151,13 +247,49 @@ warehouse flow. See the regression tests pinning this in
   `projectModelRevenues` (never counts toward a model's rental ROI). See
   FEATUREDOCS/57.
 
+**Finance tab / version projection (2026-08 fix).** `saleRevenue`/
+`saleCostTotal` are correctly wired into `ProjectCostsPanel` (above) but were
+silently dropped by the OTHER money surface on the project — the Finance
+tab's `<FinancialSummary>` card and its read-only version-projection twin
+(`VersionProjectedFinance`). Both derived `serviceChargeTotal` as `subtotal -
+equipmentRevenue`, which was correct pre-WS11 but, once `saleRevenue` became
+part of `subtotal`, silently folded every SALE line's revenue into the
+"Services" row. Fixed by threading `saleRevenue`/`saleCostTotal` through the
+two `mapProject` copies (`src/lib/projects-read.ts` and its client-safe
+mirror `src/lib/project-detail-reconstruct.ts` — both had dropped the two
+fields from their hand-picked shape) and `project-version-projection.ts`'s
+`ProjectedFinance`, subtracting `saleRevenue` too when deriving
+`serviceChargeTotal`, and giving `<FinancialSummary>` its own "Sale items"
+revenue row / "Sale cost of goods" cost row (shown only when non-zero, same
+convention as every other row in that card).
+
+**Xero push coding (2026-08 fix).** `resolveEquipmentLineCode`
+(`convex/xeroPush.ts`) hardcoded `lineKind: "RENTAL"` for every equipment
+line — written before WS11 shipped, when the SALE branch of
+`resolveModelOrKitAccountCode` (`models.xeroSaleAccountCode`) was unit-tested
+but structurally unreachable. It now branches `lineKind` on
+`projectLineItems.type === "SALE"`, so a SALE line's invoice push resolves
+via the model's sale account instead of its rental one. A kit-parent line is
+unaffected either way — a SALE line is never kit-backed. See FEATUREDOCS/66.
+
 ## CSV / rate import
 
 `Model.salePrice`/`saleStockQuantity` follow the exact `defaultPurchasePrice`/
 `replacementCost` pattern: full-model CSV export/import columns, the narrow
 rate-only CSV import (alias `saleprice|sale|sellprice|rrp|retail`), and
 `bulkUpdateRatesNative`'s `rateType` union (+ the model-table.tsx bulk
-rate-update dialog).
+rate-update dialog). **2026-08 fix:** `saleStockQuantity`'s full-model CSV
+import used `parseInt(...) || null`, which reads an explicit `"0"` as falsy
+and silently imports it as null — the update path's `data.saleStockQuantity
+?? existing.saleStockQuantity` then reads that as "unset" and keeps the OLD
+value instead of zeroing it out. `salePrice` on the same row was already fine
+(`parseDecimal` uses an explicit `isNaN` check). Fixed by adding a
+`parseIntOrNull` helper next to `parseDecimal` in `src/server/csv.ts` with
+the same explicit-`isNaN` shape, used for `saleStockQuantity` only — the
+file's other `parseInt(...) || null` fields (`powerDraw`,
+`testAndTagIntervalDays`, `maintenanceIntervalDays`) don't have a meaningful
+zero state the way a stock count does, so they're left as a separate hygiene
+follow-up rather than folded into this fix.
 
 ## Out of scope (this workstream)
 

@@ -1201,6 +1201,12 @@ export function LineItemRow({
         <Badge status="neutral" className="bg-blue-soft text-blue">Subhire</Badge>
       )}
       {item.isCustomItem && <Badge status="neutral">Custom</Badge>}
+      {desc.isSale && item.saleMode === "NEW_STOCK" && (
+        <Badge status="ok">Sale · New stock</Badge>
+      )}
+      {desc.isSale && item.saleMode === "FROM_RENTAL_STOCK" && (
+        <Badge status="warn">Sale · From fleet</Badge>
+      )}
       {isUnconfirmed && (
         <TooltipProvider>
           <Tooltip>
@@ -1561,6 +1567,16 @@ export function LineItemRow({
           {item.isCustomItem && (
             <Badge status="neutral" className="ml-1.5">
               Custom
+            </Badge>
+          )}
+          {desc.isSale && item.saleMode === "NEW_STOCK" && (
+            <Badge status="ok" className="ml-1.5">
+              Sale · New stock
+            </Badge>
+          )}
+          {desc.isSale && item.saleMode === "FROM_RENTAL_STOCK" && (
+            <Badge status="warn" className="ml-1.5">
+              Sale · From fleet
             </Badge>
           )}
           {isUnconfirmed && (

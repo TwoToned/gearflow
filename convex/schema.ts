@@ -1357,6 +1357,12 @@ export default defineSchema({
     // FROM_RENTAL_STOCK = sold out of owned stock (assetId -> AssetStatus
     // "SOLD"; bulkAssetId -> adjustBulkTotal). See convex/lib/saleStock.ts.
     saleMode: v.optional(enums.SaleMode),
+    // 2026-08 warehouse sales-prep split — set only on NEW_STOCK sale lines
+    // (no underlying asset to scan, so this is a plain checklist timestamp,
+    // deliberately NOT the asset/unit-scan-driven `prepStatus` field below).
+    // Absent = needs picking; set = picked. See convex/warehouseWrites.ts's
+    // setSalePicked and FEATUREDOCS/67.
+    salePickedAt: v.optional(v.number()),
     modelId: v.optional(v.string()),
     assetId: v.optional(v.string()),
     bulkAssetId: v.optional(v.string()),

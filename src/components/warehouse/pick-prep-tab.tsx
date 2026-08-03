@@ -30,6 +30,8 @@ import { modelDisplayName, collectAllVerifiableIds, bulkUnitKey } from "./wareho
 import { KitChildRows, MobileKitChildCards } from "./kit-child-rows";
 import { PrepStatusBadge } from "./prep-status-badge";
 import { ScanItemCard, ScanGroupCard } from "./scan-card";
+import { SaleItemsToPrep } from "./sale-items-to-prep";
+import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 
 type ContainerOption = { value: string; label: string; assetId?: string; assetTag?: string; modelId?: string };
 
@@ -56,6 +58,11 @@ export interface PickPrepTabProps {
   // Data
   pickPrepItems: LineItem[];
   groupedPrep: GroupEntry[];
+
+  // NEW_STOCK sale items — SKU-picked, separate from the asset-tag/scan tree above.
+  saleItemsToPrep: SaleItemToPrep[];
+  onToggleSalePicked: (id: string, picked: boolean) => void;
+  pendingSalePickIds: Set<string>;
 
   // Kit verification
   verifiedKitItems: Set<string>;
@@ -97,6 +104,9 @@ export function PickPrepTab({
   allPrepKeys,
   pickPrepItems,
   groupedPrep,
+  saleItemsToPrep,
+  onToggleSalePicked,
+  pendingSalePickIds,
   verifiedKitItems,
   setVerifiedKitItems,
   expandedGroups,
@@ -152,6 +162,12 @@ export function PickPrepTab({
               </Button>
             </div>
         </div>
+
+        <SaleItemsToPrep
+          items={saleItemsToPrep}
+          onTogglePicked={onToggleSalePicked}
+          pendingIds={pendingSalePickIds}
+        />
 
         {pickPrepItems.length === 0 ? (
           <EmptyState

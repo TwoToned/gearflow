@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { showError } from "@/lib/show-error";
 import { focusRing } from "@/lib/utils";
 import { transitionNeedsCheck, lineHasModelChecks, kitHasChecks } from "@/lib/warehouse-check-policy";
+import type { SaleItemToPrep } from "@/lib/warehouse-detail-reconstruct";
 
 import {
   lookupAssetForScan,
@@ -363,6 +364,10 @@ function WarehouseProjectPage({
   const [selectedOut, setSelectedOut] = useState<Set<string>>(new Set());
   const [selectedDeprep, setSelectedDeprep] = useState<Set<string>>(new Set());
   const [selectedIn, setSelectedIn] = useState<Set<string>>(new Set());
+
+  // NEW_STOCK sale-item pick checklist — tracks in-flight toggles so a double-click
+  // can't fire the mutation twice while the first call is still pending.
+  const [pendingSalePickIds, setPendingSalePickIds] = useState<Set<string>>(new Set());
 
   // Kit verification — track which child assets have been scanned to confirm presence
   const [verifiedKitItems, setVerifiedKitItems] = useState<Set<string>>(new Set());
@@ -1465,6 +1470,24 @@ function WarehouseProjectPage({
 
   // --- Derived data (must be before any early returns to keep hooks stable) ---
   const lineItems = project ? (project.lineItems || []) as unknown as LineItem[] : [];
+  // NEW_STOCK sale items — a separate, SKU-picked checklist alongside the
+  // asset-tag/scan equipment tree above (2026-08 warehouse sales-prep split).
+  const saleItemsToPrep = project ? (project.saleItemsToPrep || []) as SaleItemToPrep[] : [];
+
+  const handleToggleSalePicked = async (lineItemId: string, picked: boolean) => {
+    setPendingSalePickIds((prev) => new Set(prev).add(lineItemId));
+    try {
+      await warehouseWrites.setSalePicked(projectId, lineItemId, picked);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update pick status");
+    } finally {
+      setPendingSalePickIds((prev) => {
+        const next = new Set(prev);
+        next.delete(lineItemId);
+        return next;
+      });
+    }
+  };
 
   // Fetch container assets from the configured case category
   const { data: caseAssets } = useServerQuery({
@@ -2704,6 +2727,9 @@ function WarehouseProjectPage({
           allPrepKeys={allPrepKeys}
           pickPrepItems={pickPrepItems}
           groupedPrep={groupedPrep}
+          saleItemsToPrep={saleItemsToPrep}
+          onToggleSalePicked={handleToggleSalePicked}
+          pendingSalePickIds={pendingSalePickIds}
           verifiedKitItems={verifiedKitItems}
           setVerifiedKitItems={setVerifiedKitItems}
           expandedGroups={expandedGroups}

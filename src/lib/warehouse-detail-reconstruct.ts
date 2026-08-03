@@ -155,8 +155,46 @@ export function reconstructWarehouseLineItems(bundle: WarehouseBundleData) {
   return attachAssetBulkAssetTree(withKits as never[], assetMap, bulkAssetMap);
 }
 
+export interface SaleItemToPrep {
+  id: string;
+  description: string | null;
+  quantity: number;
+  sku: string | null;
+  modelName: string | null;
+  picked: boolean;
+}
+
+/**
+ * NEW_STOCK sale lines that need to be picked off the shelf before the job goes
+ * out — a deliberately SEPARATE, self-contained list from `reconstructWarehouseLineItems`'s
+ * `type === "EQUIPMENT"` scan/kit tree (2026-08 warehouse sales-prep split; see
+ * FEATUREDOCS/67). Picked by SKU, not asset tag — a NEW_STOCK sale line has no
+ * underlying asset/bulk record to scan. FROM_RENTAL_STOCK sale lines are NOT
+ * included here — they stay out of the warehouse tree entirely, unchanged, per the
+ * original #950 "handed over at the docket" decision (only the NEW_STOCK half of
+ * that decision was reversed).
+ */
+export function reconstructSaleItemsToPrep(bundle: WarehouseBundleData): SaleItemToPrep[] {
+  const lineItems = bundle.lineItems.map(mapLineItemDoc);
+  const modelMap = new Map(bundle.models.map((m) => [m.id, m]));
+  return lineItems
+    .filter((li) => li.type === "SALE" && li.saleMode === "NEW_STOCK" && li.status !== "CANCELLED")
+    .map((li) => {
+      const model = li.modelId ? (modelMap.get(li.modelId) ?? null) : null;
+      return {
+        id: li.id,
+        description: li.description,
+        quantity: li.quantity,
+        sku: model?.sku ?? null,
+        modelName: model?.name ?? null,
+        picked: li.salePickedAt != null,
+      };
+    });
+}
+
 export type NativeWarehouseProject = ReturnType<typeof mapProject> & {
   lineItems: ReturnType<typeof reconstructWarehouseLineItems>;
+  saleItemsToPrep: SaleItemToPrep[];
   client: WarehouseBundleData["client"];
   location: WarehouseBundleData["location"];
 };
@@ -172,6 +210,7 @@ export function reconstructWarehouseProject(
   return {
     ...mapProject(bundle.project),
     lineItems: reconstructWarehouseLineItems(bundle),
+    saleItemsToPrep: reconstructSaleItemsToPrep(bundle),
     client: bundle.client,
     location: bundle.location,
   };

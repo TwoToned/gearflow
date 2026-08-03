@@ -63,7 +63,7 @@ const TABLE_HEADER_PT = 7 + 4 * 2 + 4;
 // page, and (b) pads the allotted schema height on a page that DOES fit
 // everything, giving the real draw loop's own bottomBoundary check headroom.
 // Bumped from 1mm after a real-world tail-drop (AX Head Technician Day Rate,
-// #1148): the composer believed a 5-service "Services" group fit entirely on
+// #1149): the composer believed a 5-service "Services" group fit entirely on
 // a continuation page and told gearflowTable to render all of it (no further
 // page scheduled), but the real draw loop's independently-computed row
 // heights ran it out of room one row early, and its own overflow guard

@@ -1334,7 +1334,7 @@ describe("composeDocument + gearflowTable — group header prints once across a 
   });
 });
 
-describe("composeDocument + gearflowTable — real allotted height covers every row drawn (#1148 regression)", () => {
+describe("composeDocument + gearflowTable — real allotted height covers every row drawn (#1149 regression)", () => {
   it("a trailing group of varied-content rows on a continuation page is fully drawn, not silently dropped", async () => {
     const items: DocumentLineItem[] = [];
 
@@ -1434,7 +1434,7 @@ describe("composeDocument + gearflowTable — real allotted height covers every 
     }
 
     // Every service row's name must be drawn exactly once across all pages —
-    // a real render-time overflow that silently drops a row (the #1148 bug)
+    // a real render-time overflow that silently drops a row (the #1149 bug)
     // shows up here as a count below servicesNames.length, with no error.
     expect(totalDrawn).toBe(servicesNames.length);
   });

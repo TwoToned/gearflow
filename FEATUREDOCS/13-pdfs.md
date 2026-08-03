@@ -44,7 +44,7 @@ delivery-docket):
   index against the final page count and rendered right-aligned by
   `gearflowPageFooter`.
 
-**⚠️ Known structural weakness — estimate/draw divergence (#1148, 2026-08-03):**
+**⚠️ Known structural weakness — estimate/draw divergence (#1149, 2026-08-03):**
 row height is computed **twice**, by two independently-hand-written functions
 that have to agree or a row silently vanishes: `document-composer.ts`'s
 `calculateItemHeight()`/`estimateBlockHeight()` decide what fits on a page
@@ -60,9 +60,9 @@ the "amount is right, the row on the page isn't" shape of bug: quiet, and it
 reads as correct in a subtotal reconciliation.
 
 This has recurred three times now in different guises (v0.8.1.1's height-calc
-miss, v0.8.1.2's status-filter miss, and #1148 — a real-world quote whose
+miss, v0.8.1.2's status-filter miss, and #1149 — a real-world quote whose
 last "Services" row disappeared while its $650 stayed in the Subtotal). Two
-mitigations landed in #1148 without removing the duplication itself:
+mitigations landed in #1149 without removing the duplication itself:
 `TABLE_PADDING_BOTTOM_MM` (`document-composer.ts`) went from 1mm to 4mm — a
 defensive buffer that both shrinks the pagination fit-budget (marginal items
 are more likely to roll to the next page instead of being squeezed onto a
@@ -73,7 +73,7 @@ on its own. Neither of these fixes the *structural* problem — there are still
 two independent height calculations that can disagree for some as-yet-unknown
 reason; the safety margin just makes small disagreements non-fatal instead of
 identifying and eliminating the disagreement. `document-composer.test.ts`'s
-"real allotted height covers every row drawn (#1148 regression)" test uses
+"real allotted height covers every row drawn (#1149 regression)" test uses
 the composer's actual computed page height (not the test harness's generous
 default) against the real `gearflowTable` draw loop, specifically to catch
 future divergences of this shape — but it did **not** reproduce a pre-fix

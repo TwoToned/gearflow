@@ -12,10 +12,11 @@ import { miraSettingsSchema, type MiraSettingsFormValues } from "@/lib/validatio
 /**
  * Org-admin settings for Mira's LLM tool-calling (`/settings/mira`, gated on
  * `orgSettings:update` like every other integration-settings save — see
- * FEATUREDOCS/68). Each org supplies its OWN OpenRouter API key (encrypted at
- * rest via src/lib/crypto/secret-vault.ts, the same vault protecting Xero's
- * refresh token) and picks its own model string; the platform never sees or
- * pays for a shared LLM credential.
+ * FEATUREDOCS/68). Each org supplies its OWN API key (encrypted at rest via
+ * src/lib/crypto/secret-vault.ts, the same vault protecting Xero's refresh
+ * token) and picks its own model string; the platform never sees or pays for
+ * a shared LLM credential. Defaults to OpenRouter — `baseUrl` lets an org
+ * instead BYO any OpenAI-compatible endpoint (src/lib/mira/llm-client.ts).
  *
  * `writeAccessEnabled` gates whether Mira's self-provisioned key
  * (src/server/mira.ts) uses the read-only or full_agent preset — flipping it
@@ -27,6 +28,7 @@ import { miraSettingsSchema, type MiraSettingsFormValues } from "@/lib/validatio
 interface MiraSettingsView {
   hasApiKey: boolean;
   model: string;
+  baseUrl: string;
   writeAccessEnabled: boolean;
   updatedAt: number | null;
 }
@@ -54,6 +56,7 @@ export async function getMiraSettings(): Promise<MiraSettingsView> {
   return serialize({
     hasApiKey: !!existing?.openRouterKeyEncrypted,
     model: existing?.model ?? "",
+    baseUrl: existing?.baseUrl ?? "",
     writeAccessEnabled: existing?.writeAccessEnabled ?? false,
     updatedAt: existing?.updatedAt ?? null,
   });
@@ -76,6 +79,11 @@ export async function saveMiraSettings(data: MiraSettingsFormValues): Promise<Mi
       organizationId,
       openRouterKeyEncrypted: keyChanged ? encryptSecret(parsed.openRouterApiKey!) : undefined,
       model: parsed.model,
+      // Pass the raw (possibly "") string, NOT pre-collapsed to undefined —
+      // convex/miraOrgSettings.ts patch() treats "" as "clear it" and
+      // `undefined` as "don't touch this field," and a controlled form input
+      // always submits a defined string, never omits the key.
+      baseUrl: parsed.baseUrl,
       writeAccessEnabled: parsed.writeAccessEnabled,
       updatedById: userId,
     });
@@ -85,6 +93,7 @@ export async function saveMiraSettings(data: MiraSettingsFormValues): Promise<Mi
       organizationId,
       openRouterKeyEncrypted: keyChanged ? encryptSecret(parsed.openRouterApiKey!) : undefined,
       model: parsed.model,
+      baseUrl: parsed.baseUrl || undefined, // never store "" on a fresh row
       writeAccessEnabled: parsed.writeAccessEnabled,
       updatedAt: now,
       updatedById: userId,

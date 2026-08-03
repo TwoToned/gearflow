@@ -31,6 +31,7 @@ export const create = mutation({
     organizationId: v.string(),
     openRouterKeyEncrypted: v.optional(v.string()),
     model: v.optional(v.string()),
+    baseUrl: v.optional(v.string()),
     writeAccessEnabled: v.boolean(),
     updatedAt: v.number(),
     updatedById: v.optional(v.string()),
@@ -61,6 +62,7 @@ export const create = mutation({
 type PatchArgs = {
   openRouterKeyEncrypted?: string;
   model?: string;
+  baseUrl?: string;
   writeAccessEnabled?: boolean;
   updatedById?: string;
 };
@@ -69,6 +71,10 @@ function buildSettingsPatch(args: PatchArgs): Record<string, unknown> {
   const patch: Record<string, unknown> = { updatedAt: Date.now() };
   if (args.openRouterKeyEncrypted !== undefined) patch.openRouterKeyEncrypted = args.openRouterKeyEncrypted;
   if (args.model !== undefined) patch.model = args.model;
+  // "" means "clear it, use the default (OpenRouter)" — never store an empty
+  // string, an unset field is what src/server/mira.ts's getMiraLlmConfig
+  // checks for.
+  if (args.baseUrl !== undefined) patch.baseUrl = args.baseUrl || undefined;
   if (args.updatedById !== undefined) patch.updatedById = args.updatedById;
   if (args.writeAccessEnabled !== undefined) patch.writeAccessEnabled = args.writeAccessEnabled;
   return patch;
@@ -97,6 +103,7 @@ export const patch = mutation({
     organizationId: v.string(),
     openRouterKeyEncrypted: v.optional(v.string()),
     model: v.optional(v.string()),
+    baseUrl: v.optional(v.string()),
     writeAccessEnabled: v.optional(v.boolean()),
     updatedById: v.optional(v.string()),
   },

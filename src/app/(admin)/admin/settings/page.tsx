@@ -1,7 +1,8 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { Copy, RefreshCw } from "lucide-react";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { refreshPlatformBranding } from "@/lib/use-platform-name";
@@ -11,12 +12,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { NativeSelect } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { IconPicker } from "@/components/admin/icon-picker";
 import { DynamicIcon } from "@/components/ui/dynamic-icon";
-import { getSiteSettings, updateSiteSettings } from "@/server/site-admin";
+import {
+  getSiteSettings,
+  updateSiteSettings,
+  getOrgCreationCodeAdmin,
+  regenerateOrgCreationCode,
+} from "@/server/site-admin";
 import { SettingsCard } from "@/components/layout/page-layouts";
+
+interface SiteSettingsForm {
+  platformName: string;
+  platformIcon: string | null;
+  registrationPolicy: string;
+  defaultCurrency: string;
+  defaultTaxRate: number;
+  allowOrgCreation: boolean;
+  orgCreationCodeEnabled: boolean;
+}
 
 export default function AdminSettingsPage() {
   const { data: settings, refetch } = useServerQuery({
@@ -24,25 +41,47 @@ export default function AdminSettingsPage() {
     queryFn: getSiteSettings,
   });
 
-  const [form, setForm] = useState({
+  // Separate query — deliberately NOT part of getSiteSettings()'s payload
+  // (org-creation-gate.ts's doc comment on why the code stays off SiteSettingsRow).
+  const { data: orgCreationCode, refetch: refetchOrgCreationCode } = useServerQuery({
+    queryKey: ["org-creation-code"],
+    queryFn: getOrgCreationCodeAdmin,
+  });
+
+  const [form, setForm] = useState<SiteSettingsForm>({
     platformName: "RVLT Flow",
-    platformIcon: null as string | null,
+    platformIcon: null,
     registrationPolicy: "OPEN",
     defaultCurrency: "AUD",
     defaultTaxRate: 10,
+    allowOrgCreation: true,
+    orgCreationCodeEnabled: false,
   });
 
   useEffect(() => {
     if (settings) {
-      setForm({ // eslint-disable-line react-hooks/set-state-in-effect
+      setForm((f) => ({ // eslint-disable-line react-hooks/set-state-in-effect
+        ...f,
         platformName: settings.platformName || "RVLT Flow",
         platformIcon: settings.platformIcon || null,
         registrationPolicy: settings.registrationPolicy || "OPEN",
         defaultCurrency: settings.defaultCurrency || "AUD",
         defaultTaxRate: settings.defaultTaxRate ?? 10,
-      });
+        allowOrgCreation: settings.allowOrgCreation ?? true,
+      }));
     }
   }, [settings]);
+
+  // A separate effect (and a separate query, above) since orgCreationCodeEnabled
+  // lives outside getSiteSettings()'s payload and can resolve independently.
+  useEffect(() => {
+    if (orgCreationCode) {
+      setForm((f) => ({ // eslint-disable-line react-hooks/set-state-in-effect
+        ...f,
+        orgCreationCodeEnabled: orgCreationCode.codeEnabled,
+      }));
+    }
+  }, [orgCreationCode]);
 
   const saveMutation = useServerMutation({
     mutationFn: () => updateSiteSettings(form),
@@ -50,6 +89,15 @@ export default function AdminSettingsPage() {
       refetch();
       refreshPlatformBranding();
       toast.success("Settings saved");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const regenerateCodeMutation = useServerMutation({
+    mutationFn: () => regenerateOrgCreationCode(),
+    onSuccess: () => {
+      refetchOrgCreationCode();
+      toast.success("Signup code regenerated");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -159,6 +207,14 @@ export default function AdminSettingsPage() {
           </div>
         </SettingsCard>
 
+        <OrgCreationCard
+          form={form}
+          setForm={setForm}
+          orgCreationCode={orgCreationCode}
+          onRegenerate={() => regenerateCodeMutation.mutate()}
+          regenerating={regenerateCodeMutation.isPending}
+        />
+
         <SettingsCard>
           <div className="mb-4">
             <h3 className="t-heading">Defaults</h3>
@@ -210,5 +266,100 @@ export default function AdminSettingsPage() {
         </div>
       </div>
     </AdminShell>
+  );
+}
+
+/** Split out of AdminSettingsPage so its several fields don't push the page
+ *  component's own line count up further (R-3.6). */
+function OrgCreationCard({
+  form,
+  setForm,
+  orgCreationCode,
+  onRegenerate,
+  regenerating,
+}: {
+  form: SiteSettingsForm;
+  setForm: Dispatch<SetStateAction<SiteSettingsForm>>;
+  orgCreationCode: { allowOrgCreation: boolean; codeEnabled: boolean; code: string | null } | undefined;
+  onRegenerate: () => void;
+  regenerating: boolean;
+}) {
+  return (
+    <SettingsCard>
+      <div className="mb-4">
+        <h3 className="t-heading">Organisation creation</h3>
+        <p className="text-sm text-fg-3">
+          Control who may create a new organisation on this platform. Separate from
+          registration above — this gates creating an org, not a user account.
+        </p>
+      </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Allow organisation creation</p>
+            <p className="text-xs text-fg-3">
+              When off, an authenticated user with no organisation can&apos;t create one.
+            </p>
+          </div>
+          <Switch
+            checked={form.allowOrgCreation}
+            onCheckedChange={(checked) => setForm((f) => ({ ...f, allowOrgCreation: checked }))}
+          />
+        </div>
+        <Separator />
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Require a signup code</p>
+            <p className="text-xs text-fg-3">
+              Creating an organisation requires the code below in addition to the toggle above.
+            </p>
+          </div>
+          <Switch
+            checked={form.orgCreationCodeEnabled}
+            onCheckedChange={(checked) =>
+              setForm((f) => ({ ...f, orgCreationCodeEnabled: checked }))
+            }
+            disabled={!form.allowOrgCreation}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Signup code</Label>
+          <div className="flex gap-2">
+            <Input
+              value={orgCreationCode?.code || "Not yet generated"}
+              readOnly
+              className="font-mono text-xs"
+            />
+            <Button
+              type="button"
+              variant="line"
+              size="icon"
+              disabled={!orgCreationCode?.code}
+              onClick={() => {
+                if (orgCreationCode?.code) {
+                  navigator.clipboard.writeText(orgCreationCode.code);
+                  toast.success("Signup code copied to clipboard");
+                }
+              }}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="line"
+              size="icon"
+              onClick={onRegenerate}
+              disabled={regenerating}
+            >
+              <RefreshCw className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+          <p className="text-xs text-fg-3">
+            Shown in plaintext — hand it out to whoever should be able to create an
+            organisation. Regenerating invalidates the old code immediately.
+          </p>
+        </div>
+      </div>
+    </SettingsCard>
   );
 }

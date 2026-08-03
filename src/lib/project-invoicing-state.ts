@@ -16,8 +16,6 @@
  * A plain module: no React, no Convex, so the rule is unit-testable.
  */
 
-export type PaymentProfile = "FULL_UPFRONT" | "DEPOSIT_BALANCE" | string;
-
 export interface InvoiceLike {
   id: string;
   kind: string;

@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 414 | 290 | 122 | 1 | 1 |
-| Mutations | 761 | 277 | 475 | 0 | 9 |
-| **Total** | **1175** | **567** | **597** | **1** | **10** |
+| Queries | 417 | 290 | 125 | 1 | 1 |
+| Mutations | 764 | 277 | 478 | 0 | 9 |
+| **Total** | **1181** | **567** | **603** | **1** | **10** |
 
 <!-- reachability-floor: 567 -->
 
@@ -87,6 +87,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `orgExport` | 6 |
 | `orgSettings` | 8 |
 | `parity` | 1 |
+| `pendingOrgJoinRequests` | 6 |
 | `pendingSSOApprovals` | 5 |
 | `projectNumberSequences` | 7 |
 | `siteSettings` | 9 |
@@ -157,6 +158,9 @@ fails the build otherwise.
 | `orgSettings.getByIcalToken` | Global secret-token lookup (no orgId argument to scope against) — structurally not an org-scoped read. |
 | `orgSettings.getByOrg` | Row/lookup exposes apiKillSwitchAt (the org's own write-kill-switch state) and/or icalToken (a bearer credential for the public iCal feed); no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
 | `parity.countPage` | Internal migration-parity diagnostic tool, not an application read surface. |
+| `pendingOrgJoinRequests.findJoinableOrgsForDomain` | Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet. |
+| `pendingOrgJoinRequests.list` | Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet. |
+| `pendingOrgJoinRequests.listPendingByUser` | Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet. |
 | `pendingSSOApprovals.getByOrgUser` | Site-admin SSO approval queue; platform-operator surface, not an org-scoped agent concern. |
 | `pendingSSOApprovals.list` | Site-admin SSO approval queue; platform-operator surface, not an org-scoped agent concern. |
 | `projectLineItemUnits.getById` | Point-read by global by_cuid with no orgId arg to verify the result against — would let an agent read another org's unit by guessing its cuid. |

@@ -79,6 +79,7 @@ export const DIRECT_TABLES = [
   "notificationEmailLogs",
   "orgSettings",
   "payments",
+  "pendingOrgJoinRequests",
   "pendingSSOApprovals",
   "projectCategories",
   "projectGroups",
@@ -235,7 +236,9 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // #1004 follow-up (Mira LLM tool-calling): +3 — miraOrgSettings (DIRECT, per-org
 // OpenRouter key + model settings), miraConversations/miraMessages (EXCLUDED/
 // ephemeral, live chat transcript).
-export const EXPECTED_TABLE_COUNT = 116;
+// #1094 (B2): +1 — pendingOrgJoinRequests (DIRECT, org-scoped join requests,
+// same shape as pendingSSOApprovals above).
+export const EXPECTED_TABLE_COUNT = 117;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

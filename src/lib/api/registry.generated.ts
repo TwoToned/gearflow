@@ -32965,6 +32965,228 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "pendingOrgJoinRequests.findJoinableOrgsForDomain",
+    "module": "pendingOrgJoinRequests",
+    "fn": "findJoinableOrgsForDomain",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "domain",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "excludeUserId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "35829a05c2ae9581",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet."
+  },
+  {
+    "operation": "pendingOrgJoinRequests.list",
+    "module": "pendingOrgJoinRequests",
+    "fn": "list",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet."
+  },
+  {
+    "operation": "pendingOrgJoinRequests.listPendingByUser",
+    "module": "pendingOrgJoinRequests",
+    "fn": "listPendingByUser",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3b83ee450a3cde21",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet."
+  },
+  {
+    "operation": "pendingOrgJoinRequests.request",
+    "module": "pendingOrgJoinRequests",
+    "fn": "request",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "createdAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "email",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "userId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "872fef7b7003490a",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "pendingOrgJoinRequests.revertToPending",
+    "module": "pendingOrgJoinRequests",
+    "fn": "revertToPending",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a4467f3b7f553dc9",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "pendingOrgJoinRequests.review",
+    "module": "pendingOrgJoinRequests",
+    "fn": "review",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reviewedAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "reviewedById",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reviewNote",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "10cbf57951d691a7",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "pendingSSOApprovals.createForProvisioning",
     "module": "pendingSSOApprovals",
     "fn": "createForProvisioning",
@@ -61043,10 +61265,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1175,
+  total: 1181,
   agentReachable: 567,
-  queries: 414,
-  mutations: 761,
+  queries: 417,
+  mutations: 764,
   agentReachableQueries: 290,
   agentReachableMutations: 277,
 } as const;

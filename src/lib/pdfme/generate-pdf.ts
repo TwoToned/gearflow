@@ -65,9 +65,14 @@ export async function generatePdf(
   const measureDoc = await PDFDocument.create();
   const fonts = await getHelveticaFonts(measureDoc, pdfLib, new Map());
 
-  const { template, inputs } = composeDocument(docType, data, data.org_document_color, fonts, {
-    draftPreview: options?.draftPreview,
-  });
+  const { template, inputs } = composeDocument(
+    docType,
+    data,
+    data.org_document_color,
+    fonts,
+    { draftPreview: options?.draftPreview },
+    data.org_paper_size,
+  );
   return renderPdfTemplate(template, inputs);
 }
 

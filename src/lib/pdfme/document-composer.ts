@@ -33,12 +33,10 @@ import {
   type ProjectDocumentType,
 } from "./document-layouts";
 import {
-  PAGE_WIDTH,
-  PAGE_HEIGHT,
-  MARGIN,
-  CONTENT_WIDTH,
-  FOOTER_HEIGHT,
   SECTION_GAP,
+  getPageGeometry,
+  type PaperSize,
+  type PageGeometry,
 } from "./template-constants";
 import { parsePriceBreakdown, formatPriceBreakdown } from "@/lib/billing-derivation";
 import { wrapRichText, richTextLineHeight, truncateText, type RichLine, type RichTextFonts } from "./plugins/helpers";
@@ -61,13 +59,6 @@ const RICH_TEXT_FONT_SIZE = 8;
 function ptToMm(pt: number): number {
   return pt / PT_PER_MM;
 }
-
-/** Content width in pt, at pdfme's exact mm->pt precision (not the rounded
- *  PT_PER_MM approximation used elsewhere in this file) — must match
- *  exactly what gearflowRichText's own `getLayoutProps` resolves to when it
- *  wraps unwrapped text itself, or the estimate and the fallback render
- *  path could disagree by a hair on where a line breaks. */
-const CONTENT_WIDTH_PT = mm2pt(CONTENT_WIDTH);
 
 /** Ungrouped-items bucket key, per docType's plugin convention. */
 export function getUngroupedKey(docType: ProjectDocumentType): string {
@@ -332,13 +323,20 @@ interface LayoutContext {
    * caller/test that doesn't pass fonts keeps its exact prior behavior.
    */
   fonts?: RichTextFonts;
+  /** I5 (#1084) — page dimensions, resolved once per `composeDocument` call
+   *  from the org's country (A4 default). A wider page fits more per line, so
+   *  this affects wrapped-line-count height estimates too, not just layout
+   *  positions — never a hardcoded module constant. */
+  geometry: PageGeometry;
 }
 
 /** Wrapped line count for a markdown-lite block, using real font metrics
  *  when available (see LayoutContext.fonts) — shared by the height estimate
- *  and the page-splitting logic so they can never disagree. */
-function wrappedLineCount(text: string, fonts: RichTextFonts): number {
-  return wrapRichText(text, { maxWidth: CONTENT_WIDTH_PT, fontSize: RICH_TEXT_FONT_SIZE, fonts }).length;
+ *  and the page-splitting logic so they can never disagree. `contentWidthMm`
+ *  comes from the active `PageGeometry` (I5, #1084) — a wider Letter page
+ *  wraps fewer lines than the same text on A4. */
+function wrappedLineCount(text: string, fonts: RichTextFonts, contentWidthMm: number): number {
+  return wrapRichText(text, { maxWidth: mm2pt(contentWidthMm), fontSize: RICH_TEXT_FONT_SIZE, fonts }).length;
 }
 
 function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: LayoutContext): number {
@@ -424,7 +422,7 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
     case "clientNotes": {
       if (!data.client_notes) return 4;
       if (ctx.fonts) {
-        return Math.max(ptToMm(wrappedLineCount(data.client_notes, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)), 4);
+        return Math.max(ptToMm(wrappedLineCount(data.client_notes, ctx.fonts, ctx.geometry.contentWidth) * richTextLineHeight(RICH_TEXT_FONT_SIZE)), 4);
       }
       return 12; // fallback heuristic — unchanged when no fonts are provided
     }
@@ -447,7 +445,7 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       if (!data.terms_and_conditions) return 0;
       if (ctx.fonts) {
         return Math.max(
-          ptToMm(wrappedLineCount(data.terms_and_conditions, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
+          ptToMm(wrappedLineCount(data.terms_and_conditions, ctx.fonts, ctx.geometry.contentWidth) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
           8,
         );
       }
@@ -462,7 +460,7 @@ function estimateBlockHeight(block: LayoutBlock, data: DocumentData, ctx: Layout
       if (!data.payment_details) return 0;
       if (ctx.fonts) {
         return Math.max(
-          ptToMm(wrappedLineCount(data.payment_details, ctx.fonts) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
+          ptToMm(wrappedLineCount(data.payment_details, ctx.fonts, ctx.geometry.contentWidth) * richTextLineHeight(RICH_TEXT_FONT_SIZE)),
           8,
         );
       }
@@ -530,18 +528,24 @@ function measurePageFurniture(
  * can push finished pages and open new ones without a separate state object
  * to keep in sync.
  */
-function computePages(layout: DocumentLayout, data: DocumentData, docType: ProjectDocumentType, fonts?: RichTextFonts): Page[] {
-  const ctx: LayoutContext = { docType, filterByStatus: layout.filterByStatus, fonts };
+function computePages(
+  layout: DocumentLayout,
+  data: DocumentData,
+  docType: ProjectDocumentType,
+  geometry: PageGeometry,
+  fonts?: RichTextFonts,
+): Page[] {
+  const ctx: LayoutContext = { docType, filterByStatus: layout.filterByStatus, fonts, geometry };
   const furniture = measurePageFurniture(layout, data, ctx);
   const bodyBlocks = layout.blocks.filter((b) => !isPageFurniture(b));
 
-  const maxY = PAGE_HEIGHT - MARGIN - FOOTER_HEIGHT;
-  const continuationContentHeight = maxY - MARGIN - furniture.totalHeight;
+  const maxY = geometry.height - geometry.margin - geometry.footerHeight;
+  const continuationContentHeight = maxY - geometry.margin - furniture.totalHeight;
   const tableHeaderMm = ptToMm(TABLE_HEADER_PT);
 
   const pages: Page[] = [];
   let currentPage: Page = { entries: [] };
-  let currentY = MARGIN;
+  let currentY = geometry.margin;
 
   function placePageFurniture() {
     for (const { block, height } of furniture.blocks) {
@@ -553,7 +557,7 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
   function startNewPage() {
     pages.push(currentPage);
     currentPage = { entries: [] };
-    currentY = MARGIN;
+    currentY = geometry.margin;
     placePageFurniture();
   }
 
@@ -760,7 +764,7 @@ function computePages(layout: DocumentLayout, data: DocumentData, docType: Proje
    */
   function splitRichTextBlock(block: Extract<LayoutBlock, { kind: "clientNotes" | "termsAndConditions" | "paymentDetails" }>, text: string, fonts: RichTextFonts) {
     const lineHeightMm = ptToMm(richTextLineHeight(RICH_TEXT_FONT_SIZE));
-    const allLines = wrapRichText(text, { maxWidth: CONTENT_WIDTH_PT, fontSize: RICH_TEXT_FONT_SIZE, fonts });
+    const allLines = wrapRichText(text, { maxWidth: mm2pt(geometry.contentWidth), fontSize: RICH_TEXT_FONT_SIZE, fonts });
 
     let idx = 0;
     while (idx < allLines.length) {
@@ -855,6 +859,7 @@ function buildEntryFields(
   docColor: string,
   filterByStatus: string[] | null,
   name: string,
+  geometry: PageGeometry,
   fonts?: RichTextFonts,
 ): RenderedField[] {
   const { block, y, height } = entry;
@@ -884,7 +889,7 @@ function buildEntryFields(
       // trusting it to fit. `fonts` is optional (some composeDocument callers
       // render without real font metrics) — skip the cap rather than guess.
       const projectNumberLine = fonts
-        ? truncateText(data.project_number || "", fonts.regular, 9, CONTENT_WIDTH * 0.55)
+        ? truncateText(data.project_number || "", fonts.regular, 9, geometry.contentWidth * 0.55)
         : data.project_number || "";
       const docMetaLines = [projectNumberLine, data.document_date || ""];
       if (docType === "quote" && data.quote_valid_until) docMetaLines.push(`Expiry: ${data.quote_valid_until}`);
@@ -913,7 +918,7 @@ function buildEntryFields(
       };
       return [
         {
-          schema: { name, type: "gearflowPageHeader", content: "", position: { x: MARGIN, y }, width: CONTENT_WIDTH, height },
+          schema: { name, type: "gearflowPageHeader", content: "", position: { x: geometry.margin, y }, width: geometry.contentWidth, height },
           input: JSON.stringify(config),
         },
       ];
@@ -923,7 +928,7 @@ function buildEntryFields(
       const config: DraftWatermarkConfig = { title: block.title, subtitle: block.subtitle };
       return [
         {
-          schema: { name, type: "gearflowDraftWatermark", content: "", position: { x: MARGIN, y }, width: CONTENT_WIDTH, height },
+          schema: { name, type: "gearflowDraftWatermark", content: "", position: { x: geometry.margin, y }, width: geometry.contentWidth, height },
           input: JSON.stringify(config),
         },
       ];
@@ -974,14 +979,14 @@ function buildEntryFields(
         projectLines.push(`Invoice #: ${data.invoice_number}`);
       }
 
-      const colWidth = CONTENT_WIDTH / 2 - 4;
+      const colWidth = geometry.contentWidth / 2 - 4;
       return [
         {
           schema: {
             name: `${name}_client`,
             type: "gearflowRichText",
             content: "",
-            position: { x: MARGIN, y },
+            position: { x: geometry.margin, y },
             width: colWidth,
             height,
             fontSize: 9,
@@ -994,7 +999,7 @@ function buildEntryFields(
             name: `${name}_project`,
             type: "gearflowRichText",
             content: "",
-            position: { x: MARGIN + CONTENT_WIDTH / 2 + 4, y },
+            position: { x: geometry.margin + geometry.contentWidth / 2 + 4, y },
             width: colWidth,
             height,
             fontSize: 9,
@@ -1039,7 +1044,7 @@ function buildEntryFields(
 
       return [
         {
-          schema: { name, type: "gearflowTable", content: "", position: { x: MARGIN, y }, width: CONTENT_WIDTH, height },
+          schema: { name, type: "gearflowTable", content: "", position: { x: geometry.margin, y }, width: geometry.contentWidth, height },
           input: JSON.stringify(tableValue),
         },
       ];
@@ -1061,7 +1066,7 @@ function buildEntryFields(
       };
       return [
         {
-          schema: { name, type: "gearflowFinancialSummary", content: "", position: { x: MARGIN, y }, width: CONTENT_WIDTH, height },
+          schema: { name, type: "gearflowFinancialSummary", content: "", position: { x: geometry.margin, y }, width: geometry.contentWidth, height },
           input: JSON.stringify(config),
         },
       ];
@@ -1074,8 +1079,8 @@ function buildEntryFields(
             name,
             type: "gearflowRichText",
             content: "",
-            position: { x: MARGIN, y },
-            width: CONTENT_WIDTH,
+            position: { x: geometry.margin, y },
+            width: geometry.contentWidth,
             height,
             fontSize: RICH_TEXT_FONT_SIZE,
             fontColor: "#666666",
@@ -1096,8 +1101,8 @@ function buildEntryFields(
             name,
             type: "gearflowRichText",
             content: "",
-            position: { x: MARGIN, y },
-            width: CONTENT_WIDTH,
+            position: { x: geometry.margin, y },
+            width: geometry.contentWidth,
             height,
             fontSize: 8,
             fontColor: "#333333",
@@ -1116,8 +1121,8 @@ function buildEntryFields(
             name,
             type: "gearflowRichText",
             content: "",
-            position: { x: MARGIN, y },
-            width: CONTENT_WIDTH,
+            position: { x: geometry.margin, y },
+            width: geometry.contentWidth,
             height,
             fontSize: RICH_TEXT_FONT_SIZE,
             fontColor: "#666666",
@@ -1136,8 +1141,8 @@ function buildEntryFields(
             name,
             type: "gearflowRichText",
             content: "",
-            position: { x: MARGIN, y },
-            width: CONTENT_WIDTH,
+            position: { x: geometry.margin, y },
+            width: geometry.contentWidth,
             height,
             fontSize: RICH_TEXT_FONT_SIZE,
             fontColor: "#666666",
@@ -1153,7 +1158,7 @@ function buildEntryFields(
       };
       return [
         {
-          schema: { name, type: "gearflowSignatureLine", content: "", position: { x: MARGIN, y }, width: CONTENT_WIDTH, height },
+          schema: { name, type: "gearflowSignatureLine", content: "", position: { x: geometry.margin, y }, width: geometry.contentWidth, height },
           input: JSON.stringify(config),
         },
       ];
@@ -1185,6 +1190,11 @@ export interface ComposeResult {
  * `options.draftPreview` (#987) splices the "DRAFT PREVIEW — NOT SENT" banner in
  * as page furniture. Only the preview route sets it; the stored artifact is
  * always rendered without it.
+ *
+ * `paperSize` (I5, #1084, default `"A4"`): resolved once into a `PageGeometry`
+ * and threaded through every pagination/layout calculation below — never a
+ * hardcoded module constant, so an existing caller that hasn't threaded a
+ * paper size through yet keeps rendering A4 exactly as it always has.
  */
 export function composeDocument(
   docType: ProjectDocumentType,
@@ -1192,9 +1202,11 @@ export function composeDocument(
   docColor: string,
   fonts?: RichTextFonts,
   options?: DocumentLayoutOptions,
+  paperSize?: PaperSize,
 ): ComposeResult {
+  const geometry = getPageGeometry(paperSize);
   const layout = getDocumentLayout(docType, options);
-  const pages = computePages(layout, data, docType, fonts);
+  const pages = computePages(layout, data, docType, geometry, fonts);
 
   const allSchemas: (Schema & Record<string, unknown>)[][] = [];
   const mergedInputs: Record<string, string> = {};
@@ -1208,7 +1220,7 @@ export function composeDocument(
 
     pages[pageIdx].entries.forEach((entry, blockIdx) => {
       const name = `${entry.block.kind}_${blockIdx}_p${pageIdx}`;
-      const fields = buildEntryFields(entry, data, docType, docColor, layout.filterByStatus, name, fonts);
+      const fields = buildEntryFields(entry, data, docType, docColor, layout.filterByStatus, name, geometry, fonts);
       for (const field of fields) {
         pageSchemas.push(field.schema);
         mergedInputs[field.schema.name as string] = field.input;
@@ -1220,9 +1232,9 @@ export function composeDocument(
       name: footerName,
       type: "gearflowPageFooter",
       content: "",
-      position: { x: MARGIN, y: PAGE_HEIGHT - MARGIN - FOOTER_HEIGHT },
-      width: CONTENT_WIDTH,
-      height: FOOTER_HEIGHT,
+      position: { x: geometry.margin, y: geometry.height - geometry.margin - geometry.footerHeight },
+      width: geometry.contentWidth,
+      height: geometry.footerHeight,
     });
     mergedInputs[footerName] = JSON.stringify({
       ...footerConfig,
@@ -1234,7 +1246,11 @@ export function composeDocument(
 
   return {
     template: {
-      basePdf: { width: PAGE_WIDTH, height: PAGE_HEIGHT, padding: [MARGIN, MARGIN, MARGIN, MARGIN] },
+      basePdf: {
+        width: geometry.width,
+        height: geometry.height,
+        padding: [geometry.margin, geometry.margin, geometry.margin, geometry.margin],
+      },
       schemas: allSchemas,
     },
     // pdfme's generate() iterates inputs × schema-pages; a single merged

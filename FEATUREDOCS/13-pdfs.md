@@ -208,6 +208,49 @@ is an AU/NZ GST-system legal term, not a global one; every other market gets "IN
 None of this touches `OrgSettings.abn`/`Client.taxId` themselves (still generic storage,
 per their own doc comments) — this is a render-layer change only.
 
+### Paper size — pagination geometry, not a display setting (I5, #1084)
+
+The hardest international item, per its own issue: `template-constants.ts`'s
+`PAGE_WIDTH`/`PAGE_HEIGHT`/`MARGIN`/`CONTENT_WIDTH`/`PAGE_CONTENT_HEIGHT`/`FOOTER_HEIGHT`
+constants feed **every** pagination calculation in `document-composer.ts` — where a page
+breaks, how much space page furniture reserves, how many wrapped lines of T&Cs fit before
+a split. Getting a geometry change wrong reproduces the exact silent-tail-drop bug class
+the v0.8.1.x releases shipped three times, so this was threaded as an explicit parameter
+end to end rather than a swapped-out module constant:
+
+- `template-constants.ts` adds `PageGeometry` (`{ width, height, margin, contentWidth,
+  contentHeight, footerHeight }`, all mm) and `getPageGeometry(paperSize?)`. The bare
+  constants stay exactly as they were — `getPageGeometry("A4")` (the default) is
+  byte-identical to them, so every one of the other `templates/*.ts` files (call sheets,
+  Test & Tag reports, timeline — outside `composeDocument`'s 5 project doc types, not
+  touched by this issue) keeps importing the plain A4 constants unchanged. `PaperSize`
+  itself (`"A4" | "LETTER"`) is `src/lib/countries.ts`'s column — re-exported here, not
+  redeclared (R-3.1).
+- `document-composer.ts`: `LayoutContext` carries the resolved `geometry`; every function
+  that used to read a bare `MARGIN`/`CONTENT_WIDTH`/`PAGE_HEIGHT` — `estimateBlockHeight`,
+  `measurePageFurniture`, `computePages` (including its `splitRichTextBlock`/`splitTable`
+  closures), `buildEntryFields`, and the footer/`basePdf` construction in `composeDocument`
+  itself — now reads it off `geometry` instead. `calculateItemHeight` needed NO change —
+  its row-height math is purely font-size/row-count based, never width-dependent.
+  `composeDocument`'s new `paperSize` param defaults to `undefined` → `getPageGeometry()`
+  → A4, so every existing caller/test keeps rendering exactly as it always did.
+- `build-document-data.ts` adds `org_paper_size` to `DocumentData` (`country?.paperSize ??
+  "A4"`, alongside the I4 fields it already resolves from the same `country` lookup).
+  `generate-pdf.ts` reads it and passes it as `composeDocument`'s `paperSize` argument —
+  the same "read a resolved field off `data`, pass it through" pattern `org_document_color`
+  already used.
+- **Tested, not just smoke-tested**: `document-composer.test.ts`'s Letter-paper describe
+  block runs the SAME 120-item no-tail-drop fixture as the standing A4 harness for all 5
+  doc types (full parent-item-index coverage, header/footer repeat on every continuation
+  page — i.e. `isPageFurniture`/`measurePageFurniture` reserve correctly at the new
+  height), plus a `basePdf` dimension check (216×279, not silently still A4), a
+  content-bounds check (no schema renders past Letter's own margin), and a rich-text
+  split/reconstruct check at Letter's wider content width. `template-constants.test.ts`
+  covers `getPageGeometry` directly (A4 byte-identical to the bare constants, Letter wider
+  AND shorter, margin/footer fixed across both sizes).
+- **`nIDTH`/`nEIGHT`** (the issue's find-and-replace-residue rename) — already gone by the
+  time this issue was picked up; nothing to rename.
+
 Call sheets are a 6th `DocumentType` value but are **not** in
 `DOCUMENT_LAYOUTS` — they render via `templates/call-sheet-services.ts`
 instead (`ProjectDocumentType = Exclude<DocumentType, "call-sheet">`).

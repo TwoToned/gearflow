@@ -1,6 +1,7 @@
 /**
  * Types for the pdfme document generation system.
  */
+import type { PaperSize } from "./template-constants";
 
 export interface PdfBranding {
   primaryColor?: string;
@@ -197,6 +198,11 @@ export interface DocumentData {
   org_invoice_heading: string;
   org_branding: PdfBranding | undefined;
   org_document_color: string;
+  /** I5 (#1084) — country-derived paper size ("A4" everywhere except the US,
+   *  which uses Letter). Read by `generate-pdf.ts` and passed to
+   *  `composeDocument`'s `paperSize` param, the same way `org_document_color`
+   *  already flows through — see `template-constants.ts`'s `PageGeometry`. */
+  org_paper_size: PaperSize;
 
   // Project
   project_number: string;

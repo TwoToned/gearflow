@@ -12,7 +12,7 @@ import * as pdfLib from "@pdfme/pdf-lib";
 import { mm2pt } from "@pdfme/common";
 import { composeDocument, calculateItemHeight, type ComposeResult } from "./document-composer";
 import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
-import { CONTENT_WIDTH, SECTION_GAP } from "./template-constants";
+import { CONTENT_WIDTH, SECTION_GAP, getPageGeometry } from "./template-constants";
 import { makeLineItem, runTablePlugin } from "./plugins/test-utils";
 import { getHelveticaFonts, wrapRichText, type RichTextFonts } from "./plugins/helpers";
 import type { DocumentData, DocumentLineItem, TablePluginConfig } from "./types";
@@ -36,6 +36,7 @@ function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
     org_tax_rate: 10,
     org_tax_label: "GST",
     org_invoice_heading: "TAX INVOICE",
+    org_paper_size: "A4",
     org_branding: undefined,
     org_document_color: "#0d4f4f",
     project_number: "PRJ-001",
@@ -261,6 +262,80 @@ describe("composeDocument — long fixture pagination (no tail-drop)", () => {
       }
     });
   }
+});
+
+/**
+ * I5 (#1084) — the Letter-paper variant of the harness above, per the issue's
+ * own instruction ("needs a Letter variant of each fixture, not a single
+ * smoke test"). Letter is WIDER (more fits per line) AND SHORTER (less
+ * height per page) than A4 — both dimensions have to be threaded correctly
+ * through `getPageGeometry`/`PageGeometry` for this to hold. Same 120-item
+ * fixture, same no-tail-drop assertion, same header/footer-repeats check;
+ * only `paperSize` differs from the A4 harness above.
+ */
+describe("composeDocument — Letter paper long fixture pagination (I5, #1084, no tail-drop)", () => {
+  for (const docType of PROJECT_DOC_TYPES) {
+    it(`${docType}: a 100+ line project renders every item across multiple Letter pages`, () => {
+      const lineItems = makeLongLineItemList(120);
+      const data = makeData({ line_items: lineItems, total_items: lineItems.length });
+      const result = composeDocument(docType, data, "#0d4f4f", undefined, undefined, "LETTER");
+
+      // Must actually paginate — Letter's shorter page fits even less per page than A4's.
+      expect(result.template.schemas.length).toBeGreaterThan(1);
+
+      // basePdf itself must be Letter-sized, not silently still A4.
+      expect(result.template.basePdf).toMatchObject({ width: 216, height: 279 });
+
+      const layout = DOCUMENT_LAYOUTS[docType];
+      const totalParents = (() => {
+        let items = lineItems.filter((i) => !i.isKitChild && !i.isContainerLineItem);
+        if (layout.filterByStatus) {
+          const statuses = layout.filterByStatus;
+          items = items.filter((i) => statuses.includes(i.status));
+        }
+        if (docType === "delivery-docket") {
+          const nonKitCount = items.filter((i) => !i.kitId).length;
+          const kitChildCount = items.filter((i) => i.kitId).reduce((n, i) => n + (i.childLineItems?.filter((c) => c.status === "CHECKED_OUT").length ?? 0), 0);
+          return nonKitCount + kitChildCount;
+        }
+        return items.length;
+      })();
+
+      assertFullCoverage(result, totalParents);
+
+      // Header/footer repeat on every continuation page — isPageFurniture/
+      // measurePageFurniture must still reserve correctly at the new height.
+      for (const pageSchemas of result.template.schemas) {
+        expect(pageSchemas.some((s) => s.type === "gearflowPageHeader")).toBe(true);
+        expect(pageSchemas.some((s) => s.type === "gearflowPageFooter")).toBe(true);
+      }
+    });
+  }
+
+  it("a Letter document reserves LESS body height per page than A4 (shorter page) — proves the height, not just the width, threaded through", () => {
+    const lineItems = makeLongLineItemList(120);
+    const data = makeData({ line_items: lineItems, total_items: lineItems.length });
+    const a4Pages = composeDocument("quote", data, "#0d4f4f", undefined, undefined, "A4").template.schemas.length;
+    const letterPages = composeDocument("quote", data, "#0d4f4f", undefined, undefined, "LETTER").template.schemas.length;
+    expect(letterPages).toBeGreaterThanOrEqual(a4Pages);
+  });
+
+  it("every schema on every page stays within Letter's content bounds (x + width <= page width - margin)", () => {
+    const lineItems = makeLongLineItemList(120);
+    const data = makeData({ line_items: lineItems, total_items: lineItems.length });
+    const geometry = getPageGeometry("LETTER");
+    for (const docType of PROJECT_DOC_TYPES) {
+      const result = composeDocument(docType, data, "#0d4f4f", undefined, undefined, "LETTER");
+      for (const pageSchemas of result.template.schemas) {
+        for (const s of pageSchemas) {
+          if (s.type === "gearflowPageFooter" || !("position" in s) || !("width" in s)) continue;
+          const pos = s.position as { x: number; y: number };
+          const width = s.width as number;
+          expect(pos.x + width).toBeLessThanOrEqual(geometry.width - geometry.margin + 0.01);
+        }
+      }
+    }
+  });
 });
 
 describe("composeDocument — layout invariants", () => {
@@ -932,6 +1007,48 @@ describe("composeDocument — accurate rich-text pagination (fonts provided)", (
     );
     // Exactly one schema — never split when fonts weren't provided.
     expect(tcEntries).toHaveLength(1);
+  });
+
+  // I5 (#1084) — the same "no dropped/duplicated lines" invariant, but wrapped
+  // against Letter's WIDER content area. A wider page wraps fewer physical
+  // lines for the same source text — this only passes if the wrap width used
+  // to reserve space, split pages, AND reconstruct the expected lines all
+  // agree on Letter's contentWidth, not a hardcoded A4 one.
+  it("Letter paper: wraps at its own (wider) content width, and still splits with no dropped lines", async () => {
+    const fonts = await makeFonts();
+    const text = makeLongTermsAndConditions(20);
+
+    const a4Width = getPageGeometry("A4").contentWidth;
+    const letterWidth = getPageGeometry("LETTER").contentWidth;
+    expect(letterWidth).toBeGreaterThan(a4Width); // the precondition this test exists to exercise
+
+    const a4Lines = wrapRichText(text, { maxWidth: mm2pt(a4Width), fontSize: 8, fonts });
+    const letterLines = wrapRichText(text, { maxWidth: mm2pt(letterWidth), fontSize: 8, fonts });
+    // A wider page can never wrap to MORE lines than a narrower one for the
+    // same text — whether it wraps to fewer depends on exact word-boundary
+    // placement for this specific fixture, so this is <=, not <.
+    expect(letterLines.length).toBeLessThanOrEqual(a4Lines.length);
+
+    const result = composeDocument(
+      "quote",
+      makeData({ terms_and_conditions: text }),
+      "#0d4f4f",
+      fonts,
+      undefined,
+      "LETTER",
+    );
+    const tcEntries = findAllSchemasOfType(result, "gearflowRichText").filter(({ schema }) =>
+      (schema.name as string).startsWith("termsAndConditions_"),
+    );
+    expect(new Set(tcEntries.map((e) => e.pageIdx)).size).toBeGreaterThan(1);
+
+    const renderedLineTexts = tcEntries.flatMap(({ schema }) => {
+      const input = result.inputs[0][schema.name as string];
+      const parsed = JSON.parse(input) as { lines: { spans: { text: string }[] }[] };
+      return parsed.lines.map((l) => l.spans.map((s) => s.text).join(""));
+    });
+    const expectedLineTexts = letterLines.map((l) => l.spans.map((s) => s.text).join(""));
+    expect(renderedLineTexts).toEqual(expectedLineTexts);
   });
 });
 

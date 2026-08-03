@@ -28,6 +28,10 @@ export interface ProjectVersionListItem {
   snapshotReason?: "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT" | "VERSION_SAVED" | "PRE_PROMOTE";
   hasSnapshot: boolean;
   total: number | null;
+  /** The stored document artifact (#987) — absent on a DRAFT or a sent
+   *  revision whose render failed. Empty `quoteId` (the never-quoted
+   *  synthetic entry) never has one. */
+  pdfFileId?: string;
 }
 
 interface ProjectVersionContextValue {

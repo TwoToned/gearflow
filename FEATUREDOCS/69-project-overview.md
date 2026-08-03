@@ -188,7 +188,7 @@ Three duplications were collapsed while building this, rather than added to:
 | Rule | Was | Now |
 |---|---|---|
 | "which shortages are this project's problem" | inline in `overbookingConfirmImpact.ts` | `ownGearModelIds`, shared with the confirm gate |
-| deposit-before-balance next step | inline JSX in `project-finance-panel.tsx` | `deriveInvoicingState`, shared with the Overview card |
+| which invoice actions to offer (partial balance / remaining balance) | inline JSX in `project-finance-panel.tsx` | `deriveInvoicingState`, shared with the Overview card |
 | `intentToBadgeStatus` | two byte-identical private copies | `src/lib/status-colors.ts` |
 
 ### Reactivity

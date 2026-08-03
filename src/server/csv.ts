@@ -321,9 +321,13 @@ export async function importModelsCSV(csvContent: string): Promise<ImportResult>
         monthlyRate,
         defaultPurchasePrice: parseDecimal(get("defaultpurchaseprice") || get("purchase_price") || get("purchaseprice")),
         replacementCost: parseDecimal(get("replacementcost") || get("replacement_cost")),
-        // WS11 (#950) — sales items.
+        // WS11 (#950) — sales items. saleStockQuantity uses parseIntOrNull, not
+        // `parseInt(...) || null` — a CSV row explicitly zeroing stock out must
+        // import as 0, not silently fall back to null (which the update path's
+        // `data.saleStockQuantity ?? existing.saleStockQuantity` would then read
+        // as "unset" and keep the OLD value).
         salePrice: parseDecimal(get("saleprice") || get("sale_price") || get("sale") || get("sellprice") || get("rrp") || get("retail")),
-        saleStockQuantity: parseInt(get("salestockquantity") || get("sale_stock_quantity")) || null,
+        saleStockQuantity: parseIntOrNull(get("salestockquantity") || get("sale_stock_quantity")),
         weight: parseDecimal(get("weight")),
         powerDraw: parseInt(get("powerdraw") || get("power_draw")) || null,
         requiresTestAndTag: get("requirestestandtag") === "true",
@@ -721,6 +725,15 @@ function parseCSV(csv: string): string[][] {
 function parseDecimal(value: string): number | null {
   if (!value) return null;
   const n = parseFloat(value);
+  return isNaN(n) ? null : n;
+}
+
+/** Like `parseDecimal`, but for whole numbers — `parseInt(...) || null` reads an
+ *  explicit "0" as falsy and maps it to null, which is wrong for a field where
+ *  zero is a meaningful, common value (e.g. saleStockQuantity). */
+function parseIntOrNull(value: string): number | null {
+  if (!value) return null;
+  const n = parseInt(value, 10);
   return isNaN(n) ? null : n;
 }
 

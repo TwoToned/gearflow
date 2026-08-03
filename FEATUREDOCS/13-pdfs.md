@@ -91,6 +91,23 @@ another badge, wrapped text) **must** update both
 draw logic (`gearflow-table.ts`) — the existing header comments on both
 functions already call this out; this note is the "why."
 
+**Spike complete (#1151, 2026-08-03) — verdict: proceed.** A standalone
+`@react-pdf/renderer` proof-of-concept for the `quote` doc type lives at
+`src/lib/react-pdf-spike/` (NOT wired into `generate-pdf.ts`/`pdf-render.ts` —
+the production pipeline above is unchanged). It confirms the core hypothesis:
+Yoga's automatic layout removes the estimate/draw split entirely, and several
+other hand-rolled mechanisms in this file's pipeline (page-furniture height
+bookkeeping, the group-header continuation-page suppression added
+2026-07-28, the orphan-check bounds test, forced-page-break's
+"isFreshPage" special case, `PT_PER_MM`/`resolveFlexWidths`,
+`wrapRichText`/`measureRichTextHeight`) turned out to be things react-pdf
+does by default — see
+[`docs/designs/react-pdf-migration-spike-findings.md`](../docs/designs/react-pdf-migration-spike-findings.md)
+for the full write-up, what still needs building (kit/group/accessory child
+rendering, badges, warehouse-doc columns — none of that is exercised by a
+quote-only spike), and what needs a different approach (no auto-shrink-to-fit
+text sizing).
+
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`
 value next to the rate/total columns without adding information the reader

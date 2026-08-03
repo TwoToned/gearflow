@@ -11,7 +11,7 @@
  * `pages.length > 1 ? ... : undefined` branch entirely.
  */
 import { Text, View } from "@react-pdf/renderer";
-import { COLORS, FONT_SIZE } from "../styles";
+import { COLORS, FONT_SIZE, PAGE_MARGIN, PAGE_FOOTER_HEIGHT } from "../styles";
 
 export function Footer({ text, secondLine }: { text: string; secondLine?: string }) {
   return (
@@ -19,9 +19,10 @@ export function Footer({ text, secondLine }: { text: string; secondLine?: string
       fixed
       style={{
         position: "absolute",
-        bottom: "6mm",
-        left: "14mm",
-        right: "14mm",
+        bottom: "4mm",
+        left: PAGE_MARGIN,
+        right: PAGE_MARGIN,
+        height: PAGE_FOOTER_HEIGHT,
         borderTopWidth: 0.5,
         borderTopColor: COLORS.footerBorder,
         borderTopStyle: "solid",

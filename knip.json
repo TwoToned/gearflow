@@ -2,7 +2,8 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "convex/**/*.ts!",
-    "scripts/**/*.{ts,cjs,mjs}"
+    "scripts/**/*.{ts,cjs,mjs}",
+    "src/lib/react-pdf-spike/render-spike.tsx"
   ],
   "project": [
     "src/**/*.{ts,tsx}",

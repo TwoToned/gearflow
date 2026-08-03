@@ -10,11 +10,15 @@
  * historical bugs (PT_PER_MM drift, #1149) that structurally cannot occur
  * here — see the spike findings doc.
  */
-import { MARGIN, CONTENT_WIDTH, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
+import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
 
 export const PAGE_MARGIN = `${MARGIN}mm`;
-export const PAGE_CONTENT_WIDTH = `${CONTENT_WIDTH}mm`;
 export const PAGE_FOOTER_HEIGHT = `${FOOTER_HEIGHT}mm`;
+// No PAGE_CONTENT_WIDTH export: pdfme needs `CONTENT_WIDTH` because every
+// absolutely-positioned schema has to be told its own width in mm. A
+// react-pdf block element doesn't — it's 100% of its parent by default — so
+// there's no call site for that constant here. One more thing the old
+// pipeline tracked by hand that this one gets for free.
 
 export const COLORS = {
   text: "#1a1a1a",
@@ -31,17 +35,11 @@ export const COLORS = {
   footerBorder: "#eeeeee",
 };
 
-/** Badge fill/text colors — verbatim copy of gearflow-table.ts's BADGE_STYLES
- *  (kept in sync by eye for the spike; issue #2 should import one shared
- *  definition instead of two hand-maintained copies). */
-export const BADGE_STYLES = {
-  optional: { bg: "#fef3c7", text: "#92400e", label: "OPTIONAL" },
-  overbooked: { bg: "#fee2e2", text: "#dc2626", label: "OVERBOOKED" },
-  overbookedInherited: { bg: "#fef3c7", text: "#d97706", label: "OVERBOOKED" },
-  reducedStock: { bg: "#ede9fe", text: "#7c3aed", label: "REDUCED STOCK" },
-  subhire: { bg: "#cffafe", text: "#0891b2", label: "SUBHIRE" },
-  sale: { bg: "#dcfce7", text: "#15803d", label: "SALE" },
-} as const;
+// Badges are unexercised by this spike — `showBadges` is off for the quote's
+// `clientFacingTable` config, so no badge ever renders here. See the
+// findings doc's "What needs compromise or a different approach" section:
+// porting gearflow-table.ts's BADGE_STYLES is real remaining work for
+// whichever issue first needs a warehouse doc (badges are on there).
 
 export const FONT_SIZE = {
   title: 22,

@@ -23,7 +23,13 @@ import { TotalsBlock } from "./components/totals-block";
 import { DraftWatermark } from "./components/draft-watermark";
 import { Footer } from "./components/footer";
 import { RichText } from "./components/rich-text";
-import { COLORS, FONT_SIZE } from "./styles";
+import { COLORS, FONT_SIZE, PAGE_MARGIN } from "./styles";
+import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
+
+// Room below the flowing content for the footer (see footer.tsx): the
+// footer's own height plus a bit of clearance above it, same margin/gap
+// values `template-constants.ts` already defines for the pdfme pipeline.
+const PAGE_PADDING_BOTTOM = `${MARGIN + FOOTER_HEIGHT + 8}mm`;
 
 const DRAFT_PREVIEW_TITLE = "DRAFT PREVIEW — NOT SENT";
 const DRAFT_PREVIEW_SUBTITLE =
@@ -58,10 +64,10 @@ export function QuoteDocument({ data, draftPreview = false }: { data: DocumentDa
         size="A4"
         wrap
         style={{
-          paddingTop: "14mm",
-          paddingBottom: "22mm",
-          paddingLeft: "14mm",
-          paddingRight: "14mm",
+          paddingTop: PAGE_MARGIN,
+          paddingBottom: PAGE_PADDING_BOTTOM,
+          paddingLeft: PAGE_MARGIN,
+          paddingRight: PAGE_MARGIN,
           fontFamily: "Helvetica",
         }}
       >

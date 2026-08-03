@@ -232,6 +232,7 @@ import type * as projectServicesWrites from "../projectServicesWrites.js";
 import type * as projectTasks from "../projectTasks.js";
 import type * as projectTasksWrites from "../projectTasksWrites.js";
 import type * as projectUnlockSessionsWrites from "../projectUnlockSessionsWrites.js";
+import type * as projectVersionsEquipment from "../projectVersionsEquipment.js";
 import type * as projectVersionsRead from "../projectVersionsRead.js";
 import type * as projectVersionsWrites from "../projectVersionsWrites.js";
 import type * as projectWrites from "../projectWrites.js";
@@ -524,6 +525,7 @@ declare const fullApi: ApiFromModules<{
   projectTasks: typeof projectTasks;
   projectTasksWrites: typeof projectTasksWrites;
   projectUnlockSessionsWrites: typeof projectUnlockSessionsWrites;
+  projectVersionsEquipment: typeof projectVersionsEquipment;
   projectVersionsRead: typeof projectVersionsRead;
   projectVersionsWrites: typeof projectVersionsWrites;
   projectWrites: typeof projectWrites;

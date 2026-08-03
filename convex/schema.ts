@@ -361,19 +361,25 @@ export default defineSchema({
     .index("by_organizationId_userId", ["organizationId", "userId"]),
 
   // MiraOrgSettings — one row per org, admin-configured (Mira LLM tool-calling).
-  // Each org brings its OWN OpenRouter API key (encrypted at rest, same vault as
-  // the Xero refresh token — src/lib/crypto/secret-vault.ts) and picks its own
-  // model string; the platform never sees a shared LLM credential or bears the
-  // spend. `writeAccessEnabled` is a deliberate admin opt-in, default false:
-  // Mira's self-provisioning (any member gets a key with no admin gate, see
-  // miraKeys above) is only safe when the preset is fixed and read-only — moving
-  // to a write-capable preset needs a human, deliberate act, not a silent
-  // upgrade the next time someone asks Mira a question. See FEATUREDOCS/68.
+  // Each org brings its OWN API key (encrypted at rest, same vault as the Xero
+  // refresh token — src/lib/crypto/secret-vault.ts) and picks its own model
+  // string; the platform never sees a shared LLM credential or bears the
+  // spend. `baseUrl` is optional (empty/absent = OpenRouter, src/lib/mira/
+  // llm-client.ts `DEFAULT_LLM_BASE_URL`) — any org can instead BYO a
+  // different OpenAI-compatible endpoint (Azure OpenAI, a self-hosted vLLM/
+  // Ollama/LM Studio server, ...). Not a secret — round-trips to the browser
+  // freely, unlike the key. `writeAccessEnabled` is a deliberate admin
+  // opt-in, default false: Mira's self-provisioning (any member gets a key
+  // with no admin gate, see miraKeys above) is only safe when the preset is
+  // fixed and read-only — moving to a write-capable preset needs a human,
+  // deliberate act, not a silent upgrade the next time someone asks Mira a
+  // question. See FEATUREDOCS/68.
   miraOrgSettings: defineTable({
     id: v.string(),
     organizationId: v.string(),
     openRouterKeyEncrypted: v.optional(v.string()),
     model: v.optional(v.string()),
+    baseUrl: v.optional(v.string()),
     writeAccessEnabled: v.boolean(),
     updatedAt: v.number(),
     updatedById: v.optional(v.string()),

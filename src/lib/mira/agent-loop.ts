@@ -1,4 +1,4 @@
-import { chatCompletion, OpenRouterError, type OpenRouterMessage, type OpenRouterToolDef } from "@/lib/mira/openrouter-client";
+import { chatCompletion, LlmClientError, type LlmMessage, type LlmToolDef } from "@/lib/mira/llm-client";
 import type { MiraTool } from "@/lib/mira/tool-defs";
 
 /**
@@ -10,7 +10,7 @@ import type { MiraTool } from "@/lib/mira/tool-defs";
  * Deliberately NON-streaming (a single request/response per model turn, not
  * token-by-token SSE) — see FEATUREDOCS/68 for why. Bounded by both an
  * iteration count and a wall-clock timeout so a confused model (or an org's
- * own OpenRouter spend) can't run away.
+ * own LLM spend) can't run away.
  */
 
 export interface PendingConfirmation {
@@ -41,10 +41,12 @@ export type ExecuteTool = (toolName: string, args: Record<string, unknown>) => P
 export interface RunAgentLoopParams {
   apiKey: string;
   model: string;
+  /** Omit to use OpenRouter — see llm-client.ts `DEFAULT_LLM_BASE_URL`. */
+  baseUrl?: string;
   /** Full conversation so far, ending in the newest input turn (a user
    *  message, or — when resuming after a confirmation — a tool-result
    *  message). The loop appends to a copy; it never mutates this array. */
-  messages: OpenRouterMessage[];
+  messages: LlmMessage[];
   tools: MiraTool[];
   executeTool: ExecuteTool;
   maxIterations?: number;
@@ -55,7 +57,7 @@ export interface RunAgentLoopResult {
   /** Messages produced during the loop (assistant/tool turns) — append these
    *  to persisted history; `messages` passed in is not repeated. Each `tool`
    *  message's `content` IS the trace: what ran and what it returned. */
-  appended: OpenRouterMessage[];
+  appended: LlmMessage[];
   pendingConfirmation: PendingConfirmation | null;
 }
 
@@ -91,7 +93,7 @@ function parseToolCallArgs(raw: string): { args: Record<string, unknown> } | { p
   }
 }
 
-function toOpenRouterTools(tools: readonly MiraTool[]): OpenRouterToolDef[] | undefined {
+function toLlmTools(tools: readonly MiraTool[]): LlmToolDef[] | undefined {
   if (!tools.length) return undefined;
   return tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
 }
@@ -99,7 +101,7 @@ function toOpenRouterTools(tools: readonly MiraTool[]): OpenRouterToolDef[] | un
 /** User-facing text for a loop-ending error — split out so the ternary chain
  *  scores its own (small) complexity instead of stacking onto the loop's. */
 function describeLoopError(err: unknown, aborted: boolean): string {
-  if (err instanceof OpenRouterError) return `I hit an error talking to the language model: ${err.message}`;
+  if (err instanceof LlmClientError) return `I hit an error talking to the language model: ${err.message}`;
   if (aborted) return "That took too long, so I stopped — try a narrower question.";
   return `Something went wrong: ${err instanceof Error ? err.message : String(err)}`;
 }
@@ -111,10 +113,10 @@ function describeLoopError(err: unknown, aborted: boolean): string {
  *  shared org state, and a later call in the same turn may depend on an
  *  earlier one's effect (e.g. create_project then add_line_items). */
 async function runToolCalls(
-  message: OpenRouterMessage,
+  message: LlmMessage,
   executeTool: ExecuteTool,
-  messages: OpenRouterMessage[],
-  appended: OpenRouterMessage[],
+  messages: LlmMessage[],
+  appended: LlmMessage[],
 ): Promise<PendingConfirmation | null> {
   let pendingConfirmation: PendingConfirmation | null = null;
   for (const call of message.tool_calls ?? []) {
@@ -122,7 +124,7 @@ async function runToolCalls(
     const result: ToolExecResult =
       "parseError" in parsed ? { ok: false, error: { message: parsed.parseError, code: "INVALID_ARGUMENTS" } } : await executeTool(call.function.name, parsed.args);
 
-    const toolResultMessage: OpenRouterMessage = {
+    const toolResultMessage: LlmMessage = {
       role: "tool",
       tool_call_id: call.id,
       name: call.function.name,
@@ -144,15 +146,16 @@ export async function runMiraAgentLoop(params: RunAgentLoopParams): Promise<RunA
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const toolDefs = toOpenRouterTools(params.tools);
+  const toolDefs = toLlmTools(params.tools);
   const messages = [...params.messages];
-  const appended: OpenRouterMessage[] = [];
+  const appended: LlmMessage[] = [];
 
   try {
     for (let i = 0; i < maxIterations; i++) {
       const { message } = await chatCompletion({
         apiKey: params.apiKey,
         model: params.model,
+        baseUrl: params.baseUrl,
         messages,
         tools: toolDefs,
         signal: controller.signal,
@@ -173,6 +176,7 @@ export async function runMiraAgentLoop(params: RunAgentLoopParams): Promise<RunA
         const { message: explanation } = await chatCompletion({
           apiKey: params.apiKey,
           model: params.model,
+          baseUrl: params.baseUrl,
           messages,
           tools: undefined,
           signal: controller.signal,

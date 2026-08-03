@@ -28382,6 +28382,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "baseUrl",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -28418,7 +28423,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "14c5410b32625e79",
+    "argsSha": "b2f47e396cbc926b",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -28503,6 +28508,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "baseUrl",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -28534,7 +28544,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d4957f0031bc8532",
+    "argsSha": "a8a5f26a989a5848",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

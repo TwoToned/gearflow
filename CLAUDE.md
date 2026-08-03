@@ -380,13 +380,15 @@ same (now-superseded) credential always loses the race — do not add a grace wi
 either, unlike the manual-key `rotate` mutation's deliberate one.
 
 ### Mira (in-app assistant) — a real LLM tool-calling loop, still one dispatch() consumer
-Mira answers a question with a real LLM tool-calling loop (OpenRouter — each org brings
-its OWN API key + model, `/settings/mira`, `src/server/mira-settings.ts`) that calls
-`dispatch()` — the SAME function REST/MCP use — never a separate code path
-(`src/server/mira.ts`, `src/lib/mira/agent-loop.ts`). It acts as the asking user via a
-per-(org, user) `apiKeys` row it provisions itself (`miraKeys` table, secret encrypted
-with `src/lib/crypto/secret-vault.ts`, the same vault trusted for Xero tokens and each
-org's OpenRouter key) — never a fixed "system" identity, so a member can never get more
+Mira answers a question with a real LLM tool-calling loop (OpenRouter by default, or any
+OpenAI-compatible endpoint an org points her at instead via `miraOrgSettings.baseUrl` —
+each org brings its OWN API key + model + optional base URL, `/settings/mira`,
+`src/server/mira-settings.ts`) that calls `dispatch()` — the SAME function REST/MCP use
+— never a separate code path (`src/server/mira.ts`, `src/lib/mira/agent-loop.ts`,
+`src/lib/mira/llm-client.ts`). It acts as the asking user via a per-(org, user)
+`apiKeys` row it provisions itself (`miraKeys` table, secret encrypted with
+`src/lib/crypto/secret-vault.ts`, the same vault trusted for Xero tokens and each org's
+LLM API key) — never a fixed "system" identity, so a member can never get more
 access through Mira than their own role already grants. Which preset it provisions
 (`read_only_agent` vs `full_agent`) is an admin-controlled org setting
 (`miraOrgSettings.writeAccessEnabled`, default off) — flipping it revokes every

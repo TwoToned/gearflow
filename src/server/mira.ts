@@ -16,7 +16,7 @@ import { buildMiraSystemPrompt } from "@/lib/mira/system-prompt";
 import { buildMiraTools, findMiraTool } from "@/lib/mira/tool-defs";
 import { formatOrgSnapshot, type DashboardStatsBundle } from "@/lib/mira/org-snapshot";
 import { runMiraAgentLoop, type ExecuteTool, type ToolExecOk, type ToolExecError, type PendingConfirmation } from "@/lib/mira/agent-loop";
-import type { OpenRouterMessage } from "@/lib/mira/openrouter-client";
+import type { LlmMessage } from "@/lib/mira/llm-client";
 import { DEFAULT_MIRA_MODEL } from "@/lib/validations/mira-settings";
 
 /**
@@ -69,12 +69,15 @@ async function getOrProvisionMiraToken(organizationId: string, userId: string, w
 }
 
 const NOT_CONFIGURED_ANSWER =
-  "Mira isn't set up for this org yet — ask an org admin to add an OpenRouter API key under " +
+  "Mira isn't set up for this org yet — ask an org admin to add an API key under " +
   "Settings → Mira AI Assistant.";
 
 interface MiraLlmConfig {
   apiKey: string;
   model: string;
+  /** Omit to use OpenRouter — any org can instead BYO a different
+   *  OpenAI-compatible endpoint (miraOrgSettings.baseUrl, /settings/mira). */
+  baseUrl?: string;
   writeAccessEnabled: boolean;
 }
 
@@ -85,6 +88,7 @@ async function getMiraLlmConfig(organizationId: string): Promise<MiraLlmConfig |
   return {
     apiKey: decryptSecret(settings.openRouterKeyEncrypted),
     model: settings.model || DEFAULT_MIRA_MODEL,
+    baseUrl: settings.baseUrl || undefined,
     writeAccessEnabled: settings.writeAccessEnabled,
   };
 }
@@ -129,14 +133,14 @@ interface MiraMessageRow {
   id: string;
   role: "user" | "assistant" | "tool";
   content: string | null;
-  toolCalls?: OpenRouterMessage["tool_calls"];
+  toolCalls?: LlmMessage["tool_calls"];
   toolCallId?: string;
   toolName?: string;
   pendingConfirmation?: PendingConfirmation | null;
   createdAt: number;
 }
 
-function rowToModelMessage(row: MiraMessageRow): OpenRouterMessage {
+function rowToModelMessage(row: MiraMessageRow): LlmMessage {
   return {
     role: row.role,
     content: row.content,
@@ -175,7 +179,7 @@ interface PersistMessageInput {
   conversationId: string;
   organizationId: string;
   userId: string;
-  message: OpenRouterMessage;
+  message: LlmMessage;
   pendingConfirmation?: PendingConfirmation | null;
 }
 
@@ -296,16 +300,16 @@ export async function sendMiraMessage(question: string, pageContext: MiraPageCon
   })) as MiraMessageRow[];
 
   const systemPrompt = await buildSystemPromptFor(organizationId, userId, userName, config.writeAccessEnabled, pageContext, `Bearer ${rawToken}`);
-  const userMessage: OpenRouterMessage = { role: "user", content: trimmed };
+  const userMessage: LlmMessage = { role: "user", content: trimmed };
 
-  const messages: OpenRouterMessage[] = [
+  const messages: LlmMessage[] = [
     { role: "system", content: systemPrompt },
     ...capHistory(priorRows).map(rowToModelMessage),
     userMessage,
   ];
 
   const executeTool = createExecuteTool(tools, `Bearer ${rawToken}`);
-  const result = await runMiraAgentLoop({ apiKey: config.apiKey, model: config.model, messages, tools, executeTool });
+  const result = await runMiraAgentLoop({ apiKey: config.apiKey, model: config.model, baseUrl: config.baseUrl, messages, tools, executeTool });
 
   const persistedUser = await persistMessage({ conversationId: conversation.id, organizationId, userId, message: userMessage });
   const persisted: MiraMessageRow[] = [persistedUser];
@@ -360,7 +364,7 @@ export async function confirmMiraPendingAction(messageId: string): Promise<SendM
   // message, since the original tool_call_id was already closed out by the
   // CONFIRMATION_REQUIRED result persisted earlier in this same conversation
   // (a chat-completions tool_call_id may only be answered once).
-  const noteMessage: OpenRouterMessage = {
+  const noteMessage: LlmMessage = {
     role: "user",
     content: execResult.ok
       ? `[Confirmed] The pending action ran successfully. Result: ${JSON.stringify(execResult.data).slice(0, 2000)}`
@@ -372,9 +376,9 @@ export async function confirmMiraPendingAction(messageId: string): Promise<SendM
   const priorRows = (await convex.query(api.miraMessages.listForConversation, { conversationId: conversation.id, organizationId })) as MiraMessageRow[];
   const systemPrompt = await buildSystemPromptFor(organizationId, userId, userName, config.writeAccessEnabled, null, `Bearer ${rawToken}`);
 
-  const messages: OpenRouterMessage[] = [{ role: "system", content: systemPrompt }, ...capHistory(priorRows).map(rowToModelMessage), noteMessage];
+  const messages: LlmMessage[] = [{ role: "system", content: systemPrompt }, ...capHistory(priorRows).map(rowToModelMessage), noteMessage];
   const executeTool = createExecuteTool(tools, `Bearer ${rawToken}`);
-  const loopResult = await runMiraAgentLoop({ apiKey: config.apiKey, model: config.model, messages, tools, executeTool });
+  const loopResult = await runMiraAgentLoop({ apiKey: config.apiKey, model: config.model, baseUrl: config.baseUrl, messages, tools, executeTool });
 
   const persistedNote = await persistMessage({ conversationId: conversation.id, organizationId, userId, message: noteMessage });
   const persisted: MiraMessageRow[] = [persistedNote];

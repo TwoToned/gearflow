@@ -51,30 +51,30 @@ describe("isMiraConfigured", () => {
 
 describe("getMiraSettings", () => {
   it("never exposes the encrypted key — only whether one is configured", async () => {
-    convexMock.query.mockResolvedValue({ id: "s1", openRouterKeyEncrypted: "enc(secret)", model: "m", writeAccessEnabled: true, updatedAt: 123 });
+    convexMock.query.mockResolvedValue({ id: "s1", openRouterKeyEncrypted: "enc(secret)", model: "m", baseUrl: "https://custom.example/v1", writeAccessEnabled: true, updatedAt: 123 });
     const res = await getMiraSettings();
-    expect(res).toEqual({ hasApiKey: true, model: "m", writeAccessEnabled: true, updatedAt: 123 });
+    expect(res).toEqual({ hasApiKey: true, model: "m", baseUrl: "https://custom.example/v1", writeAccessEnabled: true, updatedAt: 123 });
     expect(JSON.stringify(res)).not.toContain("secret");
   });
 
   it("defaults cleanly when nothing is configured yet", async () => {
     const res = await getMiraSettings();
-    expect(res).toEqual({ hasApiKey: false, model: "", writeAccessEnabled: false, updatedAt: null });
+    expect(res).toEqual({ hasApiKey: false, model: "", baseUrl: "", writeAccessEnabled: false, updatedAt: null });
   });
 });
 
 describe("saveMiraSettings", () => {
   it("creates a new row, encrypting the submitted key", async () => {
-    await saveMiraSettings({ openRouterApiKey: "sk-or-v1-abcdefghijklmnop", model: "anthropic/claude-sonnet-4.5", writeAccessEnabled: false });
+    await saveMiraSettings({ openRouterApiKey: "sk-or-v1-abcdefghijklmnop", model: "anthropic/claude-sonnet-4.5", baseUrl: "", writeAccessEnabled: false });
     expect(convexMock.mutation).toHaveBeenCalledWith(
       "miraOrgSettings.create",
-      expect.objectContaining({ organizationId: "org_1", openRouterKeyEncrypted: "enc(sk-or-v1-abcdefghijklmnop)", model: "anthropic/claude-sonnet-4.5", writeAccessEnabled: false }),
+      expect.objectContaining({ organizationId: "org_1", openRouterKeyEncrypted: "enc(sk-or-v1-abcdefghijklmnop)", model: "anthropic/claude-sonnet-4.5", baseUrl: undefined, writeAccessEnabled: false }),
     );
   });
 
   it("patches an existing row, leaving the key untouched when not resubmitted", async () => {
     convexMock.query.mockResolvedValue({ id: "s1", openRouterKeyEncrypted: "enc(old)", model: "old/model", writeAccessEnabled: false });
-    await saveMiraSettings({ openRouterApiKey: "", model: "new/model", writeAccessEnabled: true });
+    await saveMiraSettings({ openRouterApiKey: "", model: "new/model", baseUrl: "", writeAccessEnabled: true });
     expect(convexMock.mutation).toHaveBeenCalledWith(
       "miraOrgSettings.patch",
       expect.objectContaining({ id: "s1", openRouterKeyEncrypted: undefined, model: "new/model", writeAccessEnabled: true }),
@@ -82,8 +82,24 @@ describe("saveMiraSettings", () => {
   });
 
   it("rejects a too-short API key before ever touching Convex", async () => {
-    await expect(saveMiraSettings({ openRouterApiKey: "short", model: "m", writeAccessEnabled: false })).rejects.toThrow();
+    await expect(saveMiraSettings({ openRouterApiKey: "short", model: "m", baseUrl: "", writeAccessEnabled: false })).rejects.toThrow();
     expect(convexMock.mutation).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed baseUrl before ever touching Convex", async () => {
+    await expect(saveMiraSettings({ openRouterApiKey: "", model: "m", baseUrl: "not-a-url", writeAccessEnabled: false })).rejects.toThrow();
+    expect(convexMock.mutation).not.toHaveBeenCalled();
+  });
+
+  it("saves a custom baseUrl for BYO OpenAI-compatible backends", async () => {
+    await saveMiraSettings({ openRouterApiKey: "sk-abcdefghijklmnopqrst", model: "llama-3.1-70b", baseUrl: "https://my-vllm.internal:8000/v1", writeAccessEnabled: false });
+    expect(convexMock.mutation).toHaveBeenCalledWith("miraOrgSettings.create", expect.objectContaining({ baseUrl: "https://my-vllm.internal:8000/v1" }));
+  });
+
+  it("clearing baseUrl on an existing row passes the raw empty string through (patch() treats it as 'use the default')", async () => {
+    convexMock.query.mockResolvedValue({ id: "s1", openRouterKeyEncrypted: "enc(old)", model: "old/model", baseUrl: "https://custom.example/v1", writeAccessEnabled: false });
+    await saveMiraSettings({ openRouterApiKey: "", model: "old/model", baseUrl: "", writeAccessEnabled: false });
+    expect(convexMock.mutation).toHaveBeenCalledWith("miraOrgSettings.patch", expect.objectContaining({ baseUrl: "" }));
   });
 });
 

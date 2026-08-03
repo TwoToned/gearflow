@@ -120,6 +120,17 @@ describe("sendMiraMessage", () => {
     expect(apiKeyCreate![1].scopes).toBe(JSON.stringify(["project:read", "asset:read", "project:create"]));
   });
 
+  it("passes the org's custom baseUrl through to the agent loop when set, omits it otherwise", async () => {
+    await sendMiraMessage("hi", null);
+    expect(runMiraAgentLoop).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: undefined }));
+
+    convexMock.query.mockImplementation(
+      queryImpl({ "miraOrgSettings.getForOrg": { openRouterKeyEncrypted: "enc(sk-key)", model: "m", baseUrl: "https://my-backend.example/v1", writeAccessEnabled: false } }),
+    );
+    await sendMiraMessage("hi again", null);
+    expect(runMiraAgentLoop).toHaveBeenLastCalledWith(expect.objectContaining({ baseUrl: "https://my-backend.example/v1" }));
+  });
+
   it("reuses an existing Mira key instead of re-provisioning", async () => {
     convexMock.query.mockImplementation(queryImpl({ "miraKeys.getForUser": { encryptedToken: "enc(existing)", apiKeyId: "key_1" } }));
     await sendMiraMessage("hi", null);

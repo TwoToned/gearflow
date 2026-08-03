@@ -71,12 +71,19 @@ param is present.
 
 `/welcome`'s "Set up a new company" card is hidden outright when `getOrgCreationPolicy()`
 returns `allowed: false` (site admin has org creation switched off, D7's soak
-posture); its "Join my team" card is always shown, but — since #1067's B2 (invite-code
-entry + verified-domain request-to-join) hasn't landed yet — leads to an inline
-"ask your admin to send you an invite link" panel rather than a real join flow. **Known
-gap:** that's the one still open. A user with an `@bigcorp.com` email and no invite
-still has no self-serve way to request into an org that domain belongs to
-(`DOMAIN_REQUEST` join policy, design doc §4.3) until B2 ships.
+posture); its "Join my team" card (#1094, B2) offers two real paths — paste an invite
+code/link (validated via `checkInviteCode()` before navigating to `/invite/[id]`; no
+verification needed, possession of the invite is the proof), or, for a user with a
+**verified** email, search for orgs whose `joinPolicy` (`src/lib/org-join-policy.ts`) is
+`DOMAIN_REQUEST` and that already have a member sharing their email domain
+(`getJoinableOrgs()`/`requestToJoinOrg()`, `src/server/org-join.ts`). A personal-email
+domain (gmail.com and similar, `convex/lib/personalEmailDomains.ts`) never matches —
+otherwise any Gmail user would match every org with a Gmail-using member. Requests land
+in Settings → Team's "Pending Join Requests" section (`approveJoinRequest`/
+`rejectJoinRequest`, same atomic PENDING→APPROVED/REJECTED claim as
+`approveSSOUser`/`rejectSSOUser`), with an immediate email to the org's owners/admins
+(`joinRequestReceivedEmail`) and a `pending_join_requests` bell notification
+(FEATUREDOCS/17) visible to owner/admin viewers only.
 
 ### Which org(s) does this user belong to? (`src/server/public-org.ts`)
 - `getMyOrganizations()` — the calling session's memberships (`{ id, name, slug,
@@ -390,7 +397,7 @@ consumer of this same identity kind — **FEATUREDOCS/68**.
 - **Server actions**: `src/server/invitations.ts` — `getMyPendingInvitations()`, `getInvitationEmail()`, `checkIsSiteAdmin()`, `getInvitationOrganizationId()`.
 - Each invitation targets a specific org (`Invitation.organizationId`) — the invite-accept page resolves which org to activate from the invitation row itself via `getInvitationOrganizationId()`, not a single-org assumption.
 - **Membership always requires the recipient's consent (#1073, A3).** `addMemberByEmail` (`src/server/settings.ts`, the "Invite" control on `/settings/team`) creates an `Invitation` and emails an accept link (`/invite/[id]`) for EVERY case — including an email that already has an account. There is no direct-add path: under multi-tenancy, silently creating a `Member` row for a known email would let any org owner pull a stranger's account into their org with no consent, putting an unwanted org in that person's switcher. `/invite/[id]` itself branches on whether the recipient is already signed in (accept immediately) or needs to sign in/register first — the invite email is the same either way (`invitationEmail`, not a register-specific template).
-- **Known gap, not built yet**: a per-org join policy (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`, distinct from the platform-global `registrationPolicy` above) is designed (`docs/designs/onboarding-and-activation.md` §2.4/§4.3) but has no consumer yet. The create-vs-join fork itself shipped (`/welcome`, #1092, B1) — its "Join my team" card is live — but the fork only points at an "ask your admin for an invite link" placeholder today, since #1067's B2 (invite-code entry + verified-domain request-to-join, the actual consumer of this join policy) hasn't landed. Revisit alongside B2.
+- **Per-org join policy (#1073/A3's deferred half, shipped in #1094/B2)**: `OrgSettings.joinPolicy` (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`, `src/lib/org-join-policy.ts`), distinct from the platform-global `registrationPolicy` above — set in Settings → Team, default `INVITE_ONLY` (byte-identical to every pre-B2 org). Only `DOMAIN_REQUEST` orgs are discoverable by `/welcome`'s domain search; `CLOSED` is invite-only and not even shown as a match. See the "Membership creation" section above for the full request/approve/reject flow.
 
 ### Account Page Sections
 The `/account` page is organized into: Profile (avatar + name), Security (password, 2FA, passkeys, connected accounts), Active Sessions.

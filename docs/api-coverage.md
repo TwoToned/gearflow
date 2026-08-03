@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 409 | 289 | 118 | 1 | 1 |
-| Mutations | 752 | 277 | 466 | 0 | 9 |
-| **Total** | **1161** | **566** | **584** | **1** | **10** |
+| Queries | 413 | 289 | 122 | 1 | 1 |
+| Mutations | 760 | 277 | 474 | 0 | 9 |
+| **Total** | **1173** | **566** | **596** | **1** | **10** |
 
 <!-- reachability-floor: 566 -->
 
@@ -75,7 +75,10 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `financeArtifacts` | 4 |
 | `globalSearch` | 1 |
 | `mediaWrites` | 4 |
+| `miraConversations` | 4 |
 | `miraKeys` | 2 |
+| `miraMessages` | 4 |
+| `miraOrgSettings` | 4 |
 | `notificationDismissals` | 7 |
 | `oauthAuthorizationCodes` | 2 |
 | `oauthClients` | 3 |

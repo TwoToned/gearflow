@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **#1095** — Site admins can now gate who's allowed to create a new
+  organisation on this platform: an on/off toggle, and an optional signup
+  code (with copy/regenerate) required in addition. The code is never shown
+  anywhere except the admin settings page it's generated on.
+
 - **#1063** — The project Readiness checklist now flags **services that aren't
   confirmed**, not just ones short of crew. A bump-in still sitting at "planned"
   with a full roster used to read as a clean pass. Services and crew are now

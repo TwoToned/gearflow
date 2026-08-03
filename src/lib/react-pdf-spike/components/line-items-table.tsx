@@ -41,6 +41,8 @@ const PRICING_LABELS: Record<string, string> = {
   OPTIMIZED: "",
 };
 
+const PRICING_COLUMN_KEYS = new Set(["unitPrice", "discount", "total"]);
+
 interface ColumnDef {
   key: "description" | "qty" | "unitPrice" | "discount" | "total";
   label: string;
@@ -116,25 +118,128 @@ function GroupHeaderRow({ name, docColor }: { name: string; docColor: string }) 
   );
 }
 
+// ─── Row-kind detection (mirrors gearflow-table.ts's parent/child kind tests,
+// each split into its own tiny function so no single function's cyclomatic
+// complexity climbs — POLICY.md R-3.6) ────────────────────────────────────
+
+function isKitParent(item: DocumentLineItem): boolean {
+  return !!item.kitId && !item.isKitChild;
+}
+
+function isGroupParentRow(item: DocumentLineItem): boolean {
+  return !!item.isGroupRow && (item.childLineItems?.length ?? 0) > 0;
+}
+
+function isAccessoryParentRow(item: DocumentLineItem): boolean {
+  if (item.isKitChild || item.kitId || item.isGroupRow) return false;
+  return item.childLineItems?.some((c) => c.childKind === "ACCESSORY") ?? false;
+}
+
+function getItemName(item: DocumentLineItem): string {
+  if (!item.model) return item.description || "-";
+  return item.model.modelNumber ? `${item.model.name} (${item.model.modelNumber})` : item.model.name;
+}
+
+interface RowDisplay {
+  isKit: boolean;
+  isItemized: boolean;
+  bold: boolean;
+  itemName: string;
+  showSubhire: boolean;
+  breakdown: string;
+}
+
+function deriveRowDisplay(item: DocumentLineItem, config: TablePluginConfig): RowDisplay {
+  const isKit = isKitParent(item);
+  const isParentWithChildren = isKit || isGroupParentRow(item) || isAccessoryParentRow(item);
+  return {
+    isKit,
+    isItemized: isKit && item.pricingMode === "ITEMIZED",
+    // Mirrors gearflow-table.ts: bold only when children will actually
+    // render below — never true here since clientFacingTable.showKitChildren
+    // is off, kept for parity with the shared logic when this component is
+    // reused by a warehouse doc's config (issue #4).
+    bold: isParentWithChildren && config.showKitChildren,
+    itemName: getItemName(item),
+    showSubhire: !!item.supplierName && isSubhireIndicatorVisible(item, config.documentType),
+    breakdown: breakdownLabel(item, config),
+  };
+}
+
+// ─── Cell renderers ─────────────────────────────────────────────────────────
+
+function DescriptionCell({
+  col,
+  item,
+  config,
+  display,
+}: {
+  col: ColumnDef;
+  item: DocumentLineItem;
+  config: TablePluginConfig;
+  display: RowDisplay;
+}) {
+  return (
+    <View style={{ width: col.width, paddingHorizontal: "1.5mm" }}>
+      <Text style={{ fontSize: FONT_SIZE.base, fontFamily: display.bold ? "Helvetica-Bold" : "Helvetica", color: COLORS.text }}>
+        {display.itemName}
+      </Text>
+      {display.showSubhire && (
+        <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note, marginTop: "0.5mm" }}>via {item.supplierName}</Text>
+      )}
+      {display.breakdown && <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note, marginTop: "0.5mm" }}>{display.breakdown}</Text>}
+      {item.notes && config.showNotes && <RichText text={item.notes} fontSize={FONT_SIZE.note} color={COLORS.note} />}
+    </View>
+  );
+}
+
+function qtyCellText(item: DocumentLineItem, isKit: boolean, showKitChildren: boolean): string {
+  if (isKit && showKitChildren) return String((item.childLineItems || []).length);
+  return String(item.quantity);
+}
+
+function priceCellText(item: DocumentLineItem, isItemized: boolean, hideSuffix: boolean): string {
+  if (isItemized) return "-";
+  if (item.unitPrice == null) return "-";
+  const suffix = hideSuffix ? "" : PRICING_LABELS[item.pricingType] || "";
+  return `${formatCurrency(item.unitPrice)}${suffix}`;
+}
+
+/** Text for the 3 pricing-gated columns, or null when `showPricing` is off
+ *  (the caller renders a blank cell in that case). Split out from `ItemRow`
+ *  so the pricing gate is checked once here, not three times inline. */
+function priceGatedCellText(col: ColumnDef, item: DocumentLineItem, config: TablePluginConfig, display: RowDisplay): string | null {
+  if (!config.showPricing) return null;
+  switch (col.key) {
+    case "unitPrice":
+      return priceCellText(item, display.isItemized, config.hidePricingPeriodSuffix);
+    case "discount":
+      return display.isItemized ? "-" : discountCellText(item);
+    case "total":
+      return display.isItemized ? "-" : formatCurrency(item.lineTotal);
+    default:
+      return null;
+  }
+}
+
+function renderCell(col: ColumnDef, item: DocumentLineItem, config: TablePluginConfig, display: RowDisplay) {
+  if (col.key === "description") return <DescriptionCell key={col.key} col={col} item={item} config={config} display={display} />;
+  if (col.key === "qty") {
+    return (
+      <Cell key={col.key} col={col}>
+        {qtyCellText(item, display.isKit, config.showKitChildren)}
+      </Cell>
+    );
+  }
+  if (PRICING_COLUMN_KEYS.has(col.key)) {
+    const text = priceGatedCellText(col, item, config, display);
+    return text == null ? <View key={col.key} style={{ width: col.width }} /> : <Cell key={col.key} col={col}>{text}</Cell>;
+  }
+  return null;
+}
+
 function ItemRow({ item, columns, config, index }: { item: DocumentLineItem; columns: ColumnDef[]; config: TablePluginConfig; index: number }) {
-  const isKit = !!item.kitId && !item.isKitChild;
-  const isItemized = isKit && item.pricingMode === "ITEMIZED";
-  const isGroupParent = !!item.isGroupRow && (item.childLineItems?.length ?? 0) > 0;
-  const isAccessoryParent =
-    !item.isKitChild && !item.kitId && !item.isGroupRow && (item.childLineItems?.some((c) => c.childKind === "ACCESSORY") ?? false);
-  const isParentWithChildren = isKit || isGroupParent || isAccessoryParent;
-  // Mirrors gearflow-table.ts: bold only when children will actually render
-  // below — never true here since clientFacingTable.showKitChildren is off,
-  // kept for parity with the shared logic when this component is reused by
-  // a warehouse doc's config (issue #4).
-  const bold = isParentWithChildren && config.showKitChildren;
-  const itemName = item.model
-    ? item.model.modelNumber
-      ? `${item.model.name} (${item.model.modelNumber})`
-      : item.model.name
-    : item.description || "-";
-  const showSubhire = !!item.supplierName && isSubhireIndicatorVisible(item, config.documentType);
-  const breakdown = breakdownLabel(item, config);
+  const display = deriveRowDisplay(item, config);
 
   return (
     <View
@@ -148,46 +253,7 @@ function ItemRow({ item, columns, config, index }: { item: DocumentLineItem; col
         paddingVertical: "1.5mm",
       }}
     >
-      {columns.map((col) => {
-        switch (col.key) {
-          case "description":
-            return (
-              <View key={col.key} style={{ width: col.width, paddingHorizontal: "1.5mm" }}>
-                <Text style={{ fontSize: FONT_SIZE.base, fontFamily: bold ? "Helvetica-Bold" : "Helvetica", color: COLORS.text }}>
-                  {itemName}
-                </Text>
-                {showSubhire && (
-                  <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note, marginTop: "0.5mm" }}>via {item.supplierName}</Text>
-                )}
-                {breakdown && <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note, marginTop: "0.5mm" }}>{breakdown}</Text>}
-                {item.notes && config.showNotes && <RichText text={item.notes} fontSize={FONT_SIZE.note} color={COLORS.note} />}
-              </View>
-            );
-          case "qty":
-            return (
-              <Cell key={col.key} col={col}>
-                {isKit && config.showKitChildren ? String((item.childLineItems || []).length) : String(item.quantity)}
-              </Cell>
-            );
-          case "unitPrice": {
-            if (!config.showPricing) return <View key={col.key} style={{ width: col.width }} />;
-            const priceStr = isItemized
-              ? "-"
-              : item.unitPrice != null
-                ? `${formatCurrency(item.unitPrice)}${config.hidePricingPeriodSuffix ? "" : PRICING_LABELS[item.pricingType] || ""}`
-                : "-";
-            return <Cell key={col.key} col={col}>{priceStr}</Cell>;
-          }
-          case "discount":
-            if (!config.showPricing) return <View key={col.key} style={{ width: col.width }} />;
-            return <Cell key={col.key} col={col}>{!isItemized ? discountCellText(item) : "-"}</Cell>;
-          case "total":
-            if (!config.showPricing) return <View key={col.key} style={{ width: col.width }} />;
-            return <Cell key={col.key} col={col}>{isItemized ? "-" : formatCurrency(item.lineTotal)}</Cell>;
-          default:
-            return null;
-        }
-      })}
+      {columns.map((col) => renderCell(col, item, config, display))}
     </View>
   );
 }

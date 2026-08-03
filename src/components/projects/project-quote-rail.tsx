@@ -165,6 +165,9 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
     onError: (e) => toast.error(e.message),
   });
 
+  if (!clientId) {
+    return <p className="t-micro text-fg-4">Assign a client to this project to generate quotes.</p>;
+  }
   if (quotes === undefined || revisionState === undefined) {
     return <p className="t-micro text-fg-4">Loading quotes…</p>;
   }

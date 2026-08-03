@@ -628,9 +628,10 @@ export default function ProjectDetailPage({
                           <InvoicingCard
                             projectId={id}
                             orgId={orgId}
+                            projectNumber={project.projectNumber}
+                            projectStatus={project.status as string | null | undefined}
                             clientId={project.clientId as string | null | undefined}
                             total={project.total as number | null}
-                            onOpenLedger={() => setActiveTab("finance")}
                           />
                         </div>
                       )}

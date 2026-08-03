@@ -15,6 +15,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
 import { QuoteDriftIndicator } from "@/components/projects/finance/quote-drift-indicator";
+import { QuoteManagerDialog } from "@/components/projects/finance/quote-manager-dialog";
 import { OverviewCardHeader, OverviewAmount, OverviewMetaList, OverviewActions } from "./card-parts";
 
 interface QuoteCardProps {
@@ -26,7 +27,9 @@ interface QuoteCardProps {
   subtotal: number | null;
   taxAmount: number | null;
   total: number | null;
-  /** Switches the project to the Finance tab, where the full revision rail lives. */
+  /** Switches the project to the Finance tab — used only by the drift
+   *  indicator's "see what changed" affordance. "All revisions" opens the
+   *  `QuoteManagerDialog` instead (self-contained state below). */
   onOpenLedger: () => void;
 }
 
@@ -177,7 +180,7 @@ function QuoteActions({
   pdfQuoteId,
   onSend,
   onAccept,
-  onOpenLedger,
+  onManage,
 }: {
   live: LiveQuote;
   status: string;
@@ -186,7 +189,7 @@ function QuoteActions({
   pdfQuoteId: string | null;
   onSend: () => void;
   onAccept: () => void;
-  onOpenLedger: () => void;
+  onManage: () => void;
 }) {
   return (
     <OverviewActions>
@@ -199,7 +202,7 @@ function QuoteActions({
           </a>
         </Button>
       )}
-      <Button variant="line" size="sm" className="h-7" onClick={onOpenLedger}>
+      <Button variant="line" size="sm" className="h-7" onClick={onManage}>
         All revisions
       </Button>
     </OverviewActions>
@@ -233,6 +236,7 @@ export function QuoteCard({
   const [now] = useState(() => Date.now());
   const [sendOpen, setSendOpen] = useState(false);
   const [acceptOpen, setAcceptOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
 
   const args = orgId ? { orgId, projectId, now } : "skip";
   const revisionState = useAuthedQuery(api.quotes.revisionStateForProject, args);
@@ -272,7 +276,7 @@ export function QuoteCard({
         pdfQuoteId={pdfQuoteId}
         onSend={() => setSendOpen(true)}
         onAccept={() => setAcceptOpen(true)}
-        onOpenLedger={onOpenLedger}
+        onManage={() => setManageOpen(true)}
       />
 
       <QuoteCardDialogs
@@ -290,6 +294,19 @@ export function QuoteCard({
         taxAmount={taxAmount}
         total={total}
         projectStatus={projectStatus}
+      />
+
+      <QuoteManagerDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        projectId={projectId}
+        orgId={orgId}
+        projectNumber={projectNumber}
+        clientId={clientId}
+        projectStatus={projectStatus}
+        subtotal={subtotal}
+        taxAmount={taxAmount}
+        total={total}
       />
     </Panel>
   );

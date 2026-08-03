@@ -1,5 +1,6 @@
 import type { OrgSSOSettings } from "@/lib/sso-types";
 import type { IncrementReset } from "@/lib/project-number";
+import type { OrgJoinPolicy } from "@/lib/org-join-policy";
 
 /**
  * Pure type definitions for org settings — split out of `server/settings.ts`
@@ -101,4 +102,8 @@ export interface OrgSettings {
   icalEnabled?: boolean;
   prepKitCategoryId?: string;
   sso?: OrgSSOSettings;
+  /** B2 (#1094) — governs whether a non-member can self-serve request to join
+   *  via verified-domain match. Absent = `INVITE_ONLY` (see
+   *  `src/lib/org-join-policy.ts` for the full policy + default). */
+  joinPolicy?: OrgJoinPolicy;
 }

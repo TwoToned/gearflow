@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Ban, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye, Send, Wallet } from "lucide-react";
+import { Ban, ChevronDown, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye, Send, Wallet } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -24,9 +24,10 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { IssueInvoiceDialog } from "@/components/projects/finance/issue-invoice-dialog";
-import { CreateDepositInvoiceDialog } from "@/components/projects/finance/create-deposit-invoice-dialog";
+import { CreatePartialInvoiceDialog } from "@/components/projects/finance/create-partial-invoice-dialog";
 import { RecordPaymentDialog } from "@/components/projects/finance/record-payment-dialog";
 import { DeleteVoidInvoiceDialog } from "@/components/projects/finance/delete-void-invoice-dialog";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payment-method-labels";
@@ -67,10 +68,14 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = {
  * accept/decline. Sending does NOT email anyone — it records the send and
  * freezes the numbers.
  *
- * Invoices: create/issue/void per the client's payment profile, and (Xero-linked
- * orgs) push an issued invoice as a Xero draft. "Deposit not yet invoiced" nudge
- * chips are DERIVED (kind/status of existing invoices), not a stored flag —
- * there is no READY_TO_INVOICE project status.
+ * Invoices: an "Invoice ▾" menu offers a partial balance (any % or $ slice,
+ * any number of times) and a remaining-balance invoice whenever there's
+ * something left to raise, in any order — no more forced deposit-then-balance
+ * sequence per client `paymentProfile` (that only seeds the partial dialog's
+ * default %). (Xero-linked orgs) push an issued invoice as a Xero draft. The
+ * menu's availability is DERIVED (kind/status of existing invoices vs the
+ * project total), not a stored flag — there is no READY_TO_INVOICE project
+ * status.
  *
  * Both halves now carry a DOCUMENT action (#987): the stored, immutable artifact
  * for anything sent or issued, a watermarked preview for anything still a draft,
@@ -99,7 +104,7 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
   const [voidReason, setVoidReason] = useState("");
   const [issueTarget, setIssueTarget] = useState<{ id: string; kind: string; total: number } | null>(null);
   const [advanceOffer, setAdvanceOffer] = useState<{ invoiceNumber: string } | null>(null);
-  const [depositDialogOpen, setDepositDialogOpen] = useState(false);
+  const [partialDialogOpen, setPartialDialogOpen] = useState(false);
   const [recordPaymentTarget, setRecordPaymentTarget] = useState<{ id: string; number: string; balanceRemaining: number } | null>(null);
   const [paymentVoidTarget, setPaymentVoidTarget] = useState<{ id: string; amount: number } | null>(null);
   const [paymentVoidReason, setPaymentVoidReason] = useState("");
@@ -112,13 +117,13 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
     return <p className="t-micro text-fg-4">Loading…</p>;
   }
 
-  const paymentProfile = (client?.paymentProfile as string | undefined) ?? "FULL_UPFRONT";
   const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
 
   // One derivation, shared with the Overview tab's invoicing card (R-3.1) —
   // these used to be five hand-rolled `.some()` predicates here and a second
   // set of the same conditions inline in the nudge-chip JSX.
-  const { nextStep } = deriveInvoicingState(invoices as InvoiceLike[], paymentProfile, depositPercent, total);
+  const invoicingState = deriveInvoicingState(invoices as InvoiceLike[], depositPercent, total);
+  const { partialStep, remainingStep } = invoicingState;
 
   async function createInvoice(kind: "FULL" | "BALANCE") {
     try {
@@ -194,19 +199,20 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
         invoices={invoices}
       />
 
-      {/* Nudge chip — the SAME next-step rule the Overview tab's invoicing
-          card offers (`deriveInvoicingState`, R-3.1), not a second copy of the
-          deposit-before-balance conditions. The affordance is deliberately in
-          both places: someone working in the ledger shouldn't have to bounce
-          to Overview to raise the next invoice. */}
-      {nextStep.kind !== "NONE" && (
+      {/* Invoice menu — the SAME derivation the Overview tab's invoicing card
+          reads (`deriveInvoicingState`, R-3.1), not a second copy of the
+          old deposit-before-balance conditions. The affordance is deliberately
+          in both places: someone working in the ledger shouldn't have to
+          bounce to Overview to raise the next invoice. Both a partial and a
+          remaining-balance invoice can be offered at once — no forced order. */}
+      {(partialStep.kind !== "NONE" || remainingStep.kind !== "NONE") && (
         <div className="flex flex-wrap gap-2">
-          <NudgeChip
-            label={nextStep.kind === "DEPOSIT" ? `Deposit not yet invoiced (${depositPercent}%)` : "Not yet invoiced"}
-            action={nextStep.label}
-            onAction={() =>
-              nextStep.kind === "DEPOSIT" ? setDepositDialogOpen(true) : void createInvoice(nextStep.kind)
-            }
+          <InvoiceMenuChip
+            label="Not yet fully invoiced"
+            partialAvailable={partialStep.kind === "DEPOSIT"}
+            remainingAvailable={remainingStep.kind !== "NONE"}
+            onPartial={() => setPartialDialogOpen(true)}
+            onRemaining={() => remainingStep.kind !== "NONE" && void createInvoice(remainingStep.kind as "FULL" | "BALANCE")}
           />
         </div>
       )}
@@ -287,14 +293,15 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
         </DialogContent>
       </Dialog>
 
-      {depositDialogOpen && clientId && (
-        <CreateDepositInvoiceDialog
-          open={depositDialogOpen}
-          onOpenChange={setDepositDialogOpen}
+      {partialDialogOpen && clientId && (
+        <CreatePartialInvoiceDialog
+          open={partialDialogOpen}
+          onOpenChange={setPartialDialogOpen}
           projectId={projectId}
           clientId={clientId}
           defaultDepositPercent={depositPercent}
           projectTotal={total ?? 0}
+          remainingAmount={invoicingState.notYetInvoiced ?? 0}
         />
       )}
 
@@ -633,14 +640,38 @@ function InvoiceDocumentAction({ invoice: inv, projectId }: { invoice: InvoiceRo
   );
 }
 
-function NudgeChip({ label, action, onAction }: { label: string; action: string; onAction: () => void }) {
+/** The nudge chip's menu — a partial (any % or $ slice, any number of times)
+ *  and a remaining-balance invoice, offered independently since a project can
+ *  carry several partials before the remainder is raised (no forced order). */
+function InvoiceMenuChip({
+  label,
+  partialAvailable,
+  remainingAvailable,
+  onPartial,
+  onRemaining,
+}: {
+  label: string;
+  partialAvailable: boolean;
+  remainingAvailable: boolean;
+  onPartial: () => void;
+  onRemaining: () => void;
+}) {
   return (
     <div className="flex items-center gap-2 rounded-full border border-warn/40 bg-warn-soft px-3 py-1.5 text-caption text-warn">
       <span>{label}</span>
       <CanDo resource="invoice" action="create">
-        <button type="button" onClick={onAction} className="font-semibold underline underline-offset-2">
-          {action}
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" className="flex items-center font-semibold underline underline-offset-2">
+              Invoice
+              <ChevronDown className="ml-0.5 size-3" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {partialAvailable && <DropdownMenuItem onClick={onPartial}>Partial balance…</DropdownMenuItem>}
+            {remainingAvailable && <DropdownMenuItem onClick={onRemaining}>Remaining balance</DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </CanDo>
     </div>
   );

@@ -133,44 +133,55 @@ export const createNative = mutation({
     let taxAmount = projectTax;
     let total = projectTotal;
     if (fields.kind === "DEPOSIT" && depositMode === "$") {
+      const priorTotal = await priorPartialTotal(ctx, fields.organizationId, fields.projectId);
+      const remaining = round(Math.max(0, projectTotal - priorTotal));
       const amount = fields.depositAmount ?? 0;
       if (amount <= 0) {
         throw new ConvexError({ code: "INVALID_FIELD", message: "depositAmount is required when depositMode is \"$\"." });
       }
-      if (amount > projectTotal) {
+      if (amount > remaining) {
         throw new ConvexError({
           code: "INVALID_FIELD",
-          message: `Deposit amount cannot exceed the project total ($${projectTotal.toFixed(2)}).`,
+          message: `Deposit amount cannot exceed the remaining balance ($${remaining.toFixed(2)}).`,
         });
       }
       // Fixed-$ basis (#1055) — same proportional-GST-fraction split as the %
       // branch below, just against an operator-entered dollar figure instead of
       // a percentage of the tax-inclusive total. projectTotal is provably > 0
-      // here (amount > 0 and amount <= projectTotal were just checked above),
-      // unlike the % branch below where pct can be set with no equipment priced
-      // yet — so no zero-guard needed on this division.
+      // here (amount > 0 and amount <= remaining <= projectTotal were just
+      // checked above), unlike the % branch below where pct can be set with no
+      // equipment priced yet — so no zero-guard needed on this division.
       total = round(amount);
       taxAmount = round(total * (projectTax / projectTotal));
       subtotal = round(total - taxAmount);
     } else if (fields.kind === "DEPOSIT") {
+      const priorTotal = await priorPartialTotal(ctx, fields.organizationId, fields.projectId);
+      const remaining = round(Math.max(0, projectTotal - priorTotal));
       const pct = fields.depositPercent ?? 25;
       // Deposit basis: % of the tax-INCLUSIVE total (matches the pre-#940
       // display math in financial-summary.tsx). taxAmount is the GST fraction
       // of that deposit — shown on the deposit tax invoice as its own GST line.
       total = round(projectTotal * (pct / 100));
+      // Multiple partials are allowed (no longer capped at one "deposit" per
+      // project) — but their sum still can't exceed what the project is worth,
+      // so this is bounded against what's LEFT, not the full total again.
+      if (total > remaining + 0.01) {
+        throw new ConvexError({
+          code: "INVALID_FIELD",
+          message: `This partial invoice ($${total.toFixed(2)}) would exceed the remaining balance ($${remaining.toFixed(2)}).`,
+        });
+      }
       taxAmount = projectTotal > 0 ? round(total * (projectTax / projectTotal)) : 0;
       subtotal = round(total - taxAmount);
     } else if (fields.kind === "BALANCE") {
-      // Balance = total less every non-VOID DEPOSIT invoice already raised on
-      // this project (server-computed — never trust a client-supplied balance).
-      const priorDeposits = await ctx.db
-        .query("invoices")
-        .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", fields.organizationId).eq("projectId", fields.projectId))
-        .collect();
-      const depositTotal = priorDeposits
-        .filter((inv) => inv.kind === "DEPOSIT" && inv.status !== "VOID")
-        .reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
-      total = round(Math.max(0, projectTotal - depositTotal));
+      // Balance = total less every non-VOID DEPOSIT/BALANCE invoice already
+      // raised on this project (server-computed — never trust a client-supplied
+      // balance).
+      const priorTotal = await priorPartialTotal(ctx, fields.organizationId, fields.projectId);
+      total = round(Math.max(0, projectTotal - priorTotal));
+      if (total <= 0.005) {
+        throw new ConvexError({ code: "INVALID_STATE", message: "Nothing left to invoice on this project." });
+      }
       taxAmount = projectTotal > 0 ? round(total * (projectTax / projectTotal)) : 0;
       subtotal = round(total - taxAmount);
     }
@@ -662,6 +673,22 @@ export const createCreditNative = mutation({
 
 function round(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+/** Total of every non-VOID DEPOSIT/BALANCE invoice already raised on this
+ *  project — the basis for "how much is left to invoice" that both a new
+ *  partial's own bound and the next remaining-balance invoice's total read.
+ *  FULL isn't counted (it's the one-shot "whole project" invoice, never mixed
+ *  with partials) and neither is CREDIT (a correction against an
+ *  already-issued invoice, not fresh billing). */
+async function priorPartialTotal(ctx: MutationCtx, organizationId: string, projectId: string): Promise<number> {
+  const existing = await ctx.db
+    .query("invoices")
+    .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", organizationId).eq("projectId", projectId))
+    .collect();
+  return existing
+    .filter((inv) => (inv.kind === "DEPOSIT" || inv.kind === "BALANCE") && inv.status !== "VOID")
+    .reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
 }
 
 /** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */

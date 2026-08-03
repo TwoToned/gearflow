@@ -137,7 +137,76 @@ describe("invoicesWrites.createNative", () => {
         id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT",
         depositMode: "$", depositAmount: 1100.01, actor, auditId: "a1", now: NOW,
       }),
-    ).rejects.toThrow(/cannot exceed the project total/i);
+    ).rejects.toThrow(/cannot exceed the remaining balance/i);
+  });
+
+  test("multiple partial invoices are allowed, but a later one is bounded by what's already been invoiced, not the full total again", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t); // project total is 1100
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoices", {
+        id: "dep1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT", status: "ISSUED",
+        subtotal: 636.36, taxAmount: 63.64, total: 700, invoiceNumber: "INV-2023-0001",
+      });
+    });
+
+    // A second $500 partial would total $1200 across both — more than the
+    // $1100 project is worth — so it's rejected even though $500 alone is
+    // under the full project total.
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+        id: "i2", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT",
+        depositMode: "$", depositAmount: 500, actor, auditId: "a1", now: NOW,
+      }),
+    ).rejects.toThrow(/exceed the remaining balance/i);
+
+    // A $400 second partial fits within the $400 that's left.
+    const { id } = await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i3", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT",
+      depositMode: "$", depositAmount: 400, actor, auditId: "a2", now: NOW,
+    });
+    const inv = await getInvoice(t, id);
+    expect(inv?.total).toBe(400);
+  });
+
+  test("a % partial that would exceed what's left is rejected", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t); // project total is 1100
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoices", {
+        id: "dep1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT", status: "ISSUED",
+        depositPercent: 80, subtotal: 800, taxAmount: 80, total: 880, invoiceNumber: "INV-2023-0001",
+      });
+    });
+
+    // 80% (880) is already invoiced — another 50% (550) would push it past 1100.
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+        id: "i2", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT",
+        depositPercent: 50, actor, auditId: "a1", now: NOW,
+      }),
+    ).rejects.toThrow(/exceed the remaining balance/i);
+  });
+
+  test("rejects a BALANCE invoice when nothing is left to invoice", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProjectAndClient(t); // project total is 1100
+    await t.run(async (ctx) => {
+      // A single partial already covers the entire project total.
+      await ctx.db.insert("invoices", {
+        id: "dep1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "DEPOSIT", status: "ISSUED",
+        subtotal: 1000, taxAmount: 100, total: 1100, invoiceNumber: "INV-2023-0001",
+      });
+    });
+
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+        id: "i2", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "BALANCE", actor, auditId: "a1", now: NOW,
+      }),
+    ).rejects.toThrow(/nothing left to invoice/i);
   });
 
   test("% mode is still the default when depositMode is omitted (unaffected by #1055)", async () => {

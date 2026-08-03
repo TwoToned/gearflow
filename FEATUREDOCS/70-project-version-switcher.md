@@ -362,6 +362,27 @@ consistency, with zero editing affordances. Visually matches the live table's
 columns, grouping and totals; is not literally the same React component
 instances.
 
+**Structural revision, same day:** the first cut above rendered each category
+as its own bordered card with its own `<table>`, and groups/sub-hire groups
+always expanded — functionally complete (sub-hires, custom items and
+`categorySlots` ordering all showed) but visibly a different layout from the
+live tab side-by-side, which is exactly what was reported back. The live
+Equipment tab (`equipment-tab.tsx`) renders every category inside ONE
+continuous `<table>` — category names are in-table header rows
+(`CategoryRow`'s `bg-paper-2/50`/`t-overline text-muted` styling), not card
+headings — and groups/sub-hire groups are collapsed by default
+(`expandedGroups`, an empty `Set` on mount), expanding only on click.
+`version-projected-equipment.tsx` was rewritten to match structurally, not
+just visually: one `<table>` with the same `colgroup`/column widths wrapping
+every category plus "Uncategorized", `CategoryHeaderRow` as an in-table row
+using the identical classes, and a local `useExpanded()` hook (a plain
+`useState<Set<string>>`, empty by default) gating group/sub-hire-group child
+rows behind a chevron toggle — the read-only equivalent of the live tab's own
+collapse state. Toggling it only touches local view state, never data, so
+it's safe even though nothing else in this view is editable. The chevron
+toggle is the one interactive element this view has; every other affordance
+(edit, delete, drag, add) is still absent.
+
 ## Out of scope (later phases)
 
 - Recall-to-edit (#1100, Phase 5) — editing a promoted SENT revision is still
@@ -416,7 +437,10 @@ instances.
   (Phase 6) — an integration-style test (not a plugin-layer unit test, per
   CLAUDE.md's PDF-pipeline testing rule applied here too) that runs a real
   bundle fixture through the ACTUAL `reconstructProjectCategories` and
-  renders it: asserts the sub-hire group and custom item both appear, in
-  `categorySlots` order (project group → sub-hire group → standalone item —
-  proving real interleaving, not "groups first"), zero buttons/mutation
-  controls render, and the old "not captured" caveat banner is gone.
+  renders it: asserts the category header, group and sub-hire group titles
+  appear in `categorySlots` order (project group → sub-hire group →
+  standalone item — proving real interleaving, not "groups first"), that
+  group/sub-hire-group child rows are absent until their chevron toggle is
+  clicked (the one interactive element this view has, matching the live
+  tab's own collapsed-by-default state), and that the old "not captured"
+  caveat banner is gone.

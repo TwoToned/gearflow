@@ -6,7 +6,7 @@
 // ConvexProvider is needed.
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 const mockUseProjectVersion = vi.fn();
 vi.mock("@/components/projects/project-version-context", () => ({
@@ -81,7 +81,7 @@ describe("VersionProjectedEquipment smoke", () => {
     expect(screen.getByText(/No equipment captured for v1/)).toBeTruthy();
   });
 
-  it("renders the category, group, sub-hire group and custom item — interleaved in categorySlots order, no caveat banner", () => {
+  it("renders the category, group, sub-hire group and custom item — interleaved in categorySlots order, no caveat banner, groups collapsed by default", () => {
     mockUseProjectVersion.mockReturnValue({
       isLoadingProjection: false,
       isLoadingEquipmentBundle: false,
@@ -92,17 +92,17 @@ describe("VersionProjectedEquipment smoke", () => {
 
     expect(screen.getByText("Lighting")).toBeTruthy();
     expect(screen.getByText("MA3 kit")).toBeTruthy();
-    expect(screen.getByText("MA3")).toBeTruthy();
     // Sub-hire group renders with its supplier + order number.
     expect(screen.getByText("Truss package")).toBeTruthy();
     expect(screen.getByText(/ACME Rigging/)).toBeTruthy();
     expect(screen.getByText(/SH-001/)).toBeTruthy();
-    expect(screen.getByText("6m truss")).toBeTruthy();
-    // The custom standalone item, tagged.
+    // The custom standalone item is not gated behind a group — always visible.
     expect(screen.getByText("Gaffer tape")).toBeTruthy();
     expect(screen.getByText("Custom")).toBeTruthy();
-    // No mutation affordances — a read-only render has no edit/delete controls.
-    expect(screen.queryByRole("button")).toBeNull();
+    // Matches the live tab's own default: groups/sub-hire groups collapsed on
+    // first render, so their child rows aren't in the DOM yet.
+    expect(screen.queryByText("MA3")).toBeNull();
+    expect(screen.queryByText("6m truss")).toBeNull();
     // The old "not captured" caveat is gone — sub-hires ARE captured now.
     expect(screen.queryByText(/Sub-hires and custom item ordering/)).toBeNull();
 
@@ -116,6 +116,14 @@ describe("VersionProjectedEquipment smoke", () => {
     expect(groupIdx).toBeGreaterThanOrEqual(0);
     expect(groupIdx).toBeLessThan(subHireIdx);
     expect(subHireIdx).toBeLessThan(customIdx);
+
+    // Expanding the group/sub-hire group toggles (chevron buttons) reveals
+    // their child rows — the read-only equivalent of the live tab's
+    // expandedGroups toggle, minus any edit/delete/drag affordances.
+    fireEvent.click(screen.getByRole("button", { name: /MA3 kit/ }));
+    expect(screen.getByText("MA3")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Truss package/ }));
+    expect(screen.getByText("6m truss")).toBeTruthy();
   });
 });
 

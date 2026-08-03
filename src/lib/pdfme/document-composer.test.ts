@@ -1333,3 +1333,109 @@ describe("composeDocument + gearflowTable — group header prints once across a 
     expect(headerDrawCount).toBe(1);
   });
 });
+
+describe("composeDocument + gearflowTable — real allotted height covers every row drawn (#1148 regression)", () => {
+  it("a trailing group of varied-content rows on a continuation page is fully drawn, not silently dropped", async () => {
+    const items: DocumentLineItem[] = [];
+
+    // A long "padding" group, long enough to push the trailing group below
+    // onto a continuation page — the exact shape of the real incident
+    // (a small "Services" group as the tail of a much longer quote).
+    for (let i = 0; i < 40; i++) {
+      items.push(
+        makeLineItem({
+          id: `pad-${i}`,
+          status: "CONFIRMED",
+          groupName: "Equipment",
+          model: { name: `Equipment Item ${i}` },
+          unitPrice: 100,
+          lineTotal: 100,
+        }),
+      );
+    }
+
+    // The trailing group — mirrors the real "Services" group that silently
+    // dropped its last row (AX Head Technician Day Rate): several rows,
+    // each exercising a different height-affecting feature the composer's
+    // estimate and gearflowTable's real draw both have to agree on.
+    const servicesNames = [
+      "Bump In",
+      "Load Out",
+      "Stage Manager Day Rate",
+      "LX Head Technician Day Rate",
+      "AX Head Technician Day Rate",
+    ];
+    servicesNames.forEach((name, i) => {
+      items.push(
+        makeLineItem({
+          id: `svc-${i}`,
+          status: "CONFIRMED",
+          groupName: "Services",
+          model: { name },
+          unitPrice: 650,
+          lineTotal: 650,
+          ...(i === 1 ? { subHireId: "sh-1", supplierName: "Acme Crew Co", showSubhireOnDocs: true } : {}),
+          ...(i === 2 ? { notes: "Confirmed via phone" } : {}),
+        }),
+      );
+    });
+
+    const data = makeData({ line_items: items, subtotal: items.reduce((s, li) => s + (li.lineTotal ?? 0), 0) });
+    const result = composeDocument("quote", data, "#0d4f4f");
+
+    expect(result.template.schemas.length).toBeGreaterThan(1); // actually paginates
+
+    // Real quote table config (not a hand-duplicated copy of it) — pulling
+    // from DOCUMENT_LAYOUTS is what keeps this test from silently drifting
+    // out of sync with the layout it's supposed to be guarding.
+    const tableBlock = DOCUMENT_LAYOUTS.quote.blocks.find((b) => b.kind === "table");
+    if (tableBlock?.kind !== "table") throw new Error("quote layout has no table block");
+    const tableConfig: TablePluginConfig = {
+      documentType: "quote",
+      documentColor: "#0d4f4f",
+      showGroupHeaders: tableBlock.config.showGroupHeaders,
+      showKitChildren: tableBlock.config.showKitChildren,
+      showCheckboxes: tableBlock.config.showCheckboxes,
+      showConditionColumns: tableBlock.config.showConditionColumns,
+      showPricing: tableBlock.config.showPricing,
+      showBadges: tableBlock.config.showBadges,
+      showNotes: tableBlock.config.showNotes,
+      showPerUnitCheckboxes: tableBlock.config.showPerUnitCheckboxes,
+      showAssetTags: tableBlock.config.showAssetTags,
+      showCategories: tableBlock.config.showCategories,
+      showRowNumbers: tableBlock.config.showRowNumbers,
+      filterOptional: false,
+      filterByStatus: null,
+      hidePricingPeriodSuffix: tableBlock.config.hidePricingPeriodSuffix ?? false,
+    };
+
+    let totalDrawn = 0;
+    for (const pageSchemas of result.template.schemas) {
+      const tableSchema = pageSchemas.find((s) => s.type === "gearflowTable");
+      if (!tableSchema) continue;
+      const value = JSON.parse(result.inputs[0][tableSchema.name as string]) as {
+        startIndex?: number;
+        endIndex?: number;
+        startSubIndex?: number;
+      };
+      // The critical difference from the "group header prints once" test
+      // above: hand the plugin the composer's REAL computed box for this
+      // page (width + height), not runTablePlugin's generous fixed default.
+      // A composer estimate that's even slightly smaller than what
+      // gearflowTable actually needs will overflow THIS box exactly as it
+      // would in production, instead of the test's slack masking it.
+      const calls = await runTablePlugin(items, tableConfig, value, {
+        width: tableSchema.width as number,
+        height: tableSchema.height as number,
+      });
+      for (const name of servicesNames) {
+        totalDrawn += calls.drawText.filter((c) => c.text === name).length;
+      }
+    }
+
+    // Every service row's name must be drawn exactly once across all pages —
+    // a real render-time overflow that silently drops a row (the #1148 bug)
+    // shows up here as a count below servicesNames.length, with no error.
+    expect(totalDrawn).toBe(servicesNames.length);
+  });
+});

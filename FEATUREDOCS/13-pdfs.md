@@ -44,6 +44,53 @@ delivery-docket):
   index against the final page count and rendered right-aligned by
   `gearflowPageFooter`.
 
+**⚠️ Known structural weakness — estimate/draw divergence (#1148, 2026-08-03):**
+row height is computed **twice**, by two independently-hand-written functions
+that have to agree or a row silently vanishes: `document-composer.ts`'s
+`calculateItemHeight()`/`estimateBlockHeight()` decide what fits on a page
+*before* anything is drawn, while `gearflow-table.ts`'s real draw loop
+computes each row's height again, natively in pt, and has its own runtime
+`bottomBoundary` guard that just stops (`overflow = true; break`) if it runs
+out of room — with **no signal back to the composer** that this happened. If
+the composer believed everything fit (`endIndex: undefined`, "render the
+rest") but the real draw came up short by even one row, that row is dropped
+from the visible document while `data.subtotal`/`data.total` — computed
+separately, straight from the DB — still include its dollar amount. This is
+the "amount is right, the row on the page isn't" shape of bug: quiet, and it
+reads as correct in a subtotal reconciliation.
+
+This has recurred three times now in different guises (v0.8.1.1's height-calc
+miss, v0.8.1.2's status-filter miss, and #1148 — a real-world quote whose
+last "Services" row disappeared while its $650 stayed in the Subtotal). Two
+mitigations landed in #1148 without removing the duplication itself:
+`TABLE_PADDING_BOTTOM_MM` (`document-composer.ts`) went from 1mm to 4mm — a
+defensive buffer that both shrinks the pagination fit-budget (marginal items
+are more likely to roll to the next page instead of being squeezed onto a
+tight one) and pads the allotted box on a page the composer believes fits
+everything — and `PT_PER_MM` is now derived from pdfme's own `mm2pt` instead
+of a separately hand-typed approximation, so the pt↔mm round trip can't drift
+on its own. Neither of these fixes the *structural* problem — there are still
+two independent height calculations that can disagree for some as-yet-unknown
+reason; the safety margin just makes small disagreements non-fatal instead of
+identifying and eliminating the disagreement. `document-composer.test.ts`'s
+"real allotted height covers every row drawn (#1148 regression)" test uses
+the composer's actual computed page height (not the test harness's generous
+default) against the real `gearflowTable` draw loop, specifically to catch
+future divergences of this shape — but it did **not** reproduce a pre-fix
+failure with a synthetic fixture, so it's a guard against recurrence, not
+proof the original trigger is understood.
+
+**Planned resolution:** migrate the 5 project doc types off this two-pass
+estimate/draw architecture onto `@react-pdf/renderer` (Yoga/flexbox automatic
+pagination — no separate height estimate to keep in sync, structurally
+impossible for this bug class to recur). Tracked as a GitHub issue; see the
+repo's issue tracker for current status. Until that lands, any new field
+added to a `DocumentLineItem` that affects row height (another sub-line,
+another badge, wrapped text) **must** update both
+`calculateItemHeight()`/`estimateBlockHeight()` (composer) and the matching
+draw logic (`gearflow-table.ts`) — the existing header comments on both
+functions already call this out; this note is the "why."
+
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`
 value next to the rate/total columns without adding information the reader

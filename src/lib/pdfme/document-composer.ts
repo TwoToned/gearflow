@@ -43,14 +43,37 @@ import { wrapRichText, richTextLineHeight, truncateText, type RichLine, type Ric
 import { isSubhireIndicatorVisible } from "./plugins/gearflow-table";
 
 // ─── Height constants (pt) — must match gearflow-table.ts's actual draw sizes ─
-const PT_PER_MM = 2.835;
+// Derived from pdfme's own mm2pt (not a hand-typed inverse) so pt→mm can never
+// drift from the library's real mm→pt factor — a second, slightly-off constant
+// here was one contributor to the AX Head Technician tail-drop (a composer
+// height estimate that didn't round-trip to exactly what gearflow-table.ts's
+// real pt-native draw math produced). See TABLE_PADDING_BOTTOM_MM below for the
+// other half of that fix.
+const PT_PER_MM = mm2pt(1);
 const PARENT_ROW_PT = 9 + 4 * 2; // fontSize(9) + rowPadding(4)*2
 const CHILD_ROW_PT = 8 + 4 * 2;
 const GRANDCHILD_ROW_PT = 7 + 4 * 2;
 const PER_UNIT_ROW_PT = 10;
 const GROUP_HEADER_PT = 9 + 4 * 2;
 const TABLE_HEADER_PT = 7 + 4 * 2 + 4;
-const TABLE_PADDING_BOTTOM_MM = 1; // safety margin at the bottom of a table block
+// Safety margin at the bottom of a table block. Doubles as a defensive buffer
+// against composer-estimate vs. gearflow-table.ts-actual-draw divergence: it
+// both (a) shrinks the fitItems() budget slightly, so a marginal item is more
+// likely to be pushed to the next page instead of squeezed onto a tight last
+// page, and (b) pads the allotted schema height on a page that DOES fit
+// everything, giving the real draw loop's own bottomBoundary check headroom.
+// Bumped from 1mm after a real-world tail-drop (AX Head Technician Day Rate,
+// #1148): the composer believed a 5-service "Services" group fit entirely on
+// a continuation page and told gearflowTable to render all of it (no further
+// page scheduled), but the real draw loop's independently-computed row
+// heights ran it out of room one row early, and its own overflow guard
+// silently stopped — with no signal back to the composer that anything was
+// dropped. This margin doesn't identify the specific per-row estimate that
+// was off; it makes the whole class of small estimate/draw divergences
+// non-fatal by leaving slack instead of cutting it to the pixel. See
+// docs/designs/pdf-system-redesign.md's planned react-pdf migration for the
+// structural fix (one shared layout pass, no separate estimate to diverge).
+const TABLE_PADDING_BOTTOM_MM = 4;
 // gearflowRichText's schema fontSize for both clientNotes and termsAndConditions
 // (buildEntryFields) — shared here so the accurate estimate/split math can
 // never drift from what's actually configured on the rendered schema.

@@ -73,6 +73,13 @@ export async function runTablePlugin(
   items: DocumentLineItem[],
   configOverrides: Partial<TablePluginConfig> = {},
   pageSlice: { startIndex?: number; startSubIndex?: number; endIndex?: number } = {},
+  // Real allotted box (mm) for this page's table entry. Defaults to a
+  // generous, page-sized box (below) that most callers want — but that
+  // default is exactly what lets a real composer/plugin height-estimate
+  // divergence go uncaught: the composer's actual, sometimes-tight computed
+  // height is what gearflowTable really gets handed in production. Pass the
+  // composer's real `entry.height`/table width here to test that.
+  schemaSize: { width?: number; height?: number } = {},
 ): Promise<RendererCalls> {
   const pdfDoc = await PDFDocument.create();
   // A4 portrait — matches the default packing-list layout.
@@ -125,8 +132,8 @@ export async function runTablePlugin(
     name: "table",
     type: "gearflowTable" as const,
     position: { x: 0, y: 0 },
-    width: 210, // A4 width in mm
-    height: 280, // most of A4 height in mm
+    width: schemaSize.width ?? 210, // A4 width in mm
+    height: schemaSize.height ?? 280, // most of A4 height in mm
   };
 
   await gearflowTable.pdf({

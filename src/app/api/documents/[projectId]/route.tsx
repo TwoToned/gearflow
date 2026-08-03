@@ -41,7 +41,9 @@ export async function GET(
   // Which SPECIFIC invoice this preview is for — without it, `generatePdf`
   // falls back to the live project total/breakdown, which is only correct
   // for a FULL invoice (bug fix: a DEPOSIT/BALANCE/CREDIT invoice needs its
-  // own snapshot, not the whole project's). Ignored for every other type.
+  // own snapshot, not the whole project's). Passed through unconditionally
+  // below — `buildDocumentData` only reads it for `docType: "invoice"`, so
+  // it's a harmless no-op on any other type, not worth its own branch here.
   const invoiceId = url.searchParams.get("invoiceId") || undefined;
 
   let session;
@@ -81,7 +83,7 @@ export async function GET(
     // a draft of anything, so it never carries the banner.
     const pdf = await generatePdf(projectId, organizationId, docType, {
       draftPreview: preview && PREVIEW_ONLY_TYPES.has(docType),
-      invoiceId: docType === "invoice" ? invoiceId : undefined,
+      invoiceId,
     });
     const filename = `${docType}-${projectId}.pdf`;
     return new NextResponse(Buffer.from(pdf), {

@@ -233,12 +233,12 @@ describe("GET /api/documents/[projectId] — the rogue path is closed", () => {
     expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "invoice", { draftPreview: true, invoiceId: undefined });
   });
 
-  test("an invoiceId on a NON-invoice type is ignored — it's meaningless for a quote/warehouse doc", async () => {
+  test("an invoiceId on a NON-invoice type reaches generatePdf but is meaningless there — buildDocumentData only reads it for docType invoice", async () => {
     await getProjectDocument(
       req("http://localhost/api/documents/p1?type=quote&preview=1&invoiceId=inv1") as never,
       projectParams,
     );
 
-    expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "quote", { draftPreview: true });
+    expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "quote", { draftPreview: true, invoiceId: "inv1" });
   });
 });

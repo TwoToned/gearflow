@@ -117,6 +117,42 @@ function shouldFetchCapturedVersion(isViewingVersion: boolean, hasCapturedState:
   return isViewingVersion && hasCapturedState;
 }
 
+// The remaining small helpers below exist for the same R-3.6 reason as the
+// `resolve*` functions above — each inlined ternary/`&&` chain is itself a
+// branch ESLint's `complexity` rule counts against `ProjectVersionProvider`,
+// so query-args/loading/value derivation is factored out to plain functions
+// instead of living inline in the component body.
+
+function versionsQueryArgs(orgId: string | undefined, projectId: string, now: number | undefined) {
+  return orgId ? { projectId, orgId, now } : ("skip" as const);
+}
+
+/** `useAuthedQuery` reads `"skip"` while ungated, so "loading" is "gated open,
+ *  but the query hasn't resolved yet" — reused for all three reads below. */
+function isLoadingGated(gateOpen: boolean, raw: unknown): boolean {
+  return gateOpen && raw === undefined;
+}
+
+function snapshotEntriesQueryArgs(orgId: string | undefined, snapshotId: string | undefined) {
+  return orgId && snapshotId ? { snapshotId, orgId } : ("skip" as const);
+}
+
+function equipmentBundleQueryArgs(
+  orgId: string | undefined,
+  projectId: string,
+  fetchCaptured: boolean,
+  snapshotId: string | undefined,
+) {
+  return orgId && fetchCaptured && snapshotId ? { projectId, orgId, snapshotId } : ("skip" as const);
+}
+
+/** Both captured-version reads resolve to `null` (not `undefined`) outside
+ *  their gate, so a consumer never has to separately check `fetchCaptured`
+ *  itself. */
+function resolveGatedValue<T>(gateOpen: boolean, raw: T | null | undefined): T | null {
+  return gateOpen ? (raw ?? null) : null;
+}
+
 export function ProjectVersionProvider({
   projectId,
   orgId,
@@ -132,12 +168,9 @@ export function ProjectVersionProvider({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const versionsRaw = useAuthedQuery(
-    api.projectVersionsRead.listVersions,
-    orgId ? { projectId, orgId, now } : "skip",
-  );
+  const versionsRaw = useAuthedQuery(api.projectVersionsRead.listVersions, versionsQueryArgs(orgId, projectId, now));
   const versions = useMemo<ProjectVersionListItem[]>(() => versionsRaw ?? [], [versionsRaw]);
-  const isLoadingVersions = orgId != null && versionsRaw === undefined;
+  const isLoadingVersions = isLoadingGated(orgId != null, versionsRaw);
 
   const requestedRevision = parseRequestedRevision(searchParams.get("v"));
   const liveRevision = useMemo(() => resolveLiveRevision(versions), [versions]);
@@ -150,11 +183,8 @@ export function ProjectVersionProvider({
 
   const snapshotId = isViewingVersion ? viewingVersion?.snapshotId : undefined;
   const fetchCaptured = shouldFetchCapturedVersion(isViewingVersion, hasCapturedState);
-  const entriesRaw = useAuthedQuery(
-    api.projectLocksRead.snapshotEntries,
-    orgId && snapshotId ? { snapshotId, orgId } : "skip",
-  );
-  const isLoadingProjection = fetchCaptured && entriesRaw === undefined;
+  const entriesRaw = useAuthedQuery(api.projectLocksRead.snapshotEntries, snapshotEntriesQueryArgs(orgId, snapshotId));
+  const isLoadingProjection = isLoadingGated(fetchCaptured, entriesRaw);
   const projected = useMemo<ProjectedView | null>(() => {
     if (!fetchCaptured || !entriesRaw) return null;
     return projectSnapshotEntries(entriesRaw as SnapshotEntryLike[]);
@@ -166,10 +196,10 @@ export function ProjectVersionProvider({
   // `entriesRaw` above.
   const equipmentBundleRaw = useAuthedQuery(
     api.projectVersionsEquipment.bundle,
-    orgId && fetchCaptured && snapshotId ? { projectId, orgId, snapshotId } : "skip",
+    equipmentBundleQueryArgs(orgId, projectId, fetchCaptured, snapshotId),
   );
-  const isLoadingEquipmentBundle = fetchCaptured && equipmentBundleRaw === undefined;
-  const equipmentBundle = fetchCaptured ? (equipmentBundleRaw ?? null) : null;
+  const isLoadingEquipmentBundle = isLoadingGated(fetchCaptured, equipmentBundleRaw);
+  const equipmentBundle = resolveGatedValue(fetchCaptured, equipmentBundleRaw);
 
   const setViewingRevision = useCallback(
     (revision: number | null) => {

@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService } from "./lib/auth";
+import { rateLimiter } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -40,6 +41,8 @@ export const create = mutation({
     defaultCurrency: v.optional(v.string()),
     defaultTaxRate: v.optional(v.number()),
     allowOrgCreation: v.optional(v.boolean()),
+    orgCreationCode: v.optional(v.string()),
+    orgCreationCodeEnabled: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
@@ -60,6 +63,8 @@ export const createIfMissing = mutation({
     defaultCurrency: v.optional(v.string()),
     defaultTaxRate: v.optional(v.number()),
     allowOrgCreation: v.optional(v.boolean()),
+    orgCreationCode: v.optional(v.string()),
+    orgCreationCodeEnabled: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
@@ -84,6 +89,8 @@ export const update = mutation({
       defaultCurrency: v.optional(v.string()),
       defaultTaxRate: v.optional(v.number()),
       allowOrgCreation: v.optional(v.boolean()),
+      orgCreationCode: v.optional(v.string()),
+      orgCreationCodeEnabled: v.optional(v.boolean()),
       createdAt: v.optional(v.number()),
       updatedAt: v.optional(v.number()),
     }),
@@ -141,6 +148,8 @@ export const upsertSingleton = mutation({
       defaultCurrency: v.optional(v.string()),
       defaultTaxRate: v.optional(v.number()),
       allowOrgCreation: v.optional(v.boolean()),
+      orgCreationCode: v.optional(v.string()),
+      orgCreationCodeEnabled: v.optional(v.boolean()),
     }),
   },
   handler: async (ctx, { fallbackId, now, patch }) => {
@@ -170,6 +179,19 @@ export const upsertSingleton = mutation({
   },
 });
 
+// Spend one org-creation-code-attempt token for `key` (Phase B, B3/#1095).
+// Called from src/lib/org-creation-gate.ts's verifyOrgCreationCode BEFORE the
+// constant-time compare, so a brute-force loop is throttled before it can even
+// try many codes. Throws (via rateLimiter's `throws: true`) once the bucket is
+// empty — the caller treats that the same as an invalid code.
+export const checkOrgCreationRateLimit = mutation({
+  args: { key: v.string() },
+  handler: async (ctx, { key }) => {
+    await requireService(ctx);
+    await rateLimiter.limit(ctx, "orgCreationCodeAttempt", { key, throws: true });
+  },
+});
+
 const siteSettingsDenyReason =
   "Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this.";
 
@@ -177,4 +199,5 @@ export const agentOps: AgentOpsAnnotations = {
   list: { agentAccess: "denied", reason: siteSettingsDenyReason },
   getById: { agentAccess: "denied", reason: siteSettingsDenyReason },
   getSingleton: { agentAccess: "denied", reason: siteSettingsDenyReason },
+  checkOrgCreationRateLimit: { agentAccess: "denied", reason: siteSettingsDenyReason },
 };

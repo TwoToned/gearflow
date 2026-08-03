@@ -23,26 +23,12 @@ import { logActivity } from "@/lib/activity-log";
 import { runWithConcurrency } from "@/lib/concurrency";
 import { requireSiteAdmin, isSiteAdmin as checkIsSiteAdmin } from "@/lib/admin-auth";
 import { seedOrgDefaultTaxRate } from "@/server/public-org";
+import { getAnyOrgForAudit } from "@/lib/audit-org";
+import { getOrgCreationGateSettings, generateOrgCreationCode } from "@/lib/org-creation-gate";
 
 /** Check if the current user is a site admin */
 export async function isSiteAdmin(): Promise<boolean> {
   return checkIsSiteAdmin();
-}
-
-/**
- * Best-effort "some organization" lookup for site-admin actions that are NOT
- * scoped to a single org (ban/promote/demote/force-disable-2FA/delete-user)
- * but still need an `organizationId` to satisfy `logActivity`'s schema.
- * Arbitrary (oldest-created) — the choice only affects which org's activity
- * feed shows the entry; these are platform-wide actions, not org actions.
- * Real per-org attribution for site-wide audit entries is unresolved by
- * Phase A (#1064) — flagged for a later platform-audit-log pass, not this one.
- */
-async function getAnyOrgForAudit() {
-  return prisma.organization.findFirst({
-    select: { id: true },
-    orderBy: { createdAt: "asc" },
-  });
 }
 
 // ─── Site Settings ─────────────────────────────────────────────────────────
@@ -62,6 +48,7 @@ export async function updateSiteSettings(data: {
   defaultCurrency?: string;
   defaultTaxRate?: number;
   allowOrgCreation?: boolean;
+  orgCreationCodeEnabled?: boolean;
 }) {
   const session = await requireSiteAdmin();
 
@@ -94,17 +81,79 @@ export async function updateSiteSettings(data: {
   return serialize(await getSiteSettingsFromConvex());
 }
 
-// ─── Org Creation Policy ──────────────────────────────────────────────────
+// ─── Org Creation Gate (Phase B, #1067, B3/#1095, D6) ─────────────────────
+//
+// Two independent gates (design doc §5.3) — don't conflate:
+//  - `registrationPolicy` (already enforced in register/page.tsx): may a
+//    stranger create a USER ACCOUNT.
+//  - `allowOrgCreation` + `orgCreationCodeEnabled`/`orgCreationCode` (this
+//    section): may an authenticated user create an ORGANIZATION. The real
+//    enforcement lives in src/lib/auth.ts's `allowUserToCreateOrganization` +
+//    `organizationHooks.beforeCreateOrganization` — everything here is either
+//    an admin-only accessor for the secret, or a narrow status check for the
+//    (not-yet-built, Phase B/#1092) fork screen. Both call the identical
+//    bootstrap predicate `auth.ts` uses, so the two never disagree.
 
-/** Check whether the current user is allowed to create organizations.
- * Phase A (#1064, D7): only allowed if no org exists yet (bootstrap) — the
- * real site-admin `allowOrgCreation` toggle + signup code (D6) is Phase B.
+async function isOrgCreationBootstrap(): Promise<boolean> {
+  return !(await prisma.organization.findFirst({ select: { id: true } }));
+}
+
+/**
+ * Status check for the (future) create-vs-join fork screen: may the CURRENT
+ * user see a "set up a new company" option, and if so, will it demand a
+ * signup code? Never returns the code itself. Safe for any authenticated user
+ * to call — it's a UI-affordance check, not a secret read; the server refuses
+ * the actual creation regardless of what this returns (R-9.3).
  */
-export async function checkOrgCreationAllowed(): Promise<{ allowed: boolean; isSiteAdmin: boolean }> {
-  const admin = await checkIsSiteAdmin();
-  const org = await prisma.organization.findFirst({ select: { id: true } });
-  // Only allow creation if no org exists (bootstrap)
-  return { allowed: !org && admin, isSiteAdmin: admin };
+export async function getOrgCreationPolicy(): Promise<{ allowed: boolean; codeRequired: boolean }> {
+  await requireSession();
+  if (await isOrgCreationBootstrap()) return { allowed: true, codeRequired: false };
+  const settings = await getOrgCreationGateSettings();
+  return {
+    allowed: settings.allowOrgCreation,
+    codeRequired: settings.allowOrgCreation && settings.codeEnabled,
+  };
+}
+
+/** Admin-only read of the org-creation gate's secret state, for the
+ *  `/admin/settings` page. Deliberately NOT part of `getSiteSettings()` —
+ *  see org-creation-gate.ts's doc comment on why the code stays off
+ *  `SiteSettingsRow`. */
+export async function getOrgCreationCodeAdmin(): Promise<{
+  allowOrgCreation: boolean;
+  codeEnabled: boolean;
+  code: string | null;
+}> {
+  await requireSiteAdmin();
+  return getOrgCreationGateSettings();
+}
+
+/** Generate and store a fresh signup code, invalidating the old one. */
+export async function regenerateOrgCreationCode(): Promise<{ code: string }> {
+  const session = await requireSiteAdmin();
+  const code = generateOrgCreationCode();
+
+  await (await getConvexClient()).mutation(api.siteSettings.upsertSingleton, {
+    fallbackId: createId(),
+    now: Date.now(),
+    patch: { orgCreationCode: code },
+  });
+
+  const theOrg = await getAnyOrgForAudit();
+  if (theOrg) {
+    await logActivity({
+      organizationId: theOrg.id,
+      userId: session.user.id,
+      userName: session.user.name,
+      action: "UPDATE",
+      entityType: "siteSettings",
+      entityId: "orgCreationCode",
+      entityName: "Org creation signup code",
+      summary: "Regenerated the org-creation signup code",
+    });
+  }
+
+  return { code };
 }
 
 // ─── Organization Management ───────────────────────────────────────────────

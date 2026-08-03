@@ -23,8 +23,8 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 414 | 290 | 122 | 1 | 1 |
-| Mutations | 760 | 277 | 474 | 0 | 9 |
-| **Total** | **1174** | **567** | **596** | **1** | **10** |
+| Mutations | 761 | 277 | 475 | 0 | 9 |
+| **Total** | **1175** | **567** | **597** | **1** | **10** |
 
 <!-- reachability-floor: 567 -->
 
@@ -89,7 +89,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `parity` | 1 |
 | `pendingSSOApprovals` | 5 |
 | `projectNumberSequences` | 7 |
-| `siteSettings` | 8 |
+| `siteSettings` | 9 |
 | `subHireGroups` | 8 |
 | `subHireItems` | 7 |
 | `supplierOrderItems` | 7 |
@@ -167,6 +167,7 @@ fails the build otherwise.
 | `projectNumberSequences.getById` | Internal sequence-counter bookkeeping, not a meaningful read for an agent. |
 | `projectNumberSequences.getByOrgAndScopeKey` | Internal sequence-counter bookkeeping, not a meaningful read for an agent. |
 | `revenueAllocation.listProjectIdsPage` | Backfill-only pagination helper for scripts/convex-backfill-revenue-allocation.ts, not a runtime read; a raw project-id enumeration doesn't fit the normal resource/scope model and financial allocation detail is out of scope pending Phase 4's no_financials flag. |
+| `siteSettings.checkOrgCreationRateLimit` | Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this. |
 | `siteSettings.getById` | Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this. |
 | `siteSettings.getSingleton` | Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this. |
 | `siteSettings.list` | Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this. |

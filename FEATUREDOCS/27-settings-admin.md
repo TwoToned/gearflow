@@ -176,7 +176,9 @@ free once the locale was threaded (I2, #1081).
 - `/admin/organizations` — Single-org view with stats, export/import, manage link
 - `/admin/organizations/[id]` — Org detail with member list, export button
 - `/admin/users` — User list, promote to admin, ban/unban, force-disable 2FA
-- `/admin/settings` — Platform name, icon, logo, registration policy, 2FA global policy, default currency/tax
+- `/admin/settings` — Platform name, icon, logo, registration policy, 2FA global policy,
+  default currency/tax, org-creation gate (Phase B, B3/#1095: allow-org-creation toggle,
+  require-signup-code toggle, signup code with copy/regenerate — see FEATUREDOCS/04)
 - **Mobile**: `AdminShell` component with hamburger menu replacing desktop sidebar
 
 ## Document Templates — removed (#790)

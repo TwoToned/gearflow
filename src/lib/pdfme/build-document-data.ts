@@ -52,6 +52,46 @@ const DEFAULT_DOC_COLOR = "#0d4f4f";
  * subHires + crewAssignments stay Prisma reads here.
  */
 
+/**
+ * A DEPOSIT/BALANCE/CREDIT invoice carries exactly one stored summary line
+ * (never the project's full equipment/service breakdown — see
+ * `invoicesWrites.ts createNative`/`createCreditNative`) — this maps that
+ * stored shape into the same `DocumentLineItem` shape a live line item has,
+ * minus every field that only makes sense for a real equipment/service row.
+ * `groupName`/`categoryName` are left `null` so it renders as a bare row
+ * with no section header (contrast the billable-service mapping below,
+ * which sets `"Services"` specifically TO get one).
+ */
+export function invoiceLineToDocumentLineItem(line: {
+  id: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}): DocumentLineItem {
+  return {
+    id: `invline-${line.id}`,
+    description: line.description,
+    quantity: line.quantity,
+    checkedOutQuantity: 0,
+    unitPrice: line.unitPrice,
+    pricingType: "FLAT",
+    duration: 1,
+    discount: null,
+    lineTotal: line.lineTotal,
+    groupName: null,
+    categoryName: null,
+    groupTitle: null,
+    isGroupRow: false,
+    isOptional: false,
+    notes: null,
+    status: "CONFIRMED",
+    model: null,
+    asset: null,
+    bulkAsset: null,
+  };
+}
+
 /** Serialize Decimal fields to numbers (Prisma v6 Decimal type) */
 function serializeDecimals<T>(obj: T): T {
   return JSON.parse(
@@ -107,6 +147,21 @@ export async function buildDocumentData(
      * pipeline's three-consumer audit (CLAUDE.md).
      */
     versionSuffix?: string;
+    /**
+     * The SPECIFIC invoice this render represents (`docType: "invoice"`
+     * only) — bug fix: this pipeline used to have no concept of an
+     * individual invoice row, so EVERY "invoice" render (preview or the
+     * stored artifact) showed the live project's full total/breakdown, even
+     * for a DEPOSIT/BALANCE/CREDIT invoice whose actual amount is a fraction
+     * of that. When set, `invoiceNumber`/`subtotal`/`taxAmount`/`total` come
+     * from the invoice's own row, and for any kind other than FULL the line
+     * items are the invoice's own stored summary line(s)
+     * (`convex/financeArtifacts.ts` `invoiceArtifactContext`) instead of the
+     * live equipment/service breakdown. Omitted ⇒ unchanged legacy
+     * behaviour (live project state) — every non-invoice doc type, and any
+     * caller that hasn't been updated to pass one yet.
+     */
+    invoiceId?: string;
   }
 ): Promise<DocumentData> {
   const expandProjectGroups = options?.expandProjectGroups ?? false;
@@ -376,12 +431,31 @@ export async function buildDocumentData(
     }
   }
 
-  const lineItems: DocumentLineItem[] = structureLineItems(
-    rawLineItems,
-    categories,
-    { expandProjectGroups, packerSort },
-    subHireGroups,
-  );
+  // A specific invoice's own money/lines (bug fix — see this function's
+  // `invoiceId` doc above): fetched once, up front, so both the line items
+  // below and the subtotal/tax/total/invoiceNumber fields further down read
+  // the SAME snapshot rather than two independent (and possibly racing)
+  // Convex round trips.
+  const invoiceContext =
+    docType === "invoice" && options?.invoiceId
+      ? await (
+          await getConvexClient()
+        ).query(api.financeArtifacts.invoiceArtifactContext, {
+          invoiceId: options.invoiceId,
+          orgId: organizationId,
+        })
+      : null;
+  // FULL still renders the live equipment/service breakdown below — its
+  // `invoiceLines` are a flat snapshot of the SAME data at creation time
+  // (`buildFinanceLines`), not a richer category/kit/group tree, so re-using
+  // the live structured render is strictly more correct, not less. Every
+  // other kind (DEPOSIT/BALANCE/CREDIT) carries exactly its own summary
+  // line(s) and nothing else.
+  const usesLiveBreakdown = !invoiceContext || invoiceContext.kind === "FULL";
+
+  const lineItems: DocumentLineItem[] = usesLiveBreakdown
+    ? structureLineItems(rawLineItems, categories, { expandProjectGroups, packerSort }, subHireGroups)
+    : invoiceContext.lines.map(invoiceLineToDocumentLineItem);
 
   // ─── Append billable services as virtual line items ─────────────────────────
   // A service appears on quotes/invoices as its own section once it has an actual
@@ -392,16 +466,20 @@ export async function buildDocumentData(
   // not a second one (R-3.1). projectService is dual-written to Convex — read the
   // org's services, filter to this project and order by sortOrder asc,
   // replicating the dropped Prisma findMany.
-  const billableServices = (await getProjectServicesByOrg(organizationId))
-    .filter(
-      (s) =>
-        s.projectId === projectId &&
-        s.status !== "CANCELLED" &&
-        Number(s.lineTotal) > 0,
-    )
-    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  //
+  // Skipped when rendering a DEPOSIT/BALANCE/CREDIT invoice's own summary
+  // line(s) — those already ARE the whole invoice; appending the project's
+  // live services here would silently show more than that invoice bills for.
+  if (usesLiveBreakdown) {
+    const billableServices = (await getProjectServicesByOrg(organizationId))
+      .filter(
+        (s) =>
+          s.projectId === projectId &&
+          s.status !== "CANCELLED" &&
+          Number(s.lineTotal) > 0,
+      )
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
-  if (billableServices.length > 0) {
     for (const svc of billableServices) {
       lineItems.push({
         id: `svc-${svc.id}`,
@@ -729,8 +807,17 @@ export async function buildDocumentData(
       : new Date(computeValidUntil(documentDate.getTime(), paymentTermsDays, orgTimezone));
 
   // WS1 (#940) — only the invoice doc type renders this; skip the extra
-  // Convex round trip for the other 4 doc types.
-  const invoiceNumber = docType === "invoice" ? await getLatestInvoiceNumberForProject(projectId, organizationId) : null;
+  // Convex round trip for the other 4 doc types. When a specific invoiceId
+  // was given, its OWN number wins (null while still DRAFT — correct: a
+  // preview of an unissued invoice has no number, rather than borrowing
+  // whichever OTHER invoice on the project happens to be most recently
+  // issued). The heuristic fallback is only for callers with no invoiceId.
+  const invoiceNumber =
+    invoiceContext != null
+      ? invoiceContext.invoiceNumber
+      : docType === "invoice"
+        ? await getLatestInvoiceNumberForProject(projectId, organizationId)
+        : null;
 
   return {
     // Org
@@ -783,13 +870,17 @@ export async function buildDocumentData(
     site_contact_phone: serialized.siteContactPhone || "",
     site_contact_email: serialized.siteContactEmail || "",
 
-    // Financial
-    subtotal: Number(serialized.subtotal) || 0,
+    // Financial — a specific invoice's own frozen snapshot wins over the
+    // live project figures (bug fix, see `invoiceId` doc above): a
+    // DEPOSIT/BALANCE/CREDIT invoice's total is a fraction of the project's,
+    // and even a FULL invoice's total is frozen at whenever it was created,
+    // which can predate a later line-item edit.
+    subtotal: invoiceContext ? invoiceContext.subtotal : Number(serialized.subtotal) || 0,
     discount_percent: Number(serialized.discountPercent) || 0,
     discount_amount: Number(serialized.discountAmount) || 0,
     tax_label: (orgSettings.taxLabel as string) || (country?.taxLabel ?? "GST"),
-    tax_amount: Number(serialized.taxAmount) || 0,
-    total: totalNum,
+    tax_amount: invoiceContext ? invoiceContext.taxAmount : Number(serialized.taxAmount) || 0,
+    total: invoiceContext ? invoiceContext.total : totalNum,
     deposit_paid: depositNum,
     balance_due: totalNum - depositNum,
 

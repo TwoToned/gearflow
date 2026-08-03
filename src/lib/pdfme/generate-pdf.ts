@@ -34,6 +34,14 @@ export interface ProjectPdfOptions {
   draftPreview?: boolean;
   /** #1080/#1097 — see `buildDocumentData`'s `versionSuffix`. */
   versionSuffix?: string;
+  /**
+   * The SPECIFIC invoice this render represents — `docType: "invoice"` only.
+   * Without this, the render falls back to the live project total/breakdown,
+   * which is only ever correct for a FULL invoice; a DEPOSIT/BALANCE/CREDIT
+   * invoice needs its OWN money snapshot and single summary line, not the
+   * whole project's. See `buildDocumentData`'s `invoiceId` option.
+   */
+  invoiceId?: string;
 }
 
 /**
@@ -56,6 +64,7 @@ export async function generatePdf(
     expandProjectGroups: layout.expandProjectGroups,
     stampedDates: options?.stampedDates,
     versionSuffix: options?.versionSuffix,
+    invoiceId: options?.invoiceId,
   });
 
   // Real font metrics for composeDocument's accurate text-wrap measurement

@@ -15,9 +15,11 @@ import {
   CircleSlash,
 } from "lucide-react";
 
+import { startOfWeek } from "date-fns";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
 import { useOrgCrewAssignments, fingerprintCrewAssignments, useOrgAvailabilities, fingerprintAvailabilities } from "@/hooks/use-crew-scheduling";
 import { getStatusColor } from "@/lib/status-colors";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -47,16 +49,6 @@ import {
 } from "@/components/ui/tooltip";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function startOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  // Monday start
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
 
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
@@ -105,8 +97,9 @@ export default function CrewPlannerPage() {
   const orgId = activeOrg?.id;
   const pConvex = useConvex();
   const { isAuthenticated: pAuthed } = useConvexAuth();
+  const weekStartsOn = useOrgWeekStartsOn();
 
-  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn }));
 
   // ── Filter state ──────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -149,7 +142,7 @@ export default function CrewPlannerPage() {
 
   const goBack = () => setWeekStart((d) => addDays(d, -7));
   const goForward = () => setWeekStart((d) => addDays(d, 7));
-  const goToday = () => setWeekStart(startOfWeek(new Date()));
+  const goToday = () => setWeekStart(startOfWeek(new Date(), { weekStartsOn }));
 
   // Stable "today" so the summary useMemo doesn't recompute every render.
   const today = useMemo(() => new Date(), []);

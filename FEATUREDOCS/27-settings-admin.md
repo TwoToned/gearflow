@@ -128,6 +128,37 @@ address lookups across ~19 countries and is a different concern from the
 7-row operational table above; Phase C's wizard country step is what wires
 the two together.
 
+### Week start + address bias (I6, #1086)
+
+`useOrgWeekStartsOn()` (`src/lib/use-org-country.ts`, sibling to
+`useOrgCountry()`) returns `date-fns`'s `weekStartsOn` value (`0` Sunday /
+`1` Monday) from the country table, defaulting to Monday (`1`) when no
+country is set — the same value every hardcoded `weekStartsOn: 1` it
+replaces already assumed. Wired into:
+
+- `crew/planner/page.tsx` — its hand-rolled `startOfWeek()` (a DRY violation,
+  ignoring `date-fns` entirely) is gone; it now calls `date-fns`'s
+  `startOfWeek(date, { weekStartsOn })`.
+- `availability/page.tsx` — `gridStart`/`gridEnd` use the hook instead of a
+  hardcoded `{ weekStartsOn: 1 }`. Also fixes a companion bug the week-start
+  change would otherwise have introduced: the month grid's `WEEKDAYS` header
+  labels were a hardcoded Monday-first array — for a Sunday-starting org the
+  header and the day cells would have visibly misaligned. Both now derive
+  from the same `weekStartsOn` via `weekdayLabels()`.
+
+Address-bias (`AddressInput`'s `countryCode` prop via `useOrgCountry()`) was
+already wired everywhere except `services-panel.tsx`'s delivery/pickup
+address field — the one gap, now closed. See FEATUREDOCS/30 for the full
+Places-autocomplete picture.
+
+**Not done in #1086** — units (weights/dimensions/rigging loads, kg-only
+today): the issue itself flags this as an open scope question ("decide the
+boundary before implementing rather than during" — dimensions and rigging
+loads are a larger surface than weights alone, and mixed units in a
+warehouse are their own hazard) rather than a spec to implement blind.
+Deferred pending that decision. Number grouping needed no work — it came
+free once the locale was threaded (I2, #1081).
+
 ## Platform Branding (`SiteSettings`)
 - `platformName` — Displayed in sidebar, page titles, emails
 - `platformIcon` — Lucide icon name, rendered via `DynamicIcon`

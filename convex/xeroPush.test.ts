@@ -33,6 +33,9 @@ async function seedInvoiceWithLines(t: ReturnType<typeof makeT>) {
     await ctx.db.insert("projectLineItems", { id: "li3", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", isKitChild: false, modelId: "mod1", categoryId: "cat1", xeroAccountCode: "9999-OVERRIDE", xeroTaxType: "EXEMPT", description: "Special item", quantity: 1, unitPrice: 100, lineTotal: 100 });
     // Line 4: EQUIPMENT, no model/kit/category -> falls through to org default.
     await ctx.db.insert("projectLineItems", { id: "li4", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", isKitChild: false, description: "Misc gear", quantity: 1, unitPrice: 50, lineTotal: 50 });
+    // Line 4b: SALE, same model as li1 -> must resolve via the model's SALE code
+    // (4250), never the RENTAL code (4200) li1 resolves to (WS11 #950).
+    await ctx.db.insert("projectLineItems", { id: "li4b", organizationId: ORG, projectId: "p1", type: "SALE", saleMode: "NEW_STOCK", isKitChild: false, modelId: "mod1", categoryId: "cat1", description: "Speaker (sold)", quantity: 1, unitPrice: 250, lineTotal: 250 });
     // Line 5: SERVICE, LABOUR type -> resolves via the LABOUR service-type default.
     await ctx.db.insert("projectServices", { id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Crew", lineTotal: 150 });
     // Group 1: no per-group override -> falls through to its category's default.
@@ -44,9 +47,10 @@ async function seedInvoiceWithLines(t: ReturnType<typeof makeT>) {
     await ctx.db.insert("invoiceLines", { id: "line2", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li2", description: "Band Kit", quantity: 1, unitPrice: 300, lineTotal: 300, sortOrder: 1 });
     await ctx.db.insert("invoiceLines", { id: "line3", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li3", description: "Special item", quantity: 1, unitPrice: 100, lineTotal: 100, sortOrder: 2 });
     await ctx.db.insert("invoiceLines", { id: "line4", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li4", description: "Misc gear", quantity: 1, unitPrice: 50, lineTotal: 50, sortOrder: 3 });
-    await ctx.db.insert("invoiceLines", { id: "line5", invoiceId: "inv1", sourceType: "SERVICE", sourceLineItemId: "svc1", description: "Crew", quantity: 1, unitPrice: 150, lineTotal: 150, sortOrder: 4 });
-    await ctx.db.insert("invoiceLines", { id: "line6", invoiceId: "inv1", sourceType: "GROUP", sourceLineItemId: "grp1", description: "Priced bundle", quantity: 1, unitPrice: 250, lineTotal: 250, sortOrder: 5 });
-    await ctx.db.insert("invoiceLines", { id: "line7", invoiceId: "inv1", sourceType: "GROUP", sourceLineItemId: "grp2", description: "Custom-coded bundle", quantity: 1, unitPrice: 400, lineTotal: 400, sortOrder: 6 });
+    await ctx.db.insert("invoiceLines", { id: "line4b", invoiceId: "inv1", sourceType: "EQUIPMENT", sourceLineItemId: "li4b", description: "Speaker (sold)", quantity: 1, unitPrice: 250, lineTotal: 250, sortOrder: 4 });
+    await ctx.db.insert("invoiceLines", { id: "line5", invoiceId: "inv1", sourceType: "SERVICE", sourceLineItemId: "svc1", description: "Crew", quantity: 1, unitPrice: 150, lineTotal: 150, sortOrder: 5 });
+    await ctx.db.insert("invoiceLines", { id: "line6", invoiceId: "inv1", sourceType: "GROUP", sourceLineItemId: "grp1", description: "Priced bundle", quantity: 1, unitPrice: 250, lineTotal: 250, sortOrder: 6 });
+    await ctx.db.insert("invoiceLines", { id: "line7", invoiceId: "inv1", sourceType: "GROUP", sourceLineItemId: "grp2", description: "Custom-coded bundle", quantity: 1, unitPrice: 400, lineTotal: 400, sortOrder: 7 });
 
     await ctx.db.insert("xeroIntegrations", {
       id: "xi1", organizationId: ORG, isConnected: true, tenantId: "tenant1",
@@ -67,6 +71,7 @@ describe("xeroPush.resolveCodingForInvoice", () => {
     expect(byId.get("line2")).toEqual({ lineId: "line2", accountCode: "4400", taxType: "OUTPUT2" }); // kit code wins over category
     expect(byId.get("line3")).toEqual({ lineId: "line3", accountCode: "9999-OVERRIDE", taxType: "EXEMPT" }); // per-line override wins over everything
     expect(byId.get("line4")).toEqual({ lineId: "line4", accountCode: "4000", taxType: "OUTPUT2" }); // org default (no model/kit/category)
+    expect(byId.get("line4b")).toEqual({ lineId: "line4b", accountCode: "4250", taxType: "OUTPUT2" }); // WS11: SALE line resolves the model's SALE code (4250), not its RENTAL code (4200)
     expect(byId.get("line5")).toEqual({ lineId: "line5", accountCode: "4600", taxType: "OUTPUT2" }); // LABOUR service-type default
     expect(byId.get("line6")).toEqual({ lineId: "line6", accountCode: "4300", taxType: "OUTPUT2" }); // group falls through to its category default
     expect(byId.get("line7")).toEqual({ lineId: "line7", accountCode: "8888-GROUP", taxType: "ZERORATED" }); // group override wins over its category

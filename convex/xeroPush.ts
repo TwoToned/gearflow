@@ -23,11 +23,12 @@ import {
  * Xero API client (the pure functions in xeroAccountCascade.ts do the real
  * work — this file is just the DB-read plumbing around them).
  *
- * NOTE (ambiguity resolved — see PR description): this rental-only app has no
- * live SALE line-item workflow yet (WS11/#950), so every equipment line here
- * resolves via the RENTAL side of the model cascade
- * (models.xeroRentalAccountCode) — resolveModelOrKitAccountCode's SALE branch
- * is unit-tested but unreachable from this caller until #950 lands.
+ * WS11 (#950) — a `projectLineItems.type === "SALE"` line resolves via the
+ * SALE side of the model cascade (`models.xeroSaleAccountCode`) instead of
+ * RENTAL. A kit-parent line ignores `lineKind` entirely regardless of type
+ * (`resolveModelOrKitAccountCode` returns the kit's own code) — a SALE line
+ * is never kit-backed (see FEATUREDOCS/67), so this only matters for a
+ * model-backed line.
  */
 
 export interface ResolvedInvoiceLine {
@@ -51,15 +52,16 @@ async function resolveEquipmentLineCode(
   const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", sourceLineItemId)).first();
   if (!li || li.organizationId !== orgId) return { accountCode: null, taxType: null };
 
+  const lineKind: "RENTAL" | "SALE" = li.type === "SALE" ? "SALE" : "RENTAL";
   const isKitParent = !!li.kitId && !li.isKitChild;
   let modelOrKitCode: string | null = null;
   if (isKitParent && li.kitId) {
     const kit = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", li.kitId!)).first();
-    modelOrKitCode = kit && kit.organizationId === orgId ? resolveModelOrKitAccountCode({ isKitParent: true, lineKind: "RENTAL", kitCode: kit.xeroAccountCode }) : null;
+    modelOrKitCode = kit && kit.organizationId === orgId ? resolveModelOrKitAccountCode({ isKitParent: true, lineKind, kitCode: kit.xeroAccountCode }) : null;
   } else if (li.modelId) {
     const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", li.modelId!)).first();
     modelOrKitCode = model && model.organizationId === orgId
-      ? resolveModelOrKitAccountCode({ isKitParent: false, lineKind: "RENTAL", modelRentalCode: model.xeroRentalAccountCode, modelSaleCode: model.xeroSaleAccountCode })
+      ? resolveModelOrKitAccountCode({ isKitParent: false, lineKind, modelRentalCode: model.xeroRentalAccountCode, modelSaleCode: model.xeroSaleAccountCode })
       : null;
   }
 

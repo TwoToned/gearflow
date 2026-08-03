@@ -1,8 +1,8 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 
 const chatCompletionMock = vi.fn();
-vi.mock("./openrouter-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./openrouter-client")>();
+vi.mock("./llm-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./llm-client")>();
   return { ...actual, chatCompletion: (...args: unknown[]) => chatCompletionMock(...args) };
 });
 
@@ -111,10 +111,16 @@ describe("runMiraAgentLoop", () => {
     expect(result.appended.at(-1)?.content).toMatch(/didn't reach a final answer/i);
   });
 
-  test("an OpenRouter error is caught and surfaced as an assistant message, not thrown", async () => {
-    const { OpenRouterError } = await import("./openrouter-client");
-    chatCompletionMock.mockRejectedValueOnce(new OpenRouterError("boom", 500));
+  test("an LLM client error is caught and surfaced as an assistant message, not thrown", async () => {
+    const { LlmClientError } = await import("./llm-client");
+    chatCompletionMock.mockRejectedValueOnce(new LlmClientError("boom", 500));
     const result = await runMiraAgentLoop({ apiKey: "k", model: "m", messages: [], tools: [baseTool], executeTool: vi.fn() });
     expect(result.appended[0]!.content).toMatch(/error talking to the language model/i);
+  });
+
+  test("baseUrl is threaded through to every chatCompletion call", async () => {
+    chatCompletionMock.mockResolvedValueOnce(assistantText("hi"));
+    await runMiraAgentLoop({ apiKey: "k", model: "m", baseUrl: "https://my-backend.example/v1", messages: [], tools: [baseTool], executeTool: vi.fn() });
+    expect(chatCompletionMock.mock.calls[0]![0]).toMatchObject({ baseUrl: "https://my-backend.example/v1" });
   });
 });

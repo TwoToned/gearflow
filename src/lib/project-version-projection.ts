@@ -8,14 +8,34 @@
  * it must be safe to unit-test and to run inside a Convex `convex-test`
  * environment for the projection-parity test (no React import).
  *
- * What it CANNOT produce — live availability, live warehouse status, sub-hire
- * lines and category-slot ordering (none of those entity types are captured
- * by `captureProjectSnapshot`, see convex/lib/projectSnapshots.ts) — is
- * reported via `uncaptured` rather than a plausible-looking zero (design doc
- * §5.1: "a wrong number that looks right is worse than an absent one").
+ * What it CANNOT produce — live availability and live warehouse status, the
+ * two genuinely point-in-time facts no snapshot can ever freeze — is reported
+ * via `uncaptured` rather than a plausible-looking zero (design doc §5.1: "a
+ * wrong number that looks right is worse than an absent one"). Sub-hires and
+ * category-slot ordering used to be on this list too; #1080/#1101 widened
+ * `captureProjectSnapshot` to capture both, so equipment parity with the live
+ * table now goes through a separate bundle-assembly query +
+ * `equipment-tab-reconstruct.ts` rather than this pure mapper — see
+ * FEATUREDOCS/70's "Phase 6" and `convex/projectVersionsEquipment.ts`.
  */
 
-type SnapshotEntityType = "project" | "category" | "group" | "lineItem" | "service" | "crewAssignment";
+/** #1080/#1101 widened this to add `subHire`/`subHireItem`/`subHireGroup`/
+ *  `categorySlot` (kept in lockstep with `convex/lib/projectSnapshots.ts`'s
+ *  `SnapshotEntityType`, R-3.1) — this mapper doesn't map them itself (they
+ *  flow through the new bundle-assembly query + `equipment-tab-reconstruct.ts`
+ *  instead, see FEATUREDOCS/70's "Phase 6"), it just needs to type-accept
+ *  entries that carry them without narrowing incorrectly. */
+type SnapshotEntityType =
+  | "project"
+  | "category"
+  | "group"
+  | "lineItem"
+  | "service"
+  | "crewAssignment"
+  | "subHire"
+  | "subHireItem"
+  | "subHireGroup"
+  | "categorySlot";
 
 export interface SnapshotEntryLike {
   entityType: SnapshotEntityType;
@@ -124,19 +144,16 @@ interface ProjectedNotes {
   clientNotes: string | null;
 }
 
-/** Entity types/facets the snapshot format never captures — always the same
- *  set (it's a property of `captureProjectSnapshot`'s shape, not of any one
- *  project), listed once here so every consumer renders the identical
- *  "not captured" explanation instead of independently guessing at one.
- *  Not exported — read it off `ProjectedView.uncaptured` instead of the
- *  constant directly, so every consumer goes through the one value the
- *  mapper actually attached (R-3.1). */
-const UNCAPTURED_FACETS = [
-  "subHires",
-  "categorySlotOrder",
-  "liveAvailability",
-  "warehouseStatus",
-] as const;
+/** Facets that stay permanently uncapturable — genuinely LIVE, point-in-time
+ *  facts, not business decisions a version can freeze (a past revision cannot
+ *  recompute today's warehouse conflicts or which physical serial is
+ *  currently checked out). `subHires`/`categorySlotOrder` were on this list
+ *  before #1080/#1101 — `captureProjectSnapshot` now captures both, so a
+ *  snapshot taken from this point on carries them (an OLDER snapshot simply
+ *  has no entries of those types, which the equipment bundle-assembly query
+ *  degrades from gracefully, not an error). Not exported — read it off
+ *  `ProjectedView.uncaptured` instead of the constant directly (R-3.1). */
+const UNCAPTURED_FACETS = ["liveAvailability", "warehouseStatus"] as const;
 
 export interface ProjectedView {
   equipment: ProjectedEquipmentView;

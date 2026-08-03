@@ -18,7 +18,29 @@ import { LOCKED_GROUP_FIELDS, LOCKED_LINE_ITEM_FIELDS, LOCKED_PROJECT_FIELDS, LO
  *  PRE_PROMOTE (Phase 2's auto-capture before a promote overwrites the live
  *  state) — all three carry a `revision`, unlike the status-driven reasons. */
 export type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT" | "VERSION_SAVED" | "PRE_PROMOTE";
-export type SnapshotEntityType = "project" | "category" | "group" | "lineItem" | "service" | "crewAssignment";
+/** #1080/#1101 — `subHire`/`subHireItem`/`subHireGroup`/`categorySlot` added
+ *  so a version-viewing render can reproduce the live Equipment tab's exact
+ *  table (sub-hire groups, and the `categorySlots`-driven combined order of
+ *  project groups + sub-hire groups + standalone line items) instead of the
+ *  simplified "not captured" fallback. Kept in lockstep with two other
+ *  redeclarations of this union: `convex/projectLocksRead.ts`'s `ENTRY_RETURNS`
+ *  and `src/lib/project-version-projection.ts`'s local type (R-3.1 — one closed
+ *  union, never a silently-widened `v.string()`). `restoreProjectSnapshot`
+ *  deliberately does NOT restore these four on `PROMOTE`/`FULL` — promoting an
+ *  older version still leaves the project's CURRENT sub-hire orders/ordering
+ *  in place; only VIEWING a captured version reflects its true historical
+ *  state. See FEATUREDOCS/70's "Phase 6" section. */
+export type SnapshotEntityType =
+  | "project"
+  | "category"
+  | "group"
+  | "lineItem"
+  | "service"
+  | "crewAssignment"
+  | "subHire"
+  | "subHireItem"
+  | "subHireGroup"
+  | "categorySlot";
 /** `FINANCIAL`/`FULL` are the two unlock-session discard scopes (#791/#792).
  *  `PROMOTE` (#1080/#1089, Phase 2) is a third caller of this same mechanism —
  *  "make an older version live" — not an unlock at all, hence the type name
@@ -34,6 +56,44 @@ export interface SnapshotEntryLike {
   entityType: SnapshotEntityType;
   entityId: string;
   data: Record<string, unknown>;
+}
+
+interface SubHireRelatedEntities {
+  subHires: Doc<"subHires">[];
+  subHireItems: Doc<"subHireItems">[];
+  subHireGroups: Doc<"subHireGroups">[];
+  categorySlots: Doc<"categorySlots">[];
+}
+
+/** `subHireItems`/`subHireGroups`/`categorySlots` carry no `organizationId` —
+ *  org-scope them transitively through `subHires`/`projectCategories`, which
+ *  do. Shared by `captureProjectSnapshot` and `collectCurrentEntries` so the
+ *  transitive-scoping logic exists once (R-3.1), mirroring the same
+ *  referenced-only join pattern `convex/equipmentTab.ts`'s `readEquipmentTab`
+ *  already uses for the live tab. */
+async function collectSubHireRelatedEntities(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  projectId: string,
+  categoryIds: string[],
+): Promise<SubHireRelatedEntities> {
+  const subHires = (
+    await ctx.db.query("subHires").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
+  ).filter((s) => s.organizationId === orgId);
+  const subHireIds = subHires.map((s) => s.id);
+
+  const [itemArrays, groupArrays, slotArrays] = await Promise.all([
+    Promise.all(subHireIds.map((id) => ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", id)).collect())),
+    Promise.all(subHireIds.map((id) => ctx.db.query("subHireGroups").withIndex("by_subHireId", (q) => q.eq("subHireId", id)).collect())),
+    Promise.all(categoryIds.map((id) => ctx.db.query("categorySlots").withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", id)).collect())),
+  ]);
+
+  return {
+    subHires,
+    subHireItems: itemArrays.flat(),
+    subHireGroups: groupArrays.flat(),
+    categorySlots: slotArrays.flat(),
+  };
 }
 
 /** Read-only: the SAME entity set/shape `captureProjectSnapshot` would write,
@@ -72,6 +132,12 @@ export async function collectCurrentEntries(
     await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
   ).filter((c) => c.organizationId === orgId);
   for (const c of crew) out.push({ entityType: "crewAssignment", entityId: c.id, data: stripDoc(c) });
+
+  const subHireRelated = await collectSubHireRelatedEntities(ctx, orgId, project.id, categories.map((c) => c.id));
+  for (const s of subHireRelated.subHires) out.push({ entityType: "subHire", entityId: s.id, data: stripDoc(s) });
+  for (const i of subHireRelated.subHireItems) out.push({ entityType: "subHireItem", entityId: i.id, data: stripDoc(i) });
+  for (const g of subHireRelated.subHireGroups) out.push({ entityType: "subHireGroup", entityId: g.id, data: stripDoc(g) });
+  for (const s of subHireRelated.categorySlots) out.push({ entityType: "categorySlot", entityId: s.id, data: stripDoc(s) });
 
   return out;
 }
@@ -147,6 +213,12 @@ export async function captureProjectSnapshot(ctx: MutationCtx, args: CaptureSnap
     await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
   ).filter((c) => c.organizationId === orgId);
   for (const c of crew) await insertEntry("crewAssignment", c.id, stripDoc(c));
+
+  const subHireRelated = await collectSubHireRelatedEntities(ctx, orgId, project.id, categories.map((c) => c.id));
+  for (const s of subHireRelated.subHires) await insertEntry("subHire", s.id, stripDoc(s));
+  for (const i of subHireRelated.subHireItems) await insertEntry("subHireItem", i.id, stripDoc(i));
+  for (const g of subHireRelated.subHireGroups) await insertEntry("subHireGroup", g.id, stripDoc(g));
+  for (const s of subHireRelated.categorySlots) await insertEntry("categorySlot", s.id, stripDoc(s));
 
   return snapshotId;
 }

@@ -56,7 +56,7 @@ async function resolveSSOProviderForEmail(
 async function handlePostLogin(router: ReturnType<typeof useRouter>, callbackUrl: string | null) {
   const orgs = await getMyOrganizations();
   if (orgs.length === 0) {
-    router.push("/onboarding");
+    router.push("/welcome");
     return;
   }
   if (orgs.length === 1) {

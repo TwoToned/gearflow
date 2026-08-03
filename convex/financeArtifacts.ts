@@ -120,13 +120,29 @@ export const quoteArtifactContext = query({
 });
 
 /** The invoice equivalent. `issuedAt` is the document date an issued invoice
- *  freezes at — the same "don't recompute from now" rule as a quote's dates. */
+ *  freezes at — the same "don't recompute from now" rule as a quote's dates.
+ *
+ *  Also carries the invoice's own money snapshot (`subtotal`/`taxAmount`/
+ *  `total`) and its `invoiceLines` — the PDF pipeline used to have no
+ *  awareness of a specific invoice row at all (every "invoice" render just
+ *  used the LIVE project total/breakdown), so a DEPOSIT/BALANCE/CREDIT
+ *  invoice's PDF always showed the full project amount instead of its own.
+ *  `build-document-data.ts` reads these to render the actual invoice being
+ *  requested instead of guessing from live project state. */
 export const invoiceArtifactContext = query({
   args: { invoiceId: v.string(), orgId: v.string() },
   handler: async (ctx, { invoiceId, orgId }) => {
     await requireService(ctx);
     const invoice = await requireInvoiceInOrg(ctx, invoiceId, orgId);
     const project = await requireProjectInOrg(ctx, invoice.projectId, orgId);
+    // Bounded by invoiceId (R-9.8) — an invoice's own line count is small and
+    // fixed (one summary line for DEPOSIT/BALANCE/CREDIT, the equipment/
+    // service breakdown for FULL), same bound deleteVoidNative already uses.
+    const lines = await ctx.db
+      .query("invoiceLines")
+      .withIndex("by_invoiceId", (q) => q.eq("invoiceId", invoiceId))
+      .take(500);
+    lines.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     return {
       invoiceId: invoice.id,
       projectId: invoice.projectId,
@@ -138,6 +154,17 @@ export const invoiceArtifactContext = query({
       issuedAt: invoice.issuedAt ?? null,
       invoiceDate: invoice.invoiceDate ?? null,
       dueDate: invoice.dueDate ?? null,
+      subtotal: invoice.subtotal,
+      taxAmount: invoice.taxAmount,
+      total: invoice.total,
+      notes: invoice.notes ?? null,
+      lines: lines.map((l) => ({
+        id: l.id,
+        description: l.description,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        lineTotal: l.lineTotal,
+      })),
     };
   },
 });

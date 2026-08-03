@@ -37,11 +37,18 @@ test.describe("harness: sign out", () => {
       .getByRole("button", { name: /create|register|sign up/i })
       .first()
       .click();
-    await expect(page).toHaveURL(/\/(dashboard|onboarding)\b/, { timeout: 20000 });
+    // A fresh registration with no org lands on the create-vs-join fork
+    // (/welcome, #1092) rather than an authenticated dashboard directly.
+    await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
 
     // Run standalone against a fresh harness, this is the first-ever user, so
-    // the (app) layout redirects to /onboarding (no org yet) — which has no
-    // UserNav, so "Account menu" below wouldn't exist without this.
+    // the (app) layout redirects to /welcome (no org yet) — which has no
+    // UserNav, so "Account menu" below wouldn't exist without completing it.
+    // "Set up a new company" leads to /onboarding, the actual create-org form.
+    if (new URL(page.url()).pathname === "/welcome") {
+      await page.getByRole("button", { name: "Set up a new company" }).click();
+      await expect(page).toHaveURL(/\/onboarding\b/, { timeout: 20000 });
+    }
     if (new URL(page.url()).pathname === "/onboarding") {
       await page.getByLabel("Organization name").fill(`Sign Out Org ${unique}`);
       await page.getByRole("button", { name: "Create organization" }).click();

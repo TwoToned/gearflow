@@ -360,6 +360,82 @@ export default defineSchema({
   })
     .index("by_organizationId_userId", ["organizationId", "userId"]),
 
+  // MiraOrgSettings — one row per org, admin-configured (Mira LLM tool-calling).
+  // Each org brings its OWN API key (encrypted at rest, same vault as the Xero
+  // refresh token — src/lib/crypto/secret-vault.ts) and picks its own model
+  // string; the platform never sees a shared LLM credential or bears the
+  // spend. `baseUrl` is optional (empty/absent = OpenRouter, src/lib/mira/
+  // llm-client.ts `DEFAULT_LLM_BASE_URL`) — any org can instead BYO a
+  // different OpenAI-compatible endpoint (Azure OpenAI, a self-hosted vLLM/
+  // Ollama/LM Studio server, ...). Not a secret — round-trips to the browser
+  // freely, unlike the key. `writeAccessEnabled` is a deliberate admin
+  // opt-in, default false: Mira's self-provisioning (any member gets a key
+  // with no admin gate, see miraKeys above) is only safe when the preset is
+  // fixed and read-only — moving to a write-capable preset needs a human,
+  // deliberate act, not a silent upgrade the next time someone asks Mira a
+  // question. See FEATUREDOCS/68.
+  miraOrgSettings: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    openRouterKeyEncrypted: v.optional(v.string()),
+    model: v.optional(v.string()),
+    baseUrl: v.optional(v.string()),
+    writeAccessEnabled: v.boolean(),
+    updatedAt: v.number(),
+    updatedById: v.optional(v.string()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"]),
+
+  // MiraConversation — one ongoing thread per (org, user); "Clear conversation"
+  // in the UI archives it (archivedAt) rather than deleting, so history is never
+  // silently destroyed. A fresh message with no live (unarchived) conversation
+  // starts a new one.
+  miraConversations: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId_userId", ["organizationId", "userId"]),
+
+  // MiraMessage — one row per turn in a miraConversations thread. Shaped to
+  // round-trip losslessly through an OpenAI-style chat-completions message
+  // (role/content/tool_calls/tool_call_id) so rebuilding the LLM's conversation
+  // history is a straight map, not a lossy re-derivation. `pendingConfirmation`
+  // is only ever set on an assistant message whose tool call hit dispatcher.ts's
+  // CONFIRMATION_REQUIRED gate — the chat UI renders it as a Confirm/Dismiss
+  // card; confirming replays the SAME operation/args/idempotencyKey with
+  // confirm:true (src/server/mira.ts), never by asking the model to retry.
+  miraMessages: defineTable({
+    id: v.string(),
+    conversationId: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    role: v.union(v.literal("user"), v.literal("assistant"), v.literal("tool")),
+    content: v.union(v.string(), v.null()),
+    toolCalls: v.optional(v.any()),
+    toolCallId: v.optional(v.string()),
+    toolName: v.optional(v.string()),
+    pendingConfirmation: v.optional(
+      v.union(
+        v.null(),
+        v.object({
+          operation: v.string(),
+          args: v.any(),
+          idempotencyKey: v.string(),
+          summary: v.string(),
+        }),
+      ),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_conversationId", ["conversationId"]),
+
   // StoredFile — the org-association for a Convex-storage file (the byte store is
   // Convex `_storage`). The /api/files proxy authorises a serve by looking up this
   // record's org (replacing the old S3 org-prefixed-key path auth). organizationId

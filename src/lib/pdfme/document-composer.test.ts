@@ -30,10 +30,12 @@ function makeData(overrides: Partial<DocumentData> = {}): DocumentData {
     org_address: "1 Test St",
     org_website: "test.com",
     org_abn: "",
+    org_business_number_label: "ABN",
     org_logo: null,
     org_icon: null,
     org_tax_rate: 10,
     org_tax_label: "GST",
+    org_invoice_heading: "TAX INVOICE",
     org_branding: undefined,
     org_document_color: "#0d4f4f",
     project_number: "PRJ-001",
@@ -464,6 +466,61 @@ describe("composeDocument — invoice T&Cs, payment details, ABN, due date", () 
     const totalsSchema = result.template.schemas[0].find((s) => s.type === "gearflowFinancialSummary")!;
     const totalsConfig = JSON.parse(result.inputs[0][totalsSchema.name as string]);
     expect(totalsConfig.dueDate).toBeUndefined();
+  });
+});
+
+describe("composeDocument — country-derived labels (I4, #1083)", () => {
+  const soloData = (overrides: Partial<DocumentData> = {}) =>
+    makeData({
+      line_items: [makeLineItem({ id: "only-item", status: "CHECKED_OUT", checkedOutQuantity: 1, model: { name: "Solo Item" } })],
+      ...overrides,
+    });
+
+  it("uses the AU 'TAX INVOICE' heading and 'ABN' label by default (byte-for-byte pre-#1083 AU rendering)", () => {
+    const result = composeDocument("invoice", soloData({ org_abn: "12 345 678 901" }), "#0d4f4f");
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.docTitle).toBe("TAX INVOICE");
+    expect(headerConfig.orgDetails).toContain("ABN: 12 345 678 901");
+  });
+
+  it("a US org's invoice renders the generic 'INVOICE' heading, not the AU-legal 'TAX INVOICE'", () => {
+    const result = composeDocument(
+      "invoice",
+      soloData({ org_invoice_heading: "INVOICE" }),
+      "#0d4f4f",
+    );
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.docTitle).toBe("INVOICE");
+  });
+
+  it("non-invoice doc types never take the org_invoice_heading override — QUOTE stays QUOTE", () => {
+    const result = composeDocument("quote", soloData({ org_invoice_heading: "INVOICE" }), "#0d4f4f");
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.docTitle).toBe("QUOTE");
+  });
+
+  it("a GB org's business number renders as 'VAT number', not 'ABN' — both the org's own and the client's", () => {
+    const result = composeDocument(
+      "invoice",
+      soloData({
+        org_business_number_label: "VAT number",
+        org_abn: "GB123456789",
+        client_tax_id: "GB987654321",
+      }),
+      "#0d4f4f",
+    );
+    const headerSchema = result.template.schemas[0].find((s) => s.type === "gearflowPageHeader")!;
+    const headerConfig = JSON.parse(result.inputs[0][headerSchema.name as string]);
+    expect(headerConfig.orgDetails).toContain("VAT number: GB123456789");
+    expect(headerConfig.orgDetails).not.toContain("ABN:");
+
+    const clientColSchema = result.template.schemas[0].find((s) => String(s.name).endsWith("_client"))!;
+    const clientColText = result.inputs[0][clientColSchema.name as string];
+    expect(clientColText).toContain("VAT number: GB987654321");
+    expect(clientColText).not.toContain("ABN:");
   });
 });
 

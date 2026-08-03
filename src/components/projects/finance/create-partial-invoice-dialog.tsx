@@ -18,36 +18,44 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-interface CreateDepositInvoiceDialogProps {
+interface CreatePartialInvoiceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
   clientId: string;
   /** The client's `profileDepositPercent` (or 25) — the % field's default. */
   defaultDepositPercent: number;
-  /** The project's current tax-inclusive total — bounds the $ mode input and
-   *  is shown as a hint (R-9.3: not sent to the server, just a UI hint). */
+  /** The project's current tax-inclusive total — the basis the % mode
+   *  computes against (R-9.3: not sent to the server, just a UI hint). */
   projectTotal: number;
+  /** What's left to invoice (project total minus every prior non-VOID
+   *  partial/remaining invoice) — bounds both modes, since a project can now
+   *  carry several partial invoices before the remainder is raised. */
+  remainingAmount: number;
   onCreated?: () => void;
 }
 
 /**
- * Deposit invoice creation (#1055) — the two ways an operator can size a
- * DEPOSIT invoice: a percentage of the project's tax-inclusive total (the
- * original, still-default behaviour), or a fixed dollar amount. The server
- * (`invoicesWrites.ts createNative`) re-derives total/tax from whichever mode
- * is submitted and re-validates the $ bound — this dialog's own bound is UX
- * only.
+ * Partial invoice creation — was "deposit invoice" (#1055) before the rigid
+ * deposit-then-balance sequencing was dropped in favour of a menu of
+ * invoicing actions. The two ways an operator can size a slice of the
+ * project: a percentage of the project's tax-inclusive total (the original,
+ * still-default behaviour), or a fixed dollar amount. Not capped at one — a
+ * project can carry several of these before the remaining balance is raised.
+ * The server (`invoicesWrites.ts createNative`) re-derives total/tax from
+ * whichever mode is submitted and re-validates the bound against what's
+ * actually left — this dialog's own bound is UX only.
  */
-export function CreateDepositInvoiceDialog({
+export function CreatePartialInvoiceDialog({
   open,
   onOpenChange,
   projectId,
   clientId,
   defaultDepositPercent,
   projectTotal,
+  remainingAmount,
   onCreated,
-}: CreateDepositInvoiceDialogProps) {
+}: CreatePartialInvoiceDialogProps) {
   const invoiceWrites = useInvoiceWrites();
   const [mode, setMode] = useState<"%" | "$">("%");
   const [percentValue, setPercentValue] = useState(String(defaultDepositPercent));
@@ -82,23 +90,25 @@ export function CreateDepositInvoiceDialog({
         depositPercent: mode === "%" ? Number(percentValue) : undefined,
         depositAmount: mode === "$" ? Number(amountValue) : undefined,
       });
-      toast.success("Deposit invoice draft created");
+      toast.success("Partial invoice draft created");
       onCreated?.();
       handleOpenChange(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create deposit invoice");
+      setError(e instanceof Error ? e.message : "Failed to create partial invoice");
     } finally {
       setCreating(false);
     }
   }
 
-  const invalid = mode === "%" ? !(Number(percentValue) > 0) : !(Number(amountValue) > 0 && Number(amountValue) <= projectTotal);
+  const invalid =
+    (mode === "%" ? !(Number(percentValue) > 0) : !(Number(amountValue) > 0 && Number(amountValue) <= remainingAmount)) ||
+    previewTotal > remainingAmount + 0.01;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Create deposit invoice</DialogTitle>
+          <DialogTitle>Create partial invoice</DialogTitle>
           <DialogDescription>Draft only — nothing is numbered or sent until you issue it.</DialogDescription>
         </DialogHeader>
 
@@ -121,9 +131,9 @@ export function CreateDepositInvoiceDialog({
 
           {mode === "%" ? (
             <div className="space-y-1.5">
-              <Label htmlFor="deposit-percent">% of project total</Label>
+              <Label htmlFor="partial-percent">% of project total</Label>
               <Input
-                id="deposit-percent"
+                id="partial-percent"
                 type="number"
                 min={0}
                 max={100}
@@ -134,25 +144,31 @@ export function CreateDepositInvoiceDialog({
             </div>
           ) : (
             <div className="space-y-1.5">
-              <Label htmlFor="deposit-amount">Deposit amount</Label>
+              <Label htmlFor="partial-amount">Invoice amount</Label>
               <Input
-                id="deposit-amount"
+                id="partial-amount"
                 type="number"
                 min={0}
-                max={projectTotal}
+                max={remainingAmount}
                 step="0.01"
                 value={amountValue}
                 onChange={(e) => setAmountValue(e.target.value)}
                 placeholder="0.00"
               />
-              <p className="t-micro text-fg-4">Project total is {formatCurrency(projectTotal)}.</p>
             </div>
           )}
+          <p className="t-micro text-fg-4">{formatCurrency(remainingAmount)} remaining of {formatCurrency(projectTotal)} total.</p>
 
           <div className="flex justify-between rounded-[var(--radius)] border border-line px-3 py-2.5 text-sm font-medium">
-            <span>This deposit</span>
+            <span>This invoice</span>
             <span className="tabular-nums">{formatCurrency(previewTotal)}</span>
           </div>
+
+          {previewTotal > remainingAmount + 0.01 && (
+            <p role="alert" className="rounded-[var(--radius)] border-l-[3px] border-l-t-out bg-out-soft px-3 py-2 text-sm text-t-out">
+              This exceeds the {formatCurrency(remainingAmount)} remaining balance.
+            </p>
+          )}
 
           {error && (
             <p role="alert" className="rounded-[var(--radius)] border-l-[3px] border-l-t-out bg-out-soft px-3 py-2 text-sm text-t-out">

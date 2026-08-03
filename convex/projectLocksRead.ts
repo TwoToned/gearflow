@@ -4,7 +4,7 @@ import { requireOrgPermission } from "./lib/auth";
 import { getOpenUnlockSession, isHardLockOverrideAllowed, resolveLockTier } from "./lib/projectLocks";
 import { getAuthContext } from "./lib/auth";
 import { collectCurrentEntries } from "./lib/projectSnapshots";
-import { effectiveQuoteStatus, findQuoteAtRevision, projectRevision } from "./lib/quoteState";
+import { effectiveQuoteStatus, findQuoteAtRevision, projectLiveRevision, projectRevision } from "./lib/quoteState";
 
 const ENTRY_RETURNS = v.array(
   v.object({
@@ -52,6 +52,11 @@ export const status = query({
       // so Phase E can render one coherent banner from this single query instead
       // of a second round trip.
       revision: v.number(),
+      // #1080/#1100 — the LIVE revision (`projectLiveRevision`), separate from
+      // `revision` (the allocator) once a promote has moved them apart. The
+      // QUOTE_SENT escalation below is resolved against THIS number, not
+      // `revision` — see `assertLifecycleGuard`'s matching fix.
+      liveRevision: v.number(),
       quoteState: v.union(
         v.null(),
         v.literal("DRAFT"),
@@ -86,7 +91,10 @@ export const status = query({
     if (!project || project.organizationId !== orgId) return null;
 
     const revision = projectRevision(project);
-    const currentQuote = await findQuoteAtRevision(ctx, orgId, projectId, revision);
+    const liveRevision = projectLiveRevision(project);
+    // The QUOTE_SENT escalation is about the LIVE revision's quote — not the
+    // allocator's high-water mark, which a promote can leave ahead of it.
+    const currentQuote = await findQuoteAtRevision(ctx, orgId, projectId, liveRevision);
     const quoteState = currentQuote ? effectiveQuoteStatus(currentQuote, now ?? 0) : null;
     const { tier, reason } = resolveLockTier({ status: project.status, quoteState });
     const session = await getOpenUnlockSession(ctx, orgId, projectId);
@@ -100,6 +108,7 @@ export const status = query({
       tier,
       reason,
       revision,
+      liveRevision,
       quoteState,
       canOverrideHardLock,
       openSession: session

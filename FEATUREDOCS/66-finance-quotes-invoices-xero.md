@@ -78,21 +78,32 @@ groupName || "Line item"`. A hand-typed `description` still always wins
 rather than leaking a foreign org's model name.
 
 - **FULL** invoice: the project's full `subtotal`/`taxAmount`/`total`, full
-  line breakdown.
-- **DEPOSIT** invoice: either a % of the tax-**inclusive** total (matches the
-  pre-#940 display math, still the default), or — #1055 — a fixed dollar
-  amount. `depositMode` (`"%" | "$"`) records which one was entered; absent =
-  `"%"` (every pre-#1055 row, same "absent means the only mode that existed"
-  convention `discountMode` established). Both compute the SAME proportional
-  GST fraction from the project's tax rate — a real tax invoice either way,
-  not a placeholder line. `$` mode is capped at the project's current total
-  (rejected server-side if the entered amount exceeds it). % defaults to the
-  client's `profileDepositPercent` (or 25) when not overridden at creation;
-  `depositAmount` has no such default — it must be entered.
-- **BALANCE** invoice: server-computed as `total - Σ(non-VOID DEPOSIT
-  invoices)`, never a client-supplied figure. This nets against each prior
-  deposit's `total` regardless of whether it was entered as `%` or `$` — no
-  special-casing needed for the mix.
+  line breakdown. Offered as "Remaining balance" the first time anything is
+  invoiced on a project (nothing raised yet).
+- **DEPOSIT** invoice — user-facing label **"Partial balance"** (renamed when
+  the rigid deposit-then-balance sequencing was dropped, see "Invoice menu:
+  partial + remaining balance" below; the Convex `kind` value is unchanged):
+  either a % of the tax-**inclusive** total (matches the pre-#940 display
+  math, still the default), or — #1055 — a fixed dollar amount. `depositMode`
+  (`"%" | "$"`) records which one was entered; absent = `"%"` (every
+  pre-#1055 row, same "absent means the only mode that existed" convention
+  `discountMode` established). Both compute the SAME proportional GST
+  fraction from the project's tax rate — a real tax invoice either way, not a
+  placeholder line. **Not capped at one per project** — a project can carry
+  several partials before the remainder is raised. Both `$` and `%` modes are
+  capped at what's actually LEFT to invoice (project total minus every prior
+  non-VOID DEPOSIT/BALANCE invoice's total, `priorPartialTotal` in
+  `invoicesWrites.ts`), not the full project total again — rejected
+  server-side if the entered amount/percentage would push the running total
+  past the project's worth. % defaults to the client's `profileDepositPercent`
+  (or 25) when not overridden at creation; `depositAmount` has no such
+  default — it must be entered.
+- **BALANCE** invoice — user-facing label **"Remaining balance"**: server-
+  computed as `total - Σ(non-VOID DEPOSIT/BALANCE invoices)`, never a
+  client-supplied figure. This nets against every prior partial's `total`
+  regardless of whether it was entered as `%` or `$` — no special-casing
+  needed for the mix. Rejected server-side (`INVALID_STATE`) when nothing is
+  left to invoice, rather than creating a pointless $0 invoice.
 - **CREDIT** invoice: negates an already-`ISSUED` invoice's amounts
   (`creditForInvoiceId` back-reference).
 
@@ -609,10 +620,10 @@ overflow menu (`invoiceRowMenuActions` in `project-finance-panel.tsx`).
 > **#1061 update — the Finance tab is now the LEDGER, not the front door.**
 > The project's Overview tab carries a paired **Quote** / **Invoicing** card
 > pair showing the CURRENT position with only the single next action each
-> (send the open draft / record the client's answer; raise the next invoice /
-> record a payment). Everything else — the full revision rail, recall,
-> correction, delete, reprice, the revision viewer and diff, issuing, voiding,
-> crediting, Xero push, the invoice and payment lists, `FinancialSummary` and
+> (send the open draft / record the client's answer; raise an invoice / record
+> a payment). Everything else — the full revision rail, recall, correction,
+> delete, reprice, the revision viewer and diff, issuing, voiding, crediting,
+> Xero push, the invoice and payment lists, `FinancialSummary` and
 > `ProjectCostsPanel` — stays here, and this tab remains the single owner of
 > those workflows. The Overview cards open the SAME dialog components
 > `ProjectQuoteRail` uses, never reimplementations.
@@ -623,12 +634,32 @@ overflow menu (`invoiceRowMenuActions` in `project-finance-panel.tsx`).
 > freeze); and there is no accepted-quote gate on invoice creation, because
 > `invoicesWrites.ts` has none — the card must not claim one.
 >
-> The nudge chip below and the Overview card's "next invoice" button now read
-> ONE shared derivation, `deriveInvoicingState`
-> (`src/lib/project-invoicing-state.ts`), rather than two copies of the
-> deposit-before-balance conditions (R-3.1). The affordance is deliberately in
-> both places — someone working in the ledger shouldn't have to bounce to
-> Overview to raise the next invoice — but the RULE cannot drift.
+> **Invoice menu: partial + remaining balance (replaces the old rigid
+> deposit-then-balance sequencing).** A client's `paymentProfile` used to
+> FORCE the sequence: `DEPOSIT_BALANCE` clients could only ever raise a
+> deposit, then (once it was issued) a balance, in that order, nothing else
+> offered; `FULL_UPFRONT` clients got exactly one invoice. That's gone. Both
+> the nudge chip here and the Overview card now render an **"Invoice ▾"
+> menu** offering, independently, whenever there's anything left to invoice:
+> - **Partial balance…** — any % or $ slice the operator chooses
+>   (`CreatePartialInvoiceDialog`, kind `DEPOSIT`), offered any number of
+>   times — a project can carry several partials before the remainder is
+>   raised.
+> - **Remaining balance** — the server-computed rest (kind `FULL` the first
+>   time nothing's been invoiced yet, `BALANCE` once something has), no
+>   dialog needed.
+>
+> `paymentProfile`/`profileDepositPercent` no longer gate anything — they only
+> seed the partial dialog's default %, editable per client regardless of which
+> profile is selected. Both surfaces read ONE shared derivation,
+> `deriveInvoicingState` (`src/lib/project-invoicing-state.ts` —
+> `partialStep`/`remainingStep`), rather than two copies of the rule (R-3.1).
+> The affordance is deliberately in both places — someone working in the
+> ledger shouldn't have to bounce to Overview to raise an invoice — but the
+> RULE cannot drift. Server-side, `createNative` bounds a partial's amount
+> against what's actually LEFT (not the full project total again), and
+> rejects a remaining-balance invoice when there's nothing left — see the
+> invoice-kind section above.
 >
 > `StalePricingBanner`'s signal also moved: stale auto-pricing is now a row in
 > Overview's Readiness checklist, with the same inline "Recalculate" action.

@@ -2,7 +2,7 @@ import { ConvexError } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { assertStrLen } from "./fieldGuards";
-import { currentRevisionQuoteStatus, projectRevision, type EffectiveQuoteStatus } from "./quoteState";
+import { currentRevisionQuoteStatus, projectLiveRevision, type EffectiveQuoteStatus } from "./quoteState";
 
 /**
  * Project lifecycle lock-tier module (#957) — the SINGLE source of truth for the
@@ -73,7 +73,9 @@ export function isConfirmedOrLater(status: string | null | undefined): boolean {
  *  the right exit (Phase E). `STATUS` covers both "nothing is locked" and
  *  every status-driven tier (FINANCE_LOCKED/JUSTIFY/HARD_LOCKED via CONFIRMED+);
  *  `QUOTE_SENT` is the one new case — an OPEN-status project (ENQUIRY/QUOTING/
- *  QUOTED) whose current revision has already gone out. */
+ *  QUOTED) whose LIVE revision (`projectLiveRevision`, #1080/#1085 — not
+ *  necessarily the allocator's high-water mark once a promote has moved them
+ *  apart) has already gone out. */
 export type LockTierReason = "STATUS" | "QUOTE_SENT";
 
 export interface ResolveLockTierResult {
@@ -289,25 +291,33 @@ export function requireJustification(justification: string | null | undefined, m
  *    prompt); otherwise requires a bounded justification.
  *
  * #988 (Phase C) folds one more input into the SAME tier: an OPEN-status
- * project (ENQUIRY/QUOTING/QUOTED) whose current revision has already been
+ * project (ENQUIRY/QUOTING/QUOTED) whose LIVE revision has already been
  * sent resolves to FINANCE_LOCKED too (`resolveLockTier`) — every rule above
  * still applies unchanged, just against a tier that can now come from either
  * source. The quote lookup only runs when the status tier is itself OPEN
  * (any higher tier already dominates — monotonic), so this adds no DB read to
  * the CONFIRMED+/ON_SITE+/COMPLETED+ paths that make up most gated writes.
+ * #1080/#1100 — looks up `projectLiveRevision(project)`, not the allocator: a
+ * promote can leave `revision` (the high-water mark) ahead of `liveRevision`,
+ * and it's the LIVE revision's quote that's actually with the client.
  *
  * Throws `ConvexError` with a stable `code` the client can branch on:
  * `PROJECT_LOCKED` | `FINANCIALS_LOCKED` | `JUSTIFICATION_REQUIRED`.
  */
 export async function assertLifecycleGuard(
   ctx: MutationCtx,
-  project: Pick<Doc<"projects">, "id" | "organizationId" | "status" | "revision">,
+  project: Pick<Doc<"projects">, "id" | "organizationId" | "status" | "revision" | "liveRevision">,
   opts: LifecycleGuardOptions,
 ): Promise<LifecycleGuardResult> {
   const statusTier = lockTierForStatus(project.status);
+  // #1080/#1100 — the quote-sent escalation checks the LIVE revision's quote
+  // state, never the allocator's. Post-promote, `revision` (the allocator) can
+  // sit ahead of `liveRevision` (e.g. a saved-but-never-sent v4 while v2 is the
+  // live, SENT revision) — checking the allocator would read that v4 DRAFT and
+  // wrongly resolve OPEN even though the live v2 is out with the client.
   const quoteState =
     statusTier === "OPEN" && !opts.bypassQuoteLock
-      ? await currentRevisionQuoteStatus(ctx, project.organizationId, project.id, projectRevision(project))
+      ? await currentRevisionQuoteStatus(ctx, project.organizationId, project.id, projectLiveRevision(project))
       : null;
   const { tier, reason } = resolveLockTier({ status: project.status, quoteState });
   if (tier === "OPEN") return { tier, reason, openSession: null, defaultToZero: false };

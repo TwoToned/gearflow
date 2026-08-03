@@ -21,6 +21,7 @@ import {
   SlidersHorizontal,
   Landmark,
   KeyRound,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -96,6 +97,7 @@ const settingsNav: SettingsNavSection[] = [
       // disconnecting Xero and editing coding defaults is a more sensitive
       // action than most org settings, restricted to owner/admin by default.
       { title: "Xero", href: "/settings/xero", icon: Landmark, permission: "invoice" },
+      { title: "Mira AI Assistant", href: "/settings/mira", icon: Sparkles, permission: "orgSettings" },
     ],
   },
   {

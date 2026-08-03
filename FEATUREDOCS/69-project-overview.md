@@ -59,22 +59,40 @@ check navigates you to the tab that fixes it.
 
 ## Readiness
 
-Six checks, always rendered — including the passing ones. This is a departure
-from the banners it replaces (`ProjectConflictsBanner`, `StalePricingBanner`),
-and the reason is worth keeping: a hide-when-clean banner gives zero noise but
-also zero reassurance, and a component that appears and disappears makes the
-page jump. When every check passes the panel collapses to a single line with a
-"Show checks" toggle, so the rows only cost anything when they have something
-to say.
+Five *possible* checks. All are always rendered when they apply — including
+the passing ones — but `services` and `crew` are dropped from the list
+entirely when they're not relevant to this project (2026-08), rather than
+rendered as a permanent "No services scheduled" / "No crew assigned yet" pass
+row:
 
-| Check | Source | Severity |
-|---|---|---|
-| Gear short for this window | `projectReadiness.forProject` | `blocking` (hard) / `warning` (pencilled) |
-| Assets double-booked | `reservationConflicts.projectConflicts` | `blocking` |
-| Services not confirmed / short of crew | `projectReadiness.forProject` | `warning` |
-| Crew unconfirmed | `projectReadiness.forProject` | `warning` |
-| Lines unpriced | `projectReadiness.forProject` | `warning` |
-| Pricing stale for these dates | `lineItemWrites.projectPricingStaleness` | `warning` |
+- `services` renders only when `activeServiceCount > 0` — a job with no
+  services scheduled has nothing there to check.
+- `crew` renders only when `activeCount > 0` — a job with nobody assigned has
+  nothing to chase.
+
+For everything that DOES apply, showing the passing rows (not just the
+failing ones) is still deliberate: this is a departure from the hide-when-clean
+banner it replaces (`ProjectConflictsBanner`), and the reason is worth
+keeping — a hide-when-clean banner gives zero noise but also zero reassurance,
+and a component that appears and disappears makes the page jump. When every
+applicable check passes the panel collapses to a single line with a
+"Show checks" toggle, so the rows only cost anything when they have something
+to say. The distinction is "does this dimension apply to the job" (hide) vs.
+"does this dimension currently have a problem" (always show, pass or fail).
+
+There is no "Pricing stale for these dates" check on this panel. It used to
+duplicate `lineItemWrites.projectPricingStaleness`, which is already surfaced
+on the Finance tab by `StalePricingBanner` — a second copy of the same fact in
+two places was a straight R-3.1 violation, not a distinct signal, so it was
+cut (2026-08) rather than kept "for reassurance."
+
+| Check | Source | Severity | Hidden when |
+|---|---|---|---|
+| Gear short for this window | `projectReadiness.forProject` | `blocking` (hard) / `warning` (pencilled) | never |
+| Assets double-booked | `reservationConflicts.projectConflicts` | `blocking` | never |
+| Services not confirmed / short of crew | `projectReadiness.forProject` | `warning` | no active services |
+| Crew unconfirmed | `projectReadiness.forProject` | `warning` | no crew assigned |
+| Lines unpriced | `projectReadiness.forProject` | `warning` | never |
 
 **Services and crew are separate checks** (#1063). "The bump-in isn't locked in"
 and "Dave hasn't replied to the offer" are different problems with different
@@ -92,8 +110,11 @@ awaiting a yes).
   (committed) vs "would be short if you confirm" (pencilled). An unconfirmed
   project's own demand is pencilled *by definition*, so collapsing these would
   cry wolf on every enquiry.
-- **"No crew assigned yet" ≠ "All crew confirmed."** Both pass, but the first
-  must not imply a roster exists.
+- **A row that doesn't apply doesn't render, at all** — not even as a quiet
+  pass. Unlike the removed hide-when-clean banners, this isn't ambiguous with
+  "not checked yet": the row genuinely never existed for a project with no
+  crew/services, vs. `unknown`, which means a check ran and couldn't answer.
+  Don't conflate "hidden because N/A" with "unknown."
 - **`DECLINED`/`CANCELLED` are settled-no, not unconfirmed.** A decline shrinks
   the active count (the service is a head short) rather than inflating the
   chase-up count — there's nobody left to chase on that row.
@@ -102,12 +123,14 @@ awaiting a yes).
   already underway; `CANCELLED` drops out of both the flagged list and the
   denominator. An absent status reads as `PLANNED` (the pre-status default).
 - **Order is fixed, not severity-sorted**, so rows don't reshuffle under the
-  cursor as problems resolve. Only the marks change.
+  cursor as problems resolve. Only the marks change. A row rejoining the list
+  (crew gets assigned mid-session) inserts back at its fixed position, not at
+  the end.
 
 Each failing row carries the action that fixes it: gear → `/overbookings`
 (where a shortage is actually resolved), conflicts → expands **inline** to the
 swap-to-a-free-asset picker, services and crew → the Labour tab, unpriced →
-Equipment, stale → an inline "Recalculate".
+Equipment.
 
 ## Finance cards
 
@@ -139,7 +162,7 @@ convex/lib/projectReadiness.ts   — pure aggregation (no ctx.db), unit-tested
 convex/projectReadiness.ts       — the `forProject` query (bounded reads, R-9.8)
 src/lib/project-readiness-checks.ts  — severity/wording/ordering (plain module)
 src/lib/project-invoicing-state.ts   — invoicing position + next step
-src/hooks/use-project-readiness.ts   — fans three sources into one check list
+src/hooks/use-project-readiness.ts   — fans two sources into one check list
 src/components/projects/project-readiness-panel.tsx
 src/lib/project-context.ts           — schedule rows + directions, shared by BOTH renderings
 src/components/projects/project-context-rail.tsx     — the sidebar (every tab but Overview)
@@ -149,19 +172,23 @@ src/components/projects/overview/{quote-card,invoicing-card,card-parts,context-c
 
 ### One rule, one home (R-3.1)
 
-The readiness query deliberately does **not** re-implement two checks that
-already had exactly one home each — the panel subscribes to their existing
-queries alongside it:
+The readiness query deliberately does **not** re-implement a check that
+already had exactly one home — the panel subscribes to its existing query
+alongside `projectReadiness.forProject`:
 
 - double-booked assets → `reservationConflicts.projectConflicts`
-- stale auto-pricing → `lineItemWrites.projectPricingStaleness`
+
+Stale auto-pricing (`lineItemWrites.projectPricingStaleness`) is the inverse
+case: it already had exactly one home (`StalePricingBanner`, Finance tab), so
+the readiness panel does NOT also subscribe to it — that would have been the
+duplication this rule exists to prevent, not an application of it.
 
 Three duplications were collapsed while building this, rather than added to:
 
 | Rule | Was | Now |
 |---|---|---|
 | "which shortages are this project's problem" | inline in `overbookingConfirmImpact.ts` | `ownGearModelIds`, shared with the confirm gate |
-| deposit-before-balance next step | inline JSX in `project-finance-panel.tsx` | `deriveInvoicingState`, shared with the Overview card |
+| which invoice actions to offer (partial balance / remaining balance) | inline JSX in `project-finance-panel.tsx` | `deriveInvoicingState`, shared with the Overview card |
 | `intentToBadgeStatus` | two byte-identical private copies | `src/lib/status-colors.ts` |
 
 ### Reactivity

@@ -70,11 +70,24 @@ function describeCurated(def: CuratedToolDef, op: RegistryOperation): string {
   return parts.join(" ");
 }
 
+const CONFIRM_SCHEMA: JsonSchema = {
+  type: "boolean",
+  description:
+    'Required (must be `true`) to actually run this call — it is classified HIGH danger. Omit it first: the call ' +
+    "fails with `CONFIRMATION_REQUIRED` and a human-legible summary of what it would do; show that to a human, then " +
+    "re-send the identical call with `confirm: true`.",
+};
+
 function curatedInputSchema(op: RegistryOperation): JsonSchema {
   const schema = argsObjectSchema(op);
   if (op.kind !== "mutation") return schema;
-  const properties = { ...(schema.properties as Record<string, JsonSchema>), idempotencyKey: IDEMPOTENCY_KEY_SCHEMA };
+  const properties: Record<string, JsonSchema> = { ...(schema.properties as Record<string, JsonSchema>), idempotencyKey: IDEMPOTENCY_KEY_SCHEMA };
   const required = [...((schema.required as string[]) ?? []), "idempotencyKey"];
+  // Only a danger:"high" op can ever be gated by CONFIRMATION_REQUIRED
+  // (dispatcher.ts's effectiveDanger) — advertising `confirm` on every
+  // mutation would suggest it does something on ops where it's a silent
+  // no-op input `additionalProperties: false` would reject anyway.
+  if (op.danger === "high") properties.confirm = CONFIRM_SCHEMA;
   return { ...schema, properties, required };
 }
 

@@ -764,3 +764,81 @@ describe("#988 quote-derived lock tier", () => {
     expect(status?.quoteState).toBeNull();
   });
 });
+
+/**
+ * #1080/#1100 (Phase 5) — the QUOTE_SENT escalation must check the LIVE
+ * revision's quote (`projectLiveRevision`), never the allocator's
+ * (`projectRevision`, the high-water mark). Once a promote (#1089) has moved
+ * `liveRevision` behind `revision` — e.g. a saved-but-never-sent v4 sitting
+ * ahead of a promoted, SENT, live v2 — checking the allocator would read v4's
+ * still-DRAFT quote and wrongly resolve OPEN even though v2 is out with the
+ * client. This is the exact scenario recall-to-edit (Phase 5) has to gate
+ * correctly: editing a promoted SENT revision must be refused (FINANCE_LOCKED)
+ * so the recall-to-edit exit is even reachable.
+ */
+describe("#1080/#1100 the quote-sent lock follows liveRevision, not the allocator", () => {
+  type QuoteStatus = "DRAFT" | "SENT" | "ACCEPTED" | "DECLINED" | "SUPERSEDED" | "EXPIRED" | "PUBLISHED";
+  async function quoteAt(t: ReturnType<typeof makeT>, version: number, status: QuoteStatus, extra: Record<string, unknown> = {}) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", {
+        id: `q${version}`, organizationId: ORG, projectId: "p1", version, status,
+        snapshot: null, ...extra,
+      });
+    });
+  }
+
+  test("a promoted (non-allocator-max) live revision that's SENT still locks money fields", async () => {
+    const t = makeT();
+    await member(t, "member");
+    // revision (allocator) sits at 4 — v3/v4 were saved-but-never-sent
+    // versions — while liveRevision points back at v2, the promoted, SENT
+    // revision actually live on the project (design decision 1).
+    await project(t, "QUOTED", { revision: 4, liveRevision: 2 });
+    await quoteAt(t, 1, "SUPERSEDED");
+    await quoteAt(t, 2, "SENT", { sentAt: NOW });
+    await quoteAt(t, 3, "DRAFT");
+    await quoteAt(t, 4, "DRAFT");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false });
+    });
+    await expect(
+      t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
+        id: "li1", orgId: ORG, set: { unitPrice: 200 }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
+      }),
+    ).rejects.toThrow(/FINANCIALS_LOCKED|locked/i);
+  });
+
+  test("projectLocksRead.status reports the LIVE revision's quote state and both revision numbers", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await project(t, "QUOTED", { revision: 4, liveRevision: 2 });
+    await quoteAt(t, 2, "SENT", { sentAt: NOW });
+    await quoteAt(t, 4, "DRAFT");
+    const status = await t.withIdentity(asUser()).query(api.projectLocksRead.status, { projectId: "p1", orgId: ORG });
+    expect(status?.tier).toBe("FINANCE_LOCKED");
+    expect(status?.reason).toBe("QUOTE_SENT");
+    expect(status?.revision).toBe(4);
+    expect(status?.liveRevision).toBe(2);
+    expect(status?.quoteState).toBe("SENT");
+  });
+
+  test("a promoted live revision that's still DRAFT (never sent) stays OPEN even with a SENT row at the allocator's max", async () => {
+    const t = makeT();
+    await member(t, "member");
+    // Inverse of the bug: liveRevision (2) is an unsent DRAFT, while the
+    // allocator's max (v4) happens to be SENT. The lock must follow the LIVE
+    // revision and stay OPEN — a SENT row elsewhere never leaks in.
+    await project(t, "QUOTED", { revision: 4, liveRevision: 2 });
+    await quoteAt(t, 2, "DRAFT");
+    await quoteAt(t, 4, "SENT", { sentAt: NOW });
+    await t.withIdentity(asUser()).mutation(api.lineItemWrites.addCustomNative, {
+      id: "li1", organizationId: ORG, projectId: "p1",
+      fields: { description: "Extra cable", quantity: 1, unitPrice: 500 },
+      actor: ACTOR, auditId: "log1", now: NOW,
+    });
+    await t.run(async (ctx) => {
+      const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first();
+      expect(Number(li?.unitPrice)).toBe(500); // not $0-defaulted — the project read as OPEN
+    });
+  });
+});

@@ -90,7 +90,8 @@ async function handleCallOperation(
   if (!operation) return errorToolResult('call_operation requires a string "operation" argument.', "VALIDATION_FAILED");
   const opArgs = args.args && typeof args.args === "object" && !Array.isArray(args.args) ? (args.args as Record<string, unknown>) : {};
   const idempotencyKey = typeof args.idempotencyKey === "string" ? args.idempotencyKey : undefined;
-  const result = await dispatch(operation, { args: opArgs, idempotencyKey }, opts.authorizationHeader, opts.requestId);
+  const confirm = typeof args.confirm === "boolean" ? args.confirm : undefined;
+  const result = await dispatch(operation, { args: opArgs, idempotencyKey, confirm }, opts.authorizationHeader, opts.requestId);
   return dispatchResultToToolResult(result);
 }
 
@@ -99,10 +100,21 @@ async function handleCuratedTool(entry: McpToolManifestEntry, args: Record<strin
     // The only operation:null curated tool is whoami, handled before this is reached.
     return errorToolResult(`Tool "${entry.name}" has no underlying operation.`, "UNKNOWN_OPERATION");
   }
-  const { idempotencyKey, ...opArgs } = args;
+  // `confirm` must be hoisted to the envelope's TOP LEVEL (a sibling of `args`,
+  // per dispatcher.ts's envelopeSchema) — it's not a business arg. Leaving it
+  // nested inside `opArgs` (as a previous version of this function did) meant
+  // `envelope.confirm` was always undefined, so a danger:"high" curated tool
+  // could never satisfy the CONFIRMATION_REQUIRED gate: re-sending "the
+  // identical call with confirm: true" would 409 forever. Same fix as
+  // `idempotencyKey`'s existing destructuring, one line below.
+  const { idempotencyKey, confirm, ...opArgs } = args;
   const result = await dispatch(
     entry.operation,
-    { args: opArgs, idempotencyKey: typeof idempotencyKey === "string" ? idempotencyKey : undefined },
+    {
+      args: opArgs,
+      idempotencyKey: typeof idempotencyKey === "string" ? idempotencyKey : undefined,
+      confirm: typeof confirm === "boolean" ? confirm : undefined,
+    },
     opts.authorizationHeader,
     opts.requestId,
   );

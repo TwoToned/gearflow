@@ -82,6 +82,10 @@ export const revisionStateForProject = query({
             sentAt: live.quote.sentAt ?? live.quote.publishedAt ?? null,
             validUntil: live.quote.validUntil ?? null,
             snapshotId: live.quote.snapshotId ?? null,
+            // #1080/#1100 — the recall-to-edit dialog needs this to decide
+            // between "Recall vN and edit" and the un-protect explanation
+            // without a second round trip.
+            protected: live.quote.protected ?? false,
           }
         : null,
     };

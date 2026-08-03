@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Wallet } from "lucide-react";
+import { ChevronDown, Plus, Wallet } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../../convex/_generated/api";
@@ -19,7 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/card";
 import { CanDo } from "@/components/auth/permission-gate";
-import { CreateDepositInvoiceDialog } from "@/components/projects/finance/create-deposit-invoice-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { CreatePartialInvoiceDialog } from "@/components/projects/finance/create-partial-invoice-dialog";
 import { RecordPaymentDialog } from "@/components/projects/finance/record-payment-dialog";
 import { OverviewCardHeader, OverviewAmount, OverviewMetaList, OverviewActions } from "./card-parts";
 
@@ -55,27 +56,25 @@ function moneyRows(state: InvoicingState) {
 
 interface InvoicingView {
   state: InvoicingState;
-  paymentProfile: string;
   depositPercent: number;
   clientName: string | undefined;
 }
 
 /**
  * The card's inputs, resolved from the two reads. `null` while either is still
- * loading. The profile defaults mirror `project-finance-panel.tsx`'s — a client
- * with no stated profile is invoiced in full, and 25% is the deposit default.
+ * loading. `profileDepositPercent` (default 25) only seeds the partial-invoice
+ * dialog's default % — it no longer gates which invoice actions are offered
+ * (that rigidity was dropped; see project-invoicing-state.ts).
  */
 function deriveInvoicingView(
   invoices: unknown[] | undefined,
-  client: { paymentProfile?: unknown; profileDepositPercent?: unknown; name?: unknown } | null | undefined,
+  client: { profileDepositPercent?: unknown; name?: unknown } | null | undefined,
   total: number | null,
 ): InvoicingView | null {
   if (invoices === undefined || client === undefined) return null;
-  const paymentProfile = (client?.paymentProfile as string | undefined) ?? "FULL_UPFRONT";
   const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
   return {
-    state: deriveInvoicingState(invoices as InvoiceLike[], paymentProfile, depositPercent, total),
-    paymentProfile,
+    state: deriveInvoicingState(invoices as InvoiceLike[], depositPercent, total),
     depositPercent,
     clientName: client?.name as string | undefined,
   };
@@ -103,20 +102,15 @@ function LoadingPanel() {
 function InvoicingCardBody({
   state,
   clientName,
-  paymentProfile,
   depositPercent,
 }: {
   state: InvoicingState;
   clientName: string | undefined;
-  paymentProfile: string;
   depositPercent: number;
 }) {
   const { latestIssued } = state;
   const nothingRaised = state.liveInvoices.length === 0;
-  const terms =
-    paymentProfile === "DEPOSIT_BALANCE"
-      ? `${clientName ?? "This client"} is on ${depositPercent}% deposit terms.`
-      : `${clientName ?? "This client"} is invoiced in full.`;
+  const terms = `${clientName ?? "This client"}'s partial invoices default to ${depositPercent}%.`;
 
   return (
     <div className="flex-1 px-4 py-3.5">
@@ -173,20 +167,25 @@ function payTargetFor(inv: InvoiceLike): PayTarget {
   };
 }
 
-/** The next invoice to raise, plus a payment to record if one is outstanding. */
+/** The invoice menu (partial / remaining balance), plus a payment to record if
+ *  one is outstanding. Both actions can be available at once — a project can
+ *  carry several partial invoices before the remaining balance is raised, in
+ *  any order (#1061 redesign — no more forced deposit-then-balance sequence). */
 function InvoicingActions({
-  nextStep,
+  partialStep,
+  remainingStep,
   unpaidIssued,
   hasInvoices,
-  onCreateDeposit,
+  onCreatePartial,
   onCreateInvoice,
   onRecordPayment,
   onOpenLedger,
 }: {
-  nextStep: InvoicingState["nextStep"];
+  partialStep: InvoicingState["partialStep"];
+  remainingStep: InvoicingState["remainingStep"];
   unpaidIssued: InvoiceLike | undefined;
   hasInvoices: boolean;
-  onCreateDeposit: () => void;
+  onCreatePartial: () => void;
   onCreateInvoice: (kind: "FULL" | "BALANCE") => void;
   onRecordPayment: (inv: InvoiceLike) => void;
   onOpenLedger: () => void;
@@ -194,17 +193,28 @@ function InvoicingActions({
   return (
     <OverviewActions>
       <CanDo resource="invoice" action="create">
-        {nextStep.kind === "DEPOSIT" && (
-          <Button size="sm" className="h-7" onClick={onCreateDeposit}>
-            <Plus className="mr-1 size-3" />
-            {nextStep.label}
-          </Button>
-        )}
-        {(nextStep.kind === "BALANCE" || nextStep.kind === "FULL") && (
-          <Button size="sm" className="h-7" onClick={() => onCreateInvoice(nextStep.kind)}>
-            <Plus className="mr-1 size-3" />
-            {nextStep.label}
-          </Button>
+        {partialStep.kind === "NONE" && remainingStep.kind === "NONE" ? (
+          hasInvoices && <span className="text-caption text-faint">{partialStep.reason}</span>
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="h-7">
+                <Plus className="mr-1 size-3" />
+                Invoice
+                <ChevronDown className="ml-1 size-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {partialStep.kind === "DEPOSIT" && (
+                <DropdownMenuItem onClick={onCreatePartial}>Partial balance…</DropdownMenuItem>
+              )}
+              {remainingStep.kind !== "NONE" && (
+                <DropdownMenuItem onClick={() => onCreateInvoice(remainingStep.kind as "FULL" | "BALANCE")}>
+                  Remaining balance
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </CanDo>
       {unpaidIssued && (
@@ -218,11 +228,6 @@ function InvoicingActions({
       <Button variant="line" size="sm" className="h-7" onClick={onOpenLedger}>
         All invoices
       </Button>
-      {/* A dead button teaches nothing — when there's no next invoice to raise,
-          say why instead of showing a disabled control. */}
-      {nextStep.kind === "NONE" && hasInvoices && (
-        <span className="text-caption text-faint">{nextStep.reason}</span>
-      )}
     </OverviewActions>
   );
 }
@@ -235,13 +240,14 @@ function InvoicingActions({
  * separate row, because "not invoiced" and "invoiced but unpaid" are different
  * problems with different fixes.
  *
- * The next step comes from `deriveInvoicingState`, the same rule the Finance
- * tab's nudge chips read (R-3.1) — deposit before balance, one full invoice
- * otherwise. Issuing, voiding, crediting, Xero pushes and the full invoice
- * list stay in the Finance tab.
+ * The available actions come from `deriveInvoicingState`, the same rule the
+ * Finance tab's invoice menu reads (R-3.1) — a partial (any % or $ slice) and
+ * a remaining-balance invoice are both offered any time there's something
+ * left, in any order, any number of partials. Issuing, voiding, crediting,
+ * Xero pushes and the full invoice list stay in the Finance tab.
  */
 export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger }: InvoicingCardProps) {
-  const [depositOpen, setDepositOpen] = useState(false);
+  const [partialOpen, setPartialOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<{ id: string; number: string; balanceRemaining: number } | null>(null);
 
   const invoices = useAuthedQuery(api.invoices.listForProject, orgId ? { orgId, projectId } : "skip");
@@ -252,8 +258,8 @@ export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger 
   const view = deriveInvoicingView(invoices, client, total);
   if (!view) return <LoadingPanel />;
 
-  const { state, paymentProfile, depositPercent, clientName } = view;
-  const { nextStep } = state;
+  const { state, depositPercent, clientName } = view;
+  const { partialStep, remainingStep } = state;
 
   return (
     <Panel className="flex flex-col p-0">
@@ -262,18 +268,14 @@ export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger 
         badge={<Badge status={HEADLINE_BADGE[state.headline]}>{INVOICING_HEADLINE_LABEL[state.headline]}</Badge>}
       />
 
-      <InvoicingCardBody
-        state={state}
-        clientName={clientName}
-        paymentProfile={paymentProfile}
-        depositPercent={depositPercent}
-      />
+      <InvoicingCardBody state={state} clientName={clientName} depositPercent={depositPercent} />
 
       <InvoicingActions
-        nextStep={nextStep}
+        partialStep={partialStep}
+        remainingStep={remainingStep}
         unpaidIssued={state.firstUnpaidIssued ?? undefined}
         hasInvoices={state.liveInvoices.length > 0}
-        onCreateDeposit={() => setDepositOpen(true)}
+        onCreatePartial={() => setPartialOpen(true)}
         onCreateInvoice={(kind) => void createInvoiceDraft(invoiceWrites, projectId, clientId, kind)}
         onRecordPayment={(inv) => setPayTarget(payTargetFor(inv))}
         onOpenLedger={onOpenLedger}
@@ -284,8 +286,9 @@ export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger 
         clientId={clientId}
         depositPercent={depositPercent}
         total={total}
-        depositOpen={depositOpen}
-        onDepositOpenChange={setDepositOpen}
+        remainingAmount={state.notYetInvoiced ?? 0}
+        partialOpen={partialOpen}
+        onPartialOpenChange={setPartialOpen}
         payTarget={payTarget}
         onPayTargetChange={setPayTarget}
       />
@@ -304,8 +307,9 @@ function InvoicingDialogs({
   clientId,
   depositPercent,
   total,
-  depositOpen,
-  onDepositOpenChange,
+  remainingAmount,
+  partialOpen,
+  onPartialOpenChange,
   payTarget,
   onPayTargetChange,
 }: {
@@ -313,21 +317,23 @@ function InvoicingDialogs({
   clientId: string;
   depositPercent: number;
   total: number | null;
-  depositOpen: boolean;
-  onDepositOpenChange: (open: boolean) => void;
+  remainingAmount: number;
+  partialOpen: boolean;
+  onPartialOpenChange: (open: boolean) => void;
   payTarget: PayTarget | null;
   onPayTargetChange: (target: PayTarget | null) => void;
 }) {
   return (
     <>
-      {depositOpen && (
-        <CreateDepositInvoiceDialog
-          open={depositOpen}
-          onOpenChange={onDepositOpenChange}
+      {partialOpen && (
+        <CreatePartialInvoiceDialog
+          open={partialOpen}
+          onOpenChange={onPartialOpenChange}
           projectId={projectId}
           clientId={clientId}
           defaultDepositPercent={depositPercent}
           projectTotal={total ?? 0}
+          remainingAmount={remainingAmount}
         />
       )}
       {payTarget && (

@@ -8,6 +8,7 @@ import { Download } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
+import { formatDateWithTime } from "@/lib/formatters";
 import { exportActivityLogCSV } from "@/server/activity-log";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
@@ -119,7 +120,7 @@ function useActivityColumns(): ColumnDef<AnyLog>[] {
       mobile: "meta",
       cell: (row) => (
         <span className="whitespace-nowrap text-sm">
-          {format(new Date(row.createdAt), "MMM d, yyyy HH:mm")}
+          {formatDateWithTime(row.createdAt)}
         </span>
       ),
     },

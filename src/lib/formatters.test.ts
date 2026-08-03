@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { formatCurrency, formatDate, formatLabel, roundCurrency } from "./formatters";
+import {
+  formatCurrency,
+  formatDate,
+  formatDateDayMonth,
+  formatDateLong,
+  formatDateWithTime,
+  formatMonthYear,
+  formatLabel,
+  roundCurrency,
+  formatConfigFromOrgSettings,
+  DEFAULT_FORMAT_CONFIG,
+} from "./formatters";
 
 describe("formatCurrency", () => {
   it("formats positive whole number", () => {
@@ -40,6 +51,36 @@ describe("formatCurrency", () => {
   });
 });
 
+describe("formatCurrency — locale-aware (I2, #1081)", () => {
+  it("defaults to the exact pre-#1081 AU behaviour when no config is passed", () => {
+    expect(formatCurrency(1500)).toBe(formatCurrency(1500, DEFAULT_FORMAT_CONFIG));
+  });
+
+  it("renders GBP with the £ symbol", () => {
+    expect(formatCurrency(1234.5, { locale: "en-GB", currency: "GBP" })).toBe("£1,234.50");
+  });
+
+  it("renders USD with the $ symbol", () => {
+    expect(formatCurrency(1234.5, { locale: "en-US", currency: "USD" })).toBe("$1,234.50");
+  });
+
+  it("renders EUR with the € symbol, grouped per the locale (Ireland vs Germany)", () => {
+    expect(formatCurrency(1234.5, { locale: "en-IE", currency: "EUR" })).toBe("€1,234.50");
+    // German locale: decimal comma, thousands dot — the exact "1.234,56" case
+    // that motivated keeping decimalSeparator locale-keyed, not currency-keyed.
+    expect(formatCurrency(1234.5, { locale: "de-DE", currency: "EUR" })).toBe("€1.234,50");
+  });
+
+  it("falls back to the ISO code for an unrecognised currency rather than guessing a symbol", () => {
+    expect(formatCurrency(10, { locale: "en-US", currency: "JPY" })).toBe("JPY 10.00");
+  });
+
+  it("still returns the em dash for null/undefined regardless of config", () => {
+    expect(formatCurrency(null, { locale: "en-US", currency: "USD" })).toBe("—");
+    expect(formatCurrency(undefined, { locale: "en-US", currency: "USD" })).toBe("—");
+  });
+});
+
 describe("formatDate", () => {
   it("formats Date object", () => {
     const d = new Date("2024-07-15T00:00:00Z");
@@ -67,6 +108,99 @@ describe("formatDate", () => {
 
   it("returns em dash for empty string", () => {
     expect(formatDate("")).toBe("\u2014");
+  });
+});
+
+describe("formatDate \u2014 locale-aware (I2, #1081)", () => {
+  it("defaults to the exact pre-#1081 AU behaviour when no config is passed", () => {
+    const d = new Date("2024-07-15T00:00:00Z");
+    expect(formatDate(d)).toBe(formatDate(d, DEFAULT_FORMAT_CONFIG));
+  });
+
+  it("US locale renders month-first \u2014 the whole point of threading locale through", () => {
+    const d = new Date("2024-07-15T00:00:00Z");
+    const result = formatDate(d, { locale: "en-US", currency: "USD" });
+    // en-US with {day, month: "short", year}: "Jul 15, 2024" \u2014 month before day.
+    expect(result.indexOf("Jul")).toBeLessThan(result.indexOf("15"));
+  });
+
+  it("still returns the em dash for null/undefined/empty regardless of config", () => {
+    const config = { locale: "en-US", currency: "USD" };
+    expect(formatDate(null, config)).toBe("\u2014");
+    expect(formatDate(undefined, config)).toBe("\u2014");
+    expect(formatDate("", config)).toBe("\u2014");
+  });
+});
+
+describe("formatConfigFromOrgSettings", () => {
+  it("falls back to DEFAULT_FORMAT_CONFIG for an org with no country set", () => {
+    expect(formatConfigFromOrgSettings({})).toEqual(DEFAULT_FORMAT_CONFIG);
+    expect(formatConfigFromOrgSettings(null)).toEqual(DEFAULT_FORMAT_CONFIG);
+    expect(formatConfigFromOrgSettings(undefined)).toEqual(DEFAULT_FORMAT_CONFIG);
+  });
+
+  it("derives locale + currency from the country table", () => {
+    expect(formatConfigFromOrgSettings({ country: "GB" })).toEqual({ locale: "en-GB", currency: "GBP" });
+    expect(formatConfigFromOrgSettings({ country: "US" })).toEqual({ locale: "en-US", currency: "USD" });
+  });
+
+  it("an explicit settings.currency overrides the country default currency, keeping its locale", () => {
+    // An IE org that's been manually set to bill in USD, say \u2014 locale stays
+    // Ireland's (date order etc.), only the currency symbol changes.
+    expect(formatConfigFromOrgSettings({ country: "IE", currency: "USD" })).toEqual({
+      locale: "en-IE",
+      currency: "USD",
+    });
+  });
+
+  it("falls back to DEFAULT_FORMAT_CONFIG for an unknown country code", () => {
+    expect(formatConfigFromOrgSettings({ country: "ZZ" })).toEqual(DEFAULT_FORMAT_CONFIG);
+  });
+});
+
+describe("named date-format roles (I3, #1082)", () => {
+  const d = new Date("2024-07-15T14:32:00Z");
+
+  it("formatDateDayMonth omits the year", () => {
+    expect(formatDateDayMonth(d)).not.toMatch(/2024/);
+    expect(formatDateDayMonth(d)).toMatch(/15/);
+    const us = formatDateDayMonth(d, { locale: "en-US", currency: "USD" });
+    // US month-first: "Jul" precedes "15".
+    expect(us.indexOf("Jul")).toBeLessThan(us.indexOf("15"));
+  });
+
+  it("formatDateLong includes the weekday and always includes the year", () => {
+    const result = formatDateLong(d);
+    expect(result).toMatch(/Monday/);
+    expect(result).toMatch(/15/);
+    expect(result).toMatch(/2024/);
+  });
+
+  it("formatDateWithTime is pinned to a 24-hour clock regardless of locale", () => {
+    // 14:32 UTC — never rendered as "2:32 PM" even for en-US, which
+    // defaults to 12-hour without an explicit hour12 override.
+    expect(formatDateWithTime(d)).toMatch(/14:32/);
+    expect(formatDateWithTime(d, { locale: "en-US", currency: "USD" })).toMatch(/14:32/);
+    expect(formatDateWithTime(d)).not.toMatch(/pm|PM/);
+  });
+
+  it("formatMonthYear has no day", () => {
+    const result = formatMonthYear(d);
+    expect(result).not.toMatch(/15/);
+    expect(result).toMatch(/2024/);
+    expect(result).toMatch(/Jul/); // substring of "July" too
+  });
+
+  it("every role returns the em dash for null/undefined, matching formatDate", () => {
+    for (const fn of [formatDateDayMonth, formatDateLong, formatDateWithTime, formatMonthYear]) {
+      expect(fn(null)).toBe("—");
+      expect(fn(undefined)).toBe("—");
+    }
+  });
+
+  it("every role accepts a string date the same way formatDate does", () => {
+    expect(formatDateDayMonth("2024-12-25")).toMatch(/25/);
+    expect(formatMonthYear("2024-12-25")).toMatch(/2024/);
   });
 });
 

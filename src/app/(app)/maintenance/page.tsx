@@ -17,8 +17,8 @@ import {
   CircleCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
 
+import { formatDate, formatMonthYear } from "@/lib/formatters";
 import { useTablePreferences } from "@/lib/use-table-preferences";
 import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
@@ -152,7 +152,7 @@ function useMaintenanceColumns(
       mobile: "meta",
       cell: (row) => (
         <span className="text-ui-text text-muted tabular-nums">
-          {row.scheduledDate ? format(new Date(row.scheduledDate), "MMM d, yyyy") : "—"}
+          {row.scheduledDate ? formatDate(new Date(row.scheduledDate)) : "—"}
         </span>
       ),
     },
@@ -163,7 +163,7 @@ function useMaintenanceColumns(
       defaultVisible: false,
       cell: (row) => (
         <span className="text-ui-text text-muted tabular-nums">
-          {row.completedDate ? format(new Date(row.completedDate), "MMM d, yyyy") : "—"}
+          {row.completedDate ? formatDate(new Date(row.completedDate)) : "—"}
         </span>
       ),
     },
@@ -418,7 +418,7 @@ export default function MaintenancePage() {
           <MaintenanceStatCard
             title="Completed this month"
             value={completedThisMonth}
-            description={format(now, "MMMM yyyy")}
+            description={formatMonthYear(now)}
             icon={CircleCheck}
             loading={statsLoading}
           />

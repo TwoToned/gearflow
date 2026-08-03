@@ -141,6 +141,12 @@ export async function generateInvoiceArtifact(invoiceId: string): Promise<Artifa
       documentDate: invoice.invoiceDate ?? invoice.issuedAt,
       invoiceDueDate: invoice.dueDate ?? undefined,
     },
+    // Bug fix: without this, every issued invoice's STORED artifact rendered
+    // the live project's full total/breakdown regardless of kind — a 25%
+    // deposit's permanent PDF showed the whole project amount. This invoice's
+    // own snapshot (subtotal/taxAmount/total + its stored summary line for
+    // anything but FULL) now wins — see `buildDocumentData`'s `invoiceId` doc.
+    invoiceId,
   });
 
   const fileName = invoiceArtifactFileName(invoice.projectNumber, invoice.invoiceNumber);

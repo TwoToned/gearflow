@@ -219,6 +219,48 @@ describe("artifact context queries (what the download routes authorise against)"
     ).rejects.toThrow(/not found/i);
   });
 
+  test("an invoice's context carries its OWN money snapshot and lines — never the live project's", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoiceLines", {
+        id: "il1", invoiceId: "inv_draft", sourceType: "CUSTOM",
+        description: "Deposit (25% of project total)", quantity: 1, unitPrice: 27.5, lineTotal: 27.5, sortOrder: 0,
+      });
+    });
+
+    const ctx = await svc(t).query(api.financeArtifacts.invoiceArtifactContext, {
+      invoiceId: "inv_draft", orgId: ORG,
+    });
+
+    expect(ctx.kind).toBe("DEPOSIT");
+    expect(ctx.subtotal).toBe(25);
+    expect(ctx.taxAmount).toBe(2.5);
+    expect(ctx.total).toBe(27.5);
+    expect(ctx.lines).toEqual([
+      { id: "il1", description: "Deposit (25% of project total)", quantity: 1, unitPrice: 27.5, lineTotal: 27.5 },
+    ]);
+  });
+
+  test("lines come back sorted by sortOrder, and an invoice with none returns an empty array", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoiceLines", {
+        id: "il_b", invoiceId: "inv1", sourceType: "CUSTOM", description: "Second", quantity: 1, unitPrice: 1, lineTotal: 1, sortOrder: 1,
+      });
+      await ctx.db.insert("invoiceLines", {
+        id: "il_a", invoiceId: "inv1", sourceType: "CUSTOM", description: "First", quantity: 1, unitPrice: 1, lineTotal: 1, sortOrder: 0,
+      });
+    });
+
+    const withLines = await svc(t).query(api.financeArtifacts.invoiceArtifactContext, { invoiceId: "inv1", orgId: ORG });
+    expect(withLines.lines.map((l) => l.description)).toEqual(["First", "Second"]);
+
+    const withoutLines = await svc(t).query(api.financeArtifacts.invoiceArtifactContext, { invoiceId: "inv_draft", orgId: ORG });
+    expect(withoutLines.lines).toEqual([]);
+  });
+
   test("a quote whose PROJECT belongs to another org is NOT_FOUND (no cross-tenant join)", async () => {
     const t = makeT();
     await seed(t);

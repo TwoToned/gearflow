@@ -207,12 +207,13 @@ describe("generateQuoteArtifact — stamped dates (the silent-validity-extension
     );
   });
 
-  test("an issued invoice's document date is its issuedAt", async () => {
+  test("an issued invoice's document date is its issuedAt, and its own invoiceId is threaded through", async () => {
     generatePdf.mockResolvedValue(new Uint8Array([1]));
     await generateInvoiceArtifact("inv1");
 
     expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "invoice", {
-      stampedDates: { documentDate: SENT_AT },
+      stampedDates: { documentDate: SENT_AT, invoiceDueDate: undefined },
+      invoiceId: "inv1",
     });
   });
 });

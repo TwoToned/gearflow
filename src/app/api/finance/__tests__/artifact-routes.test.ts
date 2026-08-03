@@ -211,4 +211,34 @@ describe("GET /api/documents/[projectId] — the rogue path is closed", () => {
 
     expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "delivery-docket", { draftPreview: false });
   });
+
+  // Bug fix: previewing a DEPOSIT/BALANCE/CREDIT invoice used to always show
+  // the live project's full total/breakdown, because this route never told
+  // generatePdf WHICH invoice it was previewing.
+  test("an invoice preview's invoiceId query param is forwarded to generatePdf", async () => {
+    await getProjectDocument(
+      req("http://localhost/api/documents/p1?type=invoice&preview=1&invoiceId=inv_deposit") as never,
+      projectParams,
+    );
+
+    expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "invoice", { draftPreview: true, invoiceId: "inv_deposit" });
+  });
+
+  test("an invoice preview with no invoiceId falls back to the legacy live render (no id to key off)", async () => {
+    await getProjectDocument(
+      req("http://localhost/api/documents/p1?type=invoice&preview=1") as never,
+      projectParams,
+    );
+
+    expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "invoice", { draftPreview: true, invoiceId: undefined });
+  });
+
+  test("an invoiceId on a NON-invoice type reaches generatePdf but is meaningless there — buildDocumentData only reads it for docType invoice", async () => {
+    await getProjectDocument(
+      req("http://localhost/api/documents/p1?type=quote&preview=1&invoiceId=inv1") as never,
+      projectParams,
+    );
+
+    expect(generatePdf).toHaveBeenCalledWith("p1", "org_1", "quote", { draftPreview: true, invoiceId: "inv1" });
+  });
 });

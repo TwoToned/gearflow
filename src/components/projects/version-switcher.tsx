@@ -91,19 +91,19 @@ function VersionRowIcons({
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       {actions.canDownload && (
-        <Button variant="ghost" size="icon" className="size-8" asChild aria-label={`Download v${v.revision} document`}>
+        <Button variant="ghost" size="icon" className="touch-target size-8" asChild aria-label={`Download v${v.revision} document`}>
           <a href={`/api/finance/quote/${v.quoteId}/pdf`} target="_blank" rel="noopener noreferrer">
             <Download className="h-3.5 w-3.5" />
           </a>
         </Button>
       )}
       {actions.canSend && (
-        <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`Send v${v.revision}`} onClick={onSend}>
+        <Button type="button" variant="ghost" size="icon" className="touch-target size-8" aria-label={`Send v${v.revision}`} onClick={onSend}>
           <Send className="h-3.5 w-3.5" />
         </Button>
       )}
       {actions.canMakeLive && (
-        <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`Make v${v.revision} live`} onClick={onMakeLive}>
+        <Button type="button" variant="ghost" size="icon" className="touch-target size-8" aria-label={`Make v${v.revision} live`} onClick={onMakeLive}>
           <Sparkles className="h-3.5 w-3.5" />
         </Button>
       )}
@@ -112,7 +112,7 @@ function VersionRowIcons({
           type="button"
           variant="ghost"
           size="icon"
-          className="size-8 text-destructive hover:text-destructive"
+          className="touch-target size-8 text-destructive hover:text-destructive"
           aria-label={`Delete v${v.revision}`}
           onClick={onDelete}
         >

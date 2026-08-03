@@ -725,6 +725,8 @@ export default function ProjectDetailPage({
                         billingDaysOverride={project.billingDaysOverride as number | null}
                         categories={project.categories as { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined}
                         equipmentRevenue={project.equipmentRevenue as number | null}
+                        saleRevenue={project.saleRevenue as number | null}
+                        saleCostTotal={project.saleCostTotal as number | null}
                         serviceCostTotal={project.serviceCostTotal as number | null}
                         labourCostTotal={project.labourCostTotal as number | null}
                         subHireCostTotal={project.subHireCostTotal as number | null}
@@ -986,6 +988,8 @@ interface FinanceTabSlotProps {
   billingDaysOverride: number | null;
   categories: { groups: { title: string; quantity: number; price: unknown }[] }[] | undefined;
   equipmentRevenue: number | null;
+  saleRevenue: number | null;
+  saleCostTotal: number | null;
   serviceCostTotal: number | null;
   labourCostTotal: number | null;
   subHireCostTotal: number | null;
@@ -1038,9 +1042,11 @@ function FinanceTabSlot(props: FinanceTabSlotProps) {
           />
           <FinancialSummary
             equipmentRevenue={props.equipmentRevenue}
+            saleRevenue={props.saleRevenue}
+            saleCostTotal={props.saleCostTotal}
             serviceChargeTotal={
               props.subtotal != null && props.equipmentRevenue != null
-                ? props.subtotal - props.equipmentRevenue
+                ? props.subtotal - props.equipmentRevenue - (props.saleRevenue ?? 0)
                 : null
             }
             serviceCostTotal={props.serviceCostTotal}

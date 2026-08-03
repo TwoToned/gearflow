@@ -61,6 +61,16 @@ describe("projectSnapshotEntries", () => {
     expect(view.finance).toMatchObject({ name: "Big Gig", total: 1100, subtotal: 1000, taxAmount: 100 });
   });
 
+  // WS11 (#950) — saleRevenue/saleCostTotal are captured by captureProjectSnapshot
+  // (convex/lib/projectSnapshots.ts) but were missing from this mapper's output.
+  test("maps the project entity's saleRevenue/saleCostTotal, null when absent", () => {
+    const withSale = projectSnapshotEntries([
+      { entityType: "project", entityId: "p1", data: { saleRevenue: 250, saleCostTotal: 90 } },
+    ]);
+    expect(withSale.finance).toMatchObject({ saleRevenue: 250, saleCostTotal: 90 });
+    expect(projectSnapshotEntries(entries()).finance).toMatchObject({ saleRevenue: null, saleCostTotal: null });
+  });
+
   test("maps the project entity's own notes fields — captured because the whole project row is snapshotted", () => {
     const view = projectSnapshotEntries([
       { entityType: "project", entityId: "p1", data: { crewNotes: "Bump in 8am", internalNotes: "Watch the budget", clientNotes: "**Bold** notice" } },

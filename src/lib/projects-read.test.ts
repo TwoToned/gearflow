@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   mapCallSheetMilestoneDates,
   buildCallSheetServiceDates,
+  mapProject,
   type ConvexProject,
   type ConvexProjectService,
   type ConvexCrewAssignment,
@@ -48,6 +49,15 @@ function assignment(overrides: Partial<ConvexCrewAssignment> = {}): ConvexCrewAs
     ...overrides,
   } as ConvexCrewAssignment;
 }
+
+describe("mapProject", () => {
+  // WS11 (#950) — regression: these two were missing from the mapped shape,
+  // so the Finance tab silently folded sale revenue/COGS into "Services".
+  it("passes through saleRevenue/saleCostTotal, null when unset", () => {
+    expect(mapProject(project({ saleRevenue: 250, saleCostTotal: 90 }))).toMatchObject({ saleRevenue: 250, saleCostTotal: 90 });
+    expect(mapProject(project())).toMatchObject({ saleRevenue: null, saleCostTotal: null });
+  });
+});
 
 describe("mapCallSheetMilestoneDates", () => {
   // WS2 (#941): collapsed to WINDOW (getProjectWindow) + RENTAL.

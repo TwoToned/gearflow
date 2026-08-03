@@ -69,6 +69,10 @@ export interface ProjectRow {
   billingDaysOverride: number | null;
   taxRate: number | null;
   equipmentRevenue: number | null;
+  // WS11 (#950) — standalone SALE lines' revenue/COGS, excluded from
+  // equipmentRevenue (convex/lib/recalc.ts).
+  saleRevenue: number | null;
+  saleCostTotal: number | null;
   serviceCostTotal: number | null;
   labourCostTotal: number | null;
   subHireCostTotal: number | null;
@@ -125,6 +129,8 @@ export function mapProject(d: ConvexProject): ProjectRow {
     billingDaysOverride: orNull(d.billingDaysOverride),
     taxRate: orNull(d.taxRate),
     equipmentRevenue: orNull(d.equipmentRevenue),
+    saleRevenue: orNull(d.saleRevenue),
+    saleCostTotal: orNull(d.saleCostTotal),
     serviceCostTotal: orNull(d.serviceCostTotal),
     labourCostTotal: orNull(d.labourCostTotal),
     subHireCostTotal: orNull(d.subHireCostTotal),

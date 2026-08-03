@@ -84,6 +84,8 @@ export function mapProject(d: ProjectDoc): ProjectRow {
     billingDaysOverride: orNull(d.billingDaysOverride),
     taxRate: orNull(d.taxRate),
     equipmentRevenue: orNull(d.equipmentRevenue),
+    saleRevenue: orNull(d.saleRevenue),
+    saleCostTotal: orNull(d.saleCostTotal),
     serviceCostTotal: orNull(d.serviceCostTotal),
     labourCostTotal: orNull(d.labourCostTotal),
     subHireCostTotal: orNull(d.subHireCostTotal),

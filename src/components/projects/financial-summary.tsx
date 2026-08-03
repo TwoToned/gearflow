@@ -13,6 +13,12 @@ interface GroupBreakdownItem {
 
 interface FinancialSummaryProps {
   equipmentRevenue: number | null;
+  /** WS11 (#950) — standalone SALE lines' lineTotal, excluded from
+   *  equipmentRevenue (convex/lib/recalc.ts). A SALE line inside a priced
+   *  group still rides the group's bundle price, unaffected. */
+  saleRevenue?: number | null;
+  /** WS11 (#950) — resolved COGS for non-cancelled, non-optional SALE lines. */
+  saleCostTotal?: number | null;
   serviceChargeTotal?: number | null;
   serviceCostTotal: number | null;
   labourCostTotal: number | null;
@@ -89,6 +95,8 @@ function Row({
 
 export function FinancialSummary({
   equipmentRevenue,
+  saleRevenue,
+  saleCostTotal,
   serviceChargeTotal,
   serviceCostTotal,
   labourCostTotal,
@@ -110,11 +118,13 @@ export function FinancialSummary({
   const totalVal = total != null ? Number(total) : 0;
   const marginVal = margin != null ? Number(margin) : 0;
   const equipmentVal = equipmentRevenue != null ? Number(equipmentRevenue) : 0;
+  const saleRevenueVal = saleRevenue != null ? Number(saleRevenue) : 0;
+  const saleCostVal = saleCostTotal != null ? Number(saleCostTotal) : 0;
   const serviceChargeVal = serviceChargeTotal != null ? Number(serviceChargeTotal) : 0;
   const serviceCostVal = serviceCostTotal != null ? Number(serviceCostTotal) : 0;
   const labourCostVal = labourCostTotal != null ? Number(labourCostTotal) : 0;
   const subHireCostVal = subHireCostTotal != null ? Number(subHireCostTotal) : 0;
-  const costs = serviceCostVal + labourCostVal + subHireCostVal;
+  const costs = serviceCostVal + labourCostVal + subHireCostVal + saleCostVal;
 
   const allGroupsPriced =
     totalGroupCount != null && pricedGroupCount != null && pricedGroupCount >= totalGroupCount;
@@ -161,6 +171,9 @@ export function FinancialSummary({
           Revenue
         </div>
         <Row label="Equipment" value={formatCurrency(equipmentVal)} />
+        {saleRevenueVal > 0 && (
+          <Row label="Sale items" value={formatCurrency(saleRevenueVal)} />
+        )}
         {serviceChargeVal > 0 && (
           <Row label="Services" value={formatCurrency(serviceChargeVal)} />
         )}
@@ -194,6 +207,9 @@ export function FinancialSummary({
         )}
         {subHireCostVal > 0 && (
           <Row label="Sub-Hires" value={formatCurrency(subHireCostVal)} />
+        )}
+        {saleCostVal > 0 && (
+          <Row label="Sale cost of goods" value={formatCurrency(saleCostVal)} />
         )}
         {costs > 0 ? (
           <Row label="Total costs" value={formatCurrency(costs)} bold />

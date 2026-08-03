@@ -3,7 +3,7 @@
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../../convex/_generated/api";
-import { ProjectQuoteRail } from "@/components/projects/project-quote-rail";
+import { ProjectQuoteRail, ASSIGN_CLIENT_FOR_QUOTES_MESSAGE } from "@/components/projects/project-quote-rail";
 import { ProjectInvoiceLedger } from "@/components/projects/finance/project-invoice-ledger";
 
 interface ProjectFinancePanelProps {
@@ -40,17 +40,21 @@ export function ProjectFinancePanel({ projectId, projectNumber, clientId, projec
 
   return (
     <div className="space-y-6">
-      <ProjectQuoteRail
-        projectId={projectId}
-        orgId={orgId}
-        projectNumber={projectNumber}
-        clientId={clientId}
-        projectStatus={projectStatus}
-        subtotal={subtotal}
-        taxAmount={taxAmount}
-        total={total}
-        invoices={invoices}
-      />
+      {clientId ? (
+        <ProjectQuoteRail
+          projectId={projectId}
+          orgId={orgId}
+          projectNumber={projectNumber}
+          clientId={clientId}
+          projectStatus={projectStatus}
+          subtotal={subtotal}
+          taxAmount={taxAmount}
+          total={total}
+          invoices={invoices}
+        />
+      ) : (
+        <p className="t-micro text-fg-4">{ASSIGN_CLIENT_FOR_QUOTES_MESSAGE}</p>
+      )}
 
       <ProjectInvoiceLedger
         projectId={projectId}

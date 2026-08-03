@@ -134,6 +134,12 @@ function findLiveQuote(quotes: QuoteRevisionDoc[], liveRevision: number): QuoteR
   return quotes.find((q) => q.version === liveRevision) ?? null;
 }
 
+/** Every embed site (`ProjectFinancePanel`, `QuoteManagerDialog`) must assign a
+ *  client before rendering `<ProjectQuoteRail>` — checked at the call site
+ *  rather than inside the rail itself, which is already at its complexity
+ *  budget (R-3.6). Shared here so the message can't drift between sites. */
+export const ASSIGN_CLIENT_FOR_QUOTES_MESSAGE = "Assign a client to this project to generate quotes.";
+
 export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, projectStatus, subtotal, taxAmount, total, invoices }: ProjectQuoteRailProps) {
   // Frozen at mount: `now` only drives the DERIVED expiry read, and a value that
   // changed every render would re-subscribe the queries on every render.
@@ -165,9 +171,6 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
     onError: (e) => toast.error(e.message),
   });
 
-  if (!clientId) {
-    return <p className="t-micro text-fg-4">Assign a client to this project to generate quotes.</p>;
-  }
   if (quotes === undefined || revisionState === undefined) {
     return <p className="t-micro text-fg-4">Loading quotes…</p>;
   }

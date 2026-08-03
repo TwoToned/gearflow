@@ -1,7 +1,7 @@
 "use client";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ProjectQuoteRail } from "@/components/projects/project-quote-rail";
+import { ProjectQuoteRail, ASSIGN_CLIENT_FOR_QUOTES_MESSAGE } from "@/components/projects/project-quote-rail";
 
 interface QuoteManagerDialogProps {
   open: boolean;
@@ -46,7 +46,7 @@ export function QuoteManagerDialog({
         <DialogHeader>
           <DialogTitle>Quotes — {projectNumber}</DialogTitle>
         </DialogHeader>
-        {open && (
+        {open && clientId && (
           <ProjectQuoteRail
             projectId={projectId}
             orgId={orgId}
@@ -57,6 +57,9 @@ export function QuoteManagerDialog({
             taxAmount={taxAmount}
             total={total}
           />
+        )}
+        {open && !clientId && (
+          <p className="t-micro text-fg-4">{ASSIGN_CLIENT_FOR_QUOTES_MESSAGE}</p>
         )}
       </DialogContent>
     </Dialog>

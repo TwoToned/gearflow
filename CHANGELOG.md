@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **#1092** — A brand-new account with no organisation and no pending invite
+  now lands on `/welcome`, a fork between "Set up a new company" and "Join my
+  team" — instead of dead-ending on the old onboarding bounce. The create
+  option disappears automatically when a site admin has org creation switched
+  off; an invite link still skips the fork entirely and goes straight to
+  accepting it.
+
 - **#1095** — Site admins can now gate who's allowed to create a new
   organisation on this platform: an on/off toggle, and an optional signup
   code (with copy/regenerate) required in addition. The code is never shown

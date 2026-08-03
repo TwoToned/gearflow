@@ -18,7 +18,9 @@ test.describe("harness: session cookie flags", () => {
     await page.getByLabel(/email/i).first().fill(email);
     await page.getByLabel(/password/i).first().fill("harness-password-123");
     await page.getByRole("button", { name: /create|register|sign up/i }).first().click();
-    await expect(page).toHaveURL(/\/(dashboard|onboarding)\b/, { timeout: 20000 });
+    // A fresh registration with no org lands on the create-vs-join fork
+    // (/welcome, #1092) rather than an authenticated dashboard directly.
+    await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
 
     const cookies = await context.cookies();
     const session = cookies.find((c) => /better-auth\.session_token/.test(c.name));

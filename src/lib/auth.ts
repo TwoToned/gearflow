@@ -156,10 +156,11 @@ export const auth = betterAuth({
       },
       organizationHooks: {
         // Verifies the signup code submitted as `metadata.orgCreationCode` on
-        // the `organization.create()` call (Phase B's B1 fork screen, #1092,
-        // is the eventual caller — not built yet). Strips the code out of
-        // `metadata` before it's persisted on the org row either way: it's a
-        // one-time proof of authorization, not org data.
+        // the `organization.create()` call — src/app/(auth)/onboarding/page.tsx,
+        // reached via the "Set up a new company" card on /welcome (Phase B's
+        // B1 fork screen, #1092). Strips the code out of `metadata` before
+        // it's persisted on the org row either way: it's a one-time proof of
+        // authorization, not org data.
         beforeCreateOrganization: async ({ organization, user }) => {
           if (await isOrgCreationBootstrap()) return;
 
@@ -345,8 +346,8 @@ export const auth = betterAuth({
           // No auto-join (#1071, A1/A3): membership is only ever created by
           // invite-accept, request-approval, or org-create (creatorRole above).
           // A fresh signup with no invite and no org to bootstrap lands with
-          // zero memberships and is routed to /onboarding, same as a 0-org
-          // login (src/app/(auth)/onboarding/page.tsx).
+          // zero memberships and is routed to /welcome, the create-vs-join
+          // fork (#1092, B1), same as a 0-org login.
 
           // Mirror the new user into Convex (best-effort; runs after the role
           // write above so the mirror captures the final role).

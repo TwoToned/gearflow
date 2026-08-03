@@ -68,9 +68,9 @@ function constantTimeEqual(a: string, b: string): boolean {
  * better-auth version (1.6.25), so per-IP limiting isn't available at this
  * call site. Per-user limiting plus the fact that creating an org already
  * requires an authenticated account (registration is itself gated) is the
- * mitigating factor; a future pre-flight HTTP endpoint (once Phase B's B1
- * fork screen exists) would have request access and could add per-IP limiting
- * on top of this if abuse is ever observed.
+ * mitigating factor; a future pre-flight HTTP endpoint would have request
+ * access and could add per-IP limiting on top of this if abuse is ever
+ * observed.
  */
 export async function verifyOrgCreationCode(
   submittedCode: string | null | undefined,

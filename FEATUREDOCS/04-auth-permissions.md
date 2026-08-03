@@ -32,12 +32,14 @@ or the gate check itself. Verification is constant-time
 (`checkOrgCreationRateLimit`, `convex/siteSettings.ts`, 5/hour) — **not** per-IP,
 since neither Better Auth hook exposes the request in this version (1.6.25); see
 `org-creation-gate.ts`'s doc comment for the scope note. `getOrgCreationPolicy`
-(any authenticated user) is the status check the not-yet-built B1 fork screen
-(#1092) will use to decide whether to show a "set up a new company" option and
-whether to prompt for a code — it never returns the code itself. Additional orgs
-can also still be created by a site admin directly (`adminCreateOrganization`,
-`src/server/site-admin.ts`), which is not code-gated (a site admin is already
-trusted).
+(any authenticated user) is the status check `/welcome` (the B1 fork screen,
+#1092) uses to decide whether to show a "set up a new company" card at all,
+and whether `/onboarding` — the "Set up a new company" destination — should
+render a signup-code field. It never returns the code itself; hiding the card
+or the field is cosmetic only, `beforeCreateOrganization` is the real gate
+either way (R-9.3). Additional orgs can also still be created by a site admin
+directly (`adminCreateOrganization`, `src/server/site-admin.ts`), which is not
+code-gated (a site admin is already trusted).
 
 ### Org resolution: the session, re-validated (`src/lib/auth-server.ts`)
 - `requireOrganization()` / `getActiveOrganizationId()` resolve the **active org from
@@ -61,10 +63,20 @@ SSO auto-provisioning (`handleSSOProvisioning`, AUTO_CREATE mode), org-create
 `adminAddMemberToOrg`). The `user.create` database hook's old single-org auto-join
 (every new signup silently joined "the org") was deleted (#1071, A1) — a fresh
 signup with no invite and no org to bootstrap lands with **zero** memberships and is
-routed to `/onboarding`. **Known gap:** with `registrationPolicy: OPEN` and no
-pending invite, that onboarding visit dead-ends once an org already exists (org
-creation is gated off, D7) — the "request to join" flow that resolves this
-(`DOMAIN_REQUEST` join policy, design doc §4.3) hasn't landed yet.
+routed to `/welcome`, the create-vs-join fork (#1092, B1) — same target every other
+0-org entry point uses (login, register, `/no-organization`, and the authenticated
+app-shell gate in `src/app/(app)/layout.tsx`). An invite signup never sees the fork
+at all: `register/page.tsx` routes straight to `/invite/[id]` when an `invite` query
+param is present.
+
+`/welcome`'s "Set up a new company" card is hidden outright when `getOrgCreationPolicy()`
+returns `allowed: false` (site admin has org creation switched off, D7's soak
+posture); its "Join my team" card is always shown, but — since #1067's B2 (invite-code
+entry + verified-domain request-to-join) hasn't landed yet — leads to an inline
+"ask your admin to send you an invite link" panel rather than a real join flow. **Known
+gap:** that's the one still open. A user with an `@bigcorp.com` email and no invite
+still has no self-serve way to request into an org that domain belongs to
+(`DOMAIN_REQUEST` join policy, design doc §4.3) until B2 ships.
 
 ### Which org(s) does this user belong to? (`src/server/public-org.ts`)
 - `getMyOrganizations()` — the calling session's memberships (`{ id, name, slug,
@@ -378,7 +390,7 @@ consumer of this same identity kind — **FEATUREDOCS/68**.
 - **Server actions**: `src/server/invitations.ts` — `getMyPendingInvitations()`, `getInvitationEmail()`, `checkIsSiteAdmin()`, `getInvitationOrganizationId()`.
 - Each invitation targets a specific org (`Invitation.organizationId`) — the invite-accept page resolves which org to activate from the invitation row itself via `getInvitationOrganizationId()`, not a single-org assumption.
 - **Membership always requires the recipient's consent (#1073, A3).** `addMemberByEmail` (`src/server/settings.ts`, the "Invite" control on `/settings/team`) creates an `Invitation` and emails an accept link (`/invite/[id]`) for EVERY case — including an email that already has an account. There is no direct-add path: under multi-tenancy, silently creating a `Member` row for a known email would let any org owner pull a stranger's account into their org with no consent, putting an unwanted org in that person's switcher. `/invite/[id]` itself branches on whether the recipient is already signed in (accept immediately) or needs to sign in/register first — the invite email is the same either way (`invitationEmail`, not a register-specific template).
-- **Known gap, not built yet**: a per-org join policy (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`, distinct from the platform-global `registrationPolicy` above) is designed (`docs/designs/onboarding-and-activation.md` §2.4/§4.3) but has no consumer until Phase B's (#1067) create-vs-join signup fork exists — there's currently no self-serve "request to join an org" flow for it to gate, so it wasn't added as an inert setting. Revisit alongside #1067.
+- **Known gap, not built yet**: a per-org join policy (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`, distinct from the platform-global `registrationPolicy` above) is designed (`docs/designs/onboarding-and-activation.md` §2.4/§4.3) but has no consumer yet. The create-vs-join fork itself shipped (`/welcome`, #1092, B1) — its "Join my team" card is live — but the fork only points at an "ask your admin for an invite link" placeholder today, since #1067's B2 (invite-code entry + verified-domain request-to-join, the actual consumer of this join policy) hasn't landed. Revisit alongside B2.
 
 ### Account Page Sections
 The `/account` page is organized into: Profile (avatar + name), Security (password, 2FA, passkeys, connected accounts), Active Sessions.

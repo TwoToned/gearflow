@@ -26,7 +26,8 @@ test.describe("harness: authenticated flow", () => {
       .first()
       .click();
 
-    // First user bootstraps as admin and lands on the dashboard (or onboarding).
-    await expect(page).toHaveURL(/\/(dashboard|onboarding)\b/, { timeout: 20000 });
+    // First user bootstraps as admin and lands on the dashboard, or — with no
+    // org yet — the create-vs-join fork (/welcome, #1092).
+    await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
   });
 });

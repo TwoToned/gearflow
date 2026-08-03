@@ -99,11 +99,12 @@ async function isOrgCreationBootstrap(): Promise<boolean> {
 }
 
 /**
- * Status check for the (future) create-vs-join fork screen: may the CURRENT
- * user see a "set up a new company" option, and if so, will it demand a
- * signup code? Never returns the code itself. Safe for any authenticated user
- * to call — it's a UI-affordance check, not a secret read; the server refuses
- * the actual creation regardless of what this returns (R-9.3).
+ * Status check for the create-vs-join fork screen (`/welcome`, #1092, B1):
+ * may the CURRENT user see a "set up a new company" option, and if so, will
+ * it demand a signup code? Never returns the code itself. Safe for any
+ * authenticated user to call — it's a UI-affordance check, not a secret read;
+ * the server refuses the actual creation regardless of what this returns
+ * (R-9.3).
  */
 export async function getOrgCreationPolicy(): Promise<{ allowed: boolean; codeRequired: boolean }> {
   await requireSession();

@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { organization, signOut, useSession } from "@/lib/auth-client";
 import { getMyOrganizations } from "@/server/public-org";
 import { getOrgCreationPolicy } from "@/server/site-admin";
+import { checkInviteCode, getJoinableOrgs, requestToJoinOrg, type JoinableOrg } from "@/server/org-join";
 import { AuthShell } from "../auth-playful";
 import { cn } from "@/lib/utils";
-import { Loader2, Building2, Users2, ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
+import { Loader2, Building2, Users2, ArrowLeft, KeyRound, Globe2, MailWarning } from "lucide-react";
 
 /**
  * `/welcome` — B1 (#1092), the create-vs-join fork. Reached by a signed-in
@@ -58,7 +60,7 @@ export default function WelcomePage() {
   };
 
   if (view === "join") {
-    return <JoinPlaceholder onBack={() => setView("fork")} />;
+    return <JoinView onBack={() => setView("fork")} />;
   }
 
   return (
@@ -143,11 +145,12 @@ function SignedInAs({ email, onNotYou }: { email: string; onNotYou: () => void }
 }
 
 /**
- * Placeholder destination for "Join my team" until #1067's B2 (invite-code
- * entry + verified-domain request-to-join) ships. Never strands the user —
- * just points them at the invite-link path that already works end to end.
+ * "Join my team" destination (#1067's B2, #1094) — two ways in. Possession of
+ * an invite code is proof enough on its own (no verification needed); the
+ * verified-domain "ask to join" branch requires `emailVerified` (anyone could
+ * otherwise claim `@bigcorp.com` and request into a stranger's org).
  */
-function JoinPlaceholder({ onBack }: { onBack: () => void }) {
+function JoinView({ onBack }: { onBack: () => void }) {
   return (
     <AuthShell accent="join" annotation="ask nicely, tape's cheap.">
       <button
@@ -160,22 +163,166 @@ function JoinPlaceholder({ onBack }: { onBack: () => void }) {
       </button>
       <div className="mb-4">
         <h1 className="t-title text-ink">Join my team</h1>
-        <p className="mt-1 text-sm text-muted">
-          You&apos;ll need an invite from whoever runs your organisation.
-        </p>
+        <p className="mt-1 text-sm text-muted">Use an invite code, or ask to be let in.</p>
       </div>
-      <div className="space-y-3 rounded-[var(--r)] border-2 border-line-2 bg-elev p-4 text-sm text-ink-2">
-        <p>
-          Ask them to send you an invite from{" "}
-          <span className="font-medium text-ink">Settings → Team</span>. Open the link they
-          send you and you&apos;ll land straight in — no need to come back here.
-        </p>
-        <p className="text-muted">
-          Already have an invite link in your email? Open it directly instead of signing in
-          here first.
-        </p>
+      <div className="space-y-4">
+        <InviteCodeEntry />
+        <DomainJoinRequest />
       </div>
     </AuthShell>
+  );
+}
+
+function InviteCodeEntry() {
+  const router = useRouter();
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!value.trim()) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const found = await checkInviteCode(value);
+      if (!found) {
+        setError("We couldn't find that invite. Check the code or link and try again.");
+        return;
+      }
+      router.push(`/invite/${found.id}`);
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <div className="rounded-[var(--r)] border-2 border-line-2 bg-card p-4">
+      <p className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+        <KeyRound className="h-3.5 w-3.5" />
+        Have an invite?
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSubmit();
+          }}
+          placeholder="Paste your invite link or code"
+          className="min-w-0 flex-1 rounded-[8px] border-2 border-line-2 bg-elev px-3 py-1.5 text-sm text-ink outline-none focus:border-red"
+        />
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={checking || !value.trim()}
+          className="flex-none rounded-[8px] border-2 border-line-2 bg-elev px-3 py-1.5 text-sm font-bold text-ink transition-colors hover:border-red hover:text-red disabled:opacity-50"
+        >
+          {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continue"}
+        </button>
+      </div>
+      {error ? <p className="mt-2 text-xs text-red">{error}</p> : null}
+    </div>
+  );
+}
+
+function DomainJoinRequest() {
+  const [state, setState] = useState<{ requiresVerification: boolean; orgs: JoinableOrg[] } | null>(null);
+  const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getJoinableOrgs().then((r) => {
+      if (!cancelled) setState(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleRequest = async (orgId: string) => {
+    setPendingId(orgId);
+    try {
+      await requestToJoinOrg(orgId);
+      setRequestedIds((prev) => new Set(prev).add(orgId));
+      toast.success("Request sent — you'll hear back once an admin reviews it.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't send that request.");
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  if (state === null) {
+    return (
+      <div className="flex justify-center py-3">
+        <Loader2 className="h-5 w-5 animate-spin text-muted" />
+      </div>
+    );
+  }
+
+  if (state.requiresVerification) {
+    return (
+      <div className="flex items-start gap-2 rounded-[var(--r)] border-2 border-line-2 bg-elev p-4 text-sm text-ink-2">
+        <MailWarning className="mt-0.5 h-4 w-4 flex-none text-muted" />
+        <p>Verify your email to search for a team at your company&apos;s domain.</p>
+      </div>
+    );
+  }
+
+  if (state.orgs.length === 0) {
+    return (
+      <div className="rounded-[var(--r)] border-2 border-line-2 bg-elev p-4 text-sm text-ink-2">
+        <p>We didn&apos;t find a team at your email domain. Ask your admin for an invite instead.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[var(--r)] border-2 border-line-2 bg-card p-4">
+      <p className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+        <Globe2 className="h-3.5 w-3.5" />
+        People at your company already use this
+      </p>
+      <div className="space-y-2">
+        {state.orgs.map((org) => {
+          const requested = requestedIds.has(org.organizationId) || org.alreadyRequested;
+          return (
+            <div
+              key={org.organizationId}
+              className="flex items-center justify-between gap-3 rounded-[8px] border-2 border-line-2 bg-elev px-3 py-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-ink">{org.organizationName}</p>
+                <p className="text-xs text-muted">
+                  {org.memberCount} {org.memberCount === 1 ? "person" : "people"} already here
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleRequest(org.organizationId)}
+                disabled={requested || pendingId === org.organizationId}
+                className="flex-none rounded-[8px] border-2 border-line-2 bg-card px-3 py-1.5 text-xs font-bold text-ink transition-colors hover:border-red hover:text-red disabled:opacity-50"
+              >
+                {pendingId === org.organizationId ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : requested ? (
+                  "Request sent"
+                ) : (
+                  "Ask to join"
+                )}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

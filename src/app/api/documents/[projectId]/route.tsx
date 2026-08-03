@@ -38,6 +38,11 @@ export async function GET(
   const url = new URL(request.url);
   const type = url.searchParams.get("type") || "quote";
   const preview = url.searchParams.get("preview") === "1";
+  // Which SPECIFIC invoice this preview is for — without it, `generatePdf`
+  // falls back to the live project total/breakdown, which is only correct
+  // for a FULL invoice (bug fix: a DEPOSIT/BALANCE/CREDIT invoice needs its
+  // own snapshot, not the whole project's). Ignored for every other type.
+  const invoiceId = url.searchParams.get("invoiceId") || undefined;
 
   let session;
   try {
@@ -76,6 +81,7 @@ export async function GET(
     // a draft of anything, so it never carries the banner.
     const pdf = await generatePdf(projectId, organizationId, docType, {
       draftPreview: preview && PREVIEW_ONLY_TYPES.has(docType),
+      invoiceId: docType === "invoice" ? invoiceId : undefined,
     });
     const filename = `${docType}-${projectId}.pdf`;
     return new NextResponse(Buffer.from(pdf), {

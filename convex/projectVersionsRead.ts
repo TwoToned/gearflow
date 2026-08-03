@@ -55,6 +55,10 @@ const VERSION_ITEM = v.object({
   // entry — `null` when there's no snapshot to read it from (a pre-versioning
   // revision, or a same-tick race the switcher shouldn't ever actually hit).
   total: v.union(v.number(), v.null()),
+  // The stored document artifact (#987), mirroring `quotes.pdfFileId` — lets
+  // the header version switcher (CLAUDE.md "fine-tune versioning") offer a
+  // direct download without a second query into `quotes.listForProject`.
+  pdfFileId: v.optional(v.string()),
 });
 
 type SnapshotReason = "CONFIRMED" | "COMPLETED" | "UNLOCK" | "QUOTE_SENT" | "VERSION_SAVED" | "PRE_PROMOTE";
@@ -72,6 +76,7 @@ interface VersionItem {
   snapshotReason?: SnapshotReason;
   hasSnapshot: boolean;
   total: number | null;
+  pdfFileId?: string;
 }
 
 /** Org-checks the parent snapshot row before trusting anything off it — same
@@ -134,6 +139,26 @@ export const listVersions = query({
         snapshotReason,
         hasSnapshot: q.snapshotId != null,
         total,
+        pdfFileId: q.pdfFileId,
+      });
+    }
+
+    // A project that has never been quoted has no `quotes` row at all — before
+    // this, the list (and therefore the header switcher, CLAUDE.md "fine-tune
+    // versioning") was simply empty and vanished. `projects.liveRevision` is
+    // real from `createNative` on, so there is always a live version to show;
+    // synthesize the virtual entry the switcher's "Add version"/"Send quote"
+    // actions can act on (`saveVersionNative` tolerates no row at that
+    // revision, and `sendNative` creates the DRAFT row itself on send).
+    if (out.length === 0 && !project.isTemplate) {
+      out.push({
+        revision: liveRevision,
+        quoteId: "",
+        status: "DRAFT",
+        isLive: true,
+        createdAt: project.createdAt,
+        hasSnapshot: false,
+        total: liveTotal,
       });
     }
 

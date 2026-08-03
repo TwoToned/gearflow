@@ -41933,7 +41933,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8f3456c860a78207",
-    "returnsSha": "26d612adfd2e34b1",
+    "returnsSha": "9a8c3234cbac91e4",
     "stability": "tracks-app",
     "summary": "List a project's versions with state, date and total for the switcher.",
     "danger": "low",

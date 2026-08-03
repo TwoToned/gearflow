@@ -340,8 +340,20 @@ export default function ProjectDetailPage({
                       same `lockStatus` subscription the strip below renders from. */}
                   {!project.isTemplate && <ProjectLockChip status={lockStatus} now={lockNow} />}
                   {/* Phase 3 (#1080/#1093) — project-wide, so it lives here
-                      rather than inside any one tab. */}
-                  {!project.isTemplate && <ProjectVersionSwitcher />}
+                      rather than inside any one tab. Extended (CLAUDE.md
+                      "fine-tune versioning") into the header's full version
+                      menu — add/delete/promote/send/download, not just switch. */}
+                  {!project.isTemplate && orgId && (
+                    <ProjectVersionSwitcher
+                      orgId={orgId}
+                      projectNumber={project.projectNumber}
+                      clientId={project.clientId as string | null | undefined}
+                      projectStatus={project.status as string | null | undefined}
+                      subtotal={project.subtotal as number | null}
+                      taxAmount={project.taxAmount as number | null}
+                      total={project.total as number | null}
+                    />
+                  )}
                 </div>
                 {/* Meta line */}
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">

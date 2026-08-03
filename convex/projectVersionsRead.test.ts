@@ -90,14 +90,46 @@ describe("projectVersionsRead.listVersions", () => {
     expect(v2.total).toBe(110); // read straight off the live project row
   });
 
-  test("a project with no quotes yet returns an empty list, not an error", async () => {
+  // Phase 5 ("fine-tune versioning") — before this, a never-quoted project's
+  // list was simply empty and the header switcher vanished entirely (you
+  // couldn't even see, let alone add, a version). Now it synthesizes ONE
+  // virtual live entry so the switcher — and its Add version/Send quote
+  // actions — is always there.
+  test("a project with no quotes yet returns a synthesized live entry, not an empty list", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
     const versions = await t
       .withIdentity(asUser(ORG))
       .query(api.projectVersionsRead.listVersions, { projectId: "p1", orgId: ORG, now: NOW });
+    expect(versions).toHaveLength(1);
+    expect(versions[0]).toMatchObject({ revision: 1, quoteId: "", status: "DRAFT", isLive: true, hasSnapshot: false, total: 110 });
+  });
+
+  test("a template project with no quotes yet returns an empty list — templates don't have versions", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t, ORG, { isTemplate: true });
+    const versions = await t
+      .withIdentity(asUser(ORG))
+      .query(api.projectVersionsRead.listVersions, { projectId: "p1", orgId: ORG, now: NOW });
     expect(versions).toEqual([]);
+  });
+
+  test("pdfFileId round-trips onto a sent version's list item", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await send(t); // v1 SENT — no artifact attached in this test (that's a server-action step)
+    await t.run(async (ctx) => {
+      const quote = await ctx.db.query("quotes").withIndex("by_cuid", (q) => q.eq("id", "q1")).first();
+      await ctx.db.patch(quote!._id, { pdfFileId: "storage_abc" });
+    });
+
+    const versions = await t
+      .withIdentity(asUser(ORG))
+      .query(api.projectVersionsRead.listVersions, { projectId: "p1", orgId: ORG, now: NOW });
+    expect(versions.find((v) => v.revision === 1)?.pdfFileId).toBe("storage_abc");
   });
 
   test("IDOR: a cross-org projectId returns an empty list rather than another org's versions", async () => {

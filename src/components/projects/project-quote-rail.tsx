@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
+import { DeleteVersionDialog } from "@/components/projects/finance/delete-version-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
 import { CorrectQuoteDialog } from "@/components/projects/finance/correct-quote-dialog";
 import { DeleteRecalledDialog } from "@/components/projects/finance/delete-recalled-dialog";
@@ -230,7 +231,7 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
 
       <UnacceptDialog target={unacceptTarget} onClose={() => setUnacceptTarget(null)} />
 
-      <DeleteDraftDialog target={deleteDraftTarget} liveRevision={liveRevision} onClose={() => setDeleteDraftTarget(null)} />
+      <DeleteVersionDialog target={deleteDraftTarget} liveRevision={liveRevision} onClose={() => setDeleteDraftTarget(null)} />
 
       <EditLabelDialog target={labelTarget} onClose={() => setLabelTarget(null)} />
 
@@ -899,76 +900,6 @@ function ValidityLabel({ validUntil, now }: { validUntil: number; now: number })
   return <span className="text-fg-4">Valid until {validUntilStr}</span>;
 }
 
-
-/** Delete a never-sent draft (#1028) — a plain confirm, no text field, since
- *  nothing outside the company has ever seen this revision. Still a real
- *  `Dialog` rather than `window.confirm` (CLAUDE.md — no `AlertDialog`
- *  anywhere in this codebase). Recall-then-delete (#1029) is a different,
- *  stricter dialog (`DeleteRecalledDialog`) — this one never fires for a
- *  revision that was ever sent; the server rejects it too if the row somehow
- *  changed underneath the click. */
-function DeleteDraftDialog({
-  target,
-  liveRevision,
-  onClose,
-}: {
-  target: QuoteRevisionDoc | null;
-  liveRevision: number;
-  onClose: () => void;
-}) {
-  const quoteWrites = useQuoteWrites();
-  const [pending, setPending] = useState(false);
-  // A saved-but-never-sent version (one `saveVersion`/an auto-capture left
-  // behind) isn't THE live draft — deleting it is `deleteVersionNative`
-  // (#1080/#1097), which touches neither `revision` nor `liveRevision`.
-  const isLiveDraft = target != null && target.version === liveRevision;
-
-  async function confirm() {
-    if (!target) return;
-    setPending(true);
-    try {
-      if (isLiveDraft) {
-        const result = await quoteWrites.deleteDraft(target.id);
-        toast.success(
-          result.revision === target.version
-            ? `Deleted v${target.version}`
-            : `Deleted v${target.version} — back to v${result.revision}`,
-        );
-      } else {
-        await quoteWrites.deleteVersion(target.id);
-        toast.success(`Deleted v${target.version}`);
-      }
-      onClose();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!target} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Delete {isLiveDraft ? "draft" : "version"} v{target?.version}</DialogTitle>
-          <DialogDescription>
-            {isLiveDraft
-              ? "Nobody outside the company has seen this draft. Deleting it frees the version number for the next one."
-              : "Nobody outside the company has seen this saved version. Deleting it removes its captured state — the version numbers already ahead of it are unaffected."}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="line" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button type="button" loading={pending} onClick={() => void confirm()}>
-            Delete {isLiveDraft ? "draft" : "version"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /** Rename a version's internal label from the row (#1080/#1097) — a plain text
  *  field, never a monetary/structural change. Reachable on any revision. */

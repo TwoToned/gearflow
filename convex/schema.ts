@@ -191,6 +191,30 @@ export default defineSchema({
     .index("by_organizationId_userId", ["organizationId", "userId"])
     .index("by_organizationId_status", ["organizationId", "status"]),
 
+  // PendingOrgJoinRequest — B2 (#1094): a user's self-serve "ask to join"
+  // request against an org whose joinPolicy is DOMAIN_REQUEST. Distinct from
+  // PendingSSOApproval above (SSO auto-provisioning enqueues those on login;
+  // this one is user-initiated from `/welcome`'s domain-match search) — same
+  // PENDING/APPROVED/REJECTED shape, deliberately not sharing the SSO table
+  // since the two are unrelated triggers with different admin-review copy.
+  pendingOrgJoinRequests: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    email: v.string(),
+    name: v.optional(v.string()),
+    status: v.optional(v.union(v.literal("PENDING"), v.literal("APPROVED"), v.literal("REJECTED"))),
+    reviewedById: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()),
+    reviewNote: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_userId", ["userId"])
+    .index("by_organizationId_userId", ["organizationId", "userId"])
+    .index("by_organizationId_status", ["organizationId", "status"]),
+
   // ApiKey — agent-accessible API/MCP access keys (docs/designs/api-mcp-agent-access.md).
   // `by_tokenHash` is the auth verify path (the token IS the credential, so a global
   // lookup by hash is correct — like by_cuid; the found key carries its own orgId).

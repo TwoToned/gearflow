@@ -94,12 +94,9 @@ describe("projectSnapshotEntries", () => {
     expect(view.equipment.uncategorizedLineItems[0].discountMode).toBe("$");
   });
 
-  test("always reports the same uncaptured facet list — sub-hires and slot ordering are never in scope", () => {
+  test("always reports the same uncaptured facet list — only the genuinely live facts", () => {
     const view = projectSnapshotEntries(entries());
-    expect(view.uncaptured).toContain("subHires");
-    expect(view.uncaptured).toContain("categorySlotOrder");
-    expect(view.uncaptured).toContain("liveAvailability");
-    expect(view.uncaptured).toContain("warehouseStatus");
+    expect(view.uncaptured).toEqual(["liveAvailability", "warehouseStatus"]);
   });
 
   test("is a pure function — identical input produces a structurally identical result", () => {

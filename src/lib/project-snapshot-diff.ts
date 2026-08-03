@@ -6,7 +6,21 @@
  * one code path.
  */
 
-export type SnapshotEntityType = "project" | "category" | "group" | "lineItem" | "service" | "crewAssignment";
+/** #1080/#1101 widened (kept in lockstep with `convex/lib/projectSnapshots.ts`'s
+ *  `SnapshotEntityType`, R-3.1) — `priceField`/`label` below both have generic
+ *  fallbacks, so the four new types participate in the diff automatically
+ *  (generic label, no price column) rather than needing dedicated cases. */
+export type SnapshotEntityType =
+  | "project"
+  | "category"
+  | "group"
+  | "lineItem"
+  | "service"
+  | "crewAssignment"
+  | "subHire"
+  | "subHireItem"
+  | "subHireGroup"
+  | "categorySlot";
 
 export interface SnapshotEntryLike {
   entityType: SnapshotEntityType;

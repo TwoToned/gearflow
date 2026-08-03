@@ -36868,7 +36868,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fefad8ad30daf59f",
-    "returnsSha": "6a4d6f0aa1f19cb8",
+    "returnsSha": "f7db68a443543ccd",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -36942,7 +36942,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "8027c6b062f56692",
-    "returnsSha": "6a4d6f0aa1f19cb8",
+    "returnsSha": "f7db68a443543ccd",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -41958,6 +41958,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": "high",
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectVersionsEquipment.bundle",
+    "module": "projectVersionsEquipment",
+    "fn": "bundle",
+    "kind": "query",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "snapshotId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "61511c17783376ef",
+    "returnsSha": "b85ce482b7f4f88b",
+    "stability": "tracks-app",
+    "summary": "Assemble a captured version's Equipment tab bundle (categories/groups/line items/sub-hires) for read-only rendering.",
+    "danger": "low",
+    "mcpTier": 2,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -60954,10 +60996,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1173,
-  agentReachable: 566,
-  queries: 413,
+  total: 1174,
+  agentReachable: 567,
+  queries: 414,
   mutations: 760,
-  agentReachableQueries: 289,
+  agentReachableQueries: 290,
   agentReachableMutations: 277,
 } as const;

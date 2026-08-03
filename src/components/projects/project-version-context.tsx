@@ -52,6 +52,18 @@ interface ProjectVersionContextValue {
    *  no snapshot — the design doc's "no captured state (pre-versioning)" case,
    *  never rendered as an error page. */
   hasCapturedState: boolean;
+  /** #1080/#1101 — the Equipment tab's bundle-assembly read
+   *  (`convex/projectVersionsEquipment.ts`), shaped like the LIVE
+   *  `equipmentTab.bundle` so `VersionProjectedEquipment` can run it through
+   *  the SAME `reconstructProjectCategories`/`reconstructUncategorized*`
+   *  functions the live tab uses (R-3.1) — sub-hire groups and the
+   *  `categorySlots` combined order included. `null` while loading, while not
+   *  viewing a captured version, or if the snapshot row itself can't be
+   *  resolved. An OLDER (pre-#1101) snapshot still resolves — it just has
+   *  empty sub-hire/categorySlot arrays, degrading gracefully to "groups then
+   *  standalone items" ordering with no sub-hire block, never an error. */
+  equipmentBundle: unknown;
+  isLoadingEquipmentBundle: boolean;
   /** Updates `?v=` (preserving `?tab=` and any other params); null clears it. */
   setViewingRevision: (revision: number | null) => void;
 }
@@ -97,6 +109,50 @@ function resolveHasCapturedState(isViewingVersion: boolean, viewingVersion: Proj
   return viewingVersion != null && viewingVersion.hasSnapshot;
 }
 
+/** Shared gate for BOTH captured-version reads (`snapshotEntries` and the
+ *  equipment bundle) — split out purely to keep `ProjectVersionProvider`'s
+ *  own branch count under R-3.6's ceiling; both reads are only meaningful
+ *  while actively viewing a version that has something captured. */
+function shouldFetchCapturedVersion(isViewingVersion: boolean, hasCapturedState: boolean): boolean {
+  return isViewingVersion && hasCapturedState;
+}
+
+// The remaining small helpers below exist for the same R-3.6 reason as the
+// `resolve*` functions above — each inlined ternary/`&&` chain is itself a
+// branch ESLint's `complexity` rule counts against `ProjectVersionProvider`,
+// so query-args/loading/value derivation is factored out to plain functions
+// instead of living inline in the component body.
+
+function versionsQueryArgs(orgId: string | undefined, projectId: string, now: number | undefined) {
+  return orgId ? { projectId, orgId, now } : ("skip" as const);
+}
+
+/** `useAuthedQuery` reads `"skip"` while ungated, so "loading" is "gated open,
+ *  but the query hasn't resolved yet" — reused for all three reads below. */
+function isLoadingGated(gateOpen: boolean, raw: unknown): boolean {
+  return gateOpen && raw === undefined;
+}
+
+function snapshotEntriesQueryArgs(orgId: string | undefined, snapshotId: string | undefined) {
+  return orgId && snapshotId ? { snapshotId, orgId } : ("skip" as const);
+}
+
+function equipmentBundleQueryArgs(
+  orgId: string | undefined,
+  projectId: string,
+  fetchCaptured: boolean,
+  snapshotId: string | undefined,
+) {
+  return orgId && fetchCaptured && snapshotId ? { projectId, orgId, snapshotId } : ("skip" as const);
+}
+
+/** Both captured-version reads resolve to `null` (not `undefined`) outside
+ *  their gate, so a consumer never has to separately check `fetchCaptured`
+ *  itself. */
+function resolveGatedValue<T>(gateOpen: boolean, raw: T | null | undefined): T | null {
+  return gateOpen ? (raw ?? null) : null;
+}
+
 export function ProjectVersionProvider({
   projectId,
   orgId,
@@ -112,12 +168,9 @@ export function ProjectVersionProvider({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const versionsRaw = useAuthedQuery(
-    api.projectVersionsRead.listVersions,
-    orgId ? { projectId, orgId, now } : "skip",
-  );
+  const versionsRaw = useAuthedQuery(api.projectVersionsRead.listVersions, versionsQueryArgs(orgId, projectId, now));
   const versions = useMemo<ProjectVersionListItem[]>(() => versionsRaw ?? [], [versionsRaw]);
-  const isLoadingVersions = orgId != null && versionsRaw === undefined;
+  const isLoadingVersions = isLoadingGated(orgId != null, versionsRaw);
 
   const requestedRevision = parseRequestedRevision(searchParams.get("v"));
   const liveRevision = useMemo(() => resolveLiveRevision(versions), [versions]);
@@ -129,15 +182,24 @@ export function ProjectVersionProvider({
   const hasCapturedState = resolveHasCapturedState(isViewingVersion, viewingVersion);
 
   const snapshotId = isViewingVersion ? viewingVersion?.snapshotId : undefined;
-  const entriesRaw = useAuthedQuery(
-    api.projectLocksRead.snapshotEntries,
-    orgId && snapshotId ? { snapshotId, orgId } : "skip",
-  );
-  const isLoadingProjection = isViewingVersion && hasCapturedState && entriesRaw === undefined;
+  const fetchCaptured = shouldFetchCapturedVersion(isViewingVersion, hasCapturedState);
+  const entriesRaw = useAuthedQuery(api.projectLocksRead.snapshotEntries, snapshotEntriesQueryArgs(orgId, snapshotId));
+  const isLoadingProjection = isLoadingGated(fetchCaptured, entriesRaw);
   const projected = useMemo<ProjectedView | null>(() => {
-    if (!isViewingVersion || !hasCapturedState || !entriesRaw) return null;
+    if (!fetchCaptured || !entriesRaw) return null;
     return projectSnapshotEntries(entriesRaw as SnapshotEntryLike[]);
-  }, [isViewingVersion, hasCapturedState, entriesRaw]);
+  }, [fetchCaptured, entriesRaw]);
+
+  // #1080/#1101 — a second, join-shaped read for the Equipment tab
+  // specifically (sub-hires/categorySlots/reference-data resolution the pure
+  // projectSnapshotEntries mapper can't do). Gated the same way as
+  // `entriesRaw` above.
+  const equipmentBundleRaw = useAuthedQuery(
+    api.projectVersionsEquipment.bundle,
+    equipmentBundleQueryArgs(orgId, projectId, fetchCaptured, snapshotId),
+  );
+  const isLoadingEquipmentBundle = isLoadingGated(fetchCaptured, equipmentBundleRaw);
+  const equipmentBundle = resolveGatedValue(fetchCaptured, equipmentBundleRaw);
 
   const setViewingRevision = useCallback(
     (revision: number | null) => {
@@ -161,6 +223,8 @@ export function ProjectVersionProvider({
     projected,
     isLoadingProjection,
     hasCapturedState,
+    equipmentBundle,
+    isLoadingEquipmentBundle,
     setViewingRevision,
   };
 

@@ -3182,6 +3182,12 @@ export default defineSchema({
     id: v.string(),
     organizationId: v.string(),
     snapshotId: v.string(),
+    // #1080/#1101 added subHire/subHireItem/subHireGroup/categorySlot so a
+    // version-viewing render can reproduce the live Equipment tab's exact
+    // table (sub-hire groups, categorySlots-driven combined order) — kept in
+    // lockstep with `convex/lib/projectSnapshots.ts`'s `SnapshotEntityType`
+    // and the other redeclarations of this union (R-3.1). Additive/backward-
+    // compatible: every existing row's value is still a member.
     entityType: v.union(
       v.literal("project"),
       v.literal("category"),
@@ -3189,6 +3195,10 @@ export default defineSchema({
       v.literal("lineItem"),
       v.literal("service"),
       v.literal("crewAssignment"),
+      v.literal("subHire"),
+      v.literal("subHireItem"),
+      v.literal("subHireGroup"),
+      v.literal("categorySlot"),
     ),
     entityId: v.string(),
     data: v.any(),

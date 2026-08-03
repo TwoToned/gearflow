@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { invoiceRowMenuActions } from "@/components/projects/project-finance-panel";
+import { invoiceRowMenuActions } from "@/components/projects/finance/project-invoice-ledger";
 
 /**
  * #1038 — unit coverage for the invoice row's overflow-menu logic (Delete

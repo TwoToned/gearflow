@@ -16,7 +16,7 @@ import { renderProjectNumber, scopeKeyFor, type IncrementReset, type ProjectNumb
 import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
 import { computeDueDate } from "./lib/invoiceDates";
 import { startOfDayInTimezone } from "./lib/quoteDates";
-import { projectLiveRevision } from "./lib/quoteState";
+import { projectLiveRevision, findQuoteAtRevision, effectiveQuoteStatus } from "./lib/quoteState";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -267,6 +267,42 @@ export const createNative = mutation({
   },
 });
 
+/**
+ * An invoice may only become real (ISSUED) once the quote it's linked to — by
+ * the revision stamped on it at creation (`sourceRevision`, never updated
+ * afterwards) — is the project's currently ACCEPTED quote. Draft invoices
+ * stay unrestricted; this only gates the DRAFT→ISSUED transition (split out
+ * of `issueNative`'s handler to keep its own complexity down, R-3.6, same
+ * reasoning as `quotesWrites.ts`'s `assertQuoteStatusIs`).
+ */
+async function assertInvoiceQuoteAccepted(
+  ctx: MutationCtx,
+  orgId: string,
+  invoice: Pick<Doc<"invoices">, "projectId" | "sourceRevision">,
+  nowMs: number,
+): Promise<void> {
+  if (invoice.sourceRevision == null) {
+    throw new ConvexError({
+      code: "QUOTE_NOT_ACCEPTED",
+      message: "This invoice has no linked quote version — recreate it against the current version to issue it.",
+    });
+  }
+  const linkedQuote = await findQuoteAtRevision(ctx, orgId, invoice.projectId, invoice.sourceRevision);
+  if (!linkedQuote) {
+    throw new ConvexError({
+      code: "QUOTE_NOT_ACCEPTED",
+      message: "Can't issue this invoice — no quote exists yet for this version.",
+    });
+  }
+  const linkedStatus = effectiveQuoteStatus(linkedQuote, nowMs);
+  if (linkedStatus !== "ACCEPTED") {
+    throw new ConvexError({
+      code: "QUOTE_NOT_ACCEPTED",
+      message: `Can't issue this invoice — the quote for this version is ${linkedStatus.toLowerCase()}, not accepted.`,
+    });
+  }
+}
+
 export const issueNative = mutation({
   returns: v.object({ id: v.string(), invoiceNumber: v.string() }),
   args: {
@@ -307,6 +343,7 @@ export const issueNative = mutation({
     if (doc.status !== "DRAFT") {
       throw new ConvexError({ code: "INVALID_STATE", message: `Invoice is ${doc.status}, only a DRAFT invoice can be issued.` });
     }
+    await assertInvoiceQuoteAccepted(ctx, orgId, doc, now);
 
     const invoiceNumber = await allocateInvoiceNumber(ctx, orgId, autoNumber, now);
 

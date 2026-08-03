@@ -9,14 +9,15 @@ Mira is RVLT Flow's in-app assistant. `MiraContextProvider`
 open/closed state and an arbitrary `pageContext` object — deliberately trivial so it
 never delays paint, with the actual assistant UI deferred to its own mount point.
 
-Mira answers a question with a real LLM tool-calling loop (OpenRouter) over the **same
+Mira answers a question with a real LLM tool-calling loop (OpenRouter by default, or any
+org-supplied OpenAI-compatible backend — see "BYO backend" below) over the **same
 agent-accessible API/MCP surface** an external agent would use (FEATUREDOCS/56) — not a
 separate code path. Every Mira call is a real `dispatch()` call, gated by the same RBAC,
 scopes, and lifecycle locks as anything else, and shows up in the asking user's per-key
 request log (Settings → API keys → request log) like any other API traffic.
 
-Each org brings its **own** OpenRouter API key and picks its **own** model
-(`/settings/mira`) — the platform never sees or pays for a shared LLM credential.
+Each org brings its **own** API key and picks its **own** model (`/settings/mira`) — the
+platform never sees or pays for a shared LLM credential.
 
 **Mira is disabled for an org until an admin connects a key.** `MiraLauncher`
 (`src/components/mira/mira-launcher.tsx`) calls `isMiraConfigured()`
@@ -44,11 +45,13 @@ MiraPanel ("use client" — persisted multi-turn thread, markdown rendering)
         │  sendMiraMessage(question, pageContext)   [server action]
         ▼
 src/server/mira.ts
-        │  1. getMiraLlmConfig(org)        → org's OpenRouter key + model, or bail
+        │  1. getMiraLlmConfig(org)        → org's API key + model (+ optional baseUrl), or bail
         │  2. getOrProvisionMiraToken(org, user, writeAccessEnabled)
         │  3. buildMiraTools({ includeWrites, grantedScopes })   [tool-defs.ts]
-        │  4. runMiraAgentLoop({ apiKey, model, messages, tools, executeTool })
+        │  4. runMiraAgentLoop({ apiKey, model, baseUrl, messages, tools, executeTool })
         │        │                                                [agent-loop.ts]
+        │        ▼  each model turn
+        │     chatCompletion({ apiKey, model, baseUrl, messages, tools })  [llm-client.ts]
         │        ▼  each tool call
         │     dispatch(operation, { args, idempotencyKey }, `Bearer <token>`, requestId)
         │  5. persist every turn to miraConversations/miraMessages
@@ -138,7 +141,7 @@ model has no parameter to self-approve a high-danger action with.
 `src/lib/mira/agent-loop.ts`'s `runMiraAgentLoop` calls the model, executes whatever
 tool calls it returns via the injected `executeTool`, feeds results back, and repeats —
 bounded by both an iteration count and a wall-clock timeout (`docs/budgets.md` T-P10) so
-a confused model can't run away on the org's own OpenRouter spend. When a tool call hits
+a confused model can't run away on the org's own LLM spend. When a tool call hits
 the dispatcher's `CONFIRMATION_REQUIRED` gate (a `danger:"high"` op — delete/archive,
 financial issue/void, bulk-destructive, warehouse dispatch/receive), the loop stops
 calling more tools, gives the model exactly one more turn (tools disabled) to explain
@@ -210,7 +213,7 @@ tool descriptions and the bare feature-map one-liners don't provide on their own
 
 **Deliberately NOT included**: the full ~120,000-word FEATUREDOCS corpus. Embedding it
 wholesale would blow well past a re-sent-every-message/every-tool-round-trip budget on
-the org's own OpenRouter key for very little benefit — most of it is implementation
+the org's own LLM spend for very little benefit — most of it is implementation
 detail (PDF pagination internals, migration history) irrelevant to answering a user's
 question. If a question genuinely needs FEATUREDOCS-level depth on one specific system,
 the answer is a future on-demand "fetch this one doc" tool, not a bigger system prompt.
@@ -226,14 +229,44 @@ system prompt (`src/lib/mira/system-prompt.ts`) as "the user is currently lookin
 X" context, not into a hand-written routing table — extend it to other detail pages the
 same way; there's no separate router file to update anymore.
 
+## BYO backend — any OpenAI-compatible endpoint, not just OpenRouter
+
+`src/lib/mira/llm-client.ts` (renamed from `openrouter-client.ts`) is a thin
+OpenAI-compatible chat-completions client: `chatCompletion()` POSTs to
+`{baseUrl}/chat/completions` and defaults `baseUrl` to `DEFAULT_LLM_BASE_URL`
+(OpenRouter) when the org hasn't set one. `miraOrgSettings.baseUrl` (optional,
+`convex/schema.ts`) lets an org instead point Mira at Azure OpenAI, a self-hosted
+vLLM/Ollama/LM Studio server, or anything else that implements the same
+request/response shape — no code change, just a URL in `/settings/mira`.
+
+`baseUrl` is **not a secret** (unlike the API key) — it's stored and returned in plain
+text by `getMiraSettings`/`saveMiraSettings`. The "clear vs don't-touch" convention
+matches every other optional settings field: `saveMiraSettings` always passes the raw
+(possibly `""`) string through; `miraOrgSettings.patch` treats `""` as "unset it, fall
+back to OpenRouter" and `undefined` as "leave whatever's there." `create` only ever
+stores `baseUrl || undefined` — never `""` on a fresh row.
+
+Two things are org-specific and both travel together: the attribution headers
+(`HTTP-Referer`/`X-Title`) OpenRouter itself reads for its own dashboards are only sent
+when `baseUrl === DEFAULT_LLM_BASE_URL` — sending them to an arbitrary third-party or
+self-hosted endpoint would be meaningless and none of this app's business. Header
+values must stay plain ASCII (the Fetch spec requires a ByteString) — a non-ASCII
+character (an em dash shipped in `X-Title` once) makes `fetch()` throw at **call**
+time, not build time, which broke every Mira request in production until fixed.
+`llm-client.test.ts` has a standing regression test that constructs a real `Headers`
+object from the actual header values sent, so this class of bug fails CI instead of
+shipping again.
+
 ## Settings — `/settings/mira`
 
 Org-admin-only (`orgSettings:update`, same gate as WooCommerce's integration settings).
-`src/server/mira-settings.ts` stores the OpenRouter key **encrypted at rest**
+`src/server/mira-settings.ts` stores the API key **encrypted at rest**
 (`src/lib/crypto/secret-vault.ts`) and never round-trips it back to the browser — the
-settings page only ever learns `hasApiKey: boolean`, never the key itself. Saving a new
-key, changing the model, or flipping write access all call `logActivity()` for the audit
-trail, same as every other settings save (CLAUDE.md's Server Actions rules).
+settings page only ever learns `hasApiKey: boolean`, never the key itself. The Base URL
+field is plain text (see "BYO backend" above), validated as a full URL when non-empty.
+Saving new settings, changing the model, or flipping write access all call
+`logActivity()` for the audit trail, same as every other settings save (CLAUDE.md's
+Server Actions rules).
 
 ## Related
 

@@ -1,4 +1,4 @@
-# Project Version Switcher (Phase 3 projection + Phase 4 promote/list + Phase 5 header actions)
+# Project Version Switcher (Phase 3 projection + Phase 4 promote/list + Phase 5 header actions + Phase 6 equipment parity)
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-08-03 (review quarterly — POLICY.md R-5.5)_
 
@@ -10,7 +10,9 @@ user-facing action — the promote dialog wired into both the read-only bar and
 the Finance tab's version rail — and the version rail itself (`ProjectQuoteRail`)
 is now the project's ONE version list, with the old `⋯ Versions` panel retired.
 Phase 5 ("fine-tune versioning") turned the header switcher itself into a full
-version menu — see §"Phase 5" below.
+version menu — see §"Phase 5" below. Phase 6 ("look exactly the same as the
+live version") closed the Equipment tab's biggest visual gap — sub-hires and
+`categorySlots` ordering are now captured and rendered — see §"Phase 6" below.
 
 **Depends on:** Phase 1 (#1085, merged) — `projects.liveRevision`, `saveVersionNative`,
 the `VERSION_SAVED`/`PRE_PROMOTE` snapshot reasons. Phase 2 (#1089, merged) —
@@ -54,15 +56,15 @@ switcher's per-revision list (state, date, total), org-checked the same way.
 
 ### What the mapper cannot produce
 
-Sub-hire lines, category-slot ordering, live availability and live warehouse
-status are never in `SnapshotEntityType` (`convex/lib/projectSnapshots.ts`) — no
-snapshot has ever captured them, at any point in this program, not a bug in this
-phase. The equipment projection renders an explicit caveat rather than silently
-omitting them or showing a plausible-looking (and wrong) number (design doc §5.1).
-Real money already invoiced/received (`invoicedTotal`/`depositPaid`) is deliberately
-passed as `null` into the projected Finance view for the same reason — it's not
-versioned (design doc decision 3, invoices are lineage-labelled on ONE
-project-level ledger, never rolled back).
+Live availability and live warehouse status are never in `SnapshotEntityType`
+(`convex/lib/projectSnapshots.ts`) — these are genuinely point-in-time facts a
+frozen version can never recompute, not a bug in this phase. Sub-hire lines and
+category-slot ordering used to be on this list too; Phase 6 (below) closed that
+gap by widening capture. Real money already invoiced/received
+(`invoicedTotal`/`depositPaid`) is deliberately passed as `null` into the
+projected Finance view for a related but distinct reason — it's not versioned
+at all (design doc decision 3, invoices are lineage-labelled on ONE
+project-level ledger, never rolled back), not merely uncapturable.
 
 ## ⚠️ Deliberate scope decision: a separate read-only render surface, not an `aria-disabled` sweep of the live tabs
 
@@ -86,11 +88,14 @@ history"). `GatedButton`/`LockedField` (the `aria-disabled` + `TooltipProvider`
 primitives from #990) remain the right tool for the LIFECYCLE lock, which continues
 to gate the live tabs unchanged.
 
-**Follow-up candidate, not filed as a phase:** if product feedback wants viewing an
-old version to keep the exact live layout (familiar scroll position, same table
-chrome) rather than a simplified read-only render, revisit the live-components-with-
-aria-disabled approach then — the mapper output (`ProjectedView`) is already the
-right shape to feed either rendering.
+Phase 6 (below) took the "if product feedback wants the exact live layout" follow-up
+this section used to flag — but landed it as a THIRD option, not the
+`aria-disabled`-sweep this section rejected: genuinely static markup that reuses
+the live tab's DATA shapes and ordering algorithm, not its interactive row
+components. The reasoning above (auditing 2500+ lines of mutating controls is a
+bigger, riskier undertaking than a dedicated read-only surface) still holds —
+Phase 6 didn't revisit it, it found a way to get closer to the same visual result
+without doing that audit.
 
 ## Routing and state
 
@@ -259,10 +264,111 @@ Action visibility is gated by `useCanDo("invoice", "publish")` (matching
 `CanDo resource="invoice" action="publish"` everywhere else a quote verb is
 offered) — a caller without it sees the plain list with no action icons.
 
+## Phase 6 — Equipment tab parity with the live table ("look exactly the same as the live version")
+
+The complaint this phase fixes: viewing a captured version's Equipment tab
+looked visibly different from the live tab — a caveat banner
+("Sub-hires and custom item ordering aren't captured in this version") instead
+of the real table, sub-hire groups invisible, and groups/standalone items
+rendered as two separate sequential lists instead of their actual
+`categorySlots`-interleaved order. The only difference the request accepted:
+live availability/overbooking calculations, which are genuinely
+un-recomputable for a past version.
+
+**Capture widened, additively.** `SnapshotEntityType`
+(`convex/lib/projectSnapshots.ts`) gained four members: `subHire`,
+`subHireItem`, `subHireGroup`, `categorySlot` — kept in lockstep across every
+place this union is redeclared (R-3.1): `convex/schema.ts`'s
+`projectSnapshotEntries.entityType` validator itself, `convex/projectLocksRead.ts`'s
+`ENTRY_RETURNS`, `src/lib/project-version-projection.ts`'s and
+`src/lib/project-snapshot-diff.ts`'s local types — five places total now
+(check all of them the next time this union changes). `subHireItems`/
+`subHireGroups`/`categorySlots` carry no `organizationId` — `captureProjectSnapshot`/
+`collectCurrentEntries` share one new helper, `collectSubHireRelatedEntities`,
+that org-scopes them transitively (through `subHires`/`projectCategories`,
+which do have it), mirroring the exact referenced-only join pattern
+`convex/equipmentTab.ts`'s `readEquipmentTab` already uses for the live tab.
+Additive and backward-compatible: an OLDER snapshot simply has none of these
+four entity types, which every consumer below degrades from gracefully
+(empty arrays, "groups then items" ordering, no sub-hire block) — never an
+error, never a plausible-looking wrong number.
+
+**`restoreProjectSnapshot` is UNCHANGED — deliberately.** Promoting an older
+version still only restores the original six entity types onto the live
+tables. This means: after this phase, VIEWING an old version shows its true
+historical sub-hire orders and combined ordering, but PROMOTING that version
+live does NOT bring historical sub-hire state back — the project's CURRENT
+sub-hire orders/`categorySlots` stay exactly as they were before the promote.
+This is a real, disclosed gap, not an oversight — restoring sub-hire orders
+touches a second live-editable subsystem's data (`subHires`/`subHireItems`/
+`subHireGroups` are edited independently of the project via the Sub-hires UI)
+with its own conflict semantics `restoreProjectSnapshot`'s existing
+`isWarehouseBacked`/conflict-surfacing model doesn't cover — a legitimate
+follow-up, not scoped into this phase.
+
+**The reuse split: data + ordering algorithm, not the interactive components.**
+The live Equipment tab already separates "assemble a bundle of raw docs"
+(`convex/equipmentTab.ts`'s `readEquipmentTab`) from "turn that bundle into
+`CategoryData[]`/`GroupData[]`/etc., interleaved by `categorySlots`"
+(`src/lib/equipment-tab-reconstruct.ts`'s `reconstructProjectCategories` and
+friends — client-side, framework-free, ~130 lines of interleaving logic) from
+"render it" (`equipment-rows.tsx`'s `GroupRow`/`SubHireGroupRow`/`LineItemRow`/
+`CategoryRow`). The new Convex query, `convex/projectVersionsEquipment.ts`'s
+`bundle`, mirrors ONLY the first step — given `{projectId, orgId, snapshotId}`
+it loads the snapshot's captured entries, splits them into the same
+doc-shaped arrays `readEquipmentTab` produces, and resolves referenced
+`models`/`assets`/`bulkAssets`/`suppliers`/`kits`/`categories` from CURRENT
+tables by id (the same referenced-only point-read pattern) — display names
+for reference data, not "live availability" (if a model was renamed after
+this version was captured, the version shows the new name, matching how the
+live tab always shows current names — a disclosed trade-off, not full
+denormalized historical capture). `units` (per-serial fulfillment,
+`projectLineItemUnits`) is always `[]` here — which physical asset is
+deployed/returned on a line is warehouse/fulfillment state, the identical
+reasoning `restoreProjectSnapshot`'s `LINE_ITEM_WAREHOUSE_FIELDS` exclusion
+already uses; `LineItemData.units` is optional, so this renders correctly
+without it.
+
+This query does NOT call `reconstructProjectCategories` itself — **the Convex
+bundler cannot resolve `@/` path aliases** (the same constraint that already
+forced `entryDataEqual`/`snapshotEntriesEqual` to exist as a pinned duplicate
+in `convex/lib/projectSnapshots.ts` instead of importing
+`src/lib/project-snapshot-diff.ts`), and `equipment-tab-reconstruct.ts`
+imports `@/components/projects/equipment-rows`. Duplicating its interleaving
+algorithm into `convex/` would violate R-3.1 the moment the two drift. So the
+split stays exactly where the live tab already put it: the CLIENT
+(`ProjectVersionContext`) fetches the new query's bundle and calls
+`reconstructProjectCategories`/`reconstructUncategorizedLineItems`/
+`reconstructUncategorizedSubHireGroups`/`reconstructUncategorizedProjectGroups`
+— the SAME functions, unmodified — exactly as `use-native-equipment-tab.ts`
+already does for the live bundle. Zero duplicated logic anywhere.
+
+**`version-projected-equipment.tsx` is genuinely static markup, not
+`GroupRow`/`LineItemRow` reused read-only.** Those components turned out NOT
+to have a built-in read-only mode on closer inspection: `onDelete`/`onEdit`/
+`onToggle`/`onAddEquipment`/`onAddKit`/`onMoveToCategory`/`onMoveToGroup`/
+`onRemove` are required props (not optional), and `LineItemRow` unconditionally
+calls `useCollaborationWrites()` and subscribes to
+`api.collaboration.listThreadCommentCounts` keyed by the CURRENT item id —
+showing a live comment count on a row from three versions ago would be
+actively wrong, not merely unstyled. Rather than passing no-op callbacks (real
+buttons that silently do nothing) or refactoring a 2500-line live-editing file
+to grow a true read-only mode (exactly the audit the original Phase 3 scope
+decision above rejected), the rebuilt component renders the SAME
+`CategoryData`/`GroupData`/`SubHireGroupData`/`LineItemData` shapes and the
+SAME `mixedGroups` order through independent, non-interactive markup — reusing
+`@/components/ui/table` primitives and `formatCurrency` for visual/numeric
+consistency, with zero editing affordances. Visually matches the live table's
+columns, grouping and totals; is not literally the same React component
+instances.
+
 ## Out of scope (later phases)
 
 - Recall-to-edit (#1100, Phase 5) — editing a promoted SENT revision is still
   refused by the existing quote-derived lock until that phase lands.
+- Promoting an older version does not restore its historical sub-hire orders
+  or `categorySlots` ordering (Phase 6) — a real follow-up candidate, not filed
+  as a phase yet.
 - Org-level version reporting — not planned.
 
 ## Testing
@@ -301,3 +407,16 @@ offered) — a caller without it sees the plain list with no action icons.
   passes.
 - `convex/projectVersionsRead.test.ts` (Phase 5) — the zero-quote-rows
   synthetic entry, and that `pdfFileId` round-trips onto each version item.
+- `convex/projectVersionsEquipment.test.ts` (Phase 6) — a full-fidelity
+  capture (project group + sub-hire group/item + `categorySlots` ordering)
+  round-trips through `bundle`, including the referenced-only supplier
+  resolve; an older snapshot with none of the four new entity types degrades
+  to empty arrays; cross-org IDOR on the snapshot row.
+- `src/components/projects/__tests__/version-projected-views.smoke.test.tsx`
+  (Phase 6) — an integration-style test (not a plugin-layer unit test, per
+  CLAUDE.md's PDF-pipeline testing rule applied here too) that runs a real
+  bundle fixture through the ACTUAL `reconstructProjectCategories` and
+  renders it: asserts the sub-hire group and custom item both appear, in
+  `categorySlots` order (project group → sub-hire group → standalone item —
+  proving real interleaving, not "groups first"), zero buttons/mutation
+  controls render, and the old "not captured" caveat banner is gone.

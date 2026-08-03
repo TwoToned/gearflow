@@ -187,6 +187,42 @@ export function ssoAccessRejectedEmail({
   };
 }
 
+/**
+ * B2 (#1094) — an org admin/owner is notified immediately when someone asks
+ * to join via verified-domain match, the same "send right away, don't wait
+ * for the notification cron" posture as `invitationEmail` (Better Auth's own
+ * invite email is immediate too). Approval/rejection of the request reuses
+ * `ssoAccessApprovedEmail`/`ssoAccessRejectedEmail` as-is — the "your request
+ * to join X was approved/not approved" copy is identical regardless of
+ * whether the request came from SSO auto-provisioning or a domain match, so a
+ * second near-duplicate template would just be two copies of one fact (R-3.1).
+ */
+export function joinRequestReceivedEmail({
+  orgName,
+  requesterName,
+  requesterEmail,
+  reviewUrl,
+  platformName = "RVLT Flow",
+}: {
+  orgName: string;
+  requesterName?: string;
+  requesterEmail: string;
+  reviewUrl: string;
+  platformName?: string;
+}): EmailContent {
+  const who = requesterName
+    ? `${escapeHtml(requesterName)} (${escapeHtml(requesterEmail)})`
+    : escapeHtml(requesterEmail);
+  return {
+    subject: `${who} wants to join ${orgName}`,
+    html: emailShell(
+      `<h2>Join Request</h2>` +
+        `<p>${who} has asked to join <strong>${escapeHtml(orgName)}</strong> on ${platformName}, matched by your organisation's email domain.</p>` +
+        emailButton({ href: reviewUrl, label: "Review Request" }),
+    ),
+  };
+}
+
 const DIGEST_BODY_FONT_SIZE = "14px";
 
 function testTagDigestRow(item: TestTagDigestAsset): string {

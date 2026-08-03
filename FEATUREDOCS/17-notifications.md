@@ -15,6 +15,7 @@
 | `pending_timesheets` | Crew time entries in SUBMITTED status | `/crew/timesheets` |
 | `flagged_asset` | Project line item in FLAGGED_FAULTY/FLAGGED_TT_OVERDUE | `/warehouse/{projectId}` |
 | `incident_report` | New/open MaintenanceRecord with `incidentType` set (Report Issue or an immediate check-item FAIL) — see FEATUREDOCS/64 | `/warehouse/{projectId}` or `/maintenance/{id}` |
+| `pending_join_requests` | Pending `PendingOrgJoinRequest` rows (B2, #1094) — owner/admin viewers only | `/settings/team` |
 
 ## Implementation
 

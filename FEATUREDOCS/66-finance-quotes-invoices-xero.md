@@ -622,7 +622,7 @@ rather than inventing a separate deletion path:
 
 UI: `DeleteVoidInvoiceDialog` (`src/components/projects/finance/`), a
 near-verbatim port of `DeleteRecalledDialog`, reachable from a `VOID` row's
-overflow menu (`invoiceRowMenuActions` in `project-finance-panel.tsx`).
+overflow menu (`invoiceRowMenuActions` in `project-invoice-ledger.tsx`).
 
 ## The Finance tab (#989 — Phase D of #985)
 
@@ -637,11 +637,37 @@ overflow menu (`invoiceRowMenuActions` in `project-finance-panel.tsx`).
 > those workflows. The Overview cards open the SAME dialog components
 > `ProjectQuoteRail` uses, never reimplementations.
 >
-> Two rules the Overview cards inherit from this doc: a sent quote's displayed
-> amount is the **frozen snapshot total**, never live project pricing (only a
-> never-sent draft shows the current total, because that IS what sending would
-> freeze); and there is no accepted-quote gate on invoice creation, because
-> `invoicesWrites.ts` has none — the card must not claim one.
+> **Invoices manager modal work (2026-08) — "All revisions" / "All invoices"
+> now open a manager dialog, not the Finance tab.** `QuoteManagerDialog` and
+> `InvoiceManagerDialog` (`src/components/projects/finance/`) are `Dialog`
+> shells around the exact same `<ProjectQuoteRail>` / `<ProjectInvoiceLedger>`
+> the Finance tab renders (`ProjectInvoiceLedger` is the invoice half,
+> extracted out of `ProjectFinancePanel` for this reuse — R-3.1: one
+> component, two embed sites, never two copies). This is a deliberate,
+> product-decided duplication of ENTRY POINT, not of logic: a PM working from
+> Overview can now send/accept a quote or issue/void an invoice without
+> switching tabs, and the Finance tab keeps its full ledger unchanged for
+> anyone who wants it there instead.
+>
+> Two rules the Overview cards (and these modals) inherit from this doc: a
+> sent quote's displayed amount is the **frozen snapshot total**, never live
+> project pricing (only a never-sent draft shows the current total, because
+> that IS what sending would freeze); and **issuing an invoice now requires
+> its linked quote revision to be ACCEPTED** (below) — draft creation stays
+> ungated.
+>
+> **Accepted-quote gate on issuing (2026-08).** `invoicesWrites.ts`'s
+> `issueNative` used to have no quote-state check at all — any DRAFT invoice
+> could be issued regardless of where the project's quote stood. It now
+> resolves the quote at the invoice's own `sourceRevision` (stamped once at
+> creation, never updated) via `findQuoteAtRevision`, and rejects with
+> `QUOTE_NOT_ACCEPTED` unless that quote's `effectiveQuoteStatus` is
+> `ACCEPTED`. Because at most one quote is ever live-`ACCEPTED` per project at
+> a time (supersede-on-send, above), this is equivalent to "only the project's
+> currently accepted quote can be turned into a real invoice" — a draft
+> invoice created against an older or newer revision than the one that ends up
+> accepted simply can't be issued until it's recreated against the accepted
+> revision. Draft creation, editing and deletion are completely unaffected.
 >
 > **Invoice menu: partial + remaining balance (replaces the old rigid
 > deposit-then-balance sequencing).** A client's `paymentProfile` used to
@@ -1334,7 +1360,9 @@ push/contact-sync/token-refresh/reference-fetch attempt, success or failure.
 | `src/server/finance-documents.ts` | `generateQuoteArtifact` / `generateInvoiceArtifact` — render, upload, attach, bin the orphan on a lost race |
 | `src/lib/finance-artifacts.ts` / `src/lib/finance-artifact-response.ts` | Artifact file naming + the shared streaming/org-check half of both routes |
 | `src/app/api/finance/{quote,invoice}/[id]/pdf/route.ts` | Download the stored document — no regeneration path |
-| `convex/invoicesWrites.ts` | `createNative`/`issueNative`/`voidNative`/`deleteDraftNative`/`createCreditNative` |
+| `convex/invoicesWrites.ts` | `createNative`/`issueNative`/`voidNative`/`deleteDraftNative`/`createCreditNative`; `issueNative` gates on the linked quote (`sourceRevision`) being `ACCEPTED` (2026-08, `QUOTE_NOT_ACCEPTED`) |
+| `src/components/projects/finance/project-invoice-ledger.tsx` | The invoice half of the Finance tab — invoice menu, list, issue/void/payment/document dialogs — extracted for reuse by `InvoiceManagerDialog` (2026-08) |
+| `src/components/projects/finance/quote-manager-dialog.tsx` / `invoice-manager-dialog.tsx` | Overview tab entry points ("All revisions" / "All invoices") — `Dialog` shells around `ProjectQuoteRail`/`ProjectInvoiceLedger` (2026-08) |
 | `convex/lib/financeSnapshot.ts` | `buildFinanceLines` — the shared quote/invoice line-breakdown builder |
 | `convex/lib/xeroAccountCascade.ts` | Pure cascade resolver functions |
 | `convex/xeroPush.ts` | Push-time coding resolution (in-context DB reads) + apply/fail mutations |

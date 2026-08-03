@@ -45862,6 +45862,33 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "siteSettings.checkOrgCreationRateLimit",
+    "module": "siteSettings",
+    "fn": "checkOrgCreationRateLimit",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "key",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e00eac8d754dbc28",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Site-admin/platform-level configuration, not org-scoped; no agent should ever see or need this."
+  },
+  {
     "operation": "siteSettings.create",
     "module": "siteSettings",
     "fn": "create",
@@ -45898,6 +45925,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "orgCreationCode",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "orgCreationCodeEnabled",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "platformIcon",
         "optional": true,
         "type": "string"
@@ -45931,7 +45968,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "allowOrgCreation"
     ],
-    "argsSha": "67af682a2841a23b",
+    "argsSha": "4570cb7ef6c6d61f",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -45977,6 +46014,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "orgCreationCode",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "orgCreationCodeEnabled",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "platformIcon",
         "optional": true,
         "type": "string"
@@ -46010,7 +46057,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "allowOrgCreation"
     ],
-    "argsSha": "67af682a2841a23b",
+    "argsSha": "4570cb7ef6c6d61f",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -46138,7 +46185,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "4de4cdb5eb94be85",
+    "argsSha": "1a179d1941d39e18",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -46175,7 +46222,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "563b74ecc5e0266a",
+    "argsSha": "305f83ba98717ef3",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -60996,10 +61043,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1174,
+  total: 1175,
   agentReachable: 567,
   queries: 414,
-  mutations: 760,
+  mutations: 761,
   agentReachableQueries: 290,
   agentReachableMutations: 277,
 } as const;

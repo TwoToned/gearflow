@@ -2603,12 +2603,6 @@ function WarehouseProjectPage({
               <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=return-sheet`, "_blank")}>
                 Return sheet
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=quote`, "_blank")}>
-                Quote / proposal
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => window.open(`/api/documents/${projectId}?type=invoice`, "_blank")}>
-                Invoice
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           {/* Desktop: View Project button */}

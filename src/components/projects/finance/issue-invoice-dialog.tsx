@@ -157,7 +157,7 @@ export function IssueInvoiceDialog({ open, onOpenChange, projectId, invoiceId, i
                 Cancel
               </Button>
               <Button type="button" asChild variant="line">
-                <a href={`/api/documents/${projectId}?type=invoice&preview=1`} target="_blank" rel="noopener noreferrer">
+                <a href={`/api/documents/${projectId}?type=invoice&preview=1&invoiceId=${invoiceId}`} target="_blank" rel="noopener noreferrer">
                   <Eye className="h-3.5 w-3.5" /> Preview
                 </a>
               </Button>

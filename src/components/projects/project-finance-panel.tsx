@@ -614,11 +614,13 @@ function InvoiceDocumentAction({ invoice: inv, projectId }: { invoice: InvoiceRo
 
   // A draft's only document is the watermarked preview — the one place a
   // client-facing finance PDF is still rendered from live state, and it says
-  // "NOT SENT" on every page.
+  // "NOT SENT" on every page. `invoiceId` matters here: without it the
+  // preview showed the live PROJECT total/breakdown regardless of this
+  // invoice's own kind — a 25% deposit draft rendered as the full invoice.
   if (inv.issuedAt == null) {
     return (
       <Button variant="line" size="sm" asChild>
-        <a href={`/api/documents/${projectId}?type=invoice&preview=1`} target="_blank" rel="noopener noreferrer">
+        <a href={`/api/documents/${projectId}?type=invoice&preview=1&invoiceId=${inv.id}`} target="_blank" rel="noopener noreferrer">
           <Eye className="h-3.5 w-3.5" /> Preview
         </a>
       </Button>

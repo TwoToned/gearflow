@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **#1094** — `/welcome`'s "Join my team" card is now a real join flow instead
+  of a placeholder: paste an invite link or code to go straight to it, or —
+  once your email is verified — search for a team already using RVLT Flow at
+  your company's email domain and ask to join. Org admins can now turn on
+  "Allow domain requests" in Settings → Team, review who's asked to join, and
+  approve or reject each one; requesters get an email either way.
+
 - **#1092** — A brand-new account with no organisation and no pending invite
   now lands on `/welcome`, a fork between "Set up a new company" and "Join my
   team" — instead of dead-ending on the old onboarding bounce. The create

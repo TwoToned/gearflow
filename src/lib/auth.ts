@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { organization, twoFactor, admin, jwt } from "better-auth/plugins";
+import { APIError } from "better-auth/api";
 import { passkey } from "@better-auth/passkey";
 import { sso } from "@better-auth/sso";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -18,6 +19,48 @@ import { readOrgSettingsBlob, saveOrgSettings } from "./org-settings-read";
 import { handleSSOProvisioning } from "./sso-provisioning";
 import { CONVEX_JWT_AUDIENCE, USER_TOKEN_TTL, JWKS_ALG } from "./convex-auth-constants";
 import { shouldUseSecureCookies } from "./cookie-security";
+import { verifyOrgCreationCode } from "./org-creation-gate";
+import { getAnyOrgForAudit } from "./audit-org";
+import { logActivity } from "./activity-log";
+
+/** Shared by `allowUserToCreateOrganization` and `beforeCreateOrganization`
+ *  below — the one-time bootstrap (no org exists anywhere yet) always skips
+ *  both the toggle and the signup code. */
+async function isOrgCreationBootstrap(): Promise<boolean> {
+  return !(await prisma.organization.findFirst({ select: { id: true } }));
+}
+
+/** Strips the one-time signup code out of the org's `metadata` before it's
+ *  persisted — it's proof of authorization, not org data. Exported (only)
+ *  for src/lib/auth.stripOrgCreationCode.test.ts — importing the full
+ *  `betterAuth()` config to unit-test a pure helper is disproportionate. */
+export function stripOrgCreationCode(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!metadata) return undefined;
+  const { orgCreationCode: _unused, ...rest } = metadata;
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
+/** Best-effort audit trail for a rejected org-creation attempt (invalid/missing
+ *  signup code) — logActivity never throws, so this can't break the rejection. */
+async function logRejectedOrgCreation(
+  organizationName: string | undefined,
+  user: { id: string; email?: string; name?: string },
+): Promise<void> {
+  const anyOrg = await getAnyOrgForAudit();
+  if (!anyOrg) return;
+  await logActivity({
+    organizationId: anyOrg.id,
+    userId: user.id,
+    userName: user.name ?? user.email ?? user.id,
+    action: "REJECT",
+    entityType: "orgCreationAttempt",
+    entityId: user.id,
+    entityName: organizationName ?? "(unnamed)",
+    summary: "Rejected organization creation — invalid or missing signup code",
+  });
+}
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
@@ -83,13 +126,19 @@ export const auth = betterAuth({
   },
   plugins: [
     organization({
-      // Phase A (#1064) ships with self-serve org creation gated off
-      // (allowOrgCreation, D7) — this is the interim, pre-Phase-B gate: only the
-      // one-time bootstrap (src/app/(auth)/onboarding/page.tsx) may create an
-      // org, and only while zero orgs exist system-wide. Phase B (#1067)
-      // replaces this with the real site-admin toggle + signup code (D6).
-      allowUserToCreateOrganization: async () =>
-        !(await prisma.organization.findFirst({ select: { id: true } })),
+      // Phase B (#1067), B3 (#1095, D6): the one-time bootstrap (no
+      // organization exists anywhere yet, src/app/(auth)/onboarding/page.tsx)
+      // is always allowed with no code — nobody could know a signup code
+      // before the first admin exists to set one. After bootstrap, creation
+      // follows the site-admin `allowOrgCreation` toggle; the signup code
+      // itself (if `orgCreationCodeEnabled`) is checked in
+      // `beforeCreateOrganization` below, since this hook only receives
+      // `user`, not the submitted form data.
+      allowUserToCreateOrganization: async () => {
+        if (await isOrgCreationBootstrap()) return true;
+        const settings = await getSiteSettingsFromConvex();
+        return settings.allowOrgCreation;
+      },
       creatorRole: "owner",
       memberRoleHierarchy: ["owner", "admin", "manager", "member", "warehouse", "viewer"],
       sendInvitationEmail: async (data) => {
@@ -104,6 +153,34 @@ export const auth = betterAuth({
             platformName: pName,
           }),
         });
+      },
+      organizationHooks: {
+        // Verifies the signup code submitted as `metadata.orgCreationCode` on
+        // the `organization.create()` call (Phase B's B1 fork screen, #1092,
+        // is the eventual caller — not built yet). Strips the code out of
+        // `metadata` before it's persisted on the org row either way: it's a
+        // one-time proof of authorization, not org data.
+        beforeCreateOrganization: async ({ organization, user }) => {
+          if (await isOrgCreationBootstrap()) return;
+
+          const submitted = (organization.metadata as Record<string, unknown> | undefined)
+            ?.orgCreationCode;
+          const code = typeof submitted === "string" ? submitted : undefined;
+          const ok = await verifyOrgCreationCode(code, user.id);
+          if (!ok) {
+            await logRejectedOrgCreation(organization.name, user);
+            throw new APIError("FORBIDDEN", {
+              message: "A valid signup code is required to create an organization.",
+            });
+          }
+
+          return {
+            data: {
+              ...organization,
+              metadata: stripOrgCreationCode(organization.metadata),
+            },
+          };
+        },
       },
     }),
     twoFactor({

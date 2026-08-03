@@ -52,6 +52,18 @@ interface ProjectVersionContextValue {
    *  no snapshot — the design doc's "no captured state (pre-versioning)" case,
    *  never rendered as an error page. */
   hasCapturedState: boolean;
+  /** #1080/#1101 — the Equipment tab's bundle-assembly read
+   *  (`convex/projectVersionsEquipment.ts`), shaped like the LIVE
+   *  `equipmentTab.bundle` so `VersionProjectedEquipment` can run it through
+   *  the SAME `reconstructProjectCategories`/`reconstructUncategorized*`
+   *  functions the live tab uses (R-3.1) — sub-hire groups and the
+   *  `categorySlots` combined order included. `null` while loading, while not
+   *  viewing a captured version, or if the snapshot row itself can't be
+   *  resolved. An OLDER (pre-#1101) snapshot still resolves — it just has
+   *  empty sub-hire/categorySlot arrays, degrading gracefully to "groups then
+   *  standalone items" ordering with no sub-hire block, never an error. */
+  equipmentBundle: unknown;
+  isLoadingEquipmentBundle: boolean;
   /** Updates `?v=` (preserving `?tab=` and any other params); null clears it. */
   setViewingRevision: (revision: number | null) => void;
 }
@@ -97,6 +109,14 @@ function resolveHasCapturedState(isViewingVersion: boolean, viewingVersion: Proj
   return viewingVersion != null && viewingVersion.hasSnapshot;
 }
 
+/** Shared gate for BOTH captured-version reads (`snapshotEntries` and the
+ *  equipment bundle) — split out purely to keep `ProjectVersionProvider`'s
+ *  own branch count under R-3.6's ceiling; both reads are only meaningful
+ *  while actively viewing a version that has something captured. */
+function shouldFetchCapturedVersion(isViewingVersion: boolean, hasCapturedState: boolean): boolean {
+  return isViewingVersion && hasCapturedState;
+}
+
 export function ProjectVersionProvider({
   projectId,
   orgId,
@@ -129,15 +149,27 @@ export function ProjectVersionProvider({
   const hasCapturedState = resolveHasCapturedState(isViewingVersion, viewingVersion);
 
   const snapshotId = isViewingVersion ? viewingVersion?.snapshotId : undefined;
+  const fetchCaptured = shouldFetchCapturedVersion(isViewingVersion, hasCapturedState);
   const entriesRaw = useAuthedQuery(
     api.projectLocksRead.snapshotEntries,
     orgId && snapshotId ? { snapshotId, orgId } : "skip",
   );
-  const isLoadingProjection = isViewingVersion && hasCapturedState && entriesRaw === undefined;
+  const isLoadingProjection = fetchCaptured && entriesRaw === undefined;
   const projected = useMemo<ProjectedView | null>(() => {
-    if (!isViewingVersion || !hasCapturedState || !entriesRaw) return null;
+    if (!fetchCaptured || !entriesRaw) return null;
     return projectSnapshotEntries(entriesRaw as SnapshotEntryLike[]);
-  }, [isViewingVersion, hasCapturedState, entriesRaw]);
+  }, [fetchCaptured, entriesRaw]);
+
+  // #1080/#1101 — a second, join-shaped read for the Equipment tab
+  // specifically (sub-hires/categorySlots/reference-data resolution the pure
+  // projectSnapshotEntries mapper can't do). Gated the same way as
+  // `entriesRaw` above.
+  const equipmentBundleRaw = useAuthedQuery(
+    api.projectVersionsEquipment.bundle,
+    orgId && fetchCaptured && snapshotId ? { projectId, orgId, snapshotId } : "skip",
+  );
+  const isLoadingEquipmentBundle = fetchCaptured && equipmentBundleRaw === undefined;
+  const equipmentBundle = fetchCaptured ? (equipmentBundleRaw ?? null) : null;
 
   const setViewingRevision = useCallback(
     (revision: number | null) => {
@@ -161,6 +193,8 @@ export function ProjectVersionProvider({
     projected,
     isLoadingProjection,
     hasCapturedState,
+    equipmentBundle,
+    isLoadingEquipmentBundle,
     setViewingRevision,
   };
 

@@ -19,7 +19,7 @@ import {
 
 export interface AppNotification {
   id: string;
-  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset" | "incident_report";
+  type: "overdue_maintenance" | "overdue_return" | "upcoming_project" | "pending_invitation" | "pending_offers" | "pending_timesheets" | "flagged_asset" | "incident_report" | "pending_join_requests";
   title: string;
   description: string;
   href: string;
@@ -290,6 +290,29 @@ export async function getNotifications(): Promise<AppNotification[]> {
         href: m.projectId ? `/warehouse/${m.projectId}` : `/maintenance/${m.id}`,
         severity: m.incidentSeverity === "MAJOR" ? "error" : "warning",
         timestamp: m.createdAt.toISOString(),
+      });
+    }
+  }
+
+  // 11. Pending org join requests (B2, #1094) — admin/owner visible only,
+  // since a member can see the count but can't act on it in Settings → Team.
+  const viewerMember = await prisma.member.findFirst({
+    where: { organizationId, userId },
+    select: { role: true },
+  });
+  if (viewerMember && (viewerMember.role === "owner" || viewerMember.role === "admin")) {
+    const pendingJoinRequests = await (await getConvexClient()).query(api.pendingOrgJoinRequests.list, {
+      orgId: organizationId,
+    });
+    if (pendingJoinRequests.length > 0) {
+      notifications.push({
+        id: "org-pending-join-requests",
+        type: "pending_join_requests",
+        title: `${pendingJoinRequests.length} pending join request${pendingJoinRequests.length !== 1 ? "s" : ""}`,
+        description: `${pendingJoinRequests.length} ${pendingJoinRequests.length !== 1 ? "people are" : "person is"} asking to join your organisation`,
+        href: "/settings/team",
+        severity: "info",
+        timestamp: now.toISOString(),
       });
     }
   }

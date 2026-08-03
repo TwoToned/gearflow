@@ -6,52 +6,55 @@ function inv(over: Partial<InvoiceLike> & { id: string; kind: string }): Invoice
   return { status: "DRAFT", total: 1000, amountPaid: 0, ...over };
 }
 
-const DEPOSIT_BALANCE = "DEPOSIT_BALANCE";
-const FULL_UPFRONT = "FULL_UPFRONT";
-
-describe("next step — deposit/balance profile", () => {
-  test("starts by asking for the deposit", () => {
-    const s = deriveInvoicingState([], DEPOSIT_BALANCE, 25, 10_000);
-    expect(s.nextStep).toEqual({ kind: "DEPOSIT", label: "Create deposit invoice", depositPercent: 25 });
+describe("partial step — always offered while something remains", () => {
+  test("offers a partial invoice with no invoices yet", () => {
+    const s = deriveInvoicingState([], 25, 10_000);
+    expect(s.partialStep).toEqual({ kind: "DEPOSIT", label: "Partial balance", depositPercent: 25 });
   });
 
-  test("waits for the deposit to be ISSUED before offering the balance", () => {
-    const draftDeposit = deriveInvoicingState([inv({ id: "1", kind: "DEPOSIT" })], DEPOSIT_BALANCE, 25, 10_000);
-    expect(draftDeposit.nextStep).toEqual({ kind: "NONE", reason: "Issue the deposit invoice first" });
-
-    const issuedDeposit = deriveInvoicingState(
-      [inv({ id: "1", kind: "DEPOSIT", status: "ISSUED" })],
-      DEPOSIT_BALANCE,
-      25,
-      10_000,
-    );
-    expect(issuedDeposit.nextStep).toEqual({ kind: "BALANCE", label: "Create balance invoice" });
+  test("stays offered after one partial already exists — multiple partials are allowed", () => {
+    const s = deriveInvoicingState([inv({ id: "1", kind: "DEPOSIT", status: "ISSUED", total: 2500 })], 25, 10_000);
+    expect(s.partialStep).toEqual({ kind: "DEPOSIT", label: "Partial balance", depositPercent: 25 });
   });
 
-  test("stops once both exist", () => {
-    const s = deriveInvoicingState(
-      [inv({ id: "1", kind: "DEPOSIT", status: "ISSUED" }), inv({ id: "2", kind: "BALANCE" })],
-      DEPOSIT_BALANCE,
-      25,
-      10_000,
-    );
-    expect(s.nextStep.kind).toBe("NONE");
+  test("disappears once the project total is fully invoiced", () => {
+    const s = deriveInvoicingState([inv({ id: "1", kind: "FULL", status: "ISSUED", total: 10_000 })], 25, 10_000);
+    expect(s.partialStep).toEqual({ kind: "NONE", reason: "Fully invoiced" });
   });
 
-  test("a VOID deposit doesn't count — the deposit is offered again", () => {
-    const s = deriveInvoicingState([inv({ id: "1", kind: "DEPOSIT", status: "VOID" })], DEPOSIT_BALANCE, 25, 10_000);
-    expect(s.nextStep.kind).toBe("DEPOSIT");
+  test("a VOID invoice doesn't count against the remainder", () => {
+    const s = deriveInvoicingState([inv({ id: "1", kind: "FULL", status: "VOID", total: 10_000 })], 25, 10_000);
+    expect(s.partialStep.kind).toBe("DEPOSIT");
+  });
+
+  test("unavailable when the project total is unknown", () => {
+    const s = deriveInvoicingState([], 25, null);
+    expect(s.partialStep).toEqual({ kind: "NONE", reason: "Project total not set" });
   });
 });
 
-describe("next step — full-upfront profile", () => {
-  test("offers one full invoice, then stops", () => {
-    expect(deriveInvoicingState([], FULL_UPFRONT, 25, 10_000).nextStep).toEqual({
-      kind: "FULL",
-      label: "Create invoice",
-    });
-    const s = deriveInvoicingState([inv({ id: "1", kind: "FULL" })], FULL_UPFRONT, 25, 10_000);
-    expect(s.nextStep).toEqual({ kind: "NONE", reason: "Already invoiced" });
+describe("remaining step — FULL the first time, BALANCE after that", () => {
+  test("offers a FULL (itemized) invoice with nothing raised yet", () => {
+    const s = deriveInvoicingState([], 25, 10_000);
+    expect(s.remainingStep).toEqual({ kind: "FULL", label: "Remaining balance" });
+  });
+
+  test("offers BALANCE once a partial already exists, even a draft one", () => {
+    const s = deriveInvoicingState([inv({ id: "1", kind: "DEPOSIT", total: 2500 })], 25, 10_000);
+    expect(s.remainingStep).toEqual({ kind: "BALANCE", label: "Remaining balance" });
+  });
+
+  test("stops once fully invoiced", () => {
+    const s = deriveInvoicingState(
+      [inv({ id: "1", kind: "DEPOSIT", status: "ISSUED", total: 2500 }), inv({ id: "2", kind: "BALANCE", status: "ISSUED", total: 7500 })],
+      25,
+      10_000,
+    );
+    expect(s.remainingStep).toEqual({ kind: "NONE", reason: "Fully invoiced" });
+  });
+
+  test("unavailable when the project total is unknown", () => {
+    expect(deriveInvoicingState([], 25, null).remainingStep).toEqual({ kind: "NONE", reason: "Project total not set" });
   });
 });
 
@@ -59,7 +62,6 @@ describe("money", () => {
   test("only ISSUED invoices count as money owed", () => {
     const s = deriveInvoicingState(
       [inv({ id: "1", kind: "DEPOSIT", status: "ISSUED", total: 2500 }), inv({ id: "2", kind: "BALANCE", total: 7500 })],
-      DEPOSIT_BALANCE,
       25,
       10_000,
     );
@@ -71,7 +73,6 @@ describe("money", () => {
   test("payments reduce what's outstanding", () => {
     const s = deriveInvoicingState(
       [inv({ id: "1", kind: "DEPOSIT", status: "ISSUED", total: 2500, amountPaid: 1000 })],
-      DEPOSIT_BALANCE,
       25,
       10_000,
     );
@@ -83,7 +84,6 @@ describe("money", () => {
   test("an overpayment never shows as negative outstanding", () => {
     const s = deriveInvoicingState(
       [inv({ id: "1", kind: "FULL", status: "ISSUED", total: 1000, amountPaid: 1200 })],
-      FULL_UPFRONT,
       25,
       1000,
     );
@@ -93,7 +93,6 @@ describe("money", () => {
   test("a VOID invoice contributes nothing", () => {
     const s = deriveInvoicingState(
       [inv({ id: "1", kind: "FULL", status: "VOID", total: 9999, amountPaid: 9999 })],
-      FULL_UPFRONT,
       25,
       1000,
     );
@@ -103,44 +102,37 @@ describe("money", () => {
   });
 
   test("an unknown project total leaves notYetInvoiced unknown rather than guessing", () => {
-    const s = deriveInvoicingState([], FULL_UPFRONT, 25, null);
+    const s = deriveInvoicingState([], 25, null);
     expect(s.notYetInvoiced).toBeNull();
   });
 });
 
 describe("headline", () => {
   test("no invoices reads as not started", () => {
-    expect(deriveInvoicingState([], FULL_UPFRONT, 25, 1000).headline).toBe("NOT_STARTED");
+    expect(deriveInvoicingState([], 25, 1000).headline).toBe("NOT_STARTED");
   });
 
   test("drafts only reads as draft", () => {
-    expect(deriveInvoicingState([inv({ id: "1", kind: "FULL" })], FULL_UPFRONT, 25, 1000).headline).toBe("DRAFT");
+    expect(deriveInvoicingState([inv({ id: "1", kind: "FULL" })], 25, 1000).headline).toBe("DRAFT");
   });
 
   test("issued and untouched reads as awaiting payment", () => {
-    const s = deriveInvoicingState(
-      [inv({ id: "1", kind: "FULL", status: "ISSUED", total: 1000 })],
-      FULL_UPFRONT,
-      25,
-      1000,
-    );
+    const s = deriveInvoicingState([inv({ id: "1", kind: "FULL", status: "ISSUED", total: 1000 })], 25, 1000);
     expect(s.headline).toBe("AWAITING_PAYMENT");
   });
 
   test("part-paid is distinguished from untouched", () => {
     const s = deriveInvoicingState(
       [inv({ id: "1", kind: "FULL", status: "ISSUED", total: 1000, amountPaid: 400 })],
-      FULL_UPFRONT,
       25,
       1000,
     );
     expect(s.headline).toBe("PARTIALLY_PAID");
   });
 
-  test("a paid deposit alone is NOT paid in full — the balance is still to raise", () => {
+  test("a paid partial alone is NOT paid in full — the remainder is still to raise", () => {
     const s = deriveInvoicingState(
       [inv({ id: "1", kind: "DEPOSIT", status: "ISSUED", total: 2500, amountPaid: 2500 })],
-      DEPOSIT_BALANCE,
       25,
       10_000,
     );
@@ -155,7 +147,6 @@ describe("headline", () => {
         inv({ id: "1", kind: "DEPOSIT", status: "ISSUED", total: 2500, amountPaid: 2500 }),
         inv({ id: "2", kind: "BALANCE", status: "ISSUED", total: 7500, amountPaid: 7500 }),
       ],
-      DEPOSIT_BALANCE,
       25,
       10_000,
     );
@@ -171,7 +162,6 @@ describe("latest issued", () => {
         inv({ id: "new", kind: "BALANCE", status: "ISSUED", issuedAt: 900 }),
         inv({ id: "draft", kind: "FULL", issuedAt: 9999 }),
       ],
-      DEPOSIT_BALANCE,
       25,
       10_000,
     );
@@ -179,7 +169,7 @@ describe("latest issued", () => {
   });
 
   test("is null when nothing has been issued", () => {
-    expect(deriveInvoicingState([inv({ id: "1", kind: "FULL" })], FULL_UPFRONT, 25, 1000).latestIssued).toBeNull();
+    expect(deriveInvoicingState([inv({ id: "1", kind: "FULL" })], 25, 1000).latestIssued).toBeNull();
   });
 });
 
@@ -190,7 +180,6 @@ describe("first unpaid issued", () => {
         inv({ id: "new", kind: "BALANCE", status: "ISSUED", issuedAt: 900, total: 500 }),
         inv({ id: "old", kind: "DEPOSIT", status: "ISSUED", issuedAt: 100, total: 500 }),
       ],
-      DEPOSIT_BALANCE,
       25,
       1000,
     );
@@ -203,7 +192,6 @@ describe("first unpaid issued", () => {
         inv({ id: "paid", kind: "DEPOSIT", status: "ISSUED", issuedAt: 100, total: 500, amountPaid: 499.999 }),
         inv({ id: "owing", kind: "BALANCE", status: "ISSUED", issuedAt: 200, total: 500, amountPaid: 100 }),
       ],
-      DEPOSIT_BALANCE,
       25,
       1000,
     );
@@ -211,12 +199,7 @@ describe("first unpaid issued", () => {
   });
 
   test("is null when nothing is owing", () => {
-    const s = deriveInvoicingState(
-      [inv({ id: "1", kind: "FULL", status: "ISSUED", total: 500, amountPaid: 500 })],
-      FULL_UPFRONT,
-      25,
-      500,
-    );
+    const s = deriveInvoicingState([inv({ id: "1", kind: "FULL", status: "ISSUED", total: 500, amountPaid: 500 })], 25, 500);
     expect(s.firstUnpaidIssued).toBeNull();
   });
 });

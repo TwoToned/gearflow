@@ -1,13 +1,17 @@
 /**
- * "Where is this project's invoicing up to, and what's the next step?" — the
- * single derivation behind BOTH the Finance tab's nudge chips and the Overview
- * tab's invoicing card (#1061).
+ * "Where is this project's invoicing up to, and what can be raised next?" —
+ * the single derivation behind BOTH the Finance tab's invoice menu and the
+ * Overview tab's invoicing card (#1061).
  *
- * The next-step rule (deposit before balance, one full invoice otherwise)
- * already existed as inline JSX conditions in `project-finance-panel.tsx`.
- * Reading it a second time for the Overview card would have made two
- * hand-maintained copies of the same business rule — a defect even while in
- * sync (R-3.1) — so it moved here and both surfaces now read it.
+ * Invoicing used to be forced into one rigid sequence per client
+ * (`paymentProfile`): FULL_UPFRONT clients got exactly one full invoice,
+ * DEPOSIT_BALANCE clients got a deposit THEN a balance, in that order, with
+ * nothing else offered. That's gone — every project can raise a "partial
+ * balance" invoice (any % or $ slice of what's left) any number of times, and
+ * a "remaining balance" invoice for whatever's left, in any order, as long as
+ * there's something left to invoice. `paymentProfile`/`profileDepositPercent`
+ * now only supply the % a partial invoice defaults to — they no longer gate
+ * what's offered.
  *
  * A plain module: no React, no Convex, so the rule is unit-testable.
  */
@@ -27,8 +31,8 @@ export interface InvoiceLike {
 }
 
 /**
- * The one invoice the operator most likely wants to raise next. `NONE` carries
- * the reason so the UI can say why rather than showing a dead button.
+ * A single invoice action the operator can take right now. `NONE` carries the
+ * reason so the UI can say why rather than showing a dead button.
  */
 export type NextInvoiceStep =
   | { kind: "DEPOSIT"; label: string; depositPercent: number }
@@ -47,10 +51,6 @@ export interface InvoicingState {
   outstanding: number;
   /** Project value not yet on any invoice — `null` when the total is unknown. */
   notYetInvoiced: number | null;
-  hasDeposit: boolean;
-  hasBalance: boolean;
-  hasFull: boolean;
-  depositIssued: boolean;
   /** The most recently issued invoice, for the card's "last activity" line. */
   latestIssued: InvoiceLike | null;
   /**
@@ -60,7 +60,21 @@ export interface InvoicingState {
    * rounding from resurrecting a settled invoice.
    */
   firstUnpaidIssued: InvoiceLike | null;
-  nextStep: NextInvoiceStep;
+  /**
+   * Raise a slice of what's left (kind DEPOSIT) — a % or $ amount the
+   * operator chooses, offered any time there's a remainder. Not capped at
+   * one: a project can carry several partial invoices before the remaining
+   * balance is raised.
+   */
+  partialStep: NextInvoiceStep;
+  /**
+   * Raise an invoice for whatever's left (server-computed, no operator
+   * input). `FULL` (itemized line-by-line) when nothing has been invoiced
+   * yet — the common one-shot case; `BALANCE` (a single summary line) once
+   * at least one invoice already exists, since the equipment/service
+   * breakdown was already shown on the earlier one(s).
+   */
+  remainingStep: NextInvoiceStep;
   /** Headline state for the card's badge. */
   headline: "NOT_STARTED" | "DRAFT" | "AWAITING_PAYMENT" | "PARTIALLY_PAID" | "PAID_IN_FULL";
 }
@@ -68,33 +82,22 @@ export interface InvoicingState {
 const isLive = (inv: InvoiceLike) => inv.status !== "VOID";
 const isIssued = (inv: InvoiceLike) => inv.status === "ISSUED";
 
-/**
- * Which invoice comes next, per the client's payment profile. Mirrors the
- * server's own model rather than inventing a gate: invoice creation is NOT
- * blocked on an accepted quote anywhere in `invoicesWrites.ts`, so this never
- * claims it is.
- */
-function deriveNextStep(
-  live: InvoiceLike[],
-  paymentProfile: PaymentProfile,
-  depositPercent: number,
-): NextInvoiceStep {
-  const hasDeposit = live.some((i) => i.kind === "DEPOSIT");
-  const hasBalance = live.some((i) => i.kind === "BALANCE");
-  const hasFull = live.some((i) => i.kind === "FULL");
-  const depositIssued = live.some((i) => i.kind === "DEPOSIT" && i.status === "ISSUED");
+/** A slice of what's left, sized however the operator likes — available any
+ *  time there's a remainder, regardless of how many partials already exist. */
+function derivePartialStep(notYetInvoiced: number | null, depositPercent: number): NextInvoiceStep {
+  if (notYetInvoiced == null) return { kind: "NONE", reason: "Project total not set" };
+  if (notYetInvoiced <= 0.005) return { kind: "NONE", reason: "Fully invoiced" };
+  return { kind: "DEPOSIT", label: "Partial balance", depositPercent };
+}
 
-  if (paymentProfile === "DEPOSIT_BALANCE") {
-    if (!hasDeposit) return { kind: "DEPOSIT", label: "Create deposit invoice", depositPercent };
-    // The balance is only meaningful once the deposit is real money owed —
-    // netting a balance against an unissued draft would misstate it.
-    if (depositIssued && !hasBalance) return { kind: "BALANCE", label: "Create balance invoice" };
-    if (!depositIssued) return { kind: "NONE", reason: "Issue the deposit invoice first" };
-    return { kind: "NONE", reason: "Deposit and balance both raised" };
-  }
-
-  if (!hasFull) return { kind: "FULL", label: "Create invoice" };
-  return { kind: "NONE", reason: "Already invoiced" };
+/** Whatever's left, in one shot — FULL (itemized) the first time, BALANCE
+ *  (summary line) after that. */
+function deriveRemainingStep(notYetInvoiced: number | null, hasAnyInvoice: boolean): NextInvoiceStep {
+  if (notYetInvoiced == null) return { kind: "NONE", reason: "Project total not set" };
+  if (notYetInvoiced <= 0.005) return { kind: "NONE", reason: "Fully invoiced" };
+  return hasAnyInvoice
+    ? { kind: "BALANCE", label: "Remaining balance" }
+    : { kind: "FULL", label: "Remaining balance" };
 }
 
 function deriveHeadline(
@@ -109,13 +112,12 @@ function deriveHeadline(
     return issued.some((i) => (i.amountPaid ?? 0) > 0) ? "PARTIALLY_PAID" : "AWAITING_PAYMENT";
   }
   // Everything issued is paid — but the job isn't fully invoiced until there's
-  // nothing left to raise, so a paid deposit alone is not "paid in full".
+  // nothing left to raise, so a paid partial alone is not "paid in full".
   return notYetInvoiced != null && notYetInvoiced > 0.005 ? "AWAITING_PAYMENT" : "PAID_IN_FULL";
 }
 
 export function deriveInvoicingState(
   invoices: InvoiceLike[],
-  paymentProfile: PaymentProfile,
   depositPercent: number,
   projectTotal: number | null,
 ): InvoicingState {
@@ -138,16 +140,13 @@ export function deriveInvoicingState(
     paidTotal,
     outstanding,
     notYetInvoiced,
-    hasDeposit: liveInvoices.some((i) => i.kind === "DEPOSIT"),
-    hasBalance: liveInvoices.some((i) => i.kind === "BALANCE"),
-    hasFull: liveInvoices.some((i) => i.kind === "FULL"),
-    depositIssued: liveInvoices.some((i) => i.kind === "DEPOSIT" && i.status === "ISSUED"),
     latestIssued: issuedByDate[0] ?? null,
     firstUnpaidIssued:
       [...issued]
         .sort((a, b) => (a.issuedAt ?? 0) - (b.issuedAt ?? 0))
         .find((i) => i.total - (i.amountPaid ?? 0) > 0.005) ?? null,
-    nextStep: deriveNextStep(liveInvoices, paymentProfile, depositPercent),
+    partialStep: derivePartialStep(notYetInvoiced, depositPercent),
+    remainingStep: deriveRemainingStep(notYetInvoiced, liveInvoices.length > 0),
     headline: deriveHeadline(liveInvoices, issued, outstanding, notYetInvoiced),
   };
 }

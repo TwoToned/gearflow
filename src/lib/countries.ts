@@ -15,11 +15,13 @@
  */
 
 /**
- * These aren't exported individually — nothing outside this file needs to
- * name them yet, and an exported-but-unimported type is dead code (R-4.2,
- * the knip ratchet). A consumer that needs one can pull it off
+ * Most of these aren't exported individually — nothing outside this file
+ * needs to name them yet, and an exported-but-unimported type is dead code
+ * (R-4.2, the knip ratchet). A consumer that needs one can pull it off
  * `CountryDefinition["dateOrder"]` etc., or a real consumer can export it
- * from here when it lands.
+ * from here when it lands. `PaperSize` IS exported — `template-constants.ts`
+ * (I5, #1084) imports it as the one canonical definition of this column's
+ * two values, rather than growing its own second copy (R-3.1).
  */
 /** Launch markets (M1) + the two EU markets documented but disabled (M7). */
 type CountryCode = "AU" | "NZ" | "GB" | "US" | "IE" | "NL" | "DE";
@@ -28,7 +30,7 @@ type DateOrder = "DMY" | "MDY";
 type DateSeparator = "/" | ".";
 type DecimalSeparator = "." | ",";
 type WeekStart = "MON" | "SUN";
-type PaperSize = "A4" | "LETTER";
+export type PaperSize = "A4" | "LETTER";
 type UnitSystem = "METRIC" | "IMPERIAL";
 
 export interface CountryDefinition {

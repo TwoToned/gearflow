@@ -3,6 +3,7 @@
  * Single source of truth for dimensions, font sizes, and spacing used by
  * both the pagination engine (document-composer.ts) and PDF plugins.
  */
+import type { PaperSize } from "@/lib/countries";
 
 // ─── Page Dimensions (mm) ───────────────────────────────────────────────────
 
@@ -26,6 +27,45 @@ export const PAGE_CONTENT_HEIGHT = PAGE_HEIGHT - MARGIN * 2 - FOOTER_HEIGHT; // 
 
 /** Gap between sections in mm */
 export const SECTION_GAP = 2;
+
+// ─── Paper size (I5, #1084) ─────────────────────────────────────────────────
+// `PaperSize` itself is `@/lib/countries`'s (its `paperSize` column is the
+// source of truth) — re-exported here so a `template-constants.ts` consumer
+// doesn't also need to reach into `countries.ts` just to name it.
+export type { PaperSize };
+
+/** Everything `document-composer.ts`'s pagination math needs for one page —
+ *  margin/footer stay fixed layout choices across both paper sizes; only
+ *  width/height (and what they derive) actually differ. */
+export interface PageGeometry {
+  width: number;
+  height: number;
+  margin: number;
+  contentWidth: number;
+  contentHeight: number;
+  footerHeight: number;
+}
+
+const LETTER_WIDTH = 216;
+const LETTER_HEIGHT = 279;
+
+/** Resolve the page geometry for a paper size. `getPageGeometry("A4")` (the
+ *  default) is BYTE-IDENTICAL to the bare `PAGE_WIDTH`/`PAGE_HEIGHT`/
+ *  `CONTENT_WIDTH`/`PAGE_CONTENT_HEIGHT` constants above — every caller that
+ *  hasn't threaded a paper size through yet keeps rendering exactly as it
+ *  always has. */
+export function getPageGeometry(paperSize: PaperSize = "A4"): PageGeometry {
+  const width = paperSize === "LETTER" ? LETTER_WIDTH : PAGE_WIDTH;
+  const height = paperSize === "LETTER" ? LETTER_HEIGHT : PAGE_HEIGHT;
+  return {
+    width,
+    height,
+    margin: MARGIN,
+    contentWidth: width - MARGIN * 2,
+    contentHeight: height - MARGIN * 2 - FOOTER_HEIGHT,
+    footerHeight: FOOTER_HEIGHT,
+  };
+}
 
 // ─── Table Plugin Constants (pt) ────────────────────────────────────────────
 

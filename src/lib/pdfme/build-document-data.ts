@@ -748,6 +748,7 @@ export async function buildDocumentData(
     org_invoice_heading: country?.invoiceHeading ?? "TAX INVOICE",
     org_branding: branding,
     org_document_color: docColor,
+    org_paper_size: country?.paperSize ?? "A4",
 
     // Project
     project_number: options?.versionSuffix ? `${serialized.projectNumber} ${options.versionSuffix}` : serialized.projectNumber,

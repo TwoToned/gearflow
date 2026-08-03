@@ -1,6 +1,6 @@
-# Project Version Switcher (Phase 3 projection + Phase 4 promote/list)
+# Project Version Switcher (Phase 3 projection + Phase 4 promote/list + Phase 5 header actions)
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-08-01 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-08-03 (review quarterly — POLICY.md R-5.5)_
 
 Phase 3 of #1080 (issue #1093) — the read path that lets a project's Equipment,
 Labour & logistics and Finance tabs render a **past version's** captured state
@@ -9,6 +9,8 @@ Phase 4 (issue #1097) landed on top of it: "Make vN live" is now a real,
 user-facing action — the promote dialog wired into both the read-only bar and
 the Finance tab's version rail — and the version rail itself (`ProjectQuoteRail`)
 is now the project's ONE version list, with the old `⋯ Versions` panel retired.
+Phase 5 ("fine-tune versioning") turned the header switcher itself into a full
+version menu — see §"Phase 5" below.
 
 **Depends on:** Phase 1 (#1085, merged) — `projects.liveRevision`, `saveVersionNative`,
 the `VERSION_SAVED`/`PRE_PROMOTE` snapshot reasons. Phase 2 (#1089, merged) —
@@ -203,6 +205,60 @@ its mount, and its menu entry are deleted (`src/app/(app)/projects/[id]/page.tsx
 appeared in this panel's list to begin with (it queries `quotes`, not
 `projectSnapshots`).
 
+## Phase 5 — the header switcher becomes the version menu ("fine-tune versioning")
+
+The complaint this phase fixes: **you couldn't make v2 without sending v1's
+quote.** That was never a deliberate rule — it was that the only *wired*
+version-creating mutation was `newVersionNative` (`project-quote-rail.tsx`'s
+"Create quote v{N+1}"), which exists specifically as the sanctioned exit from
+a quote-sent lock and therefore requires the current live revision to already
+be SENT. `saveVersionNative` (Phase 1, #1085) — reachable from ANY live
+state, including a never-sent DRAFT — had existed the whole time with no UI
+caller. This phase wires it up and, while doing so, turns
+`ProjectVersionSwitcher` (`src/components/projects/version-switcher.tsx`) from
+a read-only list+switch into the project's one version-management surface:
+
+- **Add version** (footer item) → `useProjectVersionWrites().saveVersion()` →
+  `saveVersionNative`. One click, no prompt — rename afterwards via the
+  existing "Rename version" row action if wanted. `newVersionNative` is
+  UNCHANGED and still the right tool for its own job (unlocking editing after
+  a sent quote); the two are not merged (R-3.1 — distinct jobs, distinct
+  mutations, not one bent to cover both).
+- **Make live…** on any non-live row with captured state → the same
+  `PromoteVersionDialog` `VersionReadOnlyBar` and `ProjectQuoteRail` already
+  open — a third entry point into one dialog, not a fourth hand-built confirm.
+- **Send quote…** on the live row, only while its status is DRAFT → the same
+  `SendQuoteDialog` the rail uses. Never offered on a non-live row:
+  `sendNative` always freezes whichever revision is `liveRevision`, so
+  "make a quote for a past version" isn't a real operation — promote it live
+  first.
+- **Download** on any row with a stored artifact (`pdfFileId`) → the same
+  `/api/finance/quote/{id}/pdf` link `QuoteDocumentAction` uses.
+- **Delete** on any never-sent DRAFT row → `DeleteVersionDialog`
+  (`src/components/projects/finance/delete-version-dialog.tsx`), extracted
+  from the rail's former locally-defined `DeleteDraftDialog` so both surfaces
+  share the one live-vs-non-live branch (R-3.1) instead of two copies of the
+  same `deleteDraftNative`-vs-`deleteVersionNative` decision.
+
+**The empty-state gap.** Before this phase, `listVersions` (and therefore the
+whole switcher) rendered nothing at all until a project's first quote row
+existed — a brand-new project has `projects.revision`/`liveRevision` seeded to
+1 at `createNative` but no `quotes` row until something sends or saves a
+version, so the header button simply didn't appear yet. `listVersions`
+(`convex/projectVersionsRead.ts`) now synthesizes ONE virtual live entry
+(`quoteId: ""`, `status: "DRAFT"`, `hasSnapshot: false`) when a non-template
+project has zero quote rows, so the button — and its Add version/Send quote
+actions — is always there. Both underlying mutations already tolerated this:
+`saveVersionNative`'s `outgoing` lookup is optional, and `sendNative`'s own
+docstring states it creates the DRAFT row itself when the revision has none
+yet. The synthetic entry is never persisted and never appears in
+`quotes.listForProject` (the Finance tab rail's own query) — it exists only in
+this one read, purely so the switcher has something to render.
+
+Action visibility is gated by `useCanDo("invoice", "publish")` (matching
+`CanDo resource="invoice" action="publish"` everywhere else a quote verb is
+offered) — a caller without it sees the plain list with no action icons.
+
 ## Out of scope (later phases)
 
 - Recall-to-edit (#1100, Phase 5) — editing a promoted SENT revision is still
@@ -238,3 +294,10 @@ appeared in this panel's list to begin with (it queries `quotes`, not
   opens the dialog, renders the predicted-conflict list, and confirms.
 - `src/components/projects/finance/__tests__/promote-conflicts-panel.test.tsx` —
   the persistent post-promote panel.
+- `src/components/projects/__tests__/project-version-switcher.smoke.test.tsx`
+  (Phase 5) — the switcher renders on a never-quoted project (the synthetic
+  entry), Add version fires `saveVersionNative`, and the row action icons
+  (download/send/make-live/delete) appear only when their eligibility check
+  passes.
+- `convex/projectVersionsRead.test.ts` (Phase 5) — the zero-quote-rows
+  synthetic entry, and that `pdfFileId` round-trips onto each version item.

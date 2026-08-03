@@ -1,8 +1,9 @@
 /**
- * #1151 spike — shared style tokens for the react-pdf proof-of-concept.
+ * Shared style tokens for the react-pdf component library (#1152, building on
+ * the #1151 spike's standalone quote proof-of-concept).
  *
  * Mirrors the color/size constants gearflow-table.ts and the other pdfme
- * plugins hard-code, so the spike is a fair visual comparison rather than a
+ * plugins hard-code, so this is a fair visual comparison rather than a
  * from-scratch redesign. react-pdf's style system accepts "mm" as a unit
  * directly (@react-pdf/stylesheet's VALUE_REGEX) — every measurement below is
  * expressed in the SAME mm units `template-constants.ts` already uses, with
@@ -35,11 +36,30 @@ export const COLORS = {
   footerBorder: "#eeeeee",
 };
 
-// Badges are unexercised by this spike — `showBadges` is off for the quote's
-// `clientFacingTable` config, so no badge ever renders here. See the
-// findings doc's "What needs compromise or a different approach" section:
-// porting gearflow-table.ts's BADGE_STYLES is real remaining work for
-// whichever issue first needs a warehouse doc (badges are on there).
+// Badge styles — byte-identical hex values to gearflow-table.ts's
+// BADGE_STYLES (pdfme's version is already a plain hex-string object, so
+// there's nothing to convert; this is a straight port). Warehouse docs
+// (packing-list/return-sheet/delivery-docket) and quote/invoice both read
+// this — only `config.showBadges` (off for clientFacingTable) gates whether
+// any of it ever renders.
+export const BADGE_STYLES = {
+  optional: { bg: "#fef3c7", text: "#92400e", label: "OPTIONAL" },
+  overbooked: { bg: "#fee2e2", text: "#dc2626", label: "OVERBOOKED" },
+  overbookedInherited: { bg: "#fef3c7", text: "#d97706", label: "OVERBOOKED" },
+  reducedStock: { bg: "#ede9fe", text: "#7c3aed", label: "REDUCED STOCK" },
+  subhire: { bg: "#cffafe", text: "#0891b2", label: "SUBHIRE" },
+  // WS11 (#950) — sale lines ride in their existing category/group (no
+  // separate Sales bucket, spec decision) — the badge is what differentiates.
+  sale: { bg: "#dcfce7", text: "#15803d", label: "SALE" },
+} as const;
+
+export type BadgeStyle = (typeof BADGE_STYLES)[keyof typeof BADGE_STYLES];
+
+// A muted grey used only for the child/grandchild category column — kept as
+// its own token (not folded into COLORS above) because it's one-off in the
+// pdfme original too (hexToRgb("#aaaaaa") inlined at both call sites rather
+// than a named constant).
+export const CATEGORY_MUTED = "#aaaaaa";
 
 export const FONT_SIZE = {
   title: 22,

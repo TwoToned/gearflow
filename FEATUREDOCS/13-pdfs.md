@@ -248,6 +248,62 @@ What this changes in the PDF pipeline itself:
 Superseded, recalled and voided rows keep their artifacts: the client may be
 holding that copy, so deleting ours makes the record worse, not better.
 
+### `invoice` rendering is keyed to a SPECIFIC invoice, not just the project (bug fix)
+
+Every `docType: "invoice"` render used to take only `projectId` — never an
+`invoiceId` — all the way through `generatePdf`/`buildDocumentData`. That
+meant `subtotal`/`tax_amount`/`total` and the line items always came from the
+LIVE PROJECT total/breakdown, which is only correct for a `FULL` invoice: a
+`DEPOSIT`/`BALANCE`/`CREDIT` invoice's PDF (preview AND its permanent stored
+artifact) showed the whole project amount instead of its own, even though the
+correct figures were sitting right there on the `invoices`/`invoiceLines`
+rows the whole time.
+
+Fixed by threading an optional `invoiceId` through the whole chain:
+
+```
+href/generateInvoiceArtifact(invoiceId)
+  ──▶ generatePdf(..., { invoiceId })
+        ──▶ buildDocumentData(..., { invoiceId })
+              ──▶ convex/financeArtifacts.ts invoiceArtifactContext(invoiceId, orgId)
+                    → { kind, subtotal, taxAmount, total, invoiceNumber, lines }
+```
+
+When `invoiceId` is supplied and `docType === "invoice"`:
+
+- `subtotal`/`tax_amount`/`total`/`invoice_number` come from the invoice's
+  own row, never the live project (a `FULL` invoice's own total is a frozen
+  snapshot too, so this is strictly more correct even for that kind — it can
+  predate a later line-item edit).
+- For any kind OTHER than `FULL`, the rendered line items are the invoice's
+  own stored `invoiceLines` (`invoiceLineToDocumentLineItem` in
+  `build-document-data.ts`), not the live equipment/service breakdown — a
+  `DEPOSIT`/`BALANCE` invoice only ever carries one summary line by design
+  (`invoicesWrites.ts createNative`), and `CREDIT` carries one negated line
+  (`createCreditNative`). `FULL` still uses the live structured render
+  (`structureLineItems` + billable services) — its `invoiceLines` are a flat
+  snapshot of the same data at creation time, not a richer category/kit/
+  group tree, so the live render stays strictly more correct for it.
+- `invoiceLineToDocumentLineItem` sets `groupName`/`categoryName` to `null`
+  (unlike the billable-service mapping right above it in the same file,
+  which deliberately sets `"Services"` to force a section header) — the
+  synthetic row renders as a bare line with none.
+
+Every call site was updated: the preview route
+(`/api/documents/[projectId]?type=invoice&preview=1&invoiceId=…`),
+`generateInvoiceArtifact` (the stored-artifact path — so an ISSUED
+`DEPOSIT`/`BALANCE`/`CREDIT` invoice's permanent PDF is correct from the
+moment it's issued going forward), and the two UI preview links that
+already had the specific invoice in scope but weren't passing its id
+(`project-finance-panel.tsx`'s `InvoiceDocumentAction`,
+`issue-invoice-dialog.tsx`). Omitting `invoiceId` keeps the legacy live-render
+behaviour (the fallback for any caller not yet updated).
+
+**Not retroactive.** Already-issued invoices with a stored `pdfFileId` keep
+whatever bytes were rendered before this fix (`attachInvoiceArtifact` refuses
+to overwrite — the client may already hold that copy, same "never regenerate"
+rule as everywhere else in this file). Only new renders are correct.
+
 ## Global Document Settings
 
 Org-level, stored in the existing `orgSettings` Convex blob (`OrgSettings.documents`,

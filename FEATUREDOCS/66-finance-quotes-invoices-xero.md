@@ -111,6 +111,15 @@ rather than leaking a foreign org's model name.
 `recalcProjectTotals` (summed from this project's `ISSUED` invoices — see
 "Derive, don't hand-type" below), not the invoice-level fields above.
 
+**The PDF a DEPOSIT/BALANCE/CREDIT invoice renders is THIS invoice's own
+snapshot, not the live project.** A pre-existing bug (fixed alongside the
+invoice-menu redesign above) meant the render pipeline had no concept of an
+individual invoice row — every "invoice" PDF, preview or stored artifact,
+showed the whole project's total/breakdown regardless of kind. See
+FEATUREDOCS/13's "`invoice` rendering is keyed to a SPECIFIC invoice" for the
+fix (`invoiceId` threaded through `generatePdf`/`buildDocumentData`,
+`convex/financeArtifacts.ts invoiceArtifactContext`).
+
 ## Quote revisions (#986 — Phase A of #985)
 
 WS1 shipped `quotes.version` as a number bumped inside `publishNative` by

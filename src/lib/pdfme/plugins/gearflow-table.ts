@@ -31,7 +31,7 @@ import { discountPercentOf, lineGrossAmount } from "@/lib/discount-mode";
  * Shared by all three renderers in this file (parent rows, kit/accessory
  * children, per-unit grandchildren) so the three can never drift apart.
  */
-function discountCellText(item: DocumentLineItem): string {
+export function discountCellText(item: DocumentLineItem): string {
   if (!item.discount) return "-";
   if (item.discountMode === "%") {
     const pct = discountPercentOf(item.discount, lineGrossAmount(item));
@@ -46,7 +46,7 @@ function discountCellText(item: DocumentLineItem): string {
  *  (no stored breakdown, malformed JSON, or a manually-priced line). Shared by
  *  the row-height bounds check and the actual draw call so they can never
  *  disagree about whether this line reserves an extra text row. */
-function breakdownLabel(item: DocumentLineItem, config: TablePluginConfig): string {
+export function breakdownLabel(item: DocumentLineItem, config: TablePluginConfig): string {
   if (!item.priceBreakdown || !config.showPricing) return "";
   const parsed = parsePriceBreakdown(item.priceBreakdown);
   return parsed ? formatPriceBreakdown(parsed) : "";

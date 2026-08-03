@@ -2079,6 +2079,12 @@ export default defineSchema({
     defaultCurrency: v.optional(v.string()),
     defaultTaxRate: v.optional(v.number()),
     allowOrgCreation: v.optional(v.boolean()),
+    // Phase B (#1067, B3/#1095, D6). The signup code itself — NEVER add this
+    // (or orgCreationCodeEnabled) to SiteSettingsRow/mapDoc
+    // (src/lib/site-settings-read.ts): that function feeds public routes and
+    // usePlatformBranding(). Read only through src/lib/org-creation-gate.ts.
+    orgCreationCode: v.optional(v.string()),
+    orgCreationCodeEnabled: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

@@ -1,5 +1,5 @@
 import { ConvexError } from "convex/values";
-import { RateLimiter, MINUTE } from "@convex-dev/rate-limiter";
+import { RateLimiter, MINUTE, HOUR } from "@convex-dev/rate-limiter";
 import { components } from "../_generated/api";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getAuthContext } from "./auth";
@@ -9,6 +9,7 @@ import {
   BROWSER_WRITE_LIMIT,
   MAX_BULK_ITEMS,
   MAX_BULK_ITEMS_AGENT,
+  ORG_CREATION_CODE_ATTEMPT_LIMIT,
 } from "./rateLimits";
 
 /**
@@ -46,6 +47,18 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   // bound module into Node.
   agentRead: { kind: "token bucket", rate: AGENT_READ_LIMIT.rate, period: MINUTE, capacity: AGENT_READ_LIMIT.capacity },
   agentWrite: { kind: "token bucket", rate: AGENT_WRITE_LIMIT.rate, period: MINUTE, capacity: AGENT_WRITE_LIMIT.capacity },
+
+  // Org-creation signup-code attempts (Phase B, B3/#1095) — keyed per acting
+  // user (see `verifyOrgCreationCode`, src/lib/org-creation-gate.ts). Better
+  // Auth's `beforeCreateOrganization` hook doesn't expose the request/IP, so
+  // this is session-scoped only; see that module's doc comment for the scope
+  // note on per-IP limiting.
+  orgCreationCodeAttempt: {
+    kind: "token bucket",
+    rate: ORG_CREATION_CODE_ATTEMPT_LIMIT.rate,
+    period: HOUR,
+    capacity: ORG_CREATION_CODE_ATTEMPT_LIMIT.capacity,
+  },
 });
 
 /**

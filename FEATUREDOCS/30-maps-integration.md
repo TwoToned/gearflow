@@ -40,8 +40,12 @@ Universal address autocomplete (Google Places API) and interactive maps (Google 
 ## Country Bias
 - `OrgSettings.country` (ISO 3166-1 alpha-2, e.g. "AU") set in Settings -> General
 - `useOrgCountry()` hook (`src/lib/use-org-country.ts`) reads from cached org query
-- Passed as `countryCode` to `AddressInput` in all forms
+- Passed as `countryCode` to every `<AddressInput>` call site — client/supplier/location/crew
+  forms, plus `services-panel.tsx`'s delivery/pickup address field (I6, #1086 — the one call
+  site that had been missing it)
 - Google Places `includedRegionCodes` restricts results to that country
+- This is the `useOrgCountry()`-driven half of I6; `useOrgWeekStartsOn()` (same file) is the
+  sibling hook for the week-start half — see FEATUREDOCS/27's I6 section
 
 ## Database Fields
 All coordinate fields are `Float?` (nullable). No coordinates = freeform text, no map.

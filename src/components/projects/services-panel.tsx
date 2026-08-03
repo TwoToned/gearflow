@@ -60,6 +60,7 @@ import { resolveRate, calculateEstimatedCost, resolveChargeRate } from "../../..
 import { useIsManagerPlus } from "@/lib/use-permissions";
 import { CrewPanel } from "./crew-panel";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useOrgCountry } from "@/lib/use-org-country";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -1483,6 +1484,7 @@ function ServiceDialog({
 }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const orgCountry = useOrgCountry();
   const isEditing = !!editingService;
   const isManagerPlus = useIsManagerPlus();
   const svcWrites = useProjectServiceWrites();
@@ -1948,6 +1950,7 @@ function ServiceDialog({
                       }
                     : undefined
                 }
+                countryCode={orgCountry}
               />
             </div>
           )}

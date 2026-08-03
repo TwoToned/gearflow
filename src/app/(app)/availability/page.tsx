@@ -45,8 +45,18 @@ import { projectStatusLabels } from "@/lib/status-labels";
 
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS_FROM_MONDAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** I6 (#1086) — the grid header labels have to agree with `gridStart`'s own
+ *  `weekStartsOn`, or a Sunday-starting org's day cells and header labels
+ *  visibly misalign. */
+function weekdayLabels(weekStartsOn: 0 | 1): string[] {
+  return weekStartsOn === 0
+    ? [WEEKDAYS_FROM_MONDAY[6], ...WEEKDAYS_FROM_MONDAY.slice(0, 6)]
+    : WEEKDAYS_FROM_MONDAY;
+}
 
 /** Normalise a project's rental window to whole-day local bounds. */
 function projectBounds(p: CalendarProject): { start: Date; end: Date } | null {
@@ -179,6 +189,7 @@ function AvailabilityPage() {
   const { isAuthenticated } = useConvexAuth();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const weekStartsOn = useOrgWeekStartsOn();
   const today = useMemo(() => new Date(), []);
   const [view, setView] = useState<ViewMode>("month");
 
@@ -208,8 +219,8 @@ function AvailabilityPage() {
   }, [initialDateTime]);
 
   // Query range: full calendar grid (might include days from prev/next months)
-  const gridStart = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
-  const gridEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
+  const gridStart = startOfWeek(startOfMonth(currentMonth), { weekStartsOn });
+  const gridEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn });
 
   const { data: projects = [], isLoading } = useServerQuery({
     queryKey: ["calendar", orgId, format(currentMonth, "yyyy-MM")],
@@ -342,7 +353,7 @@ function AvailabilityPage() {
               </div>
 
               {isLoading ? (
-                <CalendarSkeleton />
+                <CalendarSkeleton weekStartsOn={weekStartsOn} />
               ) : view === "month" ? (
                 <MonthGrid
                   weeks={weeks}
@@ -353,6 +364,7 @@ function AvailabilityPage() {
                   selectedDay={selectedDay}
                   onSelectDay={setSelectedDay}
                   onSelectProject={(p) => setSelectedDay(projectBounds(p)?.start ?? today)}
+                  weekStartsOn={weekStartsOn}
                 />
               ) : (
                 <AgendaView
@@ -483,6 +495,7 @@ function MonthGrid({
   selectedDay,
   onSelectDay,
   onSelectProject,
+  weekStartsOn,
 }: {
   weeks: Date[][];
   weekBars: WeekBar[][];
@@ -492,12 +505,13 @@ function MonthGrid({
   selectedDay: Date | null;
   onSelectDay: (d: Date) => void;
   onSelectProject: (p: CalendarProject) => void;
+  weekStartsOn: 0 | 1;
 }) {
   return (
     <div className="overflow-hidden rounded-[var(--r-lg)] border border-line-2 bg-card shadow-[var(--sh-card)]">
       {/* Weekday header */}
       <div className="grid grid-cols-7 border-b border-line">
-        {WEEKDAYS.map((d) => (
+        {weekdayLabels(weekStartsOn).map((d) => (
           <div key={d} className="py-2 text-center t-micro text-muted">
             {d}
           </div>
@@ -825,11 +839,11 @@ function DayProjectCard({
 
 /* ── Loading skeleton ─────────────────────────────────────────────── */
 
-function CalendarSkeleton() {
+function CalendarSkeleton({ weekStartsOn }: { weekStartsOn: 0 | 1 }) {
   return (
     <div className="overflow-hidden rounded-[var(--r-lg)] border border-line-2 bg-card shadow-[var(--sh-card)]">
       <div className="grid grid-cols-7 border-b border-line">
-        {WEEKDAYS.map((d) => (
+        {weekdayLabels(weekStartsOn).map((d) => (
           <div key={d} className="py-2 text-center t-micro text-muted">
             {d}
           </div>

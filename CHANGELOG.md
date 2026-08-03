@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Allow domain requests" in Settings → Team, review who's asked to join, and
   approve or reject each one; requesters get an email either way.
 
+- **#1151** — Spike: proved `@react-pdf/renderer` can replace the pdfme
+  two-pass pagination pipeline for project documents (#1150), starting with
+  the `quote` doc type. A standalone, non-production component tree lives at
+  `src/lib/react-pdf-spike/` (not wired into `generate-pdf.ts`) alongside a
+  written findings doc (`docs/designs/react-pdf-migration-spike-findings.md`)
+  covering what maps cleanly, what needs a different approach, and an
+  effort estimate for the remaining migration issues.
+
 - **#1092** — A brand-new account with no organisation and no pending invite
   now lands on `/welcome`, a fork between "Set up a new company" and "Join my
   team" — instead of dead-ending on the old onboarding bounce. The create

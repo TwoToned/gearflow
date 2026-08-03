@@ -9,12 +9,35 @@ memberships determine which org(s) they belong to. Single-org mode (exactly one
 `Organization` row, every user auto-joined) was removed in Phase A (#1071, A1) —
 `src/lib/single-org.ts` and its `getTheOrg()` cached singleton no longer exist.
 
-**Self-serve org creation is still gated off** (D7): `allowUserToCreateOrganization`
-in `src/lib/auth.ts` only permits creating an org while zero orgs exist system-wide
-(the one-time bootstrap, `src/app/(auth)/onboarding/page.tsx`). Phase B (#1067)
-replaces this interim gate with the real site-admin `allowOrgCreation` toggle +
-signup code (D6). Until then, additional orgs are created by a site admin
-(`adminCreateOrganization`, `src/server/site-admin.ts`).
+**Self-serve org creation gate is live** (Phase B, B3/#1095, D6):
+`allowUserToCreateOrganization` in `src/lib/auth.ts` allows the one-time
+bootstrap (no org exists anywhere yet, `src/app/(auth)/onboarding/page.tsx`)
+unconditionally, then falls through to the site-admin `SiteSettings.allowOrgCreation`
+toggle (`/admin/settings`, `updateSiteSettings`). If `orgCreationCodeEnabled` is
+also on, `organizationHooks.beforeCreateOrganization` additionally requires a
+matching signup code, submitted as `organization.create({ metadata: {
+orgCreationCode } })` — that hook only receives `{ organization, user }` (no
+request/session), so the code has to travel in the create call itself, not a
+separate pre-check. The code is stripped out of `metadata` before the org row
+is persisted either way (`stripOrgCreationCode`) — it's a one-time proof of
+authorization, not org data. The signup code itself is a SECRET, deliberately
+kept out of `SiteSettingsRow`/`mapDoc()` (`src/lib/site-settings-read.ts`) —
+that function feeds `/api/registration-policy`-style public routes and
+`usePlatformBranding()`; `src/lib/org-creation-gate.ts` (`getOrgCreationGateSettings`,
+`verifyOrgCreationCode`) is the only place the raw code is read, and every
+caller is either the `requireSiteAdmin()`-gated settings page
+(`getOrgCreationCodeAdmin`/`regenerateOrgCreationCode`, `src/server/site-admin.ts`)
+or the gate check itself. Verification is constant-time
+(`crypto.timingSafeEqual`) and rate-limited per acting user
+(`checkOrgCreationRateLimit`, `convex/siteSettings.ts`, 5/hour) — **not** per-IP,
+since neither Better Auth hook exposes the request in this version (1.6.25); see
+`org-creation-gate.ts`'s doc comment for the scope note. `getOrgCreationPolicy`
+(any authenticated user) is the status check the not-yet-built B1 fork screen
+(#1092) will use to decide whether to show a "set up a new company" option and
+whether to prompt for a code — it never returns the code itself. Additional orgs
+can also still be created by a site admin directly (`adminCreateOrganization`,
+`src/server/site-admin.ts`), which is not code-gated (a site admin is already
+trusted).
 
 ### Org resolution: the session, re-validated (`src/lib/auth-server.ts`)
 - `requireOrganization()` / `getActiveOrganizationId()` resolve the **active org from
@@ -234,12 +257,10 @@ to the requested page. Fine for a list that's supposed to stay small — a
 platform with 500+ never-activated orgs needs the Phase B automation, not a
 bigger cap here.
 
-**Deliberately NOT in this PR**: the org-creation gate controls (`allowOrgCreation`
-toggle + signup code) that issue #1078 mentions living on this same page —
-that's B3 (#1095), a distinct Phase B issue with its own security requirements
-(constant-time comparison, rate limiting, the code must never reach a public
-read). Phase A ships with org creation gated off entirely (D7); there's
-nothing to control yet.
+The org-creation gate controls (`allowOrgCreation` toggle, "require a signup
+code" toggle, and the signup code field itself) landed separately on this same
+`/admin/settings` page as their own `SettingsCard` (B3/#1095) — see the "Org
+resolution" section above for the full mechanics.
 
 ## Better Auth Configuration (`src/lib/auth.ts`)
 - Plugins: `organization({...})` (no `organizationLimit` cap — creation is gated by

@@ -20,16 +20,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
-  // If the user belongs to no LIVE org, either they never had one (→
-  // onboarding, #1071 A1) or every one of theirs is archived (→ an
-  // explanatory screen, not the create-org form — #1075 A5). The org switcher
-  // / picker for 2+ memberships is handled client-side via OrgActivator.
+  // If the user belongs to no LIVE org, either they never had one (→ the
+  // create-vs-join fork, #1092 B1) or every one of theirs is archived (→ an
+  // explanatory screen, not the fork — #1075 A5). The org switcher / picker
+  // for 2+ memberships is handled client-side via OrgActivator.
   const myOrgs = await getMyOrganizations();
   if (myOrgs.length === 0) {
     if (await hasOnlyArchivedMemberships()) {
       redirect("/organization-archived");
     }
-    redirect("/onboarding");
+    redirect("/welcome");
   }
 
   return (

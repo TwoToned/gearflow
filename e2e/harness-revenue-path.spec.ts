@@ -96,14 +96,21 @@ test.describe("harness: primary revenue path", () => {
         .getByRole("button", { name: /create|register|sign up/i })
         .first()
         .click();
-      await expect(page).toHaveURL(/\/(dashboard|onboarding)\b/, { timeout: 20000 });
+      // A fresh registration with no org lands on the create-vs-join fork
+      // (/welcome, #1092) rather than an authenticated dashboard directly.
+      await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
     });
 
     await test.step("complete onboarding (create the org) if needed", async () => {
-      // The (app) layout redirects every route to /onboarding until an org
+      // The (app) layout redirects every route to /welcome until an org
       // exists (src/app/(app)/layout.tsx) — a fresh registration on this harness
       // has no org yet, so this step is required before any protected page
-      // (the model/asset/project forms below) will render at all.
+      // (the model/asset/project forms below) will render at all. "Set up a
+      // new company" leads to /onboarding, the actual create-org form.
+      if (new URL(page.url()).pathname === "/welcome") {
+        await page.getByRole("button", { name: "Set up a new company" }).click();
+        await expect(page).toHaveURL(/\/onboarding\b/, { timeout: 20000 });
+      }
       if (new URL(page.url()).pathname === "/onboarding") {
         await page.getByLabel("Organization name").fill(`Revenue Path Org ${unique}`);
         await page.getByRole("button", { name: "Create organization" }).click();

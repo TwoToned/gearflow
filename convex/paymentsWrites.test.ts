@@ -51,6 +51,12 @@ async function seedProjectAndClient(t: ReturnType<typeof makeT>, orgId = ORG) {
       status: "CONFIRMED", isTemplate: false, subtotal: 1000, discountAmount: 0, taxAmount: 100, total: 1100, taxRate: 10,
       createdAt: NOW, updatedAt: NOW,
     });
+    // `seedIssuedInvoice` below issues against this project — issuing now
+    // requires an ACCEPTED quote at the invoice's linked revision (2026-08).
+    await ctx.db.insert("quotes", {
+      id: "q1", organizationId: orgId, projectId: "p1", version: 1, status: "ACCEPTED",
+      snapshot: null, createdAt: NOW, updatedAt: NOW,
+    });
   });
 }
 

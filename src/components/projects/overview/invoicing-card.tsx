@@ -22,14 +22,16 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CreatePartialInvoiceDialog } from "@/components/projects/finance/create-partial-invoice-dialog";
 import { RecordPaymentDialog } from "@/components/projects/finance/record-payment-dialog";
+import { InvoiceManagerDialog } from "@/components/projects/finance/invoice-manager-dialog";
 import { OverviewCardHeader, OverviewAmount, OverviewMetaList, OverviewActions } from "./card-parts";
 
 interface InvoicingCardProps {
   projectId: string;
   orgId: string | undefined;
+  projectNumber: string;
+  projectStatus?: string | null;
   clientId?: string | null;
   total: number | null;
-  onOpenLedger: () => void;
 }
 
 const HEADLINE_BADGE = {
@@ -179,7 +181,7 @@ function InvoicingActions({
   onCreatePartial,
   onCreateInvoice,
   onRecordPayment,
-  onOpenLedger,
+  onManage,
 }: {
   partialStep: InvoicingState["partialStep"];
   remainingStep: InvoicingState["remainingStep"];
@@ -188,7 +190,7 @@ function InvoicingActions({
   onCreatePartial: () => void;
   onCreateInvoice: (kind: "FULL" | "BALANCE") => void;
   onRecordPayment: (inv: InvoiceLike) => void;
-  onOpenLedger: () => void;
+  onManage: () => void;
 }) {
   return (
     <OverviewActions>
@@ -225,7 +227,7 @@ function InvoicingActions({
           </Button>
         </CanDo>
       )}
-      <Button variant="line" size="sm" className="h-7" onClick={onOpenLedger}>
+      <Button variant="line" size="sm" className="h-7" onClick={onManage}>
         All invoices
       </Button>
     </OverviewActions>
@@ -243,12 +245,15 @@ function InvoicingActions({
  * The available actions come from `deriveInvoicingState`, the same rule the
  * Finance tab's invoice menu reads (R-3.1) — a partial (any % or $ slice) and
  * a remaining-balance invoice are both offered any time there's something
- * left, in any order, any number of partials. Issuing, voiding, crediting,
- * Xero pushes and the full invoice list stay in the Finance tab.
+ * left, in any order, any number of partials. "All invoices" opens the
+ * `InvoiceManagerDialog` (the SAME `<ProjectInvoiceLedger>` the Finance tab
+ * embeds) for issuing, voiding, crediting, Xero pushes and the full list —
+ * no need to leave Overview for the rest of the workflow.
  */
-export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger }: InvoicingCardProps) {
+export function InvoicingCard({ projectId, orgId, projectNumber, projectStatus, clientId, total }: InvoicingCardProps) {
   const [partialOpen, setPartialOpen] = useState(false);
   const [payTarget, setPayTarget] = useState<{ id: string; number: string; balanceRemaining: number } | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
 
   const invoices = useAuthedQuery(api.invoices.listForProject, orgId ? { orgId, projectId } : "skip");
   const client = useAuthedQuery(api.clients.getById, clientId ? { id: clientId } : "skip");
@@ -278,7 +283,7 @@ export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger 
         onCreatePartial={() => setPartialOpen(true)}
         onCreateInvoice={(kind) => void createInvoiceDraft(invoiceWrites, projectId, clientId, kind)}
         onRecordPayment={(inv) => setPayTarget(payTargetFor(inv))}
-        onOpenLedger={onOpenLedger}
+        onManage={() => setManageOpen(true)}
       />
 
       <InvoicingDialogs
@@ -291,6 +296,17 @@ export function InvoicingCard({ projectId, orgId, clientId, total, onOpenLedger 
         onPartialOpenChange={setPartialOpen}
         payTarget={payTarget}
         onPayTargetChange={setPayTarget}
+      />
+
+      <InvoiceManagerDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        projectId={projectId}
+        orgId={orgId}
+        projectNumber={projectNumber}
+        clientId={clientId}
+        projectStatus={projectStatus}
+        total={total}
       />
     </Panel>
   );

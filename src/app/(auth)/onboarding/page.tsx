@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { organization } from "@/lib/auth-client";
 import { getMyOrganizations, mirrorMyMembership, seedOrgDefaultTaxRate } from "@/server/public-org";
+import { getOrgCreationPolicy } from "@/server/site-admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +24,9 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [codeRequired, setCodeRequired] = useState(false);
 
   // Redirect away if the user already belongs to an org. Guard on a cancelled
   // flag: if the user navigates away before this async check resolves, the
@@ -38,6 +41,26 @@ export default function OnboardingPage() {
     };
   }, [router]);
 
+  // This form is the "Set up a new company" branch of /welcome (#1092, B1) —
+  // if a site admin has switched org creation off since the fork screen was
+  // rendered (or someone bookmarked this URL directly), bounce back rather
+  // than show a form the server will refuse anyway (R-9.3: hiding it here is
+  // cosmetic, `beforeCreateOrganization` is the real gate either way).
+  useEffect(() => {
+    let cancelled = false;
+    getOrgCreationPolicy().then((policy) => {
+      if (cancelled) return;
+      if (!policy.allowed) {
+        router.replace("/welcome");
+        return;
+      }
+      setCodeRequired(policy.codeRequired);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
   const handleNameChange = (value: string) => {
     setName(value);
     setSlug(slugify(value));
@@ -45,12 +68,16 @@ export default function OnboardingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !slug.trim()) return;
+    if (!name.trim() || !slug.trim() || (codeRequired && !code.trim())) return;
     setLoading(true);
     try {
       const result = await organization.create({
         name: name.trim(),
         slug: slug.trim(),
+        // Verified server-side in beforeCreateOrganization (src/lib/auth.ts) —
+        // stripped from the persisted org row either way (it's a one-time
+        // proof of authorization, not org data).
+        ...(codeRequired ? { metadata: { orgCreationCode: code.trim() } } : {}),
       });
       if (result.error) {
         toast.error(result.error.message || "Failed to create organization");
@@ -116,6 +143,19 @@ export default function OnboardingPage() {
               Used internally. Only lowercase letters, numbers, and hyphens.
             </p>
           </div>
+          {codeRequired && (
+            <div className="space-y-2">
+              <Label htmlFor="org-creation-code">Signup code</Label>
+              <Input
+                id="org-creation-code"
+                type="text"
+                placeholder="Ask your admin for this"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+              />
+            </div>
+          )}
           <Button type="submit" className="w-full" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create organization

@@ -31,7 +31,7 @@ function SelectOrganizationContent() {
       if (cancelled) return;
       // 0 or 1 memberships don't belong on this page — bounce to where they do.
       if (result.length === 0) {
-        router.replace("/onboarding");
+        router.replace("/welcome");
         return;
       }
       if (result.length === 1) {

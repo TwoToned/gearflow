@@ -73,7 +73,7 @@ function RegisterContent() {
             await organization.setActive({ organizationId: orgs[0].id });
             router.push("/dashboard");
           } else {
-            router.push("/onboarding");
+            router.push("/welcome");
           }
         }
       }

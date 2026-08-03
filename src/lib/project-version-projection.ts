@@ -43,7 +43,12 @@ export interface SnapshotEntryLike {
   data: Record<string, unknown>;
 }
 
-export interface ProjectedLineItem {
+/** #1080/#1101 — no longer exported: equipment parity now goes through the
+ *  bundle-assembly query (`convex/projectVersionsEquipment.ts`) instead of
+ *  this pure mapper's `equipment` field, so these three types have no
+ *  consumer outside this file anymore (only `ProjectedEquipmentView`, kept
+ *  for the projection-parity test's snapshot-vs-live equality check). */
+interface ProjectedLineItem {
   id: string;
   categoryId: string | null;
   groupId: string | null;
@@ -59,7 +64,7 @@ export interface ProjectedLineItem {
   sortOrder: number;
 }
 
-export interface ProjectedGroup {
+interface ProjectedGroup {
   id: string;
   categoryId: string | null;
   title: string;
@@ -71,7 +76,7 @@ export interface ProjectedGroup {
   lineItems: ProjectedLineItem[];
 }
 
-export interface ProjectedCategory {
+interface ProjectedCategory {
   id: string;
   name: string;
   sortOrder: number;

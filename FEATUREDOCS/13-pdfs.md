@@ -92,21 +92,57 @@ draw logic (`gearflow-table.ts`) — the existing header comments on both
 functions already call this out; this note is the "why."
 
 **Spike complete (#1151, 2026-08-03) — verdict: proceed.** A standalone
-`@react-pdf/renderer` proof-of-concept for the `quote` doc type lives at
-`src/lib/react-pdf-spike/` (NOT wired into `generate-pdf.ts`/`pdf-render.ts` —
-the production pipeline above is unchanged). It confirms the core hypothesis:
-Yoga's automatic layout removes the estimate/draw split entirely, and several
-other hand-rolled mechanisms in this file's pipeline (page-furniture height
-bookkeeping, the group-header continuation-page suppression added
-2026-07-28, the orphan-check bounds test, forced-page-break's
+`@react-pdf/renderer` proof-of-concept for the `quote` doc type confirmed the
+core hypothesis: Yoga's automatic layout removes the estimate/draw split
+entirely, and several other hand-rolled mechanisms in this file's pipeline
+(page-furniture height bookkeeping, the group-header continuation-page
+suppression added 2026-07-28, the orphan-check bounds test, forced-page-break's
 "isFreshPage" special case, `PT_PER_MM`/`resolveFlexWidths`,
 `wrapRichText`/`measureRichTextHeight`) turned out to be things react-pdf
 does by default — see
 [`docs/designs/react-pdf-migration-spike-findings.md`](../docs/designs/react-pdf-migration-spike-findings.md)
-for the full write-up, what still needs building (kit/group/accessory child
-rendering, badges, warehouse-doc columns — none of that is exercised by a
-quote-only spike), and what needs a different approach (no auto-shrink-to-fit
-text sizing).
+for the full write-up and what needs a different approach (no
+auto-shrink-to-fit text sizing).
+
+**Shared component library built (#1152, 2026-08-03).** The spike's
+proof-of-concept was relocated from `src/lib/react-pdf-spike/` to its
+permanent home, **`src/lib/react-pdf/`** — still standalone, still NOT wired
+into `generate-pdf.ts`/`pdf-render.ts` (the production pipeline above is
+unchanged; wiring in is a later issue in the sequence). All 7 plugins the 5
+project doc types use are now ported to react-pdf components under
+`src/lib/react-pdf/components/`:
+
+| pdfme plugin | react-pdf component |
+|---|---|
+| `gearflowTable` | `line-items-table.tsx` — now the FULL renderer (was quote/invoice-only in the spike): all 5 doc types' column sets, the 3-level kit/group/accessory child+grandchild hierarchy, badges, checkboxes, condition columns, per-unit expansion, delivery-docket's kit-promotion grouping |
+| `gearflowPageHeader` | `header.tsx` |
+| `gearflowFinancialSummary` | `totals-block.tsx` — extended with the Deposit Paid/Balance Due/Due Date rows the spike's quote-only totals never needed |
+| `gearflowRichText` | `rich-text.tsx` |
+| `gearflowSignatureLine` | `signature-line.tsx` (new) |
+| `gearflowDraftWatermark` | `draft-watermark.tsx` |
+| `gearflowPageFooter` | `footer.tsx` |
+
+`line-items-table.tsx`'s filtering/grouping/badge/column-layout decisions are
+factored into plain, exported functions independent of any JSX (mirrors
+`gearflow-table.ts`'s exported `discountCellText`/`breakdownLabel`/
+`isSubhireIndicatorVisible`/`getAssetTag`, which the react-pdf version
+imports and reuses rather than re-deriving) — this is what lets its test
+suite assert on structured decisions the same way `gearflow-table.test.ts`
+does on captured draw calls, instead of needing to parse rendered PDF bytes.
+Render-level tests fill the remaining gap: page-count/no-throw smoke
+coverage across every doc type's real `TableLayoutConfig`
+(`document-layouts.ts`) and the full config surface (badges, checkboxes,
+per-unit rows at all 3 indent depths, condition columns) the quote-only
+spike never exercised.
+
+Two things #1152 explicitly deferred to later issues in the sequence: (1)
+`document-layouts.ts`'s declarative `DOCUMENT_LAYOUTS` table itself is not
+yet ported — each doc type's top-level component still composes its pieces
+directly in JSX, same as the spike's `QuoteDocument`; and (2) the
+Helvetica-only / em-dash-normalization question the spike flagged as
+"probably not needed, verify on the real deploy target" is still open —
+`draft-watermark.tsx` keeps the normalization as cheap insurance pending
+that verification.
 
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`

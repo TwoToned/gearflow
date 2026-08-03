@@ -957,11 +957,12 @@ push. A variance note surfaces on the push result when a line's Xero tax type
 diverges from the org default, so a coding override that implies a different
 effective rate than Flow's own project-rate math is never silently invisible.
 
-**Ambiguity resolved:** this app has no live SALE line-item workflow yet
-(that's WS11/#950 — `models.xeroSaleAccountCode` exists as a field for it,
-nothing else). Every equipment line resolves via the RENTAL branch of the
-cascade today; the SALE branch is unit-tested but unreachable until #950
-wires an actual sale line type.
+**Ambiguity resolved, then wired up (2026-08):** WS11/#950 shipped the SALE
+line-item workflow; `resolveEquipmentLineCode` now branches `lineKind` on
+`projectLineItems.type === "SALE"`, so a SALE line resolves via
+`models.xeroSaleAccountCode` instead of the RENTAL branch. A kit-parent line
+is unaffected either way (kits aren't sellable — see FEATUREDOCS/67 — so
+`isKitParent` and `type === "SALE"` never coincide).
 
 ### Line amounts push `LineAmount`, never re-derived from Quantity × UnitAmount
 

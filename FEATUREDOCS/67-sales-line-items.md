@@ -247,13 +247,49 @@ links to `/assets/sales-stock`.
   `projectModelRevenues` (never counts toward a model's rental ROI). See
   FEATUREDOCS/57.
 
+**Finance tab / version projection (2026-08 fix).** `saleRevenue`/
+`saleCostTotal` are correctly wired into `ProjectCostsPanel` (above) but were
+silently dropped by the OTHER money surface on the project — the Finance
+tab's `<FinancialSummary>` card and its read-only version-projection twin
+(`VersionProjectedFinance`). Both derived `serviceChargeTotal` as `subtotal -
+equipmentRevenue`, which was correct pre-WS11 but, once `saleRevenue` became
+part of `subtotal`, silently folded every SALE line's revenue into the
+"Services" row. Fixed by threading `saleRevenue`/`saleCostTotal` through the
+two `mapProject` copies (`src/lib/projects-read.ts` and its client-safe
+mirror `src/lib/project-detail-reconstruct.ts` — both had dropped the two
+fields from their hand-picked shape) and `project-version-projection.ts`'s
+`ProjectedFinance`, subtracting `saleRevenue` too when deriving
+`serviceChargeTotal`, and giving `<FinancialSummary>` its own "Sale items"
+revenue row / "Sale cost of goods" cost row (shown only when non-zero, same
+convention as every other row in that card).
+
+**Xero push coding (2026-08 fix).** `resolveEquipmentLineCode`
+(`convex/xeroPush.ts`) hardcoded `lineKind: "RENTAL"` for every equipment
+line — written before WS11 shipped, when the SALE branch of
+`resolveModelOrKitAccountCode` (`models.xeroSaleAccountCode`) was unit-tested
+but structurally unreachable. It now branches `lineKind` on
+`projectLineItems.type === "SALE"`, so a SALE line's invoice push resolves
+via the model's sale account instead of its rental one. A kit-parent line is
+unaffected either way — a SALE line is never kit-backed. See FEATUREDOCS/66.
+
 ## CSV / rate import
 
 `Model.salePrice`/`saleStockQuantity` follow the exact `defaultPurchasePrice`/
 `replacementCost` pattern: full-model CSV export/import columns, the narrow
 rate-only CSV import (alias `saleprice|sale|sellprice|rrp|retail`), and
 `bulkUpdateRatesNative`'s `rateType` union (+ the model-table.tsx bulk
-rate-update dialog).
+rate-update dialog). **2026-08 fix:** `saleStockQuantity`'s full-model CSV
+import used `parseInt(...) || null`, which reads an explicit `"0"` as falsy
+and silently imports it as null — the update path's `data.saleStockQuantity
+?? existing.saleStockQuantity` then reads that as "unset" and keeps the OLD
+value instead of zeroing it out. `salePrice` on the same row was already fine
+(`parseDecimal` uses an explicit `isNaN` check). Fixed by adding a
+`parseIntOrNull` helper next to `parseDecimal` in `src/server/csv.ts` with
+the same explicit-`isNaN` shape, used for `saleStockQuantity` only — the
+file's other `parseInt(...) || null` fields (`powerDraw`,
+`testAndTagIntervalDays`, `maintenanceIntervalDays`) don't have a meaningful
+zero state the way a stock count does, so they're left as a separate hygiene
+follow-up rather than folded into this fix.
 
 ## Out of scope (this workstream)
 

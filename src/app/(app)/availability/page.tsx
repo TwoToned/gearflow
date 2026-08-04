@@ -46,6 +46,7 @@ import { projectStatusLabels } from "@/lib/status-labels";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgWeekStartsOn } from "@/lib/use-org-country";
+import { useFormatters } from "@/components/providers/format-provider";
 
 const WEEKDAYS_FROM_MONDAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -190,6 +191,7 @@ function AvailabilityPage() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const weekStartsOn = useOrgWeekStartsOn();
+  const { formatDateLong, formatMonthYear } = useFormatters();
   const today = useMemo(() => new Date(), []);
   const [view, setView] = useState<ViewMode>("month");
 
@@ -284,7 +286,7 @@ function AvailabilityPage() {
               <div className="flex flex-wrap items-center gap-2">
                 {/* The 200px floor plus the 44px month-nav buttons overflows 375px. */}
                 <h1 className="t-title text-ink sm:min-w-[200px]">
-                  {format(currentMonth, "MMMM yyyy")}
+                  {formatMonthYear(currentMonth)}
                 </h1>
                 <div className="flex items-center gap-1">
                   <Button
@@ -382,7 +384,7 @@ function AvailabilityPage() {
                   {selectedDay ? (
                     <div className="space-y-3">
                       <div className="flex items-start justify-between gap-2">
-                        <SectionHeader label={format(selectedDay, "EEEE, d MMMM")} />
+                        <SectionHeader label={formatDateLong(selectedDay)} />
                         <Button
                           variant="ghost"
                           size="icon"
@@ -685,6 +687,7 @@ function AgendaView({
   today: Date;
   onOpenProject: (id: string) => void;
 }) {
+  const { formatDateLong, formatDateDayMonth, config } = useFormatters();
   if (groups.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-[var(--r-lg)] border border-line-2 bg-card py-16 text-center shadow-[var(--sh-card)]">
@@ -720,13 +723,13 @@ function AgendaView({
                   isToday ? "bg-red text-white" : "bg-elev text-ink",
                 )}
               >
-                <span className="t-overline">{format(day, "EEE")}</span>
+                <span className="t-overline">{day.toLocaleDateString(config.locale, { weekday: "short" })}</span>
                 <span className="t-mono text-[14px] font-semibold tabular-nums">
                   {format(day, "d")}
                 </span>
               </span>
               <div className="min-w-0">
-                <p className="t-small text-ink">{format(day, "EEEE, d MMMM")}</p>
+                <p className="t-small text-ink">{formatDateLong(day)}</p>
                 <p className="t-micro text-muted">
                   {dayProjects.length} project{dayProjects.length !== 1 ? "s" : ""} live
                 </p>
@@ -767,8 +770,8 @@ function AgendaView({
                       {p.clientName && <span className="truncate">{p.clientName}</span>}
                       <span className="text-faint">·</span>
                       <span className="tabular-nums">
-                        {format(new Date(p.rentalStartDate), "d MMM")} –{" "}
-                        {format(new Date(p.rentalEndDate), "d MMM")}
+                        {formatDateDayMonth(new Date(p.rentalStartDate))} –{" "}
+                        {formatDateDayMonth(new Date(p.rentalEndDate))}
                       </span>
                     </div>
                   </div>
@@ -797,6 +800,7 @@ function DayProjectCard({
   project: CalendarProject;
   onClick: () => void;
 }) {
+  const { formatDateDayMonth } = useFormatters();
   return (
     <button
       type="button"
@@ -828,8 +832,8 @@ function DayProjectCard({
       )}
       <div className="flex items-center justify-between pl-1.5 t-micro text-muted">
         <span className="tabular-nums">
-          {format(new Date(p.rentalStartDate), "d MMM")} –{" "}
-          {format(new Date(p.rentalEndDate), "d MMM")}
+          {formatDateDayMonth(new Date(p.rentalStartDate))} –{" "}
+          {formatDateDayMonth(new Date(p.rentalEndDate))}
         </span>
         <span className="t-mono">{p.lineItemCount} items</span>
       </div>

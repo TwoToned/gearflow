@@ -33,6 +33,8 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 
 import { Input } from "@/components/ui/input";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
+import { useFormatters } from "@/components/providers/format-provider";
 import {
   Table,
   TableBody,
@@ -41,6 +43,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+/** I6 (#1086) — day-of-week header labels, reordered to match the org's
+ *  week start rather than the pre-#1086 hardcoded Monday-first order. */
+const DAY_HEADERS_MON_FIRST = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_HEADERS_SUN_FIRST = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const statusColors: Record<string, string> = {
   ENQUIRY: "bg-gray-400",
@@ -103,6 +110,9 @@ export function BookingCalendar({
   const { isAuthenticated } = useConvexAuth();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const weekStartsOn = useOrgWeekStartsOn();
+  const { formatDateLong, formatDateDayMonth, formatDate, formatMonthYear } = useFormatters();
+  const dayHeaders = weekStartsOn === 0 ? DAY_HEADERS_SUN_FIRST : DAY_HEADERS_MON_FIRST;
   const today = useMemo(() => new Date(), []);
   const [currentMonth, setCurrentMonth] = useState(startOfMonth(initialDate || today));
   const [selectedDay, setSelectedDay] = useState<Date | null>(initialDate || null);
@@ -117,9 +127,9 @@ export function BookingCalendar({
   }, [initialDate?.getTime()]);
 
   const gridStart = startOfWeek(startOfMonth(currentMonth), {
-    weekStartsOn: 1,
+    weekStartsOn,
   });
-  const gridEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
+  const gridEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn });
 
   const startMs = gridStart.getTime();
   const endMs = gridEnd.getTime();
@@ -248,7 +258,7 @@ export function BookingCalendar({
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <h3 className="text-lg font-semibold min-w-[180px] text-center">
-          {format(currentMonth, "MMMM yyyy")}
+          {formatMonthYear(currentMonth)}
         </h3>
         <Button
           variant="line"
@@ -333,7 +343,7 @@ export function BookingCalendar({
                 <div>
                   {/* Day headers */}
                   <div className="grid grid-cols-7 mb-1">
-                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
+                    {dayHeaders.map(
                       (d) => (
                         <div
                           key={d}
@@ -461,7 +471,7 @@ export function BookingCalendar({
                     <div className="flex items-center gap-2">
                       <CalendarDays className="h-4 w-4 text-fg-3" />
                       <h3 className="font-semibold">
-                        {format(selectedDay, "EEEE, d MMMM yyyy")}
+                        {formatDateLong(selectedDay)}
                       </h3>
                     </div>
                     <Button
@@ -519,8 +529,8 @@ export function BookingCalendar({
                           )}
                           <div className="flex items-center justify-between text-xs text-fg-3">
                             <span>
-                              {format(new Date(b.rentalStartDate), "d MMM")} —{" "}
-                              {format(new Date(b.rentalEndDate), "d MMM")}
+                              {formatDateDayMonth(new Date(b.rentalStartDate))} —{" "}
+                              {formatDateDayMonth(new Date(b.rentalEndDate))}
                             </span>
                             {entityType === "model" && b.quantity > 1 && (
                               <span>Qty: {b.quantity}</span>
@@ -560,8 +570,8 @@ export function BookingCalendar({
                               )}
                               <div className="flex items-center justify-between text-xs text-fg-3">
                                 <span>
-                                  {format(new Date(b.rentalStartDate), "d MMM")} —{" "}
-                                  {format(new Date(b.rentalEndDate), "d MMM")}
+                                  {formatDateDayMonth(new Date(b.rentalStartDate))} —{" "}
+                                  {formatDateDayMonth(new Date(b.rentalEndDate))}
                                 </span>
                                 {b.quantity > 1 && <span>Qty: {b.quantity}</span>}
                               </div>
@@ -589,7 +599,7 @@ export function BookingCalendar({
               </div>
             ) : bookings.length === 0 ? (
               <div className="py-12 text-center text-sm text-fg-3">
-                No bookings in {format(currentMonth, "MMMM yyyy")}.
+                No bookings in {formatMonthYear(currentMonth)}.
               </div>
             ) : (
               <Table>
@@ -628,12 +638,12 @@ export function BookingCalendar({
                       </TableCell>
                       <TableCell>
                         {b.rentalStartDate
-                          ? format(new Date(b.rentalStartDate), "d MMM yyyy")
+                          ? formatDate(new Date(b.rentalStartDate))
                           : "—"}
                       </TableCell>
                       <TableCell>
                         {b.rentalEndDate
-                          ? format(new Date(b.rentalEndDate), "d MMM yyyy")
+                          ? formatDate(new Date(b.rentalEndDate))
                           : "—"}
                       </TableCell>
                       {entityType === "model" && (

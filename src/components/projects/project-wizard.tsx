@@ -11,6 +11,8 @@ import { cn, focusRing, disabledState } from "@/lib/utils";
 import {
   RangeCalendar, DURATION_PRESETS, presetRange, rangeLengthLabel, type DateRange,
 } from "@/components/ui/range-calendar";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
+import { useFormatters } from "@/components/providers/format-provider";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
@@ -616,6 +618,8 @@ function normalizeDate(value?: unknown): string | undefined {
  */
 function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   const v = form.watch();
+  const weekStartsOn = useOrgWeekStartsOn();
+  const { formatDateWeekdayShort, config } = useFormatters();
   const range: DateRange = {
     start: fromDateStr(v.rentalStartDate),
     end: fromDateStr(v.rentalEndDate),
@@ -637,15 +641,15 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   const lenLabel = rangeLengthLabel(range);
   const summary = range.start
     ? range.end
-      ? `${format(range.start, "EEE d MMM")} → ${format(range.end, "EEE d MMM")}`
-      : `${format(range.start, "EEE d MMM")} — pick an end date`
+      ? `${formatDateWeekdayShort(range.start)} → ${formatDateWeekdayShort(range.end)}`
+      : `${formatDateWeekdayShort(range.start)} — pick an end date`
     : "No dates yet";
 
   const projectLenLabel = rangeLengthLabel(projectRange);
   const projectSummary = projectRange.start
     ? projectRange.end
-      ? `${format(projectRange.start, "EEE d MMM")} → ${format(projectRange.end, "EEE d MMM")}`
-      : `${format(projectRange.start, "EEE d MMM")} — pick an end date`
+      ? `${formatDateWeekdayShort(projectRange.start)} → ${formatDateWeekdayShort(projectRange.end)}`
+      : `${formatDateWeekdayShort(projectRange.start)} — pick an end date`
     : "Same as rental window";
 
   // Soft (non-blocking) hint: a diverging project window is expected to CONTAIN
@@ -699,7 +703,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
 
       {/* Calendar + live summary */}
       <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-        <RangeCalendar value={range} onChange={setRange} />
+        <RangeCalendar value={range} onChange={setRange} weekStartsOn={weekStartsOn} locale={config.locale} />
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
           <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-faint")}>{summary}</span>
           {lenLabel && (
@@ -722,7 +726,7 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
                 window (e.g. an earlier bump-in or a later strike).
               </p>
               <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-                <RangeCalendar value={projectRange} onChange={setProjectRange} />
+                <RangeCalendar value={projectRange} onChange={setProjectRange} weekStartsOn={weekStartsOn} locale={config.locale} />
                 <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
                   <span className={cn("text-table-cell font-medium", projectRange.start ? "text-ink" : "text-faint")}>
                     {projectSummary}

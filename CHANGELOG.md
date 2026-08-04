@@ -19,10 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **#1151** — Spike: proved `@react-pdf/renderer` can replace the pdfme
   two-pass pagination pipeline for project documents (#1150), starting with
   the `quote` doc type. A standalone, non-production component tree lives at
-  `src/lib/react-pdf-spike/` (not wired into `generate-pdf.ts`) alongside a
+  `src/lib/react-pdf/` (not wired into `generate-pdf.ts`) alongside a
   written findings doc (`docs/designs/react-pdf-migration-spike-findings.md`)
   covering what maps cleanly, what needs a different approach, and an
   effort estimate for the remaining migration issues.
+
+- **#1152** — Shared react-pdf component library: every remaining
+  composer-pipeline plugin (`gearflowTable`'s full 3-level kit/group/
+  accessory hierarchy with badges/checkboxes/condition columns/per-unit
+  rows, plus the page header, financial summary, rich text, signature
+  line, draft watermark, and page footer) now has a react-pdf port under
+  `src/lib/react-pdf/components/`, covering all 5 project doc types — not
+  just the `quote`-only shape the #1151 spike proved. Still standalone and
+  not wired into `generate-pdf.ts`/`pdf-render.ts`; no user-facing change
+  yet.
 
 - **#1092** — A brand-new account with no organisation and no pending invite
   now lands on `/welcome`, a fork between "Set up a new company" and "Join my

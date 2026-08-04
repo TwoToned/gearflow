@@ -1,19 +1,29 @@
 # react-pdf migration spike — findings (#1151)
 
-**Status:** spike complete, verdict: **proceed**. Code lives at
+**Status:** spike complete, verdict: **proceed**. Code originally lived at
 `src/lib/react-pdf-spike/` — a standalone, self-contained `@react-pdf/renderer`
 component tree for the `quote` document type. It is **not wired into**
 `generate-pdf.ts` / `pdf-render.ts`; nothing in the production render path
 changed. Run it yourself:
 
 ```bash
-pnpm exec tsx src/lib/react-pdf-spike/render-spike.tsx [outDir]
+pnpm exec tsx src/lib/react-pdf/render-spike.tsx [outDir]
 ```
 
 This writes 5 PDFs (long multi-page fixture, the same fixture with the
 draft-preview watermark, each header mode, and a fixture sized to check the
 forced-page-break edge case) to `outDir` (default: a temp dir, path printed on
-exit). Automated coverage: `pnpm vitest run src/lib/react-pdf-spike`.
+exit). Automated coverage: `pnpm vitest run src/lib/react-pdf`.
+
+**Update (#1152, 2026-08-03):** the shared component library this spike
+recommended has landed. The code moved to its permanent home,
+`src/lib/react-pdf/` (still standalone, still not wired into the production
+pipeline), and every remaining plugin — the kit/group/accessory child
+renderer, badges, checkboxes, condition columns, per-unit rows, the
+signature line, and the invoice-only totals rows — is now built. See
+[FEATUREDOCS/13-pdfs.md](../../FEATUREDOCS/13-pdfs.md)'s "Shared component
+library built (#1152)" section for the full component map; this document is
+kept as-is below as the point-in-time record of what the #1151 spike proved.
 
 ## TL;DR
 

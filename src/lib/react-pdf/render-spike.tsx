@@ -2,7 +2,7 @@
  * #1151 spike — manual render script. NOT part of the app or CI; run it by
  * hand to eyeball the output:
  *
- *   pnpm exec tsx src/lib/react-pdf-spike/render-spike.ts [outDir]
+ *   pnpm exec tsx src/lib/react-pdf/render-spike.tsx [outDir]
  *
  * Writes a handful of PDFs (default: a temp dir, printed on exit) covering
  * everything #1151 asks the spike to prove:

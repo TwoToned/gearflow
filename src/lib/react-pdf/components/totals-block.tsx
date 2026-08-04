@@ -1,9 +1,22 @@
 /**
- * #1151 spike — financial totals block (subtotal, item discounts, discount,
- * tax, total, deposit/balance, due date). Mirrors
- * gearflow-financial-summary.ts's row set and ordering for the quote layout
- * (`defaultTotals`: subtotal/discount/tax/total on, deposit/balance/dueDate
- * off).
+ * gearflowFinancialSummary → react-pdf port. Row set and ordering mirror
+ * gearflow-financial-summary.ts exactly: subtotal (+ optional pre-discount
+ * transparency rows), discount, tax, Total (bold, divider), then — invoice
+ * only — Deposit Paid / Balance Due / Due Date. `document-layouts.ts`'s
+ * `defaultTotals` turns the last 3 off for quote; invoice's totals config
+ * turns `showDeposit`/`showBalance`/`showDueDate` on, so this component
+ * gates each on the corresponding data being present rather than on a
+ * separate config flag — `depositPaid > 0`/`dueDate` truthy is the same
+ * "has something to show" gate the pdfme original uses.
+ *
+ * The divider line above "Total" has a documented history of visually
+ * touching the Total text on real pdfme renders (2026-07-27, 2026-07-28 x2)
+ * — tuned there to a hand-picked 6pt-before/13pt-after gap. Yoga's automatic
+ * sizing of the `<Text>` above/below the `<View>` divider here means there's
+ * no manual baseline-vs-line-position math to get wrong, but the clearance
+ * should still be verified visually once this renders in a real doc type
+ * (issue #3's invoice port is the first to exercise the deposit/balance/
+ * due-date rows below).
  */
 import { Text, View } from "@react-pdf/renderer";
 import type { DocumentData } from "@/lib/pdfme/types";
@@ -60,6 +73,15 @@ export function TotalsBlock({ data, itemDiscountTotal }: { data: DocumentData; i
         )}
         <Row label={data.tax_label || "GST"} value={formatCurrency(data.tax_amount)} docColor={docColor} />
         <Row label="Total" value={formatCurrency(data.total)} bold divider docColor={docColor} />
+        {data.deposit_paid > 0 && (
+          <>
+            <Row label="Deposit Paid" value={`-${formatCurrency(data.deposit_paid)}`} docColor={docColor} />
+            <Row label="Balance Due" value={formatCurrency(data.balance_due)} bold docColor={docColor} />
+          </>
+        )}
+        {/* Bottom-most, bold — the amount owed and the date it's owed by are
+         *  read together (invoice only; quote never populates this field). */}
+        {data.invoice_due_date && <Row label="Due Date" value={data.invoice_due_date} bold docColor={docColor} />}
       </View>
     </View>
   );

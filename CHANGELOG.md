@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not wired into `generate-pdf.ts`/`pdf-render.ts`; no user-facing change
   yet.
 
+- **#1153** — `invoice` doc type ported to react-pdf
+  (`src/lib/react-pdf/invoice-document.tsx`), reusing #1152's shared
+  components: the country-derived "TAX INVOICE"/"INVOICE" heading (I4,
+  #1083), client tax id / payment terms / issued invoice number in the
+  details row, deposit paid / balance due / due date in the totals block,
+  the bold due-date header highlight, and a new payment-details block (bank
+  details) that shares terms & conditions' free-text convention without
+  forcing its own page. Still standalone and not wired into
+  `generate-pdf.ts`/`pdf-render.ts`; no user-facing change yet.
+
 - **#1092** — A brand-new account with no organisation and no pending invite
   now lands on `/welcome`, a fork between "Set up a new company" and "Join my
   team" — instead of dead-ending on the old onboarding bounce. The create

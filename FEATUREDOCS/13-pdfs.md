@@ -144,6 +144,30 @@ Helvetica-only / em-dash-normalization question the spike flagged as
 `draft-watermark.tsx` keeps the normalization as cheap insurance pending
 that verification.
 
+**Invoice ported (#1153, 2026-08-04).** `src/lib/react-pdf/invoice-document.tsx`
+composes the same shared components as `quote-document.tsx` — still standalone,
+still not wired into `generate-pdf.ts`/`pdf-render.ts`, still hand-composed in
+JSX rather than walking `DOCUMENT_LAYOUTS.invoice` (point (1) above is
+unchanged; it's a later issue). The delta over quote, all mirroring the old
+pipeline's `invoice`-specific branches in `document-composer.ts`:
+
+- `DetailsRow` (`components/details-row.tsx`) gained an optional `config` prop
+  gating `showClientTaxId`/`showPaymentTerms`/`showInvoiceNumber` — quote
+  passes no config, so its rendering is unchanged; invoice turns all three on.
+  The pure line-building functions (`buildClientLines`/`buildProjectLines`)
+  are exported and unit-tested directly (`__tests__/details-row.test.ts`),
+  the same convention `line-items-table.tsx`'s pure decision functions use.
+- The `TAX INVOICE` heading takes the I4 (#1083) country-derived
+  `org_invoice_heading` override — `TotalsBlock`'s Deposit Paid/Balance Due/
+  Due Date rows and `Header`'s bold "Due: <date>" highlight needed **no**
+  changes; #1152 already gated both on the data being present rather than a
+  separate config flag.
+- A new `paymentDetails` block (bank details, invoice-only, same free-text/
+  markdown-lite convention as terms & conditions) renders directly after the
+  totals block. Unlike terms & conditions it does **not** use `break` — it's
+  meant to flow onto whatever room is left after the totals block, not read
+  as its own legal section.
+
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`
 value next to the rate/total columns without adding information the reader

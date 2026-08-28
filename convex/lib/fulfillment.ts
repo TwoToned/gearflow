@@ -78,15 +78,21 @@ export async function syncLineItemRollup(ctx: Ctx, lineItemId: string): Promise<
   });
 }
 
-/** Find-or-create the serialised unit for a (line, asset) pair. */
+/** Find-or-create the serialised unit for a (line, asset) pair. Uses `.collect()` +
+ *  take-first rather than `.unique()`: a duplicate row on `by_lineItemId_assetId`
+ *  (e.g. from an old double-submit before the client had pending-state guards)
+ *  must not turn every future checkout of that asset into a masked Convex system
+ *  error — degrade to "use the first one" instead of throwing (see CLAUDE.md's
+ *  `.unique()`-on-a-duplicate-row footgun). */
 export async function ensureSerialisedUnit(
   ctx: Ctx,
   args: { organizationId: string; lineItemId: string; assetId: string },
 ): Promise<{ id: string; created: boolean }> {
-  const existing = await ctx.db
+  const existingRows = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", args.lineItemId).eq("assetId", args.assetId))
-    .unique();
+    .collect();
+  const existing = existingRows[0];
   if (existing) return { id: existing.id, created: false };
 
   const siblings = await lineUnits(ctx, args.lineItemId);

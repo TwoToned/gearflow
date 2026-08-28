@@ -56,10 +56,14 @@ async function checkOutSerializedItem(
   const asset = await assetByCuid(ctx, p.targetAssetId);
   if (!asset || asset.organizationId !== p.organizationId) throw new ConvexError("Asset not found in this organization");
   if (asset.status === "CHECKED_OUT") {
-    const ownUnit = await ctx.db
+    // `.collect()` + take-first, not `.unique()`: a stray duplicate row on this
+    // (lineItemId, assetId) pair must degrade gracefully, not turn this into a
+    // masked Convex system error (see fulfillment.ts's ensureSerialisedUnit).
+    const ownUnits = await ctx.db
       .query("projectLineItemUnits")
       .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", p.lineItemId).eq("assetId", p.targetAssetId))
-      .unique();
+      .collect();
+    const ownUnit = ownUnits.find((u) => u.status === "CHECKED_OUT") ?? ownUnits[0];
     if (ownUnit && ownUnit.status === "CHECKED_OUT") return "continue";
     throw new ConvexError(`Asset ${asset.assetTag} is already deployed`);
   }

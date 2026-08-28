@@ -715,6 +715,26 @@ describe("checkOutItems", () => {
     expect(payload.assetIds).toEqual(["a1"]);
   });
 
+  test("pre-existing duplicate (lineItemId, assetId) unit rows → checkout still succeeds (no masked system error)", async () => {
+    // Regression: a stray duplicate on `by_lineItemId_assetId` (e.g. an old
+    // double-submit before client pending-state guards existed) used to make
+    // `ensureSerialisedUnit`'s `.unique()` throw a Convex SYSTEM error — masked
+    // to the client as a generic "Server Error", not a ConvexError.
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItemUnits", { id: "dup1", organizationId: ORG, lineItemId: "li1", ordinal: 1, assetId: "a1", quantity: 1, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItemUnits", { id: "dup2", organizationId: ORG, lineItemId: "li1", ordinal: 2, assetId: "a1", quantity: 1, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+      orgId: ORG, projectId: "p1",
+      items: [{ lineItemId: "li1", assetId: "a1" }],
+      includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+    });
+    expect(res.updatedLineIds).toEqual(["li1"]);
+    expect((await assetById(t, "a1"))?.status).toBe("CHECKED_OUT");
+  });
+
   test("no active subscription → no delivery rows (but checkout still succeeds)", async () => {
     const t = makeT();
     await seed(t);

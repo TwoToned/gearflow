@@ -2168,10 +2168,29 @@ function WarehouseProjectPage({
     } catch {
       // Never let the audit trail write block the actual deploy.
     }
+
+    // Narrow each pending parent's accessory cascade to exclude the accessories
+    // just declared missing — the override records WHY they're being left
+    // behind, it must not also silently deploy them anyway (issue #794: this
+    // gate previously logged the reason but still checked out the "missing"
+    // accessory since `includeAccessoryIds` was never set on the resend).
+    const skippedLineIds = new Set(skipped.map((s) => s.accessoryLineItemId));
+    const narrowedItems = pendingCheckOutItems.map((item) => {
+      const li = lineItems.find((l) => l.id === item.lineItemId);
+      if (!li) return item;
+      const allAccessories = accessoryChildrenOf(li);
+      const eligible = allAccessories.filter((c) => !skippedLineIds.has(c.id));
+      if (eligible.length === allAccessories.length) return item; // nothing skipped for this parent
+      const includeAccessoryIds = eligible
+        .map((c) => c.assetId ?? c.bulkAssetId ?? "")
+        .filter((v): v is string => v !== "");
+      return { ...item, includeAccessoryIds };
+    });
+
     setAccessoryGate(null);
     setDefaultOverrideReason("");
     setOptionalSkipReasons({});
-    runCheckOut(pendingCheckOutItems);
+    runCheckOut(narrowedItems);
   };
 
   // De-prep selected returned items: run return checks where the model has them,

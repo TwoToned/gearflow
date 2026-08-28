@@ -402,12 +402,24 @@ either kind runs `warehouseWrites.logAccessoryCheckoutOverride` — a new
 activity log (one entry per skipped accessory, e.g. `"Deployed <parent>
 without default accessory <name>: <reason>"`) and that accessory child line's
 own `notes` field (merge-appended, same "join with `; `" convention as custom
-line item notes) — then the actual `checkOutItems` call proceeds unchanged.
-The gate is client-side pre-flight only; it does not touch
-`checkoutAccessoryChildren`/`expandAccessoriesForAsset` in
-`convex/warehouseOps.ts` — an accessory that was never prepped simply has no
-unit to flip, so the existing cascade does nothing for it either way, exactly
-as if the operator had scanned the parent alone.
+line item notes) — then the resent `checkOutItems` call carries an
+`includeAccessoryIds` narrowed to every accessory child of the deploying
+parent(s) **except** the ones just declared missing (computed client-side from
+`accessoryChildrenOf` minus the skipped set, translated to asset/bulk-asset
+identity the same way `findPartiallyVerifiedAccessoryParent` does).
+
+This narrowing is load-bearing for a **bulk** DEFAULT accessory (e.g. a
+battery-kit template accessory) that was already added to the project at
+add-time but never packed: the "no unit to flip" assumption above only holds
+for a *serialised* accessory. A bulk one gets its unit **materialised at
+checkout time** by `expandAccessoriesForAsset` regardless of prep state (it's
+how a never-touched DEFAULT bulk accessory ever gets a unit at all), and
+`checkoutAccessoryChildren` immediately flips whatever unit exists — so
+without the narrowing, the very accessory the operator just said was missing
+got silently checked out anyway in the same call. `includeAccessoryIds` is
+exactly the existing "verified subset" filter both of those functions already
+respect (issue #794's partial-deploy escape hatch), so no new gate was needed
+on the Convex side — the client just wasn't setting it on the override path.
 
 ## Not in v1
 

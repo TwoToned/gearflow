@@ -62,15 +62,9 @@ import {
   phaseLabels,
   formatLabel,
 } from "@/lib/status-labels";
-import { format } from "date-fns";
+import { useFormatters } from "@/components/providers/format-provider";
 import { toast } from "sonner";
 import { FadeIn } from "@/components/ui/motion";
-
-
-function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return "—";
-  return format(new Date(date), "d MMM");
-}
 
 export default function CrewPage() {
   const canManage = useCanDo("crew", "update");
@@ -106,6 +100,7 @@ function CrewDashboard() {
   const cdConvex = useConvex();
   const { isAuthenticated: cdAuthed } = useConvexAuth();
   const timeWrites = useCrewTimeWrites();
+  const { formatDateDayMonth: formatDate } = useFormatters();
   const [logTimeOpen, setLogTimeOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 

@@ -23,22 +23,34 @@ import { cn, focusRing } from "@/lib/utils";
 
 export type DateRange = { start?: Date; end?: Date };
 
-const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const WEEKDAYS_MON_FIRST = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const WEEKDAYS_SUN_FIRST = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 /**
  * Inline range calendar (date-fns, no external calendar dep). Two-click range
  * selection with live hover preview. RVLT-tokenised: endpoints fill --red,
- * the in-between span fills --red-soft. Week starts Monday (en-AU).
+ * the in-between span fills --red-soft.
  */
 export function RangeCalendar({
   value,
   onChange,
   className,
+  /** I6 (#1086) — the org's week start (0 = Sunday, 1 = Monday). Defaults
+   *  to Monday, the pre-#1086 hardcoded behaviour, for a caller that hasn't
+   *  threaded the org's `useOrgWeekStartsOn()` through yet. */
+  weekStartsOn = 1,
+  /** I3 (#1082) — BCP-47 locale for the month header (e.g. "en-US"). Defaults
+   *  to the pre-#1082 AU rendering for a caller that hasn't threaded the
+   *  org's `useFormatters().config.locale` through yet. */
+  locale = "en-AU",
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   className?: string;
+  weekStartsOn?: 0 | 1;
+  locale?: string;
 }) {
+  const WEEKDAYS = weekStartsOn === 0 ? WEEKDAYS_SUN_FIRST : WEEKDAYS_MON_FIRST;
   const [viewMonth, setViewMonth] = React.useState<Date>(
     () => startOfMonth(value.start ?? new Date()),
   );
@@ -57,8 +69,8 @@ export function RangeCalendar({
     }
   }
 
-  const gridStart = startOfWeek(startOfMonth(viewMonth), { weekStartsOn: 1 });
-  const gridEnd = endOfWeek(endOfMonth(viewMonth), { weekStartsOn: 1 });
+  const gridStart = startOfWeek(startOfMonth(viewMonth), { weekStartsOn });
+  const gridEnd = endOfWeek(endOfMonth(viewMonth), { weekStartsOn });
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
   // Preview end while choosing the second endpoint.
@@ -89,7 +101,9 @@ export function RangeCalendar({
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <span className="text-[14px] font-semibold text-ink">{format(viewMonth, "MMMM yyyy")}</span>
+        <span className="text-[14px] font-semibold text-ink">
+          {viewMonth.toLocaleDateString(locale, { month: "long", year: "numeric" })}
+        </span>
         <button
           type="button"
           onClick={() => setViewMonth((m) => addMonths(m, 1))}

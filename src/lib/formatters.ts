@@ -134,6 +134,18 @@ export function formatDateWithTime(
   });
 }
 
+/** Weekday (short) + day + short month, no year \u2014 a date-range endpoint
+ *  label (e.g. AU "Mon, 15 Jul", US "Mon, Jul 15"). Replaces the ad-hoc
+ *  `date-fns format(d, "EEE d MMM")` the project wizard's range picker used
+ *  before I3 \u2014 that string hardcoded day-before-month regardless of org
+ *  locale. */
+export function formatDateWeekdayShort(
+  date: string | Date | null | undefined,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+): string {
+  return formatDateWithOptions(date, config, { weekday: "short", day: "numeric", month: "short" });
+}
+
 /** Month + year only \u2014 calendar headers (e.g. "July 2024"). */
 export function formatMonthYear(
   date: string | Date | null | undefined,

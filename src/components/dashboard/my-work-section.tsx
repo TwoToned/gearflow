@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { format } from "date-fns";
 import { ArrowRight, Boxes, CalendarClock, ShieldAlert, AtSign, CheckCircle2, FolderOpen, Circle, CircleDot } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
 import { StaggerList, StaggerItem } from "@/components/ui/motion";
 import { SectionHeader } from "@/components/layout/page-layouts";
 import { getStatusColor } from "@/lib/status-colors";
+import { useFormatters } from "@/components/providers/format-provider";
 
 const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry", QUOTING: "Quoting", QUOTED: "Quoted", CONFIRMED: "Confirmed",
@@ -20,12 +20,18 @@ type TaskDue = Record<string, unknown>;
 
 const TASKS_DUE_SHOWN = 5;
 
-/** Compact due-date label for the tasks-due block (no "d MMM" year clutter). */
-function taskDueLabel(task: TaskDue): { text: string; overdue: boolean } | null {
+/** Compact due-date label for the tasks-due block (no "d MMM" year clutter).
+ *  `formatDateDayMonth` is the org-locale-bound role (I3, #1082) — replaces
+ *  a bare `toLocaleDateString(undefined, …)`, which rendered the VIEWER's
+ *  browser locale rather than the org's configured one. */
+function taskDueLabel(
+  task: TaskDue,
+  formatDateDayMonth: (date: Date) => string,
+): { text: string; overdue: boolean } | null {
   const due = task.dueDate as number | null | undefined;
   if (due == null) return null;
   return {
-    text: new Date(due).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    text: formatDateDayMonth(new Date(due)),
     overdue: !!task.overdue,
   };
 }
@@ -34,7 +40,10 @@ const DAY = 24 * 60 * 60 * 1000;
 function startOfDay(d: Date) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 
 /** Status-aware date line for a project card. */
-function projectDateLine(p: Project): { text: string; tone: "error" | "warning" | "muted" } | null {
+function projectDateLine(
+  p: Project,
+  formatDateDayMonth: (date: Date) => string,
+): { text: string; tone: "error" | "warning" | "muted" } | null {
   const status = p.status as string;
   const now = startOfDay(new Date());
   const start = p.rentalStartDate ? startOfDay(new Date(p.rentalStartDate as string)) : null;
@@ -46,14 +55,14 @@ function projectDateLine(p: Project): { text: string; tone: "error" | "warning" 
     if (days < 0) return { text: `${Math.abs(days)}d overdue`, tone: "error" };
     if (days === 0) return { text: "Back today", tone: "warning" };
     if (days <= 3) return { text: `Back in ${days}d`, tone: "warning" };
-    return { text: `Back ${format(end, "d MMM")}`, tone: "muted" };
+    return { text: `Back ${formatDateDayMonth(end)}`, tone: "muted" };
   }
   if (start) {
     const days = Math.round((start.getTime() - now.getTime()) / DAY);
-    if (days < 0) return { text: `Started ${format(start, "d MMM")}`, tone: "muted" };
+    if (days < 0) return { text: `Started ${formatDateDayMonth(start)}`, tone: "muted" };
     if (days === 0) return { text: "Starts today", tone: "warning" };
     if (days <= 7) return { text: `Starts in ${days}d`, tone: days <= 2 ? "warning" : "muted" };
-    return { text: `Starts ${format(start, "d MMM")}`, tone: "muted" };
+    return { text: `Starts ${formatDateDayMonth(start)}`, tone: "muted" };
   }
   return null;
 }
@@ -70,6 +79,7 @@ export function MyWorkSection({
   /** Top N of projectTasks.myOpenTasks (already sorted overdue → due asc → priority). */
   tasks?: TaskDue[];
 }) {
+  const { formatDateDayMonth } = useFormatters();
   // Group blockers by project so each card can flag its own issues.
   const blockersByProject = new Map<string, Blocker[]>();
   for (const b of blockers) {
@@ -99,7 +109,9 @@ export function MyWorkSection({
         </Link>
       </div>
 
-      {shownTasks.length > 0 && <TasksDueBlock tasks={shownTasks} moreCount={moreTasks} />}
+      {shownTasks.length > 0 && (
+        <TasksDueBlock tasks={shownTasks} moreCount={moreTasks} formatDateDayMonth={formatDateDayMonth} />
+      )}
 
       {projects.length === 0 ? (
         <div className="rounded-[var(--r-lg)] border border-dashed border-line py-8 text-center">
@@ -114,7 +126,7 @@ export function MyWorkSection({
             const pill = getStatusColor("project", status);
             const client = p.client as { name?: string } | null;
             const equip = (p._count as { lineItems?: number } | undefined)?.lineItems ?? 0;
-            const dateLine = projectDateLine(p);
+            const dateLine = projectDateLine(p, formatDateDayMonth);
             const pBlockers = blockersByProject.get(p.id as string) ?? [];
             const latest = pBlockers[0];
             return (
@@ -195,7 +207,15 @@ const TASK_STATUS_ICON_TEXT: Record<string, string> = {
   TODO: "text-muted",
 };
 
-function TasksDueBlock({ tasks, moreCount }: { tasks: TaskDue[]; moreCount: number }) {
+function TasksDueBlock({
+  tasks,
+  moreCount,
+  formatDateDayMonth,
+}: {
+  tasks: TaskDue[];
+  moreCount: number;
+  formatDateDayMonth: (date: Date) => string;
+}) {
   return (
     <div className="space-y-1.5 border-b border-line pb-4">
       <div className="flex items-center justify-between gap-2">
@@ -211,15 +231,15 @@ function TasksDueBlock({ tasks, moreCount }: { tasks: TaskDue[]; moreCount: numb
       </div>
       <div className="space-y-0.5">
         {tasks.map((t) => (
-          <TaskDueRow key={t.id as string} task={t} />
+          <TaskDueRow key={t.id as string} task={t} formatDateDayMonth={formatDateDayMonth} />
         ))}
       </div>
     </div>
   );
 }
 
-function TaskDueRow({ task }: { task: TaskDue }) {
-  const due = taskDueLabel(task);
+function TaskDueRow({ task, formatDateDayMonth }: { task: TaskDue; formatDateDayMonth: (date: Date) => string }) {
+  const due = taskDueLabel(task, formatDateDayMonth);
   const status = task.status as string;
   const StatusIcon = TASK_STATUS_ICON[status] ?? Circle;
   return (

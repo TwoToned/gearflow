@@ -111,6 +111,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **#1063 (Phase I, I3/I6)** — Dates and week-start day now render in the
+  org's own locale instead of a hardcoded AU one across the booking calendar,
+  availability calendar, warehouse dashboard, crew dashboard, dashboard "My
+  work" section and the new-project date-range picker — a US org now sees
+  "Jul 15" instead of "15 Jul", and its week grids start Sunday instead of
+  Monday. One call site was also reading the *viewer's* browser locale
+  instead of the org's configured one (the dashboard's tasks-due date). The
+  inline-date-format ratchet (`scripts/date-format-ratchet.sh`,
+  `.date-format-ratchet-baseline`) is now at 0.
+
 - **#1063** — The project sidebar (schedule, location, team, activity) is back on
   every tab, so you keep the site contact and dates in view while working in
   Equipment or Labour. On the Overview tab that same information is now built

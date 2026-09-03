@@ -51,6 +51,7 @@ export const listPendingByUser = query({
 async function orgMemberDomains(ctx: QueryCtx, organizationId: string): Promise<Set<string>> {
   const members = await ctx.db
     .query("members")
+    // r9.8-ok: roster-scale, bounded by org headcount — see docs/exceptions.md (R-8.3.3, pendingOrgJoinRequests.ts)
     .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
     .collect();
   const domains = new Set<string>();
@@ -77,7 +78,7 @@ export const findJoinableOrgsForDomain = query({
     const normalizedDomain = domain.toLowerCase();
     if (isPersonalEmailDomain(normalizedDomain)) return [];
 
-    const allSettings = await ctx.db.query("orgSettings").collect(); // r9.8-ok: per-org opt-in scan, bounded by total org count — see doc comment above
+    const allSettings = await ctx.db.query("orgSettings").collect(); // r9.8-ok: per-org opt-in scan, bounded by total org count — see docs/exceptions.md (R-8.3.3, pendingOrgJoinRequests.ts)
     const domainPolicyOrgIds: string[] = [];
     for (const row of allSettings) {
       if (!row.settings) continue;
@@ -99,6 +100,7 @@ export const findJoinableOrgsForDomain = query({
 
       const members = await ctx.db
         .query("members")
+        // r9.8-ok: roster-scale, bounded by org headcount — see docs/exceptions.md (R-8.3.3, pendingOrgJoinRequests.ts)
         .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
         .collect();
       let memberCount = 0;

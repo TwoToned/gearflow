@@ -51,6 +51,7 @@ export const listPendingByUser = query({
 async function orgMemberDomains(ctx: QueryCtx, organizationId: string): Promise<Set<string>> {
   const members = await ctx.db
     .query("members")
+    // r9.8-ok: roster-scale, bounded by org headcount — see docs/exceptions.md (R-8.3.3, pendingOrgJoinRequests.ts)
     .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
     .collect();
   const domains = new Set<string>();
@@ -60,6 +61,37 @@ async function orgMemberDomains(ctx: QueryCtx, organizationId: string): Promise<
     if (d) domains.add(d);
   }
   return domains;
+}
+
+/** Org ids whose `orgSettings.joinPolicy` is DOMAIN_REQUEST. */
+async function domainRequestOrgIds(ctx: QueryCtx): Promise<string[]> {
+  const allSettings = await ctx.db.query("orgSettings").collect(); // r9.8-ok: per-org opt-in scan, bounded by total org count — see docs/exceptions.md (R-8.3.3, pendingOrgJoinRequests.ts)
+  const ids: string[] = [];
+  for (const row of allSettings) {
+    if (!row.settings) continue;
+    try {
+      const parsed = JSON.parse(row.settings) as { joinPolicy?: string };
+      if (parsed.joinPolicy === "DOMAIN_REQUEST") ids.push(row.organizationId);
+    } catch {
+      // Malformed blob — skip, never crash the search over one bad row.
+    }
+  }
+  return ids;
+}
+
+/** How many of an org's members share the given (already-lowercased) email domain. */
+async function matchingMemberCount(ctx: QueryCtx, organizationId: string, normalizedDomain: string): Promise<number> {
+  const members = await ctx.db
+    .query("members")
+    // r9.8-ok: roster-scale, bounded by org headcount — see docs/exceptions.md (R-8.3.3, pendingOrgJoinRequests.ts)
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
+    .collect();
+  let count = 0;
+  for (const m of members) {
+    const user = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", m.userId)).unique();
+    if (user?.email && emailDomain(user.email) === normalizedDomain) count++;
+  }
+  return count;
 }
 
 /**
@@ -77,17 +109,7 @@ export const findJoinableOrgsForDomain = query({
     const normalizedDomain = domain.toLowerCase();
     if (isPersonalEmailDomain(normalizedDomain)) return [];
 
-    const allSettings = await ctx.db.query("orgSettings").collect(); // r9.8-ok: per-org opt-in scan, bounded by total org count — see doc comment above
-    const domainPolicyOrgIds: string[] = [];
-    for (const row of allSettings) {
-      if (!row.settings) continue;
-      try {
-        const parsed = JSON.parse(row.settings) as { joinPolicy?: string };
-        if (parsed.joinPolicy === "DOMAIN_REQUEST") domainPolicyOrgIds.push(row.organizationId);
-      } catch {
-        // Malformed blob — skip, never crash the search over one bad row.
-      }
-    }
+    const domainPolicyOrgIds = await domainRequestOrgIds(ctx);
 
     const results: { organizationId: string; organizationName: string; memberCount: number }[] = [];
     for (const organizationId of domainPolicyOrgIds) {
@@ -97,15 +119,7 @@ export const findJoinableOrgsForDomain = query({
         .first();
       if (existingMembership) continue;
 
-      const members = await ctx.db
-        .query("members")
-        .withIndex("by_organizationId", (q) => q.eq("organizationId", organizationId))
-        .collect();
-      let memberCount = 0;
-      for (const m of members) {
-        const user = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", m.userId)).unique();
-        if (user?.email && emailDomain(user.email) === normalizedDomain) memberCount++;
-      }
+      const memberCount = await matchingMemberCount(ctx, organizationId, normalizedDomain);
       if (memberCount === 0) continue;
 
       const org = await ctx.db.query("organizations").withIndex("by_cuid", (q) => q.eq("id", organizationId)).unique();

@@ -78,18 +78,21 @@ export async function syncLineItemRollup(ctx: Ctx, lineItemId: string): Promise<
   });
 }
 
-/** Find-or-create the serialised unit for a (line, asset) pair. */
+/** Find-or-create the serialised unit for a (line, asset) pair.
+ *  Finds via a JS `.find()` over the line's collected units (like its
+ *  ensureBulkUnit/ensureAccessoryUnit siblings below), not `ctx.db…unique()` —
+ *  `by_lineItemId_assetId` is a non-unique Convex index, and any stray
+ *  duplicate row for the pair would make `.unique()` throw a raw, unmasked
+ *  system error that surfaces to the client as an opaque "Server Error"
+ *  instead of failing gracefully. */
 export async function ensureSerialisedUnit(
   ctx: Ctx,
   args: { organizationId: string; lineItemId: string; assetId: string },
 ): Promise<{ id: string; created: boolean }> {
-  const existing = await ctx.db
-    .query("projectLineItemUnits")
-    .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", args.lineItemId).eq("assetId", args.assetId))
-    .unique();
+  const siblings = await lineUnits(ctx, args.lineItemId);
+  const existing = siblings.find((u) => u.assetId === args.assetId);
   if (existing) return { id: existing.id, created: false };
 
-  const siblings = await lineUnits(ctx, args.lineItemId);
   const id = createId();
   const now = Date.now();
   await ctx.db.insert("projectLineItemUnits", {

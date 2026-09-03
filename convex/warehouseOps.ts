@@ -56,10 +56,12 @@ async function checkOutSerializedItem(
   const asset = await assetByCuid(ctx, p.targetAssetId);
   if (!asset || asset.organizationId !== p.organizationId) throw new ConvexError("Asset not found in this organization");
   if (asset.status === "CHECKED_OUT") {
-    const ownUnit = await ctx.db
-      .query("projectLineItemUnits")
-      .withIndex("by_lineItemId_assetId", (q) => q.eq("lineItemId", p.lineItemId).eq("assetId", p.targetAssetId))
-      .unique();
+    // `.find()` over the collected units, not `ctx.db…unique()` on
+    // by_lineItemId_assetId — that index is non-unique, so a stray duplicate
+    // row for the pair would make `.unique()` throw a raw, unmasked Convex
+    // system error instead of the intended ConvexError below (see the same
+    // fix in ensureSerialisedUnit, convex/lib/fulfillment.ts).
+    const ownUnit = (await lineUnits(ctx, p.lineItemId)).find((u) => u.assetId === p.targetAssetId);
     if (ownUnit && ownUnit.status === "CHECKED_OUT") return "continue";
     throw new ConvexError(`Asset ${asset.assetTag} is already deployed`);
   }

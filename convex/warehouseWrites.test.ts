@@ -726,6 +726,61 @@ describe("checkOutItems", () => {
     expect(await deliveriesForOrg(t)).toHaveLength(0);
   });
 
+  // Regression: `by_lineItemId_assetId` is a non-unique Convex index. A stray
+  // duplicate row for the (line, asset) pair used to make the internal
+  // `.unique()` lookups throw a raw, unmasked Convex system error instead of
+  // completing the checkout — surfacing to the client as an opaque "Server
+  // Error" (the checkOutItems production incident this pins down).
+  test("a pre-existing duplicate unit row for the (line, asset) pair doesn't crash checkout", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "dup1", organizationId: ORG, lineItemId: "li1", ordinal: 0, assetId: "a1",
+        quantity: 1, returnedQuantity: 0, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "dup2", organizationId: ORG, lineItemId: "li1", ordinal: 1, assetId: "a1",
+        quantity: 1, returnedQuantity: 0, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+      orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+      includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+    });
+    expect(res.updatedLineIds).toEqual(["li1"]);
+    expect((await assetById(t, "a1"))?.status).toBe("CHECKED_OUT");
+  });
+
+  // Same regression, but through the `asset already CHECKED_OUT` re-deploy
+  // path (checkOutSerializedItem's ownUnit lookup), not ensureSerialisedUnit.
+  test("re-deploying an already-checked-out asset with a duplicate unit row doesn't crash", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedModelAsset(t, ORG, "CHECKED_OUT");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("li1", { modelId: "m1", assetId: "a1", status: "CONFIRMED" }));
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "own1", organizationId: ORG, lineItemId: "li1", ordinal: 0, assetId: "a1",
+        quantity: 1, returnedQuantity: 0, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItemUnits", {
+        id: "dup1", organizationId: ORG, lineItemId: "li1", ordinal: 1, assetId: "a1",
+        quantity: 1, returnedQuantity: 0, status: "CHECKED_OUT", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    // Already deployed on this exact line → checkOutSerializedItem's "continue"
+    // short-circuit (no-op, not an error). The regression under test is that this
+    // resolves at all instead of throwing on the duplicate-row `.unique()` lookup.
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutItems, {
+        orgId: ORG, projectId: "p1", items: [{ lineItemId: "li1", assetId: "a1" }],
+        includeAccessories: true, auditIds: ["log1"], now: NOW, actor: SPOOF,
+      }),
+    ).resolves.toEqual({ updatedLineIds: [] });
+  });
+
   test("blocking comment present → ConvexError, no write", async () => {
     const t = makeT();
     await seed(t);

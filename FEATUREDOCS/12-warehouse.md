@@ -517,6 +517,23 @@ Two invariants `checkOutItems` enforces (see `warehouse-tenant-tt-safety.int.tes
 - **Org-scoped asset writes.** The asset id used for a serialised checkout can come from the untrusted scan payload (`item.assetId`), so it is re-scoped to the caller's org with `findFirst({ id, organizationId })` before any write; a miss throws "Asset not found in this organization". The status/location mutation is an org-scoped `updateMany` (defense-in-depth), as is the accessory-cascade asset write in `checkoutAccessoryChildren`. Without this a caller could flip another tenant's asset status/location by scanning its id onto their own line.
 - **Accessories are T&T-gated.** The top-level T&T preflight (`assertTestTagAllowsCheckout`) only sees the scanned parent lines + their units. Accessory children are **separate line items** with their own ids/units (materialised at prep time on different line ids, or at scan time *after* the preflight runs), so they never reach the top-level gate. `checkoutAccessoryChildren` therefore runs its own `assertTestTagAllowsCheckout` over the accessory children's asset/bulk ids before flipping them — a failed/overdue accessory throws `TestTagBlockError` and rolls back the whole batch. The gate is scoped to children that are **not already `CHECKED_OUT`** (mirroring the cascade's skip-already-out guards) so an already-shipped sibling accessory whose T&T lapsed doesn't block a later partial deploy of the same multi-quantity parent line. (A not-yet-deployed sibling accessory is still gated, since the line-scoped cascade would flip it — true per-unit scoping is the deferred "snapshot per-unit accessory contributions" follow-up.) See [Child Assets / Accessories](./48-child-assets-accessories.md).
 
+### ⚠️ A stray duplicate `projectLineItemUnits` row must never crash checkout
+`by_lineItemId_assetId` is an ordinary, **non-unique** Convex index (schema.ts has no
+uniqueness constraint on it) — Convex only enforces it *conceptually*, not structurally.
+`ensureSerialisedUnit` (`convex/lib/fulfillment.ts`) and `checkOutSerializedItem`'s
+already-deployed check (`convex/warehouseOps.ts`) both look up a line's unit for a given
+asset by this pair; a production incident (delivery-docket deploy failing with an opaque
+Convex "Server Error") traced back to one of them calling `ctx.db….unique()` on this index,
+which throws Convex's raw, unmasked system error the instant two rows share a
+`(lineItemId, assetId)` pair — the exact `create`-vs-`createIfMissing` footgun this file's
+parent CLAUDE.md documents for `by_cuid`, just on a different index. Both call sites now
+find the unit via `.find()` over the line's already-collected units (same pattern as
+`ensureBulkUnit`/`ensureAccessoryUnit`) so a stray duplicate degrades to "pick one", not a
+crash. Regression coverage: `checkOutItems > a pre-existing duplicate unit row…` and
+`> re-deploying an already-checked-out asset with a duplicate unit row…` in
+`convex/warehouseWrites.test.ts`. **Never reintroduce a bare `.unique()` on
+`by_lineItemId_assetId`** — use `.find()` over `lineUnits(ctx, lineItemId)` instead.
+
 ## Cross-Navigation
 - **Warehouse → Project**: "View Project" button in warehouse header links to `/projects/[id]`
 - **Project → Warehouse**: "Warehouse" button in project header links to `/warehouse/[id]`

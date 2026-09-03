@@ -7,6 +7,7 @@ import {
   projectServiceSchema,
   type ProjectServiceFormValues,
 } from "@/lib/validations/project-service";
+import { mapNativeWriteError } from "@/lib/native-writes";
 import { api } from "../../convex/_generated/api";
 
 type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
@@ -92,59 +93,95 @@ export function useProjectServiceWrites() {
   return {
     create: async (projectId: string, data: ProjectServiceFormValues): Promise<{ id: string }> => {
       const { input, crew } = buildInput(data);
-      return createM({
-        id: createId(),
-        orgId: requireOrg(),
-        projectId,
-        ...input,
-        crew,
-        now: Date.now(),
-        actor: actor(),
-        auditId: createId(),
-      });
+      try {
+        return await createM({
+          id: createId(),
+          orgId: requireOrg(),
+          projectId,
+          ...input,
+          crew,
+          now: Date.now(),
+          actor: actor(),
+          auditId: createId(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     update: async (serviceId: string, data: ProjectServiceFormValues): Promise<{ id: string }> => {
       const { input, crew } = buildInput(data);
-      return updateM({
-        id: serviceId,
-        orgId: requireOrg(),
-        ...input,
-        crew, // always present (even []) → reconcile crew, mirroring the server's crewMemberIds != null
-        now: Date.now(),
-        actor: actor(),
-        auditId: createId(),
-      });
+      try {
+        return await updateM({
+          id: serviceId,
+          orgId: requireOrg(),
+          ...input,
+          crew, // always present (even []) → reconcile crew, mirroring the server's crewMemberIds != null
+          now: Date.now(),
+          actor: actor(),
+          auditId: createId(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     /** `justification` (#990) — forwarded to `deleteServiceNative`, required once
      *  the project is ON_SITE+ with no open unlock session. */
     remove: async (serviceId: string, justification?: string): Promise<{ id: string }> => {
-      return deleteM({ id: serviceId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId(), justification });
+      try {
+        return await deleteM({ id: serviceId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId(), justification });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     setStatus: async (serviceId: string, status: ServiceStatus): Promise<{ id: string }> => {
-      return statusM({ id: serviceId, orgId: requireOrg(), status, now: Date.now(), actor: actor(), auditId: createId() });
+      try {
+        return await statusM({ id: serviceId, orgId: requireOrg(), status, now: Date.now(), actor: actor(), auditId: createId() });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     bulkDelete: async (ids: string[], justification?: string): Promise<{ deleted: number; skipped: number }> => {
-      return bulkDeleteM({ ids, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId(), justification });
+      try {
+        return await bulkDeleteM({ ids, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId(), justification });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     bulkSetStatus: async (ids: string[], status: ServiceStatus): Promise<{ updated: number; skipped: number }> => {
-      return bulkStatusM({ ids, orgId: requireOrg(), status, now: Date.now(), actor: actor(), auditId: createId() });
+      try {
+        return await bulkStatusM({ ids, orgId: requireOrg(), status, now: Date.now(), actor: actor(), auditId: createId() });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     generate: async (projectId: string): Promise<{ created: number }> => {
-      return generateM({ projectId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
+      try {
+        return await generateM({ projectId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     clone: async (targetProjectId: string, sourceProjectId: string): Promise<{ cloned: number }> => {
-      return cloneM({ targetProjectId, sourceProjectId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
+      try {
+        return await cloneM({ targetProjectId, sourceProjectId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
 
     convertLineItem: async (lineItemId: string): Promise<{ id: string }> => {
-      return convertM({ serviceId: createId(), lineItemId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
+      try {
+        return await convertM({ serviceId: createId(), lineItemId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
     },
   };
 }

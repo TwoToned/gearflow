@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type. Naming and creating the company is still the only required step —
   everything else in the wizard remains to come.
 
+- **#1099** — The setup wizard's second screen, "where you operate": pick a
+  country and it fills your currency, time zone, tax label and tax rate —
+  shown editable, never hidden, so you can correct any of them on the spot —
+  plus what your business-number field is even called (ABN in Australia,
+  NZBN in New Zealand, VAT number in the UK/Ireland, EIN in the US). Country
+  is permanent once saved; everything else on the screen, including "Skip
+  for now", stays changeable later in Settings. Business address now
+  suggests as you type, biased to your country.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

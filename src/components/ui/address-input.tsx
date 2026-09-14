@@ -38,6 +38,11 @@ interface AddressInputProps {
   initialCoordinates?: { latitude: number; longitude: number } | null;
   /** ISO 3166-1 alpha-2 country code to bias results (e.g. "AU", "US") */
   countryCode?: string;
+  /** Passed straight to the inner `<input>` so a sibling `<Label htmlFor>`
+   *  actually associates (none of the existing consumers set this — they all
+   *  render their own visible label text elsewhere without a `htmlFor`
+   *  pairing — so this is additive, not a behavior change for them). */
+  id?: string;
 }
 
 export function AddressInput({
@@ -49,6 +54,7 @@ export function AddressInput({
   className,
   initialCoordinates,
   countryCode,
+  id,
 }: AddressInputProps) {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -197,6 +203,7 @@ export function AddressInput({
       <div className="relative">
         <input
           ref={inputRef}
+          id={id}
           type="text"
           value={value}
           onChange={(e) => handleInputChange(e.target.value)}

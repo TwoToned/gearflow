@@ -40,6 +40,19 @@ vi.mock("@/server/public-org", () => ({
 vi.mock("@/server/site-admin", () => ({
   getOrgCreationPolicy: mocks.getOrgCreationPolicy,
 }));
+// StepOperating (C2, #1099) has its own dependencies and its own smoke test
+// (step-operating.smoke.test.tsx) — stubbed here so this file stays scoped to
+// step-1/transition behavior, not re-testing step 2's internals.
+vi.mock("../step-operating", () => ({
+  StepOperating: ({ orgId, onDone }: { orgId: string; onDone: () => void }) => (
+    <div>
+      <p>Step 2 stub for {orgId}</p>
+      <button type="button" onClick={onDone}>
+        Finish stub
+      </button>
+    </div>
+  ),
+}));
 
 import SetupPage from "../page";
 
@@ -87,7 +100,7 @@ describe("SetupPage (smoke)", () => {
     );
   });
 
-  it("still redirects to /dashboard when the best-effort post-creation seed fails", async () => {
+  it("still advances to step 2 when the best-effort post-creation seed fails", async () => {
     // The org + membership already exist and are active by this point
     // (organization.create() + setActive() both succeeded) — a transient
     // Convex hiccup in seedOrgDefaults must never strand the user on the
@@ -100,6 +113,19 @@ describe("SetupPage (smoke)", () => {
     await user.type(await screen.findByLabelText("Company name"), "Acme Productions");
     await user.click(screen.getByRole("button", { name: /create company/i }));
 
-    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/dashboard"));
+    expect(await screen.findByText("Step 2 stub for org1")).toBeTruthy();
+  });
+
+  it("moves to step 2 (StepOperating) after a successful create, and step 2's onDone lands on /dashboard", async () => {
+    const user = userEvent.setup();
+    render(<SetupPage />);
+
+    await user.type(await screen.findByLabelText("Company name"), "Acme Productions");
+    await user.click(screen.getByRole("button", { name: /create company/i }));
+
+    await screen.findByText("Step 2 stub for org1");
+    await user.click(screen.getByRole("button", { name: /finish stub/i }));
+
+    expect(mocks.push).toHaveBeenCalledWith("/dashboard");
   });
 });

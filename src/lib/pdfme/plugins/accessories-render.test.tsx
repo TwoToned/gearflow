@@ -7,21 +7,50 @@
  * accessory children are isKitChild:true + childKind:ACCESSORY. The pipeline
  * must:
  *   - filter the children out of the top-level list (they're not parents),
- *   - render them indented under the parent (gearflow-table),
- *   - reserve their height (document-composer's calculateItemHeight) so the
- *     plugin doesn't silently tail-drop them.
+ *   - render them indented under the parent (LineItemsTable),
+ *   - render every accessory row so nothing silently tail-drops.
+ *
+ * #1157 (cleanup) — ported from the pdfme-composer pipeline
+ * (`runTablePlugin`/`getFilteredParentItems`/`calculateItemHeight`, all
+ * deleted with #1156's cutover) to the react-pdf pipeline that replaced it.
+ * React-pdf's automatic layout removes the manual height-reservation
+ * consumer entirely (see FEATUREDOCS/13-pdfs.md) — coverage here shifts from
+ * "height reserved" to "actually renders", which is the property that
+ * mattered.
  */
 
 import { describe, it, expect } from "vitest";
-import { runTablePlugin, makeLineItem } from "./test-utils";
-import { getFilteredParentItems, calculateItemHeight } from "../document-composer";
-import { DOCUMENT_LAYOUTS, type TableLayoutConfig } from "../document-layouts";
+import { filterAndGroupItems } from "@/lib/react-pdf/components/line-items-table";
+import { DeliveryDocketDocument } from "@/lib/react-pdf/delivery-docket-document";
+import { PackingListDocument } from "@/lib/react-pdf/packing-list-document";
+import { QuoteDocument } from "@/lib/react-pdf/quote-document";
+import { renderPdfPages } from "@/lib/react-pdf/pdf-test-utils";
+import { makeSpikeData } from "@/lib/react-pdf/fixture";
 import type { DocumentLineItem } from "../types";
 
-function tableConfig(docType: "packing-list" | "delivery-docket"): TableLayoutConfig {
-  const block = DOCUMENT_LAYOUTS[docType].blocks.find((b) => b.kind === "table");
-  if (block?.kind !== "table") throw new Error(`${docType} layout has no table block`);
-  return block.config;
+/** Build a minimal DocumentLineItem with sensible defaults. Overrides win. */
+function makeLineItem(overrides: Partial<DocumentLineItem>): DocumentLineItem {
+  return {
+    id: overrides.id ?? "li-default",
+    description: null,
+    quantity: 1,
+    checkedOutQuantity: 0,
+    unitPrice: null,
+    pricingType: "PER_DAY",
+    duration: 1,
+    discount: null,
+    lineTotal: null,
+    groupName: null,
+    categoryName: null,
+    groupTitle: null,
+    isOptional: false,
+    notes: null,
+    status: "CONFIRMED",
+    model: null,
+    asset: null,
+    bulkAsset: null,
+    ...overrides,
+  };
 }
 
 function lightWithAccessories(): DocumentLineItem {
@@ -91,49 +120,70 @@ function groupWithAccessoryMember(withAccessory = true): DocumentLineItem {
   });
 }
 
+const DELIVERY_DOCKET_CONFIG = {
+  documentType: "delivery-docket" as const,
+  documentColor: "#0d4f4f",
+  showGroupHeaders: true,
+  showKitChildren: true,
+  showCheckboxes: true,
+  showConditionColumns: false,
+  showPricing: false,
+  showBadges: false,
+  showNotes: false,
+  showPerUnitCheckboxes: true,
+  showAssetTags: true,
+  showCategories: false,
+  showRowNumbers: true,
+  filterOptional: false,
+  filterByStatus: ["CHECKED_OUT"],
+  hidePricingPeriodSuffix: false,
+};
+
 describe("accessories — full PDF pipeline (Phase F)", () => {
   it("filters accessory children out of the top-level parent list", () => {
     const parent = lightWithAccessories();
-    const data = { line_items: [parent, ...(parent.childLineItems ?? [])] } as never;
-    const parents = getFilteredParentItems(data, DOCUMENT_LAYOUTS["delivery-docket"].filterByStatus);
-    const ids = parents.map((p) => p.id);
+    const { groups } = filterAndGroupItems([parent, ...(parent.childLineItems ?? [])], DELIVERY_DOCKET_CONFIG);
+    const ids = [...groups.values()].flat().map((p) => p.id);
     expect(ids).toContain("parent-light");
     expect(ids).not.toContain("acc-clamp");
     expect(ids).not.toContain("acc-truecon");
   });
 
-  it("renders the accessory rows indented under the parent when showKitChildren is on (warehouse docs)", async () => {
+  it("renders the accessory rows under the parent when showKitChildren is on (warehouse docs)", async () => {
     const parent = lightWithAccessories();
-    const calls = await runTablePlugin([parent], { showKitChildren: true });
-    const texts = calls.drawText.map((c) => c.text).join("\n");
-    expect(texts).toMatch(/LED Par/);
-    expect(texts).toMatch(/Safety Clamp/);
-    expect(texts).toMatch(/TrueCon Tail/);
+    const data = makeSpikeData({ line_items: [parent], total_items: 1 });
+    const { fullText } = await renderPdfPages(<DeliveryDocketDocument data={data} />);
 
-    // Accessory rows are indented further right than the parent name.
-    const parentX = calls.drawText.find((c) => /LED Par/.test(c.text))!.x;
-    const clampX = calls.drawText.find((c) => /Safety Clamp/.test(c.text))!.x;
-    expect(clampX).toBeGreaterThan(parentX);
+    expect(fullText).toMatch(/LED Par/);
+    expect(fullText).toMatch(/Safety Clamp/);
+    expect(fullText).toMatch(/TrueCon Tail/);
+
+    // Accessory rows render after (below) the parent.
+    const parentIdx = fullText.search(/LED Par/);
+    const clampIdx = fullText.search(/Safety Clamp/);
+    expect(clampIdx).toBeGreaterThan(parentIdx);
   });
 
   it("hides accessory rows when showKitChildren is off (client-facing quote/invoice)", async () => {
     const parent = lightWithAccessories();
-    const calls = await runTablePlugin([parent], { showKitChildren: false });
-    const texts = calls.drawText.map((c) => c.text).join("\n");
+    const data = makeSpikeData({ line_items: [parent], total_items: 1 });
+    const { fullText } = await renderPdfPages(<QuoteDocument data={data} />);
+
     // Parent still renders — only its exploded children are suppressed.
-    expect(texts).toMatch(/LED Par/);
-    expect(texts).not.toMatch(/Safety Clamp/);
-    expect(texts).not.toMatch(/TrueCon Tail/);
+    expect(fullText).toMatch(/LED Par/);
+    expect(fullText).not.toMatch(/Safety Clamp/);
+    expect(fullText).not.toMatch(/TrueCon Tail/);
   });
 
   it("renders the accessories of a GROUPED accessory parent (group member) when showKitChildren is on", async () => {
     const group = groupWithAccessoryMember();
-    const calls = await runTablePlugin([group], { showKitChildren: true });
-    const texts = calls.drawText.map((c) => c.text).join("\n");
-    expect(texts).toMatch(/Wireless Michael/); // group header
-    expect(texts).toMatch(/IMX6A Headset/); // the accessory parent (group member)
+    const data = makeSpikeData({ line_items: [group], total_items: 1 });
+    const { fullText } = await renderPdfPages(<PackingListDocument data={data} />);
+
+    expect(fullText).toMatch(/Wireless Michael/); // group header
+    expect(fullText).toMatch(/IMX6A Headset/); // the accessory parent (group member)
     // The bug: its accessory grandchild was missing from the PDF.
-    expect(texts).toMatch(/Micon Adapter/);
+    expect(fullText).toMatch(/Micon Adapter/);
   });
 
   it("expands an accessory per unit on a packing list (10x EW-DX → 10 battery lines)", async () => {
@@ -165,28 +215,23 @@ describe("accessories — full PDF pipeline (Phase F)", () => {
       childLineItems: [ewdx],
     });
 
-    const calls = await runTablePlugin([group], { showPerUnitCheckboxes: true });
-    const texts = calls.drawText.map((c) => c.text);
+    const data = makeSpikeData({ line_items: [group], total_items: 1 });
+    const { fullText } = await renderPdfPages(<PackingListDocument data={data} />);
     // One battery line per EW-DX unit — not a single qty-10 row.
-    const batteryUnitLines = texts.filter((t) => /^AA Battery - \d+$/.test(t));
+    const batteryUnitLines = fullText.match(/AA Battery - \d+/g) ?? [];
     expect(batteryUnitLines).toHaveLength(10);
   });
 
-  it("reserves height for a grouped accessory parent's accessories", () => {
-    const config = tableConfig("packing-list");
-    const hAcc = calculateItemHeight(groupWithAccessoryMember(true), config);
-    const hPlain = calculateItemHeight(groupWithAccessoryMember(false), config);
-    expect(hAcc).toBeGreaterThan(hPlain);
-  });
+  it("renders every accessory-bearing row without dropping the accessory-less control (no tail-drop)", async () => {
+    const withAcc = makeSpikeData({ line_items: [groupWithAccessoryMember(true)], total_items: 1 });
+    const withoutAcc = makeSpikeData({ line_items: [groupWithAccessoryMember(false)], total_items: 1 });
 
-  it("reserves height for accessory children (no tail-drop)", () => {
-    const config = tableConfig("delivery-docket");
-    const hAcc = calculateItemHeight(lightWithAccessories(), config);
-    const hPlain = calculateItemHeight(
-      makeLineItem({ id: "parent-light", asset: { id: "a", assetTag: "LIGHT-1" } as never, model: { name: "LED Par" } as never }),
-      config,
-    );
-    // The accessory parent must be taller — its two child rows are reserved.
-    expect(hAcc).toBeGreaterThan(hPlain);
+    const rendered = await renderPdfPages(<PackingListDocument data={withAcc} />);
+    const renderedPlain = await renderPdfPages(<PackingListDocument data={withoutAcc} />);
+
+    expect(rendered.fullText).toContain("Micon Adapter");
+    expect(renderedPlain.fullText).not.toContain("Micon Adapter");
+    expect(rendered.fullText).toContain("IMX6A Headset");
+    expect(renderedPlain.fullText).toContain("IMX6A Headset");
   });
 });

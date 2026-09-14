@@ -40,13 +40,24 @@ vi.mock("@/server/public-org", () => ({
 vi.mock("@/server/site-admin", () => ({
   getOrgCreationPolicy: mocks.getOrgCreationPolicy,
 }));
-// StepOperating (C2, #1099) has its own dependencies and its own smoke test
-// (step-operating.smoke.test.tsx) — stubbed here so this file stays scoped to
-// step-1/transition behavior, not re-testing step 2's internals.
+// StepOperating (C2, #1099) and StepBranding (C3, #1101) each have their own
+// dependencies and their own smoke test (step-operating.smoke.test.tsx,
+// step-branding.smoke.test.tsx) — stubbed here so this file stays scoped to
+// step-1/transition behavior, not re-testing steps 2/3's internals.
 vi.mock("../step-operating", () => ({
   StepOperating: ({ orgId, onDone }: { orgId: string; onDone: () => void }) => (
     <div>
       <p>Step 2 stub for {orgId}</p>
+      <button type="button" onClick={onDone}>
+        Finish stub
+      </button>
+    </div>
+  ),
+}));
+vi.mock("../step-branding", () => ({
+  StepBranding: ({ orgId, onDone }: { orgId: string; onDone: () => void }) => (
+    <div>
+      <p>Step 3 stub for {orgId}</p>
       <button type="button" onClick={onDone}>
         Finish stub
       </button>
@@ -116,7 +127,7 @@ describe("SetupPage (smoke)", () => {
     expect(await screen.findByText("Step 2 stub for org1")).toBeTruthy();
   });
 
-  it("moves to step 2 (StepOperating) after a successful create, and step 2's onDone lands on /dashboard", async () => {
+  it("moves to step 2 (StepOperating) after a successful create, step 2's onDone advances to step 3 (StepBranding), and step 3's onDone lands on /dashboard", async () => {
     const user = userEvent.setup();
     render(<SetupPage />);
 
@@ -124,6 +135,10 @@ describe("SetupPage (smoke)", () => {
     await user.click(screen.getByRole("button", { name: /create company/i }));
 
     await screen.findByText("Step 2 stub for org1");
+    await user.click(screen.getByRole("button", { name: /finish stub/i }));
+
+    await screen.findByText("Step 3 stub for org1");
+    expect(mocks.push).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /finish stub/i }));
 
     expect(mocks.push).toHaveBeenCalledWith("/dashboard");

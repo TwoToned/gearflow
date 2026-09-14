@@ -2941,6 +2941,25 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_organizationId_userId", ["organizationId", "userId"]),
 
+  // OrgActivationDismissal — D1 (#1105): the ONE persisted bit behind the
+  // dashboard's "Get started" activation checklist (the four milestones
+  // themselves are derived from live org state — see convex/activationMilestones.ts).
+  // Same shape as orgSetupDismissals directly above, and deliberately its own
+  // table for the identical reason: reusing either that table or
+  // notificationDismissals would tie this feature's write-kill-switch and
+  // (for notificationDismissals) prune mechanism to an unrelated feature's
+  // lifecycle. Setup ("configure the company") and activation ("do the work")
+  // are different jobs with different lifetimes — see FEATUREDOCS/72.
+  orgActivationDismissals: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    dismissedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_organizationId_userId", ["organizationId", "userId"]),
+
   // UserNotificationPreference
   userNotificationPreferences: defineTable({
     id: v.string(),

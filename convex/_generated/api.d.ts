@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as activationMilestones from "../activationMilestones.js";
 import type * as activityLog from "../activityLog.js";
 import type * as activityLogWrites from "../activityLogWrites.js";
 import type * as agentRevert from "../agentRevert.js";
@@ -205,6 +206,7 @@ import type * as notificationDismissalsWrites from "../notificationDismissalsWri
 import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as oauthAuthorizationCodes from "../oauthAuthorizationCodes.js";
 import type * as oauthClients from "../oauthClients.js";
+import type * as orgActivationDismissalsWrites from "../orgActivationDismissalsWrites.js";
 import type * as orgAdminStats from "../orgAdminStats.js";
 import type * as orgErasure from "../orgErasure.js";
 import type * as orgExport from "../orgExport.js";
@@ -306,6 +308,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activationMilestones: typeof activationMilestones;
   activityLog: typeof activityLog;
   activityLogWrites: typeof activityLogWrites;
   agentRevert: typeof agentRevert;
@@ -503,6 +506,7 @@ declare const fullApi: ApiFromModules<{
   notificationEmailLogs: typeof notificationEmailLogs;
   oauthAuthorizationCodes: typeof oauthAuthorizationCodes;
   oauthClients: typeof oauthClients;
+  orgActivationDismissalsWrites: typeof orgActivationDismissalsWrites;
   orgAdminStats: typeof orgAdminStats;
   orgErasure: typeof orgErasure;
   orgExport: typeof orgExport;

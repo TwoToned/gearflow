@@ -2919,6 +2919,28 @@ export default defineSchema({
     .index("by_userId_notificationKey", ["userId", "notificationKey"])
     .index("by_organizationId_userId", ["organizationId", "userId"]),
 
+  // OrgSetupDismissal — C6 (#1104): the ONE persisted bit behind the dashboard's
+  // "Finish setup" checklist (everything else on that card is derived from the
+  // org's real settings, per D5/R-3.1). Deliberately its OWN table, not a reuse
+  // of notificationDismissals just above: that table's pruneStaleNative GCs
+  // every dismissal row for a user whose notificationKey isn't in the CALLER's
+  // own activeKeys list, and its only two callers (the notification bell/page)
+  // pass their own notification ids — a "setup-checklist" row parked in that
+  // table would be silently deleted the next time either one fires, since
+  // neither knows this feature exists. That breaks #1104's own requirement
+  // ("disappears for good once dismissed"). This table has no prune mechanism
+  // because there is nothing to prune against: at most one row per
+  // (organizationId, userId).
+  orgSetupDismissals: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    userId: v.string(),
+    dismissedAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_organizationId_userId", ["organizationId", "userId"]),
+
   // UserNotificationPreference
   userNotificationPreferences: defineTable({
     id: v.string(),

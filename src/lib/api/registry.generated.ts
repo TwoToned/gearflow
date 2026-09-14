@@ -32774,6 +32774,69 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "orgSetupDismissalsWrites.dismissNative",
+    "module": "orgSetupDismissalsWrites",
+    "fn": "dismissNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e8360fd880fe715",
+    "returnsSha": "f52f859a6342c10f",
+    "stability": "tracks-app",
+    "summary": "Dismiss the caller's 'Finish setup' checklist card.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "orgSetupDismissalsWrites.mine",
+    "module": "orgSetupDismissalsWrites",
+    "fn": "mine",
+    "kind": "query",
+    "guard": "self",
+    "resource": "self",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [],
+    "privilegedArgs": [],
+    "argsSha": "5151b7eb8536aa97",
+    "returnsSha": "1c2357983d4be541",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "overbooking.bundle",
     "module": "overbooking",
     "fn": "bundle",
@@ -61455,10 +61518,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1186,
-  agentReachable: 568,
-  queries: 420,
-  mutations: 766,
-  agentReachableQueries: 291,
-  agentReachableMutations: 277,
+  total: 1188,
+  agentReachable: 570,
+  queries: 421,
+  mutations: 767,
+  agentReachableQueries: 292,
+  agentReachableMutations: 278,
 } as const;

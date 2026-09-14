@@ -47,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use them, nothing to save at the end. The invite role picker (here and
   in Settings) now correctly offers Warehouse alongside the other roles.
 
+- **#1104** — A dismissible "Finish setup" card on the dashboard, for anyone
+  who skipped part of the setup wizard: it lists exactly what's still
+  unset (currency/tax, logo, a location, a second teammate) and links
+  straight to the right settings page for each — no need to redo the
+  wizard. Disappears for good once you dismiss it or finish everything.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

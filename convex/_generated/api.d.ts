@@ -28,6 +28,7 @@ import type * as backfillClientContacts from "../backfillClientContacts.js";
 import type * as backfillInvoiceSourceRevision from "../backfillInvoiceSourceRevision.js";
 import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as backfillMaintenanceSchedules from "../backfillMaintenanceSchedules.js";
+import type * as backfillOrphanedLineItemComments from "../backfillOrphanedLineItemComments.js";
 import type * as backfillProjectLiveRevision from "../backfillProjectLiveRevision.js";
 import type * as backfillProjectWindow from "../backfillProjectWindow.js";
 import type * as backfillQuoteRevisions from "../backfillQuoteRevisions.js";
@@ -322,6 +323,7 @@ declare const fullApi: ApiFromModules<{
   backfillInvoiceSourceRevision: typeof backfillInvoiceSourceRevision;
   backfillKitUnits: typeof backfillKitUnits;
   backfillMaintenanceSchedules: typeof backfillMaintenanceSchedules;
+  backfillOrphanedLineItemComments: typeof backfillOrphanedLineItemComments;
   backfillProjectLiveRevision: typeof backfillProjectLiveRevision;
   backfillProjectWindow: typeof backfillProjectWindow;
   backfillQuoteRevisions: typeof backfillQuoteRevisions;

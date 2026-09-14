@@ -86,6 +86,33 @@ Blocking comments only gate **project** prep / send-out, so the Block toggle in
 hidden unless `entityType === "project"`. Other records get plain discussion
 threads.
 
+### Needs-attention alerts are scoped to current/future gigs
+
+An open blocking-comment thread (or pending crew offer) on a job that's
+`COMPLETED` / `INVOICED` / `CANCELLED`, or whose `rentalEndDate` has already
+passed, is done — it stops surfacing as a dashboard "needs attention" alert.
+`isCurrentOrFutureProject` (`convex/dashboardLists.ts`) is the single gate for
+this: `dashboardLists.blocking` filters threads through it before surfacing
+them, and `dashboardLists.pendingCrewOffers` (a small project-joined query, NOT
+the org-wide `dashboardCounters.pendingCrewOffers` sharded counter used
+elsewhere for general stats) applies it to crew offers for the dashboard chip.
+The comment thread / crew assignment itself is untouched — still visible from
+the project's own Activity tab / Crew panel — this only hides it from the
+"needs your attention right now" surface once the gig it belongs to is over.
+
+### Comment threads are cleaned up when their target is deleted
+
+A comment thread's `targetId` (e.g. a line item's cuid) has no foreign-key
+enforcement, so deleting the target row used to orphan the thread — an
+`isBlocking:true`/`status:"open"` thread with nothing left to resolve it from
+would keep surfacing in `dashboardLists.blocking` forever. Every route that
+permanently deletes a line item (`lineItemWrites.removeNative`/
+`removeManyNative`, `projectLineItems.remove`, and the cascade core
+`removeLineItemCascadeCore` used when a whole project is deleted) now calls
+`deleteCommentsAndMarkersForTarget` (`convex/lib/commentCleanup.ts`) to delete
+every thread (+ its comments) and review marker targeting that line, in the
+same transaction as the delete.
+
 ## Live build feedback (Phase 4)
 
 The equipment rows give subtle realtime feedback while collaborators work
@@ -168,6 +195,8 @@ not replace those mirrors.
 - `src/lib/collaboration-targets.ts` (+ test) — target descriptors / keys.
 - `src/lib/blocking-comments-gate.ts` (+ test) — pure gate decision logic.
 - `src/lib/blocking-comments-read.ts` — server-only summary fetch + `assertNoBlockingComments`.
+- `convex/dashboardLists.ts` (`isCurrentOrFutureProject`, `blocking`, `pendingCrewOffers`) — needs-attention alerts scoped to current/future gigs.
+- `convex/lib/commentCleanup.ts` (`deleteCommentsAndMarkersForTarget`) — cascade-delete threads/comments/markers when their target row is deleted.
 - `src/lib/collaboration-activity.ts` — `writeCollabActivityEvent` helper. Now dead
   code (no importers) — see point 2 under "Activity feed" above.
 - `src/lib/collaboration-colors.ts` — deterministic per-user colours.

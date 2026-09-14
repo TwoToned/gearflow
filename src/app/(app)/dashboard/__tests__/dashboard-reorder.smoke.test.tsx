@@ -66,6 +66,7 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeUpcoming: () => [],
   useNativeHome: () => ({ userName: "Jayden", userId: "user1", myProjects: [MY_PROJECT] }),
   useNativeBlocking: () => [BLOCKER],
+  useNativePendingCrewOffers: () => 0,
   useNativeActivity: () => ({ logs: [], testRecords: [], maintenanceRecords: [] }),
   useNativeMyOpenTasks: () => [TASK],
   // WS3 #942 — nonzero so the overbooking-chip test below has something to render.

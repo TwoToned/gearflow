@@ -101,7 +101,24 @@ export function useNativeHome(orgId: string | undefined) {
 
 export function useNativeBlocking(orgId: string | undefined) {
   const enabled = !!orgId;
-  return useAuthedQuery(api.dashboardLists.blocking, enabled ? { orgId: orgId! } : "skip");
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  return useAuthedQuery(api.dashboardLists.blocking, enabled ? { orgId: orgId!, now: nowBucket } : "skip");
+}
+
+/**
+ * dashboardLists.pendingCrewOffers: pending crew offers scoped to current/future
+ * gigs only — the "needs attention" chip's count. Distinct from
+ * `stats.pendingCrewOffers` (the raw org-wide counter, still used elsewhere as a
+ * general activity stat): a job that's closed out, cancelled, or already past
+ * shouldn't keep nagging the dashboard for an offer nobody will act on.
+ */
+export function useNativePendingCrewOffers(orgId: string | undefined): number | undefined {
+  const enabled = !!orgId;
+  const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
+  return useAuthedQuery(
+    api.dashboardLists.pendingCrewOffers,
+    enabled ? { orgId: orgId!, now: nowBucket } : "skip",
+  ) as number | undefined;
 }
 
 export function useNativeActivity(orgId: string | undefined) {

@@ -14,6 +14,7 @@ import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { getProjectWindow } from "./lib/projectWindow";
 import { pricedUnderLockOnInsert } from "./lib/projectLocks";
+import { deleteCommentsAndMarkersForTarget } from "./lib/commentCleanup";
 
 /**
  * Thin CRUD for ProjectLineItem (Convex table "projectLineItems"). GENERATED — Phase 2/5.
@@ -429,6 +430,7 @@ export const remove = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("projectLineItems not found: " + id);
+    await deleteCommentsAndMarkersForTarget(ctx, doc.organizationId, doc.id);
     await ctx.db.delete(doc._id);
   },
 });
@@ -452,12 +454,18 @@ async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId:
   return ((top && top.organizationId === organizationId ? top.sortOrder : undefined) ?? -1) + 1;
 }
 
-async function deleteLineWithUnits(ctx: MutationCtx, lineDocId: import("./_generated/dataModel").Id<"projectLineItems">, lineCuid: string) {
+async function deleteLineWithUnits(
+  ctx: MutationCtx,
+  lineDocId: import("./_generated/dataModel").Id<"projectLineItems">,
+  lineCuid: string,
+  orgId: string,
+) {
   const units = await ctx.db
     .query("projectLineItemUnits")
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineCuid))
     .collect();
   for (const u of units) await ctx.db.delete(u._id);
+  await deleteCommentsAndMarkersForTarget(ctx, orgId, lineCuid);
   await ctx.db.delete(lineDocId);
 }
 
@@ -765,8 +773,8 @@ export async function removeLineItemCascadeCore(ctx: MutationCtx, id: string): P
     .query("projectLineItems")
     .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
     .collect();
-  for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id);
-  await deleteLineWithUnits(ctx, line._id, line.id);
+  for (const c of children) await deleteLineWithUnits(ctx, c._id, c.id, c.organizationId);
+  await deleteLineWithUnits(ctx, line._id, line.id, line.organizationId);
 }
 
 /** Cascade delete a line: its children (+ all units), then the line (+ its units). */

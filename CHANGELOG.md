@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   location yet, we set up a "Main warehouse" for you automatically so your
   first serialized asset has somewhere to go.
 
+- **#1103** — The setup wizard's fifth and final screen, "your team & your
+  gear": invite colleagues by email and role (with a plain-English
+  explainer for each), and seed your inventory — import a spreadsheet of
+  models or add your first one by hand. Both sections write live as you
+  use them, nothing to save at the end. The invite role picker (here and
+  in Settings) now correctly offers Warehouse alongside the other roles.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

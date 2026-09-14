@@ -40,11 +40,12 @@ vi.mock("@/server/public-org", () => ({
 vi.mock("@/server/site-admin", () => ({
   getOrgCreationPolicy: mocks.getOrgCreationPolicy,
 }));
-// StepOperating (C2, #1099), StepBranding (C3, #1101) and StepNumbering (C4,
-// #1102) each have their own dependencies and their own smoke test
-// (step-operating.smoke.test.tsx, step-branding.smoke.test.tsx,
-// step-numbering.smoke.test.tsx) — stubbed here so this file stays scoped to
-// step-1/transition behavior, not re-testing steps 2/3/4's internals.
+// StepOperating (C2, #1099), StepBranding (C3, #1101), StepNumbering (C4,
+// #1102) and StepTeamGear (C5, #1103) each have their own dependencies and
+// their own smoke test (step-operating.smoke.test.tsx,
+// step-branding.smoke.test.tsx, step-numbering.smoke.test.tsx,
+// step-team-gear.smoke.test.tsx) — stubbed here so this file stays scoped
+// to step-1/transition behavior, not re-testing steps 2-5's internals.
 vi.mock("../step-operating", () => ({
   StepOperating: ({ orgId, onDone }: { orgId: string; onDone: () => void }) => (
     <div>
@@ -69,6 +70,16 @@ vi.mock("../step-numbering", () => ({
   StepNumbering: ({ orgId, onDone }: { orgId: string; onDone: () => void }) => (
     <div>
       <p>Step 4 stub for {orgId}</p>
+      <button type="button" onClick={onDone}>
+        Finish stub
+      </button>
+    </div>
+  ),
+}));
+vi.mock("../step-team-gear", () => ({
+  StepTeamGear: ({ orgId, onDone }: { orgId: string; onDone: () => void }) => (
+    <div>
+      <p>Step 5 stub for {orgId}</p>
       <button type="button" onClick={onDone}>
         Finish stub
       </button>
@@ -138,7 +149,7 @@ describe("SetupPage (smoke)", () => {
     expect(await screen.findByText("Step 2 stub for org1")).toBeTruthy();
   });
 
-  it("chains through steps 2, 3 and 4 (each stub's onDone advances the wizard), and step 4's onDone lands on /dashboard", async () => {
+  it("chains through steps 2, 3, 4 and 5 (each stub's onDone advances the wizard), and step 5's onDone lands on /dashboard", async () => {
     const user = userEvent.setup();
     render(<SetupPage />);
 
@@ -153,6 +164,10 @@ describe("SetupPage (smoke)", () => {
     await user.click(screen.getByRole("button", { name: /finish stub/i }));
 
     await screen.findByText("Step 4 stub for org1");
+    expect(mocks.push).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /finish stub/i }));
+
+    await screen.findByText("Step 5 stub for org1");
     expect(mocks.push).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /finish stub/i }));
 

@@ -14,6 +14,7 @@ import { AuthShell } from "../auth-playful";
 import { StepOperating } from "./step-operating";
 import { StepBranding } from "./step-branding";
 import { StepNumbering } from "./step-numbering";
+import { StepTeamGear } from "./step-team-gear";
 import { TOTAL_STEPS } from "./wizard-steps";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
@@ -46,7 +47,8 @@ function renderLaterStep(
   if (!createdOrgId) return null;
   if (step === 2) return <StepOperating orgId={createdOrgId} onDone={() => setStep(3)} />;
   if (step === 3) return <StepBranding orgId={createdOrgId} onDone={() => setStep(4)} />;
-  if (step === 4) return <StepNumbering orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
+  if (step === 4) return <StepNumbering orgId={createdOrgId} onDone={() => setStep(5)} />;
+  if (step === 5) return <StepTeamGear orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
   return null;
 }
 
@@ -60,9 +62,10 @@ function renderLaterStep(
  * Step 0/1 (C1, #1098) is the ONLY blocking screen (D3): naming the org
  * commits it for real — `organization.create()` → `setActive()` →
  * `mirrorMyMembership()`. Every later screen (step 2, C2/#1099; step 3, C3/
- * #1101; step 4, C4/#1102; step 5 still unbuilt — #1103/#1104) is then an
- * ordinary settings write against a live org rather than draft state, and
- * can be skipped.
+ * #1101; step 4, C4/#1102; step 5, C5/#1103) is then an ordinary write
+ * against a live org rather than draft state, and can be skipped. C6
+ * (#1104) is the dashboard "Finish setup" checklist, not another wizard
+ * step.
  */
 export default function SetupPage() {
   const router = useRouter();

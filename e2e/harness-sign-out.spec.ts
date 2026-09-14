@@ -53,9 +53,10 @@ test.describe("harness: sign out", () => {
       await page.getByLabel("Company name").fill(`Sign Out Org ${unique}`);
       await page.getByRole("button", { name: "Create company" }).click();
       // Step 1's success lands on step 2 ("where you operate", C2 #1099),
-      // step 3 ("your brand", C3 #1101), then step 4 ("how you work", C4
-      // #1102), all still at /setup — skip all three, only the name is
-      // required (D3).
+      // step 3 ("your brand", C3 #1101), step 4 ("how you work", C4
+      // #1102), then step 5 ("your team & your gear", C5 #1103), all still
+      // at /setup — skip all four, only the name is required (D3).
+      await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();

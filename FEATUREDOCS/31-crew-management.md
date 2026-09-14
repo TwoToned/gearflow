@@ -446,6 +446,16 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
   `setIcalIncludeTentative(crewMemberId, include)` (`crew.update`), read via `getIcalSettings`.
 - If shifts exist, one event per shift; otherwise one event per assignment
 - Events include: project name, role, phase, location, site contact, notes
+- **Project manager projects also appear, even without a crew assignment:** if
+  this crew member is linked to a platform user (`crewMember.userId`) and that
+  user is a project manager on a project (the `projectManagers` table — added
+  via the project detail page's "Project managers" panel, independent of crew
+  assignments), the feed includes one additional all-day `VEVENT` per such
+  project spanning its full window (`getProjectWindow` — the same "gear
+  committed" start/end used for availability, `src/lib/project-window.ts`),
+  `SUMMARY:"{project name} (Project Manager)"`, `UID:pm-project-{projectId}@gearflow`.
+  This is purely additive — it doesn't replace or dedupe against any
+  shift/assignment events the same project may also produce.
 - Token can be regenerated (invalidates old URL) or feed can be disabled
 - **Response caching:** `Cache-Control: private, max-age=300` (changed 2026-07-25, R-8.9.3 finding #862 — was `no-cache, no-store, must-revalidate`). Calendar clients (Google/Apple/Outlook) already poll a feed URL on their own multi-minute-to-hourly cadence, not per user action, so a short cache window is safe and avoids re-running the full `getByIcalToken` + assignments + shifts + per-project-lookup chain on every external poll. This is deliberately narrower than the sibling no-cache token-feed routes (`/api/warehouse/display/[token]`, `/api/auditor/[token]`) — those are live status views that must stay uncached; only this feed's pull-based, client-controlled refresh cadence justifies caching.
 

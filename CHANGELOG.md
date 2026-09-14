@@ -56,6 +56,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so it's never a guess. Skippable, like every screen after the company name;
   everything here can be changed later in Settings too.
 
+- **#1102** — The setup wizard's fourth screen, "how you work": project and
+  invoice numbering formats (with a live next-number preview), your asset
+  tag scheme, and document terms — quote validity, payment terms, footer
+  text, T&Cs, and payment details. Every field has a working default, so
+  it's the easiest screen to skip — and if you do, and don't have a
+  location yet, we set up a "Main warehouse" for you automatically so your
+  first serialized asset has somewhere to go.
+
+- **#1103** — The setup wizard's fifth and final screen, "your team & your
+  gear": invite colleagues by email and role (with a plain-English
+  explainer for each), and seed your inventory — import a spreadsheet of
+  models or add your first one by hand. Both sections write live as you
+  use them, nothing to save at the end. The invite role picker (here and
+  in Settings) now correctly offers Warehouse alongside the other roles.
+
+- **#1104** — A dismissible "Finish setup" card on the dashboard, for anyone
+  who skipped part of the setup wizard: it lists exactly what's still
+  unset (currency/tax, logo, a location, a second teammate) and links
+  straight to the right settings page for each — no need to redo the
+  wizard. Disappears for good once you dismiss it or finish everything.
+
+- **#1105** — A "Get started" card beside it, walking through the first real
+  use of the app: add a model, add a unit of it, create a job, put that gear
+  on the job. Each step is checked off the moment it's actually true — do it
+  by hand without ever touching the card and it's already ticked when you
+  come back. Dismissible; disappears for good once dismissed or finished.
+
+- **#1106** — The "add a model" / "add an asset" / "create a job" / "add gear
+  to a job" screens now carry a short coaching tip in their existing sidebar
+  while you're on that exact step of getting started — gone the moment
+  you're past it, and back to the screen's normal hint for anyone who isn't
+  new. A "Hide tips" link turns it off (just the coaching, not the "Get
+  started" card).
+
+- **#1107** — Finishing one of the "get started" steps now offers the next
+  one right in the confirmation toast — add a model and it offers to add an
+  asset to it; add that asset and it offers to create your first job; create
+  the job and it offers to add that gear to it, straight into the equipment
+  tab with the model already picked. Purely offered, never forced — your
+  normal navigation after saving is unchanged, and it only ever shows up for
+  the one save that's actually completing that step.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

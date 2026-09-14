@@ -62,6 +62,23 @@ vi.mock("@/components/clients/quick-create-client", () => ({
 vi.mock("@/components/assets/quick-create-location", () => ({
   QuickCreateLocation: () => null,
 }));
+// D2 (#1106): CoachingTip pulls in Convex-auth-gated hooks this test doesn't
+// set up a provider for — out of scope here (has its own smoke test), so
+// it's stubbed to the plain eyebrow/tip markup it replaced.
+vi.mock("@/components/onboarding/coaching-tip", () => ({
+  CoachingTip: ({ fallbackEyebrow, fallbackTip }: { fallbackEyebrow: string; fallbackTip: string }) => (
+    <div>
+      <p>{fallbackEyebrow}</p>
+      <p>{fallbackTip}</p>
+    </div>
+  ),
+}));
+// D3 (#1107): ProjectWizard itself now reads activation-milestone state
+// directly (for the "Add <model> to it" hand-off toast), which needs the
+// same Convex-auth provider this test doesn't set up.
+vi.mock("@/hooks/use-activation-milestones", () => ({
+  useActivationMilestones: () => undefined,
+}));
 
 import { ProjectWizard } from "../project-wizard";
 

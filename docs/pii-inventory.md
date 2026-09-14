@@ -46,7 +46,11 @@ blanket click/input/pageview capture), `disable_session_recording: true` (no rep
 `mask_all_text` + `mask_all_element_attributes`, and a `sanitize_properties` hook that strips
 query strings from URLs before send. Only events explicitly emitted via
 `src/lib/analytics.ts` reach PostHog, and by convention their properties are cuid-only (no
-names/emails/notes). Person profiles are `identified_only`.
+names/emails/notes) or, for the D4 (#1108) onboarding-funnel events
+(`onboarding_fork_chosen`/`setup_step_*`/`activation_milestone`/`activation_checklist_dismissed`),
+enum-ish strings and counts only — no ids at all, since a step/milestone/choice name and a
+count are already the least-identifying properties this schema supports. Person profiles are
+`identified_only`.
 
 **PostHog Error Tracking** (migrated off Sentry, #650) captures exceptions client-side
 (`capture_exceptions`) and server-side (`src/lib/posthog-server.ts`, `posthog-node`). Server

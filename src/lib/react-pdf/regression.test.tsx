@@ -57,16 +57,26 @@ const PAGE_OF_PATTERN = /Page \d+ of \d+/;
 // ─── No tail-drop, all 5 doc types ─────────────────────────────────────────
 
 describe.each(PROJECT_DOC_TYPES)("no tail-drop regression (#1149 class) — %s", (docType) => {
-  it("every top-level item's text appears somewhere in the rendered document", async () => {
-    const items = makeNoTailDropFixture(120);
-    const data = makeSpikeData({ line_items: items, total_items: items.length });
-    const { pageCount, fullText } = await renderPdfPages(DOC_COMPONENTS[docType](data));
+  it(
+    "every top-level item's text appears somewhere in the rendered document",
+    async () => {
+      const items = makeNoTailDropFixture(120);
+      const data = makeSpikeData({ line_items: items, total_items: items.length });
+      const { pageCount, fullText } = await renderPdfPages(DOC_COMPONENTS[docType](data));
 
-    expect(pageCount).toBeGreaterThan(1);
-    for (const item of items) {
-      expect(fullText, `missing ${item.description} in rendered ${docType}`).toContain(item.description as string);
-    }
-  });
+      expect(pageCount).toBeGreaterThan(1);
+      for (const item of items) {
+        expect(fullText, `missing ${item.description} in rendered ${docType}`).toContain(item.description as string);
+      }
+    },
+    // 15s, not the 5s default: rendering a 120-item, multi-page PDF via
+    // @react-pdf/renderer is inherently CPU-heavy, and the default budget can
+    // tip over under normal CI runner variance (observed: PR #1210, no
+    // change to this file involved) even though it's comfortably clear
+    // locally. Not a correctness issue — this test's assertions are
+    // unchanged; only the time budget is more generous.
+    15_000,
+  );
 });
 
 // ─── The #1149 case specifically ───────────────────────────────────────────

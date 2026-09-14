@@ -61,6 +61,9 @@ interface UnifiedAddDialogProps {
    *  should close this dialog and open SubHireOrderDialog in manage mode
    *  on the new id so the user can add items. */
   onSubHireCreated: (subHireId: string) => void;
+  /** D3 (#1107) — pre-select this model on the "own-stock" body when the
+   *  dialog was opened via the "Add <model> to it" chained hand-off. */
+  preselectedModelId?: string;
 }
 
 interface KindOption {
@@ -98,6 +101,7 @@ export function UnifiedAddDialog({
   categories,
   onInvalidate,
   onSubHireCreated,
+  preselectedModelId,
 }: UnifiedAddDialogProps) {
   function handleClose() {
     onOpenChange(false);
@@ -152,6 +156,7 @@ export function UnifiedAddDialog({
             onInvalidate={onInvalidate}
             onSubHireCreated={onSubHireCreated}
             onClose={handleClose}
+            preselectedModelId={preselectedModelId}
           />
         )}
       </DialogContent>
@@ -172,6 +177,7 @@ type AddFormBodyProps = Pick<
   | "categories"
   | "onInvalidate"
   | "onSubHireCreated"
+  | "preselectedModelId"
 > & { onClose: () => void };
 
 function AddFormBody({
@@ -187,6 +193,7 @@ function AddFormBody({
   onInvalidate,
   onSubHireCreated,
   onClose,
+  preselectedModelId,
 }: AddFormBodyProps) {
   switch (kind) {
     case "own-stock":
@@ -206,6 +213,7 @@ function AddFormBody({
             // the inline sub-hire form, not a separate dialog.
             onKindChange("sub-hire");
           }}
+          preselectedModelId={preselectedModelId}
         />
       );
     case "kit":

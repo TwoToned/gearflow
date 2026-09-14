@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Primary revenue path (POLICY.md R-8.8.3 / #621, docs/critical-flows.md flows
@@ -60,27 +61,29 @@ test.describe("harness: primary revenue path", () => {
     await locator.click({ timeout: 5000 });
   }
 
-  // Quarantined (POLICY.md R-8.8.4): #1071 deleted the single-org auto-join
-  // hook, which is what silently gave every OTHER harness spec file's fresh
-  // registrant org membership for free. This file's "complete onboarding if
-  // needed" step now correctly can't create a second org once another
-  // harness spec has already bootstrapped one in the shared harness DB — an
-  // E2E test-isolation gap, not a product bug.
-  // Owner: Jayden (eng). Tracked: #1118. Deadline: 2026-08-15.
-  test("project -> line item -> availability -> check-out -> return @quarantine", async ({ page }) => {
+  // #1118 fix: restore this file's own "fresh Better Auth DB" (every harness
+  // file's docstring already assumes one) rather than sharing whatever state
+  // an earlier file in the same CI job left behind — see harness-db-reset.ts.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
+
+  test("project -> line item -> availability -> check-out -> return", async ({ page }) => {
     // Playwright's default test timeout is 30s — a budget for the WHOLE test,
     // not per test.step. This flow chains register -> onboard -> model ->
     // asset -> project (4 wizard steps) -> line item + an async availability
     // check -> warehouse pipeline across several page loads, each hitting
     // Postgres + Convex; under this environment's demonstrated latency (100-
     // 300ms even for simple queries) that easily exceeds 30s in total even
-    // though every individual step is fast enough on its own. 240s (not the
-    // original 180s): the first GitHub-hosted-runner run (#725/#753) hit the
-    // 180s ceiling on its first attempt running last in the harness job, after
-    // ~6 prior tests had already been driving the same shared Postgres +
-    // self-hosted Convex backend on a 2-core runner — this is genuinely
-    // slower than the local dev machine this was first tuned against.
-    test.setTimeout(240_000);
+    // though every individual step is fast enough on its own. 300s (not the
+    // original 180s, then 240s): the first GitHub-hosted-runner run
+    // (#725/#753) hit the 180s ceiling on its first attempt running last in
+    // the harness job, after ~6 prior tests had already been driving the
+    // same shared Postgres + self-hosted Convex backend on a 2-core runner —
+    // 240s absorbed that, but D5 (#1109) added 3 more full-flow specs to the
+    // same job, raising the shared load again and hitting the 240s ceiling
+    // on the "create a project" step specifically (#1210's first CI run).
+    test.setTimeout(300_000);
 
     const unique = Date.now();
     const email = `e2e+revenue-${unique}@harness.local`;
@@ -114,9 +117,12 @@ test.describe("harness: primary revenue path", () => {
       if (new URL(page.url()).pathname === "/setup") {
         await page.getByLabel("Company name").fill(`Revenue Path Org ${unique}`);
         await page.getByRole("button", { name: "Create company" }).click();
-        // Step 1's success lands on step 2 ("where you operate", C2 #1099)
-        // then step 3 ("your brand", C3 #1101), both still at /setup — skip
-        // both, only the name is required (D3).
+        // Step 1's success lands on step 2 ("where you operate", C2 #1099),
+        // step 3 ("your brand", C3 #1101), step 4 ("how you work", C4
+        // #1102), then step 5 ("your team & your gear", C5 #1103), all
+        // still at /setup — skip all four, only the name is required (D3).
+        await page.getByRole("button", { name: "Skip for now" }).click();
+        await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
         await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
@@ -152,10 +158,16 @@ test.describe("harness: primary revenue path", () => {
       // hang rather than a validation failure. Under CI load that fetch can be
       // slow enough to matter, so type a code directly instead of waiting on
       // it — a real user hitting the same lag would do exactly this.
-      const projectCodeInput = page.locator(
-        "xpath=//input[@placeholder='e.g. Summer Festival 2026']/parent::div/following-sibling::div[1]//input",
-      );
-      await projectCodeInput.fill(`E2E-${unique}`);
+      //
+      // Target the react-hook-form field name, not a structural xpath off the
+      // Name field's placeholder: D2 (#1106, same day as this fix) wrapped
+      // the Name field in a new data-tour-anchor div for coaching-tip
+      // targeting, which silently broke the old parent/following-sibling
+      // xpath (it no longer has a sibling div to land on). Neither
+      // getByLabel (the Field helper's <Label> has no htmlFor/id) nor
+      // getByPlaceholder (this field's placeholder mutates once the async
+      // query resolves) works here either.
+      await page.locator('input[name="projectNumber"]').fill(`E2E-${unique}`);
 
       // Basics -> Schedule -> Site -> Review: every other field is optional, so
       // three plain "Continue" activations get through from here.

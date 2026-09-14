@@ -109,9 +109,94 @@ mirrors both faithfully instead — same three `documentLogoMode` layouts, same 
 meta line composition — using sample doc title/number/date, since this screen has no real
 project data to preview against yet.
 
-## Steps 4-5 — not yet built
+## Step 4 — "how you work" (C4, #1102)
 
-Screens for numbering/document terms, first location, team invites and gear import
-(#1102-#1104) are still open. Until they land, step 3's "Skip for now" and "Save and continue"
-both end the wizard by redirecting to `/dashboard` — consistent with D3: everything past the
-name is safe to skip because it's a live org, not a draft.
+The boring, load-bearing screen, and the most likely skip — every field here has a working
+default. Project numbering, invoice numbering, the asset tag scheme, and document terms
+(footer text, T&Cs, payment details, quote validity days, payment terms days) are an ordinary
+`OrgSettings` write through `updateOrganization` — the SAME server action Settings uses (D5) —
+merged onto a freshly re-fetched org rather than the (possibly stale) `useOrganization` cache,
+same fix and rationale as step 3's `saveBranding`. The numbering fields reuse Settings' own
+`ProjectNumberingSettings`/`InvoiceNumberingSettings` components directly (including the former's
+live next-number preview via `peekNextProjectNumber`) rather than re-implementing them.
+
+**The first location is not an `OrgSettings` field.** It's a separate Convex `locations` row,
+written through `useLocationWrites` — so this step's save path does two writes, not one:
+the settings patch, then (conditionally) a location create.
+
+**"Skip for now" is not a no-op here — the one deliberate exception in the wizard.** Every other
+step's skip button writes nothing. This one still creates a `"Main warehouse"` default location
+(`isDefault: true`) when the org has zero locations, because a serialized asset needs somewhere
+to live and the screen says so plainly before the click ("Skip this and we'll make you a 'Main
+warehouse'…"). An org that already has at least one location gets nothing extra on skip — no
+duplicate default. Both Save and Skip are disabled while the org's location list is still
+loading, specifically to close the race where a stale "zero locations" read would create a
+second default on top of a real one. The location write is best-effort on skip (logged via
+`logger.error`, never blocks `onDone`) — same posture as C1's post-creation seed/mirror step:
+a location can always be renamed or added to later, so a transient failure here must never
+strand the wizard.
+
+## Step 5 — "your team" + "your gear" (C5, #1103)
+
+**One screen, two sections — not two steps.** The design doc's own screen table lists "Your
+team" and "Your gear" as separate rows, but its opening line says "Five screens, sectioned —
+not eight steps, which tests as a slog," and the mockup confirms it: there is no standalone
+"Step X of 5 · Your team" panel, only a single step-5 panel with the gear fork on it. `C4`
+already sectioned five content groups onto one screen (step 4) the same way — step 5 follows
+suit rather than pushing `TOTAL_STEPS` to 6.
+
+**There is no `OrgSettings` write on this screen at all.** Both sections are already-final,
+independently-live writes the instant you act — an invite is sent through `addMemberByEmail`
+(Prisma's `Invitation` model, not Convex, not `OrgSettings`) the moment you click "Send
+invite"; a model is created through `useModelWrites().create({ name })` the moment you click
+"Add"; a CSV import (`CSVImportDialog`, reused as-is) commits row by row as it runs. D5's "no
+draft state" applies at the finest possible grain — there's nothing to batch into a "Save and
+continue", so this screen doesn't have one. "Skip for now" is a genuine no-op here (unlike
+step 4's location fallback — nothing on this screen is load-bearing enough to need one), and
+the primary "Finish setup" button does the exact same `onDone()` under a different label.
+
+Gear import defaults to `type="models"`: a brand-new org has zero models, and an asset needs
+one to attach to, so offering an assets import first would have nothing to reference.
+"Add one by hand" creates a bare-name model only — it deliberately does NOT chain into asset
+creation here. The full model → asset → project → line-item hand-off is Phase D's job
+(#1107), coached by the activation tour after the wizard hands off, matching #1068's own
+framing ("Your gear ... hands off to Phase D").
+
+**Fixed alongside this screen**: the invite-role dropdown (`InviteMember`, the Settings > Team
+page) had drifted out of sync with `roleLabels` (`src/lib/permissions.ts`) — its hand-kept
+`builtInRoles` array was missing `warehouse`, a real, fully-permissioned role. Both this
+screen and `InviteMember` now read from one shared list, `src/lib/role-descriptions.ts`
+(`ASSIGNABLE_ROLE_OPTIONS`), which also carries the plain-English explainer the design doc
+calls for (§6.1) — the one place these five role descriptions are written (R-3.1).
+
+## C6 — "Finish setup" checklist (#1104)
+
+Not another wizard step — a dashboard card (`src/components/dashboard/finish-setup-checklist.tsx`,
+`FinishSetupChecklist`) that closes out Phase C. What makes D3's "skip everything" in the
+wizard actually safe: a dismissible, always-accurate checklist that deep-links back into the
+real settings pages for whatever's still unset, rather than back into a wizard step (there is
+ONE place each setting is edited).
+
+**Progress is derived; only dismissal is stored.** Every item is computed live from the org's
+real state — `settings.currency` (→ `/settings`), `settings.branding?.logoUrl`
+(→ `/settings/branding`), at least one `Location` (→ `/locations`), at least two people on the
+team (→ `/settings/team`, counting accepted members AND pending invites — an owner who's sent
+an invite has genuinely finished this step even before it's accepted, and C5's own screen is
+about sending invites, not waiting on acceptance). Nothing tracks "step 3 done": someone who
+configured tax in Settings instead of the wizard has genuinely finished that item, and a
+stored flag would say otherwise (R-3.1/R-8.2.4). The card disappears for good once every item
+is done OR once dismissed, and — because it's derived — can legitimately reappear if something
+that was set becomes unset again (e.g. the org's last location is deleted); that's a feature of
+"derived," not a bug.
+
+**The one persisted bit — dismissal — deliberately is NOT a `notificationDismissals` row.**
+That table already exists for exactly this shape (per-user, per-org, timestamped dismissal)
+and was the obvious first reach, but its `pruneStaleNative` mutation GCs every dismissal row
+for a user whose key isn't in the CALLER's own `activeKeys` list — and its only two callers
+(the notification bell, the notifications page) pass their own notification ids, never this
+screen's key. A `"setup-checklist"` row parked there would be silently deleted the next time
+either one fires, since neither knows this feature exists — breaking "disappears for good."
+Instead, `dismissedAt` lives in its own table, `orgSetupDismissals` (`convex/schema.ts`), with
+its own tiny mutations module (`convex/orgSetupDismissalsWrites.ts`, `mine`/`dismissNative`)
+and hook (`src/hooks/use-setup-dismissal.ts`, `useSetupDismissal`) — at most one row per
+`(organizationId, userId)`, no prune mechanism, because there's nothing to prune against.

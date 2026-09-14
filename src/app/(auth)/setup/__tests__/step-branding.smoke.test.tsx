@@ -42,7 +42,7 @@ beforeEach(() => {
 
 describe("StepBranding (smoke)", () => {
   it("renders the live header preview with the org name", async () => {
-    render(<StepBranding orgId="org1" onDone={vi.fn()} />);
+    render(<StepBranding orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
     const preview = await screen.findByTestId("header-preview");
     expect(preview.textContent).toContain("Acme Productions");
     expect(preview.textContent).toContain("QUOTE");
@@ -51,7 +51,7 @@ describe("StepBranding (smoke)", () => {
   it("'Skip for now' calls onDone without writing anything", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepBranding orgId="org1" onDone={onDone} />);
+    render(<StepBranding orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /skip for now/i }));
 
@@ -62,7 +62,7 @@ describe("StepBranding (smoke)", () => {
   it("picking a document colour and saving writes through updateOrganization, merged with existing settings, then calls onDone", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepBranding orgId="org1" onDone={onDone} />);
+    render(<StepBranding orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     const hexInput = screen.getByLabelText("Document hex value");
     await user.clear(hexInput);
@@ -85,9 +85,32 @@ describe("StepBranding (smoke)", () => {
     expect(onDone).toHaveBeenCalled();
   });
 
+  it("disables 'Skip for now' while a save is in flight — a fast Save-then-Skip click can't double-fire the step outcome (D4, #1108)", async () => {
+    let resolveSave: (() => void) | undefined;
+    mocks.updateOrganization.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = () => resolve({});
+        }),
+    );
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    const onStepOutcome = vi.fn();
+    render(<StepBranding orgId="org1" onDone={onDone} onStepOutcome={onStepOutcome} />);
+
+    await user.click(await screen.findByRole("button", { name: /save and continue/i }));
+
+    const skipButton = (await screen.findByRole("button", { name: /skip for now/i })) as HTMLButtonElement;
+    expect(skipButton.disabled).toBe(true);
+
+    resolveSave?.();
+    await waitFor(() => expect(onStepOutcome).toHaveBeenCalledExactlyOnceWith("completed"));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
   it("switching document-logo mode to 'Logo, above header' updates the preview", async () => {
     const user = userEvent.setup();
-    render(<StepBranding orgId="org1" onDone={vi.fn()} />);
+    render(<StepBranding orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.click(screen.getByRole("radio", { name: /logo, above header/i }));
     expect((screen.getByRole("radio", { name: /logo, above header/i }) as HTMLInputElement).checked).toBe(true);
@@ -96,7 +119,7 @@ describe("StepBranding (smoke)", () => {
   it("saves undefined branding when nothing was changed from defaults", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepBranding orgId="org1" onDone={onDone} />);
+    render(<StepBranding orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /save and continue/i }));
 
@@ -115,7 +138,7 @@ describe("StepBranding (smoke)", () => {
       settings: { currency: "AUD", country: "AU", branding: { showOrgNameOnDocuments: false } },
     };
     const user = userEvent.setup();
-    render(<StepBranding orgId="org1" onDone={vi.fn()} />);
+    render(<StepBranding orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /save and continue/i }));
 
@@ -141,7 +164,7 @@ describe("StepBranding (smoke)", () => {
       settings: { currency: "AUD", country: "AU", taxLabel: "GST" },
     });
     const user = userEvent.setup();
-    render(<StepBranding orgId="org1" onDone={vi.fn()} />);
+    render(<StepBranding orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /save and continue/i }));
 

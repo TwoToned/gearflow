@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as activationMilestones from "../activationMilestones.js";
 import type * as activityLog from "../activityLog.js";
 import type * as activityLogWrites from "../activityLogWrites.js";
 import type * as agentRevert from "../agentRevert.js";
@@ -28,6 +29,7 @@ import type * as backfillClientContacts from "../backfillClientContacts.js";
 import type * as backfillInvoiceSourceRevision from "../backfillInvoiceSourceRevision.js";
 import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as backfillMaintenanceSchedules from "../backfillMaintenanceSchedules.js";
+import type * as backfillOrphanedLineItemComments from "../backfillOrphanedLineItemComments.js";
 import type * as backfillProjectLiveRevision from "../backfillProjectLiveRevision.js";
 import type * as backfillProjectWindow from "../backfillProjectWindow.js";
 import type * as backfillQuoteRevisions from "../backfillQuoteRevisions.js";
@@ -114,6 +116,7 @@ import type * as lib_checkIncidentReportCore from "../lib/checkIncidentReportCor
 import type * as lib_checkPredictiveMaintenanceCore from "../lib/checkPredictiveMaintenanceCore.js";
 import type * as lib_clientContactCore from "../lib/clientContactCore.js";
 import type * as lib_collaborationColors from "../lib/collaborationColors.js";
+import type * as lib_commentCleanup from "../lib/commentCleanup.js";
 import type * as lib_counters from "../lib/counters.js";
 import type * as lib_crewConflicts from "../lib/crewConflicts.js";
 import type * as lib_crewRate from "../lib/crewRate.js";
@@ -140,6 +143,7 @@ import type * as lib_overbookingBoard from "../lib/overbookingBoard.js";
 import type * as lib_overbookingConfirmImpact from "../lib/overbookingConfirmImpact.js";
 import type * as lib_pagination from "../lib/pagination.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
+import type * as lib_personalEmailDomains from "../lib/personalEmailDomains.js";
 import type * as lib_projectLocks from "../lib/projectLocks.js";
 import type * as lib_projectNumber from "../lib/projectNumber.js";
 import type * as lib_projectNumberCounter from "../lib/projectNumberCounter.js";
@@ -202,10 +206,12 @@ import type * as notificationDismissalsWrites from "../notificationDismissalsWri
 import type * as notificationEmailLogs from "../notificationEmailLogs.js";
 import type * as oauthAuthorizationCodes from "../oauthAuthorizationCodes.js";
 import type * as oauthClients from "../oauthClients.js";
+import type * as orgActivationDismissalsWrites from "../orgActivationDismissalsWrites.js";
 import type * as orgAdminStats from "../orgAdminStats.js";
 import type * as orgErasure from "../orgErasure.js";
 import type * as orgExport from "../orgExport.js";
 import type * as orgSettings from "../orgSettings.js";
+import type * as orgSetupDismissalsWrites from "../orgSetupDismissalsWrites.js";
 import type * as overbooking from "../overbooking.js";
 import type * as overbookingBoard from "../overbookingBoard.js";
 import type * as parity from "../parity.js";
@@ -302,6 +308,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activationMilestones: typeof activationMilestones;
   activityLog: typeof activityLog;
   activityLogWrites: typeof activityLogWrites;
   agentRevert: typeof agentRevert;
@@ -322,6 +329,7 @@ declare const fullApi: ApiFromModules<{
   backfillInvoiceSourceRevision: typeof backfillInvoiceSourceRevision;
   backfillKitUnits: typeof backfillKitUnits;
   backfillMaintenanceSchedules: typeof backfillMaintenanceSchedules;
+  backfillOrphanedLineItemComments: typeof backfillOrphanedLineItemComments;
   backfillProjectLiveRevision: typeof backfillProjectLiveRevision;
   backfillProjectWindow: typeof backfillProjectWindow;
   backfillQuoteRevisions: typeof backfillQuoteRevisions;
@@ -408,6 +416,7 @@ declare const fullApi: ApiFromModules<{
   "lib/checkPredictiveMaintenanceCore": typeof lib_checkPredictiveMaintenanceCore;
   "lib/clientContactCore": typeof lib_clientContactCore;
   "lib/collaborationColors": typeof lib_collaborationColors;
+  "lib/commentCleanup": typeof lib_commentCleanup;
   "lib/counters": typeof lib_counters;
   "lib/crewConflicts": typeof lib_crewConflicts;
   "lib/crewRate": typeof lib_crewRate;
@@ -434,6 +443,7 @@ declare const fullApi: ApiFromModules<{
   "lib/overbookingConfirmImpact": typeof lib_overbookingConfirmImpact;
   "lib/pagination": typeof lib_pagination;
   "lib/permissionsCore": typeof lib_permissionsCore;
+  "lib/personalEmailDomains": typeof lib_personalEmailDomains;
   "lib/projectLocks": typeof lib_projectLocks;
   "lib/projectNumber": typeof lib_projectNumber;
   "lib/projectNumberCounter": typeof lib_projectNumberCounter;
@@ -496,10 +506,12 @@ declare const fullApi: ApiFromModules<{
   notificationEmailLogs: typeof notificationEmailLogs;
   oauthAuthorizationCodes: typeof oauthAuthorizationCodes;
   oauthClients: typeof oauthClients;
+  orgActivationDismissalsWrites: typeof orgActivationDismissalsWrites;
   orgAdminStats: typeof orgAdminStats;
   orgErasure: typeof orgErasure;
   orgExport: typeof orgExport;
   orgSettings: typeof orgSettings;
+  orgSetupDismissalsWrites: typeof orgSetupDismissalsWrites;
   overbooking: typeof overbooking;
   overbookingBoard: typeof overbookingBoard;
   parity: typeof parity;

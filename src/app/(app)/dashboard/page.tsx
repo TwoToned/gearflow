@@ -8,6 +8,7 @@ import {
   useNativeUpcoming,
   useNativeHome,
   useNativeBlocking,
+  useNativePendingCrewOffers,
   useNativeActivity,
   useNativeMyOpenTasks,
   useNativeOverbookingCounts,
@@ -40,6 +41,8 @@ import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
 import { formatDateLong, formatDateDayMonth } from "@/lib/formatters";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
+import { FinishSetupChecklist } from "@/components/dashboard/finish-setup-checklist";
+import { ActivationChecklist } from "@/components/dashboard/activation-checklist";
 import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { formatDistanceToNow } from "date-fns";
 import type { LucideIcon } from "lucide-react";
@@ -82,6 +85,7 @@ export default function DashboardPage() {
   const myHome = useNativeHome(orgId) as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const myBlockers = useNativeBlocking(orgId) as any;
+  const pendingCrewOffers = useNativePendingCrewOffers(orgId);
   const myTasks = useNativeMyOpenTasks(orgId);
 
   // Delay ladder derived from section index instead of hand-numbered literals
@@ -137,6 +141,18 @@ export default function DashboardPage() {
         />
       </FadeIn>
 
+      {/* Dashboard-side half of Phase C's "skip everything" safety net (C6,
+          #1104) — beside, not merged with, the activation checklist (D1,
+          #1105) right after it: setup is "configure the company", activation
+          is "do the work". Both render nothing once dismissed or complete,
+          so together they cost nothing once an org is set up and active. */}
+      <FadeIn delay={nextSectionDelay()}>
+        <FinishSetupChecklist orgId={orgId} />
+      </FadeIn>
+      <FadeIn delay={nextSectionDelay()}>
+        <ActivationChecklist orgId={orgId} />
+      </FadeIn>
+
       {/* ══ Zone 1: My work ══
           "On the floor now" + MyWorkSection (which now owns the tasks-due
           block and the per-project blocker badges/snippets — the standalone
@@ -186,6 +202,7 @@ export default function DashboardPage() {
             stats={stats}
             loading={statsLoading}
             blockers={myBlockers ?? []}
+            pendingCrewOffers={pendingCrewOffers}
             subHireOverdue={subHireStats?.overdueReturns ?? 0}
             overbookingCounts={overbookingCounts}
             orgFinanceCounts={orgFinanceCounts}
@@ -317,7 +334,7 @@ function DeployTile({ deployed, total, util, loading }: { deployed: number; tota
   );
 }
 
-function NeedsAttention({ stats, loading, blockers, subHireOverdue, overbookingCounts, orgFinanceCounts }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number; pendingCrewOffers?: number }; loading: boolean; blockers: Record<string, unknown>[]; subHireOverdue: number; overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number }; orgFinanceCounts?: { quotesOutCount: number; expiringCount: number; neverSentCount: number; confirmedUninvoicedCount: number; depositDueCount: number; outstandingCount: number } }) {
+function NeedsAttention({ stats, loading, blockers, pendingCrewOffers, subHireOverdue, overbookingCounts, orgFinanceCounts }: { stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number }; loading: boolean; blockers: Record<string, unknown>[]; pendingCrewOffers?: number; subHireOverdue: number; overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number }; orgFinanceCounts?: { quotesOutCount: number; expiringCount: number; neverSentCount: number; confirmedUninvoicedCount: number; depositDueCount: number; outstandingCount: number } }) {
   if (loading) return <div className="flex gap-2"><Skeleton className="h-8 w-36 rounded-full" /><Skeleton className="h-8 w-28 rounded-full" /></div>;
   const chips = [
     blockers.length > 0 && { href: `/projects/${blockers[0].projectId}`, label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`, cls: "bg-out-soft text-t-out hover:bg-out-soft/70", Icon: ShieldAlert },
@@ -333,7 +350,7 @@ function NeedsAttention({ stats, loading, blockers, subHireOverdue, overbookingC
     // WS6 #945 — separate chip for recurring PM (excluded from maintenanceDue
     // above so the two never double-count the same schedule-generated cycle).
     (stats?.modelsDueForService ?? 0) > 0 && { href: "/maintenance/due", label: `${stats?.modelsDueForService} model${(stats?.modelsDueForService ?? 0) > 1 ? "s" : ""} due for service`, cls: "bg-warn-soft text-warn hover:bg-warn-soft/70", Icon: Wrench },
-    (stats?.pendingCrewOffers ?? 0) > 0 && { href: "/crew", label: `${stats?.pendingCrewOffers} crew offer${(stats?.pendingCrewOffers ?? 0) > 1 ? "s" : ""} pending`, cls: "bg-blue-soft text-blue hover:bg-blue-soft/70", Icon: UserCheck },
+    (pendingCrewOffers ?? 0) > 0 && { href: "/crew", label: `${pendingCrewOffers} crew offer${(pendingCrewOffers ?? 0) > 1 ? "s" : ""} pending`, cls: "bg-blue-soft text-blue hover:bg-blue-soft/70", Icon: UserCheck },
     // #992 (Phase F) — org Finance section chips, backed by the cheap
     // financeOrg.counts query. Link to /finance rather than duplicating the
     // aggregation logic here (R-3.1, decision 9). Expiring is the urgent one

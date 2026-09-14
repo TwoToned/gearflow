@@ -66,6 +66,7 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeUpcoming: () => [],
   useNativeHome: () => ({ userName: "Jayden", userId: "user1", myProjects: [MY_PROJECT] }),
   useNativeBlocking: () => [BLOCKER],
+  useNativePendingCrewOffers: () => 0,
   useNativeActivity: () => ({ logs: [], testRecords: [], maintenanceRecords: [] }),
   useNativeMyOpenTasks: () => [TASK],
   // WS3 #942 — nonzero so the overbooking-chip test below has something to render.
@@ -79,6 +80,17 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
     depositDueCount: 0,
     outstandingCount: 0,
   }),
+}));
+// FinishSetupChecklist (C6, #1104) and ActivationChecklist (D1, #1105) both
+// pull in their own Convex-auth-gated hooks, which need a
+// ConvexProviderWithAuth ancestor this reorder test doesn't set up — out of
+// scope here (each has its own smoke test), so both are stubbed to render
+// nothing, matching their own real behavior while loading/dismissed/complete.
+vi.mock("@/components/dashboard/finish-setup-checklist", () => ({
+  FinishSetupChecklist: () => null,
+}));
+vi.mock("@/components/dashboard/activation-checklist", () => ({
+  ActivationChecklist: () => null,
 }));
 
 import DashboardPage from "../page";

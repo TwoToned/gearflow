@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
@@ -47,6 +47,8 @@ import {
 } from "@/components/projects/overview/context-cards";
 import type { ProjectContextProject } from "@/lib/project-context";
 import { DetailLayout, DetailMain, DetailSidebar } from "@/components/layout/page-layouts";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { QuoteCard } from "@/components/projects/overview/quote-card";
 import { InvoicingCard } from "@/components/projects/overview/invoicing-card";
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
@@ -166,10 +168,37 @@ export default function ProjectDetailPage({
   // needs a setter the uncontrolled form doesn't give.
   const VALID_TABS = ["overview", "equipment", "labour", "finance", "tasks", "notes", "files"] as const;
   const requestedTab = searchParams.get("tab");
+  // D3 (#1107) — the "Add <model> to it" chained hand-off deep-links here as
+  // `?tab=equipment&modelId=<id>`; EquipmentTab auto-opens its add dialog
+  // with that model pre-selected the one time this is set. Captured ONCE via
+  // the lazy useState initializer (not read from `searchParams` on every
+  // render) and the URL is scrubbed of `modelId` right after, in the effect
+  // below — otherwise switching tabs away and back remounts EquipmentTab
+  // (Radix `TabsContent` unmounts inactive panels), resetting its own
+  // one-shot ref guard while the URL param is still there, popping the
+  // dialog open again on every return visit for the rest of the session.
+  const [autoOpenAddModelId] = useState(() => searchParams.get("modelId") ?? undefined);
+  useEffect(() => {
+    if (!autoOpenAddModelId) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("modelId");
+    router.replace(`/projects/${id}?${params.toString()}`);
+    // Runs once on mount only — re-running on searchParams changing would
+    // fight the very replace() this effect just did.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Overview is always the landing tab (#1061) — the project's home. A `?tab=`
   // deep link still wins, so the org Finance section's rows land where they meant to.
   const initialTab = (VALID_TABS as readonly string[]).includes(requestedTab ?? "") ? requestedTab! : "overview";
   const [activeTab, setActiveTab] = useState(initialTab);
+  // D2 (#1106): only the org's FIRST (oldest) non-template project ever
+  // shows the line-item coaching tip in its Equipment tab — this is the one
+  // project the "put that gear on the job" milestone (D1, #1105) tracks.
+  // Skipped (no Convex subscription at all) outside the Equipment tab: an
+  // adversarial review caught this query running unconditionally on every
+  // tab of every project's detail page, forever, for zero visible benefit
+  // outside Equipment.
+  const activationState = useActivationMilestones(activeTab === "equipment" ? orgId : undefined);
 
   const [dupMode, setDupMode] = useState<"duplicate" | "template" | null>(null);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
@@ -663,7 +692,13 @@ export default function ProjectDetailPage({
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <EquipmentTabSlot projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} addMenuSlot={equipmentAddSlot} />
+                    <EquipmentTabSlot
+                      projectId={id}
+                      rentalStartDate={rentalStart}
+                      rentalEndDate={rentalEnd}
+                      addMenuSlot={equipmentAddSlot}
+                      autoOpenAddModelId={autoOpenAddModelId}
+                    />
                   </div>
                 </TabsContent>
 
@@ -802,6 +837,19 @@ export default function ProjectDetailPage({
             {/* Every tab but Overview, which composes this content itself. */}
             {activeTab !== "overview" && (
               <DetailSidebar>
+                {/* D2 (#1106): coaching for the "put that gear on the job"
+                    milestone — only on the ONE project it tracks (D1's
+                    firstProjectId). CoachingTip itself checks whether that
+                    milestone is still active (and honors "Hide tips"),
+                    rendering nothing once it isn't — so a normal project's
+                    Equipment tab, or this one after the milestone is done,
+                    shows nothing extra here (`SidebarSection`'s own border
+                    would look odd wrapping empty content, so this skips
+                    that shell and lets the tip carry its own "Get started"
+                    heading, same as the other three forms). */}
+                {activeTab === "equipment" && activationState?.firstProjectId === id && (
+                  <CoachingTip orgId={orgId} milestoneKey="lineItem" fallbackEyebrow="" fallbackTip="" hideWhenInactive />
+                )}
                 <ProjectContextRail
                   projectId={id}
                   orgId={orgId}

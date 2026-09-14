@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Create inventory (docs/critical-flows.md flow #10, POLICY.md R-8.8.3), as
@@ -12,6 +13,14 @@ import { expect, test } from "@playwright/test";
  */
 test.describe("harness: create inventory", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
+
+  // #1118: this file "won" the org-creation-bootstrap race purely by run
+  // order, per its own issue's exit criteria ("consider whether
+  // harness-create-inventory.spec.ts needs the same treatment") — give it
+  // its own DB isolation too so passing here never depends on being first.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
 
   test("create a model -> create a serialized asset -> asset tag generated", async ({
     page,
@@ -49,9 +58,12 @@ test.describe("harness: create inventory", () => {
       if (new URL(page.url()).pathname === "/setup") {
         await page.getByLabel("Company name").fill(`Inventory Org ${unique}`);
         await page.getByRole("button", { name: "Create company" }).click();
-        // Step 1's success lands on step 2 ("where you operate", C2 #1099)
-        // then step 3 ("your brand", C3 #1101), both still at /setup — skip
-        // both, only the name is required (D3).
+        // Step 1's success lands on step 2 ("where you operate", C2 #1099),
+        // step 3 ("your brand", C3 #1101), step 4 ("how you work", C4
+        // #1102), then step 5 ("your team & your gear", C5 #1103), all
+        // still at /setup — skip all four, only the name is required (D3).
+        await page.getByRole("button", { name: "Skip for now" }).click();
+        await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
         await page.getByRole("button", { name: "Skip for now" }).click();
         await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });

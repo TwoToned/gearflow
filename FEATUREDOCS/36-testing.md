@@ -78,15 +78,21 @@ One CI job in `.github/workflows/ci.yml`:
 
 - **`e2e`** — smoke + a11y (critical-flows #1) against a dummy Convex URL, blocking.
 
-Seeded-auth flows (critical-flows #2-10: sign-in, onboarding, sign-out,
+Seeded-auth flows (critical-flows #2-12: sign-in, onboarding, sign-out,
 create-inventory, through the primary revenue path — project → line items →
-availability → check-out → return) exist as `e2e/harness-*.spec.ts` against a real
-self-hosted Convex backend stood up in Docker (`scripts/e2e-harness-up.sh`) and pass
-locally, and the **`e2e-harness` CI job that runs them is restored** (2026-07-25,
-#858) — both the original dev-server-crash cause (#725) and a second, distinct
-stuck-dialog bug in the revenue-path spec are root-caused and fixed. Still
-`continue-on-error: true` until proven green on a GitHub-hosted runner. See
-`docs/e2e-harness.md` and `docs/critical-flows.md` for the full flow list and status.
+availability → check-out → return — plus D5 (#1109)'s onboarding happy path,
+invite-join, and org-switcher/cross-tenant isolation) exist as
+`e2e/harness-*.spec.ts` against a real self-hosted Convex backend stood up in
+Docker (`scripts/e2e-harness-up.sh`) and pass locally, and the **`e2e-harness`
+CI job that runs them is restored** (2026-07-25, #858) — both the original
+dev-server-crash cause (#725) and a second, distinct stuck-dialog bug in the
+revenue-path spec are root-caused and fixed. Still `continue-on-error: true`
+until proven green on a GitHub-hosted runner. Every harness file resets its
+own slice of the shared Postgres in a `test.beforeEach` (`e2e/harness-db-
+reset.ts`, #1118) — the whole job shares ONE Postgres, not one per file, so
+this is what makes each file's own "fresh Better Auth DB" docstring claim
+actually true regardless of run order. See `docs/e2e-harness.md` and
+`docs/critical-flows.md` for the full flow list and status.
 
 ## CI Integration
 

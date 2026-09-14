@@ -913,7 +913,7 @@ through this engine.
   "Invoicing" block (Deposit invoiced / Invoiced to date / Outstanding) fed
   by the derived fields above.
 
-## Category price rollup (FEATUREDOCS/72)
+## Category price rollup (FEATUREDOCS/73)
 
 A project category set to `pricingDisplay: "ROLLUP"` prints every one of its
 lines on a quote/invoice PDF with the money columns blank and ONE derived

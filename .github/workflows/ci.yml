@@ -182,11 +182,13 @@ jobs:
     #     (~10s each, vs. the previous 240s timeouts) before restoring this job.
     name: E2E (seeded harness — revenue path)
     runs-on: ubuntu-latest
-    # 20, not the usual 15: the revenue-path test alone can take up to 3
-    # attempts (2 retries) at up to 240s each under CI load — see its
-    # test.setTimeout comment. A hard job timeout here would cancel the whole
-    # job mid-run rather than let it report a clean pass/fail.
-    timeout-minutes: 20
+    # 30, not the usual 15: revenue-path alone can take up to 3 attempts (2
+    # retries) at up to 300s each under CI load (see its test.setTimeout
+    # comment), and D5 (#1109) added 3 more full-flow specs (up to 150s each)
+    # to the same job that can each retry twice too. A hard job timeout here
+    # would cancel the whole job mid-run rather than let it report a clean
+    # pass/fail for whichever spec is still running.
+    timeout-minutes: 30
     # NOT blocking yet: re-added after fixing the stuck-dialog bug that made it
     # guaranteed-red, but that fix hasn't been proven on a GitHub-hosted runner
     # yet (only verified locally, 4/4 clean runs). Flip this off once a run
@@ -245,7 +247,7 @@ jobs:
         run: pnpm run build
 
       - name: Run E2E (seeded harness, chromium)
-        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-onboarding.spec.ts e2e/harness-sign-out.spec.ts e2e/harness-create-inventory.spec.ts e2e/harness-revenue-path.spec.ts
+        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-onboarding.spec.ts e2e/harness-sign-out.spec.ts e2e/harness-create-inventory.spec.ts e2e/harness-revenue-path.spec.ts e2e/harness-onboarding-happy-path.spec.ts e2e/harness-invite-join.spec.ts e2e/harness-org-switch.spec.ts
         env:
           E2E_HARNESS: "1"
 

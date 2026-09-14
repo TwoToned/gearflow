@@ -40,6 +40,9 @@ import {
 } from "@/components/ui/select";
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActivationMilestones } from "@/hooks/use-activation-milestones";
+import { activeMilestoneKey } from "@/lib/activation-milestones";
 
 const TYPE_OPTIONS = [
   { value: "DRY_HIRE", label: "Dry hire" }, { value: "WET_HIRE", label: "Wet hire" },
@@ -109,6 +112,13 @@ const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFor
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
 ];
 
+/** Split out purely to keep `onSuccess`'s own complexity under the ceiling
+ *  (D3, #1107's hand-off branch pushed it over). */
+function projectSavedToastCopy(isEditing: boolean, isTemplate: boolean): string {
+  if (isEditing) return isTemplate ? "Template updated" : "Job updated";
+  return isTemplate ? "Template created" : "Job created";
+}
+
 export function ProjectWizard({
   isTemplate: isTemplateProp,
   project,
@@ -122,6 +132,12 @@ export function ProjectWizard({
   const managerWrites = useProjectManagerWrites();
   const orgId = activeOrg?.id;
   const projectWrites = useProjectWrites(orgId);
+  // D3 (#1107) — see the identical note in model-form.tsx. Reads the FULL
+  // milestone state (not just the active key) because the hand-off needs
+  // firstModelId/firstModelName too, to deep-link + label "Add <model> to it".
+  const activationState = useActivationMilestones(orgId);
+  const isActiveProjectMilestone =
+    activationState != null && activeMilestoneKey(activationState) === "project";
 
   const isEditing = !!project;
 
@@ -326,11 +342,22 @@ export function ProjectWizard({
       return result;
     },
     onSuccess: (result) => {
-      toast.success(
-        isEditing
-          ? isTemplate ? "Template updated" : "Job updated"
-          : isTemplate ? "Template created" : "Job created",
-      );
+      // D3 (#1107) — offered, never forced: the navigation below is
+      // unchanged either way, this only adds an optional action button.
+      // Templates never complete the "project" milestone (activationMilestones
+      // excludes them), so they never offer this hand-off either.
+      const firstModelId = activationState?.firstModelId;
+      const offerHandoff = !isEditing && !isTemplate && isActiveProjectMilestone && !!firstModelId;
+      if (offerHandoff) {
+        toast.success("Job created", {
+          action: {
+            label: `Add ${activationState?.firstModelName ?? "it"} to it`,
+            onClick: () => router.push(`/projects/${result.id}?tab=equipment&modelId=${firstModelId}`),
+          },
+        });
+      } else {
+        toast.success(projectSavedToastCopy(isEditing, isTemplate));
+      }
       router.push(`/projects/${result.id}`);
     },
     onError: (e) => {
@@ -407,9 +434,11 @@ export function ProjectWizard({
           </h2>
           {step === 0 && (
             <div className="space-y-5">
-              <Field label="Name" required error={form.formState.errors.name?.message}>
-                <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
-              </Field>
+              <div data-tour-anchor="tour-project-name">
+                <Field label="Name" required error={form.formState.errors.name?.message}>
+                  <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
+                </Field>
+              </div>
               {!isTemplate && (
                 <Field label="Project code" required hint="Pre-filled from your next sequence — edit if you need a custom code." error={form.formState.errors.projectNumber?.message}>
                   <Input {...form.register("projectNumber")} placeholder={nextProjectNumber ? `Auto: ${nextProjectNumber}` : "e.g. PROJ-2026-0001"} className="font-mono" />
@@ -565,10 +594,19 @@ export function ProjectWizard({
         {/* Helper rail */}
         <aside className="hidden lg:block">
           <div className="sticky top-4 space-y-4 rounded-[var(--r-lg)] border border-line bg-paper-2/50 p-4">
-            <div>
-              <p className="t-overline text-faint">Step {step + 1} of {STEPS.length}</p>
-              <p className="mt-1 font-hand text-[15px] text-t-out">{STEPS[step].tip}</p>
-            </div>
+            {step === 0 ? (
+              <CoachingTip
+                orgId={orgId}
+                milestoneKey="project"
+                fallbackEyebrow={`Step ${step + 1} of ${STEPS.length}`}
+                fallbackTip={STEPS[step].tip}
+              />
+            ) : (
+              <div>
+                <p className="t-overline text-faint">Step {step + 1} of {STEPS.length}</p>
+                <p className="mt-1 font-hand text-[15px] text-t-out">{STEPS[step].tip}</p>
+              </div>
+            )}
             <div className="space-y-2 border-t border-line pt-3">
               <p className="t-overline text-faint">So far</p>
               <SummaryLine label="Name" value={v.name || "—"} />

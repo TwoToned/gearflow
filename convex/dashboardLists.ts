@@ -18,6 +18,19 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED"]);
 const HOME_INACTIVE_STATUSES = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);
 
+/**
+ * A gig is "done" — and should stop surfacing needs-attention alerts (blocking
+ * comments, pending crew offers) — once it's closed out or cancelled (same
+ * terminal statuses as HOME_INACTIVE_STATUSES) OR its rental window has already
+ * ended. Alerts belong on current/future work; a finished job's loose ends are
+ * no longer anyone's "needs attention" item.
+ */
+function isCurrentOrFutureProject(project: { status?: string; rentalEndDate?: number }, now: number): boolean {
+  if (HOME_INACTIVE_STATUSES.has(project.status ?? "")) return false;
+  if (project.rentalEndDate != null && project.rentalEndDate < now) return false;
+  return true;
+}
+
 type ProjectDoc = { id: string; isTemplate?: boolean; status?: string; rentalStartDate?: number; rentalEndDate?: number; projectNumber: string; name: string; clientId?: string; projectManagerId?: string; createdAt?: number };
 
 /** EQUIPMENT line-item count per project id (mirrors countEquipmentLineItemsByProject). */
@@ -150,8 +163,8 @@ export const home = query({
 // ─── getMyBlockingComments ───────────────────────────────────────────────────
 
 export const blocking = query({
-  args: { orgId: v.string() },
-  handler: async (ctx, { orgId }) => {
+  args: { orgId: v.string(), now: v.number() },
+  handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth)) throw new ConvexError("Unauthorized: user token required.");
@@ -183,6 +196,10 @@ export const blocking = query({
       const projectId = t.projectId ?? t.entityId;
       const project = projectId ? projectMap.get(projectId) : undefined;
       if (!project) continue;
+      // Closed-out / cancelled / past gigs are done — their blocking comments
+      // stop being a "needs attention" alert (still resolvable from the
+      // project's own Activity tab, just not surfaced here).
+      if (!isCurrentOrFutureProject(project, now)) continue;
       const isPM = project.projectManagerId === userId || pmProjectIds.has(project.id);
       const isMentioned = (t.mentionUserIds ?? []).includes(userId);
       if (!isPM && !isMentioned) continue;
@@ -208,9 +225,48 @@ export const blocking = query({
   },
 });
 
+// ─── pendingCrewOffers (needs-attention scoped count) ────────────────────────
+// The dashboardCounters.pendingCrewOffers sharded counter is a raw org-wide
+// count (no project join — see convex/lib/counters.ts) used for the general
+// stats bundle. The "needs attention" chip wants a narrower question: how many
+// pending offers belong to a gig that hasn't happened yet or wrapped up? That
+// requires a project join, so it's a small bounded query here rather than a
+// field on the counter.
+const PENDING_OFFER_STATUSES = ["OFFERED", "PENDING"] as const;
+
+export const pendingCrewOffers = query({
+  args: { orgId: v.string(), now: v.number() },
+  handler: async (ctx, { orgId, now }) => {
+    await requireOrgReadFor(ctx, orgId, "project"); // Phase 5 domain slice (#1001)
+
+    const assignmentLists = await Promise.all(
+      PENDING_OFFER_STATUSES.map((status) =>
+        ctx.db
+          .query("crewAssignments")
+          .withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status))
+          .collect(),
+      ),
+    );
+    const assignments = assignmentLists.flat();
+    if (assignments.length === 0) return 0;
+
+    const projectIds = [...new Set(assignments.map((a) => a.projectId))];
+    const projectDocs = await Promise.all(
+      projectIds.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
+    );
+    const projectMap = new Map(projectDocs.filter((p): p is NonNullable<typeof p> => p != null).map((p) => [p.id, p]));
+
+    return assignments.filter((a) => {
+      const project = projectMap.get(a.projectId);
+      return project != null && project.organizationId === orgId && isCurrentOrFutureProject(project, now);
+    }).length;
+  },
+});
+
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
   upcoming: { summary: "List the org's upcoming projects (next 8 by rental start date).", danger: "low", mcpTier: 2 },
   home: { summary: "The caller's personal dashboard project list (managed or PM-assigned).", danger: "low", mcpTier: 2 },
   blocking: { summary: "Blocking comment threads relevant to the caller (as PM or mentioned).", danger: "low", mcpTier: 2 },
+  pendingCrewOffers: { summary: "Count of pending crew offers on current/future (not past or closed) gigs.", danger: "low", mcpTier: 2 },
 };

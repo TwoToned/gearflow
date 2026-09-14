@@ -37,6 +37,7 @@ import {
   type PriceBreakdown,
 } from "./lib/billingDerivation";
 import { assertLifecycleGuard, lifecycleAuditMetadata, LOCKED_LINE_ITEM_FIELDS, pricedUnderLockOnInsert } from "./lib/projectLocks";
+import { deleteCommentsAndMarkersForTarget } from "./lib/commentCleanup";
 import {
   adjustModelSaleStock,
   sellSerializedAssetForSale,
@@ -327,6 +328,7 @@ async function deleteLineWithUnits(ctx: MutationCtx, lineDocId: Id<"projectLineI
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineCuid))
     .collect()).filter((u) => u.organizationId === orgId);
   for (const u of units) await ctx.db.delete(u._id);
+  await deleteCommentsAndMarkersForTarget(ctx, orgId, lineCuid);
   await ctx.db.delete(lineDocId);
 }
 

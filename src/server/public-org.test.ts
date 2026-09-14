@@ -3,13 +3,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const memberFindMany = vi.fn();
 const memberFindFirst = vi.fn();
 const organizationFindMany = vi.fn();
+const organizationFindUnique = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     member: {
       findMany: (...a: unknown[]) => memberFindMany(...a),
       findFirst: (...a: unknown[]) => memberFindFirst(...a),
     },
-    organization: { findMany: (...a: unknown[]) => organizationFindMany(...a) },
+    organization: {
+      findMany: (...a: unknown[]) => organizationFindMany(...a),
+      findUnique: (...a: unknown[]) => organizationFindUnique(...a),
+    },
   },
 }));
 
@@ -32,11 +36,17 @@ vi.mock("@/lib/site-settings-read", () => ({
   getSiteSettingsFromConvex: (...a: unknown[]) => getSiteSettingsFromConvex(...a),
 }));
 
+const invalidateOrgLoginInfoCache = vi.fn();
+vi.mock("@/lib/org-login-info-cache", () => ({
+  invalidateOrgLoginInfoCache: (...a: unknown[]) => invalidateOrgLoginInfoCache(...a),
+}));
+
 import {
+  checkSlugAvailable,
   getMyOrganizations,
   getSoloOrgBranding,
   hasOnlyArchivedMemberships,
-  seedOrgDefaultTaxRate,
+  seedOrgDefaults,
 } from "./public-org";
 
 beforeEach(() => {
@@ -125,12 +135,53 @@ describe("getSoloOrgBranding — only when exactly one org exists system-wide", 
   });
 });
 
-describe("seedOrgDefaultTaxRate — seed at creation, never a live read (#1077, A7)", () => {
-  it("copies the platform's CURRENT defaultTaxRate into the new org's own settings", async () => {
-    getSiteSettingsFromConvex.mockResolvedValue({ defaultCurrency: "AUD", defaultTaxRate: 15 });
+describe("seedOrgDefaults — seed tax rate + currency at creation, never a live read (#1077, A7; C1, #1098)", () => {
+  it("copies the platform's CURRENT defaultTaxRate + defaultCurrency into the new org's own settings", async () => {
+    getSiteSettingsFromConvex.mockResolvedValue({ defaultCurrency: "GBP", defaultTaxRate: 15 });
 
-    await seedOrgDefaultTaxRate("org_new");
+    await seedOrgDefaults("org_new", "acme");
 
-    expect(saveOrgSettings).toHaveBeenCalledWith("org_new", {}, 15);
+    expect(saveOrgSettings).toHaveBeenCalledWith("org_new", { currency: "GBP" }, 15);
+  });
+
+  it("busts the org-login-info cache for the new org's slug", async () => {
+    getSiteSettingsFromConvex.mockResolvedValue({ defaultCurrency: "AUD", defaultTaxRate: 10 });
+
+    await seedOrgDefaults("org_new", "acme");
+
+    expect(invalidateOrgLoginInfoCache).toHaveBeenCalledWith("acme");
+  });
+});
+
+describe("checkSlugAvailable — UX-only tick, not a new authorization surface (C1, #1098)", () => {
+  it("returns false with no session", async () => {
+    getSession.mockResolvedValue(null);
+
+    expect(await checkSlugAvailable("acme")).toBe(false);
+    expect(organizationFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns false for an empty/whitespace slug without querying", async () => {
+    getSession.mockResolvedValue({ user: { id: "user_1" } });
+
+    expect(await checkSlugAvailable("   ")).toBe(false);
+    expect(organizationFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns true when no org has claimed the (normalized) slug", async () => {
+    getSession.mockResolvedValue({ user: { id: "user_1" } });
+    organizationFindUnique.mockResolvedValue(null);
+
+    expect(await checkSlugAvailable("Acme")).toBe(true);
+    expect(organizationFindUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { slug: "acme" } }),
+    );
+  });
+
+  it("returns false when the slug is already taken", async () => {
+    getSession.mockResolvedValue({ user: { id: "user_1" } });
+    organizationFindUnique.mockResolvedValue({ id: "org_existing" });
+
+    expect(await checkSlugAvailable("acme")).toBe(false);
   });
 });

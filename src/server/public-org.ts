@@ -6,14 +6,15 @@ import { getSession } from "@/lib/auth-server";
 import { upsertMemberMirrorByOrgUser } from "@/lib/member-mirror";
 import { saveOrgSettings } from "@/lib/org-settings-read";
 import { getSiteSettingsFromConvex } from "@/lib/site-settings-read";
+import { invalidateOrgLoginInfoCache } from "@/lib/org-login-info-cache";
 
 /**
  * The calling user's LIVE (non-archived) org memberships. Safe to call
  * without an active org set (session-only). This is the multi-tenant
  * replacement for the single-org `getTheOrgId()` —
- * login/register/invite/onboarding/OrgActivator (#1071, A1) all resolve
- * "which org(s) does this user belong to" through here instead of assuming
- * there's exactly one.
+ * login/register/invite/`/setup`/OrgActivator (#1071, A1) all resolve "which
+ * org(s) does this user belong to" through here instead of assuming there's
+ * exactly one.
  *
  * Membership-derived, never a list of all orgs filtered client-side (R-9.3).
  * Archived orgs (#1075, A5) never appear here — the switcher/onboarding-gate
@@ -44,8 +45,8 @@ export async function getMyOrganizations(): Promise<
 
 /**
  * True when the caller has at least one membership, but every one of them is
- * in an archived org. Distinguishes "never had an org" (→ /onboarding) from
- * "org(s) archived" (→ an explanatory screen, not the create-org form) for
+ * in an archived org. Distinguishes "never had an org" (→ /welcome → /setup)
+ * from "org(s) archived" (→ an explanatory screen, not the create-org form) for
  * the `(app)` layout gate and `OrgActivator` — a user in this state gets
  * neither a crash nor a silent empty dashboard (#1075, A5).
  */
@@ -79,8 +80,8 @@ export async function getSoloOrgBranding(): Promise<{ name: string } | null> {
 
 /**
  * Mirror the CALLING session's own membership in `organizationId` into Convex.
- * Called by the onboarding page right after `organization.create()` +
- * `setActive()` succeed.
+ * Called by `/setup`'s step 0 (C1, #1098) right after `organization.create()`
+ * + `setActive()` succeed.
  *
  * The self-serve `organization.create()` client call (Better Auth's own
  * organization plugin) creates the Postgres Organization + Member rows
@@ -103,26 +104,59 @@ export async function mirrorMyMembership(organizationId: string): Promise<void> 
 }
 
 /**
- * Seed a freshly-created org's `defaultTaxRate` from the platform's CURRENT
- * `SiteSettings.defaultTaxRate` (#1077, A7). Copies the value once, at
- * creation — never a live read.
+ * Seed a freshly-created org's `defaultTaxRate` AND `currency` from the
+ * platform's CURRENT `SiteSettings` (#1077, A7; extended to currency by C1,
+ * #1098). Copies both values once, at creation — never a live read
+ * afterward, so changing the platform default later never reaches back into
+ * an org this already ran for.
  *
  * Why this matters: `resolveOrgDefaultTaxRate` (convex/lib/orgSettings.ts)
  * already treats an org's own `orgSettings.defaultTaxRate` as the sole
  * operating value (falling to a hardcoded default, never to the platform
- * setting, when unset) — so `SiteSettings.defaultTaxRate` was previously
- * pure admin-UI decoration with no effect on any org's actual tax math. This
- * seed step is what makes changing the platform default meaningful: it sets
- * the STARTING POINT for orgs created from now on, without retroactively
- * reaching into already-existing orgs (whose own configured or seeded value
- * stays exactly as an admin left it) — "orgs differ" is the point, not a bug
- * to route around with a live cross-org read.
+ * setting, when unset), and `formatConfigFromOrgSettings` (`formatters.ts`)
+ * does the same for `orgSettings.currency` — so `SiteSettings.defaultTaxRate`
+ * / `.defaultCurrency` were otherwise pure admin-UI decoration with no effect
+ * on any org's actual tax math or formatting. This seed step is what makes
+ * changing the platform default meaningful: it sets the STARTING POINT for
+ * orgs created from now on, without retroactively reaching into
+ * already-existing orgs (whose own configured or seeded value stays exactly
+ * as an admin left it) — "orgs differ" is the point, not a bug to route
+ * around with a live cross-org read.
+ *
+ * Also busts the org/SSO login-info cache (`org-login-info-cache.ts`) for the
+ * new org's `slug` — a pre-creation probe (this wizard's own slug-
+ * availability check, or a bot) can already have cached that slug as an
+ * "unknown org" miss, which would otherwise leave the brand-new org's login
+ * page briefly falling back to default branding.
  *
  * Best-effort: called right after org creation, same posture as
  * `mirrorMyMembership` — a transient Convex hiccup here shouldn't fail
  * onboarding itself (the org already exists in Postgres by this point).
  */
-export async function seedOrgDefaultTaxRate(organizationId: string): Promise<void> {
-  const { defaultTaxRate } = await getSiteSettingsFromConvex();
-  await saveOrgSettings(organizationId, {}, defaultTaxRate);
+export async function seedOrgDefaults(organizationId: string, slug: string): Promise<void> {
+  const { defaultTaxRate, defaultCurrency } = await getSiteSettingsFromConvex();
+  await saveOrgSettings(organizationId, { currency: defaultCurrency }, defaultTaxRate);
+  invalidateOrgLoginInfoCache(slug);
+}
+
+/**
+ * UX-only slug-availability check for `/setup`'s step 0 (C1, #1098) — renders
+ * the "Available"/"Taken" tick as the operator types, before they submit.
+ * This is NOT a new authorization or uniqueness surface: `organization.create()`'s
+ * own unique constraint on `Organization.slug` (enforced by Postgres, same as
+ * `adminCreateOrganization`'s inline check in `site-admin.ts`) is the only
+ * real gate — "the tick is not a promise until submit" (the issue's own
+ * words), so a slug that shows available here can still be rejected at
+ * submit if someone else claims it in the interim.
+ */
+export async function checkSlugAvailable(slug: string): Promise<boolean> {
+  const session = await getSession();
+  if (!session) return false;
+  const normalized = slug.toLowerCase().trim();
+  if (!normalized) return false;
+  const existing = await prisma.organization.findUnique({
+    where: { slug: normalized },
+    select: { id: true },
+  });
+  return !existing;
 }

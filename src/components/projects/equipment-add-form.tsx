@@ -65,6 +65,10 @@ export interface EquipmentAddFormProps {
   onClose: () => void;
   /** Open the sub-hire order dialog instead of overbooking. */
   onOpenSubHire?: () => void;
+  /** D3 (#1107) — pre-select this model when the dialog is opened via the
+   *  "Add <model> to it" chained hand-off from job creation. Only ever set
+   *  for that one deep link; an ordinary "Add" click leaves this unset. */
+  preselectedModelId?: string;
 }
 
 export function EquipmentAddForm({
@@ -77,12 +81,13 @@ export function EquipmentAddForm({
   onInvalidate,
   onClose,
   onOpenSubHire,
+  preselectedModelId,
 }: EquipmentAddFormProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const lineItemWrites = useLineItemWrites();
   const [mode, setMode] = useState<AddMode>("model");
-  const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState(preselectedModelId ?? "");
   const [assetTagInput, setAssetTagInput] = useState("");
   const [lookupTag, setLookupTag] = useState("");
   const [discountMode, setDiscountMode] = useState<DiscountMode>("$");

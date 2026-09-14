@@ -150,3 +150,55 @@ deliberately no in-app "show tips again" control in this iteration — since coa
 appears during the brief pre-activation window anyway (it stops showing the moment its milestone
 is done, same as everything else on this card), the cost of a wrong click is low; a settings-page
 reset can be added later if that turns out wrong.
+
+## D3 — chained hand-offs, offered not forced (#1107)
+
+Each of the three creation forms D1/D2 track (model, asset, project) offers the next step in the
+chain in its own success toast, ONLY when that specific creation is the one completing the org's
+currently-active milestone — never for an established org's routine 50th model. The existing
+post-save navigation (to the new entity's own detail page) is unchanged either way; the hand-off
+is purely an extra `action` button on the same `sonner` toast (`toast.success(msg, { action: {
+label, onClick } })`), never a redirect of its own.
+
+1. **Model → asset.** `model-form.tsx` reads `useActiveMilestoneKey(orgId) === "model"` before
+   submit. On a successful (non-edit) create, offers "Add an asset" → `/assets/registry/new?modelId=<id>`
+   (the registry form's existing `preselectedModelId` support, unchanged from before D3).
+2. **Asset → project.** `asset-form.tsx` reads the FULL `useActivationMilestones` state, not just
+   the active key — the "asset" milestone (`convex/activationMilestones.ts`'s `hasAssetForModel`)
+   is scoped to the org's FIRST model specifically, so an org with two models whose first-ever
+   asset lands on the SECOND one has NOT completed the milestone even though "asset" is next in
+   the abstract. The hand-off additionally checks `v.modelId === activationState.firstModelId`
+   before offering "Create your first job" → `/projects/new`. Covers both the single- and
+   multi-asset (`extraAssets`) create paths — one toast either way, since `createMany` is one
+   mutation call regardless of how many tag rows were added.
+3. **Project → line item.** `project-wizard.tsx` reads the full state too, for `firstModelId`/
+   `firstModelName` — offers `"Add <model name> to it"` → `/projects/<id>?tab=equipment&modelId=<firstModelId>`.
+   Templates (`isTemplate`) never complete the "project" milestone (excluded by
+   `activationMilestones.ts` itself) and so never offer this hand-off.
+
+**The equipment-tab deep link auto-opens the add dialog with that model pre-selected** — new
+plumbing threaded through `EquipmentAddForm` (`preselectedModelId` prop, seeds `selectedModelId`'s
+initial state) → `UnifiedAddDialog` (same prop, passed to the `"own-stock"` body only) →
+`EquipmentTab` (`autoOpenAddModelId` prop). Two correctness traps an adversarial review caught
+before this shipped:
+
+- **The URL param has to be consumed once, not read live.** `page.tsx` captures
+  `?modelId=` via a LAZY `useState` initializer (read once, not on every render) and immediately
+  scrubs it from the URL in a mount-only effect. Radix `TabsContent` unmounts inactive tab panels
+  (no `forceMount`), so switching away from Equipment and back remounts `EquipmentTab` — which
+  resets its own one-shot `useRef` guard. Without scrubbing the URL, a stale `?modelId=` would
+  still be sitting there on remount and the dialog would pop open again on every return visit to
+  the tab, for the rest of the page session.
+- **The preselect can't ride the raw prop for the tab's whole lifetime.** `EquipmentTab` copies
+  `autoOpenAddModelId` into local one-shot state (`pendingAutoModelId`) exactly when it
+  auto-triggers the open, and clears it the moment the dialog closes (`onOpenChange`). Passing the
+  raw prop straight through to `UnifiedAddDialog` would silently preselect the hand-off's model on
+  every LATER manual "Add" click too, since the prop itself stays truthy for as long as the tab
+  component is mounted — only the local state is actually one-shot.
+
+No dedicated component test was added for the deep-link plumbing itself (`equipment-add-form.tsx`/
+`unified-add-dialog.tsx`/`equipment-tab.tsx` have no existing test harness to extend — each is a
+large, heavily-hook-dependent component, and standing one up from scratch was judged
+disproportionate to this change); typecheck, lint, the full suite, and the existing
+`project-wizard` smoke tests (updated to mock the new milestone read) cover the regression
+surface instead.

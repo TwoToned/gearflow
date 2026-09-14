@@ -115,6 +115,11 @@ interface EquipmentTabProps {
    *  slot inline with the Equipment/Labour/Tasks tabs and hands the node here so
    *  the Add action sits on the tab row. */
   addMenuSlot?: HTMLElement | null;
+  /** D3 (#1107) — auto-opens the "Add equipment" dialog with this model
+   *  pre-selected, once, when set. Set only by the "Add <model> to it"
+   *  chained hand-off deep link (`?modelId=` on this tab's URL), never by
+   *  an ordinary tab visit. */
+  autoOpenAddModelId?: string;
 }
 
 /** `useSortable()`'s `transform`/`transition` turned into an inline style —
@@ -407,7 +412,7 @@ function UncategorizedHeader({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot }: EquipmentTabProps) {
+export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMenuSlot, autoOpenAddModelId }: EquipmentTabProps) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const isMobile = useIsMobile();
@@ -628,6 +633,27 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     groupId?: string;
     label?: string;
   }>({});
+
+  // D3 (#1107) — the chained "Add <model> to it" hand-off deep link opens
+  // straight into the own-stock add dialog with that model already chosen.
+  // Runs once per mount (a ref guard, not a dep-array trick) — if the user
+  // closes the dialog it must stay closed on its own, not reopen on some
+  // unrelated re-render. `pendingAutoModelId` (not the raw `autoOpenAddModelId`
+  // prop) is what actually reaches UnifiedAddDialog's `preselectedModelId`,
+  // and is cleared the moment the dialog closes — otherwise the preselect
+  // would silently leak into every LATER manual "Add" click for the rest of
+  // the tab's lifetime, since the prop itself stays truthy long after this
+  // one auto-triggered open is done with.
+  const autoOpenedRef = useRef(false);
+  const [pendingAutoModelId, setPendingAutoModelId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!autoOpenAddModelId || autoOpenedRef.current) return;
+    autoOpenedRef.current = true;
+    setUnifiedAddKind("own-stock");
+    setUnifiedAddTarget({});
+    setPendingAutoModelId(autoOpenAddModelId);
+    setShowUnifiedAdd(true);
+  }, [autoOpenAddModelId]);
 
   // Sub-hire order dialog state
   const [showSubHireOrderDialog, setShowSubHireOrderDialog] = useState(false);
@@ -2574,7 +2600,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         open={showUnifiedAdd}
         onOpenChange={(open) => {
           setShowUnifiedAdd(open);
-          if (!open) setUnifiedAddTarget({});
+          if (!open) {
+            setUnifiedAddTarget({});
+            setPendingAutoModelId(undefined);
+          }
         }}
         kind={unifiedAddKind}
         onKindChange={setUnifiedAddKind}
@@ -2586,6 +2615,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
         targetLabel={unifiedAddTarget.label}
         categories={categories as CategoryData[]}
         onInvalidate={invalidate}
+        preselectedModelId={pendingAutoModelId}
         onSubHireCreated={(newSubHireId) => {
           // Hand off from the inline create form to the manage view so
           // the user can add items to their new order without a context

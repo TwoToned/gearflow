@@ -38,6 +38,7 @@ import {
   SmartFormLayout, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
 import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActiveMilestoneKey } from "@/hooks/use-activation-milestones";
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   SERIALIZED: "Serialized (tracked individually)",
@@ -55,6 +56,11 @@ export function ModelForm({ initialData }: ModelFormProps) {
   const [showCreateCategory, setShowCreateCategory] = useState(false);
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  // D3 (#1107): whether THIS creation is the one completing the org's active
+  // "model" milestone — read before submit, so a returning org creating its
+  // 50th model never sees the hand-off (it only ever fires for the one
+  // model creation D1/D2's coaching was actually about).
+  const isActiveModelMilestone = useActiveMilestoneKey(orgId) === "model";
 
   // Reactive categories (Convex) with synthetic parent name, sorted to match the
   // old getCategories() order.
@@ -94,7 +100,16 @@ export function ModelForm({ initialData }: ModelFormProps) {
     mutationFn: (data: ModelFormValues) =>
       isEditing ? modelWrites.update(initialData.id, data) : modelWrites.create(data),
     onSuccess: (result) => {
-      toast.success(isEditing ? "Model updated" : "Model created");
+      // D3 (#1107) — a chained hand-off is a SUGGESTION, never a redirect:
+      // the normal navigation to the new model below is unchanged either
+      // way, this only adds an optional action button to the same toast.
+      if (!isEditing && isActiveModelMilestone) {
+        toast.success("Model created", {
+          action: { label: "Add an asset", onClick: () => router.push(`/assets/registry/new?modelId=${result.id}`) },
+        });
+      } else {
+        toast.success(isEditing ? "Model updated" : "Model created");
+      }
       router.push(`/assets/models/${result.id}`);
     },
     onError: (e) => toast.error(e.message),

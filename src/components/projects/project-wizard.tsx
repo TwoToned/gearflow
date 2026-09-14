@@ -41,6 +41,8 @@ import {
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
 import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActivationMilestones } from "@/hooks/use-activation-milestones";
+import { activeMilestoneKey } from "@/lib/activation-milestones";
 
 const TYPE_OPTIONS = [
   { value: "DRY_HIRE", label: "Dry hire" }, { value: "WET_HIRE", label: "Wet hire" },
@@ -110,6 +112,13 @@ const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFor
   { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
 ];
 
+/** Split out purely to keep `onSuccess`'s own complexity under the ceiling
+ *  (D3, #1107's hand-off branch pushed it over). */
+function projectSavedToastCopy(isEditing: boolean, isTemplate: boolean): string {
+  if (isEditing) return isTemplate ? "Template updated" : "Job updated";
+  return isTemplate ? "Template created" : "Job created";
+}
+
 export function ProjectWizard({
   isTemplate: isTemplateProp,
   project,
@@ -123,6 +132,12 @@ export function ProjectWizard({
   const managerWrites = useProjectManagerWrites();
   const orgId = activeOrg?.id;
   const projectWrites = useProjectWrites(orgId);
+  // D3 (#1107) — see the identical note in model-form.tsx. Reads the FULL
+  // milestone state (not just the active key) because the hand-off needs
+  // firstModelId/firstModelName too, to deep-link + label "Add <model> to it".
+  const activationState = useActivationMilestones(orgId);
+  const isActiveProjectMilestone =
+    activationState != null && activeMilestoneKey(activationState) === "project";
 
   const isEditing = !!project;
 
@@ -327,11 +342,22 @@ export function ProjectWizard({
       return result;
     },
     onSuccess: (result) => {
-      toast.success(
-        isEditing
-          ? isTemplate ? "Template updated" : "Job updated"
-          : isTemplate ? "Template created" : "Job created",
-      );
+      // D3 (#1107) — offered, never forced: the navigation below is
+      // unchanged either way, this only adds an optional action button.
+      // Templates never complete the "project" milestone (activationMilestones
+      // excludes them), so they never offer this hand-off either.
+      const firstModelId = activationState?.firstModelId;
+      const offerHandoff = !isEditing && !isTemplate && isActiveProjectMilestone && !!firstModelId;
+      if (offerHandoff) {
+        toast.success("Job created", {
+          action: {
+            label: `Add ${activationState?.firstModelName ?? "it"} to it`,
+            onClick: () => router.push(`/projects/${result.id}?tab=equipment&modelId=${firstModelId}`),
+          },
+        });
+      } else {
+        toast.success(projectSavedToastCopy(isEditing, isTemplate));
+      }
       router.push(`/projects/${result.id}`);
     },
     onError: (e) => {

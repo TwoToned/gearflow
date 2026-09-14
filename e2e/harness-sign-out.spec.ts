@@ -52,9 +52,11 @@ test.describe("harness: sign out", () => {
     if (new URL(page.url()).pathname === "/setup") {
       await page.getByLabel("Company name").fill(`Sign Out Org ${unique}`);
       await page.getByRole("button", { name: "Create company" }).click();
-      // Step 1's success lands on step 2 ("where you operate", C2 #1099)
-      // then step 3 ("your brand", C3 #1101), both still at /setup — skip
-      // both, only the name is required (D3).
+      // Step 1's success lands on step 2 ("where you operate", C2 #1099),
+      // step 3 ("your brand", C3 #1101), then step 4 ("how you work", C4
+      // #1102), all still at /setup — skip all three, only the name is
+      // required (D3).
+      await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
       await page.getByRole("button", { name: "Skip for now" }).click();
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });

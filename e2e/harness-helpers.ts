@@ -90,12 +90,13 @@ export async function createProject(page: Page, projectName: string, code: strin
   await page.goto("/projects/new");
   await page.getByPlaceholder("e.g. Summer Festival 2026").fill(projectName);
   // Project code normally auto-fills asynchronously (peekNextProjectNumber) —
-  // type one directly rather than wait on it (see harness-revenue-path.spec.ts's
-  // identical comment on this exact field).
-  const projectCodeInput = page.locator(
-    "xpath=//input[@placeholder='e.g. Summer Festival 2026']/parent::div/following-sibling::div[1]//input",
-  );
-  await projectCodeInput.fill(code);
+  // type one directly rather than wait on it. Neither getByLabel (the
+  // <Label> in project-wizard.tsx's Field helper has no htmlFor/id — plain
+  // sibling markup, no programmatic association) nor getByPlaceholder (the
+  // placeholder mutates from "e.g. PROJ-2026-0001" to "Auto: <n>" once the
+  // async query resolves) works here — target the react-hook-form field
+  // name directly instead, which is what the form itself is keyed on.
+  await page.locator('input[name="projectNumber"]').fill(code);
   // .focus()+Enter, not .click() — sidesteps a Playwright locator-retry race
   // against the wizard's step-transition unmount (see harness-revenue-path's
   // identical comment; the underlying action always succeeds either way).

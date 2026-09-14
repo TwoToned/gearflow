@@ -158,10 +158,16 @@ test.describe("harness: primary revenue path", () => {
       // hang rather than a validation failure. Under CI load that fetch can be
       // slow enough to matter, so type a code directly instead of waiting on
       // it — a real user hitting the same lag would do exactly this.
-      const projectCodeInput = page.locator(
-        "xpath=//input[@placeholder='e.g. Summer Festival 2026']/parent::div/following-sibling::div[1]//input",
-      );
-      await projectCodeInput.fill(`E2E-${unique}`);
+      //
+      // Target the react-hook-form field name, not a structural xpath off the
+      // Name field's placeholder: D2 (#1106, same day as this fix) wrapped
+      // the Name field in a new data-tour-anchor div for coaching-tip
+      // targeting, which silently broke the old parent/following-sibling
+      // xpath (it no longer has a sibling div to land on). Neither
+      // getByLabel (the Field helper's <Label> has no htmlFor/id) nor
+      // getByPlaceholder (this field's placeholder mutates once the async
+      // query resolves) works here either.
+      await page.locator('input[name="projectNumber"]').fill(`E2E-${unique}`);
 
       // Basics -> Schedule -> Site -> Review: every other field is optional, so
       // three plain "Continue" activations get through from here.

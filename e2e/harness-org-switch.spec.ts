@@ -95,8 +95,14 @@ test.describe("harness: org switcher (cross-tenant isolation)", () => {
 
     await test.step("switched into org 2 (post-accept active org) -> models list shows ONLY org 2's model", async () => {
       await page.goto("/assets/models");
-      await expect(page.getByText(model2)).toBeVisible({ timeout: 20000 });
-      await expect(page.getByText(model1)).toHaveCount(0);
+      // .and(':visible') — the model-table row renders twice (a desktop and
+      // a mobile layout, toggled by CSS breakpoint, not conditional mount),
+      // so a bare text/role locator on desktop chromium still resolves 2
+      // elements (one CSS-hidden). Narrow to the one actually visible.
+      await expect(page.getByText(model2, { exact: true }).and(page.locator(":visible"))).toBeVisible({
+        timeout: 20000,
+      });
+      await expect(page.getByText(model1, { exact: true }).and(page.locator(":visible"))).toHaveCount(0);
     });
 
     await test.step("switch back to org 1 via the Account menu -> models list shows ONLY org 1's model", async () => {
@@ -105,8 +111,10 @@ test.describe("harness: org switcher (cross-tenant isolation)", () => {
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
 
       await page.goto("/assets/models");
-      await expect(page.getByText(model1)).toBeVisible({ timeout: 20000 });
-      await expect(page.getByText(model2)).toHaveCount(0);
+      await expect(page.getByText(model1, { exact: true }).and(page.locator(":visible"))).toBeVisible({
+        timeout: 20000,
+      });
+      await expect(page.getByText(model2, { exact: true }).and(page.locator(":visible"))).toHaveCount(0);
     });
   });
 });

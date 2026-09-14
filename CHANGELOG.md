@@ -66,6 +66,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new. A "Hide tips" link turns it off (just the coaching, not the "Get
   started" card).
 
+- **#1107** — Finishing one of the "get started" steps now offers the next
+  one right in the confirmation toast — add a model and it offers to add an
+  asset to it; add that asset and it offers to create your first job; create
+  the job and it offers to add that gear to it, straight into the equipment
+  tab with the model already picked. Purely offered, never forced — your
+  normal navigation after saving is unchanged, and it only ever shows up for
+  the one save that's actually completing that step.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by hand without ever touching the card and it's already ticked when you
   come back. Dismissible; disappears for good once dismissed or finished.
 
+- **#1106** — The "add a model" / "add an asset" / "create a job" / "add gear
+  to a job" screens now carry a short coaching tip in their existing sidebar
+  while you're on that exact step of getting started — gone the moment
+  you're past it, and back to the screen's normal hint for anyone who isn't
+  new. A "Hide tips" link turns it off (just the coaching, not the "Get
+  started" card).
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

@@ -42,6 +42,7 @@ import { cn, focusRing } from "@/lib/utils";
 import { formatDateLong, formatDateDayMonth } from "@/lib/formatters";
 import { MyWorkSection } from "@/components/dashboard/my-work-section";
 import { FinishSetupChecklist } from "@/components/dashboard/finish-setup-checklist";
+import { ActivationChecklist } from "@/components/dashboard/activation-checklist";
 import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { formatDistanceToNow } from "date-fns";
 import type { LucideIcon } from "lucide-react";
@@ -141,11 +142,15 @@ export default function DashboardPage() {
       </FadeIn>
 
       {/* Dashboard-side half of Phase C's "skip everything" safety net (C6,
-          #1104) — beside, not merged with, the activation checklist (#1105)
-          that will eventually sit near here too. Renders nothing once
-          dismissed or complete, so it costs nothing once an org is set up. */}
+          #1104) — beside, not merged with, the activation checklist (D1,
+          #1105) right after it: setup is "configure the company", activation
+          is "do the work". Both render nothing once dismissed or complete,
+          so together they cost nothing once an org is set up and active. */}
       <FadeIn delay={nextSectionDelay()}>
         <FinishSetupChecklist orgId={orgId} />
+      </FadeIn>
+      <FadeIn delay={nextSectionDelay()}>
+        <ActivationChecklist orgId={orgId} />
       </FadeIn>
 
       {/* ══ Zone 1: My work ══

@@ -14703,6 +14703,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "icalIncludeTentative",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "icalToken",
         "optional": true,
         "type": "string"
@@ -14779,7 +14784,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "33da8256a845fa35",
+    "argsSha": "b5915775265a5c3d",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -14880,6 +14885,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "boolean"
       },
       {
+        "name": "icalIncludeTentative",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "icalToken",
         "optional": true,
         "type": "string"
@@ -14956,7 +14966,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "33da8256a845fa35",
+    "argsSha": "b5915775265a5c3d",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -15269,7 +15279,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1afbf7c5ea61b8ac",
+    "argsSha": "d1da12c6f5b6c2ef",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,

@@ -102,14 +102,18 @@ closed), clears `archivedAt`/`dormancyStage`/`dormancyNoticedAt`/the token itsel
 (single-use), and — matching `adminUnarchiveOrganization`'s own choice — does NOT restore the
 pre-archive slug, since another org may have claimed it in the meantime.
 
-## Preventing the refill — verified email required to create an org
+## Preventing the refill — considered and dropped
 
-Emailing and archiving a dormant org is half the fix; the other half is making the throwaway-org
-path itself harder. `allowUserToCreateOrganization` (`src/lib/auth.ts`) now requires
-`user.emailVerified` before permitting org creation, checked AFTER the one-time bootstrap branch
-(`isOrgCreationBootstrap()`) — the platform's very first user can't be locked out before they've
-verified anything — and independently of the existing `allowOrgCreation` site-admin toggle /
-signup-code gate (#1095), which still apply on top.
+An earlier version of this change also gated `allowUserToCreateOrganization` on
+`user.emailVerified`, to make the throwaway-org path itself harder. Reverted before merge: this
+app never requires email verification anywhere else — `emailAndPassword`/`emailVerification` in
+`src/lib/auth.ts` auto-signs a user in immediately on registration (`sendOnSignUp: true`, no
+`requireEmailVerification`), so `user.emailVerified` is false for every normal signup until they
+separately click the verification link, which most users never do. Gating org creation on it would
+have silently blocked the large majority of real second-org creations, not just throwaway ones —
+caught by `e2e/harness-org-switch.spec.ts` (a second user creating a second org) timing out in CI.
+The existing `allowOrgCreation` site-admin toggle and signup-code gate (#1095) are the mechanisms
+this repo actually uses to control org creation; B4 doesn't add a new one.
 
 ## Email copy
 

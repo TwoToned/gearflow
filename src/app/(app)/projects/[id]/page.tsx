@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
@@ -168,6 +168,25 @@ export default function ProjectDetailPage({
   // needs a setter the uncontrolled form doesn't give.
   const VALID_TABS = ["overview", "equipment", "labour", "finance", "tasks", "notes", "files"] as const;
   const requestedTab = searchParams.get("tab");
+  // D3 (#1107) — the "Add <model> to it" chained hand-off deep-links here as
+  // `?tab=equipment&modelId=<id>`; EquipmentTab auto-opens its add dialog
+  // with that model pre-selected the one time this is set. Captured ONCE via
+  // the lazy useState initializer (not read from `searchParams` on every
+  // render) and the URL is scrubbed of `modelId` right after, in the effect
+  // below — otherwise switching tabs away and back remounts EquipmentTab
+  // (Radix `TabsContent` unmounts inactive panels), resetting its own
+  // one-shot ref guard while the URL param is still there, popping the
+  // dialog open again on every return visit for the rest of the session.
+  const [autoOpenAddModelId] = useState(() => searchParams.get("modelId") ?? undefined);
+  useEffect(() => {
+    if (!autoOpenAddModelId) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("modelId");
+    router.replace(`/projects/${id}?${params.toString()}`);
+    // Runs once on mount only — re-running on searchParams changing would
+    // fight the very replace() this effect just did.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Overview is always the landing tab (#1061) — the project's home. A `?tab=`
   // deep link still wins, so the org Finance section's rows land where they meant to.
   const initialTab = (VALID_TABS as readonly string[]).includes(requestedTab ?? "") ? requestedTab! : "overview";
@@ -673,7 +692,13 @@ export default function ProjectDetailPage({
                 {/* Equipment Tab — new category/group hierarchy */}
                 <TabsContent value="equipment">
                   <div className="pt-4">
-                    <EquipmentTabSlot projectId={id} rentalStartDate={rentalStart} rentalEndDate={rentalEnd} addMenuSlot={equipmentAddSlot} />
+                    <EquipmentTabSlot
+                      projectId={id}
+                      rentalStartDate={rentalStart}
+                      rentalEndDate={rentalEnd}
+                      addMenuSlot={equipmentAddSlot}
+                      autoOpenAddModelId={autoOpenAddModelId}
+                    />
                   </div>
                 </TabsContent>
 

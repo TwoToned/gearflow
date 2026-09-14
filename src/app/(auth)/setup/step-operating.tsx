@@ -24,6 +24,7 @@ import { orgOperatingDetailsSchema } from "@/lib/validations/org-settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { cn } from "@/lib/utils";
 import { TOTAL_STEPS } from "./wizard-steps";
+import { capture, AnalyticsEvent, type SetupStepId } from "@/lib/analytics";
 
 interface OrgRecord {
   name?: string;
@@ -164,11 +165,24 @@ async function saveOperatingDetails(
  * whatever's already in the blob (notably `currency`, seeded by C1's
  * `seedOrgDefaults`) so this save can never wipe out an unrelated field.
  */
-export function StepOperating({ orgId, onDone }: { orgId: string; onDone: () => void }) {
+export function StepOperating({
+  orgId,
+  onDone,
+  onStepOutcome,
+}: {
+  orgId: string;
+  onDone: () => void;
+  /** D4 (#1108) — purely additive analytics tally; doesn't affect `onDone`. */
+  onStepOutcome: (outcome: "completed" | "skipped") => void;
+}) {
   const { data: org, isLoading } = useOrganization(orgId) as {
     data: OrgRecord | undefined;
     isLoading: boolean;
   };
+
+  useEffect(() => {
+    capture(AnalyticsEvent.SetupStepViewed, { step: "operating" satisfies SetupStepId });
+  }, []);
 
   const [country, setCountry] = useState("");
   const [currency, setCurrency] = useState("");
@@ -240,6 +254,8 @@ export function StepOperating({ orgId, onDone }: { orgId: string; onDone: () => 
         return;
       }
       toast.success("Saved.");
+      capture(AnalyticsEvent.SetupStepCompleted, { step: "operating" satisfies SetupStepId });
+      onStepOutcome("completed");
       onDone();
     } catch (e) {
       toast.error(saveErrorMessage(e));
@@ -309,7 +325,15 @@ export function StepOperating({ orgId, onDone }: { orgId: string; onDone: () => 
           </div>
 
           <div className="flex items-center justify-between gap-3 pt-2">
-            <button type="button" onClick={onDone} className="text-sm text-muted hover:text-ink">
+            <button
+              type="button"
+              onClick={() => {
+                capture(AnalyticsEvent.SetupStepSkipped, { step: "operating" satisfies SetupStepId });
+                onStepOutcome("skipped");
+                onDone();
+              }}
+              className="text-sm text-muted hover:text-ink"
+            >
               Skip for now
             </button>
             <Button onClick={handleSave} disabled={saving || !country}>

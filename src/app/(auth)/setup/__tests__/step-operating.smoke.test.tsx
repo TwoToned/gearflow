@@ -91,7 +91,7 @@ beforeEach(() => {
 describe("StepOperating (smoke)", () => {
   it("auto-fills currency/timezone/tax label/tax rate when a country is picked", async () => {
     const user = userEvent.setup();
-    render(<StepOperating orgId="org1" onDone={vi.fn()} />);
+    render(<StepOperating orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.selectOptions(await screen.findByLabelText("Country"), "AU");
 
@@ -104,7 +104,7 @@ describe("StepOperating (smoke)", () => {
 
   it("leaves tax rate blank for the US — no invented default (#1088)", async () => {
     const user = userEvent.setup();
-    render(<StepOperating orgId="org1" onDone={vi.fn()} />);
+    render(<StepOperating orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.selectOptions(await screen.findByLabelText("Country"), "US");
 
@@ -118,7 +118,7 @@ describe("StepOperating (smoke)", () => {
   it("'Skip for now' calls onDone without writing anything", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepOperating orgId="org1" onDone={onDone} />);
+    render(<StepOperating orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /skip for now/i }));
 
@@ -129,7 +129,7 @@ describe("StepOperating (smoke)", () => {
   it("'Save and continue' writes through updateOrganization, merged with existing settings, then calls onDone", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepOperating orgId="org1" onDone={onDone} />);
+    render(<StepOperating orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.selectOptions(await screen.findByLabelText("Country"), "AU");
     await user.type(screen.getByLabelText("ABN"), "61 224 983 011");
@@ -154,7 +154,7 @@ describe("StepOperating (smoke)", () => {
   });
 
   it("disables 'Save and continue' until a country is chosen", async () => {
-    render(<StepOperating orgId="org1" onDone={vi.fn()} />);
+    render(<StepOperating orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
     const button = (await screen.findByRole("button", {
       name: /save and continue/i,
     })) as HTMLButtonElement;
@@ -167,7 +167,7 @@ describe("StepOperating (smoke)", () => {
       settings: { currency: "AUD", country: "AU" },
       defaultTaxRate: 10,
     };
-    render(<StepOperating orgId="org1" onDone={vi.fn()} />);
+    render(<StepOperating orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
     const select = (await screen.findByLabelText("Country")) as HTMLSelectElement;
     expect(select.disabled).toBe(true);
     expect(select.value).toBe("AU");
@@ -181,7 +181,7 @@ describe("StepOperating (smoke)", () => {
     mocks.updateOrganization.mockResolvedValue({ settings: { country: "AU" } });
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepOperating orgId="org1" onDone={onDone} />);
+    render(<StepOperating orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.selectOptions(await screen.findByLabelText("Country"), "US");
     await user.click(screen.getByRole("button", { name: /save and continue/i }));

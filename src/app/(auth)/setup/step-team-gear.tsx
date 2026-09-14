@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive — form state, Convex/Prisma-backed hooks (R-8.1.1)
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Loader2, UserPlus, Check, Upload, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AuthShell } from "../auth-playful";
@@ -23,6 +23,7 @@ import { refreshOrgMembers } from "@/hooks/use-org-members";
 import { refreshPendingInvitations } from "@/hooks/use-pending-invitations";
 import { ASSIGNABLE_ROLE_OPTIONS, type RoleOption } from "@/lib/role-descriptions";
 import { TOTAL_STEPS } from "./wizard-steps";
+import { capture, AnalyticsEvent, type SetupStepId } from "@/lib/analytics";
 
 interface InviteResult {
   email: string;
@@ -74,8 +75,25 @@ function roleLabel(value: string): string {
  * just seeding, per #1068's own phase table ("Your gear ... hands off to
  * Phase D").
  */
-export function StepTeamGear({ orgId, onDone }: { orgId: string; onDone: () => void }) {
+export function StepTeamGear({
+  orgId,
+  onDone,
+  onStepOutcome,
+}: {
+  orgId: string;
+  onDone: () => void;
+  /** D4 (#1108) — purely additive analytics tally; doesn't affect `onDone`.
+   *  "Skip for now" reports "skipped" and "Finish setup" reports "completed"
+   *  regardless of whether any invite/model was actually added on this
+   *  screen — it reflects which button the operator chose, same as every
+   *  earlier step's Skip/Save distinction. */
+  onStepOutcome: (outcome: "completed" | "skipped") => void;
+}) {
   const modelWrites = useModelWrites();
+
+  useEffect(() => {
+    capture(AnalyticsEvent.SetupStepViewed, { step: "team_gear" satisfies SetupStepId });
+  }, []);
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<RoleOption["value"]>("member");
@@ -152,10 +170,26 @@ export function StepTeamGear({ orgId, onDone }: { orgId: string; onDone: () => v
         />
 
         <div className="flex items-center justify-between gap-3 pt-2">
-          <button type="button" onClick={onDone} className="text-sm text-muted hover:text-ink">
+          <button
+            type="button"
+            onClick={() => {
+              capture(AnalyticsEvent.SetupStepSkipped, { step: "team_gear" satisfies SetupStepId });
+              onStepOutcome("skipped");
+              onDone();
+            }}
+            className="text-sm text-muted hover:text-ink"
+          >
             Skip for now
           </button>
-          <Button onClick={onDone}>Finish setup</Button>
+          <Button
+            onClick={() => {
+              capture(AnalyticsEvent.SetupStepCompleted, { step: "team_gear" satisfies SetupStepId });
+              onStepOutcome("completed");
+              onDone();
+            }}
+          >
+            Finish setup
+          </Button>
         </div>
       </div>
 

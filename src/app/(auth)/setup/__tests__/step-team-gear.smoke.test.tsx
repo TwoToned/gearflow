@@ -73,7 +73,7 @@ describe("StepTeamGear (smoke)", () => {
   it("'Skip for now' calls onDone without writing anything", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepTeamGear orgId="org1" onDone={onDone} />);
+    render(<StepTeamGear orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /skip for now/i }));
 
@@ -85,7 +85,7 @@ describe("StepTeamGear (smoke)", () => {
   it("'Finish setup' calls onDone without requiring any invites or gear", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepTeamGear orgId="org1" onDone={onDone} />);
+    render(<StepTeamGear orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /finish setup/i }));
 
@@ -95,7 +95,7 @@ describe("StepTeamGear (smoke)", () => {
   it("sends an invite immediately on 'Send invite' (no batching), shows it in the list, and does NOT call onDone", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepTeamGear orgId="org1" onDone={onDone} />);
+    render(<StepTeamGear orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.type(await screen.findByLabelText("Email address"), "colleague@example.com");
     await user.click(screen.getByRole("button", { name: /send invite/i }));
@@ -116,7 +116,7 @@ describe("StepTeamGear (smoke)", () => {
         }),
     );
     const user = userEvent.setup();
-    render(<StepTeamGear orgId="org1" onDone={vi.fn()} />);
+    render(<StepTeamGear orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     const input = await screen.findByLabelText("Email address");
     await user.type(input, "colleague@example.com");
@@ -132,7 +132,7 @@ describe("StepTeamGear (smoke)", () => {
   it("shows a per-row error when an invite fails, without blocking further use of the screen", async () => {
     mocks.addMemberByEmail.mockRejectedValueOnce(new Error("Already a member"));
     const user = userEvent.setup();
-    render(<StepTeamGear orgId="org1" onDone={vi.fn()} />);
+    render(<StepTeamGear orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.type(await screen.findByLabelText("Email address"), "existing@example.com");
     await user.click(screen.getByRole("button", { name: /send invite/i }));
@@ -141,13 +141,13 @@ describe("StepTeamGear (smoke)", () => {
   });
 
   it("includes 'Warehouse' as an assignable role (the invite-role list drift this screen's shared module fixes)", async () => {
-    render(<StepTeamGear orgId="org1" onDone={vi.fn()} />);
+    render(<StepTeamGear orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
     expect(await screen.findByRole("option", { name: "Warehouse" })).toBeTruthy();
   });
 
   it("creates a model immediately on 'Add' and shows it in the list", async () => {
     const user = userEvent.setup();
-    render(<StepTeamGear orgId="org1" onDone={vi.fn()} />);
+    render(<StepTeamGear orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.type(await screen.findByLabelText("Model name"), "Shure SM58");
     await user.click(screen.getByRole("button", { name: /^add$/i }));
@@ -158,7 +158,7 @@ describe("StepTeamGear (smoke)", () => {
 
   it("opens the CSV import dialog (models, not assets — a brand-new org has no models to attach assets to)", async () => {
     const user = userEvent.setup();
-    render(<StepTeamGear orgId="org1" onDone={vi.fn()} />);
+    render(<StepTeamGear orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /import a spreadsheet/i }));
 

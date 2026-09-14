@@ -19,6 +19,7 @@ import {
   DEFAULT_DOCUMENT_COLOR as DEFAULT_DOCUMENT,
 } from "@/lib/branding-defaults";
 import { TOTAL_STEPS } from "./wizard-steps";
+import { capture, AnalyticsEvent, type SetupStepId } from "@/lib/analytics";
 
 interface OrgRecord {
   name?: string;
@@ -177,11 +178,24 @@ async function uploadBrandingImage(
  * (`PageHeaderConfig` in `src/lib/pdfme/types.ts`) as plain HTML — honest to
  * what actually prints, not aspirational.
  */
-export function StepBranding({ orgId, onDone }: { orgId: string; onDone: () => void }) {
+export function StepBranding({
+  orgId,
+  onDone,
+  onStepOutcome,
+}: {
+  orgId: string;
+  onDone: () => void;
+  /** D4 (#1108) — purely additive analytics tally; doesn't affect `onDone`. */
+  onStepOutcome: (outcome: "completed" | "skipped") => void;
+}) {
   const { data: org, isLoading } = useOrganization(orgId) as {
     data: OrgRecord | undefined;
     isLoading: boolean;
   };
+
+  useEffect(() => {
+    capture(AnalyticsEvent.SetupStepViewed, { step: "branding" satisfies SetupStepId });
+  }, []);
 
   const [logoUrl, setLogoUrl] = useState("");
   const [iconUrl, setIconUrl] = useState("");
@@ -221,6 +235,8 @@ export function StepBranding({ orgId, onDone }: { orgId: string; onDone: () => v
         documentLogoMode,
       });
       toast.success("Saved.");
+      capture(AnalyticsEvent.SetupStepCompleted, { step: "branding" satisfies SetupStepId });
+      onStepOutcome("completed");
       onDone();
     } catch (e) {
       toast.error(saveErrorMessage(e));
@@ -288,7 +304,15 @@ export function StepBranding({ orgId, onDone }: { orgId: string; onDone: () => v
           />
 
           <div className="flex items-center justify-between gap-3 pt-2">
-            <button type="button" onClick={onDone} className="text-sm text-muted hover:text-ink">
+            <button
+              type="button"
+              onClick={() => {
+                capture(AnalyticsEvent.SetupStepSkipped, { step: "branding" satisfies SetupStepId });
+                onStepOutcome("skipped");
+                onDone();
+              }}
+              className="text-sm text-muted hover:text-ink"
+            >
               Skip for now
             </button>
             <Button onClick={handleSave} disabled={saving}>

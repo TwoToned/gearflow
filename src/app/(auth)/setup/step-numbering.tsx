@@ -32,6 +32,7 @@ import { DEFAULT_PAYMENT_TERMS_DAYS, PAYMENT_TERMS_BOUNDS } from "@/lib/invoice-
 import type { OrgSettings, OrgDocumentSettings } from "@/lib/org-settings-types";
 import { logger } from "@/lib/logger";
 import { TOTAL_STEPS } from "./wizard-steps";
+import { capture, AnalyticsEvent, type SetupStepId } from "@/lib/analytics";
 
 interface OrgRecord {
   name?: string;
@@ -367,13 +368,26 @@ function computeDisabled(opts: {
  * every earlier step already relies on, since `organization.setActive()` in
  * step 1 keeps the two in lockstep for the lifetime of this wizard.
  */
-export function StepNumbering({ orgId, onDone }: { orgId: string; onDone: () => void }) {
+export function StepNumbering({
+  orgId,
+  onDone,
+  onStepOutcome,
+}: {
+  orgId: string;
+  onDone: () => void;
+  /** D4 (#1108) — purely additive analytics tally; doesn't affect `onDone`. */
+  onStepOutcome: (outcome: "completed" | "skipped") => void;
+}) {
   const { data: org, isLoading } = useOrganization(orgId) as {
     data: OrgRecord | undefined;
     isLoading: boolean;
   };
   const locations = useLocations(orgId);
   const locWrites = useLocationWrites();
+
+  useEffect(() => {
+    capture(AnalyticsEvent.SetupStepViewed, { step: "numbering" satisfies SetupStepId });
+  }, []);
 
   const [fields, setFields] = useState<NumberingFields>(EMPTY_FIELDS);
   const [locationName, setLocationName] = useState("");
@@ -401,6 +415,8 @@ export function StepNumbering({ orgId, onDone }: { orgId: string; onDone: () => 
       await saveNumbering(orgId, org, fields);
       await ensureLocationOnSave(locWrites, locationName, hasExistingLocations);
       toast.success("Saved.");
+      capture(AnalyticsEvent.SetupStepCompleted, { step: "numbering" satisfies SetupStepId });
+      onStepOutcome("completed");
       onDone();
     } catch (e) {
       toast.error(saveErrorMessage(e));
@@ -418,6 +434,8 @@ export function StepNumbering({ orgId, onDone }: { orgId: string; onDone: () => 
     } finally {
       setSkipping(false);
     }
+    capture(AnalyticsEvent.SetupStepSkipped, { step: "numbering" satisfies SetupStepId });
+    onStepOutcome("skipped");
     onDone();
   }
 

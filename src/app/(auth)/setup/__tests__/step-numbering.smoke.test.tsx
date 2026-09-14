@@ -79,7 +79,7 @@ describe("StepNumbering (smoke)", () => {
   it("'Skip for now' creates a default 'Main warehouse' location when the org has none, without writing settings", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepNumbering orgId="org1" onDone={onDone} />);
+    render(<StepNumbering orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /skip for now/i }));
 
@@ -94,7 +94,7 @@ describe("StepNumbering (smoke)", () => {
     mocks.locations = [{ id: "existing" }];
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepNumbering orgId="org1" onDone={onDone} />);
+    render(<StepNumbering orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /skip for now/i }));
 
@@ -106,7 +106,7 @@ describe("StepNumbering (smoke)", () => {
     mocks.createLocation.mockRejectedValueOnce(new Error("Convex hiccup"));
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepNumbering orgId="org1" onDone={onDone} />);
+    render(<StepNumbering orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /skip for now/i }));
 
@@ -115,7 +115,7 @@ describe("StepNumbering (smoke)", () => {
 
   it("disables both buttons while the org's location list is still loading", async () => {
     mocks.locations = undefined;
-    render(<StepNumbering orgId="org1" onDone={vi.fn()} />);
+    render(<StepNumbering orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     const skip = (await screen.findByRole("button", { name: /skip for now/i })) as HTMLButtonElement;
     const save = screen.getByRole("button", { name: /save and continue/i }) as HTMLButtonElement;
@@ -126,7 +126,7 @@ describe("StepNumbering (smoke)", () => {
   it("'Save and continue' writes numbering/asset-tag fields through updateOrganization merged with existing settings, creates the typed location, then calls onDone", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepNumbering orgId="org1" onDone={onDone} />);
+    render(<StepNumbering orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
 
     await user.type(await screen.findByLabelText("Project number format"), "%YY%MM%INC");
     await user.type(screen.getByLabelText("Prefix"), "GF-");
@@ -153,7 +153,7 @@ describe("StepNumbering (smoke)", () => {
 
   it("'Save and continue' with an out-of-range payment-terms value is disabled", async () => {
     const user = userEvent.setup();
-    render(<StepNumbering orgId="org1" onDone={vi.fn()} />);
+    render(<StepNumbering orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     const input = await screen.findByLabelText("Payment terms (days)");
     await user.clear(input);
@@ -164,7 +164,7 @@ describe("StepNumbering (smoke)", () => {
 
   it("saves undefined documents when nothing was changed from defaults", async () => {
     const user = userEvent.setup();
-    render(<StepNumbering orgId="org1" onDone={vi.fn()} />);
+    render(<StepNumbering orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /save and continue/i }));
 
@@ -189,7 +189,7 @@ describe("StepNumbering (smoke)", () => {
       settings: { currency: "AUD", country: "AU", branding: { documentColor: "#ff0000" } },
     });
     const user = userEvent.setup();
-    render(<StepNumbering orgId="org1" onDone={vi.fn()} />);
+    render(<StepNumbering orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: /save and continue/i }));
 
@@ -212,7 +212,7 @@ describe("StepNumbering (smoke)", () => {
       },
     };
     const user = userEvent.setup();
-    render(<StepNumbering orgId="org1" onDone={vi.fn()} />);
+    render(<StepNumbering orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     // Touch a field this screen DOES expose, so buildDocumentsPatch has
     // something to write (an all-default save persists `documents: undefined`
@@ -237,7 +237,7 @@ describe("StepNumbering (smoke)", () => {
 
   it("rejects a fractional quote-validity value (server schema requires an integer)", async () => {
     const user = userEvent.setup();
-    render(<StepNumbering orgId="org1" onDone={vi.fn()} />);
+    render(<StepNumbering orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);
 
     const input = await screen.findByLabelText("Quote validity (days)");
     await user.clear(input);

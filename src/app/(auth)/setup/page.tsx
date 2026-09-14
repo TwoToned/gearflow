@@ -16,6 +16,7 @@ import { StepBranding } from "./step-branding";
 import { StepNumbering } from "./step-numbering";
 import { StepTeamGear } from "./step-team-gear";
 import { TOTAL_STEPS } from "./wizard-steps";
+import { capture, AnalyticsEvent, type SetupStepId } from "@/lib/analytics";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { Loader2, Check, X } from "lucide-react";
@@ -32,23 +33,41 @@ function slugify(text: string): string {
 type SlugCheckStatus = "checking" | "available" | "taken";
 type SlugStatus = "idle" | SlugCheckStatus;
 
+/** D4 (#1108) — the wizard-wide step-outcome tally `setup_completed` reports
+ *  once the final step finishes. A plain mutable object (not React state):
+ *  nothing here needs to trigger a re-render, it's read exactly once, at the
+ *  very end. */
+export interface SetupStepTally {
+  completed: number;
+  skipped: number;
+}
+
 /** Steps 2+ each need a real org to write against — split out of
  *  `SetupPage`'s own body purely to keep that component's cyclomatic
  *  complexity under the R-3.6/complexity-ratchet ceiling (each `if` adds a
  *  decision point, and a 4th step pushed the inline version over it). Null
  *  when still on step 1 (the name form renders instead) or `createdOrgId`
- *  isn't set yet. */
+ *  isn't set yet. `onStepOutcome`/`onFinalStepOutcome` are D4's per-step
+ *  tally callbacks, threaded into each later step alongside its existing
+ *  `onDone` — purely additive, doesn't change `onDone`'s own behavior. Both
+ *  are plain functions (not the ref they close over) so this render
+ *  function never touches ref state itself (react-hooks/refs) — only
+ *  `SetupPage`'s own event-handler-time closures do. */
 function renderLaterStep(
   step: number,
   createdOrgId: string | null,
   setStep: (n: number) => void,
   router: ReturnType<typeof useRouter>,
+  onStepOutcome: (outcome: "completed" | "skipped") => void,
+  onFinalStepOutcome: (outcome: "completed" | "skipped") => void,
 ): ReactNode {
   if (!createdOrgId) return null;
-  if (step === 2) return <StepOperating orgId={createdOrgId} onDone={() => setStep(3)} />;
-  if (step === 3) return <StepBranding orgId={createdOrgId} onDone={() => setStep(4)} />;
-  if (step === 4) return <StepNumbering orgId={createdOrgId} onDone={() => setStep(5)} />;
-  if (step === 5) return <StepTeamGear orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
+  if (step === 2) return <StepOperating orgId={createdOrgId} onDone={() => setStep(3)} onStepOutcome={onStepOutcome} />;
+  if (step === 3) return <StepBranding orgId={createdOrgId} onDone={() => setStep(4)} onStepOutcome={onStepOutcome} />;
+  if (step === 4) return <StepNumbering orgId={createdOrgId} onDone={() => setStep(5)} onStepOutcome={onStepOutcome} />;
+  if (step === 5) {
+    return <StepTeamGear orgId={createdOrgId} onDone={() => router.push("/dashboard")} onStepOutcome={onFinalStepOutcome} />;
+  }
   return null;
 }
 
@@ -78,6 +97,13 @@ export default function SetupPage() {
   const [codeRequired, setCodeRequired] = useState(false);
   const [slugCheckStatus, setSlugCheckStatus] = useState<SlugCheckStatus>("checking");
   const slugCheckId = useRef(0);
+  // D4 (#1108) — step 1 is never skippable, so it always counts toward
+  // "completed" the moment the org is created (below).
+  const stepTally = useRef<SetupStepTally>({ completed: 0, skipped: 0 });
+
+  useEffect(() => {
+    capture(AnalyticsEvent.SetupStepViewed, { step: "company" satisfies SetupStepId });
+  }, []);
 
   // Redirect away if the user already belongs to an org. Guard on a cancelled
   // flag: if the user navigates away before this async check resolves, the
@@ -186,6 +212,8 @@ export default function SetupPage() {
           });
         }
         toast.success("Company created!");
+        stepTally.current.completed++;
+        capture(AnalyticsEvent.SetupStepCompleted, { step: "company" satisfies SetupStepId });
         setCreatedOrgId(result.data!.id);
         setStep(2);
       }
@@ -196,7 +224,30 @@ export default function SetupPage() {
     }
   };
 
-  const laterStep = renderLaterStep(step, createdOrgId, setStep, router);
+  // D4 (#1108) — built here (not inside renderLaterStep) so no ref crosses
+  // into that render-time function call; both close over `stepTally` but
+  // only ever run later, from a Skip/Save/Finish click.
+  const onStepOutcome = (outcome: "completed" | "skipped") => {
+    if (outcome === "completed") stepTally.current.completed++;
+    else stepTally.current.skipped++;
+  };
+  const onFinalStepOutcome = (outcome: "completed" | "skipped") => {
+    onStepOutcome(outcome);
+    // The wizard is done the moment step 5 resolves, whichever button got
+    // it there — report the full-session tally now, including step 5's own
+    // just-recorded outcome.
+    capture(AnalyticsEvent.SetupCompleted, {
+      steps_completed: stepTally.current.completed,
+      steps_skipped: stepTally.current.skipped,
+    });
+  };
+  // react-hooks/refs flags these two callbacks for CLOSING OVER stepTally,
+  // even though renderLaterStep only ever hands them to a child as an
+  // onDone/onStepOutcome prop — invoked later, from that child's own Skip/
+  // Save click, never synchronously here during render. Same accepted
+  // pattern as src/lib/auth-client.ts's useActiveOrganization.
+  // eslint-disable-next-line react-hooks/refs
+  const laterStep = renderLaterStep(step, createdOrgId, setStep, router, onStepOutcome, onFinalStepOutcome);
   if (laterStep) return laterStep;
 
   return (

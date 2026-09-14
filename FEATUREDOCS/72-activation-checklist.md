@@ -202,3 +202,47 @@ large, heavily-hook-dependent component, and standing one up from scratch was ju
 disproportionate to this change); typecheck, lint, the full suite, and the existing
 `project-wizard` smoke tests (updated to mock the new milestone read) cover the regression
 surface instead.
+
+## D4 — onboarding funnel analytics, PII-safe (#1108)
+
+Instruments the whole path from `/welcome`'s three-way fork through `/setup`'s five steps to each
+of the four D1 activation milestones, so drop-off is visible as a PostHog funnel instead of a
+guess. R-8.12.4 governs every property: enum-ish strings and counts only — never an org name,
+email, address, or free-text field, and (unlike the rest of the app's PostHog convention) not
+even a cuid, since a step/milestone/choice name plus a count is already the least-identifying
+shape this schema supports. `src/lib/analytics.ts` is the single source of truth for both the
+seven new event-name constants and the three value unions each event's properties are drawn from
+(`OnboardingForkChoice`, `SetupStepId`, `ActivationMilestoneId`) — every call site types its
+literal against the relevant union with `satisfies`, so a typo or a renamed step is a compile
+error, not a silently-forked PostHog insight.
+
+1. **Fork chosen** (`onboarding_fork_chosen`, `{ choice }`) — fired at the moment each of
+   `/welcome`'s three paths commits: creating an org, submitting a valid invite code, and
+   requesting to join a domain-matched org.
+2. **Setup steps** (`setup_step_viewed` / `setup_step_completed` / `setup_step_skipped`, `{ step }`)
+   — each of the five `/setup` steps fires `viewed` once on mount and exactly one of
+   `completed`/`skipped` on its way out, via a new `onStepOutcome` callback prop each step calls
+   right before its existing `onDone()`. Step 1 ("company") is never skippable so it only ever
+   fires `completed`. `step-team-gear.tsx`'s two buttons ("Skip for now" / "Finish setup") each
+   report their own outcome independently — this reflects which button the user clicked, not a
+   difference in what gets written, since both buttons finish setup either way.
+3. **Activation milestones** (`activation_milestone`, `{ milestone }`) —
+   `useActivationMilestoneAnalytics` (`src/hooks/use-activation-milestones.ts`) watches the same
+   `useActivationMilestones` state D1's checklist reads, and fires once per milestone the instant
+   it flips from not-done to done during THIS mount. A milestone already done the first time state
+   resolves never fires — that would misreport a historical completion (e.g. an org active for
+   months before this instrumentation shipped) as a fresh one on every page load. Mounted
+   unconditionally inside `ActivationChecklist`, ahead of its early returns, so it observes state
+   even while the card itself is rendering nothing.
+4. **Checklist dismissed** (`activation_checklist_dismissed`, `{ milestones_done }`) — fired from
+   the existing Dismiss button, with a count (0-4) of how many milestones were already done at
+   dismiss time — never which ones, since that would need the same enum-mapping the milestone
+   event already owns and a count is enough to tell "dismissed early" from "dismissed after
+   finishing."
+
+`docs/pii-inventory.md`'s PostHog section documents the even-more-restrictive (no-id) shape of
+this event family. Test coverage: `analytics.test.ts` locks the seven wire names down verbatim (a
+rename here forks whatever PostHog funnel/insight was built against the old name);
+`use-activation-milestone-analytics.test.tsx` covers the no-fire-while-loading,
+no-fire-for-already-done, fires-once-per-transition, and never-re-fires-on-rerender cases with a
+mocked `useAuthedQuery`.

@@ -25,13 +25,21 @@ const mocks = vi.hoisted(() => ({
   state: undefined as typeof EMPTY_STATE | undefined,
   dismissedAt: null as number | null | undefined,
   dismiss: vi.fn(async () => undefined),
+  captured: [] as [string, unknown][],
 }));
 
 vi.mock("@/hooks/use-activation-milestones", () => ({
   useActivationMilestones: () => mocks.state,
+  // D4 (#1108) — analytics side-effect hook; out of scope for this
+  // component's own behavior tests (has its own coverage).
+  useActivationMilestoneAnalytics: () => undefined,
 }));
 vi.mock("@/hooks/use-activation-dismissal", () => ({
   useActivationDismissal: () => ({ dismissedAt: mocks.dismissedAt, dismiss: mocks.dismiss }),
+}));
+vi.mock("@/lib/analytics", () => ({
+  capture: (event: string, props: unknown) => mocks.captured.push([event, props]),
+  AnalyticsEvent: { ActivationChecklistDismissed: "activation_checklist_dismissed" },
 }));
 
 import { ActivationChecklist } from "../activation-checklist";
@@ -40,6 +48,7 @@ beforeEach(() => {
   mocks.state = { ...EMPTY_STATE };
   mocks.dismissedAt = null;
   mocks.dismiss.mockClear();
+  mocks.captured = [];
 });
 
 describe("ActivationChecklist (smoke)", () => {
@@ -125,5 +134,21 @@ describe("ActivationChecklist (smoke)", () => {
     await user.click(await screen.findByRole("button", { name: /dismiss/i }));
 
     expect(mocks.dismiss).toHaveBeenCalled();
+  });
+
+  it("fires activation_checklist_dismissed with the count of milestones already done at dismiss time (D4, #1108)", async () => {
+    mocks.state = {
+      ...EMPTY_STATE,
+      firstModelId: "m1",
+      firstModelName: "MAC Aura XB",
+      hasModel: true,
+      hasAssetOnFirstModel: true,
+    };
+    const user = userEvent.setup();
+    render(<ActivationChecklist orgId="org1" />);
+
+    await user.click(await screen.findByRole("button", { name: /dismiss/i }));
+
+    expect(mocks.captured).toEqual([["activation_checklist_dismissed", { milestones_done: 2 }]]);
   });
 });

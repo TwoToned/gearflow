@@ -73,6 +73,12 @@ vi.mock("@/components/onboarding/coaching-tip", () => ({
     </div>
   ),
 }));
+// D3 (#1107): ProjectWizard itself now reads activation-milestone state
+// directly (for the "Add <model> to it" hand-off toast), which needs the
+// same Convex-auth provider this test doesn't set up.
+vi.mock("@/hooks/use-activation-milestones", () => ({
+  useActivationMilestones: () => undefined,
+}));
 
 import { ProjectWizard } from "../project-wizard";
 

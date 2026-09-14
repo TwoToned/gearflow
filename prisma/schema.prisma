@@ -123,6 +123,19 @@ model Organization {
   // (rewritten) so a new org can claim it while archived.
   archivedAt DateTime?
 
+  // B4 (#1096) — the "never activated" email ladder. The ELIGIBILITY
+  // predicate stays fully derived (site-admin.ts's isNeverActivated) and is
+  // re-checked fresh on every sweep tick; these fields only record an
+  // OUTBOUND SIDE EFFECT ("did we already email them"), which cannot be
+  // derived from anything else — without a marker the daily cron would
+  // re-send the same stage forever. dormancyStage: 1=day1, 2=day3, 3=day7,
+  // 4=day23, 5=day29, 6=day30/archived; null/0 = never contacted. Any
+  // qualifying activity makes the org fail the live predicate on the next
+  // tick, so the ladder has no explicit "cancel" — it just stops advancing.
+  dormancyStage             Int?
+  dormancyNoticedAt         DateTime?
+  dormancyReactivationToken String?   @unique
+
   members     Member[]
   invitations Invitation[]
 

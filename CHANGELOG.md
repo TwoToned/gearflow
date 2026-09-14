@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
+  pending/offered assignments as tentative events, alongside the usual
+  confirmed/accepted ones — off by default, so nothing changes unless you turn
+  it on.
+
 - **#1094** — `/welcome`'s "Join my team" card is now a real join flow instead
   of a placeholder: paste an invite link or code to go straight to it, or —
   once your email is verified — search for a team already using RVLT Flow at

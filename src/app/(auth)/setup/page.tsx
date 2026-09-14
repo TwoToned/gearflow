@@ -11,11 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { WizardRail } from "@/components/ui/wizard-rail";
 import { AuthShell } from "../auth-playful";
+import { StepOperating } from "./step-operating";
+import { TOTAL_STEPS } from "./wizard-steps";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
 import { Loader2, Check, X } from "lucide-react";
 
-const TOTAL_STEPS = 5;
 const SLUG_CHECK_DEBOUNCE_MS = 400;
 
 function slugify(text: string): string {
@@ -29,15 +30,22 @@ type SlugCheckStatus = "checking" | "available" | "taken";
 type SlugStatus = "idle" | SlugCheckStatus;
 
 /**
- * `/setup` — C1 (#1098), the wizard shell + step 0. Reached only from
- * `/welcome`'s "Set up a new company" card (B1, #1092). This step is the
- * ONLY blocking screen (D3): naming the org commits it for real —
- * `organization.create()` → `setActive()` → `mirrorMyMembership()` — so every
- * later screen (steps 1-4, not yet built — Phase C's #1099-#1104) is an
- * ordinary settings write against a live org rather than draft state.
+ * `/setup` — the wizard shell, hosting all 5 steps as client-side state on
+ * one route (not one route per step — `WizardRail`'s generic `step`/`total`
+ * props and this page's own `TOTAL_STEPS` constant are shared across every
+ * step for exactly this reason). Reached only from `/welcome`'s "Set up a
+ * new company" card (B1, #1092).
+ *
+ * Step 0/1 (C1, #1098) is the ONLY blocking screen (D3): naming the org
+ * commits it for real — `organization.create()` → `setActive()` →
+ * `mirrorMyMembership()`. Every later screen (step 2 here, C2/#1099; steps
+ * 3-4 still unbuilt — #1101-#1104) is then an ordinary settings write
+ * against a live org rather than draft state, and can be skipped.
  */
 export default function SetupPage() {
   const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [code, setCode] = useState("");
@@ -153,7 +161,8 @@ export default function SetupPage() {
           });
         }
         toast.success("Company created!");
-        router.push("/dashboard");
+        setCreatedOrgId(result.data!.id);
+        setStep(2);
       }
     } catch {
       toast.error("Something went wrong");
@@ -161,6 +170,10 @@ export default function SetupPage() {
       setLoading(false);
     }
   };
+
+  if (step === 2 && createdOrgId) {
+    return <StepOperating orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
+  }
 
   return (
     <AuthShell accent="setup" annotation="first the name — the rest can wait.">

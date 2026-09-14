@@ -99,3 +99,54 @@ subtitle are the mockup's literal strings (screen 7) — "Get started", "About 5
 wherever you left off.", "Add a piece of gear you own" / "Add a real unit of it" / "Create your
 first job" / "Put that gear on the job" — dry and specific rather than generic ("gear" and "job"
 throughout, never "asset inventory" or "engagement").
+
+## D2 — helper-rail coaching, in-flow not over-flow (#1106)
+
+`/assets/models/new`, `/assets/registry/new`, `/projects/new`, and the project detail page's
+Equipment tab each carry coaching copy for the one milestone they correspond to — but **only**
+while that milestone is the org's current *active* one (`useActiveMilestoneKey`,
+`src/hooks/use-activation-milestones.ts`), i.e. every earlier milestone is done and this one
+isn't yet. A returning user who's long past onboarding, or who navigates to `/assets/models/new`
+to add a SECOND model, sees the form's ordinary hint unchanged — coaching is not "always on for
+this page," it's "on for this page only during the one visit that actually needs it."
+
+**Explicitly no tour library** (`package.json` has none, and stays that way). Overlay tour
+libraries spotlight via a portalled fixed layer — this codebase has documented scar tissue
+exactly there (a Radix modal `Dialog`'s `pointer-events: none` body lock; `OverlayLockReset`
+exists solely to self-heal orphaned inert locks from it, see CLAUDE.md "DOM Safety"). Coaching
+instead renders INTO each form's existing sticky helper rail — the `SmartFormLayout`/
+`SmartFormRail` pattern (`model-form.tsx`) and its pre-migration inline-aside twin
+(`asset-form.tsx`/`project-wizard.tsx`), described as the reference pattern in FEATUREDOCS/08.
+`CoachingTip` (`src/components/onboarding/coaching-tip.tsx`) reproduces the same eyebrow+tip
+markup rather than depending on `SmartFormRail` itself, so it drops into either shape unchanged.
+No portal, no z-index, nothing that can ever swallow a click.
+
+The Equipment tab has no helper rail (it's a table/list UI, not a form) — its coaching instead
+sits at the top of the existing `DetailSidebar` (`src/app/(app)/projects/[id]/page.tsx`), gated
+so it can ONLY appear on the org's first project (D1's `firstProjectId` — the one the milestone
+actually tracks) while its Equipment tab is open. `CoachingTip`'s `hideWhenInactive` prop makes it
+render nothing (rather than an empty fallback block) once that milestone stops applying, since
+this call site has no ordinary hint of its own to fall back to.
+
+**Single source of truth for "which milestone is active":** `src/lib/activation-milestones.ts`
+(`MILESTONE_ORDER`, `milestoneDone`, `activeMilestoneKey`) is imported by BOTH the dashboard
+checklist (D1) and the coaching rail (D2) — one definition of the milestone order and "done"
+predicate, not two that could drift (R-3.1).
+
+**Anti-rot (the issue's own requirement):** `src/lib/onboarding-tour.ts`'s `TOUR_CONTENT` names a
+`data-tour-anchor` string per milestone, placed on the one real form field/button the coaching
+copy is actually about (the model Name input, the asset's model-picker field, the project Name
+input, the Equipment tab's Add button). `onboarding-tour-anchors.test.ts` greps the whole `src/`
+tree for every anchor named in `TOUR_CONTENT` and fails if one's missing — a moved/renamed field
+becomes a red test, not a silently-stale tip pointing at nothing. The milestones themselves never
+need this kind of guard (they're derived from live data, not UI structure); only the coaching
+copy's anchor is UI-coupled, and by design there are exactly four of them.
+
+**"Hide tips" is honest about its scope**, per the issue: its own label says it only hides this
+coaching, not the dashboard's "Get started" checklist. It's a `usePersistentPref` boolean
+(`onboarding-tips-hidden`, the existing per-signed-in-user localStorage hook — no new Convex
+table for a preference this low-stakes), so it survives navigation and reload. There is
+deliberately no in-app "show tips again" control in this iteration — since coaching only ever
+appears during the brief pre-activation window anyway (it stops showing the moment its milestone
+is done, same as everything else on this card), the cost of a wrong click is low; a settings-page
+reset can be added later if that turns out wrong.

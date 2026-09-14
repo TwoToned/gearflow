@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (570 agent-reachable)
+## Operations (573 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -333,6 +333,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `xeroIntegrations.getForOrg` (query, scope: orgSettings:read)
 
 ### project
+- `activationMilestones.state` (query, scope: project:read)
 - `activityLog.exportRows` (query, scope: project:read)
 - `activityLog.list` (query, scope: project:read)
 - `activityLog.listByEntity` (query, scope: project:read)
@@ -489,6 +490,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `notificationDismissalsWrites.dismissManyNative` (mutation, scope: self:write)
 - `notificationDismissalsWrites.mine` (query, scope: self:read)
 - `notificationDismissalsWrites.pruneStaleNative` (mutation, scope: self:write)
+- `orgActivationDismissalsWrites.dismissNative` (mutation, scope: self:write)
+- `orgActivationDismissalsWrites.mine` (query, scope: self:read)
 - `orgSetupDismissalsWrites.dismissNative` (mutation, scope: self:write)
 - `orgSetupDismissalsWrites.mine` (query, scope: self:read)
 - `savedTableViews.getById` (query, scope: self:read)

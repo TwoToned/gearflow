@@ -81,14 +81,16 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
     outstandingCount: 0,
   }),
 }));
-// FinishSetupChecklist (C6, #1104) pulls in its own Convex-auth-gated hooks
-// (useOrganization/useLocations/useOrgMembers/usePendingInvitations/
-// useSetupDismissal), which need a ConvexProviderWithAuth ancestor this
-// reorder test doesn't set up — out of scope here (it has its own smoke
-// test), so it's stubbed to render nothing, matching its own real behavior
-// while loading/dismissed/complete.
+// FinishSetupChecklist (C6, #1104) and ActivationChecklist (D1, #1105) both
+// pull in their own Convex-auth-gated hooks, which need a
+// ConvexProviderWithAuth ancestor this reorder test doesn't set up — out of
+// scope here (each has its own smoke test), so both are stubbed to render
+// nothing, matching their own real behavior while loading/dismissed/complete.
 vi.mock("@/components/dashboard/finish-setup-checklist", () => ({
   FinishSetupChecklist: () => null,
+}));
+vi.mock("@/components/dashboard/activation-checklist", () => ({
+  ActivationChecklist: () => null,
 }));
 
 import DashboardPage from "../page";

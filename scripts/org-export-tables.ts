@@ -77,6 +77,7 @@ export const DIRECT_TABLES = [
   "models",
   "notificationDismissals",
   "notificationEmailLogs",
+  "orgActivationDismissals",
   "orgSettings",
   "orgSetupDismissals",
   "payments",
@@ -241,7 +242,9 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // same shape as pendingSSOApprovals above).
 // #1104 (C6): +1 — orgSetupDismissals (DIRECT, per-user "Finish setup" card
 // dismissal — same export posture as notificationDismissals above).
-export const EXPECTED_TABLE_COUNT = 118;
+// #1105 (D1): +1 — orgActivationDismissals (DIRECT, per-user "Get started"
+// activation-checklist dismissal — same export posture as orgSetupDismissals).
+export const EXPECTED_TABLE_COUNT = 119;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

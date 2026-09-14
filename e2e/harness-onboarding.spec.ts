@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Register / onboarding (docs/critical-flows.md flow #4, POLICY.md R-8.8.3).
@@ -13,13 +14,14 @@ import { expect, test } from "@playwright/test";
 test.describe("harness: register / onboarding", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
 
-  // Quarantined (POLICY.md R-8.8.4): #1071 deleted the single-org auto-join
-  // hook, which is what silently gave every OTHER harness spec file's fresh
-  // registrant org membership for free. This file now correctly can't create
-  // a second org once another harness spec has already bootstrapped one in
-  // the shared harness DB — an E2E test-isolation gap, not a product bug.
-  // Owner: Jayden (eng). Tracked: #1118. Deadline: 2026-08-15.
-  test("new account -> create org -> onboarding completes @quarantine", async ({ page }) => {
+  // #1118 fix: restore this file's own "fresh Better Auth DB" (every harness
+  // file's docstring already assumes one) rather than sharing whatever state
+  // an earlier file in the same CI job left behind — see harness-db-reset.ts.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
+
+  test("new account -> create org -> onboarding completes", async ({ page }) => {
     // Playwright's default test timeout is 30s for the WHOLE test — this
     // chains register -> create org -> a revisit-check across 3 page loads,
     // each with its own 20s expect; under CI's observed latency the total can
@@ -70,5 +72,80 @@ test.describe("harness: register / onboarding", () => {
     // redirects away rather than re-showing the create-org form.
     await page.goto("/setup");
     await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+  });
+
+  /**
+   * D5 (#1109) spec 3, the "skip-everything path" — what makes D3's
+   * "skip everything" claim real rather than aspirational: register, create
+   * an org with a name and nothing else, skip all four optional wizard
+   * screens (the flow the test above already drives), then prove two things
+   * a fresh operator actually needs:
+   *
+   * 1. **The app is fully usable** — creating a model works with zero setup,
+   *    same as it would for an operator who filled in every wizard field.
+   * 2. **The "Finish setup" checklist (C6, #1104) reflects exactly what's
+   *    unset** — not a generic "welcome" banner. Two of its four items are
+   *    already done despite every wizard screen being skipped:
+   *    "Set your currency & tax details" (org creation seeds a default
+   *    currency/tax rate regardless of the wizard, C1 #1098's
+   *    `seedOrgDefaults`) and "Add a location" (skipping step 4 still
+   *    creates a "Main warehouse" default, `ensureLocationOnSkip`). The
+   *    other two — "Add your logo", "Invite your team" — are genuinely
+   *    unset, since nothing else in this flow sets them.
+   */
+  test("skip-everything path -> app fully usable -> checklist reflects exactly what's unset", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+
+    const unique = Date.now();
+    const email = `e2e+skipall-${unique}@harness.local`;
+    const orgName = `Skip Everything Org ${unique}`;
+    const modelName = `E2E Skip-Everything Model ${unique}`;
+
+    await test.step("register -> create org -> skip all four wizard screens", async () => {
+      await page.goto("/register");
+      await page.getByLabel(/name/i).first().fill("Skip Everything Test");
+      await page.getByLabel(/email/i).first().fill(email);
+      await page.getByLabel(/password/i).first().fill("harness-password-123");
+      await page
+        .getByRole("button", { name: /create|register|sign up/i })
+        .first()
+        .click();
+      await expect(page).toHaveURL(/\/(dashboard|welcome)\b/, { timeout: 20000 });
+
+      if (new URL(page.url()).pathname === "/welcome") {
+        await page.getByRole("button", { name: "Set up a new company" }).click();
+        await expect(page).toHaveURL(/\/setup\b/, { timeout: 20000 });
+      }
+      await page.getByLabel("Company name").fill(orgName);
+      await page.getByRole("button", { name: "Create company" }).click();
+      await page.getByRole("button", { name: "Skip for now" }).click();
+      await page.getByRole("button", { name: "Skip for now" }).click();
+      await page.getByRole("button", { name: "Skip for now" }).click();
+      await page.getByRole("button", { name: "Skip for now" }).click();
+      await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
+    });
+
+    await test.step("Finish setup checklist reflects exactly what's unset -> 2 of 4 done", async () => {
+      await expect(page.getByText("Finish setup")).toBeVisible({ timeout: 20000 });
+      await expect(page.getByText("2 of 4 done")).toBeVisible();
+
+      const doneRow = (label: string) => page.getByText(label, { exact: true });
+      // Done despite skipping every wizard screen (seeded at org creation /
+      // by the step-4 skip's own default-location fallback).
+      await expect(doneRow("Set your currency & tax details")).toHaveClass(/line-through/);
+      await expect(doneRow("Add a location")).toHaveClass(/line-through/);
+      // Genuinely unset — nothing in this flow ever touches either.
+      await expect(doneRow("Add your logo")).not.toHaveClass(/line-through/);
+      await expect(doneRow("Invite your team")).not.toHaveClass(/line-through/);
+    });
+
+    await test.step("the app is fully usable despite skipping everything -> create a model", async () => {
+      await page.goto("/assets/models/new");
+      await page.getByPlaceholder("e.g. Shure SM58").fill(modelName);
+      await page.getByRole("button", { name: "Create model" }).click();
+      await expect(page).toHaveURL(/\/assets\/models\/(?!new$)[^/]+$/, { timeout: 20000 });
+    });
   });
 });

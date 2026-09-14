@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Session cookie hardening (POLICY.md R-8.4.5): asserts the Better Auth session
@@ -10,6 +11,11 @@ import { expect, test } from "@playwright/test";
  */
 test.describe("harness: session cookie flags", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness");
+
+  // #1118: every harness file's own DB isolation — see harness-db-reset.ts.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
 
   test("session cookie is HttpOnly + SameSite", async ({ page, context }) => {
     const email = `e2e+${Date.now()}@harness.local`;

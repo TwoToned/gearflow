@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Create inventory (docs/critical-flows.md flow #10, POLICY.md R-8.8.3), as
@@ -12,6 +13,14 @@ import { expect, test } from "@playwright/test";
  */
 test.describe("harness: create inventory", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness (E2E_HARNESS=1)");
+
+  // #1118: this file "won" the org-creation-bootstrap race purely by run
+  // order, per its own issue's exit criteria ("consider whether
+  // harness-create-inventory.spec.ts needs the same treatment") — give it
+  // its own DB isolation too so passing here never depends on being first.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
 
   test("create a model -> create a serialized asset -> asset tag generated", async ({
     page,

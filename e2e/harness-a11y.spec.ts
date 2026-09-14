@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Accessibility on authenticated pages (POLICY.md R-8.1.7). Extends axe coverage
@@ -8,6 +9,11 @@ import { expect, test } from "@playwright/test";
  */
 test.describe("harness: a11y (authenticated)", () => {
   test.skip(!process.env.E2E_HARNESS, "requires the seeded Convex harness");
+
+  // #1118: every harness file's own DB isolation — see harness-db-reset.ts.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
 
   test("dashboard has no serious/critical WCAG 2 A/AA violations", async ({ page }) => {
     const email = `e2e+${Date.now()}@harness.local`;

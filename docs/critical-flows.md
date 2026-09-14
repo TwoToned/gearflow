@@ -22,13 +22,15 @@ second bug — `harness-revenue-path.spec.ts` hanging on a stuck "Assign assets"
 | 1 | **Login page loads** | Unauthenticated visit to `/login` renders the sign-in entry form (+ axe a11y, zero serious/critical WCAG 2 A/AA) | ✅ `e2e/smoke.spec.ts`, `e2e/a11y.spec.ts` (CI-gated, blocking) |
 | 2 | **Sign in / register** | Register/sign in → authenticated → lands on dashboard | ✅ `e2e/harness-auth.spec.ts` (`E2E_HARNESS=1`; passes locally and in CI — see status above) |
 | 3 | **Sign out** | Authenticated → sign out → session invalidated, back to `/login` | ✅ `e2e/harness-sign-out.spec.ts` (asserts a post-sign-out visit to `/dashboard` bounces back to `/login`, not just a client-side redirect) |
-| 4 | **Register / onboarding** | New account → create/join org → onboarding completes | ✅ `e2e/harness-onboarding.spec.ts` (asserts a post-onboarding revisit to `/setup` itself redirects away, proving the org was actually created) |
+| 4 | **Register / onboarding** | New account → create/join org → onboarding completes | ✅ `e2e/harness-onboarding.spec.ts` (asserts a post-onboarding revisit to `/setup` itself redirects away, proving the org was actually created; skip-everything path, D5 #1109); `e2e/harness-onboarding-happy-path.spec.ts` (all five wizard screens filled in, all four D1 activation milestones ticked, D5 #1109) |
 | 5 | **Create a project** (revenue path) | New project with a client → saved, visible in list | ✅ `e2e/harness-revenue-path.spec.ts` (name-only project; client is optional so this run skips it) |
 | 6 | **Add line items + pricing** (revenue path) | Add gear/models to a project → totals compute server-side | ✅ `e2e/harness-revenue-path.spec.ts` (own-stock, by-model) |
 | 7 | **Availability check** (revenue path) | Overlapping booking is flagged; no double-book | ✅ `e2e/harness-revenue-path.spec.ts` (asserts the inline availability panel renders with no overbook warning for a 1-asset/1-unit request) |
 | 8 | **Warehouse check-out** | Project gear checked out (per-unit) from the warehouse | ✅ `e2e/harness-revenue-path.spec.ts` (Pick → Prep → Deploy) — the stuck "Assign assets" dialog after Prep/Deploy is root-caused and handled (see `docs/e2e-harness.md`) |
 | 9 | **Warehouse check-in / return** | Checked-out gear returned; status + history update | ✅ `e2e/harness-revenue-path.spec.ts` (Deployed → Return) |
 | 10 | **Create inventory** | Create a model/asset → asset tag generated | ✅ `e2e/harness-create-inventory.spec.ts` (standalone flow; also exercised as setup within `e2e/harness-revenue-path.spec.ts`) |
+| 11 | **Join an org via invite** | Existing org invites an email → invitee accepts → lands in that org, never shown `/setup` | ✅ `e2e/harness-invite-join.spec.ts` (D5 #1109) |
+| 12 | **Switch organisations** (multi-tenant isolation, R-8.4.3) | A user in two orgs switches between them → the other org's entities never show through | ✅ `e2e/harness-org-switch.spec.ts` (D5 #1109) |
 
 **Primary revenue path** = flows 5 → 6 → 7 → 8 → 9 (project creation through check-out/return),
 where pricing and availability are server-authoritative (R-9.3). Covered end-to-end by

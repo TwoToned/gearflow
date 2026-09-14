@@ -109,9 +109,36 @@ mirrors both faithfully instead — same three `documentLogoMode` layouts, same 
 meta line composition — using sample doc title/number/date, since this screen has no real
 project data to preview against yet.
 
-## Steps 4-5 — not yet built
+## Step 4 — "how you work" (C4, #1102)
 
-Screens for numbering/document terms, first location, team invites and gear import
-(#1102-#1104) are still open. Until they land, step 3's "Skip for now" and "Save and continue"
-both end the wizard by redirecting to `/dashboard` — consistent with D3: everything past the
-name is safe to skip because it's a live org, not a draft.
+The boring, load-bearing screen, and the most likely skip — every field here has a working
+default. Project numbering, invoice numbering, the asset tag scheme, and document terms
+(footer text, T&Cs, payment details, quote validity days, payment terms days) are an ordinary
+`OrgSettings` write through `updateOrganization` — the SAME server action Settings uses (D5) —
+merged onto a freshly re-fetched org rather than the (possibly stale) `useOrganization` cache,
+same fix and rationale as step 3's `saveBranding`. The numbering fields reuse Settings' own
+`ProjectNumberingSettings`/`InvoiceNumberingSettings` components directly (including the former's
+live next-number preview via `peekNextProjectNumber`) rather than re-implementing them.
+
+**The first location is not an `OrgSettings` field.** It's a separate Convex `locations` row,
+written through `useLocationWrites` — so this step's save path does two writes, not one:
+the settings patch, then (conditionally) a location create.
+
+**"Skip for now" is not a no-op here — the one deliberate exception in the wizard.** Every other
+step's skip button writes nothing. This one still creates a `"Main warehouse"` default location
+(`isDefault: true`) when the org has zero locations, because a serialized asset needs somewhere
+to live and the screen says so plainly before the click ("Skip this and we'll make you a 'Main
+warehouse'…"). An org that already has at least one location gets nothing extra on skip — no
+duplicate default. Both Save and Skip are disabled while the org's location list is still
+loading, specifically to close the race where a stale "zero locations" read would create a
+second default on top of a real one. The location write is best-effort on skip (logged via
+`logger.error`, never blocks `onDone`) — same posture as C1's post-creation seed/mirror step:
+a location can always be renamed or added to later, so a transient failure here must never
+strand the wizard.
+
+## Step 5 — not yet built
+
+Team invites and gear import (#1103) are still open, and #1104 (the finish checklist) closes
+out Phase C. Until they land, step 4's "Skip for now" and "Save and continue" both end the
+wizard by redirecting to `/dashboard` — consistent with D3: everything past the name is safe
+to skip because it's a live org, not a draft.

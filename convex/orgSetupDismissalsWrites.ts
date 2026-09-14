@@ -35,7 +35,7 @@ export const mine = query({
         q.eq("organizationId", auth.orgId as string).eq("userId", auth.userId),
       )
       .order("desc")
-      .collect();
+      .take(1);
     return rows[0]?.dismissedAt ?? null;
   },
 });
@@ -45,7 +45,7 @@ export const mine = query({
  *  second row. Convex's OCC already serializes two concurrent calls for the
  *  same (org, user) — one would conflict and retry, re-observing the row the
  *  other just inserted — so this shouldn't be reachable in practice; the
- *  `.collect()` + length check (not `.unique()`) is defense in depth so that
+ *  `.take(1)` + length check (not `.unique()`) is defense in depth so that
  *  IF it ever were, the result is "one harmless extra row, newest wins on
  *  read" (see `mine()`'s `.order("desc")`) rather than `mine()` throwing. */
 export const dismissNative = mutation({
@@ -74,7 +74,7 @@ export const dismissNative = mutation({
       .withIndex("by_organizationId_userId", (q) =>
         q.eq("organizationId", organizationId).eq("userId", userId),
       )
-      .collect();
+      .take(1);
     if (existing.length > 0) return { created: false };
     await ctx.db.insert("orgSetupDismissals", { id, organizationId, userId, dismissedAt: now });
     return { created: true };

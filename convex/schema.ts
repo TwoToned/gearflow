@@ -2170,6 +2170,10 @@ export default defineSchema({
     tags: v.optional(v.array(v.string())),
     icalEnabled: v.optional(v.boolean()),
     icalToken: v.optional(v.string()),
+    // Per-member opt-in: also emit PENDING/OFFERED assignments on the iCal feed
+    // (as STATUS:TENTATIVE) instead of only CONFIRMED/ACCEPTED. Default false —
+    // absent means "confirmed only", matching every pre-existing row.
+    icalIncludeTentative: v.optional(v.boolean()),
     crewRoleId: v.optional(v.string()),
     // Phase C: the member↔skill m2m (_CrewMemberToCrewSkill, never mutated in-app)
     // is represented as a skillId array on the member doc (backfilled from Prisma).

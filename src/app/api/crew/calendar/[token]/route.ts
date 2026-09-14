@@ -50,9 +50,17 @@ export async function GET(
 
   const organizationId = memberDoc.organizationId;
 
-  // The member's CONFIRMED/ACCEPTED assignments come from Convex (org list
-  // filtered to this member). crewRole + project resolve from Convex maps;
-  // shifts (non-CANCELLED, date asc) come from the by-assignment Convex query.
+  // Per-member opt-in (Calendar tab toggle): also emit PENDING/OFFERED
+  // assignments as STATUS:TENTATIVE, not just CONFIRMED/ACCEPTED. Absent
+  // means "confirmed only" (pre-existing behaviour, every row before this).
+  const includeTentative = memberDoc.icalIncludeTentative ?? false;
+  const CONFIRMED_STATUSES = new Set(["CONFIRMED", "ACCEPTED"]);
+  const TENTATIVE_STATUSES = new Set(["PENDING", "OFFERED"]);
+
+  // The member's CONFIRMED/ACCEPTED assignments (plus PENDING/OFFERED when
+  // opted in) come from Convex (org list filtered to this member). crewRole +
+  // project resolve from Convex maps; shifts (non-CANCELLED, date asc) come
+  // from the by-assignment Convex query.
   const [orgAssignments, roleMap] = await Promise.all([
     convex.query(api.crewAssignments.list, { orgId: organizationId }),
     getCrewRoleMap(organizationId),
@@ -60,7 +68,9 @@ export async function GET(
   const myRawAssignments = orgAssignments.filter(
     (a) =>
       a.crewMemberId === memberDoc.id &&
-      (a.status === "CONFIRMED" || a.status === "ACCEPTED"),
+      a.status != null &&
+      (CONFIRMED_STATUSES.has(a.status) ||
+        (includeTentative && TENTATIVE_STATUSES.has(a.status))),
   );
   const shiftsAll = await getShiftsByAssignmentIds(myRawAssignments.map((a) => a.id));
   const shiftsByAssignment = new Map<string, typeof shiftsAll>();
@@ -92,6 +102,7 @@ export async function GET(
       return [
         {
           id: a.id,
+          tentative: a.status != null && TENTATIVE_STATUSES.has(a.status),
           phase: a.phase ?? null,
           notes: a.notes ?? null,
           startDate: a.startDate != null ? new Date(a.startDate) : null,
@@ -142,6 +153,12 @@ export async function GET(
       );
     }
     if (a.notes) descLines.push(`\nNotes: ${a.notes}`);
+    if (a.tentative) descLines.push("\n(Not yet confirmed)");
+
+    const summary = a.tentative
+      ? `(Tentative) ${project.name} - ${roleName}`
+      : `${project.name} - ${roleName}`;
+    const icsStatus = a.tentative ? "TENTATIVE" : "CONFIRMED";
 
     // If there are shifts, create one event per shift
     if (a.shifts.length > 0) {
@@ -153,12 +170,12 @@ export async function GET(
 
         events.push({
           uid: `shift-${shift.id}@gearflow`,
-          summary: `${project.name} - ${roleName}`,
+          summary,
           description: descLines.join("\n"),
           location: shift.location || location,
           dtstart,
           dtend,
-          status: "CONFIRMED",
+          status: icsStatus,
           categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
         });
       }
@@ -177,12 +194,12 @@ export async function GET(
 
       events.push({
         uid: `assignment-${a.id}@gearflow`,
-        summary: `${project.name} - ${roleName}`,
+        summary,
         description: descLines.join("\n"),
         location,
         dtstart,
         dtend,
-        status: "CONFIRMED",
+        status: icsStatus,
         categories: ["RVLT Flow", a.phase || ""].filter(Boolean),
       });
     }

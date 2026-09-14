@@ -436,7 +436,14 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 - Feed URL: `GET /api/crew/calendar/[token]` (or `[token].ics`)
 - Token is a 32-byte cryptographically random URL-safe base64 string
 - No authentication required — the token IS the auth
-- Feed contains all CONFIRMED assignments as VEVENT entries
+- Feed contains all CONFIRMED/ACCEPTED assignments as VEVENT entries by default
+- **Per-member opt-in — include pending assignments:** a `Switch` next to the feed URL
+  (Calendar tab, `crewMembers.icalIncludeTentative`, default false/absent) also emits
+  PENDING/OFFERED assignments — those still awaiting an offer or a crew response. Included
+  events are `STATUS:TENTATIVE` (not `CONFIRMED`) with a `(Tentative)` `SUMMARY` prefix and a
+  "(Not yet confirmed)" `DESCRIPTION` line, so the distinction survives in any calendar client.
+  DECLINED/CANCELLED/COMPLETED assignments never appear, toggle or not. Toggled via
+  `setIcalIncludeTentative(crewMemberId, include)` (`crew.update`), read via `getIcalSettings`.
 - If shifts exist, one event per shift; otherwise one event per assignment
 - Events include: project name, role, phase, location, site contact, notes
 - Token can be regenerated (invalidates old URL) or feed can be disabled
@@ -445,6 +452,8 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 ### Schema Fields (CrewMember)
 - `icalEnabled` — Boolean, default false
 - `icalToken` — String, unique, nullable
+- `icalIncludeTentative` — Boolean, optional, default false — include PENDING/OFFERED
+  assignments (as tentative) on this member's feed
 
 ### Per-Assignment .ics Download
 - API route: `GET /api/crew/calendar/assignment/[id]`
@@ -458,7 +467,8 @@ UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 | `enableIcalFeed(crewMemberId)` | crew.update | Enable feed + generate token |
 | `disableIcalFeed(crewMemberId)` | crew.update | Disable feed (keeps token) |
 | `regenerateIcalToken(crewMemberId)` | crew.update | New token, invalidates old URL |
-| `getIcalSettings(crewMemberId)` | crew.read | Get icalEnabled + icalToken |
+| `getIcalSettings(crewMemberId)` | crew.read | Get icalEnabled + icalToken + icalIncludeTentative |
+| `setIcalIncludeTentative(crewMemberId, include)` | crew.update | Toggle whether pending/offered assignments show as tentative |
 | `getAssignmentIcsData(assignmentId)` | crew.read | Full assignment data for .ics |
 
 ### iCal Library (`src/lib/ical.ts`)

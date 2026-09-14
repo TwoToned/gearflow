@@ -50,6 +50,28 @@ had to move out to stay unit-testable without any Prisma/Convex/email mocking at
 `convex/apiRequestLog.ts`'s `purgeOlderThan`) plus one batched Convex stats call, then per
 candidate: re-check the predicate, compute the due stage, send the ladder email or archive.
 
+**Two correctness traps an adversarial review caught before this shipped:**
+
+- **Ordering, for the ladder emails.** `sendLadderStageEmail` sends the email FIRST and only
+  persists `dormancyStage` on success. `dormancyStage` means nothing but "we already emailed this
+  stage" — writing it before the send succeeds would falsely record a stage as sent (and, since
+  `nextDormancyStage` only ever advances past a stage it hasn't seen, permanently skip retrying
+  it) if `sendEmail` throws after exhausting its own internal retries. Archiving is different: it's
+  the real action, not just a notification, so `archiveDormantOrg` writes `archivedAt` first
+  regardless of whether the owner can be reached — only the reactivation email send is wrapped in
+  its own try/catch (logged, not thrown), so a failed send can't undo the archive; the token is
+  still persisted, so a site admin can hand it to the owner out of band.
+- **Isolation and concurrency.** Every candidate's processing is wrapped in its own try/catch
+  inside the sweep's loop (`processDormancyCandidate`) — without it, one hard-bouncing owner
+  address would throw and abort the whole tick, and since the query orders oldest-first, that same
+  org would always sort first and silently block every org behind it, forever. Separately, the
+  whole tick is serialized behind a Postgres advisory lock (`SWEEP_LOCK_KEY`, held for the tick's
+  duration, released in `finally`) — without it, an overrunning tick colliding with the next
+  scheduled fire (or a manual trigger hitting the route while the cron is also running) could have
+  two runs archive the same org concurrently, each minting its own reactivation token; whichever
+  write lands second silently invalidates the token already emailed by the first. A run that can't
+  acquire the lock is a no-op, not a race.
+
 Reached the same way every other Postgres-dependent cron in this repo is (see CLAUDE.md's
 "HTTP-hop cron pattern"): `convex/crons.ts` registers `org-dormancy-sweep` (21:00 UTC, clear of the
 22:00/23:00 slots the other two daily HTTP-hop crons use) → `convex/scheduledJobs.ts`'s

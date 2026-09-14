@@ -49,6 +49,17 @@ import {
 // sweep's read/time budget.
 const MAX_ORGS_PER_TICK = 500;
 
+// Postgres advisory lock key for the whole sweep tick. A tick that overruns
+// into the next scheduled fire (or a manual POST /api/cron/org-dormancy
+// overlapping the cron) would otherwise race: two concurrent runs can read
+// the same org's dormancyStage, both decide to archive it, and each mint
+// their own reactivation token — whichever write lands second silently
+// invalidates the token already emailed by the first. Serializing the whole
+// tick behind one lock (held for the duration, released in `finally`) makes
+// a second concurrent invocation a no-op instead of a race. Arbitrary
+// constant, unique to this feature — advisory locks are a flat namespace.
+const SWEEP_LOCK_KEY = 1096_030;
+
 interface DormantOrgCandidate {
   id: string;
   name: string;
@@ -56,8 +67,17 @@ interface DormantOrgCandidate {
   createdAt: Date;
   dormancyStage: number | null;
   members: { user: { email: string } }[];
+  _count: { members: number };
 }
 
+/**
+ * Send FIRST, persist the stage SECOND — this stage marker means nothing but
+ * "we emailed them," so persisting it before the send succeeds would record
+ * a stage as sent when it wasn't, and (since `nextDormancyStage` only fires
+ * once `stage > currentStage`) permanently skip retrying it. If `sendEmail`
+ * throws (it retries internally, then re-throws — see src/lib/email.ts), the
+ * stage is simply left unadvanced for the next tick to retry.
+ */
 async function sendLadderStageEmail(
   org: DormantOrgCandidate,
   stage: number,
@@ -76,13 +96,24 @@ async function sendLadderStageEmail(
         ? dormancyArchiveWarningEmail({ orgName: org.name, checklistUrl, platformName })
         : dormancyNudgeEmail({ orgName: org.name, checklistUrl, platformName });
 
+  await sendEmail({ to: owner.email, ...content });
   await prisma.organization.update({
     where: { id: org.id },
     data: { dormancyStage: stage, dormancyNoticedAt: new Date() },
   });
-  await sendEmail({ to: owner.email, ...content });
 }
 
+/**
+ * Archiving itself (unlike the ladder emails) is the real action, not just a
+ * notification — it must happen whether or not the owner can be reached, so
+ * the write stays first. Only the reactivation email is best-effort from
+ * here: a failure to send it is caught and logged rather than thrown, so it
+ * can't undo the archive or abort the rest of the tick (the caller in
+ * `runOrgDormancySweep` also isolates per-org failures, but this keeps the
+ * "archive succeeded, email didn't" case explicit rather than relying on
+ * that outer catch alone). The token is still persisted even if the send
+ * fails, so a site admin can hand it to the owner out of band.
+ */
 async function archiveDormantOrg(org: DormantOrgCandidate, platformName: string): Promise<void> {
   const owner = org.members[0]?.user;
   const token = crypto.randomBytes(24).toString("hex");
@@ -117,10 +148,39 @@ async function archiveDormantOrg(org: DormantOrgCandidate, platformName: string)
     return;
   }
   const reactivateUrl = `${env.NEXT_PUBLIC_APP_URL}/reactivate/${token}`;
-  await sendEmail({
-    to: owner.email,
-    ...dormancyArchivedEmail({ orgName: org.name, reactivateUrl, platformName }),
-  });
+  try {
+    await sendEmail({
+      to: owner.email,
+      ...dormancyArchivedEmail({ orgName: org.name, reactivateUrl, platformName }),
+    });
+  } catch (err) {
+    logger.error("[org-dormancy] archived an org but failed to send the reactivation email", {
+      organizationId: org.id,
+      error: err,
+    });
+  }
+}
+
+/** Evaluates and, if due, acts on a single candidate. Pulled out of
+ *  `runOrgDormancySweep`'s loop so that function stays a plain orchestration
+ *  shell — the per-candidate try/catch lives at the call site. */
+async function processDormancyCandidate(
+  org: DormantOrgCandidate,
+  orgStats: { lastActivityAt: number | null; hasAnyMilestone: boolean } | undefined,
+  platformName: string,
+): Promise<"archived" | "emailed" | "skipped"> {
+  if (!orgStats || !isStillNeverActivated(org._count.members, orgStats)) return "skipped";
+
+  const daysSinceCreation = Math.floor((Date.now() - org.createdAt.getTime()) / DAY_MS);
+  const nextStage = nextDormancyStage(org.dormancyStage ?? 0, daysSinceCreation);
+  if (nextStage === null) return "skipped";
+
+  if (nextStage === STAGE_DAY30_ARCHIVED) {
+    await archiveDormantOrg(org, platformName);
+    return "archived";
+  }
+  await sendLadderStageEmail(org, nextStage, platformName);
+  return "emailed";
 }
 
 /** One sweep tick: scan a bounded page of never-archived orgs old enough for
@@ -128,62 +188,79 @@ async function archiveDormantOrg(org: DormantOrgCandidate, platformName: string)
  *  (never trusting a stored flag), and advance/send whichever single stage
  *  is now due. Two Convex round trips total (batched milestone/activity
  *  stats + nothing else) regardless of how many orgs are scanned — never
- *  N+1, matching `enrichOrgsWithConvexStats`'s own established pattern. */
+ *  N+1, matching `enrichOrgsWithConvexStats`'s own established pattern.
+ *
+ *  Holds a Postgres advisory lock for the whole tick (see `SWEEP_LOCK_KEY`)
+ *  so an overrunning tick and the next scheduled fire — or a manual trigger
+ *  overlapping the cron — can't run concurrently; a run that can't acquire
+ *  the lock is a no-op, not a race. Each candidate's processing is isolated
+ *  in its own try/catch so one org's failing email (e.g. a hard-bouncing
+ *  address) can't abort the rest of the batch — every candidate behind it in
+ *  `createdAt` order would otherwise be silently skipped every single tick,
+ *  forever, since the same failing org always sorts first. */
 export async function runOrgDormancySweep(): Promise<{ scanned: number; emailed: number; archived: number }> {
-  const candidates = await prisma.organization.findMany({
-    where: {
-      archivedAt: null,
-      // Nothing younger than the earliest stage (day 1) can ever be due —
-      // narrows the Postgres scan itself, not just the in-memory filter.
-      createdAt: { lte: new Date(Date.now() - DAY_MS) },
-    },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      createdAt: true,
-      dormancyStage: true,
-      members: {
-        where: { role: "owner" },
-        take: 1,
-        select: { user: { select: { email: true } } },
-      },
-      _count: { select: { members: true } },
-    },
-    orderBy: { createdAt: "asc" }, // oldest (most overdue) first when bounded
-    take: MAX_ORGS_PER_TICK,
-  });
-
-  if (candidates.length === 0) return { scanned: 0, emailed: 0, archived: 0 };
-
-  const convex = await getConvexClient();
-  const stats = await convex.query(api.orgAdminStats.getBatchOrgStats, {
-    organizationIds: candidates.map((o) => o.id),
-  });
-  const statsByOrg = new Map(stats.map((s) => [s.organizationId, s]));
-  const platformName = await getPlatformName();
-
-  let emailed = 0;
-  let archived = 0;
-
-  for (const org of candidates) {
-    const orgStats = statsByOrg.get(org.id);
-    if (!orgStats || !isStillNeverActivated(org._count.members, orgStats)) continue;
-
-    const daysSinceCreation = Math.floor((Date.now() - org.createdAt.getTime()) / DAY_MS);
-    const nextStage = nextDormancyStage(org.dormancyStage ?? 0, daysSinceCreation);
-    if (nextStage === null) continue;
-
-    if (nextStage === STAGE_DAY30_ARCHIVED) {
-      await archiveDormantOrg(org, platformName);
-      archived++;
-    } else {
-      await sendLadderStageEmail(org, nextStage, platformName);
-    }
-    emailed++;
+  const [{ locked }] = await prisma.$queryRaw<{ locked: boolean }[]>`
+    SELECT pg_try_advisory_lock(${SWEEP_LOCK_KEY}) AS locked
+  `;
+  if (!locked) {
+    logger.warn("[org-dormancy] sweep already running — skipping this tick");
+    return { scanned: 0, emailed: 0, archived: 0 };
   }
 
-  return { scanned: candidates.length, emailed, archived };
+  try {
+    const candidates = await prisma.organization.findMany({
+      where: {
+        archivedAt: null,
+        // Nothing younger than the earliest stage (day 1) can ever be due —
+        // narrows the Postgres scan itself, not just the in-memory filter.
+        createdAt: { lte: new Date(Date.now() - DAY_MS) },
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        createdAt: true,
+        dormancyStage: true,
+        members: {
+          where: { role: "owner" },
+          take: 1,
+          select: { user: { select: { email: true } } },
+        },
+        _count: { select: { members: true } },
+      },
+      orderBy: { createdAt: "asc" }, // oldest (most overdue) first when bounded
+      take: MAX_ORGS_PER_TICK,
+    });
+
+    if (candidates.length === 0) return { scanned: 0, emailed: 0, archived: 0 };
+
+    const convex = await getConvexClient();
+    const stats = await convex.query(api.orgAdminStats.getBatchOrgStats, {
+      organizationIds: candidates.map((o) => o.id),
+    });
+    const statsByOrg = new Map(stats.map((s) => [s.organizationId, s]));
+    const platformName = await getPlatformName();
+
+    let emailed = 0;
+    let archived = 0;
+
+    for (const org of candidates) {
+      try {
+        const outcome = await processDormancyCandidate(org, statsByOrg.get(org.id), platformName);
+        if (outcome === "archived") archived++;
+        if (outcome !== "skipped") emailed++;
+      } catch (err) {
+        logger.error("[org-dormancy] failed to process a candidate org — continuing with the rest of the batch", {
+          organizationId: org.id,
+          error: err,
+        });
+      }
+    }
+
+    return { scanned: candidates.length, emailed, archived };
+  } finally {
+    await prisma.$executeRaw`SELECT pg_advisory_unlock(${SWEEP_LOCK_KEY})`;
+  }
 }
 
 /**

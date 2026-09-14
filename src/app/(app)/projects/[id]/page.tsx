@@ -47,6 +47,8 @@ import {
 } from "@/components/projects/overview/context-cards";
 import type { ProjectContextProject } from "@/lib/project-context";
 import { DetailLayout, DetailMain, DetailSidebar } from "@/components/layout/page-layouts";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
+import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { QuoteCard } from "@/components/projects/overview/quote-card";
 import { InvoicingCard } from "@/components/projects/overview/invoicing-card";
 import { OpenIssuesBadge } from "@/components/projects/open-issues-badge";
@@ -170,6 +172,14 @@ export default function ProjectDetailPage({
   // deep link still wins, so the org Finance section's rows land where they meant to.
   const initialTab = (VALID_TABS as readonly string[]).includes(requestedTab ?? "") ? requestedTab! : "overview";
   const [activeTab, setActiveTab] = useState(initialTab);
+  // D2 (#1106): only the org's FIRST (oldest) non-template project ever
+  // shows the line-item coaching tip in its Equipment tab — this is the one
+  // project the "put that gear on the job" milestone (D1, #1105) tracks.
+  // Skipped (no Convex subscription at all) outside the Equipment tab: an
+  // adversarial review caught this query running unconditionally on every
+  // tab of every project's detail page, forever, for zero visible benefit
+  // outside Equipment.
+  const activationState = useActivationMilestones(activeTab === "equipment" ? orgId : undefined);
 
   const [dupMode, setDupMode] = useState<"duplicate" | "template" | null>(null);
   const [callSheetOpen, setCallSheetOpen] = useState(false);
@@ -802,6 +812,19 @@ export default function ProjectDetailPage({
             {/* Every tab but Overview, which composes this content itself. */}
             {activeTab !== "overview" && (
               <DetailSidebar>
+                {/* D2 (#1106): coaching for the "put that gear on the job"
+                    milestone — only on the ONE project it tracks (D1's
+                    firstProjectId). CoachingTip itself checks whether that
+                    milestone is still active (and honors "Hide tips"),
+                    rendering nothing once it isn't — so a normal project's
+                    Equipment tab, or this one after the milestone is done,
+                    shows nothing extra here (`SidebarSection`'s own border
+                    would look odd wrapping empty content, so this skips
+                    that shell and lets the tip carry its own "Get started"
+                    heading, same as the other three forms). */}
+                {activeTab === "equipment" && activationState?.firstProjectId === id && (
+                  <CoachingTip orgId={orgId} milestoneKey="lineItem" fallbackEyebrow="" fallbackTip="" hideWhenInactive />
+                )}
                 <ProjectContextRail
                   projectId={id}
                   orgId={orgId}

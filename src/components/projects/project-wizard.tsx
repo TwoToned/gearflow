@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/select";
 import { QuickCreateClient } from "@/components/clients/quick-create-client";
 import { QuickCreateLocation } from "@/components/assets/quick-create-location";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
 
 const TYPE_OPTIONS = [
   { value: "DRY_HIRE", label: "Dry hire" }, { value: "WET_HIRE", label: "Wet hire" },
@@ -407,9 +408,11 @@ export function ProjectWizard({
           </h2>
           {step === 0 && (
             <div className="space-y-5">
-              <Field label="Name" required error={form.formState.errors.name?.message}>
-                <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
-              </Field>
+              <div data-tour-anchor="tour-project-name">
+                <Field label="Name" required error={form.formState.errors.name?.message}>
+                  <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
+                </Field>
+              </div>
               {!isTemplate && (
                 <Field label="Project code" required hint="Pre-filled from your next sequence — edit if you need a custom code." error={form.formState.errors.projectNumber?.message}>
                   <Input {...form.register("projectNumber")} placeholder={nextProjectNumber ? `Auto: ${nextProjectNumber}` : "e.g. PROJ-2026-0001"} className="font-mono" />
@@ -565,10 +568,19 @@ export function ProjectWizard({
         {/* Helper rail */}
         <aside className="hidden lg:block">
           <div className="sticky top-4 space-y-4 rounded-[var(--r-lg)] border border-line bg-paper-2/50 p-4">
-            <div>
-              <p className="t-overline text-faint">Step {step + 1} of {STEPS.length}</p>
-              <p className="mt-1 font-hand text-[15px] text-t-out">{STEPS[step].tip}</p>
-            </div>
+            {step === 0 ? (
+              <CoachingTip
+                orgId={orgId}
+                milestoneKey="project"
+                fallbackEyebrow={`Step ${step + 1} of ${STEPS.length}`}
+                fallbackTip={STEPS[step].tip}
+              />
+            ) : (
+              <div>
+                <p className="t-overline text-faint">Step {step + 1} of {STEPS.length}</p>
+                <p className="mt-1 font-hand text-[15px] text-t-out">{STEPS[step].tip}</p>
+              </div>
+            )}
             <div className="space-y-2 border-t border-line pt-3">
               <p className="t-overline text-faint">So far</p>
               <SummaryLine label="Name" value={v.name || "—"} />

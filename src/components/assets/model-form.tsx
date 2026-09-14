@@ -35,8 +35,9 @@ import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { QuickCreateCategory } from "./quick-create-category";
 import { SpecificationsEditor } from "./specifications-editor";
 import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
+  SmartFormLayout, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
 } from "@/components/ui/smart-form";
+import { CoachingTip } from "@/components/onboarding/coaching-tip";
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
   SERIALIZED: "Serialized (tracked individually)",
@@ -123,7 +124,12 @@ export function ModelForm({ initialData }: ModelFormProps) {
       onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
       aside={
         <>
-          <SmartFormRail eyebrow={isEditing ? "Editing" : "New model"} tip={helperTip} />
+          <CoachingTip
+            orgId={orgId}
+            milestoneKey="model"
+            fallbackEyebrow={isEditing ? "Editing" : "New model"}
+            fallbackTip={helperTip}
+          />
           <SmartFormPreview>
             <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card shadow-[var(--sh-card)]">
               <div className="relative flex aspect-[5/3] items-center justify-center overflow-hidden bg-paper-2">
@@ -153,7 +159,7 @@ export function ModelForm({ initialData }: ModelFormProps) {
         {/* Identity */}
         <SmartFormSection title="Identity" hint="What it is and how you'll find it." divider={false}>
           <div className="grid gap-5 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2" data-tour-anchor="tour-model-name">
               <SmartFormField label="Name" required error={form.formState.errors.name?.message}>
                 <Input
                   {...form.register("name")}

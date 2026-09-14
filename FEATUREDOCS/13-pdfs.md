@@ -206,6 +206,59 @@ the shared `makeMixedRentalSaleLineItems` fixture (`fixture.ts`, ported from
 `document-composer.test.ts`'s WS11 fixture) — rather than re-proving filtering
 logic the component-level tests already cover.
 
+**Standing regression harness ported (#1155, 2026-09-14).**
+`src/lib/react-pdf/regression.test.tsx` is now what
+`document-composer.test.ts`'s own docstring calls itself for the old
+pipeline — "the regression harness for the new engine" — made literally true
+for react-pdf. Every other react-pdf test file in this codebase stopped at
+"renders, no throw, page-count sanity" because page count was the only
+cheap signal available; this file goes further using `pdf-parse`'s page-wise
+text extraction (`pdf-test-utils.ts`'s `renderPdfPages()`, added as a new
+devDependency — no existing package in this repo extracts PDF text, and
+without one the #1149 bug class stays provable only by margin, not by test).
+Covers, across all 5 doc types via `DOCUMENT_LAYOUTS`-driven
+`describe.each`:
+
+- **No tail-drop** — a 120-item fixture (`makeNoTailDropFixture`, zero-padded
+  unambiguous item names so `.includes()` can't false-positive the way
+  "Item 1"/"Item 10" would) asserts every single item's text is present
+  somewhere in the rendered output.
+- **The #1149 case specifically** — `makeTrailingGroupFixture()` ports the
+  exact real-incident shape (a long padding group pushing a small trailing
+  "Services" group, with sub-hire/notes rows mixed in, onto a continuation
+  page) and asserts every trailing-group row renders, across all 5 doc
+  types. Verified this suite actually catches the regression class it
+  claims to (temporarily dropped the last row of a group in
+  `line-items-table.tsx`, confirmed all 5 doc types' tests fail, reverted).
+- **Group header prints exactly once** across a multi-page single-group
+  fixture (`makeLongSingleGroupFixture`) — the 2026-07-28 bug class.
+- **Header/footer page furniture** — doc title repeats every page, footer
+  org text repeats every page, "Page N of M" is correct per page and
+  entirely absent on a single-page document.
+- **Draft-preview watermark** (quote/invoice only — the only 2 doc types
+  `DRAFT_PREVIEW_SUBTITLE` covers) — repeats every page when set, never
+  appears on a stored render.
+- **`termsAndConditions.forceNewPage`** (quote/invoice only) — T&Cs land on
+  a strictly later page than the content before them, and the spike's
+  "no spurious blank page when T&Cs already starts fresh" finding holds
+  (checked via no blank page between the table and the T&Cs page, not just
+  a page-count comparison).
+
+Scope note in the file's own header comment: some of #1155's invariants
+("a row is never split mid-page", "a group header never strands alone at a
+page bottom") are geometric guarantees from `wrap={false}`/
+`minPresenceAhead` (see `line-items-table.tsx`), not something provable by
+re-deriving page geometry from extracted text — the file says so rather than
+faking a text-based check for those.
+
+**Deferred to a follow-up, not built in #1155:** the visual side-by-side
+parity pass (render real project fixtures through both pipelines, compare
+layout/spacing/page-breaks, attach screenshots) — no screenshot/PDF-to-image
+tooling exists in this repo yet, and building it was judged out of scope for
+the automated regression suite. `pdf-parse`'s `getScreenshot()` (PNG render
+per page, already available now that the package is a devDependency) is the
+likely starting point when that follow-up happens.
+
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`
 value next to the rate/total columns without adding information the reader

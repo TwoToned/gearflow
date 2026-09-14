@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useOrganization, refreshOrganization } from "@/hooks/use-organization";
 import { updateOrganization } from "@/server/settings";
-import { getCountry, listEnabledCountries } from "@/lib/countries";
+import { getCountry, listEnabledCountries, type CountryDefinition } from "@/lib/countries";
 import { orgOperatingDetailsSchema } from "@/lib/validations/org-settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,120 @@ interface OrgRecord {
   name?: string;
   settings?: OrgSettings;
   defaultTaxRate?: number | null;
+}
+
+interface OperatingFields {
+  country: string;
+  currency: string;
+  timezone: string;
+  taxLabel: string;
+  taxRate: string;
+  businessNumber: string;
+  phone: string;
+  email: string;
+  address: string;
+}
+
+/** The complexity ratchet (R-3.6) counts each destructuring default as a
+ *  decision point, so reading all 8 optional settings fields in one
+ *  function trips it — split across two small functions instead of one big
+ *  one, each safely under the ceiling. */
+function coreFieldsFromSettings(settings: OrgSettings) {
+  const { country = "", currency = "", timezone = "", taxLabel = "" } = settings;
+  return { country, currency, timezone, taxLabel };
+}
+
+function contactFieldsFromSettings(settings: OrgSettings) {
+  const { abn: businessNumber = "", phone = "", email = "", address = "" } = settings;
+  return { businessNumber, phone, email, address };
+}
+
+/** Everything already stored for this org, as the form's flat string fields. */
+function fieldsFromOrg(org: OrgRecord): OperatingFields {
+  const settings = org.settings ?? {};
+  return {
+    ...coreFieldsFromSettings(settings),
+    ...contactFieldsFromSettings(settings),
+    taxRate: org.defaultTaxRate != null ? String(org.defaultTaxRate) : "",
+  };
+}
+
+/** The `orgOperatingDetailsSchema` input shape from the form's raw string
+ *  state — split out of `handleSave` purely to keep that function's own
+ *  cyclomatic complexity under the R-3.6/complexity-ratchet ceiling. */
+function toSchemaInput(fields: OperatingFields) {
+  return {
+    country: fields.country,
+    currency: fields.currency || undefined,
+    timezone: fields.timezone || undefined,
+    taxLabel: fields.taxLabel || undefined,
+    taxRate: fields.taxRate === "" ? undefined : fields.taxRate,
+    businessNumber: fields.businessNumber || undefined,
+    phone: fields.phone || undefined,
+    email: fields.email,
+    address: fields.address || undefined,
+  };
+}
+
+/** The `OrgSettings` patch to send, merged onto whatever's already stored
+ *  (D5 — no draft state, an ordinary settings write). */
+function buildSettingsPatch(
+  existing: OrgSettings,
+  data: ReturnType<typeof orgOperatingDetailsSchema.parse>,
+): OrgSettings {
+  return {
+    ...existing,
+    country: data.country,
+    currency: data.currency,
+    timezone: data.timezone,
+    taxLabel: data.taxLabel,
+    abn: data.businessNumber,
+    phone: data.phone,
+    email: data.email || undefined,
+    address: data.address,
+  };
+}
+
+/** `withImmutableCountry` (src/server/settings.ts) silently forces `country`
+ *  back to whatever was already persisted rather than rejecting a changed
+ *  value — normally unreachable here since the picker disables once
+ *  `countryLocked`, but a stale/duplicate session (double tab, browser
+ *  back/forward) could still submit a different one. Returns the persisted
+ *  country when it disagrees with what was submitted, so the caller can
+ *  correct the UI instead of reporting a false success; null otherwise. */
+function countryMismatch(persisted: string | undefined, submitted: string): string | null {
+  return persisted && persisted !== submitted ? persisted : null;
+}
+
+function countryLockedMessage(code: string): string {
+  return `Country is already set to ${getCountry(code)?.name ?? code} and can't be changed.`;
+}
+
+function schemaErrorMessage(parsed: { error: { issues: { message: string }[] } }): string {
+  return parsed.error.issues[0]?.message ?? "Check the form and try again";
+}
+
+function saveErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : "Something went wrong";
+}
+
+/** Performs the actual write + cache refresh, split out of `handleSave`
+ *  purely to keep that function's own cyclomatic complexity under the
+ *  R-3.6/complexity-ratchet ceiling (this eslint config counts optional
+ *  chaining as a decision point too, same as `??`/`||`/ternaries). */
+async function saveOperatingDetails(
+  orgId: string,
+  org: OrgRecord | undefined,
+  data: ReturnType<typeof orgOperatingDetailsSchema.parse>,
+): Promise<{ mismatchCountry: string | null }> {
+  const existingSettings = org?.settings ?? {};
+  const result = (await updateOrganization({
+    name: org?.name ?? "",
+    settings: buildSettingsPatch(existingSettings, data),
+    defaultTaxRate: data.taxRate ?? null,
+  })) as { settings?: OrgSettings };
+  refreshOrganization(orgId);
+  return { mismatchCountry: countryMismatch(result.settings?.country, data.country) };
 }
 
 /**
@@ -82,22 +196,21 @@ export function StepOperating({ orgId, onDone }: { orgId: string; onDone: () => 
   // another tab) must never silently overwrite what the operator is typing.
   useEffect(() => {
     if (hydrated || !org) return;
-    const settings = org.settings ?? {};
-    setCountry(settings.country ?? ""); // eslint-disable-line react-hooks/set-state-in-effect
-    setCurrency(settings.currency ?? "");
-    setTimezone(settings.timezone ?? "");
-    setTaxLabel(settings.taxLabel ?? "");
-    setTaxRate(org.defaultTaxRate != null ? String(org.defaultTaxRate) : "");
-    setBusinessNumber(settings.abn ?? "");
-    setPhone(settings.phone ?? "");
-    setEmail(settings.email ?? "");
-    setAddress(settings.address ?? "");
-    setCountryLocked(!!settings.country);
+    const fields = fieldsFromOrg(org);
+    setCountry(fields.country); // eslint-disable-line react-hooks/set-state-in-effect
+    setCurrency(fields.currency);
+    setTimezone(fields.timezone);
+    setTaxLabel(fields.taxLabel);
+    setTaxRate(fields.taxRate);
+    setBusinessNumber(fields.businessNumber);
+    setPhone(fields.phone);
+    setEmail(fields.email);
+    setAddress(fields.address);
+    setCountryLocked(!!fields.country);
     setHydrated(true);
   }, [org, hydrated]);
 
   const countryDef = getCountry(country);
-  const businessNumberLabel = countryDef?.businessNumberLabel ?? "Business number";
 
   function handleCountryChange(code: string) {
     setCountry(code);
@@ -110,58 +223,26 @@ export function StepOperating({ orgId, onDone }: { orgId: string; onDone: () => 
   }
 
   async function handleSave() {
-    const parsed = orgOperatingDetailsSchema.safeParse({
-      country,
-      currency: currency || undefined,
-      timezone: timezone || undefined,
-      taxLabel: taxLabel || undefined,
-      taxRate: taxRate === "" ? undefined : taxRate,
-      businessNumber: businessNumber || undefined,
-      phone: phone || undefined,
-      email,
-      address: address || undefined,
-    });
+    const parsed = orgOperatingDetailsSchema.safeParse(
+      toSchemaInput({ country, currency, timezone, taxLabel, taxRate, businessNumber, phone, email, address }),
+    );
     if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Check the form and try again");
+      toast.error(schemaErrorMessage(parsed));
       return;
     }
     setSaving(true);
     try {
-      const result = (await updateOrganization({
-        name: org?.name ?? "",
-        settings: {
-          ...(org?.settings ?? {}),
-          country: parsed.data.country,
-          currency: parsed.data.currency,
-          timezone: parsed.data.timezone,
-          taxLabel: parsed.data.taxLabel,
-          abn: parsed.data.businessNumber,
-          phone: parsed.data.phone,
-          email: parsed.data.email || undefined,
-          address: parsed.data.address,
-        },
-        defaultTaxRate: parsed.data.taxRate ?? null,
-      })) as { settings?: OrgSettings };
-      refreshOrganization(orgId);
-      // The server silently forces `country` back to whatever was already
-      // persisted (`withImmutableCountry`, src/server/settings.ts) rather
-      // than rejecting a changed value — normally unreachable here since the
-      // picker is disabled once `countryLocked`, but a stale/duplicate
-      // session (double tab, browser back/forward) could still submit a
-      // different one. Check the actual persisted value rather than assume
-      // the submit succeeded as written.
-      if (result.settings?.country && result.settings.country !== parsed.data.country) {
-        setCountry(result.settings.country);
+      const { mismatchCountry } = await saveOperatingDetails(orgId, org, parsed.data);
+      if (mismatchCountry) {
+        setCountry(mismatchCountry);
         setCountryLocked(true);
-        toast.error(
-          `Country is already set to ${getCountry(result.settings.country)?.name ?? result.settings.country} and can't be changed.`,
-        );
+        toast.error(countryLockedMessage(mismatchCountry));
         return;
       }
       toast.success("Saved.");
       onDone();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong");
+      toast.error(saveErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -179,60 +260,26 @@ export function StepOperating({ orgId, onDone }: { orgId: string; onDone: () => 
         </div>
       ) : (
         <div className="mt-6 space-y-5">
-          <div className="space-y-2">
-            <Label htmlFor="op-country">Country</Label>
-            <Select value={country} onValueChange={handleCountryChange} disabled={countryLocked}>
-              <SelectTrigger id="op-country">
-                <SelectValue>{countryDef?.name ?? "Select a country"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {listEnabledCountries().map((c) => (
-                  <SelectItem key={c.code} value={c.code}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="flex items-start gap-1.5 text-xs text-fg-3">
-              <Lock className="mt-0.5 h-3 w-3 flex-none" aria-hidden />
-              {countryLocked && "Already set. "}
-              Permanent. It sets your currency, tax, paper size and date format, so it can&apos;t
-              be changed once you&apos;re running. Everything else on this page can.
-            </p>
-          </div>
+          <CountrySelectField
+            country={country}
+            countryDef={countryDef}
+            locked={countryLocked}
+            onChange={handleCountryChange}
+          />
 
-          {countryDef && (
-            <div className="rounded-[var(--r)] border-2 border-line-2 bg-elev p-4">
-              <p className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
-                <Check className="h-3.5 w-3.5 text-ok" aria-hidden />
-                {countryDef.name} sets these — change any of them.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <FilledField id="op-currency" label="Currency" value={currency} onChange={setCurrency} />
-                <FilledField id="op-timezone" label="Time zone" value={timezone} onChange={setTimezone} />
-                <FilledField id="op-tax-label" label="Tax label" value={taxLabel} onChange={setTaxLabel} />
-                <FilledField
-                  id="op-tax-rate"
-                  label="Tax rate (%)"
-                  value={taxRate}
-                  onChange={setTaxRate}
-                  type="number"
-                  placeholder={countryDef.defaultTaxRate == null ? "No default — set your own" : undefined}
-                />
-              </div>
-              <div className="mt-3 space-y-2">
-                <Label htmlFor="op-business-number">{businessNumberLabel}</Label>
-                <Input
-                  id="op-business-number"
-                  value={businessNumber}
-                  onChange={(e) => setBusinessNumber(e.target.value)}
-                />
-                <p className="text-xs text-fg-3">
-                  Your business number. Prints on every tax invoice.
-                </p>
-              </div>
-            </div>
-          )}
+          <CountryAutofillSection
+            countryDef={countryDef}
+            currency={currency}
+            onCurrencyChange={setCurrency}
+            timezone={timezone}
+            onTimezoneChange={setTimezone}
+            taxLabel={taxLabel}
+            onTaxLabelChange={setTaxLabel}
+            taxRate={taxRate}
+            onTaxRateChange={setTaxRate}
+            businessNumber={businessNumber}
+            onBusinessNumberChange={setBusinessNumber}
+          />
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
@@ -273,6 +320,107 @@ export function StepOperating({ orgId, onDone }: { orgId: string; onDone: () => 
         </div>
       )}
     </AuthShell>
+  );
+}
+
+/** The country picker + its M6 "permanent" hint — split out of the main
+ *  component purely to keep `StepOperating`'s own complexity down. */
+function CountrySelectField({
+  country,
+  countryDef,
+  locked,
+  onChange,
+}: {
+  country: string;
+  countryDef: CountryDefinition | undefined;
+  locked: boolean;
+  onChange: (code: string) => void;
+}) {
+  const lockedPrefix = locked ? "Already set. " : "";
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="op-country">Country</Label>
+      <Select value={country} onValueChange={onChange} disabled={locked}>
+        <SelectTrigger id="op-country">
+          <SelectValue>{countryDef?.name ?? "Select a country"}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {listEnabledCountries().map((c) => (
+            <SelectItem key={c.code} value={c.code}>
+              {c.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="flex items-start gap-1.5 text-xs text-fg-3">
+        <Lock className="mt-0.5 h-3 w-3 flex-none" aria-hidden />
+        {lockedPrefix}Permanent. It sets your currency, tax, paper size and date format, so it
+        can&apos;t be changed once you&apos;re running. Everything else on this page can.
+      </p>
+    </div>
+  );
+}
+
+/** The four auto-filled fields + the business-number field whose LABEL (not
+ *  value) tracks the country — split out of the main component purely to
+ *  keep `StepOperating`'s own complexity down. Renders nothing until a
+ *  country is picked. */
+function CountryAutofillSection({
+  countryDef,
+  currency,
+  onCurrencyChange,
+  timezone,
+  onTimezoneChange,
+  taxLabel,
+  onTaxLabelChange,
+  taxRate,
+  onTaxRateChange,
+  businessNumber,
+  onBusinessNumberChange,
+}: {
+  countryDef: CountryDefinition | undefined;
+  currency: string;
+  onCurrencyChange: (v: string) => void;
+  timezone: string;
+  onTimezoneChange: (v: string) => void;
+  taxLabel: string;
+  onTaxLabelChange: (v: string) => void;
+  taxRate: string;
+  onTaxRateChange: (v: string) => void;
+  businessNumber: string;
+  onBusinessNumberChange: (v: string) => void;
+}) {
+  if (!countryDef) return null;
+  const taxRatePlaceholder = countryDef.defaultTaxRate == null ? "No default — set your own" : undefined;
+  return (
+    <div className="rounded-[var(--r)] border-2 border-line-2 bg-elev p-4">
+      <p className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+        <Check className="h-3.5 w-3.5 text-ok" aria-hidden />
+        {countryDef.name} sets these — change any of them.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <FilledField id="op-currency" label="Currency" value={currency} onChange={onCurrencyChange} />
+        <FilledField id="op-timezone" label="Time zone" value={timezone} onChange={onTimezoneChange} />
+        <FilledField id="op-tax-label" label="Tax label" value={taxLabel} onChange={onTaxLabelChange} />
+        <FilledField
+          id="op-tax-rate"
+          label="Tax rate (%)"
+          value={taxRate}
+          onChange={onTaxRateChange}
+          type="number"
+          placeholder={taxRatePlaceholder}
+        />
+      </div>
+      <div className="mt-3 space-y-2">
+        <Label htmlFor="op-business-number">{countryDef.businessNumberLabel}</Label>
+        <Input
+          id="op-business-number"
+          value={businessNumber}
+          onChange={(e) => onBusinessNumberChange(e.target.value)}
+        />
+        <p className="text-xs text-fg-3">Your business number. Prints on every tax invoice.</p>
+      </div>
+    </div>
   );
 }
 

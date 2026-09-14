@@ -46,15 +46,28 @@ code-gated (a site admin is already trusted).
   the session** (`session.session.activeOrganizationId`, set by the client-callable
   `organization.setActive()`), but **never trust it alone** (R-9.3) — every
   resolution re-validates it against a live `Member` row. A removed member, an
-  archived membership, or a stale/forged session value resolves to `null`, not the
-  claimed org.
+  archived membership, or a stale/forged session value falls through to the
+  sole-membership fallback below rather than resolving to the claimed org.
+- **Sole-membership fallback**, shared with the Convex JWT mint below: if
+  `activeOrganizationId` is unset, or doesn't re-validate, and the caller has
+  **exactly one** live membership, that org is used — nothing is guessed with 0
+  or 2+ memberships (still `null`). This exists for the SSO-redirect race
+  `OrgActivator` (`src/components/providers/org-activator.tsx`) heals
+  client-side: an SSO login redirects straight to `/dashboard` via
+  `callbackURL`, bypassing the login page's `handlePostLogin()` →
+  `organization.setActive()` call, so `activeOrganizationId` can still be unset
+  on the very first server-rendered request/server action after the redirect.
+  Before this fallback existed, that request threw `"No active organization.
+  Please select an organization."` (observed in production) instead of just
+  resolving the obvious answer.
 - Memoized per-request with React `cache()` so every caller in the same request
-  shares one session fetch + one membership query.
+  shares one session fetch + one membership query (plus the fallback query only
+  when needed).
 - The Convex JWT's `orgId`/`role` claims (`src/lib/auth.ts`'s `definePayload`) are
-  minted the same way — re-read from a live `Member` row at every mint, with a
-  same-request fallback to the user's SOLE membership if `activeOrganizationId` is
-  unset (e.g. the SSO-redirect race `OrgActivator` exists to heal). With 0 or 2+
-  memberships and no active org set, nothing is guessed — `orgId: null`.
+  minted the same way — re-read from a live `Member` row at every mint, with the
+  identical same-request fallback to the user's SOLE membership if
+  `activeOrganizationId` is unset or stale. With 0 or 2+ memberships and no active
+  org set, nothing is guessed — `orgId: null`.
 
 ### Membership creation — invite/provisioning only, never auto-join
 Membership is only ever created by: invite-accept (`organization.acceptInvitation`),

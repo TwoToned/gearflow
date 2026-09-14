@@ -136,9 +136,40 @@ second default on top of a real one. The location write is best-effort on skip (
 a location can always be renamed or added to later, so a transient failure here must never
 strand the wizard.
 
-## Step 5 — not yet built
+## Step 5 — "your team" + "your gear" (C5, #1103)
 
-Team invites and gear import (#1103) are still open, and #1104 (the finish checklist) closes
-out Phase C. Until they land, step 4's "Skip for now" and "Save and continue" both end the
-wizard by redirecting to `/dashboard` — consistent with D3: everything past the name is safe
-to skip because it's a live org, not a draft.
+**One screen, two sections — not two steps.** The design doc's own screen table lists "Your
+team" and "Your gear" as separate rows, but its opening line says "Five screens, sectioned —
+not eight steps, which tests as a slog," and the mockup confirms it: there is no standalone
+"Step X of 5 · Your team" panel, only a single step-5 panel with the gear fork on it. `C4`
+already sectioned five content groups onto one screen (step 4) the same way — step 5 follows
+suit rather than pushing `TOTAL_STEPS` to 6.
+
+**There is no `OrgSettings` write on this screen at all.** Both sections are already-final,
+independently-live writes the instant you act — an invite is sent through `addMemberByEmail`
+(Prisma's `Invitation` model, not Convex, not `OrgSettings`) the moment you click "Send
+invite"; a model is created through `useModelWrites().create({ name })` the moment you click
+"Add"; a CSV import (`CSVImportDialog`, reused as-is) commits row by row as it runs. D5's "no
+draft state" applies at the finest possible grain — there's nothing to batch into a "Save and
+continue", so this screen doesn't have one. "Skip for now" is a genuine no-op here (unlike
+step 4's location fallback — nothing on this screen is load-bearing enough to need one), and
+the primary "Finish setup" button does the exact same `onDone()` under a different label.
+
+Gear import defaults to `type="models"`: a brand-new org has zero models, and an asset needs
+one to attach to, so offering an assets import first would have nothing to reference.
+"Add one by hand" creates a bare-name model only — it deliberately does NOT chain into asset
+creation here. The full model → asset → project → line-item hand-off is Phase D's job
+(#1107), coached by the activation tour after the wizard hands off, matching #1068's own
+framing ("Your gear ... hands off to Phase D").
+
+**Fixed alongside this screen**: the invite-role dropdown (`InviteMember`, the Settings > Team
+page) had drifted out of sync with `roleLabels` (`src/lib/permissions.ts`) — its hand-kept
+`builtInRoles` array was missing `warehouse`, a real, fully-permissioned role. Both this
+screen and `InviteMember` now read from one shared list, `src/lib/role-descriptions.ts`
+(`ASSIGNABLE_ROLE_OPTIONS`), which also carries the plain-English explainer the design doc
+calls for (§6.1) — the one place these five role descriptions are written (R-3.1).
+
+## C6 — "Finish setup" checklist (#1104)
+
+Not another wizard step — the dashboard-side, derived-progress checklist that closes out Phase
+C. Not yet built.

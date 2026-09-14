@@ -1,19 +1,23 @@
 /**
  * PDF generation orchestrator.
  *
- * One pipeline: build data → compose (fixed layout, paginated) → render.
  * The 5 project document types (quote, invoice, packing-list, return-sheet,
- * delivery-docket) go through `composeDocument()`. Call sheets use their own
- * service-based builder (`templates/call-sheet-services.ts`); T&T reports use
- * their own single-purpose builders (`templates/tt-*.ts`).
+ * delivery-docket) go through `buildDocumentData()` (shared with the old
+ * pipeline — org/project/line-item data assembly doesn't change) then
+ * `renderReactPdfTemplate()` (#1156 cutover, react-pdf's own vendor
+ * boundary — see `src/lib/react-pdf/render.tsx`). No `composeDocument()`/
+ * font-measuring step anymore: react-pdf paginates and wraps itself, which
+ * is the entire point of the migration (`FEATUREDOCS/13-pdfs.md`'s "Known
+ * structural weakness" note — this is the fix). Call sheets use their own
+ * service-based builder (`templates/call-sheet-services.ts`); T&T reports
+ * use their own single-purpose builders (`templates/tt-*.ts`) and still
+ * render through the old pdfme pipeline (`renderPdfTemplate`) — out of
+ * scope for this migration (FEATUREDOCS/13-pdfs.md).
  */
-import { PDFDocument } from "@pdfme/pdf-lib";
-import * as pdfLib from "@pdfme/pdf-lib";
 import { buildDocumentData } from "./build-document-data";
-import { composeDocument } from "./document-composer";
 import { DOCUMENT_LAYOUTS, type ProjectDocumentType } from "./document-layouts";
-import { getHelveticaFonts } from "./plugins/helpers";
 import { renderPdfTemplate } from "./pdf-render";
+import { renderReactPdfTemplate } from "@/lib/react-pdf/render";
 import { getTtReportBuilder } from "./templates";
 import type { TestTagReportType } from "./types";
 
@@ -67,22 +71,7 @@ export async function generatePdf(
     invoiceId: options?.invoiceId,
   });
 
-  // Real font metrics for composeDocument's accurate text-wrap measurement
-  // (clientNotes/termsAndConditions) — a throwaway document used purely to
-  // embed the standard fonts, never rendered itself; the actual PDF is
-  // produced by renderPdfTemplate()'s own pdfme generate() call below.
-  const measureDoc = await PDFDocument.create();
-  const fonts = await getHelveticaFonts(measureDoc, pdfLib, new Map());
-
-  const { template, inputs } = composeDocument(
-    docType,
-    data,
-    data.org_document_color,
-    fonts,
-    { draftPreview: options?.draftPreview },
-    data.org_paper_size,
-  );
-  return renderPdfTemplate(template, inputs);
+  return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview });
 }
 
 /**

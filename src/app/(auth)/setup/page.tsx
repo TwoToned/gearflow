@@ -1,7 +1,7 @@
 "use client";
 // use-client: interactive — React state/effects (client-only) (R-8.1.1)
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { organization } from "@/lib/auth-client";
 import { getMyOrganizations, mirrorMyMembership, seedOrgDefaults, checkSlugAvailable } from "@/server/public-org";
@@ -13,6 +13,7 @@ import { WizardRail } from "@/components/ui/wizard-rail";
 import { AuthShell } from "../auth-playful";
 import { StepOperating } from "./step-operating";
 import { StepBranding } from "./step-branding";
+import { StepNumbering } from "./step-numbering";
 import { TOTAL_STEPS } from "./wizard-steps";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
@@ -30,6 +31,25 @@ function slugify(text: string): string {
 type SlugCheckStatus = "checking" | "available" | "taken";
 type SlugStatus = "idle" | SlugCheckStatus;
 
+/** Steps 2+ each need a real org to write against — split out of
+ *  `SetupPage`'s own body purely to keep that component's cyclomatic
+ *  complexity under the R-3.6/complexity-ratchet ceiling (each `if` adds a
+ *  decision point, and a 4th step pushed the inline version over it). Null
+ *  when still on step 1 (the name form renders instead) or `createdOrgId`
+ *  isn't set yet. */
+function renderLaterStep(
+  step: number,
+  createdOrgId: string | null,
+  setStep: (n: number) => void,
+  router: ReturnType<typeof useRouter>,
+): ReactNode {
+  if (!createdOrgId) return null;
+  if (step === 2) return <StepOperating orgId={createdOrgId} onDone={() => setStep(3)} />;
+  if (step === 3) return <StepBranding orgId={createdOrgId} onDone={() => setStep(4)} />;
+  if (step === 4) return <StepNumbering orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
+  return null;
+}
+
 /**
  * `/setup` — the wizard shell, hosting all 5 steps as client-side state on
  * one route (not one route per step — `WizardRail`'s generic `step`/`total`
@@ -40,8 +60,9 @@ type SlugStatus = "idle" | SlugCheckStatus;
  * Step 0/1 (C1, #1098) is the ONLY blocking screen (D3): naming the org
  * commits it for real — `organization.create()` → `setActive()` →
  * `mirrorMyMembership()`. Every later screen (step 2, C2/#1099; step 3, C3/
- * #1101; steps 4-5 still unbuilt — #1102-#1104) is then an ordinary settings
- * write against a live org rather than draft state, and can be skipped.
+ * #1101; step 4, C4/#1102; step 5 still unbuilt — #1103/#1104) is then an
+ * ordinary settings write against a live org rather than draft state, and
+ * can be skipped.
  */
 export default function SetupPage() {
   const router = useRouter();
@@ -172,13 +193,8 @@ export default function SetupPage() {
     }
   };
 
-  if (step === 2 && createdOrgId) {
-    return <StepOperating orgId={createdOrgId} onDone={() => setStep(3)} />;
-  }
-
-  if (step === 3 && createdOrgId) {
-    return <StepBranding orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
-  }
+  const laterStep = renderLaterStep(step, createdOrgId, setStep, router);
+  if (laterStep) return laterStep;
 
   return (
     <AuthShell accent="setup" annotation="first the name — the rest can wait.">

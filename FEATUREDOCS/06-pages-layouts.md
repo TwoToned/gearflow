@@ -50,7 +50,8 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/register/admin` | Secret admin registration (token-gated) |
 | `/two-factor` | TOTP verification after login |
 | `/invite/[id]` | Accept team invitation |
-| `/onboarding` | First-time org setup (redirects to dashboard if org exists) |
+| `/welcome` | Create-vs-join fork for a signed-in user with no live org (B1, #1092) |
+| `/setup` | Org setup wizard shell + step 0, name/slug (redirects to dashboard if org exists) — C1, #1098; formerly `/onboarding` |
 | `/pending-approval` | SSO user pending admin approval |
 
 ### App (Protected)

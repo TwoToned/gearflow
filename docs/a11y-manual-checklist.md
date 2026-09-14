@@ -108,7 +108,7 @@ treating it as a finding — several were test-harness artifacts (see notes belo
 | Flow | Method | Result |
 |------|--------|--------|
 | 3. Sign out | Dashboard nav walk; account menu opened with `Enter`, closed with `Escape` (focus returns to trigger), re-opened and navigated to "Sign out" with real `ArrowDown` presses, activated with `Enter`; confirmed the session is actually invalidated (a post-sign-out visit to `/dashboard` bounces to `/login`) | ✅ Clean |
-| 4. Register / onboarding | Registration form and the org-creation form both filled and submitted keyboard-only (`Tab` between fields, `Enter` to submit); confirmed onboarding actually completes (revisiting `/onboarding` redirects to `/dashboard`) | ✅ Clean |
+| 4. Register / onboarding | Registration form and the org-creation form both filled and submitted keyboard-only (`Tab` between fields, `Enter` to submit); confirmed onboarding actually completes (revisiting `/setup` redirects to `/dashboard`) | ✅ Clean |
 | 5. Create a project (revenue path) | Keyboard walk through the 4-step wizard (Basics → Schedule → Site → Review → Create job) | ✅ Clean now — one finding found and **fixed** in a follow-up PR, see below |
 | 6. Add line items + pricing (revenue path) | Keyboard-only: "Add" menu (`Enter` + `ArrowDown` + `Enter`), item dialog (tab-strip + form fields), model search combobox, "Add to project" | ✅ Clean now — one finding found and **fixed** in this PR, see below |
 | 7. Availability check (revenue path) | Inline availability panel (async Convex query) renders "1 available" with no overbook warning, exercised as part of the same keyboard flow as flow 6 | ✅ Clean |

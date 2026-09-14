@@ -11,7 +11,7 @@ memberships determine which org(s) they belong to. Single-org mode (exactly one
 
 **Self-serve org creation gate is live** (Phase B, B3/#1095, D6):
 `allowUserToCreateOrganization` in `src/lib/auth.ts` allows the one-time
-bootstrap (no org exists anywhere yet, `src/app/(auth)/onboarding/page.tsx`)
+bootstrap (no org exists anywhere yet, `src/app/(auth)/setup/page.tsx`)
 unconditionally, then falls through to the site-admin `SiteSettings.allowOrgCreation`
 toggle (`/admin/settings`, `updateSiteSettings`). If `orgCreationCodeEnabled` is
 also on, `organizationHooks.beforeCreateOrganization` additionally requires a
@@ -34,8 +34,8 @@ since neither Better Auth hook exposes the request in this version (1.6.25); see
 `org-creation-gate.ts`'s doc comment for the scope note. `getOrgCreationPolicy`
 (any authenticated user) is the status check `/welcome` (the B1 fork screen,
 #1092) uses to decide whether to show a "set up a new company" card at all,
-and whether `/onboarding` — the "Set up a new company" destination — should
-render a signup-code field. It never returns the code itself; hiding the card
+and whether `/setup` (C1, #1098) — the "Set up a new company" destination —
+should render a signup-code field. It never returns the code itself; hiding the card
 or the field is cosmetic only, `beforeCreateOrganization` is the real gate
 either way (R-9.3). Additional orgs can also still be created by a site admin
 directly (`adminCreateOrganization`, `src/server/site-admin.ts`), which is not
@@ -102,8 +102,8 @@ in Settings → Team's "Pending Join Requests" section (`approveJoinRequest`/
 - `getMyOrganizations()` — the calling session's memberships (`{ id, name, slug,
   role }[]`), membership-derived, never a list of all orgs filtered client-side
   (R-9.3). The multi-tenant replacement for the single-org `getTheOrgId()` —
-  login/register/invite/onboarding/`OrgActivator`/the `(app)` layout gate all
-  resolve through here: **0 → `/onboarding`, 1 → activate it, 2+ → `/select-organization`
+  login/register/invite/`/setup`/`OrgActivator`/the `(app)` layout gate all
+  resolve through here: **0 → `/welcome`, 1 → activate it, 2+ → `/select-organization`
   (never guess which one).**
 - `getSoloOrgBranding()` — best-effort org name for the pre-auth login page, returned
   only when exactly one org exists system-wide (an anonymous visitor's org isn't
@@ -210,7 +210,7 @@ Tracked under the same `#1118` as the other quarantined harness gaps.
   they never appear in the picker/switcher/`OrgActivator`.
   `hasOnlyArchivedMemberships()` distinguishes "every org I'm in got archived" from
   "never had one" for the `(app)` layout gate, which routes the former to
-  `/organization-archived` (an explanatory screen) instead of `/onboarding`.
+  `/organization-archived` (an explanatory screen) instead of `/welcome`.
 
 ### Tenancy hygiene (#1077, A7)
 
@@ -245,18 +245,19 @@ Tracked under the same `#1118` as the other quarantined harness gaps.
   typed exactly, deletes storage blobs before the `storedFiles` records that
   reference them, then deletes the Postgres `Organization` row last (cascading
   `Member`/`Invitation` via the schema's own `onDelete: Cascade`).
-- **Seed-vs-operating tax rate.** `resolveOrgDefaultTaxRate`
-  (`convex/lib/orgSettings.ts`) already treats an org's own
-  `orgSettings.defaultTaxRate` as the sole operating value — `SiteSettings.
-  defaultTaxRate` was pure admin-UI decoration with no live-read path into any
-  org's actual tax math. `seedOrgDefaultTaxRate` (`src/server/public-org.ts`)
-  copies the platform's *current* default into a freshly-created org's own
-  settings once, at creation, wired into both org-creation paths (self-serve
-  onboarding and `adminCreateOrganization`) — never a live cross-org read.
-  `SiteSettings.defaultCurrency` gets no equivalent treatment: it has zero
-  consumers anywhere today (currency formatting is hardcoded, not
-  settings-driven), so there's no live read to fix — international currency
-  support is later epic work.
+- **Seed-vs-operating tax rate + currency.** `resolveOrgDefaultTaxRate`
+  (`convex/lib/orgSettings.ts`) treats an org's own `orgSettings.defaultTaxRate`
+  as the sole operating value, and `formatConfigFromOrgSettings`
+  (`src/lib/formatters.ts`, I2/#1081) does the same for `orgSettings.currency`
+  — `SiteSettings.defaultTaxRate`/`.defaultCurrency` would otherwise be pure
+  admin-UI decoration with no live-read path into any org's actual tax math or
+  formatting. `seedOrgDefaults` (`src/server/public-org.ts`, extended to
+  currency by C1/#1098) copies the platform's *current* defaults into a
+  freshly-created org's own settings once, at creation, wired into both
+  org-creation paths (`/setup`'s step 0 and `adminCreateOrganization`) — never
+  a live cross-org read. It also busts the org/SSO login-info cache
+  (`org-login-info-cache.ts`) for the new org's slug, in case a pre-creation
+  slug-availability probe already cached it as an "unknown org" miss.
 
 ### Site admin: the real org list (#1078, A8)
 
@@ -313,7 +314,7 @@ Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/au
 
 ## Middleware (`src/middleware.ts`)
 - Checks cookies: `better-auth.session_token` or `__Secure-better-auth.session_token` (HTTPS)
-- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/onboarding`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
+- Public routes exempted: `/login`, `/register`, `/api/auth`, `/invite`, `/two-factor`, `/welcome`, `/setup`, `/api/platform-name`, `/api/registration-policy`, `/pending-approval`
 - Unauthenticated requests redirect to `/login?callbackUrl=...`
 
 ## Session Cookie Hardening (POLICY.md R-8.4.5)

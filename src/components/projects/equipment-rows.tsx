@@ -26,6 +26,10 @@ import {
   Handshake,
   ArrowRightLeft,
   Sparkles,
+  Layers,
+  ListOrdered,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -37,6 +41,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  type CategoryPricingDisplay,
+  isRollupCategory,
+} from "@/lib/category-pricing-display";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -305,6 +313,8 @@ export function GroupRow({
   onAddKit,
   onMove,
   onSaveAsTemplate,
+  inRollupCategory,
+  onTogglePriceReveal,
   orgId,
   projectId,
   commentBadge,
@@ -338,6 +348,13 @@ export function GroupRow({
   onEditPrice?: () => void;
   onAddEquipment: () => void;
   onAddKit: () => void;
+  /** Category price rollup — true when this group sits in a `ROLLUP` category,
+   *  so its collapsed bundle row prints without a price on client-facing
+   *  documents unless revealed. Gates the reveal entry below.
+   *  See src/lib/category-pricing-display.ts. */
+  inRollupCategory?: boolean;
+  /** Flip this group's `revealPriceInRollup`. The menu entry hides without it. */
+  onTogglePriceReveal?: () => void;
   /** Open the move-to-category dialog. Optional so callers that don't
    *  want the affordance (e.g. read-only views) can omit it. */
   onMove?: () => void;
@@ -356,6 +373,21 @@ export function GroupRow({
   const groupTotal = priceVal != null ? Math.max(0, priceVal * group.quantity - discountVal) : null;
   const shortcuts = useRowShortcuts({ e: onEdit, m: onMove, d: onDelete }, "equipment");
   const isMobile = useIsMobile();
+
+  /** Category price rollup, per-item reveal — a priced group collapses to ONE
+   *  row on a client-facing document, so it needs the same control every other
+   *  row in the section has. Defined once, rendered in both kebabs. */
+  const priceRevealItem =
+    inRollupCategory && onTogglePriceReveal ? (
+      <DropdownMenuItem onClick={onTogglePriceReveal}>
+        {group.revealPriceInRollup ? (
+          <EyeOff className="mr-2 h-3.5 w-3.5" />
+        ) : (
+          <Eye className="mr-2 h-3.5 w-3.5" />
+        )}
+        {group.revealPriceInRollup ? "Hide this price on documents" : "Show this price on documents"}
+      </DropdownMenuItem>
+    ) : null;
 
   // ── Mobile: group header card (children render as sibling cards below). ──
   const groupMenu = (
@@ -378,6 +410,7 @@ export function GroupRow({
             <Pencil className="mr-2 h-3.5 w-3.5" />
             Edit
           </DropdownMenuItem>
+          {priceRevealItem}
           <DropdownMenuItem onClick={onAddEquipment}>
             <Plus className="mr-2 h-3.5 w-3.5" />
             Add equipment
@@ -592,6 +625,7 @@ export function GroupRow({
                       Edit price
                     </DropdownMenuItem>
                   )}
+                  {priceRevealItem}
                   <DropdownMenuItem onClick={onAddEquipment}>
                     <Plus className="mr-2 h-3.5 w-3.5" />
                     Add equipment
@@ -861,6 +895,7 @@ export function CategoryRow({
   columnCount,
   onRename,
   onDelete,
+  onSetPricingDisplay,
   onAddEquipment,
   onAddKit,
   onAddCustom,
@@ -878,6 +913,11 @@ export function CategoryRow({
   columnCount: number;
   onRename: () => void;
   onDelete: () => void;
+  /** Category price rollup — switch this category between per-line pricing and
+   *  one derived subtotal on client-facing documents. Optional so a read-only
+   *  caller can omit it; the menu entry hides when it isn't supplied.
+   *  See src/lib/category-pricing-display.ts. */
+  onSetPricingDisplay?: (next: CategoryPricingDisplay) => void;
   /** Open the unified add dialog scoped to this category (no group).
    *  All three are optional so callers can opt in. The kebab section
    *  hides entirely when none are supplied. Sub-hire is intentionally
@@ -890,6 +930,25 @@ export function CategoryRow({
 } & DragHandleControls) {
   const hasAddActions = !!(onAddEquipment || onAddKit || onAddCustom);
   const isMobile = useIsMobile();
+  const isRollup = isRollupCategory(cat.pricingDisplay);
+
+  /** The pricing-display toggle, shared by the mobile kebab and the desktop
+   *  one so the two menus can't drift. */
+  const pricingDisplayItem = onSetPricingDisplay ? (
+    <DropdownMenuItem onClick={() => onSetPricingDisplay(isRollup ? "ITEMISED" : "ROLLUP")}>
+      {isRollup ? <ListOrdered className="mr-2 h-3.5 w-3.5" /> : <Layers className="mr-2 h-3.5 w-3.5" />}
+      {isRollup ? "Show a price per item" : "Show one price for the category"}
+    </DropdownMenuItem>
+  ) : null;
+
+  /** Shown next to the name so the operator can see, without opening a menu,
+   *  that this category's documents won't carry per-item prices. Labelled, not
+   *  colour-only (DESIGN.md §3.3). */
+  const rollupBadge = isRollup ? (
+    <Badge status="info" className="font-normal">
+      One price
+    </Badge>
+  ) : null;
 
   const categoryMenu = (
     <DropdownMenu>
@@ -923,6 +982,7 @@ export function CategoryRow({
               )}
             </>
           )}
+          {pricingDisplayItem}
           <DropdownMenuItem onClick={onRename}>
             <Pencil className="mr-2 h-3.5 w-3.5" />
             Rename
@@ -944,6 +1004,7 @@ export function CategoryRow({
     return (
       <CategoryCardHeading
         name={cat.name}
+        badge={rollupBadge}
         dragHandleRef={dragHandleRef}
         dragAttributes={dragAttributes}
         dragListeners={dragListeners}
@@ -977,6 +1038,7 @@ export function CategoryRow({
       <TableCell colSpan={columnCount} className="py-2 px-1">
         <div className="flex items-center gap-1.5">
           <h3 className="t-overline text-muted">{cat.name}</h3>
+          {rollupBadge}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="size-8 opacity-0 transition-opacity pointer-coarse:opacity-100 group-hover/cat:opacity-100 focus-visible:opacity-100">
@@ -1008,6 +1070,7 @@ export function CategoryRow({
                     )}
                   </>
                 )}
+                {pricingDisplayItem}
                 <DropdownMenuItem onClick={onRename}>
                   <Pencil className="mr-2 h-3.5 w-3.5" />
                   Rename
@@ -1050,6 +1113,8 @@ export function LineItemRow({
   onMoveToGroup,
   onRemove,
   onClick,
+  inRollupCategory,
+  onTogglePriceReveal,
   dragHandleRef,
   dragAttributes,
   dragListeners,
@@ -1093,6 +1158,15 @@ export function LineItemRow({
    *  specific group and adopts its category. */
   onMoveToGroup: () => void;
   onRemove: () => void;
+  /** Category price rollup — true when this row sits in a `ROLLUP` category, so
+   *  its price is hidden on client-facing documents unless revealed. Gates the
+   *  reveal menu entry: offering it in an ITEMISED category would suggest the
+   *  flag does something there, and it does not.
+   *  See src/lib/category-pricing-display.ts. */
+  inRollupCategory?: boolean;
+  /** Flip this row's `revealPriceInRollup`. Omitted for rows the caller can't
+   *  patch (or won't) — the menu entry hides with it. */
+  onTogglePriceReveal?: () => void;
   /** Multi-select: row click handler (not firing for grip handle clicks) */
   onClick?: (e: React.MouseEvent) => void;
   /** Inline (click-to-edit, save-on-blur) price/discount/description/notes —
@@ -1119,6 +1193,21 @@ export function LineItemRow({
   // sub-hire-item-edit-payload.ts and equipment-tab.tsx's
   // handleInlineLineItemUpdate.
   const isSubHireGroupChild = item.subHireGroupId != null;
+
+  /** Category price rollup, per-item reveal — only offered inside a rolled-up
+   *  category, where the flag actually changes what a client sees. Defined once
+   *  and rendered in both the desktop and mobile kebabs so they can't drift. */
+  const priceRevealItem =
+    inRollupCategory && onTogglePriceReveal ? (
+      <DropdownMenuItem onClick={onTogglePriceReveal}>
+        {item.revealPriceInRollup ? (
+          <EyeOff className="mr-2 h-3.5 w-3.5" />
+        ) : (
+          <Eye className="mr-2 h-3.5 w-3.5" />
+        )}
+        {item.revealPriceInRollup ? "Hide this price on documents" : "Show this price on documents"}
+      </DropdownMenuItem>
+    ) : null;
 
   // Captures the shift key on checkbox click so the row-level handler can extend
   // a range — Radix's onCheckedChange doesn't forward the originating event.
@@ -1252,6 +1341,7 @@ export function LineItemRow({
             <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
             Move to group
           </DropdownMenuItem>
+          {priceRevealItem}
           <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
             <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
             Needs review
@@ -1798,6 +1888,7 @@ export function LineItemRow({
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to category
                 </DropdownMenuItem>
+                {priceRevealItem}
                 <DropdownMenuItem onClick={onMoveToGroup}>
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to group

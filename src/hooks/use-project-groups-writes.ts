@@ -74,6 +74,22 @@ export function useProjectGroupWrites() {
       });
     },
 
+    /** Category price rollup, per-item reveal — print this group's collapsed
+     *  bundle price on client-facing documents even inside a rolled-up
+     *  category. Its own call (not folded into `update`) so a caller can't
+     *  accidentally blank the group's title/description by patching only the
+     *  flag through the shared, clears-on-falsy `update` shape above. */
+    setPriceReveal: async (groupId: string, reveal: boolean): Promise<void> => {
+      await updateM({
+        id: groupId,
+        orgId: requireOrg(),
+        revealPriceInRollup: reveal,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+      });
+    },
+
     updatePrice: async (
       groupId: string,
       price: number,

@@ -168,6 +168,44 @@ pipeline's `invoice`-specific branches in `document-composer.ts`:
   meant to flow onto whatever room is left after the totals block, not read
   as its own legal section.
 
+**Warehouse doc types ported (#1154, 2026-09-14).** The 3 warehouse doc types
+— `src/lib/react-pdf/packing-list-document.tsx`, `return-sheet-document.tsx`,
+`delivery-docket-document.tsx` — compose the same shared components as
+quote/invoice. Still standalone, still not wired into
+`generate-pdf.ts`/`pdf-render.ts`, still hand-composed in JSX (point (1) above
+is unchanged). Unlike quote/invoice, these turn `showKitChildren` back on and
+`showPricing`/`showBadges`/`showNotes` off — `LineItemsTable` (#1152) already
+carried every feature this needs (checkboxes, per-unit sub-rows, condition
+columns, row numbers, delivery-docket's kit-promotion grouping), so this issue
+was almost entirely wiring, not new component work:
+
+- `packing-list-document.tsx` — no totals/notes/T&Cs/signature block; ends
+  with the `totalItemsNote` line (`Total items: {data.total_items}`, same
+  fontSize/color as `document-composer.ts`'s original draw call).
+- `return-sheet-document.tsx` — `filterByStatus: ["CHECKED_OUT", "RETURNED"]`,
+  `showConditionColumns: true`, ends with `SignatureLine`'s default columns
+  ("Returned By"/"Received By"/"Date").
+- `delivery-docket-document.tsx` — `filterByStatus: ["CHECKED_OUT"]`,
+  `showRowNumbers: true`, `DetailsRow`'s new `showSiteContact` config flag
+  (below), ends with `SignatureLine` columns ("Delivered By"/"Received By"/
+  "Date").
+- `DetailsRow` (`components/details-row.tsx`) gained `showSiteContact` —
+  renders `Site Contact: {name} | Ph: {phone}` (phone segment omitted when
+  absent), mirroring `document-composer.ts`'s `detailsRow` case. Only
+  delivery-docket turns it on.
+
+No new SALE-filtering/kit-promotion logic was needed: `filterAndGroupItems`
+(#1152) already implements the WS11 (#950) per-doc-type SALE rules and
+delivery-docket's kit-parent-promotes-CHECKED_OUT-children grouping, and
+`components/__tests__/line-items-table.test.ts` +
+`line-items-table.render.test.tsx` already exercise all 5 doc types against
+that logic. The 3 new doc-level test files
+(`packing-list-document.test.ts` etc.) stick to this codebase's established
+react-pdf bar — render/no-throw/page-count sanity, including a run against
+the shared `makeMixedRentalSaleLineItems` fixture (`fixture.ts`, ported from
+`document-composer.test.ts`'s WS11 fixture) — rather than re-proving filtering
+logic the component-level tests already cover.
+
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`
 value next to the rate/total columns without adding information the reader

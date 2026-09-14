@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 418 | 291 | 125 | 1 | 1 |
-| Mutations | 764 | 277 | 478 | 0 | 9 |
-| **Total** | **1182** | **568** | **603** | **1** | **10** |
+| Queries | 420 | 291 | 127 | 1 | 1 |
+| Mutations | 766 | 277 | 480 | 0 | 9 |
+| **Total** | **1186** | **568** | **607** | **1** | **10** |
 
 <!-- reachability-floor: 568 -->
 
@@ -63,6 +63,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `backfillInvoiceSourceRevision` | 2 |
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
+| `backfillOrphanedLineItemComments` | 4 |
 | `backfillProjectLiveRevision` | 2 |
 | `backfillProjectWindow` | 1 |
 | `backfillQuoteRevisions` | 2 |

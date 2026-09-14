@@ -4608,6 +4608,144 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "backfillOrphanedLineItemComments.backfillOrphanedCommentThreadsPage",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "backfillOrphanedCommentThreadsPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "302589cceccccb8c",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillOrphanedLineItemComments.backfillOrphanedReviewMarkersPage",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "backfillOrphanedReviewMarkersPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "302589cceccccb8c",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillOrphanedLineItemComments.verifyOrphanedCommentThreads",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "verifyOrphanedCommentThreads",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e9753884d189782",
+    "returnsSha": "e789e32dd7114c4b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillOrphanedLineItemComments.verifyOrphanedReviewMarkers",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "verifyOrphanedReviewMarkers",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e9753884d189782",
+    "returnsSha": "e789e32dd7114c4b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "backfillProjectLiveRevision.backfillProjectLiveRevisionPage",
     "module": "backfillProjectLiveRevision",
     "fn": "backfillProjectLiveRevisionPage",
@@ -61317,10 +61455,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1182,
+  total: 1186,
   agentReachable: 568,
-  queries: 418,
-  mutations: 764,
+  queries: 420,
+  mutations: 766,
   agentReachableQueries: 291,
   agentReachableMutations: 277,
 } as const;

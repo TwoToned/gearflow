@@ -85,6 +85,29 @@ describe("StepBranding (smoke)", () => {
     expect(onDone).toHaveBeenCalled();
   });
 
+  it("disables 'Skip for now' while a save is in flight — a fast Save-then-Skip click can't double-fire the step outcome (D4, #1108)", async () => {
+    let resolveSave: (() => void) | undefined;
+    mocks.updateOrganization.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = () => resolve({});
+        }),
+    );
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    const onStepOutcome = vi.fn();
+    render(<StepBranding orgId="org1" onDone={onDone} onStepOutcome={onStepOutcome} />);
+
+    await user.click(await screen.findByRole("button", { name: /save and continue/i }));
+
+    const skipButton = (await screen.findByRole("button", { name: /skip for now/i })) as HTMLButtonElement;
+    expect(skipButton.disabled).toBe(true);
+
+    resolveSave?.();
+    await waitFor(() => expect(onStepOutcome).toHaveBeenCalledExactlyOnceWith("completed"));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
   it("switching document-logo mode to 'Logo, above header' updates the preview", async () => {
     const user = userEvent.setup();
     render(<StepBranding orgId="org1" onDone={vi.fn()} onStepOutcome={vi.fn()} />);

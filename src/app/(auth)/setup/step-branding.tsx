@@ -306,12 +306,13 @@ export function StepBranding({
           <div className="flex items-center justify-between gap-3 pt-2">
             <button
               type="button"
+              disabled={saving}
               onClick={() => {
                 capture(AnalyticsEvent.SetupStepSkipped, { step: "branding" satisfies SetupStepId });
                 onStepOutcome("skipped");
                 onDone();
               }}
-              className="text-sm text-muted hover:text-ink"
+              className="text-sm text-muted hover:text-ink disabled:opacity-50"
             >
               Skip for now
             </button>

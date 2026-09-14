@@ -15,8 +15,13 @@ const mocks = vi.hoisted(() => ({
   refreshOrgMembers: vi.fn(),
   refreshPendingInvitations: vi.fn(),
   createModel: vi.fn(async () => ({ id: "model1" })),
+  captured: [] as [string, unknown][],
 }));
 
+vi.mock("@/lib/analytics", () => ({
+  capture: (event: string, props: unknown) => mocks.captured.push([event, props]),
+  AnalyticsEvent: { SetupStepViewed: "setup_step_viewed", SetupStepCompleted: "setup_step_completed", SetupStepSkipped: "setup_step_skipped" },
+}));
 vi.mock("@/server/settings", () => ({
   addMemberByEmail: mocks.addMemberByEmail,
 }));
@@ -67,29 +72,38 @@ beforeEach(() => {
   mocks.refreshOrgMembers.mockClear();
   mocks.refreshPendingInvitations.mockClear();
   mocks.createModel.mockClear().mockResolvedValue({ id: "model1" });
+  mocks.captured = [];
 });
 
 describe("StepTeamGear (smoke)", () => {
-  it("'Skip for now' calls onDone without writing anything", async () => {
+  it("'Skip for now' calls onDone without writing anything, and reports its own outcome as skipped (not completed)", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepTeamGear orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
+    const onStepOutcome = vi.fn();
+    render(<StepTeamGear orgId="org1" onDone={onDone} onStepOutcome={onStepOutcome} />);
+    mocks.captured = []; // clear the mount-time setup_step_viewed capture
 
     await user.click(await screen.findByRole("button", { name: /skip for now/i }));
 
     expect(onDone).toHaveBeenCalled();
     expect(mocks.addMemberByEmail).not.toHaveBeenCalled();
     expect(mocks.createModel).not.toHaveBeenCalled();
+    expect(onStepOutcome).toHaveBeenCalledExactlyOnceWith("skipped");
+    expect(mocks.captured).toEqual([["setup_step_skipped", { step: "team_gear" }]]);
   });
 
-  it("'Finish setup' calls onDone without requiring any invites or gear", async () => {
+  it("'Finish setup' calls onDone without requiring any invites or gear, and reports its own outcome as completed (not skipped)", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<StepTeamGear orgId="org1" onDone={onDone} onStepOutcome={vi.fn()} />);
+    const onStepOutcome = vi.fn();
+    render(<StepTeamGear orgId="org1" onDone={onDone} onStepOutcome={onStepOutcome} />);
+    mocks.captured = []; // clear the mount-time setup_step_viewed capture
 
     await user.click(await screen.findByRole("button", { name: /finish setup/i }));
 
     expect(onDone).toHaveBeenCalled();
+    expect(onStepOutcome).toHaveBeenCalledExactlyOnceWith("completed");
+    expect(mocks.captured).toEqual([["setup_step_completed", { step: "team_gear" }]]);
   });
 
   it("sends an invite immediately on 'Send invite' (no batching), shows it in the list, and does NOT call onDone", async () => {

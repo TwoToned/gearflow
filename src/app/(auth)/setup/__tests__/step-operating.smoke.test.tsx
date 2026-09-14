@@ -173,6 +173,30 @@ describe("StepOperating (smoke)", () => {
     expect(select.value).toBe("AU");
   });
 
+  it("disables 'Skip for now' while a save is in flight — a fast Save-then-Skip click can't double-fire the step outcome (D4, #1108)", async () => {
+    let resolveSave: (() => void) | undefined;
+    mocks.updateOrganization.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = () => resolve({});
+        }),
+    );
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    const onStepOutcome = vi.fn();
+    render(<StepOperating orgId="org1" onDone={onDone} onStepOutcome={onStepOutcome} />);
+
+    await user.selectOptions(await screen.findByLabelText("Country"), "AU");
+    await user.click(screen.getByRole("button", { name: /save and continue/i }));
+
+    const skipButton = (await screen.findByRole("button", { name: /skip for now/i })) as HTMLButtonElement;
+    expect(skipButton.disabled).toBe(true);
+
+    resolveSave?.();
+    await waitFor(() => expect(onStepOutcome).toHaveBeenCalledExactlyOnceWith("completed"));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
   it("surfaces an error (not a false success) when the server silently keeps the existing country — never calls onDone", async () => {
     // Simulates the stale/duplicate-session case: the picker was somehow
     // enabled (or this ran before the lock existed) and a different country

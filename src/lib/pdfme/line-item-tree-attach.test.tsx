@@ -3,23 +3,27 @@
  * Convex attach helper (`attachLineItemTree`) feeding the FULL PDF pipeline.
  *
  * Per CLAUDE.md's PDF data-shape rule, plugin-only unit tests are not enough —
- * a data-shape change has five independent `DocumentLineItem` consumers, so this
- * exercises the whole chain against a realistic equipment tree:
+ * a data-shape change has multiple independent `DocumentLineItem` consumers, so
+ * this exercises the whole chain against a realistic equipment tree:
  *
  *   attachLineItemTree  →  (build-document-data enrichment)  →  structureLineItems
- *     →  getFilteredParentItems (status filter)  →  calculateItemHeight (height)
- *     →  gearflowTable.pdf (render)
+ *     →  filterAndGroupItems (status filter, react-pdf pipeline)  →  render
  *
  * The safety property under test is parity: the attached Convex model/supplier
  * docs must produce the same rendered output a Prisma `include: { model, supplier }`
  * join did — `model.name`, `model.category.name`, and the resolved `supplierName`
- * all reach the page, and no top-level item is dropped by the filter / height path.
+ * all reach the page, and no top-level item is dropped by the filter path.
  *
  * Also covers the Phase 6 location decommission: `locationName` (now resolved from
  * the Convex location map by `locationId` in build-document-data, not a Prisma
- * `asset.location` join) survives the pipeline as the packer-sort field; and the
- * height-reservation consumer (`calculateItemHeight`, the v0.8.1.1 tail-drop
- * class) reserves space for every structured item.
+ * `asset.location` join) survives the pipeline as the packer-sort field.
+ *
+ * #1157 (cleanup) — ported from the pdfme-composer pipeline
+ * (`getFilteredParentItems`/`calculateItemHeight`/`runTablePlugin`, all
+ * deleted with #1156's cutover) to the react-pdf pipeline that replaced it.
+ * React-pdf's automatic layout removes the manual height-reservation
+ * consumer entirely (see FEATUREDOCS/13-pdfs.md) — the "no tail-drop"
+ * property is now proven by actually rendering the tree.
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -27,13 +31,14 @@ import {
   type LineItemAttachMaps,
 } from "@/lib/line-item-tree-read";
 import { structureLineItems, type CategoryForStructuring, type SubHireGroupForStructuring } from "./structure-line-items";
-import { getFilteredParentItems, calculateItemHeight } from "./document-composer";
-import { DOCUMENT_LAYOUTS } from "./document-layouts";
-import { runTablePlugin } from "./plugins/test-utils";
 import type { ConvexModel } from "@/lib/models-read";
 import type { ConvexSupplier } from "@/lib/suppliers-read";
 import type { ConvexCategory } from "@/lib/categories-read";
-import type { DocumentData, DocumentLineItem } from "./types";
+import type { DocumentLineItem } from "./types";
+import { filterAndGroupItems } from "@/lib/react-pdf/components/line-items-table";
+import { PackingListDocument } from "@/lib/react-pdf/packing-list-document";
+import { renderPdfPages } from "@/lib/react-pdf/pdf-test-utils";
+import { makeSpikeData } from "@/lib/react-pdf/fixture";
 
 // ── Convex doc fixtures (what the dual-write mirror returns) ──────────────────
 function makeModel(over: Partial<ConvexModel> & { id: string; name: string }): ConvexModel {
@@ -147,6 +152,7 @@ describe("full PDF pipeline parity (attach → structure → filter → render)"
     ...li,
     supplierName: li.supplier?.name ?? null,
     locationName: resolvedLocationName[li.id] ?? null,
+    showSubhireOnDocs: true,
   })) as unknown as DocumentLineItem[];
 
   const categories: CategoryForStructuring[] = [
@@ -164,25 +170,46 @@ describe("full PDF pipeline parity (attach → structure → filter → render)"
     subHireGroups,
   );
 
-  it("renders attached model names + equipment category + supplier on the doc", async () => {
-    const data = { line_items: structured } as DocumentData;
-    // The status filter must keep every top-level item (all CHECKED_OUT) — a
-    // mismatch here is the classic silent tail-drop the mandate guards against.
-    const parents = getFilteredParentItems(data, DOCUMENT_LAYOUTS["packing-list"].filterByStatus);
-    expect(parents.length).toBe(structured.filter((i) => !i.isKitChild && !i.isContainerLineItem).length);
+  const PACKING_LIST_CONFIG = {
+    documentType: "packing-list" as const,
+    documentColor: "#0d4f4f",
+    showGroupHeaders: true,
+    showKitChildren: true,
+    showCheckboxes: true,
+    showConditionColumns: false,
+    showPricing: false,
+    showBadges: false,
+    showNotes: false,
+    showPerUnitCheckboxes: true,
+    showAssetTags: true,
+    showCategories: true,
+    showRowNumbers: false,
+    filterOptional: false,
+    filterByStatus: null,
+    hidePricingPeriodSuffix: false,
+  };
 
-    const calls = await runTablePlugin(structured, { documentType: "packing-list", showCategories: true });
-    const text = calls.drawText.map((c) => c.text).join("\n");
+  it("keeps every top-level item through the status filter (no tail-drop)", () => {
+    // Every item here is CHECKED_OUT — a mismatch is the classic silent
+    // tail-drop the mandate guards against.
+    const { groups } = filterAndGroupItems(structured, PACKING_LIST_CONFIG);
+    const grouped = [...groups.values()].flat().length;
+    expect(grouped).toBe(structured.filter((i) => !i.isKitChild && !i.isContainerLineItem).length);
+  });
+
+  it("renders attached model names + equipment category + supplier on the doc", async () => {
+    const data = makeSpikeData({ line_items: structured, total_items: structured.length });
+    const { fullText } = await renderPdfPages(<PackingListDocument data={data} />);
 
     // model.name reaches the page (parent + kit child).
-    expect(text).toContain("Source Four LED");
-    expect(text).toContain("Wireless Mic");
+    expect(fullText).toContain("Source Four LED");
+    expect(fullText).toContain("Wireless Mic");
     // model.category.name reaches the packing-list category column.
-    expect(text).toContain("Lighting");
-    expect(text).toContain("Audio");
+    expect(fullText).toContain("Lighting");
+    expect(fullText).toContain("Audio");
     // supplierName (resolved from the attached Convex supplier) reaches the
-    // sub-hire section header.
-    expect(text).toContain("Acme Hire");
+    // sub-hire indicator line ("via Acme Hire").
+    expect(fullText).toContain("Acme Hire");
   });
 
   it("preserves the Convex-sourced locationName through structuring (packer-sort field intact)", () => {
@@ -192,19 +219,5 @@ describe("full PDF pipeline parity (attach → structure → filter → render)"
     const byId = new Map(structured.map((i) => [i.id, i]));
     expect(byId.get("li-light")?.locationName).toBe("Main Warehouse");
     expect(byId.get("li-speaker")?.locationName).toBe("Van 2");
-  });
-
-  it("reserves height for every structured item (consumer #2 — tail-drop guard)", () => {
-    // calculateItemHeight sums per item. The whole structured list must reserve
-    // strictly more height than a single-item subset — proving the height path
-    // sums per-item and never caps/drops tail items (the v0.8.1.1 silent
-    // tail-drop class). Also guards that the synthetic group-row / kit-parent
-    // shapes don't throw here.
-    const tableBlock = DOCUMENT_LAYOUTS["packing-list"].blocks.find((b) => b.kind === "table");
-    if (tableBlock?.kind !== "table") throw new Error("packing-list layout has no table block");
-    const hAll = structured.reduce((sum, item) => sum + calculateItemHeight(item, tableBlock.config), 0);
-    const hOne = calculateItemHeight(structured[0], tableBlock.config);
-    expect(Number.isFinite(hAll)).toBe(true);
-    expect(hAll).toBeGreaterThan(hOne);
   });
 });

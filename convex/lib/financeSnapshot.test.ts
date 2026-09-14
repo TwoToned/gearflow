@@ -340,6 +340,30 @@ describe("buildFinanceLines — category price rollup", () => {
     expect(lines.map((l) => l.sourceType)).toEqual(["EQUIPMENT", "EQUIPMENT"]);
   });
 
+  // The category lookup is by cuid (an indexed narrowing, not a whole-table
+  // scan), and by_cuid is GLOBAL — so it is pinned to this project as well as
+  // this org. A row pointing at another PROJECT's category must not decide how
+  // this project bills.
+  test("ignores a same-org category belonging to another project", async () => {
+    const t = makeT();
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other",
+        isTemplate: false, createdAt: 0, updatedAt: 0,
+      });
+      // Same org, ROLLUP — but it belongs to p2, not p1.
+      await ctx.db.insert("projectCategories", {
+        id: "cat1", organizationId: ORG, projectId: "p2", name: "Lighting",
+        sortOrder: 0, pricingDisplay: "ROLLUP",
+      });
+    });
+    await seedTwoLightingLines(t);
+
+    const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+    expect(lines.map((l) => l.sourceType)).toEqual(["EQUIPMENT", "EQUIPMENT"]);
+  });
+
   test("keeps the rollup line where its first member would have appeared", async () => {
     const t = makeT();
     await seedProject(t);

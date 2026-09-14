@@ -51,6 +51,62 @@ async function resolveModelAndKitNames(
 }
 
 /**
+ * Category price rollup: the `ROLLUP` categories this project's rows actually
+ * reference, by cuid -> display name. A category set to `ROLLUP` bills as ONE
+ * line covering everything inside it — the finance counterpart of the single
+ * subtotal the quote/invoice PDF prints on that section's header, so the
+ * document a client holds and the invoice they're billed from are grouped the
+ * same way (the amount is identical either way: rollup only regroups, it never
+ * reprices). See src/lib/category-pricing-display.ts.
+ *
+ * Fetches only the categories REFERENCED by the project's groups/lines, deduped,
+ * rather than scanning every category on the project: a project reuses the same
+ * handful of categories across many rows, so this reads strictly less, and it
+ * keeps the whole-repo collect-scan ratchet (#860) flat — an indexed narrowing
+ * is what that ratchet asks for in place of a new whole-table scan. (That
+ * ratchet text-matches per line and does not strip comments, so this note
+ * deliberately avoids spelling the call token.) Split out for the same reason
+ * `resolveModelAndKitNames` above is.
+ *
+ * `by_cuid` is a GLOBAL index, so every hit is checked against BOTH the caller's
+ * org (R-8.4.3) and this project before it is trusted — without those, another
+ * org's (or another project's) category row could decide how this project bills.
+ */
+async function resolveRollupCategoryNames(
+  ctx: MutationCtx,
+  groups: Array<{ categoryId?: string }>,
+  projectLines: Array<{ categoryId?: string }>,
+  projectId: string,
+  orgId: string,
+): Promise<Map<string, string>> {
+  const categoryIds = new Set<string>();
+  for (const g of groups) if (g.categoryId) categoryIds.add(g.categoryId);
+  for (const li of projectLines) if (li.categoryId) categoryIds.add(li.categoryId);
+  if (categoryIds.size === 0) return new Map();
+
+  const docs = await Promise.all(
+    [...categoryIds].map((id) =>
+      ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", id)).first(),
+    ),
+  );
+  return new Map(
+    docs
+      .filter(
+        (c) =>
+          c &&
+          c.organizationId === orgId &&
+          // Also pin to THIS project: a by_cuid hit is not project-scoped the way
+          // the by_projectId scan this replaced implicitly was, and a row whose
+          // categoryId pointed at another project's category would otherwise
+          // decide how this project bills.
+          c.projectId === projectId &&
+          c.pricingDisplay === "ROLLUP",
+      )
+      .map((c) => [c!.id, c!.name]),
+  );
+}
+
+/**
  * Build the client-facing line breakdown for a project's CURRENT pricing —
  * the single shared builder behind both `Quote.snapshot` (publish) and
  * `Invoice`/`InvoiceLine` snapshots (create). Deliberately mirrors
@@ -69,29 +125,15 @@ export async function buildFinanceLines(
   projectId: string,
   orgId: string,
 ): Promise<FinanceSnapshotLine[]> {
-  const [groups, projectLines, services, categoryDocs] = await Promise.all([
+  const [groups, projectLines, services] = await Promise.all([
     ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
   ]);
 
   const { modelNameById, kitNameById } = await resolveModelAndKitNames(ctx, projectLines, orgId);
+  const rollupCategoryNames = await resolveRollupCategoryNames(ctx, groups, projectLines, projectId, orgId);
 
-  // ─── Category price rollup ────────────────────────────────────────────────
-  // A category the operator set to `ROLLUP` bills as ONE line covering
-  // everything inside it — the finance counterpart of the single subtotal the
-  // quote/invoice PDF prints on that section's header, so the document a client
-  // holds and the invoice they're billed from are grouped the same way (the
-  // amount is identical either way: rollup only regroups, it never reprices).
-  // `by_projectId` is a GLOBAL index, so org-filter before trusting a row
-  // (R-8.4.3). See src/lib/category-pricing-display.ts.
-  const rollupCategoryNames = new Map<string, string>();
-  for (const c of categoryDocs) {
-    if (c.organizationId !== orgId) continue;
-    if (c.pricingDisplay !== "ROLLUP") continue;
-    rollupCategoryNames.set(c.id, c.name);
-  }
   const groupCategoryById = new Map<string, string | null>(groups.map((g) => [g.id, g.categoryId ?? null]));
 
   /** The rolled-up category that will absorb this source row's charge, or null.

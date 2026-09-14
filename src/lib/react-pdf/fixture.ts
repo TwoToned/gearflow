@@ -285,3 +285,69 @@ export function makeLongLineItemList(count: number): DocumentLineItem[] {
 
   return items;
 }
+
+/**
+ * WS11 (#950) — mixed rental + SALE fixture, ported from
+ * `document-composer.test.ts`'s `makeMixedRentalSaleLineItems`. Shared by the
+ * 3 warehouse doc types' (#1154) full-pipeline tests to assert the spec's
+ * per-doc-type SALE inclusion rules:
+ *   - packing-list/delivery-docket: SALE included REGARDLESS of status
+ *   - return-sheet: SALE excluded entirely, regardless of status
+ * (quote/invoice's own version of this assertion lives in their #1151/#1153
+ * test files already.)
+ */
+export function makeMixedRentalSaleLineItems(): DocumentLineItem[] {
+  return [
+    makeLineItem({
+      id: "rental-1",
+      description: "PA Speaker",
+      quantity: 2,
+      checkedOutQuantity: 2,
+      unitPrice: 100,
+      lineTotal: 200,
+      status: "CHECKED_OUT",
+      model: { name: "PA Speaker" },
+    }),
+    makeLineItem({
+      id: "sale-new-stock",
+      description: "SM58 Mic",
+      type: "SALE",
+      quantity: 1,
+      checkedOutQuantity: 0,
+      unitPrice: 120,
+      lineTotal: 120,
+      pricingType: "FLAT",
+      duration: 1,
+      status: "CONFIRMED",
+      model: { name: "SM58" },
+    }),
+    makeLineItem({
+      id: "sale-from-rental",
+      description: "Sold XLR Cable",
+      type: "SALE",
+      quantity: 1,
+      checkedOutQuantity: 0,
+      unitPrice: 15,
+      lineTotal: 15,
+      pricingType: "FLAT",
+      duration: 1,
+      status: "CONFIRMED",
+      model: { name: "XLR Cable" },
+      asset: { assetTag: "CABLE-42" },
+    }),
+    makeLineItem({
+      id: "group-1",
+      description: "Package Deal",
+      isGroupRow: true,
+      groupName: "Package Deal",
+      quantity: 1,
+      checkedOutQuantity: 1,
+      status: "CHECKED_OUT",
+      model: { name: "Package Deal" },
+      childLineItems: [
+        makeLineItem({ id: "group-member-rental", quantity: 1, checkedOutQuantity: 1, status: "CHECKED_OUT", model: { name: "Mixer" } }),
+        makeLineItem({ id: "group-member-sale", type: "SALE", quantity: 1, checkedOutQuantity: 0, status: "CONFIRMED", model: { name: "Cable Bundle" } }),
+      ],
+    }),
+  ];
+}

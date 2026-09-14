@@ -24,6 +24,14 @@
  *   - invoice-long-icon.pdf     — the realistic long fixture with every
  *                                 invoice-only field populated
  *   - invoice-header-logo.pdf   — header logo mode, single page
+ *
+ * #1154 added the 3 warehouse doc types — the surface quote/invoice never
+ * exercise: `showKitChildren` on (real 3-level expansion), checkboxes,
+ * per-unit sub-rows, condition columns, row numbers, and the signature block:
+ *   - packing-list-long.pdf     — pull slip, kit/group/accessory children
+ *                                 expanded, no pricing/badges/notes
+ *   - return-sheet-long.pdf     — condition checkboxes + signature block
+ *   - delivery-docket-long.pdf  — row numbers, site contact, signature block
  */
 import { mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -32,6 +40,9 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { PDFDocument as PdfLibDocument } from "@pdfme/pdf-lib";
 import { QuoteDocument } from "./quote-document";
 import { InvoiceDocument } from "./invoice-document";
+import { PackingListDocument } from "./packing-list-document";
+import { ReturnSheetDocument } from "./return-sheet-document";
+import { DeliveryDocketDocument } from "./delivery-docket-document";
 import { makeSpikeData, makeLongLineItemList } from "./fixture";
 
 // Tiny 1x1 PNG — real image bytes are irrelevant to this spike (it's testing
@@ -129,6 +140,18 @@ async function main() {
     />,
     join(outDir, "invoice-header-logo.pdf"),
   );
+
+  const warehouseItems = makeLongLineItemList(60);
+  const warehouseData = makeSpikeData({
+    line_items: warehouseItems,
+    total_items: warehouseItems.length,
+    site_contact_name: "Site Manager",
+    site_contact_phone: "0400 222 222",
+  });
+
+  await renderAndReport("packing-list-long", <PackingListDocument data={warehouseData} />, join(outDir, "packing-list-long.pdf"));
+  await renderAndReport("return-sheet-long", <ReturnSheetDocument data={warehouseData} />, join(outDir, "return-sheet-long.pdf"));
+  await renderAndReport("delivery-docket-long", <DeliveryDocketDocument data={warehouseData} />, join(outDir, "delivery-docket-long.pdf"));
 
   // eslint-disable-next-line no-console -- manual CLI dev script, see the reason above.
   console.log(`\nAll spike PDFs written to: ${outDir}`);

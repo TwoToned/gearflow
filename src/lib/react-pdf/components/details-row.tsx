@@ -7,6 +7,9 @@
  * layout turns on (`showClientTaxId`/`showPaymentTerms`/`showInvoiceNumber` —
  * see document-composer.ts's `detailsRow` case, the source these mirror).
  * Quote passes no config, so its rendering is unchanged.
+ *
+ * #1154 adds `showSiteContact` (delivery-docket only) — the driver needs to
+ * know who to hand the gear to on site.
  */
 import { Text, View } from "@react-pdf/renderer";
 import type { DocumentData } from "@/lib/pdfme/types";
@@ -16,6 +19,7 @@ export interface DetailsRowConfig {
   showClientTaxId?: boolean;
   showPaymentTerms?: boolean;
   showInvoiceNumber?: boolean;
+  showSiteContact?: boolean;
 }
 
 function formatDateRange(label: string, start: string, end: string): string | null {
@@ -48,6 +52,9 @@ export function buildProjectLines(data: DocumentData, config: DetailsRowConfig):
     // (build-document-data.ts resolves this to "" for a DRAFT-only project,
     // and the guard here matches every other conditional line above).
     config.showInvoiceNumber && data.invoice_number ? `Invoice #: ${data.invoice_number}` : null,
+    config.showSiteContact && data.site_contact_name
+      ? `Site Contact: ${data.site_contact_name}${data.site_contact_phone ? ` | Ph: ${data.site_contact_phone}` : ""}`
+      : null,
   ].filter((line): line is string => !!line);
 }
 

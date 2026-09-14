@@ -245,7 +245,7 @@ jobs:
         run: pnpm run build
 
       - name: Run E2E (seeded harness, chromium)
-        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-onboarding.spec.ts e2e/harness-sign-out.spec.ts e2e/harness-create-inventory.spec.ts e2e/harness-revenue-path.spec.ts
+        run: pnpm exec playwright test --project=chromium e2e/harness-auth.spec.ts e2e/harness-a11y.spec.ts e2e/harness-cookie-flags.spec.ts e2e/harness-onboarding.spec.ts e2e/harness-sign-out.spec.ts e2e/harness-create-inventory.spec.ts e2e/harness-revenue-path.spec.ts e2e/harness-onboarding-happy-path.spec.ts e2e/harness-invite-join.spec.ts e2e/harness-org-switch.spec.ts
         env:
           E2E_HARNESS: "1"
 

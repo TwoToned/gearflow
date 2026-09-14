@@ -13,7 +13,7 @@ Multi-tenant asset and rental management platform for AV/theatre production comp
 | Database | Convex (sole copy of domain data) + PostgreSQL/Prisma v7 for Better Auth + activity log only |
 | Auth | Better Auth (Organization, TwoFactor, Admin, Passkey plugins) |
 | State | Convex `useQuery`/`useMutation` (reactive, no polling), React Hook Form + Zod |
-| PDF | pdfme (@pdfme/generator + custom plugins, Helvetica only, no Unicode) |
+| PDF | @react-pdf/renderer for the 5 project documents (quote/invoice/packing-list/return-sheet/delivery-docket); pdfme (@pdfme/generator + custom plugins) for call sheets/T&T reports/timeline. Helvetica only, no Unicode. |
 | Storage | Convex file storage (`_storage`), per-org access records |
 
 ## Commands

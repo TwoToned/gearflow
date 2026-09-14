@@ -82,6 +82,39 @@ describe("lineItemWrites.removeNative", () => {
     });
   });
 
+  test("deletes comment threads (+ comments) and review markers targeting the removed line", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Light", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false });
+      const threadId = await ctx.db.insert("commentThreads", {
+        orgId: ORG, entityType: "project", entityId: "p1", targetType: "lineItem", targetId: "li1",
+        status: "open", isBlocking: true, projectId: "p1", createdBy: USER, createdByName: "Alice", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("comments", { orgId: ORG, threadId: threadId as unknown as string, body: "blocked", authorId: USER, authorName: "Alice", authorColor: "#000", createdAt: NOW });
+      await ctx.db.insert("reviewMarkers", {
+        orgId: ORG, entityType: "project", entityId: "p1", targetType: "lineItem", targetId: "li1",
+        status: "needs_review", createdBy: USER, createdByName: "Alice", createdAt: NOW, updatedAt: NOW,
+      });
+      // A thread on a DIFFERENT line must survive.
+      await ctx.db.insert("commentThreads", {
+        orgId: ORG, entityType: "project", entityId: "p1", targetType: "lineItem", targetId: "other-line",
+        status: "open", isBlocking: true, projectId: "p1", createdBy: USER, createdByName: "Alice", createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    await t.withIdentity(SERVICE).mutation(api.lineItemWrites.removeNative, args);
+    await t.run(async (ctx) => {
+      const threads = await ctx.db.query("commentThreads").withIndex("by_orgId_targetId", (q) => q.eq("orgId", ORG).eq("targetId", "li1")).collect();
+      expect(threads).toHaveLength(0);
+      const comments = await ctx.db.query("comments").withIndex("by_orgId_authorId", (q) => q.eq("orgId", ORG).eq("authorId", USER)).collect();
+      expect(comments).toHaveLength(0);
+      const markers = await ctx.db.query("reviewMarkers").withIndex("by_orgId_targetId", (q) => q.eq("orgId", ORG).eq("targetId", "li1")).collect();
+      expect(markers).toHaveLength(0);
+      const survivor = await ctx.db.query("commentThreads").withIndex("by_orgId_targetId", (q) => q.eq("orgId", ORG).eq("targetId", "other-line")).collect();
+      expect(survivor).toHaveLength(1);
+    });
+  });
+
   test("blocks removing a kit child directly (KIT_CHILD)", async () => {
     const t = makeT();
     await t.run(async (ctx) => {

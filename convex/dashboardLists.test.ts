@@ -75,10 +75,50 @@ describe("dashboardLists.blocking", () => {
       await ctx.db.insert("comments", { orgId: ORG, threadId: th1 as unknown as string, body: "blocked on X", authorId: "u9", authorName: "Bob", authorColor: "#000", createdAt: NOW });
       void th2;
     });
-    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.blocking, { orgId: ORG });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.blocking, { orgId: ORG, now: NOW });
     expect(res.map((b) => b.projectId)).toEqual(["pm1", "pMent"]); // createdAt desc; pNone excluded
     expect(res[0].reason).toBe("pm");
     expect(res[0].snippet).toBe("blocked on X");
     expect(res[1].reason).toBe("mention");
+  });
+
+  test("excludes threads on a cancelled/completed/invoiced or past-dated project", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pLive", organizationId: ORG, projectNumber: "PL", name: "Live Job", status: "CONFIRMED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("projects", { id: "pCancelled", organizationId: ORG, projectNumber: "PC", name: "Cancelled Job", status: "CANCELLED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("projects", { id: "pInvoiced", organizationId: ORG, projectNumber: "PI", name: "Invoiced Job", status: "INVOICED", isTemplate: false, projectManagerId: USER });
+      await ctx.db.insert("projects", { id: "pPast", organizationId: ORG, projectNumber: "PP", name: "Past Job", status: "ON_SITE", isTemplate: false, projectManagerId: USER, rentalEndDate: NOW - DAY });
+      const baseT = { orgId: ORG, entityType: "project", status: "open" as const, isBlocking: true, createdBy: "u9", createdByName: "Bob", updatedAt: NOW, mentionUserIds: [] };
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pLive", projectId: "pLive", createdAt: NOW });
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pCancelled", projectId: "pCancelled", createdAt: NOW });
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pInvoiced", projectId: "pInvoiced", createdAt: NOW });
+      await ctx.db.insert("commentThreads", { ...baseT, entityId: "pPast", projectId: "pPast", createdAt: NOW });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.blocking, { orgId: ORG, now: NOW });
+    expect(res.map((b) => b.projectId)).toEqual(["pLive"]);
+  });
+});
+
+describe("dashboardLists.pendingCrewOffers", () => {
+  test("counts only offers on current/future gigs, not closed/cancelled/past ones", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pLive", organizationId: ORG, projectNumber: "PL", name: "Live Job", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projects", { id: "pFuture", organizationId: ORG, projectNumber: "PF", name: "Future Job", status: "QUOTED", isTemplate: false, rentalEndDate: NOW + DAY });
+      await ctx.db.insert("projects", { id: "pCancelled", organizationId: ORG, projectNumber: "PC", name: "Cancelled Job", status: "CANCELLED", isTemplate: false });
+      await ctx.db.insert("projects", { id: "pPast", organizationId: ORG, projectNumber: "PP", name: "Past Job", status: "ON_SITE", isTemplate: false, rentalEndDate: NOW - DAY });
+      const assign = (id: string, status: "OFFERED" | "PENDING" | "ACCEPTED", projectId: string) =>
+        ctx.db.insert("crewAssignments", { id, organizationId: ORG, projectId, crewMemberId: "c1", status });
+      await assign("ca1", "OFFERED", "pLive");
+      await assign("ca2", "PENDING", "pFuture");
+      await assign("ca3", "OFFERED", "pCancelled");
+      await assign("ca4", "PENDING", "pPast");
+      await assign("ca5", "ACCEPTED", "pLive"); // not pending → excluded regardless
+    });
+    const count = await t.withIdentity(asUser(ORG)).query(api.dashboardLists.pendingCrewOffers, { orgId: ORG, now: NOW });
+    expect(count).toBe(2); // ca1 (pLive) + ca2 (pFuture)
   });
 });

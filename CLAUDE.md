@@ -407,10 +407,10 @@ records only how the operator *entered* it, so documents can print `-15%`
 instead of `-$150.00`. Absent = `"$"` (every pre-#1012 row; no backfill).
 
 The percentage itself is **never stored** — `discountCellText`
-(`gearflow-table.ts`) / `discountEntryValue` recompute it from the stored dollar
-amount against the row's own gross. Storing the typed `15` would let a document
-contradict itself once the unit price changed (the dollar amount is frozen at
-save). Don't "fix" that by adding a `discountValue` column.
+(`src/lib/pdfme/line-item-format.ts`) / `discountEntryValue` recompute it from
+the stored dollar amount against the row's own gross. Storing the typed `15`
+would let a document contradict itself once the unit price changed (the dollar
+amount is frozen at save). Don't "fix" that by adding a `discountValue` column.
 
 `discountMode` must never outlive the amount it describes: every write path that
 clears/zeroes `discount` clears the mode too (patchNative, patchManyNative,
@@ -563,45 +563,59 @@ the human-readable label even when the selected `SelectItem` isn't currently mou
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 
-### PDF generation — one pipeline, data-shape changes still need cross-cutting audits
-**#790 redesign (2026-07-26):** ripped out the PDF customization engine (dual
-render pipelines, stored per-org templates, section/block model, `{token}`
-resolution, visibility conditions, brand templates, Convex `documentTemplates`/
-`brandTemplates`/`sectionPresets`) — ~8,300 LOC deleted. There is now **one**
-pipeline for the 5 project doc types: `document-layouts.ts` (fixed layout per
-doc type, plain TS, no persistence) → `document-composer.ts` (net-new,
-purpose-built pagination engine, a few hundred LOC) → `pdf-render.ts`. No
-template designer of any kind exists or is planned. See
+### PDF generation — two vendor pipelines, one per doc family
+**#790 redesign (2026-07-26)** ripped out the old PDF customization engine
+(dual render pipelines, stored per-org templates, section/block model,
+`{token}` resolution, visibility conditions, brand templates, Convex
+`documentTemplates`/`brandTemplates`/`sectionPresets`) — ~8,300 LOC deleted.
+No template designer of any kind exists or is planned. See
 `docs/designs/pdf-system-redesign.md` and FEATUREDOCS/13 for the full
-architecture. This also fixed a live truncation bug: the legacy fallback
-builders were single-page only, so any default document longer than one page
-silently dropped its tail — the new composer paginates every doc type by
-default.
+architecture and migration history.
 
-The PDF pipeline still has **independent consumers** of the `DocumentLineItem`
-shape (down from 5 across 2 files pre-redesign to 3 across 2 files). Any
-change to the shape (new field, new synthetic row type, new relationship
-between parent and children) must be verified against ALL of them — fixing
-one and shipping leaves silent bugs in the others:
+**The react-pdf migration (#1150-#1157, 2026-09-14)** then moved the 5
+project document types (quote, invoice, packing-list, return-sheet,
+delivery-docket) off the #790 redesign's own hand-rolled two-pass
+estimate/draw pagination engine (`document-layouts.ts` →
+`document-composer.ts` → `pdf-render.ts`, deleted) onto
+**`@react-pdf/renderer`** (Yoga/flexbox automatic layout — no separate height
+estimate to keep in sync with the render, structurally closing the tail-drop
+bug class described below for good): `generatePdf()`
+(`src/lib/pdfme/generate-pdf.ts`) now calls `renderReactPdfTemplate()`
+(`src/lib/react-pdf/render.tsx`), the single call site for
+`@react-pdf/renderer`'s render-producing exports (`no-restricted-imports` in
+`eslint.config.mjs` enforces it, mirroring the pdfme rule below). Each doc
+type is its own component tree under `src/lib/react-pdf/` (e.g.
+`quote-document.tsx`) composing shared pieces from
+`src/lib/react-pdf/components/`; `document-layouts.ts` still exists but only
+as a minimal `ProjectDocumentType`/`expandProjectGroups` registry, not a
+layout schema. **Call sheets and T&T reports were never part of this
+migration** — they still render through **pdfme** (`@pdfme/generator`, single
+call site `src/lib/pdfme/pdf-render.ts`) with their own plugins
+(`src/lib/pdfme/plugins/`) and builders (`src/lib/pdfme/templates/*.ts`).
 
-1. **`gearflow-table.ts` rendering** — what gets drawn (bold, indented, etc.)
-2. **`document-composer.ts`'s `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
-3. **`document-composer.ts`'s `getFilteredParentItems`** — top-level status filter (miss this → items disappear from docket / return-sheet). `gearflow-table.ts`'s own top-level filter mirrors this and must stay in sync (documented cross-reference in both files).
+The 5-doc-type pipeline still has **independent consumers** of the
+`DocumentLineItem` shape. Any change to the shape (new field, new synthetic
+row type, new relationship between parent and children) must be verified
+against ALL of them — fixing one and shipping leaves silent bugs in the
+others:
 
-A new **`LayoutBlock` kind** (`draftWatermark` was the first, #987) is a smaller but
-equally silent audit: `estimateBlockHeight` must reserve its height (miss it → it draws
-over the block below, or the tail drops) and `buildEntryFields` must emit its schema
-(miss it → nothing renders). Both are exhaustive switches, so a missing arm fails the
-build — keep the union closed. A block that belongs on EVERY page is page furniture
-(`isPageFurniture`/`measurePageFurniture`), not a body block.
+1. **`src/lib/react-pdf/components/line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), plus the pure formatting helpers it imports from `src/lib/pdfme/line-item-format.ts` (`discountCellText`/`breakdownLabel`/`isSubhireIndicatorVisible`/`getAssetTag`).
+2. **`filterAndGroupItems`'s status filter** (same file) — miss this → items disappear from docket / return-sheet.
+
+That's down from 4 consumers across 2 files (pre-#1157: `gearflow-table.ts`'s
+render + its own top-level filter, plus `document-composer.ts`'s
+`calculateItemHeight` + `getFilteredParentItems`) — react-pdf's automatic
+pagination eliminates the height-reservation consumer entirely; there is no
+`calculateItemHeight` equivalent because nothing pre-computes how much
+vertical space a row needs.
 
 **Synthetic rows (e.g. `isGroupRow: true`) are footguns.** Their hard-coded fields (`status: "CONFIRMED"`, etc.) silently fail any filter that compares against them. Every status/filter site must special-case the synthetic row type, or compute the field dynamically from children.
 
-**Parent/child kinds.** A line is a child when `isKitChild: true` (covers kit members, sub-hire group children, AND accessory children) — that flag is the structural "is a child" test the ~40 `isKitChild: false` DB filters depend on. `childKind` (`KIT | ACCESSORY`) is the *behaviour* discriminator. An **accessory parent** is NOT a kit (no `kitId`); detect it as "top-level line, no `kitId`, has `ACCESSORY` children" and treat it like a kit parent for child rendering (gearflow-table) AND height reservation (document-composer) — kit children, Project Group members, and accessories are all gated by the single `showKitChildren` flag (2026-07-27). Warehouse docs (packing-list/return-sheet/delivery-docket) leave it `true`, so accessories still always render there (inseparable, packers need every component); client-facing docs (quote/invoice) set it `false` (`clientFacingTable` in `document-layouts.ts`) so the client sees top-level line items only, not exploded kit/accessory sub-rows. See [FEATUREDOCS/48](./FEATUREDOCS/48-child-assets-accessories.md).
+**Parent/child kinds.** A line is a child when `isKitChild: true` (covers kit members, sub-hire group children, AND accessory children) — that flag is the structural "is a child" test the ~40 `isKitChild: false` DB filters depend on. `childKind` (`KIT | ACCESSORY`) is the *behaviour* discriminator. An **accessory parent** is NOT a kit (no `kitId`); detect it as "top-level line, no `kitId`, has `ACCESSORY` children" and treat it like a kit parent for child rendering — kit children, Project Group members, and accessories are all gated by the single `showKitChildren` flag (2026-07-27, carried into each react-pdf doc component's own `tableConfig`). Warehouse docs (packing-list/return-sheet/delivery-docket) leave it `true`, so accessories still always render there (inseparable, packers need every component); client-facing docs (quote/invoice) set it `false` so the client sees top-level line items only, not exploded kit/accessory sub-rows. See [FEATUREDOCS/48](./FEATUREDOCS/48-child-assets-accessories.md).
 
-**Test coverage rule:** unit tests at the plugin layer alone are NOT enough. For any data-shape change, write at least one integration test that exercises the full pipeline (structureLineItems → calculateItemHeight → filter → plugin render) against a realistic fixture. The plugin-only harness in `src/lib/pdfme/plugins/test-utils.ts` is great for rendering assertions but misses the pipeline bugs. `document-composer.test.ts` is the standing regression harness — a 120+ item fixture per doc type asserting full parent-item index coverage across pages.
+**Test coverage rule:** unit tests at the plugin/component layer alone are NOT enough. For any data-shape change, write at least one integration test that exercises the full pipeline (Convex-doc reconstruction → `structureLineItems` → filter → render) against a realistic fixture — see `src/lib/pdfme/document-data-reconstruction.test.tsx` / `line-item-tree-attach.test.tsx` / `plugins/accessories-render.test.tsx`, which render through a real doc component and extract text via `renderPdfPages` (`src/lib/react-pdf/pdf-test-utils.ts`). `src/lib/react-pdf/regression.test.tsx` is the standing regression harness — pagination invariants (no tail-drop, group-header-once, header/footer page furniture, draft watermark) across all 5 doc types via `pdf-parse` text extraction.
 
-History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed the height-calc miss (tail items dropped). v0.8.1.2 fixed the status-filter miss (groups invisible on dockets). Each was a separate user-impacting deploy that an upfront cross-cutting audit would have caught — the #790 redesign collapsed the dual-pipeline root cause of these into one.
+History: v0.8.1.0 added group-as-kit rendering. v0.8.1.1 fixed a pdfme-era height-calc miss (tail items dropped). v0.8.1.2 fixed a pdfme-era status-filter miss (groups invisible on dockets). #1149 (2026-08-03) was a real-world recurrence of the same estimate/draw-divergence class on the #790 pipeline — the react-pdf migration (#1150-#1157) removed the two-pass architecture that made that bug class possible for the 5 project doc types; the same discipline (keep render and filter in sync — see the consumer list above) still applies to call sheets/T&T reports, which remain on pdfme.
 
 ### Convex Mutation Rules
 

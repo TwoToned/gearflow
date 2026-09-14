@@ -4,110 +4,63 @@
 
 ## Architecture
 
-**⚠️ Two pipelines, live simultaneously (#1156 cutover, 2026-09-14).** The 5
+**One pipeline per doc family (#1157 cleanup complete, 2026-09-14).** The 5
 project document types (quote, invoice, packing-list, return-sheet,
-delivery-docket) render through **`@react-pdf/renderer`** as of #1156 —
+delivery-docket) render through **`@react-pdf/renderer`** —
 `generatePdf()` (`generate-pdf.ts`) calls `renderReactPdfTemplate()`
-(`src/lib/react-pdf/render.ts`), not `composeDocument()`/`renderPdfTemplate()`.
-Call sheets and T&T reports still render through **pdfme**
-(`@pdfme/generator` + `@pdfme/common` + custom plugins via `@pdfme/pdf-lib`) —
-they were never part of this migration (see "Do" in #1156/#1150). The
-sections below describing `composeDocument()`, `DOCUMENT_LAYOUTS`, and the
-`gearflowTable`/`gearflowFinancialSummary`/etc. plugins are now **history for
-the 5 project doc types specifically** — accurate for call sheets/T&T
-reports, and accurate for how the 5 project doc types got their pagination
-model right before the react-pdf migration, but no longer what runs when you
-send a quote. That code is deliberately still in the repo (still tested by
-`document-composer.test.ts`) — removing it is #1157 (cleanup), a separate,
-later issue, not part of the cutover. See "react-pdf pipeline (current)"
-below for what actually runs today.
+(`src/lib/react-pdf/render.tsx`). Call sheets and T&T reports still render
+through **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom plugins via
+`@pdfme/pdf-lib`) — they were never part of this migration (see "Do" in
+#1156/#1150/#1157). The old pdfme-composer pipeline that used to render the 5
+project doc types (`document-composer.ts`, `document-composer.test.ts`,
+`gearflow-table.ts` and the other composer-only plugins) is **gone** — #1157
+deleted it once the react-pdf cutover (#1156) had been live for a full issue
+cycle with nothing left depending on it. See "react-pdf pipeline" below for
+what actually runs today, and "No Template Customization" for what preceded
+both pipelines.
 
-### Generation Pipeline — One Pipeline
+### Generation Pipeline
 
-Per the PDF system redesign (`docs/designs/pdf-system-redesign.md`, #790), the
-customization engine (stored templates, sections, brand templates, block
-editor) was ripped out. There is now **exactly one** render pipeline for the
-5 project document types (quote, invoice, packing-list, return-sheet,
-delivery-docket):
+There is **exactly one** render pipeline for the 5 project document types
+(quote, invoice, packing-list, return-sheet, delivery-docket):
 
 1. `buildDocumentData(projectId, organizationId, docType, ..., { expandProjectGroups })`
    assembles the `DocumentData` contract (org branding, project/client fields,
    line items via `structureLineItems`).
-2. `DOCUMENT_LAYOUTS[docType]` (`document-layouts.ts`) — a **hardcoded, fixed**
-   layout per doc type: an ordered list of blocks (header, client/project
-   details, table, totals, notes, signature) with fixed options (which
-   columns, checkboxes, status filter, `expandProjectGroups`). One definition
-   per doc type — no variants, no stored overrides, no merge step.
-3. `composeDocument(docType, data, docColor)` (`document-composer.ts`) — a
-   purpose-built linear pagination engine. Walks the layout's blocks
-   top-to-bottom, measures each against remaining page height using the
-   shared constants in `template-constants.ts`, and starts a new page when a
-   block doesn't fit. Table blocks split across pages via the plugin's
-   `startIndex`/`endIndex`/`startSubIndex` support instead of moving whole —
-   this is what fixes the pre-redesign truncation bug (long equipment lists
-   used to render single-page only, silently dropping the tail).
-4. `renderPdfTemplate(template, inputs)` — pdfme `generate()`, unchanged.
+2. `DOCUMENT_LAYOUTS[docType]` (`document-layouts.ts`) — now a minimal
+   registry of `ProjectDocumentType` → `{ expandProjectGroups }`, the one
+   layout flag `generate-pdf.ts` still needs before handing data to a
+   component. Each doc type's actual layout (columns, checkboxes, status
+   filter, block ordering) lives directly in its own react-pdf component tree
+   below, not in a shared schema.
+3. `renderReactPdfTemplate(docType, data, options)` (`src/lib/react-pdf/render.tsx`)
+   — picks the matching component tree (`QuoteDocument`, `InvoiceDocument`,
+   `PackingListDocument`, `ReturnSheetDocument`, `DeliveryDocketDocument`) and
+   calls `renderToBuffer()`. Pagination (page breaks, header/footer repeat,
+   group-header-once, orphan control) is entirely react-pdf/Yoga's automatic
+   flexbox layout — there is no separate height-estimate pass to keep in sync
+   with the draw pass, which is what closed the estimate/draw-divergence bug
+   class (#1149) described in the migration narrative below for good, rather
+   than just mitigating it.
 
-**Pagination invariants** (each covered by `document-composer.test.ts`):
-- Atomic table rows — a row (incl. kit/group/accessory children) is never
-  split mid-row; only complete per-unit sub-rows may continue on the next page.
-- Table overflow continues on the next page (no silent tail-drop).
-- Header repeats on every continuation page; footer on every page.
-- Totals/signature/notes blocks are kept whole (pushed to the next page if
-  they don't fit, never split).
-- Every page's footer carries "Page X of Y" (omitted on single-page
-  documents) — `pageNumber` is computed once in `composeDocument` per page
-  index against the final page count and rendered right-aligned by
-  `gearflowPageFooter`.
+**Pagination invariants** (each covered by `src/lib/react-pdf/regression.test.tsx`,
+across all 5 doc types):
+- Table overflow continues on the next page (no silent tail-drop) — a 120-item
+  fixture proves every item's text lands somewhere in the rendered output.
+- A single group spanning multiple pages draws its header exactly once, not
+  once per continuation page.
+- Header repeats on every continuation page; footer on every page, with a
+  correct "Page X of Y" (omitted on single-page documents).
+- The draft-preview watermark (quote/invoice only) repeats on every page when
+  set, and never appears on a stored (non-preview) render.
+- `termsAndConditions` (quote/invoice only) starts on its own fresh page,
+  with no spurious blank page inserted when it already lands first on one.
+- Atomic rows / no-mid-row-split and "a group header never strands alone at a
+  page bottom" are geometric guarantees from react-pdf's `wrap={false}` /
+  `minPresenceAhead` (`line-items-table.tsx`) rather than something provable
+  from extracted text — see that file's own header comment.
 
-**⚠️ Known structural weakness — estimate/draw divergence (#1149, 2026-08-03):**
-row height is computed **twice**, by two independently-hand-written functions
-that have to agree or a row silently vanishes: `document-composer.ts`'s
-`calculateItemHeight()`/`estimateBlockHeight()` decide what fits on a page
-*before* anything is drawn, while `gearflow-table.ts`'s real draw loop
-computes each row's height again, natively in pt, and has its own runtime
-`bottomBoundary` guard that just stops (`overflow = true; break`) if it runs
-out of room — with **no signal back to the composer** that this happened. If
-the composer believed everything fit (`endIndex: undefined`, "render the
-rest") but the real draw came up short by even one row, that row is dropped
-from the visible document while `data.subtotal`/`data.total` — computed
-separately, straight from the DB — still include its dollar amount. This is
-the "amount is right, the row on the page isn't" shape of bug: quiet, and it
-reads as correct in a subtotal reconciliation.
-
-This has recurred three times now in different guises (v0.8.1.1's height-calc
-miss, v0.8.1.2's status-filter miss, and #1149 — a real-world quote whose
-last "Services" row disappeared while its $650 stayed in the Subtotal). Two
-mitigations landed in #1149 without removing the duplication itself:
-`TABLE_PADDING_BOTTOM_MM` (`document-composer.ts`) went from 1mm to 4mm — a
-defensive buffer that both shrinks the pagination fit-budget (marginal items
-are more likely to roll to the next page instead of being squeezed onto a
-tight one) and pads the allotted box on a page the composer believes fits
-everything — and `PT_PER_MM` is now derived from pdfme's own `mm2pt` instead
-of a separately hand-typed approximation, so the pt↔mm round trip can't drift
-on its own. Neither of these fixes the *structural* problem — there are still
-two independent height calculations that can disagree for some as-yet-unknown
-reason; the safety margin just makes small disagreements non-fatal instead of
-identifying and eliminating the disagreement. `document-composer.test.ts`'s
-"real allotted height covers every row drawn (#1149 regression)" test uses
-the composer's actual computed page height (not the test harness's generous
-default) against the real `gearflowTable` draw loop, specifically to catch
-future divergences of this shape — but it did **not** reproduce a pre-fix
-failure with a synthetic fixture, so it's a guard against recurrence, not
-proof the original trigger is understood.
-
-**Resolved (#1156, cutover complete, 2026-09-14):** the 5 project doc types
-moved off this two-pass estimate/draw architecture onto `@react-pdf/renderer`
-(Yoga/flexbox automatic pagination — no separate height estimate to keep in
-sync, structurally impossible for this bug class to recur). The narrative
-below (#1151-#1156) is how that happened. The duplication-hazard warning
-above (any new row-height-affecting field needs both
-`calculateItemHeight()`/`estimateBlockHeight()` AND `gearflow-table.ts`
-updated) still applies verbatim to call sheets/T&T reports, which are still
-on this pipeline — it just no longer applies to quote/invoice/packing-list/
-return-sheet/delivery-docket.
-
-### react-pdf pipeline (current, #1151-#1156)
+### react-pdf pipeline (#1151-#1157)
 
 **Spike complete (#1151, 2026-08-03) — verdict: proceed.** A standalone
 `@react-pdf/renderer` proof-of-concept for the `quote` doc type confirmed the
@@ -342,16 +295,62 @@ deployment reachable here). Recommend a manual spot-check of a real
 quote/invoice send and a packing-list pull in the actual deployed app after
 this ships.
 
+**Cleanup complete (#1157, 2026-09-14).** With the react-pdf cutover (#1156)
+proven out, the old pdfme-composer pipeline it replaced was deleted rather
+than left as dead weight:
+
+- **Deleted:** `document-composer.ts`, `document-composer.test.ts`, and the 4
+  composer-only plugins + their tests — `gearflow-table.ts`,
+  `gearflow-financial-summary.ts`, `gearflow-rich-text.ts`,
+  `gearflow-draft-watermark.ts` (plus `plugins/test-utils.ts`, the pdf-lib
+  draw-call-capturing harness that only existed to test them). The issue's
+  own candidate list named 7 plugins; grepping every `templates/*.ts` builder
+  first (as the issue itself required) showed `gearflowPageHeader`,
+  `gearflowPageFooter` and `gearflowSignatureLine` are still live —
+  call-sheet, T&T, and timeline builders all still use them — so only 4 of
+  the 7 were actually composer-exclusive and safe to remove.
+- **Extracted, not deleted:** `gearflow-table.ts`'s 4 pure `DocumentLineItem`
+  formatting functions (`discountCellText`, `breakdownLabel`,
+  `isSubhireIndicatorVisible`, `getAssetTag`) were framework-agnostic string/
+  boolean derivations that happened to live in a pdf-lib plugin file — moved
+  to `src/lib/pdfme/line-item-format.ts` (imports neither `@pdfme/pdf-lib` nor
+  `@react-pdf/renderer`) since `line-items-table.tsx` (#1152) already imported
+  them directly rather than re-deriving the same logic.
+- **Repurposed:** `document-layouts.ts` kept its filename and its
+  `ProjectDocumentType`/`DOCUMENT_LAYOUTS` export names (avoiding churn across
+  ~15 import sites) but shrank from the old block-schema layout registry
+  (`LayoutBlock`, `TableLayoutConfig`, `getDocumentLayout`, the draft-watermark
+  splice) down to just `ProjectDocumentType` and
+  `DOCUMENT_LAYOUTS[docType].expandProjectGroups` — the only two things any
+  react-pdf consumer actually still reads from it.
+- **Ported, not dropped:** 3 full-pipeline integration tests
+  (`document-data-reconstruction.test.tsx`, `line-item-tree-attach.test.tsx`,
+  `plugins/accessories-render.test.tsx`) exercised valuable Convex-doc-
+  reconstruction → `structureLineItems` → render coverage through the deleted
+  pipeline's `getFilteredParentItems`/`calculateItemHeight`/`runTablePlugin`.
+  Per this file's "PDF Data-Shape Consumers" rule (a plugin-only unit test
+  isn't enough for a data-shape change), these were rewired onto the
+  react-pdf pipeline instead of deleted — rendering a real doc component and
+  asserting on extracted text via `renderPdfPages`
+  (`src/lib/react-pdf/pdf-test-utils.ts`) and `filterAndGroupItems`
+  (`line-items-table.tsx`) in place of the deleted height/filter functions.
+- **`@pdfme/generator` stays a dependency** — call sheets/T&T reports/timeline
+  still use it via `pdf-render.ts`; only the 5 project doc types' usage of it
+  was removed.
+- #1149 (the estimate/draw-divergence bug the section above used to describe
+  in detail) is closed by this migration: the two-pass architecture that made
+  it possible no longer exists for these 5 doc types.
+
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`
 value next to the rate/total columns without adding information the reader
 needed, and produced confusing/misleading output on lines whose duration
 didn't match the project's overall rental span. `duration` is still a real
 per-line DB field (`project-line-item-read.ts`); it's just no longer
-rendered as its own column. `getAssetTag()` (`gearflow-table.ts`) also
-dedupes unit tags before applying the "+N more" truncation — a bulk line's
-units all share one `bulkAsset` tag, so without dedup a 10-unit bulk line
-rendered as `"TTP00099, TTP00099 +8"` instead of the single tag.
+rendered as its own column. `getAssetTag()` (now `src/lib/pdfme/line-item-format.ts`,
+#1157) also dedupes unit tags before applying the "+N more" truncation — a
+bulk line's units all share one `bulkAsset` tag, so without dedup a 10-unit
+bulk line rendered as `"TTP00099, TTP00099 +8"` instead of the single tag.
 
 Call sheets don't go through this pipeline — they use their own service-based
 builder (`templates/call-sheet-services.ts`, queries `ProjectService`/
@@ -393,42 +392,46 @@ Two vendor boundaries, one per pipeline (POLICY.md R-8.10.1):
 |------|---------|
 | `src/lib/pdfme/generate-pdf.ts` | Orchestrator. `generatePdf()` (5 project doc types): build data → `renderReactPdfTemplate()` (#1156). `generateCallSheetPdf()` and `generateTestTagReport()` for the two doc families that keep their own pdfme builders. |
 | `src/lib/react-pdf/render.tsx` | `renderReactPdfTemplate()` — the single react-pdf render-export call site (#1156) |
-| `src/lib/react-pdf/{quote,invoice,packing-list,return-sheet,delivery-docket}-document.tsx` | The 5 project doc types' react-pdf component trees |
+| `src/lib/react-pdf/{quote,invoice,packing-list,return-sheet,delivery-docket}-document.tsx` | The 5 project doc types' react-pdf component trees — each composes its own layout directly in JSX (columns, checkboxes, status filter) rather than reading a shared schema |
+| `src/lib/react-pdf/components/` | Shared react-pdf pieces (`line-items-table.tsx`, `header.tsx`, `totals-block.tsx`, `details-row.tsx`, `signature-line.tsx`, `draft-watermark.tsx`, `footer.tsx`, `rich-text.tsx`, `checkbox.tsx`) |
 | `src/lib/react-pdf/regression.test.tsx` | The standing regression harness for the react-pdf pipeline (#1155) — pagination invariants across all 5 doc types |
-| `src/lib/pdfme/document-layouts.ts` | Fixed layout definitions (`DOCUMENT_LAYOUTS`) for the 5 project doc types — blocks, `expandProjectGroups`, status filter. Single source of truth. |
-| `src/lib/pdfme/document-composer.ts` | Net-new pagination engine — `composeDocument()` walks a layout's blocks, measures against remaining page height, splits table blocks across pages. |
-| `src/lib/pdfme/document-composer.test.ts` | Full-pipeline integration tests (Phase 0 safety net) — every doc type, a 120+ item fixture, asserts full parent-item index coverage across pages (no tail-drop). |
-| `src/lib/pdfme/pdf-render.ts` | `renderPdfTemplate()` — the single `@pdfme/generator` call site |
+| `src/lib/react-pdf/pdf-test-utils.ts` | `renderPdfPages()` — render+extract test helper (`pdf-parse` page-wise text), shared by the regression suite and the full-pipeline integration tests below |
+| `src/lib/pdfme/document-layouts.ts` | `ProjectDocumentType` + `DOCUMENT_LAYOUTS[docType].expandProjectGroups` — the one layout flag still shared across doc types (#1157: shrunk from a full block-schema layout registry once `document-composer.ts` was deleted) |
+| `src/lib/pdfme/line-item-format.ts` | Pure `DocumentLineItem` formatting helpers shared by `line-items-table.tsx` — `discountCellText`, `breakdownLabel`, `isSubhireIndicatorVisible`, `getAssetTag` (#1157: extracted from the deleted `gearflow-table.ts`) |
+| `src/lib/pdfme/pdf-render.ts` | `renderPdfTemplate()` — the single `@pdfme/generator` call site, still used for call sheets/T&T reports/timeline |
 | `src/lib/pdfme/build-document-data.ts` | Assembles `DocumentData` contract for project documents. Loads project + sub-hires + categories with location data. Calls `structureLineItems`. `client_contact`/`client_email`/`client_phone` resolve through a fallback chain (WS9 #948, [FEATUREDOCS/63](./63-client-contacts.md)): the project's explicitly selected `clientContactId` → the client's primary contact → the legacy embedded `clients.contactName/Email/Phone` fields. |
-| `src/lib/pdfme/structure-line-items.ts` | Pure helper — restructures raw line items into per-bucket arrays for the table plugin. Handles Project Group expand/collapse, sub-hire sections, kit boundary, packer-walk sort |
+| `src/lib/pdfme/structure-line-items.ts` | Pure helper, shared by both pipelines — restructures raw line items into per-bucket arrays. Handles Project Group expand/collapse, sub-hire sections, kit boundary, packer-walk sort |
 | `src/lib/pdfme/templates/index.ts` | T&T report template registry only — maps `TestTagReportType` → builder |
 | `src/lib/pdfme/templates/call-sheet-services.ts` | Service-based call sheet builder (queries `ProjectService`/`CrewAssignment` directly) |
 | `src/lib/pdfme/templates/timeline.ts` | Project timeline builder |
 | `src/lib/pdfme/templates/tt-*.ts` | The 10 T&T report builders |
-| `src/lib/pdfme/types.ts` | `DocumentType`, `TestTagReportType`, `DocumentData`, plugin config types |
-| `src/lib/pdfme/plugins/index.ts` | Plugin registry — all custom + built-in plugins |
+| `src/lib/pdfme/types.ts` | `DocumentType`, `TestTagReportType`, `DocumentData`, plugin config types — shared by both pipelines |
+| `src/lib/pdfme/plugins/index.ts` | pdfme plugin registry — call sheet/T&T/report plugins + built-in `text` (react-pdf has no plugin registry; its pieces are plain components under `src/lib/react-pdf/components/`) |
 | `src/lib/pdfme/fonts.ts` | Font configuration for pdfme |
 | `src/server/finance-documents.ts` | **Immutable finance artifacts (#987)** — renders a quote/invoice PDF ONCE at send/issue, uploads it to Convex `_storage`, attaches the storage id. The only writer of `quotes.pdfFileId` / `invoices.pdfFileId`. |
 | `src/lib/finance-artifacts.ts` | Artifact file naming (`RVLT-2026-0087-quote-v2.pdf`) + filename sanitising — one definition shared by the upload and the download routes. |
 | `src/lib/finance-artifact-response.ts` | Streaming half of the two artifact routes: org re-check on the stored file, headers, and deliberately **no** regeneration fallback. |
-| `src/lib/pdfme/template-constants.ts` | Shared height/dimension constants (row heights, padding, font sizes, page dimensions) — the composer's single source of truth for pagination math |
+| `src/lib/pdfme/template-constants.ts` | Shared height/dimension constants (row heights, padding, font sizes, page dimensions) — read by pdfme's call-sheet/T&T pagination math AND by the react-pdf components for margin/footer-height sizing (`MARGIN`, `FOOTER_HEIGHT`) |
 
 ### Custom Plugins (`src/lib/pdfme/plugins/`)
 
-**Project Document Plugins:**
+**#1157 (cleanup):** `gearflowTable`, `gearflowFinancialSummary`,
+`gearflowRichText` and `gearflowDraftWatermark` — the 4 plugins that only
+ever served the 5 project doc types' old pdfme-composer pipeline — were
+deleted along with that pipeline. Every plugin below is still live because
+call sheets, T&T reports, and/or the project timeline still render through
+pdfme; none of them are used by the 5 project doc types anymore.
+
+**Call Sheet / Shared Plugins:**
 | Plugin | Purpose |
 |--------|---------|
-| `gearflowTable` | Equipment table — grouping (by `groupName` or `prepContainer`), kit children (3 levels), badges, checkboxes, conditions, per-unit expansion. Container line items (`isContainerLineItem`) are excluded. Draws the derived billing-weeks/days breakdown under an auto-priced line's description when `showPricing` is on (#943 — see below). |
-| `gearflowFinancialSummary` | Subtotal/discount/tax/total block with optional deposit/balance |
-| `gearflowPageHeader` | Three modes: logo, icon, none — org info + doc title |
-| `gearflowPageFooter` | Centered footer with top border; right-aligned "Page X of Y" when the document has more than one page (`FooterConfig.pageNumber`, computed per-page in `composeDocument`) |
+| `gearflowPageHeader` | Three modes: logo, icon, none — org info + doc title. Used by call sheets/timeline. |
+| `gearflowPageFooter` | Centered footer with top border; right-aligned "Page X of Y" when the document has more than one page. Used by call sheets/T&T reports/timeline. |
 | `gearflowCheckbox` | Empty/checked checkbox square |
-| `gearflowSignatureLine` | Signature blocks with configurable columns |
+| `gearflowSignatureLine` | Signature blocks with configurable columns. Used by T&T reports (e.g. Overdue/Non-Compliant, Test Session, Compliance Certificate). |
 | `gearflowCrewTable` | Crew table for call sheets — sorted by call time then role |
 | `gearflowCallSheetInfo` | 2-column info block: PM/client/equipment (left), venue/schedule (right) |
 | `gearflowDayHeader` | Day separator with accent bar, date label, phase badges, crew count |
-| `gearflowDraftWatermark` | "DRAFT PREVIEW — NOT SENT" banner (#987). Only ever produced by `?preview=1`; a stored artifact never carries one. Page furniture — repeated under the header on **every** page (see "Immutable finance artifacts"). Helvetica can't encode an em dash, so the plugin normalises `—`/curly quotes before drawing. |
-| `gearflowRichText` | Markdown-lite text block (`**bold**`, `*italic*`, `- `/`* ` bullets, word-wrapped to the box width) — replaces the pdfme built-in `text` type for every free-text/paragraph block in the 5 project document layouts: client+project details columns, client notes, total-items note, terms & conditions. When real font metrics are available (`generate-pdf.ts`), clientNotes/termsAndConditions also split across pages by wrapped line instead of only ever moving whole — see "Wrap-accurate pagination" below. |
 
 **Report Plugins:**
 | Plugin | Purpose |
@@ -445,23 +448,23 @@ Two vendor boundaries, one per pipeline (POLICY.md R-8.10.1):
 ### Derived Billing Breakdown on Line Items (#943)
 `projectLineItems.priceBreakdown` (previously a dead, always-empty field — see
 FEATUREDOCS/10 "Derived Billing Weeks/Days") is now populated for every
-auto-priced line and rendered directly by `gearflowTable`: a formatted string
-like `"2 wk @ $150.00 + 3 d @ $30.00"` or `"charged as 1 wk (capped)"`
+auto-priced line and rendered directly by `line-items-table.tsx` (via
+`breakdownLabel()`, `src/lib/pdfme/line-item-format.ts`, #1157): a formatted
+string like `"2 wk @ $150.00 + 3 d @ $30.00"` or `"charged as 1 wk (capped)"`
 (`formatPriceBreakdown`, `src/lib/billing-derivation.ts`) drawn under the
 line's description, gated on `TablePluginConfig.showPricing` (a manually
 priced line has no stored breakdown, so nothing renders for it). Since #790
 removed the entire `{token}` resolution system with no replacement planned
-(see "No Template Customization" below), this wires directly into the plugin
-— NOT a token — matching how every other derived value already reaches a PDF
-in this pipeline.
+(see "No Template Customization" below), this wires directly into the
+component — NOT a token — matching how every other derived value already
+reaches a PDF in this pipeline.
 
-`document-composer.ts`'s `calculateItemHeight` reserves the matching extra
-text-row height using the exact same "does this line have a renderable
-breakdown" check the plugin itself uses, so an auto-priced line's breakdown
-text can never silently overflow the page's pagination budget — the same
-class of tail-drop bug `document-composer.test.ts` guards the rest of the
-table against. `getFilteredParentItems` is unaffected — `priceBreakdown`
-never gates the top-level status filter.
+No separate height reservation exists for this (or any other) field — react-pdf's
+automatic layout measures what `breakdownLabel()` actually returns and lays
+out the page accordingly, so there's no "does the reserved height agree with
+the rendered height" class of bug to guard against here (contrast the old
+pdfme-composer pipeline's `calculateItemHeight`, deleted #1157). `priceBreakdown`
+never gates `filterAndGroupItems`'s top-level status filter.
 
 ## No Template Customization
 
@@ -478,8 +481,10 @@ deleted outright in the #790 redesign, not slimmed:
   `src/lib/validations/template-section.ts`, `src/lib/document-template-read.ts`,
   `src/lib/brand-templates-read.ts`, `src/server/document-templates.ts`,
   and the Convex `documentTemplates`/`brandTemplates`/`sectionPresets` tables +
-  CRUD are **all gone** — replaced by the fixed `document-layouts.ts` +
-  `document-composer.ts` pair (a few hundred lines total, not a slimmed copy).
+  CRUD are **all gone** — replaced first by the fixed `document-layouts.ts` +
+  `document-composer.ts` pair (a few hundred lines total, not a slimmed copy),
+  then by the react-pdf component trees (`src/lib/react-pdf/`) once #1156/#1157
+  moved the 5 project doc types off that pair entirely.
 - `/settings/documents` (read-only template list) and its nav entry are gone.
 - The project page's "Documents" dropdown is plain doc-type items — no
   per-type custom-template submenu (there's nothing to select).
@@ -496,99 +501,75 @@ removed (dual pipelines, ~8,300 dead LOC, and the pagination bug it caused).
 
 ## Project Document Layouts
 
-5 document types, each with exactly one fixed layout in `DOCUMENT_LAYOUTS`
-(`document-layouts.ts`):
+5 document types, each its own react-pdf component tree
+(`src/lib/react-pdf/{quote,invoice,packing-list,return-sheet,delivery-docket}-document.tsx`)
+composing shared pieces from `src/lib/react-pdf/components/`. `DOCUMENT_LAYOUTS`
+(`document-layouts.ts`) only carries `expandProjectGroups` per type now (#1157)
+— everything else below (columns, checkboxes, status filter, block ordering)
+is read directly out of each component's own `tableConfig`/JSX, not a shared
+schema:
 
-| Type | Blocks | `expandProjectGroups` | Status filter |
+| Type | Layout | `expandProjectGroups` | Status filter |
 |------|--------|------------------------|----------------|
-| `quote` | header (+ "Expiry: {date}" meta line, real computed date), client+project details, table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset) | false (collapse groups) | none |
-| `invoice` | header (+ bold "Due: {date}" meta line), client+project details (+ tax ID, payment terms), table (`clientFacingTable`: no "/day" price suffix, no badges, no kit/accessory children), totals (+ deposit/balance, + bold "Due Date" row), payment details (omitted if unset), client notes, T&Cs (omitted unless `showTermsAndConditionsOnInvoice` is on AND text is set) | false | none |
+| `quote` | header (+ "Expiry: {date}" meta line, real computed date), client+project details, table (no "/day" price suffix, no badges, no kit/accessory children), totals, client notes, T&Cs (omitted if unset, forced onto its own page) | false (collapse groups) | none |
+| `invoice` | header (+ bold "Due: {date}" meta line), client+project details (+ tax ID, payment terms), table (no "/day" price suffix, no badges, no kit/accessory children), totals (+ deposit/balance, + bold "Due Date" row), payment details (omitted if unset), client notes, T&Cs (omitted unless `showTermsAndConditionsOnInvoice` is on AND text is set, forced onto its own page) | false | none |
 | `packing-list` | header, client+project details, table (checkboxes, per-unit, asset tags, categories), total-items note | true (expand groups) | none |
 | `return-sheet` | header, client+project details, table (checkboxes, condition columns, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT`, `RETURNED` |
 | `delivery-docket` | header, client+project details (+ site contact), table (checkboxes, row numbers, per-unit, asset tags), signature (3 cols) | true | `CHECKED_OUT` |
 
-The `header` block itself is the SAME across all 5 doc types (`document-composer.ts`'s
-one `case "header"` in both `estimateBlockHeight` and `buildEntryFields`) — the org's
-business-registration number (when set) renders under the address/phone/email lines on
-**every** doc type, not just the invoice. Only the "Expiry"/"Due" meta lines next to the
-doc number are doc-type-gated.
+The `Header` component (`components/header.tsx`) is the SAME across all 5 doc
+types — the org's business-registration number (when set) renders under the
+address/phone/email lines on **every** doc type, not just the invoice. Only
+the "Expiry"/"Due" meta lines next to the doc number are doc-type-gated (a
+prop each doc component passes in).
 
 **Labels are country-derived, not hardcoded (I4, #1083).** `data.org_business_number_label`
 (from `src/lib/countries.ts` via `build-document-data.ts`) replaces the literal `"ABN"` for
-BOTH the org's own number (header) and the client's (`detailsRow`'s `showClientTaxId`
+BOTH the org's own number (header) and the client's (`DetailsRow`'s `showClientTaxId`
 line) — one label, since it names the org's home-jurisdiction registration-number format
 ("VAT number" for GB/IE, "EIN" for US, …), not a per-party thing. `data.tax_label`/
 `org_tax_label` fall back to the country's `taxLabel` (not a literal `"GST"`) when
-`OrgSettings.taxLabel` is unset. `data.org_invoice_heading` overrides the invoice layout's
-static `"TAX INVOICE"` title (`document-layouts.ts`) for any non-AU/NZ org — "Tax Invoice"
-is an AU/NZ GST-system legal term, not a global one; every other market gets "INVOICE".
-None of this touches `OrgSettings.abn`/`Client.taxId` themselves (still generic storage,
-per their own doc comments) — this is a render-layer change only.
+`OrgSettings.taxLabel` is unset. `data.org_invoice_heading` overrides `InvoiceDocument`'s
+static `"TAX INVOICE"` title for any non-AU/NZ org — "Tax Invoice" is an AU/NZ GST-system
+legal term, not a global one; every other market gets "INVOICE". None of this touches
+`OrgSettings.abn`/`Client.taxId` themselves (still generic storage, per their own doc
+comments) — this is a render-layer change only.
 
 ### Paper size — pagination geometry, not a display setting (I5, #1084)
 
-**Ported to react-pdf (#1156):** `pageSizeFor()` (`src/lib/react-pdf/styles.ts`)
-is the entire equivalent for the current pipeline — react-pdf's `<Page size>`
-accepts `"LETTER"` as a named standard size directly, so there's no
-`PageGeometry`/`getPageGeometry()`-style table to port; margin/footer are
-identical across both paper sizes below too, and every table column in the
-react-pdf components already uses percentage widths, so content width/height
-fall out of the page size automatically. The detail below (`PageGeometry`,
-`LayoutContext.geometry`, `composeDocument`'s `paperSize` param) describes
-the **old** pipeline, still accurate for call sheets/T&T reports/timeline
-(none of which were ever in `composeDocument`'s 5 project doc types to begin
-with) but no longer how quote/invoice/packing-list/return-sheet/
-delivery-docket resolve paper size.
+`pageSizeFor()` (`src/lib/react-pdf/styles.ts`) is the entire mechanism —
+react-pdf's `<Page size>` accepts `"LETTER"` as a named standard size
+directly, so there's no `PageGeometry`/`getPageGeometry()`-style dimension
+table to maintain; margin/footer are identical across both paper sizes, and
+every table column in the react-pdf components already uses percentage
+widths, so content width/height fall out of the page size automatically.
+`build-document-data.ts` resolves `org_paper_size` (`country?.paperSize ??
+"A4"`, alongside the other I4 fields from the same `country` lookup) onto
+`DocumentData`; each doc component reads `data.org_paper_size` and passes it
+through `pageSizeFor()` into its `<Page size>`. `PaperSize` itself
+(`"A4" | "LETTER"`) is `src/lib/countries.ts`'s column — re-exported by
+`template-constants.ts`, not redeclared (R-3.1). Tested by
+`render.test.tsx`'s per-doc-type dimension assertions (612×792pt LETTER,
+595×842pt A4) and `regression.test.tsx`'s full pagination-invariant suite
+running against both sizes.
 
-The hardest international item, per its own issue: `template-constants.ts`'s
-`PAGE_WIDTH`/`PAGE_HEIGHT`/`MARGIN`/`CONTENT_WIDTH`/`PAGE_CONTENT_HEIGHT`/`FOOTER_HEIGHT`
-constants feed **every** pagination calculation in `document-composer.ts` — where a page
-breaks, how much space page furniture reserves, how many wrapped lines of T&Cs fit before
-a split. Getting a geometry change wrong reproduces the exact silent-tail-drop bug class
-the v0.8.1.x releases shipped three times, so this was threaded as an explicit parameter
-end to end rather than a swapped-out module constant:
-
-- `template-constants.ts` adds `PageGeometry` (`{ width, height, margin, contentWidth,
-  contentHeight, footerHeight }`, all mm) and `getPageGeometry(paperSize?)`. The bare
-  constants stay exactly as they were — `getPageGeometry("A4")` (the default) is
-  byte-identical to them, so every one of the other `templates/*.ts` files (call sheets,
-  Test & Tag reports, timeline — outside `composeDocument`'s 5 project doc types, not
-  touched by this issue) keeps importing the plain A4 constants unchanged. `PaperSize`
-  itself (`"A4" | "LETTER"`) is `src/lib/countries.ts`'s column — re-exported here, not
-  redeclared (R-3.1).
-- `document-composer.ts`: `LayoutContext` carries the resolved `geometry`; every function
-  that used to read a bare `MARGIN`/`CONTENT_WIDTH`/`PAGE_HEIGHT` — `estimateBlockHeight`,
-  `measurePageFurniture`, `computePages` (including its `splitRichTextBlock`/`splitTable`
-  closures), `buildEntryFields`, and the footer/`basePdf` construction in `composeDocument`
-  itself — now reads it off `geometry` instead. `calculateItemHeight` needed NO change —
-  its row-height math is purely font-size/row-count based, never width-dependent.
-  `composeDocument`'s new `paperSize` param defaults to `undefined` → `getPageGeometry()`
-  → A4, so every existing caller/test keeps rendering exactly as it always did.
-- `build-document-data.ts` adds `org_paper_size` to `DocumentData` (`country?.paperSize ??
-  "A4"`, alongside the I4 fields it already resolves from the same `country` lookup).
-  `generate-pdf.ts` reads it and passes it as `composeDocument`'s `paperSize` argument —
-  the same "read a resolved field off `data`, pass it through" pattern `org_document_color`
-  already used.
-- **Tested, not just smoke-tested**: `document-composer.test.ts`'s Letter-paper describe
-  block runs the SAME 120-item no-tail-drop fixture as the standing A4 harness for all 5
-  doc types (full parent-item-index coverage, header/footer repeat on every continuation
-  page — i.e. `isPageFurniture`/`measurePageFurniture` reserve correctly at the new
-  height), plus a `basePdf` dimension check (216×279, not silently still A4), a
-  content-bounds check (no schema renders past Letter's own margin), and a rich-text
-  split/reconstruct check at Letter's wider content width. `template-constants.test.ts`
-  covers `getPageGeometry` directly (A4 byte-identical to the bare constants, Letter wider
-  AND shorter, margin/footer fixed across both sizes).
-- **`nIDTH`/`nEIGHT`** (the issue's find-and-replace-residue rename) — already gone by the
-  time this issue was picked up; nothing to rename.
+An earlier version of this feature (I5, #1084, pre-migration) threaded a
+hand-maintained `PageGeometry`/`getPageGeometry()` table through the old
+pdfme-composer pipeline's every pagination calculation — deleted along with
+that pipeline in #1157. `template-constants.ts`'s plain A4 constants
+(`PAGE_WIDTH`/`MARGIN`/etc.) are still what call sheets/T&T reports/timeline
+use directly (they were never paper-size-aware and are out of scope for I5).
 
 Call sheets are a 6th `DocumentType` value but are **not** in
 `DOCUMENT_LAYOUTS` — they render via `templates/call-sheet-services.ts`
 instead (`ProjectDocumentType = Exclude<DocumentType, "call-sheet">`).
 
-`getDocumentLayout(docType, { draftPreview: true })` (#987) returns the same
-layout with one extra block spliced in after the header: `draftWatermark`. It is
-the ONE variant of a fixed layout that exists, it is never persisted, and only
-`/api/documents/[projectId]?preview=1` asks for it.
+The draft-preview watermark (#987) is a plain conditional in `QuoteDocument`/
+`InvoiceDocument`'s own JSX (`draftPreview && <DraftWatermark .../>`,
+`components/draft-watermark.tsx`) — not a layout variant spliced in by a
+separate function. `generate-pdf.ts` passes `draftPreview` through to
+`renderReactPdfTemplate()`'s options; only
+`/api/documents/[projectId]?preview=1` sets it.
 
 ## Immutable finance artifacts (#987)
 
@@ -1325,34 +1306,29 @@ type, new relationship) must be verified against all consumers below —
 fixing one and shipping leaves silent bugs in the others (see CLAUDE.md's
 PDF footgun section for the pre-#790 history of exactly this):
 
-1. **`gearflow-table.ts` rendering** — what gets drawn (bold, indented, etc.)
-2. **`document-composer.ts`'s `calculateItemHeight`** — pagination space reservation (miss this → silent tail-drop)
-3. **`document-composer.ts`'s `getFilteredParentItems`** — status filter (miss this → items disappear from docket / return-sheet)
-4. **`gearflow-table.ts`'s own top-level filter** — mirrors #3, must stay in sync (documented cross-reference in both files)
+1. **`line-items-table.tsx` rendering** — what gets drawn (bold, indented, badges, per-unit expansion, etc.), including the pure formatting helpers it imports from `line-item-format.ts`.
+2. **`filterAndGroupItems`'s status filter** (same file) — miss this → items disappear from docket / return-sheet.
 
-A new **LayoutBlock kind** (e.g. `draftWatermark`, #987; `paymentDetails`, the
-invoice payment-details block) is a different audit with two entries, not four:
-`estimateBlockHeight`'s switch (miss it → the block draws over whatever follows,
-or is silently dropped) and `buildEntryFields`'s switch (miss it → nothing
-renders). Both are exhaustive `switch`es over `LayoutBlock["kind"]`, so
-TypeScript fails the build on a missing arm — which is the point of keeping the
-block union closed. `trySplitAcrossPages`/`splitRichTextBlock`'s narrower
-`Extract<LayoutBlock, {...}>` union (the three free-text block kinds that can
-split across pages by wrapped line) is NOT exhaustive-checked by the compiler —
-`paymentDetails` had to be added there by hand alongside `clientNotes`/
-`termsAndConditions`, same as `estimateBlockHeight`/`buildEntryFields`.
+That's it — react-pdf's automatic layout removed the height-reservation
+consumer entirely (there is no `calculateItemHeight` equivalent; nothing
+pre-computes how much vertical space a row needs, so there is nothing that
+can silently disagree with what actually gets drawn). Pre-#1157, on the old
+pdfme-composer pipeline, this checklist had 4 entries across 2 files:
+`gearflow-table.ts`'s render, its own top-level filter (mirroring #2), and
+`document-composer.ts`'s `calculateItemHeight`/`getFilteredParentItems`. And
+before that, pre-#790, it had 5 entries across 2 files (`section-renderer.ts`
+and `gearflow-table.ts` each had their own filter + height-estimation logic
+kept in sync by hand). Each redesign closed off a whole category of "forgot
+to update the other consumer" bug by removing a consumer, not by disciplining
+authors to remember all of them.
 
-This is down from 5 consumers in 2 files pre-redesign (the dual pipeline
-meant `section-renderer.ts` and `gearflow-table.ts` each had their own filter
-+ height-estimation logic that had to be kept in sync by hand); the fixed
-single pipeline collapses it to one file (`document-composer.ts`) plus the
-plugin's own top-level filter.
-
-**Real incident, #2 above (2026-07-28):** `gearflow-table.ts` grew a
-sub-hire "via `<Supplier>`" line under a row's description with no matching
-case added to `calculateItemHeight` — real quotes with many sub-hire lines
-silently lost entire trailing categories off the rendered table (subtotal
-stayed correct; the visible rows didn't). See "Sub-hire row tail-drop"
-above. Concrete evidence this checklist is load-bearing, not decorative —
-when a row's drawn height gains a new conditional line, add the matching
-line to `calculateItemHeight` in the same change.
+**Real historical incident (2026-07-28, pdfme-composer era):** `gearflow-table.ts`
+grew a sub-hire "via `<Supplier>`" line under a row's description with no
+matching case added to `calculateItemHeight` — real quotes with many
+sub-hire lines silently lost entire trailing categories off the rendered
+table (subtotal stayed correct; the visible rows didn't). Concrete evidence
+this class of bug is real and not decorative — react-pdf's automatic layout
+is what makes it structurally impossible to recur for these 5 doc types (see
+"Architecture" above); the discipline of keeping render and filter logic in
+sync (the 2-entry checklist above) still matters for anything new added to
+`line-items-table.tsx`.

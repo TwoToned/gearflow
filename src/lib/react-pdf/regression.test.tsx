@@ -167,9 +167,13 @@ describe.each(["quote", "invoice"] as const)("draft-preview watermark — %s", (
 
 // ─── termsAndConditions.forceNewPage (quote/invoice only) ──────────────────
 
-describe.each(
-  PROJECT_DOC_TYPES.filter((docType) => DOCUMENT_LAYOUTS[docType].blocks.some((b) => b.kind === "termsAndConditions")),
-)("termsAndConditions forceNewPage — %s", (docType) => {
+// #1157 (cleanup) — was derived from DOCUMENT_LAYOUTS[docType].blocks (the
+// old pdfme-composer layout registry, deleted with #1156's cutover). Only
+// QuoteDocument/InvoiceDocument render a T&Cs block at all (see their own
+// component trees) — hardcode the same two doc types directly.
+const DOC_TYPES_WITH_TERMS: ProjectDocumentType[] = ["quote", "invoice"];
+
+describe.each(DOC_TYPES_WITH_TERMS)("termsAndConditions forceNewPage — %s", (docType) => {
   it("terms & conditions start on their own fresh page, never sharing a page with earlier content", async () => {
     // Deliberately tiny line-item list: without forceNewPage, T&Cs would fit
     // on page 1 right after the totals block. Its presence on a LATER page

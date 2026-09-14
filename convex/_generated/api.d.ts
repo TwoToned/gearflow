@@ -28,6 +28,7 @@ import type * as backfillClientContacts from "../backfillClientContacts.js";
 import type * as backfillInvoiceSourceRevision from "../backfillInvoiceSourceRevision.js";
 import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as backfillMaintenanceSchedules from "../backfillMaintenanceSchedules.js";
+import type * as backfillOrphanedLineItemComments from "../backfillOrphanedLineItemComments.js";
 import type * as backfillProjectLiveRevision from "../backfillProjectLiveRevision.js";
 import type * as backfillProjectWindow from "../backfillProjectWindow.js";
 import type * as backfillQuoteRevisions from "../backfillQuoteRevisions.js";
@@ -114,6 +115,7 @@ import type * as lib_checkIncidentReportCore from "../lib/checkIncidentReportCor
 import type * as lib_checkPredictiveMaintenanceCore from "../lib/checkPredictiveMaintenanceCore.js";
 import type * as lib_clientContactCore from "../lib/clientContactCore.js";
 import type * as lib_collaborationColors from "../lib/collaborationColors.js";
+import type * as lib_commentCleanup from "../lib/commentCleanup.js";
 import type * as lib_counters from "../lib/counters.js";
 import type * as lib_crewConflicts from "../lib/crewConflicts.js";
 import type * as lib_crewRate from "../lib/crewRate.js";
@@ -324,6 +326,7 @@ declare const fullApi: ApiFromModules<{
   backfillInvoiceSourceRevision: typeof backfillInvoiceSourceRevision;
   backfillKitUnits: typeof backfillKitUnits;
   backfillMaintenanceSchedules: typeof backfillMaintenanceSchedules;
+  backfillOrphanedLineItemComments: typeof backfillOrphanedLineItemComments;
   backfillProjectLiveRevision: typeof backfillProjectLiveRevision;
   backfillProjectWindow: typeof backfillProjectWindow;
   backfillQuoteRevisions: typeof backfillQuoteRevisions;
@@ -410,6 +413,7 @@ declare const fullApi: ApiFromModules<{
   "lib/checkPredictiveMaintenanceCore": typeof lib_checkPredictiveMaintenanceCore;
   "lib/clientContactCore": typeof lib_clientContactCore;
   "lib/collaborationColors": typeof lib_collaborationColors;
+  "lib/commentCleanup": typeof lib_commentCleanup;
   "lib/counters": typeof lib_counters;
   "lib/crewConflicts": typeof lib_crewConflicts;
   "lib/crewRate": typeof lib_crewRate;

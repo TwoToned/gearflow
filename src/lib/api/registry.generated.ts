@@ -4608,6 +4608,144 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "backfillOrphanedLineItemComments.backfillOrphanedCommentThreadsPage",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "backfillOrphanedCommentThreadsPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "302589cceccccb8c",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillOrphanedLineItemComments.backfillOrphanedReviewMarkersPage",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "backfillOrphanedReviewMarkersPage",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "apply",
+        "optional": false,
+        "type": "boolean"
+      },
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4a4d51d7dca5806e",
+    "returnsSha": "302589cceccccb8c",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillOrphanedLineItemComments.verifyOrphanedCommentThreads",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "verifyOrphanedCommentThreads",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e9753884d189782",
+    "returnsSha": "e789e32dd7114c4b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "backfillOrphanedLineItemComments.verifyOrphanedReviewMarkers",
+    "module": "backfillOrphanedLineItemComments",
+    "fn": "verifyOrphanedReviewMarkers",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "cursor",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "numItems",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1e9753884d189782",
+    "returnsSha": "e789e32dd7114c4b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "backfillProjectLiveRevision.backfillProjectLiveRevisionPage",
     "module": "backfillProjectLiveRevision",
     "fn": "backfillProjectLiveRevisionPage",
@@ -18501,13 +18639,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "549a746c6908f6ab",
+    "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "Blocking comment threads relevant to the caller (as PM or mentioned).",
@@ -18543,6 +18686,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "The caller's personal dashboard project list (managed or PM-assigned).",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "dashboardLists.pendingCrewOffers",
+    "module": "dashboardLists",
+    "fn": "pendingCrewOffers",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Count of pending crew offers on current/future (not past or closed) gigs.",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -61338,10 +61518,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1183,
-  agentReachable: 569,
-  queries: 418,
-  mutations: 765,
-  agentReachableQueries: 291,
+  total: 1188,
+  agentReachable: 570,
+  queries: 421,
+  mutations: 767,
+  agentReachableQueries: 292,
   agentReachableMutations: 278,
 } as const;

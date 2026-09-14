@@ -2,21 +2,28 @@
  * Full PDF-pipeline integration test for the Phase A keystone (consumer 4/4):
  * the line-item-tree RECONSTRUCTION from FLAT Convex rows feeding the whole PDF
  * pipeline. Per CLAUDE.md's PDF data-shape rule, plugin-only unit tests are not
- * enough — a data-shape change has five independent `DocumentLineItem` consumers,
- * so this exercises the chain that `build-document-data.ts` now runs:
+ * enough — a data-shape change has multiple independent `DocumentLineItem`
+ * consumers, so this exercises the chain that `build-document-data.ts` runs:
  *
  *   {mapLineItemDoc/mapUnitDoc/...} → indexChildren/indexUnits/reconstructScope
  *     → attachLineItemTree + attachAssetBulkAssetTree  (buildDocumentLineItemData's
  *       pure core, fed flat Convex docs)
  *     → (build-document-data enrichment) → structureLineItems
- *     → getFilteredParentItems (status filter) → calculateItemHeight (height)
- *     → gearflowTable.pdf (render)
+ *     → filterAndGroupItems (status filter, react-pdf pipeline) → render
  *
  * Safety properties under test: the reconstruction drops CANCELLED tombstones,
  * nests kit children to the include depth (2) with their grandchildren, attaches
- * units with their physical-asset tags, and the resulting tree survives the filter
- * + height path with no silent tail-drop (the v0.8.1.x class) and renders model
- * names + categories on the page.
+ * units with their physical-asset tags, and the resulting tree survives the
+ * filter + render path with no silent tail-drop (the v0.8.1.x class) and
+ * renders model names + categories on the page.
+ *
+ * #1157 (cleanup) — ported from the pdfme-composer pipeline
+ * (`getFilteredParentItems`/`calculateItemHeight`/`runTablePlugin`, all
+ * deleted with #1156's cutover) to the react-pdf pipeline that replaced it.
+ * React-pdf's automatic layout removes the manual height-reservation failure
+ * mode entirely (see FEATUREDOCS/13-pdfs.md) — the "no tail-drop" property is
+ * now proven by actually rendering the reconstructed tree and checking every
+ * item's text made it onto some page, rather than by a height sum.
  */
 import { describe, it, expect } from "vitest";
 import { mapLineItemDoc, mapUnitDoc } from "@/lib/project-line-item-read";
@@ -34,10 +41,12 @@ import type { ConvexModel } from "@/lib/models-read";
 import type { ConvexCategory } from "@/lib/categories-read";
 import type { ConvexAsset } from "@/lib/assets-read";
 import { structureLineItems, type CategoryForStructuring } from "./structure-line-items";
-import { getFilteredParentItems, calculateItemHeight } from "./document-composer";
-import { DOCUMENT_LAYOUTS } from "./document-layouts";
-import { runTablePlugin } from "./plugins/test-utils";
-import type { DocumentData, DocumentLineItem } from "./types";
+import type { DocumentLineItem } from "./types";
+import { filterAndGroupItems } from "@/lib/react-pdf/components/line-items-table";
+import { PackingListDocument } from "@/lib/react-pdf/packing-list-document";
+import { QuoteDocument } from "@/lib/react-pdf/quote-document";
+import { renderPdfPages } from "@/lib/react-pdf/pdf-test-utils";
+import { makeSpikeData } from "@/lib/react-pdf/fixture";
 
 const MS = 1_700_000_000_000;
 
@@ -93,6 +102,25 @@ function reconstruct() {
   return attachAssetBulkAssetTree(withModel, assetMap, new Map());
 }
 
+const PACKING_LIST_CONFIG = {
+  documentType: "packing-list" as const,
+  documentColor: "#0d4f4f",
+  showGroupHeaders: true,
+  showKitChildren: true,
+  showCheckboxes: true,
+  showConditionColumns: false,
+  showPricing: false,
+  showBadges: false,
+  showNotes: false,
+  showPerUnitCheckboxes: true,
+  showAssetTags: true,
+  showCategories: true,
+  showRowNumbers: false,
+  filterOptional: false,
+  filterByStatus: null,
+  hidePricingPeriodSuffix: false,
+};
+
 describe("keystone reconstruction → full PDF pipeline", () => {
   const tree = reconstruct();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,7 +148,7 @@ describe("keystone reconstruction → full PDF pipeline", () => {
     expect(plain.units[0].asset?.assetTag).toBe("AST-001");
   });
 
-  describe("structure → filter → height → render", () => {
+  describe("structure → filter → render", () => {
     const enriched = tree.map((li) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const liAny = li as any;
@@ -133,63 +161,39 @@ describe("keystone reconstruction → full PDF pipeline", () => {
     const structured = structureLineItems(enriched, categories, { expandProjectGroups: true, packerSort: true }, []);
 
     it("keeps every top-level item through the status filter (no tail-drop)", () => {
-      const data = { line_items: structured } as DocumentData;
-      const parents = getFilteredParentItems(data, DOCUMENT_LAYOUTS["packing-list"].filterByStatus);
+      const { groups } = filterAndGroupItems(structured, PACKING_LIST_CONFIG);
+      const grouped = [...groups.values()].flat().length;
       const expectedTop = structured.filter((i) => !i.isKitChild && !i.isContainerLineItem).length;
-      expect(parents.length).toBe(expectedTop);
-    });
-
-    it("reserves height for the whole structured list (consumer #2 tail-drop guard)", () => {
-      const tableBlock = DOCUMENT_LAYOUTS["packing-list"].blocks.find((b) => b.kind === "table");
-      if (tableBlock?.kind !== "table") throw new Error("packing-list layout has no table block");
-      const hAll = structured.reduce((sum, item) => sum + calculateItemHeight(item, tableBlock.config), 0);
-      const hOne = calculateItemHeight(structured[0], tableBlock.config);
-      expect(Number.isFinite(hAll)).toBe(true);
-      expect(hAll).toBeGreaterThan(hOne);
+      expect(grouped).toBe(expectedTop);
     });
 
     it("renders reconstructed model names + categories on the page", async () => {
-      const calls = await runTablePlugin(structured, { documentType: "packing-list", showCategories: true });
-      const text = calls.drawText.map((c) => c.text).join("\n");
-      expect(text).toContain("Wireless Mic");
-      expect(text).toContain("Source Four LED");
-      expect(text).toContain("Audio");
-      expect(text).toContain("Lighting");
+      const data = makeSpikeData({ line_items: structured, total_items: structured.length });
+      const { fullText } = await renderPdfPages(<PackingListDocument data={data} />);
+      expect(fullText).toContain("Wireless Mic");
+      expect(fullText).toContain("Source Four LED");
+      expect(fullText).toContain("Audio");
+      expect(fullText).toContain("Lighting");
     });
 
     // #943 — derived billing weeks/days: an auto-priced line's priceBreakdown
-    // must survive the FULL pipeline (structure → height reservation → render),
-    // not just a plugin-only unit test (CLAUDE.md's PDF data-shape rule).
-    it("an auto-priced line's priceBreakdown reserves height AND renders on the page", async () => {
+    // must survive the FULL pipeline (structure → render), not just a
+    // plugin-only unit test (CLAUDE.md's PDF data-shape rule).
+    it("an auto-priced line's priceBreakdown renders on the page", async () => {
       // "quote" (client-facing, showPricing: true) — packing-list/return-sheet/
       // delivery-docket never show pricing at all, so their layouts wouldn't
-      // reserve height for it regardless of priceBreakdown (correctly).
-      const tableBlock = DOCUMENT_LAYOUTS.quote.blocks.find((b) => b.kind === "table");
-      if (tableBlock?.kind !== "table") throw new Error("quote layout has no table block");
-
+      // render it regardless of priceBreakdown (correctly).
       const plain = structured.find((i) => i.id === "plainLine");
       if (!plain) throw new Error("plainLine missing from structured output");
       const priced: DocumentLineItem = {
         ...plain,
         priceBreakdown: JSON.stringify({ weeks: 1, days: 2, weeklyRate: 80, dailyRate: 15, capped: false }),
       };
-
-      // Height reservation: the priced clone must reserve MORE than the
-      // unpriced original — otherwise the breakdown text silently overflows
-      // the pagination budget calculateItemHeight computed for it.
-      const hUnpriced = calculateItemHeight(plain, tableBlock.config);
-      const hPriced = calculateItemHeight(priced, tableBlock.config);
-      expect(hPriced).toBeGreaterThan(hUnpriced);
-
-      // Render: the formatted breakdown text actually appears on the page.
       const pricedStructured = structured.map((i) => (i.id === "plainLine" ? priced : i));
-      const calls = await runTablePlugin(pricedStructured, {
-        documentType: "quote",
-        showCategories: true,
-        showPricing: true,
-      });
-      const text = calls.drawText.map((c) => c.text).join("\n");
-      expect(text).toContain("1 wk @ $80.00 + 2 d @ $15.00");
+
+      const data = makeSpikeData({ line_items: pricedStructured, total_items: pricedStructured.length });
+      const { fullText } = await renderPdfPages(<QuoteDocument data={data} />);
+      expect(fullText).toContain("1 wk @ $80.00 + 2 d @ $15.00");
     });
   });
 });

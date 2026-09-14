@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 418 | 291 | 125 | 1 | 1 |
-| Mutations | 765 | 278 | 478 | 0 | 9 |
-| **Total** | **1183** | **569** | **603** | **1** | **10** |
+| Queries | 421 | 292 | 127 | 1 | 1 |
+| Mutations | 767 | 278 | 480 | 0 | 9 |
+| **Total** | **1188** | **570** | **607** | **1** | **10** |
 
-<!-- reachability-floor: 569 -->
+<!-- reachability-floor: 570 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -63,6 +63,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `backfillInvoiceSourceRevision` | 2 |
 | `backfillKitUnits` | 1 |
 | `backfillMaintenanceSchedules` | 1 |
+| `backfillOrphanedLineItemComments` | 4 |
 | `backfillProjectLiveRevision` | 2 |
 | `backfillProjectWindow` | 1 |
 | `backfillQuoteRevisions` | 2 |

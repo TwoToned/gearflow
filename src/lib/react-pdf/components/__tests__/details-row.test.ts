@@ -62,4 +62,28 @@ describe("buildProjectLines", () => {
     const lines = buildProjectLines(data, { showPaymentTerms: true });
     expect(lines.some((l) => l.startsWith("Payment Terms:"))).toBe(false);
   });
+
+  it("omits the site contact line with no config (quote/invoice's usage)", () => {
+    const data = makeSpikeData({ site_contact_name: "Site Manager", site_contact_phone: "0400 222 222" });
+    const lines = buildProjectLines(data, {});
+    expect(lines.some((l) => l.startsWith("Site Contact:"))).toBe(false);
+  });
+
+  it("includes the site contact name and phone when showSiteContact is on (delivery-docket)", () => {
+    const data = makeSpikeData({ site_contact_name: "Site Manager", site_contact_phone: "0400 222 222" });
+    const lines = buildProjectLines(data, { showSiteContact: true });
+    expect(lines).toContain("Site Contact: Site Manager | Ph: 0400 222 222");
+  });
+
+  it("omits the phone segment when the site contact has no phone", () => {
+    const data = makeSpikeData({ site_contact_name: "Site Manager", site_contact_phone: "" });
+    const lines = buildProjectLines(data, { showSiteContact: true });
+    expect(lines).toContain("Site Contact: Site Manager");
+  });
+
+  it("omits the site contact line when no name is set, even with showSiteContact on", () => {
+    const data = makeSpikeData({ site_contact_name: "" });
+    const lines = buildProjectLines(data, { showSiteContact: true });
+    expect(lines.some((l) => l.startsWith("Site Contact:"))).toBe(false);
+  });
 });

@@ -26,7 +26,7 @@ import { getMyOrganizations } from "@/server/public-org";
  *
  * Must not guess (#1071, A1): 1 membership → activate it; 2+ → route to the
  * picker rather than pick one; 0 → nothing to activate here (the (app) layout's
- * own guard routes a 0-membership session to /onboarding).
+ * own guard routes a 0-membership session to /welcome, not this component).
  */
 export function OrgActivator() {
   const router = useRouter();

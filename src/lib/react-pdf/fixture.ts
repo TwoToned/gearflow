@@ -82,7 +82,7 @@ export function makeSpikeData(overrides: Partial<DocumentData> = {}): DocumentDa
   };
 }
 
-export function makeLineItem(overrides: Partial<DocumentLineItem>): DocumentLineItem {
+function makeLineItem(overrides: Partial<DocumentLineItem>): DocumentLineItem {
   return {
     id: overrides.id ?? "li-default",
     description: null,

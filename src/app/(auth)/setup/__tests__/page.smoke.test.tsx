@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Smoke test for the org-creation form's B1 wiring (#1092): it's the "Set up
+// Smoke test for the org-creation form's C1 wiring (#1098): it's the "Set up
 // a new company" destination from /welcome, so it must (a) bounce away if
 // org creation has since been gated off rather than show a form the server
 // will refuse anyway, and (b) collect + submit the signup code when the gate
@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(async () => ({ data: { id: "org1" }, error: null as { message: string } | null })),
   setActive: vi.fn(async () => undefined),
   getOrgCreationPolicy: vi.fn(async () => ({ allowed: true, codeRequired: false })),
+  checkSlugAvailable: vi.fn(async () => true),
+  mirrorMyMembership: vi.fn(async () => undefined),
+  seedOrgDefaults: vi.fn(async () => undefined),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -30,45 +33,49 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 vi.mock("@/server/public-org", () => ({
   getMyOrganizations: () => Promise.resolve([]),
-  mirrorMyMembership: () => Promise.resolve(undefined),
-  seedOrgDefaultTaxRate: () => Promise.resolve(undefined),
+  mirrorMyMembership: mocks.mirrorMyMembership,
+  seedOrgDefaults: mocks.seedOrgDefaults,
+  checkSlugAvailable: mocks.checkSlugAvailable,
 }));
 vi.mock("@/server/site-admin", () => ({
   getOrgCreationPolicy: mocks.getOrgCreationPolicy,
 }));
 
-import OnboardingPage from "../page";
+import SetupPage from "../page";
 
 beforeEach(() => {
   mocks.push.mockClear();
   mocks.replace.mockClear();
   mocks.create.mockClear();
   mocks.setActive.mockClear();
+  mocks.checkSlugAvailable.mockClear();
+  mocks.mirrorMyMembership.mockReset().mockResolvedValue(undefined);
+  mocks.seedOrgDefaults.mockReset().mockResolvedValue(undefined);
   mocks.getOrgCreationPolicy.mockResolvedValue({ allowed: true, codeRequired: false });
 });
 
-describe("OnboardingPage (smoke)", () => {
+describe("SetupPage (smoke)", () => {
   it("bounces to /welcome when org creation has been gated off", async () => {
     mocks.getOrgCreationPolicy.mockResolvedValue({ allowed: false, codeRequired: false });
-    render(<OnboardingPage />);
+    render(<SetupPage />);
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/welcome"));
   });
 
   it("does not render a signup-code field when none is required", async () => {
-    render(<OnboardingPage />);
-    await screen.findByLabelText("Organization name");
+    render(<SetupPage />);
+    await screen.findByLabelText("Company name");
     expect(screen.queryByLabelText("Signup code")).toBeNull();
   });
 
   it("renders and submits a signup-code field when the gate requires one", async () => {
     mocks.getOrgCreationPolicy.mockResolvedValue({ allowed: true, codeRequired: true });
     const user = userEvent.setup();
-    render(<OnboardingPage />);
+    render(<SetupPage />);
 
     const codeInput = await screen.findByLabelText("Signup code");
-    await user.type(await screen.findByLabelText("Organization name"), "Acme Productions");
+    await user.type(await screen.findByLabelText("Company name"), "Acme Productions");
     await user.type(codeInput, "abc123");
-    await user.click(screen.getByRole("button", { name: /create organization/i }));
+    await user.click(screen.getByRole("button", { name: /create company/i }));
 
     await waitFor(() =>
       expect(mocks.create).toHaveBeenCalledWith(
@@ -78,5 +85,21 @@ describe("OnboardingPage (smoke)", () => {
         }),
       ),
     );
+  });
+
+  it("still redirects to /dashboard when the best-effort post-creation seed fails", async () => {
+    // The org + membership already exist and are active by this point
+    // (organization.create() + setActive() both succeeded) — a transient
+    // Convex hiccup in seedOrgDefaults must never strand the user on the
+    // form with a generic error, since a retry would fail with "slug
+    // already taken" against an org they already own.
+    mocks.seedOrgDefaults.mockRejectedValue(new Error("Convex hiccup"));
+    const user = userEvent.setup();
+    render(<SetupPage />);
+
+    await user.type(await screen.findByLabelText("Company name"), "Acme Productions");
+    await user.click(screen.getByRole("button", { name: /create company/i }));
+
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/dashboard"));
   });
 });

@@ -45,22 +45,22 @@ test.describe("harness: register / onboarding", () => {
 
     // The first user on a fresh harness has no org yet, so the (app) layout
     // redirects every protected route to /welcome (src/app/(app)/layout.tsx)
-    // until one is created. "Set up a new company" leads to /onboarding, the
-    // actual create-org form.
+    // until one is created. "Set up a new company" leads to /setup, the
+    // actual create-org form (C1, #1098 — formerly /onboarding).
     if (new URL(page.url()).pathname === "/welcome") {
       await page.getByRole("button", { name: "Set up a new company" }).click();
-      await expect(page).toHaveURL(/\/onboarding\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/setup\b/, { timeout: 20000 });
     }
-    if (new URL(page.url()).pathname === "/onboarding") {
-      await page.getByLabel("Organization name").fill(orgName);
-      await page.getByRole("button", { name: "Create organization" }).click();
+    if (new URL(page.url()).pathname === "/setup") {
+      await page.getByLabel("Company name").fill(orgName);
+      await page.getByRole("button", { name: "Create company" }).click();
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     }
 
     // Onboarding actually completed (not just a client-side navigation): the
-    // (app) layout's org check now passes, and revisiting /onboarding itself
+    // (app) layout's org check now passes, and revisiting /setup itself
     // redirects away rather than re-showing the create-org form.
-    await page.goto("/onboarding");
+    await page.goto("/setup");
     await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
   });
 });

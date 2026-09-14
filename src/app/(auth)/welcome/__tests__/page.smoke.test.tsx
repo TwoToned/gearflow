@@ -82,11 +82,11 @@ describe("WelcomePage (smoke)", () => {
     expect(screen.queryByText("Set up a new company")).toBeNull();
   });
 
-  it("routes 'Set up a new company' to /onboarding", async () => {
+  it("routes 'Set up a new company' to /setup", async () => {
     const user = userEvent.setup();
     render(<WelcomePage />);
     await user.click(await screen.findByText("Set up a new company"));
-    expect(mocks.push).toHaveBeenCalledWith("/onboarding");
+    expect(mocks.push).toHaveBeenCalledWith("/setup");
   });
 
   it("'Join my team' shows the invite-code + domain-request UI, not a placeholder", async () => {

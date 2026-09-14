@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **#1098** — The org setup wizard has a real first screen: creating a new
+  company now happens at `/setup` (replacing the old bare `/onboarding`
+  form) on the same split-panel look as login/register/`/welcome`, with a
+  five-step progress rail and a live "is this slug taken?" check as you
+  type. Naming and creating the company is still the only required step —
+  everything else in the wizard remains to come.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

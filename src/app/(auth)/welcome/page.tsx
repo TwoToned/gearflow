@@ -17,7 +17,8 @@ import { Loader2, Building2, Users2, ArrowLeft, KeyRound, Globe2, MailWarning } 
  * user with zero live org memberships and no pending invite (invite signups
  * skip this entirely — register/page.tsx routes them straight to
  * /invite/[id]). `/no-organization` and every 0-org redirect in the app now
- * land here instead of the old dead-end `/onboarding` bounce.
+ * land here instead of the old dead-end `/onboarding` bounce (now `/setup`,
+ * C1 #1098).
  */
 export default function WelcomePage() {
   const router = useRouter();
@@ -67,7 +68,7 @@ export default function WelcomePage() {
     <ForkView
       session={session}
       policy={policy}
-      onCreateCompany={() => router.push("/onboarding")}
+      onCreateCompany={() => router.push("/setup")}
       onJoinTeam={() => setView("join")}
       onNotYou={handleNotYou}
     />

@@ -106,14 +106,14 @@ test.describe("harness: primary revenue path", () => {
       // exists (src/app/(app)/layout.tsx) — a fresh registration on this harness
       // has no org yet, so this step is required before any protected page
       // (the model/asset/project forms below) will render at all. "Set up a
-      // new company" leads to /onboarding, the actual create-org form.
+      // new company" leads to /setup, the actual create-org form.
       if (new URL(page.url()).pathname === "/welcome") {
         await page.getByRole("button", { name: "Set up a new company" }).click();
-        await expect(page).toHaveURL(/\/onboarding\b/, { timeout: 20000 });
+        await expect(page).toHaveURL(/\/setup\b/, { timeout: 20000 });
       }
-      if (new URL(page.url()).pathname === "/onboarding") {
-        await page.getByLabel("Organization name").fill(`Revenue Path Org ${unique}`);
-        await page.getByRole("button", { name: "Create organization" }).click();
+      if (new URL(page.url()).pathname === "/setup") {
+        await page.getByLabel("Company name").fill(`Revenue Path Org ${unique}`);
+        await page.getByRole("button", { name: "Create company" }).click();
         await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
       }
     });

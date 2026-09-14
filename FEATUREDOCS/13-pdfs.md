@@ -1299,6 +1299,30 @@ forms and this renderer all share one definition of the mode union,
 [FEATUREDOCS/10](./10-projects.md#groups-projectgroup--the-billable-unit) for
 the write side.
 
+### Category price rollup (FEATUREDOCS/72)
+
+Alongside the two bucketing modes above, `structureLineItems` resolves each
+category's `pricingDisplay` (plus each row's `revealPriceInRollup`) into two
+DERIVED fields renderers read instead of the stored ones:
+
+- **`priceHidden`** — blank this row's unitPrice/discount/total cells.
+- **`rollupCategory`** — this row is in a rolled-up section, so the section
+  header carries ONE derived subtotal (`rollupAmountForBucket` →
+  `formatCurrency`, printed with the `ROLLUP_SUBTOTAL_LABEL`). Stamped on
+  every row in the section, revealed ones included, because
+  `filterAndGroupItems` buckets by display NAME and holds no category
+  metadata — any row in the bucket has to answer "is this section rolled up?".
+
+Both are stamped **only in collapse mode**: a warehouse doc expands its
+groups, so a bucket would hold both a group's bundle total and that group's
+members, and summing it would double-count. (Warehouse docs print no money
+anyway — `rollupAmountForBucket` also returns null when `showPricing` is off.)
+
+The money cells go **blank**, not `"-"` — an empty cell reads as "not shown
+here", a dash reads as "nothing to charge". See
+`src/lib/category-pricing-display.ts` for why the subtotal is derived rather
+than stored.
+
 ## PDF Data-Shape Consumers (audit checklist)
 
 Any change to the `DocumentLineItem` shape (new field, new synthetic row

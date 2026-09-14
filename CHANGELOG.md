@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Category price rollup** — a category on a quote or invoice can now show
+  every item it contains, with quantities, while printing just one price for
+  the whole category instead of a price per line. Flip it from the category's
+  ⋯ menu in the Equipment tab ("Show one price for the category"); a **One
+  price** pill marks it. This is different from a priced group, which hides
+  what's inside it — here the client sees the full list, just not what each
+  line costs. The category's price is always the exact sum of its items, so
+  the totals never change; rolling up only changes how they're presented, and
+  the invoice bills the category as one matching line (coded for Xero from the
+  category, falling back to your org default). Need one item broken out? "Show
+  this price on documents" on that row reveals just that price — and it still
+  counts toward the category total, which is why the category's figure prints
+  labelled.
+
 - **#1098** — The org setup wizard has a real first screen: creating a new
   company now happens at `/setup` (replacing the old bare `/onboarding`
   form) on the same split-panel look as login/register/`/welcome`, with a

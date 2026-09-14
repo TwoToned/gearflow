@@ -913,6 +913,27 @@ through this engine.
   "Invoicing" block (Deposit invoiced / Invoiced to date / Outstanding) fed
   by the derived fields above.
 
+## Category price rollup (FEATUREDOCS/72)
+
+A project category set to `pricingDisplay: "ROLLUP"` prints every one of its
+lines on a quote/invoice PDF with the money columns blank and ONE derived
+subtotal on the section header. `buildFinanceLines` mirrors that grouping:
+every line belonging to such a category folds into a single
+`sourceType: "CATEGORY"` snapshot line, so the document a client holds and the
+invoice they're billed from are grouped the same way.
+
+The fold is a REGROUPING, never a repricing — the rolled-up line totals the
+plain sum of the members it replaces, so the snapshot still sums to exactly
+the project totals `recalc.ts` already stored, and "rolling up" can never
+change what is billed. It sits where its first member would have appeared,
+carries `quantity: 1` (a quantity would imply a per-unit rate the category
+doesn't have), and absorbs per-item-revealed rows too — revealing a price is a
+display decision, and billing that row separately as well would double it.
+
+`resolveCategoryLineCode` (xeroPush.ts) codes the line: **category override →
+org default**, two levels rather than a group's three, because a
+`ProjectCategory` is per-project and has no org-level twin to inherit from.
+
 ## Lifecycle locks
 
 Quote send/new-version go through the shared

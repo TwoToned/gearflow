@@ -18501,13 +18501,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "549a746c6908f6ab",
+    "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "Blocking comment threads relevant to the caller (as PM or mentioned).",
@@ -18543,6 +18548,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "The caller's personal dashboard project list (managed or PM-assigned).",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "dashboardLists.pendingCrewOffers",
+    "module": "dashboardLists",
+    "fn": "pendingCrewOffers",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "3a029b11cc797978",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Count of pending crew offers on current/future (not past or closed) gigs.",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -61275,10 +61317,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1181,
-  agentReachable: 567,
-  queries: 417,
+  total: 1182,
+  agentReachable: 568,
+  queries: 418,
   mutations: 764,
-  agentReachableQueries: 290,
+  agentReachableQueries: 291,
   agentReachableMutations: 277,
 } as const;

@@ -123,6 +123,37 @@ async function resolveServiceLineCode(
   };
 }
 
+/** Resolve a ROLLUP category's single invoice line's account/tax code.
+ *  The cascade is only two deep — this category's own override, then the org
+ *  default. A ProjectCategory is a per-project bucket with no org-level twin to
+ *  inherit from, so unlike a group (override -> category -> org) there is no
+ *  middle level to consult; that's a shape difference, not a missing lookup. */
+async function resolveCategoryLineCode(
+  ctx: Ctx,
+  sourceLineItemId: string,
+  orgId: string,
+  orgDefaultCode: string | null,
+  orgDefaultTaxType: string | null,
+): Promise<{ accountCode: string | null; taxType: string | null }> {
+  // by_cuid is a GLOBAL index — re-check the org on the hit (R-8.4.3).
+  const category = await ctx.db
+    .query("projectCategories")
+    .withIndex("by_cuid", (q) => q.eq("id", sourceLineItemId))
+    .first();
+  if (!category || category.organizationId !== orgId) {
+    return { accountCode: orgDefaultCode, taxType: orgDefaultTaxType };
+  }
+  return {
+    accountCode: resolveEquipmentAccountCode({
+      lineOverride: category.xeroAccountCode,
+      modelOrKitCode: null,
+      categoryCode: null,
+      orgDefaultCode,
+    }),
+    taxType: resolveTaxType({ lineOverride: category.xeroTaxType, orgDefaultTaxType }),
+  };
+}
+
 /** Dispatch one invoice line to its source-type resolver (or the org default
  *  for CUSTOM lines, which have no backing entity to resolve coding from). */
 async function resolveOneLine(
@@ -141,6 +172,9 @@ async function resolveOneLine(
   }
   if (line.sourceType === "GROUP" && line.sourceLineItemId) {
     return resolveGroupLineCode(ctx, line.sourceLineItemId, orgId, orgDefaultCode, orgDefaultTaxType);
+  }
+  if (line.sourceType === "CATEGORY" && line.sourceLineItemId) {
+    return resolveCategoryLineCode(ctx, line.sourceLineItemId, orgId, orgDefaultCode, orgDefaultTaxType);
   }
   // CUSTOM (deposit/balance/credit summary lines — no backing entity) — org default only.
   return { accountCode: orgDefaultCode, taxType: orgDefaultTaxType };

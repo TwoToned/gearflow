@@ -60,6 +60,15 @@ export interface DocumentLineItem {
    */
   revealPriceInRollup?: boolean | null;
   /**
+   * Group child disclosure — the RAW stored flag off a Project Group MEMBER:
+   * list this row under the group's collapsed row on a client-facing document,
+   * showing description + quantity and never a price.
+   * `structureLineItems` consumes it when deciding which members to attach;
+   * renderers see the result as an ordinary child row carrying `priceHidden`.
+   * See `src/lib/group-child-disclosure.ts`.
+   */
+  showInGroupOnDocs?: boolean | null;
+  /**
    * DERIVED by `structureLineItems`: this row prints its description and
    * quantity but leaves its unit price / discount / line total cells blank,
    * because its category rolled up and this row wasn't explicitly revealed.

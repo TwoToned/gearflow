@@ -107,6 +107,7 @@ export type MappedLineItem = Omit<
   | "discount"
   | "discountMode"
   | "revealPriceInRollup"
+  | "showInGroupOnDocs"
   | "lineTotal"
   | "priceBreakdown"
   | "priceOverridden"
@@ -173,6 +174,11 @@ export type MappedLineItem = Omit<
    *  normalised to `false` (the default: hidden inside a rollup, and irrelevant
    *  outside one). See src/lib/category-pricing-display.ts. */
   revealPriceInRollup: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on a client-facing document (description +
+   *  quantity, never a price). Absent on the row = false.
+   *  See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs: boolean;
   lineTotal: number | null;
   priceBreakdown: string | null;
   priceOverridden: boolean;
@@ -241,6 +247,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
     revealPriceInRollup: d.revealPriceInRollup ?? false,
+    showInGroupOnDocs: d.showInGroupOnDocs ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,

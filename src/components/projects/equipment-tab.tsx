@@ -958,6 +958,26 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Group child disclosure — lists ONE member of a Project Group under the
+  // group's collapsed row on client-facing documents (description + quantity,
+  // never a price: the group's bundle price is the charge). Display-only, so
+  // like the reveal toggle it sends a minimal patch and moves no money.
+  const toggleGroupChildDisclosureMut = useServerMutation({
+    mutationFn: ({ item }: { item: LineItemData }) =>
+      lineItemWrites.setGroupChildDisclosure(item.id, !item.showInGroupOnDocs, {
+        entityName: item.description ?? "Line item",
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.item.showInGroupOnDocs
+          ? "Hidden from client documents"
+          : "Listed on client documents under its group",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const deleteCategoryMut = useServerMutation({
     mutationFn: (id: string) => categoryWrites.remove(id),
     onSuccess: () => {
@@ -1878,6 +1898,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                   })}
                                   inRollupCategory={isRollupCategory(cat.pricingDisplay)}
                                   onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
+                                  inProjectGroup
+                                  onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
                                   onRemove={() => handleRemoveItem(item.id)}
                                   onInlineUpdate={handleInlineLineItemUpdate}
                                   moneyLocked={moneyLocked}
@@ -2084,6 +2106,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               lineItemId: item.id,
                               initialGroupId: group.id,
                             })}
+                            inProjectGroup
+                            onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
                             onRemove={() => handleRemoveItem(item.id)}
                             onInlineUpdate={handleInlineLineItemUpdate}
                             moneyLocked={moneyLocked}

@@ -1524,4 +1524,39 @@ describe("lineItemWrites.patchNative — revealPriceInRollup", () => {
     });
     expect((await readLine(t))?.revealPriceInRollup).toBeUndefined();
   });
+
+  // The second client-document disclosure flag (src/lib/group-child-disclosure.ts)
+  // goes through the same normalisation loop, so it gets the same guarantees.
+  test("showInGroupOnDocs follows the identical boundary rules", async () => {
+    const t = makeT();
+    await seedPricedLine(t);
+    const set = (value: unknown) =>
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+        ...pargs, set: { showInGroupOnDocs: value, updatedAt: NOW }, clear: [], emitSideEffects: true,
+      });
+
+    await set(true);
+    expect((await readLine(t))?.showInGroupOnDocs).toBe(true);
+    expect((await readLine(t))?.lineTotal).toBe(300);
+
+    await set(false);
+    expect((await readLine(t))?.showInGroupOnDocs).toBeUndefined();
+
+    await set("yes");
+    expect((await readLine(t))?.showInGroupOnDocs).toBeUndefined();
+  });
+
+  test("the two disclosure flags are independent", async () => {
+    const t = makeT();
+    await seedPricedLine(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { revealPriceInRollup: true, updatedAt: NOW }, clear: [], emitSideEffects: true,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { showInGroupOnDocs: true, updatedAt: NOW }, clear: [], emitSideEffects: true,
+    });
+    const li = await readLine(t);
+    expect(li?.revealPriceInRollup).toBe(true);
+    expect(li?.showInGroupOnDocs).toBe(true);
+  });
 });

@@ -26,6 +26,10 @@ export interface LineItemData {
    *  (and never offered) outside a `pricingDisplay: "ROLLUP"` category.
    *  See src/lib/category-pricing-display.ts. */
   revealPriceInRollup?: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on client-facing documents (description +
+   *  quantity, never a price). See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs?: boolean;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;

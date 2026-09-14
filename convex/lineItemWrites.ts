@@ -624,16 +624,21 @@ export const patchNative = mutation({
     // #1012: `discountMode` describes `discount`, so it never outlives it — a patch
     // that clears the amount clears the mode too, whatever the client sent.
     if (clear.includes("discount") && !clear.includes("discountMode")) clear.push("discountMode");
-    // Category price rollup: the per-item reveal flag is a strict boolean. A
-    // browser-direct caller bypasses the client Zod, and `set` is `v.any()`, so
-    // normalise here rather than relying on the table schema to reject a
-    // truthy non-boolean. `false` is stored as an absent field (the default
-    // reading) so the two ways of saying "hidden" can't diverge.
-    if ("revealPriceInRollup" in setObj) {
-      if (setObj.revealPriceInRollup === true) setObj.revealPriceInRollup = true;
-      else {
-        delete setObj.revealPriceInRollup;
-        if (!clear.includes("revealPriceInRollup")) clear.push("revealPriceInRollup");
+    // Client-document disclosure flags are strict booleans whose `false` is
+    // stored as an ABSENT field, so each has exactly ONE representation of
+    // "off". A browser-direct caller bypasses the client Zod and `set` is
+    // `v.any()`, so normalise here rather than relying on the table schema to
+    // reject a truthy non-boolean — these decide what a CLIENT sees, so they
+    // fail closed.
+    //   revealPriceInRollup — print this row's own price inside a rolled-up
+    //     category (src/lib/category-pricing-display.ts).
+    //   showInGroupOnDocs   — list this group member under the group's
+    //     collapsed row (src/lib/group-child-disclosure.ts).
+    for (const flag of ["revealPriceInRollup", "showInGroupOnDocs"] as const) {
+      if (!(flag in setObj)) continue;
+      if (setObj[flag] !== true) {
+        delete setObj[flag];
+        if (!clear.includes(flag)) clear.push(flag);
       }
     }
     assertLineItemFields(setObj as { description?: string; subhireOrderNumber?: string; xeroAccountCode?: string; xeroTaxType?: string }); // R-8.6.2

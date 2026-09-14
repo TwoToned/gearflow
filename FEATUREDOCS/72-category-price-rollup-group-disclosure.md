@@ -1,4 +1,4 @@
-# Category Price Rollup
+# Category Price Rollup & Group Child Disclosure
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-09-14 (review quarterly — POLICY.md R-5.5)_
 
@@ -29,7 +29,7 @@ plainly:
 
 | | Priced **Project Group** | **`ROLLUP`** category |
 |---|---|---|
-| Contents on the doc | **Hidden** — replaced by one row | **Shown** — every line, with quantities |
+| Contents on the doc | **Hidden** — replaced by one row (unless individually disclosed, see below) | **Shown** — every line, with quantities |
 | Price shown | The group's own bundle price | One derived subtotal on the section header |
 | Where the price comes from | A number the operator typed (`projectGroups.price`) | `sum(lineTotal)` over the members — **never stored** |
 
@@ -85,12 +85,15 @@ exactly one representation.
 src/lib/category-pricing-display.ts    — THE shared module: the union, the default
                                           reading, isLinePriceHidden, rollupSubtotal,
                                           ROLLUP_SUBTOTAL_LABEL
+src/lib/group-child-disclosure.ts      — the sibling module: isGroupChildDisclosed +
+                                          disclosedGroupChildren (the pure selector)
 convex/lib/validators.ts               — CategoryPricingDisplay validator;
                                           InvoiceLineSourceType += "CATEGORY"
 convex/schema.ts                       — projectCategories.pricingDisplay +
                                           xeroAccountCode/xeroTaxType;
                                           projectLineItems.revealPriceInRollup;
-                                          projectGroups.revealPriceInRollup
+                                          projectGroups.revealPriceInRollup;
+                                          projectLineItems.showInGroupOnDocs
 src/lib/validations/project-category.ts — Zod pricingDisplay (z.enum off the shared list)
 
 convex/projectCategoriesWrites.ts      — updateCategoryNative's `pricingDisplay` arg
@@ -166,6 +169,76 @@ cascade is two deep — **this category's override → org default** — rather
 than a group's three: a `ProjectCategory` is per-project and has no org-level
 twin to inherit from. That is a shape difference, not a missing lookup.
 
+## Group child disclosure
+
+The sibling feature, and the other half of "show the client what they're
+getting without showing what each piece costs".
+
+A Project Group collapses to ONE row on a client-facing document: title,
+quantity, bundle price. Everything inside is dropped. That is right for a
+package sold as a package, but it left no way to say *"the Lighting Package
+is $8,000, and here is the gear in it"* short of retyping the contents into
+the group's description by hand.
+
+`projectLineItems.showInGroupOnDocs` opts ONE member back onto the document.
+It renders indented under the group's row showing its **description and
+quantity**, and nothing else. "List on client documents" in the row's kebab;
+absent = not listed, which is the pre-feature behaviour (no backfill).
+
+### A disclosed member NEVER shows a price
+
+Not "hidden unless revealed" like a rolled-up category's lines — never, full
+stop, and there is deliberately no per-member override for it. The group's
+charge **is** its bundle price; a member's own `unitPrice`/`lineTotal` is an
+internal build-up figure the bundle price supersedes. Printing both would put
+two contradictory numbers for the same gear on one document, and printing the
+members' would invite the client to add them up and find they don't equal the
+bundle.
+
+That is also why disclosure needs **no counterpart in `buildFinanceLines`**:
+it moves no money and bills nothing new. The group still bills as exactly one
+line. The flag is purely "does this row appear".
+
+### How it reaches the page
+
+`disclosedGroupChildren` (`src/lib/group-child-disclosure.ts`) is the pure
+selector. `structureLineItems`' collapse mode attaches its result as the group
+row's `childLineItems`, each stamped `priceHidden: true` — the **same** derived
+field a rolled-up category's rows carry, so there is one flag meaning "this row
+prints no money", not two.
+
+It returns `undefined` rather than `[]` when nothing is disclosed, so a group
+with no disclosures keeps the exact row shape it had before the feature and
+`isGroupParentRow` still reads false for it.
+
+Two deliberate exclusions:
+
+- **Kit parents.** A kit inside a group is itself a collapsing container;
+  exploding one here would disclose a second level of contents nobody asked
+  for.
+- **Expand (warehouse) mode.** A packing list / return sheet / delivery docket
+  lists every member regardless — the packers need the full pick list — so the
+  flag is never consulted there. A stale `true` on a line that later leaves its
+  group therefore changes nothing.
+
+### The `showKitChildren` gate
+
+`line-items-table.tsx` renders a group row's children past
+`config.showKitChildren`. That gate exists to stop a client-facing document
+exploding kits and accessories into sub-rows the client didn't ask for; a
+group row is different, because in collapse mode `structureLineItems` attaches
+**only** the members the operator deliberately disclosed — so the presence of
+children *is* the intent. Leaving them behind the gate would make the toggle
+silently do nothing on exactly the documents it exists for.
+
+### Composing with a rolled-up category
+
+They are separate decisions on separate entities and compose without
+interacting: in a `ROLLUP` category, the group's own row prints without its
+bundle price (unless that group is revealed), and its disclosed members print
+without prices as they always do. Both toggles can be offered on the same row
+— one is about the category's pricing, the other about the group's contents.
+
 ## Known edge: an unpriced group with billable extras
 
 In collapse mode, an **unpriced** Project Group emits its synthetic row and
@@ -216,4 +289,10 @@ changed.
   module (Convex production modules don't import from `src/` — same reason
   `getUserColor` is inlined there).
 - `src/components/projects/__tests__/category-price-rollup-menu.smoke.test.tsx`
-  — the menus, actually opened.
+  — the menus, actually opened (both features').
+- `src/lib/group-child-disclosure.test.ts` — the strict flag reading and the
+  pure selector (kit-parent exclusion, `undefined` vs `[]`, no input mutation).
+- `src/lib/pdfme/group-child-disclosure.test.tsx` — the full pipeline again:
+  a group still collapses by default, a disclosed member appears with its
+  quantity and no price, undisclosed siblings stay hidden, and a warehouse doc
+  is unaffected.

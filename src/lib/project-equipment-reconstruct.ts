@@ -175,6 +175,11 @@ export interface MappedLineItem {
    *  own price even inside a rolled-up category (absent on the row = false).
    *  See src/lib/category-pricing-display.ts. */
   revealPriceInRollup: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on a client-facing document (description +
+   *  quantity, never a price). Absent on the row = false.
+   *  See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs: boolean;
   /** Set only when `type === "SALE"` — which stock pool the sale drew from. */
   saleMode: "NEW_STOCK" | "FROM_RENTAL_STOCK" | null;
   /** NEW_STOCK sale-item pick checklist timestamp — absent = to pick. */
@@ -247,6 +252,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
     revealPriceInRollup: d.revealPriceInRollup ?? false,
+    showInGroupOnDocs: d.showInGroupOnDocs ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,

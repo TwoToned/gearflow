@@ -889,7 +889,16 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
             globalIdx++;
             const idx = globalIdx;
             const display = deriveRowDisplay(item, config);
-            const shouldRenderChildren = display.isParentWithChildren && config.showKitChildren;
+            // `showKitChildren` exists to stop a CLIENT-facing doc exploding
+            // kits and accessories into sub-rows the client didn't ask for. A
+            // Project Group row is different: in collapse mode
+            // `structureLineItems` attaches ONLY the members the operator
+            // deliberately disclosed (src/lib/group-child-disclosure.ts), so
+            // the presence of children IS the intent — gating them behind
+            // `showKitChildren` would make the toggle silently do nothing on
+            // exactly the documents it exists for.
+            const shouldRenderChildren =
+              display.isParentWithChildren && (config.showKitChildren || item.isGroupRow === true);
 
             return (
               <View key={item.id}>

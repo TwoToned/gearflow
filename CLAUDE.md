@@ -448,6 +448,20 @@ in collapse mode (a warehouse doc expands groups, so summing a bucket would
 double-count). `buildFinanceLines` folds a rolled-up category into one
 `sourceType: "CATEGORY"` invoice line. See FEATUREDOCS/72.
 
+Its sibling, `projectLineItems.showInGroupOnDocs` ("group child disclosure"),
+lets a Project Group — which otherwise collapses to ONE row and drops
+everything inside it — list selected members under that row with description +
+quantity. Collapse mode attaches `disclosedGroupChildren(members)`
+(`src/lib/group-child-disclosure.ts`), each stamped the SAME derived
+`priceHidden` (one flag for "this row prints no money", not two), and
+`undefined` when none are disclosed so an untouched group keeps its exact
+pre-feature shape. A disclosed member **never** prints a price and gets no
+per-member override: the group's bundle price IS the charge, so printing a
+member's own figure too would put two contradictory numbers for the same gear
+on one document — which is also why `buildFinanceLines` needs no counterpart
+(the group still bills as one line). Kit parents are excluded, and expand
+(warehouse) mode ignores the flag entirely — packers need the full list.
+
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
 (`validUntil < now && status === "SENT"`) and never stored, and the deprecated

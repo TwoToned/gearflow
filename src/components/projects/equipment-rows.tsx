@@ -1115,6 +1115,8 @@ export function LineItemRow({
   onClick,
   inRollupCategory,
   onTogglePriceReveal,
+  inProjectGroup,
+  onToggleGroupDisclosure,
   dragHandleRef,
   dragAttributes,
   dragListeners,
@@ -1167,6 +1169,13 @@ export function LineItemRow({
   /** Flip this row's `revealPriceInRollup`. Omitted for rows the caller can't
    *  patch (or won't) — the menu entry hides with it. */
   onTogglePriceReveal?: () => void;
+  /** Group child disclosure — true when this row is a member of a Project
+   *  Group, which collapses to ONE row on a client-facing document. Gates the
+   *  disclosure entry: a row that isn't in a group has nothing to be listed
+   *  under. See src/lib/group-child-disclosure.ts. */
+  inProjectGroup?: boolean;
+  /** Flip this row's `showInGroupOnDocs`. The menu entry hides without it. */
+  onToggleGroupDisclosure?: () => void;
   /** Multi-select: row click handler (not firing for grip handle clicks) */
   onClick?: (e: React.MouseEvent) => void;
   /** Inline (click-to-edit, save-on-blur) price/discount/description/notes —
@@ -1206,6 +1215,21 @@ export function LineItemRow({
           <Eye className="mr-2 h-3.5 w-3.5" />
         )}
         {item.revealPriceInRollup ? "Hide this price on documents" : "Show this price on documents"}
+      </DropdownMenuItem>
+    ) : null;
+
+  /** Group child disclosure — list this member under its group's collapsed row
+   *  on quotes/invoices. Offered only for a row that's actually in a group;
+   *  elsewhere there is no collapsed row to appear under. */
+  const groupDisclosureItem =
+    inProjectGroup && onToggleGroupDisclosure ? (
+      <DropdownMenuItem onClick={onToggleGroupDisclosure}>
+        {item.showInGroupOnDocs ? (
+          <EyeOff className="mr-2 h-3.5 w-3.5" />
+        ) : (
+          <Eye className="mr-2 h-3.5 w-3.5" />
+        )}
+        {item.showInGroupOnDocs ? "Hide from client documents" : "List on client documents"}
       </DropdownMenuItem>
     ) : null;
 
@@ -1342,6 +1366,7 @@ export function LineItemRow({
             Move to group
           </DropdownMenuItem>
           {priceRevealItem}
+          {groupDisclosureItem}
           <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
             <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
             Needs review
@@ -1889,6 +1914,7 @@ export function LineItemRow({
                   Move to category
                 </DropdownMenuItem>
                 {priceRevealItem}
+                {groupDisclosureItem}
                 <DropdownMenuItem onClick={onMoveToGroup}>
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to group

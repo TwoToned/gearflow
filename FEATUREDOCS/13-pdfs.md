@@ -1323,6 +1323,28 @@ here", a dash reads as "nothing to charge". See
 `src/lib/category-pricing-display.ts` for why the subtotal is derived rather
 than stored.
 
+### Group child disclosure (FEATUREDOCS/72)
+
+Collapse mode used to attach NO children to a group's synthetic row
+(`childLineItems: undefined` — the group's contents were dropped entirely). It
+now attaches `disclosedGroupChildren(members)`
+(`src/lib/group-child-disclosure.ts`): the members whose
+`showInGroupOnDocs` is `true`, each stamped `priceHidden` so the renderer
+blanks its money cells. Still `undefined` when none are disclosed, so an
+untouched group keeps its exact pre-feature shape.
+
+A disclosed member NEVER prints a price and has no per-member override for it —
+the group's bundle price is the charge, and a member's own figure is an
+internal build-up the bundle supersedes. Kit parents are excluded (a kit is
+itself a collapsing container). Expand mode is untouched: warehouse docs list
+every member regardless, because the packers need the full pick list.
+
+`shouldRenderChildren` therefore ORs `item.isGroupRow` with
+`config.showKitChildren`. That gate exists to stop a client doc exploding
+kits/accessories; for a group row in collapse mode the attached children are
+*already* exactly the deliberate disclosures, so gating them would make the
+toggle silently do nothing on the documents it exists for.
+
 ## PDF Data-Shape Consumers (audit checklist)
 
 Any change to the `DocumentLineItem` shape (new field, new synthetic row

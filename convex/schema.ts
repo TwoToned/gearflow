@@ -1424,6 +1424,15 @@ export default defineSchema({
     // is still INCLUDED in the section subtotal — see
     // src/lib/category-pricing-display.ts.
     revealPriceInRollup: v.optional(v.boolean()),
+    // Group child disclosure — this member of a Project Group is listed under
+    // the group's collapsed row on a client-facing document, showing its
+    // description and quantity and NEVER a price (the group's bundle price is
+    // the charge; a member's own figure is an internal build-up the bundle
+    // supersedes). Absent = not disclosed, the pre-feature behaviour, so no
+    // backfill. Consulted only for a line with a `groupId`, and only on
+    // quote/invoice — a warehouse doc lists every member regardless.
+    // See src/lib/group-child-disclosure.ts.
+    showInGroupOnDocs: v.optional(v.boolean()),
     lineTotal: v.optional(v.number()),
     allocatedRevenue: v.optional(v.number()),
     allocationBasis: v.optional(enums.AllocationBasis),

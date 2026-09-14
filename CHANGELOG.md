@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counts toward the category total, which is why the category's figure prints
   labelled.
 
+- **Group child disclosure** — a group on a quote or invoice normally shows as
+  a single line with one price, hiding what's inside it. You can now pick
+  individual items in a group and have them listed underneath it, showing what
+  they are and how many — but never a price, because the group's price already
+  covers them. "List on client documents" on the item's ⋯ menu. Everything
+  else in the group stays hidden, the group's own price is unchanged, and
+  nothing about invoicing changes: the group still bills as one line. Packing
+  lists and other warehouse paperwork are unaffected — they keep listing
+  everything, as the crew needs.
+
 - **#1098** — The org setup wizard has a real first screen: creating a new
   company now happens at `/setup` (replacing the old bare `/onboarding`
   form) on the same split-panel look as login/register/`/welcome`, with a

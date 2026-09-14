@@ -158,3 +158,43 @@ describe("per-item price reveal (smoke)", () => {
     expect(screen.getByText("Move to group")).toBeTruthy();
   });
 });
+
+describe("group child disclosure (smoke)", () => {
+  it("offers the disclosure for a member of a Project Group", async () => {
+    const onToggleGroupDisclosure = vi.fn();
+    const { container } = renderItem({ inProjectGroup: true, onToggleGroupDisclosure });
+    await openKebab(container);
+    fireEvent.click(screen.getByText("List on client documents"));
+    expect(onToggleGroupDisclosure).toHaveBeenCalled();
+  });
+
+  it("offers the way back on an already-listed member", async () => {
+    const { container } = renderItem({
+      inProjectGroup: true,
+      onToggleGroupDisclosure: vi.fn(),
+      item: { ...baseItem, showInGroupOnDocs: true },
+    });
+    await openKebab(container);
+    expect(screen.getByText("Hide from client documents")).toBeTruthy();
+  });
+
+  // A row that isn't in a group has no collapsed group row to appear under.
+  it("never offers the disclosure outside a Project Group", async () => {
+    const { container } = renderItem({ inProjectGroup: false, onToggleGroupDisclosure: vi.fn() });
+    await openKebab(container);
+    expect(screen.queryByText("List on client documents")).toBeNull();
+  });
+
+  // The two flags are separate decisions on the same row: one is about a
+  // category's pricing, the other about a group's contents.
+  it("can offer both toggles at once without conflating them", async () => {
+    const { container } = renderItem({
+      inRollupCategory: true,
+      inProjectGroup: true,
+      onToggleGroupDisclosure: vi.fn(),
+    });
+    await openKebab(container);
+    expect(screen.getByText("Show this price on documents")).toBeTruthy();
+    expect(screen.getByText("List on client documents")).toBeTruthy();
+  });
+});

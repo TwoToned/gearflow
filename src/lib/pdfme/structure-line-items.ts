@@ -49,6 +49,7 @@ import {
   isLinePriceHidden,
   isRollupCategory,
 } from "@/lib/category-pricing-display";
+import { disclosedGroupChildren } from "@/lib/group-child-disclosure";
 
 /** Category metadata as already loaded by build-document-data's project include. */
 export interface CategoryForStructuring {
@@ -295,15 +296,16 @@ export function structureLineItems(
       // doc its outer section header.
       const bucketLabel = cat.name;
 
-      const groupChildren = expand
-        ? rawLineItems.filter(
-            li =>
-              isGroupMember(li, group, cat.name) &&
-              !li.isKitChild &&
-              !li.isContainerLineItem &&
-              !isInSubHireSection(li),
-          )
-        : [];
+      // Both modes need the group's members now: expand mode renders all of
+      // them, collapse mode renders only the ones deliberately disclosed
+      // (src/lib/group-child-disclosure.ts).
+      const groupChildren = rawLineItems.filter(
+        li =>
+          isGroupMember(li, group, cat.name) &&
+          !li.isKitChild &&
+          !li.isContainerLineItem &&
+          !isInSubHireSection(li),
+      );
 
       // Kit parents inside the group break out to their own `[Kit] X`
       // section at the top level. Non-kit members render indented under
@@ -341,9 +343,11 @@ export function structureLineItems(
         model: { name: group.title },
         asset: null,
         bulkAsset: null,
-        // Attach non-kit members so the renderer indents them under the
-        // group parent. Empty array in collapse mode (children dropped).
-        childLineItems: expand ? maybeSort(groupInlineMembers) : undefined,
+        // Expand mode (warehouse): every non-kit member, indented under the
+        // group parent. Collapse mode (client-facing): ONLY the members the
+        // operator disclosed — `undefined` when none are, which is the exact
+        // shape this row had before the feature existed.
+        childLineItems: expand ? maybeSort(groupInlineMembers) : disclosedGroupChildren(groupChildren),
       }, group.revealPriceInRollup));
 
       // Kit parents that lived inside this group still get their own

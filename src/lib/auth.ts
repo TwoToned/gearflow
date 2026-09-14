@@ -134,8 +134,15 @@ export const auth = betterAuth({
       // itself (if `orgCreationCodeEnabled`) is checked in
       // `beforeCreateOrganization` below, since this hook only receives
       // `user`, not the submitted form data.
-      allowUserToCreateOrganization: async () => {
+      allowUserToCreateOrganization: async (user) => {
         if (await isOrgCreationBootstrap()) return true;
+        // B4 (#1096): require a verified email before an org can be created —
+        // an unverified signup is the easiest way to mint a throwaway org
+        // that then feeds straight into the never-activated dormancy ladder.
+        // Bootstrap (above) deliberately skips this: the platform's very
+        // first user can't be locked out before they've had a chance to
+        // verify anything.
+        if (!user.emailVerified) return false;
         const settings = await getSiteSettingsFromConvex();
         return settings.allowOrgCreation;
       },

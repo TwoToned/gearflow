@@ -28,7 +28,7 @@ import { TotalsBlock } from "./components/totals-block";
 import { DraftWatermark } from "./components/draft-watermark";
 import { Footer } from "./components/footer";
 import { RichText } from "./components/rich-text";
-import { COLORS, FONT_SIZE, PAGE_MARGIN } from "./styles";
+import { COLORS, FONT_SIZE, PAGE_MARGIN, pageSizeFor } from "./styles";
 import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
 
 const PAGE_PADDING_BOTTOM = `${MARGIN + FOOTER_HEIGHT + 8}mm`;
@@ -65,7 +65,7 @@ export function InvoiceDocument({ data, draftPreview = false }: { data: Document
   return (
     <Document title={`${data.org_name} — Invoice ${data.invoice_number || data.project_number}`}>
       <Page
-        size="A4"
+        size={pageSizeFor(data.org_paper_size)}
         wrap
         style={{
           paddingTop: PAGE_MARGIN,

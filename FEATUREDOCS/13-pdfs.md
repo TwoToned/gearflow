@@ -4,7 +4,23 @@
 
 ## Architecture
 
-All PDF generation uses **pdfme** (`@pdfme/generator` + `@pdfme/common` + custom plugins via `@pdfme/pdf-lib`).
+**⚠️ Two pipelines, live simultaneously (#1156 cutover, 2026-09-14).** The 5
+project document types (quote, invoice, packing-list, return-sheet,
+delivery-docket) render through **`@react-pdf/renderer`** as of #1156 —
+`generatePdf()` (`generate-pdf.ts`) calls `renderReactPdfTemplate()`
+(`src/lib/react-pdf/render.ts`), not `composeDocument()`/`renderPdfTemplate()`.
+Call sheets and T&T reports still render through **pdfme**
+(`@pdfme/generator` + `@pdfme/common` + custom plugins via `@pdfme/pdf-lib`) —
+they were never part of this migration (see "Do" in #1156/#1150). The
+sections below describing `composeDocument()`, `DOCUMENT_LAYOUTS`, and the
+`gearflowTable`/`gearflowFinancialSummary`/etc. plugins are now **history for
+the 5 project doc types specifically** — accurate for call sheets/T&T
+reports, and accurate for how the 5 project doc types got their pagination
+model right before the react-pdf migration, but no longer what runs when you
+send a quote. That code is deliberately still in the repo (still tested by
+`document-composer.test.ts`) — removing it is #1157 (cleanup), a separate,
+later issue, not part of the cutover. See "react-pdf pipeline (current)"
+below for what actually runs today.
 
 ### Generation Pipeline — One Pipeline
 
@@ -80,16 +96,18 @@ future divergences of this shape — but it did **not** reproduce a pre-fix
 failure with a synthetic fixture, so it's a guard against recurrence, not
 proof the original trigger is understood.
 
-**Planned resolution:** migrate the 5 project doc types off this two-pass
-estimate/draw architecture onto `@react-pdf/renderer` (Yoga/flexbox automatic
-pagination — no separate height estimate to keep in sync, structurally
-impossible for this bug class to recur). Tracked as a GitHub issue; see the
-repo's issue tracker for current status. Until that lands, any new field
-added to a `DocumentLineItem` that affects row height (another sub-line,
-another badge, wrapped text) **must** update both
-`calculateItemHeight()`/`estimateBlockHeight()` (composer) and the matching
-draw logic (`gearflow-table.ts`) — the existing header comments on both
-functions already call this out; this note is the "why."
+**Resolved (#1156, cutover complete, 2026-09-14):** the 5 project doc types
+moved off this two-pass estimate/draw architecture onto `@react-pdf/renderer`
+(Yoga/flexbox automatic pagination — no separate height estimate to keep in
+sync, structurally impossible for this bug class to recur). The narrative
+below (#1151-#1156) is how that happened. The duplication-hazard warning
+above (any new row-height-affecting field needs both
+`calculateItemHeight()`/`estimateBlockHeight()` AND `gearflow-table.ts`
+updated) still applies verbatim to call sheets/T&T reports, which are still
+on this pipeline — it just no longer applies to quote/invoice/packing-list/
+return-sheet/delivery-docket.
+
+### react-pdf pipeline (current, #1151-#1156)
 
 **Spike complete (#1151, 2026-08-03) — verdict: proceed.** A standalone
 `@react-pdf/renderer` proof-of-concept for the `quote` doc type confirmed the
@@ -259,6 +277,71 @@ the automated regression suite. `pdf-parse`'s `getScreenshot()` (PNG render
 per page, already available now that the package is a devDependency) is the
 likely starting point when that follow-up happens.
 
+**Cutover complete (#1156, 2026-09-14).** `generate-pdf.ts`'s `generatePdf()`
+— the one function every call site (`finance-documents.ts`'s send/issue
+artifact render, `/api/documents/[projectId]/route.tsx`'s `?preview=1` live
+preview, and the same route's warehouse-doc generation) already went
+through — now calls `renderReactPdfTemplate()`
+(`src/lib/react-pdf/render.ts`) instead of building a `composeDocument()`
+template and handing it to `renderPdfTemplate()`. No caller changed: the
+function signature and `Promise<Uint8Array>` return are identical, so this
+was purely an internals swap. Three things this issue's own scope required
+beyond the swap itself:
+
+- **A vendor boundary for react-pdf**, mirroring `pdf-render.ts`'s role for
+  `@pdfme/generator` (POLICY.md R-8.10.1): `no-restricted-imports` in
+  `eslint.config.mjs` now blocks importing `@react-pdf/renderer`'s
+  render-producing exports (`renderToBuffer`/`renderToStream`/
+  `renderToFile`/`pdf`) anywhere outside `src/lib/react-pdf/` — unlike the
+  pdfme rule, this one restricts specific named exports rather than the
+  whole package, because `@react-pdf/renderer` also exports the JSX
+  primitives (`Document`/`Page`/`View`/`Text`/…) every component tree in
+  that directory needs directly. `src/lib/react-pdf/render.tsx`'s own header
+  comment has the full reasoning.
+- **Paper size (I5, #1084)** — live, active functionality in the old
+  pipeline (`getPageGeometry()`, A4 vs `LETTER`) that none of #1151-#1155's
+  react-pdf component work had ported yet (every doc hardcoded
+  `size="A4"`), since it was out of scope until cutover made it a real
+  regression risk. `styles.ts`'s new `pageSizeFor()` is the entire port —
+  react-pdf's `<Page size>` accepts `"LETTER"` as a named standard size
+  directly, and margin/footer are identical across both paper sizes in the
+  old geometry table too, so there's no `LETTER_WIDTH`/`LETTER_HEIGHT`
+  constant table to carry over. `render.test.tsx` asserts actual rendered
+  page dimensions (612×792pt for LETTER, 595×842pt for A4) per doc type, not
+  just "doesn't throw."
+- **`generate-pdf.test.ts`** (new) — the orchestrator itself had no test
+  file before this; `finance-documents.test.ts` and friends mock
+  `generatePdf()` entirely (deliberately — see that file's own header
+  comment), so nothing previously asserted `generatePdf()` wires
+  `buildDocumentData()`'s output into the render step correctly. Mocks both
+  `buildDocumentData` and `renderReactPdfTemplate` and asserts the
+  connection between them (right `expandProjectGroups` per doc type,
+  `stampedDates`/`versionSuffix`/`invoiceId`/`draftPreview` all threaded
+  through).
+
+**Rollout safety (per #1150 and #1156's own "Rollout" section) — no
+backfill:** sent quotes and issued invoices are immutable stored bytes
+(`src/server/finance-documents.ts` — see "Immutable finance artifacts"
+below); this cutover only changes what NEW renders use going forward. Every
+PDF already sent to a client stays exactly the bytes it always was,
+untouched by this change, because nothing about #987's storage/streaming
+path changed — only what `generatePdf()` does the next time it's called for
+a *new* send/issue/preview.
+
+**Verification performed:** `render.test.tsx` + `generate-pdf.test.ts`
+(above) plus the full `regression.test.tsx` suite (including the #1149
+trailing-group case) all pass against the code path `generatePdf()` now
+actually calls — not just the standalone component trees, which is what
+#1151-#1155 could only prove up to this point. **Verification NOT
+performed:** a real quote/invoice send + download or warehouse-doc
+generation against a live staging/preview environment, or reconstructing
+the original #1149 project's exact line-item shape — #1156's own "Verify
+post-cutover" checklist asks for both, and neither is possible from this
+sandboxed session (no staging environment, no live Convex/Postgres
+deployment reachable here). Recommend a manual spot-check of a real
+quote/invoice send and a packing-list pull in the actual deployed app after
+this ships.
+
 **Quote/invoice table simplification (2026-07-26):** the quote/invoice table
 dropped its separate "Days" column — it duplicated the per-line `duration`
 value next to the rate/total columns without adding information the reader
@@ -277,22 +360,41 @@ own single-purpose builders (see below) — they were never part of the
 customization system.
 
 ### Vendor Boundary
-`@pdfme/generator`'s `generate()` has exactly one call site: `renderPdfTemplate()` in
-`src/lib/pdfme/pdf-render.ts` (POLICY.md R-8.10.1). It lives in its own module rather
-than in `generate-pdf.ts` because `generate-pdf.ts` dynamically imports
-`templates/call-sheet-services.ts` — if that file imported `renderPdfTemplate` back
-from `generate-pdf.ts` the two would form a circular dependency (caught by the
-`depcruise-ratchet` CI check). Every generation path — `generate-pdf.ts`,
-`templates/call-sheet-services.ts`, and
-`/api/documents/timeline/[projectId]/route.tsx` — calls `renderPdfTemplate()` instead
-of importing `@pdfme/generator` directly. `no-restricted-imports` in
-`eslint.config.mjs` blocks direct imports of `@pdfme/generator` everywhere except
-`pdf-render.ts` to keep it that way.
+Two vendor boundaries, one per pipeline (POLICY.md R-8.10.1):
+
+- **pdfme** — `@pdfme/generator`'s `generate()` has exactly one call site:
+  `renderPdfTemplate()` in `src/lib/pdfme/pdf-render.ts`. It lives in its own
+  module rather than in `generate-pdf.ts` because `generate-pdf.ts`
+  dynamically imports `templates/call-sheet-services.ts` — if that file
+  imported `renderPdfTemplate` back from `generate-pdf.ts` the two would
+  form a circular dependency (caught by the `depcruise-ratchet` CI check).
+  Still called for call sheets/T&T reports (`generate-pdf.ts`'s
+  `generateCallSheetPdf()`/`generateTestTagReport()`,
+  `templates/call-sheet-services.ts`, and
+  `/api/documents/timeline/[projectId]/route.tsx`). `no-restricted-imports`
+  in `eslint.config.mjs` blocks direct imports of `@pdfme/generator`
+  everywhere except `pdf-render.ts`.
+- **react-pdf** (#1156) — `@react-pdf/renderer`'s render-producing exports
+  (`renderToBuffer`/`renderToStream`/`renderToFile`/`pdf`) have exactly one
+  call site outside `src/lib/react-pdf/` itself: `renderReactPdfTemplate()`
+  in `src/lib/react-pdf/render.tsx`, which `generate-pdf.ts`'s
+  `generatePdf()` calls for the 5 project doc types. Unlike the pdfme rule,
+  `no-restricted-imports`' entry for `@react-pdf/renderer` restricts only
+  those named exports (via `importNames`), not the whole package —
+  `@react-pdf/renderer` also exports the JSX primitives
+  (`Document`/`Page`/`View`/`Text`/…) every component tree under
+  `src/lib/react-pdf/` needs directly, so the whole directory (component
+  trees, tests, the manual `render-spike.tsx` dev script) is exempted from
+  the restriction the same way `pdf-render.ts` is exempted from the pdfme
+  one.
 
 ### Key Files
 | File | Purpose |
 |------|---------|
-| `src/lib/pdfme/generate-pdf.ts` | Orchestrator — build data → compose → render. `generateCallSheetPdf()` and `generateTestTagReport()` for the two doc families that keep their own builders. |
+| `src/lib/pdfme/generate-pdf.ts` | Orchestrator. `generatePdf()` (5 project doc types): build data → `renderReactPdfTemplate()` (#1156). `generateCallSheetPdf()` and `generateTestTagReport()` for the two doc families that keep their own pdfme builders. |
+| `src/lib/react-pdf/render.tsx` | `renderReactPdfTemplate()` — the single react-pdf render-export call site (#1156) |
+| `src/lib/react-pdf/{quote,invoice,packing-list,return-sheet,delivery-docket}-document.tsx` | The 5 project doc types' react-pdf component trees |
+| `src/lib/react-pdf/regression.test.tsx` | The standing regression harness for the react-pdf pipeline (#1155) — pagination invariants across all 5 doc types |
 | `src/lib/pdfme/document-layouts.ts` | Fixed layout definitions (`DOCUMENT_LAYOUTS`) for the 5 project doc types — blocks, `expandProjectGroups`, status filter. Single source of truth. |
 | `src/lib/pdfme/document-composer.ts` | Net-new pagination engine — `composeDocument()` walks a layout's blocks, measures against remaining page height, splits table blocks across pages. |
 | `src/lib/pdfme/document-composer.test.ts` | Full-pipeline integration tests (Phase 0 safety net) — every doc type, a 120+ item fixture, asserts full parent-item index coverage across pages (no tail-drop). |
@@ -424,6 +526,19 @@ None of this touches `OrgSettings.abn`/`Client.taxId` themselves (still generic 
 per their own doc comments) — this is a render-layer change only.
 
 ### Paper size — pagination geometry, not a display setting (I5, #1084)
+
+**Ported to react-pdf (#1156):** `pageSizeFor()` (`src/lib/react-pdf/styles.ts`)
+is the entire equivalent for the current pipeline — react-pdf's `<Page size>`
+accepts `"LETTER"` as a named standard size directly, so there's no
+`PageGeometry`/`getPageGeometry()`-style table to port; margin/footer are
+identical across both paper sizes below too, and every table column in the
+react-pdf components already uses percentage widths, so content width/height
+fall out of the page size automatically. The detail below (`PageGeometry`,
+`LayoutContext.geometry`, `composeDocument`'s `paperSize` param) describes
+the **old** pipeline, still accurate for call sheets/T&T reports/timeline
+(none of which were ever in `composeDocument`'s 5 project doc types to begin
+with) but no longer how quote/invoice/packing-list/return-sheet/
+delivery-docket resolve paper size.
 
 The hardest international item, per its own issue: `template-constants.ts`'s
 `PAGE_WIDTH`/`PAGE_HEIGHT`/`MARGIN`/`CONTENT_WIDTH`/`PAGE_CONTENT_HEIGHT`/`FOOTER_HEIGHT`

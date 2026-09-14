@@ -22,7 +22,7 @@ import { DetailsRow } from "./components/details-row";
 import { LineItemsTable } from "./components/line-items-table";
 import { SignatureLine } from "./components/signature-line";
 import { Footer } from "./components/footer";
-import { PAGE_MARGIN } from "./styles";
+import { PAGE_MARGIN, pageSizeFor } from "./styles";
 import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
 import type { TablePluginConfig } from "@/lib/pdfme/types";
 
@@ -53,7 +53,7 @@ export function DeliveryDocketDocument({ data }: { data: DocumentData }) {
   return (
     <Document title={`${data.org_name} — Delivery Docket ${data.project_number}`}>
       <Page
-        size="A4"
+        size={pageSizeFor(data.org_paper_size)}
         wrap
         style={{
           paddingTop: PAGE_MARGIN,

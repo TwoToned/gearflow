@@ -23,7 +23,7 @@ import { Header } from "./components/header";
 import { DetailsRow } from "./components/details-row";
 import { LineItemsTable } from "./components/line-items-table";
 import { Footer } from "./components/footer";
-import { PAGE_MARGIN } from "./styles";
+import { PAGE_MARGIN, pageSizeFor } from "./styles";
 import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
 
 const PAGE_PADDING_BOTTOM = `${MARGIN + FOOTER_HEIGHT + 8}mm`;
@@ -53,7 +53,7 @@ export function PackingListDocument({ data }: { data: DocumentData }) {
   return (
     <Document title={`${data.org_name} — Pull Slip ${data.project_number}`}>
       <Page
-        size="A4"
+        size={pageSizeFor(data.org_paper_size)}
         wrap
         style={{
           paddingTop: PAGE_MARGIN,

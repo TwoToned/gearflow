@@ -23,7 +23,7 @@ import { TotalsBlock } from "./components/totals-block";
 import { DraftWatermark } from "./components/draft-watermark";
 import { Footer } from "./components/footer";
 import { RichText } from "./components/rich-text";
-import { COLORS, FONT_SIZE, PAGE_MARGIN } from "./styles";
+import { COLORS, FONT_SIZE, PAGE_MARGIN, pageSizeFor } from "./styles";
 import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
 
 // Room below the flowing content for the footer (see footer.tsx): the
@@ -61,7 +61,7 @@ export function QuoteDocument({ data, draftPreview = false }: { data: DocumentDa
   return (
     <Document title={`${data.org_name} — Quote ${data.project_number}`}>
       <Page
-        size="A4"
+        size={pageSizeFor(data.org_paper_size)}
         wrap
         style={{
           paddingTop: PAGE_MARGIN,

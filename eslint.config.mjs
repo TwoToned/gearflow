@@ -150,13 +150,15 @@ const eslintConfig = [
   {
     // No hardcoded color literals in UI components — use design tokens (POLICY.md
     // R-8.7.1) so a brand-color change is a one-line diff. Excludes legitimate
-    // non-CSS contexts: canvas (favicon), browser theme-color meta, the brand-default
-    // config constants themselves, Google Maps SDK pin props, and server-rendered HTML.
+    // non-CSS contexts: canvas (favicon), browser theme-color meta, Google Maps SDK
+    // pin props, and server-rendered HTML. Brand-default colour constants (e.g. the
+    // org branding defaults BrandingSettings/StepBranding both read) live in a plain
+    // `src/lib/` module instead of inline here, so they need no ignore entry of their
+    // own (R-3.1 — src/lib/branding-defaults.ts).
     files: ["src/components/**/*.tsx", "src/app/**/*.tsx"],
     ignores: [
       "src/components/layout/dynamic-favicon.tsx",
       "src/app/layout.tsx",
-      "src/components/settings/branding-settings.tsx",
       "src/components/ui/address-map-inner.tsx",
       "src/app/api/**",
       "**/*.test.tsx",

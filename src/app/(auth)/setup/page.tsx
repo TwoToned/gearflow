@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { WizardRail } from "@/components/ui/wizard-rail";
 import { AuthShell } from "../auth-playful";
 import { StepOperating } from "./step-operating";
+import { StepBranding } from "./step-branding";
 import { TOTAL_STEPS } from "./wizard-steps";
 import { toast } from "sonner";
 import { logger } from "@/lib/logger";
@@ -38,9 +39,9 @@ type SlugStatus = "idle" | SlugCheckStatus;
  *
  * Step 0/1 (C1, #1098) is the ONLY blocking screen (D3): naming the org
  * commits it for real — `organization.create()` → `setActive()` →
- * `mirrorMyMembership()`. Every later screen (step 2 here, C2/#1099; steps
- * 3-4 still unbuilt — #1101-#1104) is then an ordinary settings write
- * against a live org rather than draft state, and can be skipped.
+ * `mirrorMyMembership()`. Every later screen (step 2, C2/#1099; step 3, C3/
+ * #1101; steps 4-5 still unbuilt — #1102-#1104) is then an ordinary settings
+ * write against a live org rather than draft state, and can be skipped.
  */
 export default function SetupPage() {
   const router = useRouter();
@@ -172,7 +173,11 @@ export default function SetupPage() {
   };
 
   if (step === 2 && createdOrgId) {
-    return <StepOperating orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
+    return <StepOperating orgId={createdOrgId} onDone={() => setStep(3)} />;
+  }
+
+  if (step === 3 && createdOrgId) {
+    return <StepBranding orgId={createdOrgId} onDone={() => router.push("/dashboard")} />;
   }
 
   return (

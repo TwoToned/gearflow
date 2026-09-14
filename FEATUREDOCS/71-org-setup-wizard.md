@@ -171,5 +171,32 @@ calls for (§6.1) — the one place these five role descriptions are written (R-
 
 ## C6 — "Finish setup" checklist (#1104)
 
-Not another wizard step — the dashboard-side, derived-progress checklist that closes out Phase
-C. Not yet built.
+Not another wizard step — a dashboard card (`src/components/dashboard/finish-setup-checklist.tsx`,
+`FinishSetupChecklist`) that closes out Phase C. What makes D3's "skip everything" in the
+wizard actually safe: a dismissible, always-accurate checklist that deep-links back into the
+real settings pages for whatever's still unset, rather than back into a wizard step (there is
+ONE place each setting is edited).
+
+**Progress is derived; only dismissal is stored.** Every item is computed live from the org's
+real state — `settings.currency` (→ `/settings`), `settings.branding?.logoUrl`
+(→ `/settings/branding`), at least one `Location` (→ `/locations`), at least two people on the
+team (→ `/settings/team`, counting accepted members AND pending invites — an owner who's sent
+an invite has genuinely finished this step even before it's accepted, and C5's own screen is
+about sending invites, not waiting on acceptance). Nothing tracks "step 3 done": someone who
+configured tax in Settings instead of the wizard has genuinely finished that item, and a
+stored flag would say otherwise (R-3.1/R-8.2.4). The card disappears for good once every item
+is done OR once dismissed, and — because it's derived — can legitimately reappear if something
+that was set becomes unset again (e.g. the org's last location is deleted); that's a feature of
+"derived," not a bug.
+
+**The one persisted bit — dismissal — deliberately is NOT a `notificationDismissals` row.**
+That table already exists for exactly this shape (per-user, per-org, timestamped dismissal)
+and was the obvious first reach, but its `pruneStaleNative` mutation GCs every dismissal row
+for a user whose key isn't in the CALLER's own `activeKeys` list — and its only two callers
+(the notification bell, the notifications page) pass their own notification ids, never this
+screen's key. A `"setup-checklist"` row parked there would be silently deleted the next time
+either one fires, since neither knows this feature exists — breaking "disappears for good."
+Instead, `dismissedAt` lives in its own table, `orgSetupDismissals` (`convex/schema.ts`), with
+its own tiny mutations module (`convex/orgSetupDismissalsWrites.ts`, `mine`/`dismissNative`)
+and hook (`src/hooks/use-setup-dismissal.ts`, `useSetupDismissal`) — at most one row per
+`(organizationId, userId)`, no prune mechanism, because there's nothing to prune against.

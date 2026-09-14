@@ -49,6 +49,9 @@ test.describe("harness: create inventory", () => {
       if (new URL(page.url()).pathname === "/setup") {
         await page.getByLabel("Company name").fill(`Inventory Org ${unique}`);
         await page.getByRole("button", { name: "Create company" }).click();
+        // Step 1's success lands on step 2 ("where you operate", C2 #1099),
+        // still at /setup — skip it, only the name is required (D3).
+        await page.getByRole("button", { name: "Skip for now" }).click();
         await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
       }
     });

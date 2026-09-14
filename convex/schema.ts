@@ -1639,6 +1639,12 @@ export default defineSchema({
     // discount above ($ off vs % of `price × quantity`), for document display
     // only. Absent = "$".
     discountMode: v.optional(enums.DiscountMode),
+    // Category price rollup, per-item reveal — mirrors
+    // projectLineItems.revealPriceInRollup for a group's own collapsed row, so
+    // a priced bundle isn't the one line on the document that can't be shown
+    // with its price. Display-only; consulted only inside a
+    // `pricingDisplay: "ROLLUP"` category. See src/lib/category-pricing-display.ts.
+    revealPriceInRollup: v.optional(v.boolean()),
     suggestedPrice: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     // Mirrors projectLineItems.pricedUnderLock — true when this group's own `price`/

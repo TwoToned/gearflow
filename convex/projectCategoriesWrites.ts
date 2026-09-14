@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertProjectInOrg } from "./projectLineItems";
 import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+import * as enums from "./lib/validators";
 
 /** Fetch a project by cuid, confirm it's the caller's org (needed for the tier check). */
 async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId: string) {
@@ -53,6 +54,15 @@ const COLLAB_COLORS = [
   "#2563eb", "#7c3aed", "#db2777", "#0891b2", "#059669", "#65a30d",
   "#d97706", "#0d9488", "#4f46e5", "#9333ea", "#0284c7", "#16a34a",
 ] as const;
+
+/** A stored `pricingDisplay` read back with the default applied. Mirrors
+ *  `toCategoryPricingDisplay` in src/lib/category-pricing-display.ts — inlined
+ *  rather than imported for the same reason `getUserColor` above is: Convex
+ *  production modules don't reach across into `src/`. `projectCategoriesPricingDisplay.test.ts`
+ *  asserts the two stay byte-identical. */
+function storedPricingDisplay(value: unknown): "ITEMISED" | "ROLLUP" {
+  return value === "ROLLUP" ? "ROLLUP" : "ITEMISED";
+}
 
 function getUserColor(userId: string): string {
   let hash = 0;
@@ -180,9 +190,17 @@ export const createCategoryNative = mutation({
 });
 
 /**
- * Patch a category's name / sortOrder. Strips organizationId + id (never client-set).
- * When the name changes, ALSO records the collaboration activity event the server
- * action wrote via writeCollabActivityEvent (atomic here instead of a second call).
+ * Patch a category's name / sortOrder / pricing display. Strips organizationId + id
+ * (never client-set). When the name changes, ALSO records the collaboration activity
+ * event the server action wrote via writeCollabActivityEvent (atomic here instead of
+ * a second call).
+ *
+ * `pricingDisplay` is a DISPLAY + billing-grouping switch, not a money edit: it never
+ * changes an amount, only whether the category's members print their own prices or
+ * one derived section subtotal. It therefore goes through the same `structural`
+ * lifecycle gate the rename/reorder use, not the FINANCIAL unlock-session flow (which
+ * exists to guard values, and which no value here moves). It IS client-facing on a
+ * quote/invoice, so it is audited like any other category change.
  */
 export const updateCategoryNative = mutation({
   returns: v.object({ ok: v.boolean() }),
@@ -191,13 +209,17 @@ export const updateCategoryNative = mutation({
     orgId: v.string(),
     name: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
+    // Category price rollup (src/lib/category-pricing-display.ts). Omitted =
+    // leave as-is; "ITEMISED" is written as an explicit value rather than an
+    // unset field so switching back is a real, audited edit.
+    pricingDisplay: v.optional(enums.CategoryPricingDisplay),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
     // #793: required once the project is ON_SITE+ and no unlock session is open.
     justification: v.optional(v.string()),
   },
-  handler: async (ctx, { id, orgId, name, sortOrder, now, actor: suppliedActor, auditId, justification }) => {
+  handler: async (ctx, { id, orgId, name, sortOrder, pricingDisplay, now, actor: suppliedActor, auditId, justification }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -208,13 +230,23 @@ export const updateCategoryNative = mutation({
     const guard = await assertLifecycleGuard(ctx, updCatProject, { kind: "structural", justification });
     if (name !== undefined) assertValidName(name);
 
-    const patch: { name?: string; sortOrder?: number; updatedAt: number } = { updatedAt: now };
+    const patch: {
+      name?: string;
+      sortOrder?: number;
+      pricingDisplay?: "ITEMISED" | "ROLLUP";
+      updatedAt: number;
+    } = { updatedAt: now };
     if (name !== undefined) patch.name = name;
     if (sortOrder !== undefined) patch.sortOrder = sortOrder;
+    if (pricingDisplay !== undefined) patch.pricingDisplay = pricingDisplay;
     await ctx.db.patch(category._id, patch);
 
     // Parity: the server logged the PRE-patch name (category.name) as entityName +
-    // in the summary — replicated verbatim here.
+    // in the summary — replicated verbatim here. A pricing-display change says so
+    // explicitly instead: it changes what a client-facing document shows, so
+    // "Updated category X" alone would leave no trace of WHAT changed.
+    const displayChanged =
+      pricingDisplay !== undefined && pricingDisplay !== storedPricingDisplay(category.pricingDisplay);
     await logCategoryChange(ctx, {
       orgId,
       projectId: category.projectId,
@@ -223,8 +255,15 @@ export const updateCategoryNative = mutation({
       now,
       action: "updated",
       entityName: category.name,
-      summary: `Updated category "${category.name}"`,
-      metadata: lifecycleAuditMetadata(guard, justification),
+      summary: displayChanged
+        ? `Updated category "${category.name}" — pricing display ${storedPricingDisplay(category.pricingDisplay)} -> ${pricingDisplay}`
+        : `Updated category "${category.name}"`,
+      metadata: {
+        ...lifecycleAuditMetadata(guard, justification),
+        ...(displayChanged
+          ? { pricingDisplay: { from: storedPricingDisplay(category.pricingDisplay), to: pricingDisplay } }
+          : {}),
+      },
     });
 
     // Realtime collaboration feed event (only on a rename) — uses the NEW name,

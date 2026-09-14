@@ -79,9 +79,39 @@ issue. Settings also still hand-maintains its own `COUNTRIES`/`TIMEZONES` label 
 than importing `src/lib/countries.ts` — a second country→label map the module's own docstring
 warns against (R-3.1), not fixed here to keep this PR's diff scoped to the wizard.
 
-## Steps 3-5 — not yet built
+## Step 3 — "your brand" (C3, #1101)
 
-Screens for branding, numbering/document terms, team invites and gear import (#1101-#1104) are
-still open. Until they land, step 2's "Skip for now" and "Save and continue" both end the
-wizard by redirecting to `/dashboard` — consistent with D3: everything past the name is safe to
-skip because it's a live org, not a draft.
+Logo, icon, primary/accent/document colour, and `documentLogoMode`, written through the SAME
+`updateOrganization` server action `BrandingSettings` (the general Settings page) already
+uses — same merge-onto-existing-settings pattern as step 2, same D5 rationale (no parallel
+wizard-only write path). `DEFAULT_PRIMARY_COLOR`/`DEFAULT_ACCENT_COLOR`/`DEFAULT_DOCUMENT_COLOR`
+(`src/lib/branding-defaults.ts`) are now the ONE place these hex defaults are literal — both
+`BrandingSettings` and this screen import them, so "unchanged from default" (and therefore
+"don't bother persisting it") means the same thing in both places (R-3.1). A colour/logo/icon
+at its default value is omitted from the saved `OrgBranding`, not written — an org that never
+opens this screen keeps a branding-free settings blob.
+
+**Light-only (D8).** `branding.logoUrl`/`iconUrl` are read exclusively by the PDF pipeline
+(`build-document-data.ts`, the `tt-*.ts` report templates), which renders onto white paper —
+there's exactly one background to design for, so there's no dark-mode variant here. The
+sidebar/login/favicon dark-surface marks come from a DIFFERENT, platform-level field
+(`SiteSettings.platformLogo`, site-admin-owned) — "logo" means two different things in this
+codebase, and the wizard copy says so explicitly ("the logo that prints on your documents").
+
+**"The preview is the point."** `HeaderPreview` is a live HTML/CSS approximation of the actual
+quote-header block, built from the SAME field set and layout logic as the PDF pipeline's
+`PageHeaderConfig` (`src/lib/pdfme/types.ts`) — not a fresh, aspirational mock. It can't be a
+literal reuse of the production renderer: `gearflow-page-header.ts`'s `pdfRender()` draws
+directly onto a pdf-lib `PDFPage` (canvas/PDF draw calls, not DOM-reusable), and the react-pdf
+spike's `Header` component (`src/lib/react-pdf/components/header.tsx`, #1151) renders
+`@react-pdf/renderer` primitives, which also don't render to a browser DOM. `HeaderPreview`
+mirrors both faithfully instead — same three `documentLogoMode` layouts, same org-details/doc-
+meta line composition — using sample doc title/number/date, since this screen has no real
+project data to preview against yet.
+
+## Steps 4-5 — not yet built
+
+Screens for numbering/document terms, first location, team invites and gear import
+(#1102-#1104) are still open. Until they land, step 3's "Skip for now" and "Save and continue"
+both end the wizard by redirecting to `/dashboard` — consistent with D3: everything past the
+name is safe to skip because it's a live org, not a draft.

@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for now", stays changeable later in Settings. Business address now
   suggests as you type, biased to your country.
 
+- **#1101** — The setup wizard's third screen, "your brand": upload a logo and
+  icon, pick your primary/accent/document colours, and choose how they show
+  up on your documents (icon inline, logo above the header, or plain text) —
+  with a live preview of your actual quote header right next to the fields,
+  so it's never a guess. Skippable, like every screen after the company name;
+  everything here can be changed later in Settings too.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

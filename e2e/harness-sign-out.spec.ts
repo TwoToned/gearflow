@@ -44,14 +44,14 @@ test.describe("harness: sign out", () => {
     // Run standalone against a fresh harness, this is the first-ever user, so
     // the (app) layout redirects to /welcome (no org yet) — which has no
     // UserNav, so "Account menu" below wouldn't exist without completing it.
-    // "Set up a new company" leads to /onboarding, the actual create-org form.
+    // "Set up a new company" leads to /setup, the actual create-org form.
     if (new URL(page.url()).pathname === "/welcome") {
       await page.getByRole("button", { name: "Set up a new company" }).click();
-      await expect(page).toHaveURL(/\/onboarding\b/, { timeout: 20000 });
+      await expect(page).toHaveURL(/\/setup\b/, { timeout: 20000 });
     }
-    if (new URL(page.url()).pathname === "/onboarding") {
-      await page.getByLabel("Organization name").fill(`Sign Out Org ${unique}`);
-      await page.getByRole("button", { name: "Create organization" }).click();
+    if (new URL(page.url()).pathname === "/setup") {
+      await page.getByLabel("Company name").fill(`Sign Out Org ${unique}`);
+      await page.getByRole("button", { name: "Create company" }).click();
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     }
 

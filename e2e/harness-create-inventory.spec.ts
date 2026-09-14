@@ -44,11 +44,11 @@ test.describe("harness: create inventory", () => {
     await test.step("complete onboarding (create the org) if needed", async () => {
       if (new URL(page.url()).pathname === "/welcome") {
         await page.getByRole("button", { name: "Set up a new company" }).click();
-        await expect(page).toHaveURL(/\/onboarding\b/, { timeout: 20000 });
+        await expect(page).toHaveURL(/\/setup\b/, { timeout: 20000 });
       }
-      if (new URL(page.url()).pathname === "/onboarding") {
-        await page.getByLabel("Organization name").fill(`Inventory Org ${unique}`);
-        await page.getByRole("button", { name: "Create organization" }).click();
+      if (new URL(page.url()).pathname === "/setup") {
+        await page.getByLabel("Company name").fill(`Inventory Org ${unique}`);
+        await page.getByRole("button", { name: "Create company" }).click();
         await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
       }
     });

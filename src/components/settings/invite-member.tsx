@@ -18,13 +18,7 @@ import { addMemberByEmail } from "@/server/settings";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { refreshOrgMembers } from "@/hooks/use-org-members";
 import { refreshPendingInvitations } from "@/hooks/use-pending-invitations";
-
-const builtInRoles = [
-  { value: "admin", label: "Admin" },
-  { value: "manager", label: "Manager" },
-  { value: "member", label: "Member" },
-  { value: "viewer", label: "Viewer" },
-];
+import { ASSIGNABLE_ROLE_OPTIONS } from "@/lib/role-descriptions";
 
 export function InviteMember() {
   const { data: activeOrg } = useActiveOrganization();
@@ -68,12 +62,12 @@ export function InviteMember() {
         <Select value={role} onValueChange={(v) => setRole(v ?? "member")}>
           <SelectTrigger className="w-full sm:w-[160px]">
             <SelectValue>
-              {builtInRoles.find((r) => r.value === role)?.label ??
+              {ASSIGNABLE_ROLE_OPTIONS.find((r) => r.value === role)?.label ??
                 role.charAt(0).toUpperCase() + role.slice(1)}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {builtInRoles.map((r) => (
+            {ASSIGNABLE_ROLE_OPTIONS.map((r) => (
               <SelectItem key={r.value} value={r.value}>
                 {r.label}
               </SelectItem>

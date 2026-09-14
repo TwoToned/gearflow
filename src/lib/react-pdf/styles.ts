@@ -11,7 +11,7 @@
  * historical bugs (PT_PER_MM drift, #1149) that structurally cannot occur
  * here — see the spike findings doc.
  */
-import { MARGIN, FOOTER_HEIGHT } from "@/lib/pdfme/template-constants";
+import { MARGIN, FOOTER_HEIGHT, type PaperSize } from "@/lib/pdfme/template-constants";
 
 export const PAGE_MARGIN = `${MARGIN}mm`;
 export const PAGE_FOOTER_HEIGHT = `${FOOTER_HEIGHT}mm`;
@@ -20,6 +20,21 @@ export const PAGE_FOOTER_HEIGHT = `${FOOTER_HEIGHT}mm`;
 // react-pdf block element doesn't — it's 100% of its parent by default — so
 // there's no call site for that constant here. One more thing the old
 // pipeline tracked by hand that this one gets for free.
+
+/**
+ * #1156 (cutover) — react-pdf's `<Page size>` accepts named standard sizes
+ * directly, "LETTER" included (`@react-pdf/types`'s `StandardPageSize`), so
+ * there's no pdfme-style `getPageGeometry()`/`LETTER_WIDTH`/`LETTER_HEIGHT`
+ * table to port (`template-constants.ts`'s geometry math stays pdfme-only —
+ * margin/footer are identical across both paper sizes there too, only
+ * width/height differ, and react-pdf derives every table column from
+ * percentage widths, so this one prop is the whole port). `PaperSize` itself
+ * is still `@/lib/countries`'s single source of truth — re-exported via
+ * `template-constants.ts` the same way the pdfme pipeline reaches it.
+ */
+export function pageSizeFor(paperSize: PaperSize): "A4" | "LETTER" {
+  return paperSize === "LETTER" ? "LETTER" : "A4";
+}
 
 export const COLORS = {
   text: "#1a1a1a",

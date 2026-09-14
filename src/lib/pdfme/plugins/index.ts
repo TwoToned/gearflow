@@ -1,10 +1,16 @@
 /**
  * Plugin registry — exports all custom gearflow pdfme plugins.
  * Used by generatePdf() when calling pdfme's generate().
+ *
+ * #1157 (cleanup) — `gearflowTable`, `gearflowFinancialSummary`,
+ * `gearflowRichText` and `gearflowDraftWatermark` were removed here (#1156
+ * cut the 5 project doc types they served over to react-pdf; nothing else
+ * ever registered a schema of those types). `gearflowPageHeader`,
+ * `gearflowPageFooter` and `gearflowSignatureLine` stay — call sheets, T&T
+ * reports and the timeline builder still render through this registry and
+ * still use them (see `templates/*.ts`).
  */
 import { text } from "@pdfme/schemas";
-import gearflowTable from "./gearflow-table";
-import gearflowFinancialSummary from "./gearflow-financial-summary";
 import gearflowPageHeader from "./gearflow-page-header";
 import gearflowPageFooter from "./gearflow-page-footer";
 import gearflowCheckbox from "./gearflow-checkbox";
@@ -12,8 +18,6 @@ import gearflowSignatureLine from "./gearflow-signature-line";
 import gearflowCrewTable from "./gearflow-crew-table";
 import gearflowCallSheetInfo from "./gearflow-call-sheet-info";
 import gearflowDayHeader from "./gearflow-day-header";
-import gearflowRichText from "./gearflow-rich-text";
-import gearflowDraftWatermark from "./gearflow-draft-watermark";
 import { gearflowDataTable } from "./gearflow-data-table";
 import { gearflowSummaryBox } from "./gearflow-summary-box";
 import { gearflowTextBlock } from "./gearflow-text-block";
@@ -22,8 +26,6 @@ export const gearflowPlugins = {
   // Built-in pdfme plugins
   text,
   // Custom plugins — project documents
-  gearflowTable,
-  gearflowFinancialSummary,
   gearflowPageHeader,
   gearflowPageFooter,
   gearflowCheckbox,
@@ -31,8 +33,6 @@ export const gearflowPlugins = {
   gearflowCrewTable,
   gearflowCallSheetInfo,
   gearflowDayHeader,
-  gearflowRichText,
-  gearflowDraftWatermark,
   // Custom plugins — reports
   gearflowDataTable,
   gearflowSummaryBox,
@@ -44,8 +44,6 @@ export const gearflowPlugins = {
   // rebranded type while every existing template (persisted with `gearflow*`
   // types) keeps rendering. Additive only — do NOT remove the legacy keys until
   // stored templates have been migrated.
-  rvltFlowTable: gearflowTable,
-  rvltFlowFinancialSummary: gearflowFinancialSummary,
   rvltFlowPageHeader: gearflowPageHeader,
   rvltFlowPageFooter: gearflowPageFooter,
   rvltFlowCheckbox: gearflowCheckbox,
@@ -53,8 +51,6 @@ export const gearflowPlugins = {
   rvltFlowCrewTable: gearflowCrewTable,
   rvltFlowCallSheetInfo: gearflowCallSheetInfo,
   rvltFlowDayHeader: gearflowDayHeader,
-  rvltFlowRichText: gearflowRichText,
-  rvltFlowDraftWatermark: gearflowDraftWatermark,
   rvltFlowDataTable: gearflowDataTable,
   rvltFlowSummaryBox: gearflowSummaryBox,
   rvltFlowTextBlock: gearflowTextBlock,
@@ -64,8 +60,6 @@ export const gearflowPlugins = {
 export const rvltFlowPlugins = gearflowPlugins;
 
 export {
-  gearflowTable,
-  gearflowFinancialSummary,
   gearflowPageHeader,
   gearflowPageFooter,
   gearflowCheckbox,
@@ -73,12 +67,7 @@ export {
   gearflowCrewTable,
   gearflowCallSheetInfo,
   gearflowDayHeader,
-  gearflowRichText,
   gearflowDataTable,
   gearflowSummaryBox,
   gearflowTextBlock,
 };
-// NOTE: gearflowDraftWatermark is deliberately NOT re-exported by name — it is
-// only ever resolved through the registry above (by schema `type`), and an
-// unused named re-export trips the dead-code ratchet (R-4.2). Import it from
-// ./gearflow-draft-watermark directly if you ever need the plugin itself.

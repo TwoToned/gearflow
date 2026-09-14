@@ -184,7 +184,13 @@ const eslintConfig = [
     // maps → @/lib/maps-sdk; Resend → src/lib/email.ts (Next) or convex/emailActions.ts
     // (Convex — two runtimes, one adapter each); PostHog → posthog-provider.tsx (client)
     // or posthog-server.ts (server) — the sanctioned error/analytics capture boundary
-    // (§8.9/§8.10); pdfme → src/lib/pdfme/pdf-render.ts (single `generate()` call site).
+    // (§8.9/§8.10); pdfme → src/lib/pdfme/pdf-render.ts (single `generate()` call site);
+    // react-pdf's render-producing exports (renderToBuffer/renderToStream/renderToFile/
+    // pdf) → src/lib/react-pdf/render.tsx (#1156). Unlike the others, `@react-pdf/renderer`
+    // also exports JSX primitives (Document/Page/View/Text/…) every component tree under
+    // src/lib/react-pdf/ needs directly — only the byte-producing exports are restricted
+    // (see the `paths` entry below), and the whole vendor/library directory is exempted
+    // the same way pdf-render.ts is exempted from the pdfme restriction.
     files: ["src/**/*.{ts,tsx}", "convex/**/*.ts"],
     ignores: [
       "src/lib/maps-sdk.ts",
@@ -193,6 +199,7 @@ const eslintConfig = [
       "src/components/providers/posthog-provider.tsx",
       "src/lib/posthog-server.ts",
       "src/lib/pdfme/pdf-render.ts",
+      "src/lib/react-pdf/**",
     ],
     rules: {
       "no-restricted-imports": [
@@ -221,6 +228,12 @@ const eslintConfig = [
               name: "@pdfme/generator",
               message:
                 "Use the PDF adapter (src/lib/pdfme/pdf-render.ts renderPdfTemplate) (R-8.10.1).",
+            },
+            {
+              name: "@react-pdf/renderer",
+              importNames: ["renderToBuffer", "renderToStream", "renderToFile", "pdf"],
+              message:
+                "Use the PDF adapter (src/lib/react-pdf/render.tsx renderReactPdfTemplate) (R-8.10.1).",
             },
           ],
         },

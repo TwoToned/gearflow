@@ -30,10 +30,15 @@ const mocks = vi.hoisted(() => ({
   sessionData: {
     user: { name: "Sam Roadie", email: "sam@northlight.com.au" },
   } as { user: { name: string; email: string } } | null,
+  captured: [] as [string, unknown][],
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.push, replace: mocks.replace, back: vi.fn(), refresh: vi.fn() }),
+}));
+vi.mock("@/lib/analytics", () => ({
+  capture: (event: string, props: unknown) => mocks.captured.push([event, props]),
+  AnalyticsEvent: { OnboardingForkChosen: "onboarding_fork_chosen" },
 }));
 vi.mock("@/lib/auth-client", () => ({
   organization: { setActive: mocks.setActive },
@@ -66,6 +71,7 @@ beforeEach(() => {
   mocks.getJoinableOrgs.mockResolvedValue({ requiresVerification: false, orgs: [] });
   mocks.requestToJoinOrg.mockResolvedValue({ id: "req_1", created: true });
   mocks.sessionData = { user: { name: "Sam Roadie", email: "sam@northlight.com.au" } };
+  mocks.captured = [];
 });
 
 describe("WelcomePage (smoke)", () => {
@@ -82,11 +88,12 @@ describe("WelcomePage (smoke)", () => {
     expect(screen.queryByText("Set up a new company")).toBeNull();
   });
 
-  it("routes 'Set up a new company' to /setup", async () => {
+  it("routes 'Set up a new company' to /setup and fires onboarding_fork_chosen with choice: create", async () => {
     const user = userEvent.setup();
     render(<WelcomePage />);
     await user.click(await screen.findByText("Set up a new company"));
     expect(mocks.push).toHaveBeenCalledWith("/setup");
+    expect(mocks.captured).toEqual([["onboarding_fork_chosen", { choice: "create" }]]);
   });
 
   it("'Join my team' shows the invite-code + domain-request UI, not a placeholder", async () => {
@@ -98,7 +105,7 @@ describe("WelcomePage (smoke)", () => {
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
-  it("invite-code entry navigates to /invite/[id] when the code resolves", async () => {
+  it("invite-code entry navigates to /invite/[id] when the code resolves, and fires onboarding_fork_chosen with choice: join_invite", async () => {
     mocks.checkInviteCode.mockResolvedValue({ id: "inv_123" });
     const user = userEvent.setup();
     render(<WelcomePage />);
@@ -106,6 +113,7 @@ describe("WelcomePage (smoke)", () => {
     await user.type(screen.getByPlaceholderText("Paste your invite link or code"), "inv_123");
     await user.click(screen.getByText("Continue"));
     await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/invite/inv_123"));
+    expect(mocks.captured).toEqual([["onboarding_fork_chosen", { choice: "join_invite" }]]);
   });
 
   it("invite-code entry shows an inline error for an unknown code", async () => {
@@ -117,6 +125,7 @@ describe("WelcomePage (smoke)", () => {
     await user.click(screen.getByText("Continue"));
     expect(await screen.findByText(/couldn't find that invite/i)).toBeTruthy();
     expect(mocks.push).not.toHaveBeenCalled();
+    expect(mocks.captured).toEqual([]);
   });
 
   it("prompts email verification before showing domain-matched orgs", async () => {
@@ -127,7 +136,7 @@ describe("WelcomePage (smoke)", () => {
     expect(await screen.findByText(/Verify your email to search for a team/)).toBeTruthy();
   });
 
-  it("offers 'Ask to join' for a domain-matched org and calls requestToJoinOrg", async () => {
+  it("offers 'Ask to join' for a domain-matched org, calls requestToJoinOrg, and fires onboarding_fork_chosen with choice: join_domain", async () => {
     mocks.getJoinableOrgs.mockResolvedValue({
       requiresVerification: false,
       orgs: [{ organizationId: "org_x", organizationName: "Northlight AV", memberCount: 3, alreadyRequested: false }],
@@ -139,6 +148,7 @@ describe("WelcomePage (smoke)", () => {
     await user.click(screen.getByText("Ask to join"));
     await waitFor(() => expect(mocks.requestToJoinOrg).toHaveBeenCalledWith("org_x"));
     expect(await screen.findByText("Request sent")).toBeTruthy();
+    expect(mocks.captured).toEqual([["onboarding_fork_chosen", { choice: "join_domain" }]]);
   });
 
   it("bounces a user who already has exactly one org to /dashboard", async () => {

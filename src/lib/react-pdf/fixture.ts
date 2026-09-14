@@ -82,7 +82,7 @@ export function makeSpikeData(overrides: Partial<DocumentData> = {}): DocumentDa
   };
 }
 
-function makeLineItem(overrides: Partial<DocumentLineItem>): DocumentLineItem {
+export function makeLineItem(overrides: Partial<DocumentLineItem>): DocumentLineItem {
   return {
     id: overrides.id ?? "li-default",
     description: null,
@@ -350,4 +350,115 @@ export function makeMixedRentalSaleLineItems(): DocumentLineItem[] {
       ],
     }),
   ];
+}
+
+/**
+ * #1155 — a large fixture whose every item has a zero-padded, unambiguous
+ * description ("ZZItem-0007") and NO `model` (so `getItemName` renders the
+ * description verbatim, not a model name). Fixed-width zero-padding means no
+ * item's identifying text is ever a substring of another's (unlike
+ * "Item 1" / "Item 10"), so a regression test can assert on exact text
+ * presence/absence per item across a 100+ item, multi-page render without
+ * false positives — the actual proof `document-composer.test.ts`'s
+ * `assertFullCoverage` used to get for free from composed page schemas that
+ * no longer exist in this pipeline.
+ */
+export function makeNoTailDropFixture(count: number): DocumentLineItem[] {
+  const items: DocumentLineItem[] = [];
+  for (let i = 0; i < count; i++) {
+    items.push(
+      makeLineItem({
+        id: `notaildrop-${i}`,
+        description: `ZZItem-${String(i).padStart(4, "0")}`,
+        quantity: 1,
+        checkedOutQuantity: 1,
+        unitPrice: 50,
+        lineTotal: 50,
+        status: "CHECKED_OUT",
+        groupName: `ZZGroup-${String(Math.floor(i / 8)).padStart(2, "0")}`,
+      }),
+    );
+  }
+  return items;
+}
+
+/**
+ * #1149 regression fixture — port of `document-composer.test.ts`'s
+ * "a trailing group of varied-content rows on a continuation page is fully
+ * drawn, not silently dropped" fixture: a long "padding" group (long enough
+ * to push the trailing group onto a continuation page, mirroring the real
+ * incident's much-longer quote) followed by a small "Services" group whose
+ * rows exercise every height-affecting feature the old pipeline's estimate
+ * and real draw could disagree on — sub-hire line, notes, and the row that
+ * actually dropped in production (AX Head Technician Day Rate). Zero-padded
+ * padding-item names avoid the same substring-collision risk
+ * `makeNoTailDropFixture` avoids.
+ */
+export function makeTrailingGroupFixture(): { items: DocumentLineItem[]; paddingNames: string[]; servicesNames: string[] } {
+  const items: DocumentLineItem[] = [];
+  const paddingNames: string[] = [];
+
+  for (let i = 0; i < 40; i++) {
+    const name = `ZZPad-${String(i).padStart(2, "0")}`;
+    paddingNames.push(name);
+    items.push(
+      makeLineItem({
+        id: `pad-${i}`,
+        description: name,
+        status: "CHECKED_OUT",
+        groupName: "Equipment",
+        quantity: 1,
+        checkedOutQuantity: 1,
+        unitPrice: 100,
+        lineTotal: 100,
+      }),
+    );
+  }
+
+  const servicesNames = ["Bump In", "Load Out", "Stage Manager Day Rate", "LX Head Technician Day Rate", "AX Head Technician Day Rate"];
+  servicesNames.forEach((name, i) => {
+    items.push(
+      makeLineItem({
+        id: `svc-${i}`,
+        description: name,
+        status: "CHECKED_OUT",
+        groupName: "Services",
+        quantity: 1,
+        checkedOutQuantity: 1,
+        unitPrice: 650,
+        lineTotal: 650,
+        ...(i === 1 ? { subHireId: "sh-1", supplierName: "Acme Crew Co", showSubhireOnDocs: true } : {}),
+        ...(i === 2 ? { notes: "Confirmed via phone" } : {}),
+      }),
+    );
+  });
+
+  return { items, paddingNames, servicesNames };
+}
+
+/**
+ * #1155 — a single group spanning several pages, for the "group header
+ * prints exactly once across a multi-page group" invariant (2026-07-28's
+ * real bug in the old pipeline). The group name and item descriptions share
+ * no substring, so a naive `.includes()` count can't false-positive on
+ * either side.
+ */
+export function makeLongSingleGroupFixture(count: number): { items: DocumentLineItem[]; groupName: string } {
+  const groupName = "QQGroupHeader";
+  const items: DocumentLineItem[] = [];
+  for (let i = 0; i < count; i++) {
+    items.push(
+      makeLineItem({
+        id: `grp-${i}`,
+        description: `WWRow-${String(i).padStart(4, "0")}`,
+        status: "CHECKED_OUT",
+        groupName,
+        quantity: 1,
+        checkedOutQuantity: 1,
+        unitPrice: 100 + i,
+        lineTotal: 100 + i,
+      }),
+    );
+  }
+  return { items, groupName };
 }

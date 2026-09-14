@@ -53,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   straight to the right settings page for each — no need to redo the
   wizard. Disappears for good once you dismiss it or finish everything.
 
+- **#1105** — A "Get started" card beside it, walking through the first real
+  use of the app: add a model, add a unit of it, create a job, put that gear
+  on the job. Each step is checked off the moment it's actually true — do it
+  by hand without ever touching the card and it's already ticked when you
+  come back. Dismissible; disappears for good once dismissed or finished.
+
 - Crew members' iCal feed (Calendar tab) now has a per-member toggle to include
   pending/offered assignments as tentative events, alongside the usual
   confirmed/accepted ones — off by default, so nothing changes unless you turn

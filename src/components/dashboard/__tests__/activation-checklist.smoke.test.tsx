@@ -29,6 +29,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/hooks/use-activation-milestones", () => ({
   useActivationMilestones: () => mocks.state,
+  // D4 (#1108) — analytics side-effect hook; out of scope for this
+  // component's own behavior tests (has its own coverage).
+  useActivationMilestoneAnalytics: () => undefined,
 }));
 vi.mock("@/hooks/use-activation-dismissal", () => ({
   useActivationDismissal: () => ({ dismissedAt: mocks.dismissedAt, dismiss: mocks.dismiss }),

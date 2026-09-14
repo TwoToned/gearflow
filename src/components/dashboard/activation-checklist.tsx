@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { useActivationMilestones } from "@/hooks/use-activation-milestones";
+import { useActivationMilestones, useActivationMilestoneAnalytics } from "@/hooks/use-activation-milestones";
 import { useActivationDismissal } from "@/hooks/use-activation-dismissal";
 import { MILESTONE_ORDER, milestoneDone, type ActivationMilestonesState, type MilestoneKey } from "@/lib/activation-milestones";
+import { capture, AnalyticsEvent } from "@/lib/analytics";
 import { cn, focusRing } from "@/lib/utils";
 
 interface MilestoneItem {
@@ -80,6 +81,10 @@ export function ActivationChecklist({ orgId }: { orgId: string | undefined }) {
   const state = useActivationMilestones(orgId);
   const { dismissedAt, dismiss } = useActivationDismissal();
   const [dismissing, setDismissing] = useState(false);
+  // D4 (#1108) — keeps observing milestone state (and reporting new
+  // completions) even past the early returns below, since this hook call
+  // itself is unconditional.
+  useActivationMilestoneAnalytics(orgId);
 
   if (state === undefined || dismissedAt === undefined || dismissedAt != null) return null;
 
@@ -106,6 +111,7 @@ export function ActivationChecklist({ orgId }: { orgId: string | undefined }) {
             onClick={async () => {
               setDismissing(true);
               try {
+                capture(AnalyticsEvent.ActivationChecklistDismissed, { milestones_done: doneCount });
                 await dismiss();
               } finally {
                 setDismissing(false);

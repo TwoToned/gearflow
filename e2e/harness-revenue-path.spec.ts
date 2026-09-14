@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { resetHarnessDb } from "./harness-db-reset";
 
 /**
  * Primary revenue path (POLICY.md R-8.8.3 / #621, docs/critical-flows.md flows
@@ -60,14 +61,14 @@ test.describe("harness: primary revenue path", () => {
     await locator.click({ timeout: 5000 });
   }
 
-  // Quarantined (POLICY.md R-8.8.4): #1071 deleted the single-org auto-join
-  // hook, which is what silently gave every OTHER harness spec file's fresh
-  // registrant org membership for free. This file's "complete onboarding if
-  // needed" step now correctly can't create a second org once another
-  // harness spec has already bootstrapped one in the shared harness DB — an
-  // E2E test-isolation gap, not a product bug.
-  // Owner: Jayden (eng). Tracked: #1118. Deadline: 2026-08-15.
-  test("project -> line item -> availability -> check-out -> return @quarantine", async ({ page }) => {
+  // #1118 fix: restore this file's own "fresh Better Auth DB" (every harness
+  // file's docstring already assumes one) rather than sharing whatever state
+  // an earlier file in the same CI job left behind — see harness-db-reset.ts.
+  test.beforeEach(async () => {
+    await resetHarnessDb();
+  });
+
+  test("project -> line item -> availability -> check-out -> return", async ({ page }) => {
     // Playwright's default test timeout is 30s — a budget for the WHOLE test,
     // not per test.step. This flow chains register -> onboard -> model ->
     // asset -> project (4 wizard steps) -> line item + an async availability

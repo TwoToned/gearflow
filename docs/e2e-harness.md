@@ -104,3 +104,62 @@ bootstraps as admin.
 3. This harness also unblocks verifying the deferred refactors (#616 images, #625
    pagination, #618 validation, #645 code-split, #655 templates, #646 axe pages) by
    driving the real authenticated app.
+
+## Per-file DB isolation (#1118, fixed)
+
+Every `harness-*.spec.ts` file's own docstring claims to run against "a fresh
+Better Auth DB" — only true for whichever file happened to run first in a CI
+job, since `scripts/e2e-harness-up.sh` stands up ONE shared Postgres for the
+whole job, not one per file. `#1071` (deleting the single-org auto-join hook)
+turned that shared state into occasional real failures for a second file's
+fresh registrant. Fixed by `e2e/harness-db-reset.ts`'s `resetHarnessDb()` —
+every harness file calls it from a `test.beforeEach` (not `beforeAll`: a file
+with more than one test needs a fresh DB before each one, not just once),
+truncating the org/membership/auth tables. Playwright's harness project runs
+with `workers: 1` in CI (`playwright.config.ts`), so this can never race a
+concurrently-running file. Scoped to Postgres only — Convex's domain data is
+untouched, since `isOrgCreationBootstrap`'s check (the thing this actually
+needs to reset) is pure Postgres, and every Convex read is org-scoped to the
+new org's own cuid regardless of stale rows from a prior file's org.
+
+## D5 (#1109) — E2E for the onboarding/activation funnel
+
+Four specs cover `docs/designs/onboarding-and-activation.md` §9:
+
+1. **Happy path** (`e2e/harness-onboarding-happy-path.spec.ts`) — register →
+   the create-vs-join fork → create an org → all FIVE wizard screens actually
+   filled in (not skipped) → the four D1 (#1105) activation milestones ticked
+   from real rows (model, from step 5's own inline add-by-hand form → asset →
+   project → line item).
+2. **Join path** (`e2e/harness-invite-join.spec.ts`) — an existing org
+   invites a new email, the invitee accepts, and lands directly in the org;
+   `/setup` is never shown to them. There's no copyable invite link in the UI
+   (invitations are delivered by email only) and no seed-data API reachable
+   from Playwright, so the invitation id is read straight out of Postgres
+   after a real invite is sent through Settings > Team
+   (`inviteAndGetInvitationId` in `e2e/harness-helpers.ts`) — the only way an
+   E2E test can reach `/invite/[id]` without a real mailbox.
+3. **Skip-everything path** — extends the existing
+   `e2e/harness-onboarding.spec.ts` (flow #4) with a second test rather than
+   duplicating its register/create-org/skip-all setup: proves the app is
+   fully usable with zero setup (creates a model) and that the "Finish
+   setup" checklist (C6, #1104) reflects exactly what's unset — 2 of 4 items
+   already done (currency/tax seeded at org creation, a default location
+   from the step-4 skip) despite every wizard screen being skipped.
+4. **Org switcher / cross-tenant isolation**
+   (`e2e/harness-org-switch.spec.ts`) — a user in two orgs switches, and the
+   second org's data never shows the first org's entities. Self-serve org
+   creation is capped to the platform's very first org (D7), so getting a
+   genuine SECOND org (real Convex-mirrored data, not a seeded row bypassing
+   the app) needs a site admin to flip `allowOrgCreation` first. No explicit
+   promotion API call needed for that: `src/lib/auth.ts`'s
+   `databaseHooks.user.create.after` already auto-promotes the first-ever
+   Postgres `user` row to `role: "admin"`, and `resetHarnessDb()` truncating
+   that table before this test is exactly what makes this spec's own first
+   user that row.
+
+`e2e/harness-helpers.ts` holds the register/create-org/model/asset/project/
+line-item steps every harness spec was otherwise duplicating verbatim — a
+fifth copy (for D5) was the last straw. The pre-existing specs weren't
+migrated onto it (low-risk, no behavior change either way); new specs should
+prefer it over hand-rolling the same steps again.

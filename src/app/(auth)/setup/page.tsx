@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { WizardRail } from "@/components/ui/wizard-rail";
 import { AuthShell } from "../auth-playful";
 import { toast } from "sonner";
+import { logger } from "@/lib/logger";
 import { Loader2, Check, X } from "lucide-react";
 
 const TOTAL_STEPS = 5;
@@ -125,15 +126,32 @@ export default function SetupPage() {
         await organization.setActive({
           organizationId: result.data!.id,
         });
-        // The org plugin's own create path never mirrors the new owner's
-        // membership into Convex (only src/server/site-admin.ts's admin-driven
-        // path does) — without this, every Convex-authorized action afterward
-        // fails with "not a member of this organization".
-        await mirrorMyMembership(result.data!.id);
-        // Seed the new org's tax rate + currency from the platform's current
-        // defaults (#1077, A7; C1, #1098) — copied once, at creation, and
-        // busts the login-info cache for this slug.
-        await seedOrgDefaults(result.data!.id, slug.trim());
+        // The org (+ membership, now active) already exists in Postgres past
+        // this point, so a transient failure in either of the two calls below
+        // must never surface as a blanket "Something went wrong" — that would
+        // strand the user on a form whose own retry now fails with "slug
+        // already taken" against an org they in fact already own, with no way
+        // back. Both are genuinely best-effort (their own docstrings in
+        // public-org.ts say so): log and move on to the success redirect
+        // regardless. mirrorMyMembership's own mirror write already swallows
+        // failures internally (member-mirror.ts's non-strict runMirror), so
+        // this mainly guards seedOrgDefaults' direct Convex mutation.
+        try {
+          // The org plugin's own create path never mirrors the new owner's
+          // membership into Convex (only src/server/site-admin.ts's
+          // admin-driven path does) — without this, every Convex-authorized
+          // action afterward fails with "not a member of this organization".
+          await mirrorMyMembership(result.data!.id);
+          // Seed the new org's tax rate + currency from the platform's
+          // current defaults (#1077, A7; C1, #1098) — copied once, at
+          // creation, and busts the login-info cache for this slug.
+          await seedOrgDefaults(result.data!.id, slug.trim());
+        } catch (postCreateError) {
+          logger.error("setup: post-creation seed/mirror step failed (best-effort)", {
+            organizationId: result.data!.id,
+            error: postCreateError,
+          });
+        }
         toast.success("Company created!");
         router.push("/dashboard");
       }

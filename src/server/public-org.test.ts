@@ -168,6 +168,13 @@ describe("checkSlugAvailable — UX-only tick, not a new authorization surface (
     expect(organizationFindUnique).not.toHaveBeenCalled();
   });
 
+  it("returns false for an oversized slug without querying (no real slug is this long)", async () => {
+    getSession.mockResolvedValue({ user: { id: "user_1" } });
+
+    expect(await checkSlugAvailable("a".repeat(101))).toBe(false);
+    expect(organizationFindUnique).not.toHaveBeenCalled();
+  });
+
   it("returns true when no org has claimed the (normalized) slug", async () => {
     getSession.mockResolvedValue({ user: { id: "user_1" } });
     organizationFindUnique.mockResolvedValue(null);

@@ -153,7 +153,10 @@ export async function checkSlugAvailable(slug: string): Promise<boolean> {
   const session = await getSession();
   if (!session) return false;
   const normalized = slug.toLowerCase().trim();
-  if (!normalized) return false;
+  // No real Organization.slug is ever this long — reject up front rather than
+  // sending an oversized value into the query (any authenticated caller can
+  // reach this, not just an orgless one, so treat it as a public-ish surface).
+  if (!normalized || normalized.length > 100) return false;
   const existing = await prisma.organization.findUnique({
     where: { slug: normalized },
     select: { id: true },

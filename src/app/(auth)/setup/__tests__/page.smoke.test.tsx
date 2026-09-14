@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   setActive: vi.fn(async () => undefined),
   getOrgCreationPolicy: vi.fn(async () => ({ allowed: true, codeRequired: false })),
   checkSlugAvailable: vi.fn(async () => true),
+  mirrorMyMembership: vi.fn(async () => undefined),
+  seedOrgDefaults: vi.fn(async () => undefined),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -31,8 +33,8 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 vi.mock("@/server/public-org", () => ({
   getMyOrganizations: () => Promise.resolve([]),
-  mirrorMyMembership: () => Promise.resolve(undefined),
-  seedOrgDefaults: () => Promise.resolve(undefined),
+  mirrorMyMembership: mocks.mirrorMyMembership,
+  seedOrgDefaults: mocks.seedOrgDefaults,
   checkSlugAvailable: mocks.checkSlugAvailable,
 }));
 vi.mock("@/server/site-admin", () => ({
@@ -47,6 +49,8 @@ beforeEach(() => {
   mocks.create.mockClear();
   mocks.setActive.mockClear();
   mocks.checkSlugAvailable.mockClear();
+  mocks.mirrorMyMembership.mockReset().mockResolvedValue(undefined);
+  mocks.seedOrgDefaults.mockReset().mockResolvedValue(undefined);
   mocks.getOrgCreationPolicy.mockResolvedValue({ allowed: true, codeRequired: false });
 });
 
@@ -81,5 +85,21 @@ describe("SetupPage (smoke)", () => {
         }),
       ),
     );
+  });
+
+  it("still redirects to /dashboard when the best-effort post-creation seed fails", async () => {
+    // The org + membership already exist and are active by this point
+    // (organization.create() + setActive() both succeeded) — a transient
+    // Convex hiccup in seedOrgDefaults must never strand the user on the
+    // form with a generic error, since a retry would fail with "slug
+    // already taken" against an org they already own.
+    mocks.seedOrgDefaults.mockRejectedValue(new Error("Convex hiccup"));
+    const user = userEvent.setup();
+    render(<SetupPage />);
+
+    await user.type(await screen.findByLabelText("Company name"), "Acme Productions");
+    await user.click(screen.getByRole("button", { name: /create company/i }));
+
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/dashboard"));
   });
 });

@@ -25,6 +25,19 @@ function safeCallbackUrl(raw: string | null): string | null {
   return raw;
 }
 
+/** `?nosso=1` escape hatch: `resolveSSOProviderForEmail` auto-redirects the
+ *  instant an email's domain matches a configured provider, with no way for
+ *  the user to reach the password form from the UI — a dead end whenever SSO
+ *  itself is broken (misconfigured provider, provisioning rejecting the
+ *  account, etc.). This link is deliberately a plain, unstyled text link
+ *  (not a button) so it isn't presented as a normal login option — someone
+ *  has to already know to look for it or be handed the URL. */
+function noSsoHref(callbackUrl: string | null): string {
+  const params = new URLSearchParams({ nosso: "1" });
+  if (callbackUrl) params.set("callbackUrl", callbackUrl);
+  return `/login?${params.toString()}`;
+}
+
 /**
  * Resolve the single SSO provider matching this email's domain, or null if
  * there's no match — or 2+ orgs share the domain, which we can't disambiguate
@@ -81,13 +94,14 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
+  const noSso = searchParams.get("nosso") === "1";
   const { name: platformName } = usePlatformBranding();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [regOpen, setRegOpen] = useState(false);
-  const [step, setStep] = useState<"email" | "password">("email");
+  const [step, setStep] = useState<"email" | "password">(noSso ? "password" : "email");
   const [checkingSSO, setCheckingSSO] = useState(false);
   const [orgName, setOrgName] = useState<string | null>(null);
 
@@ -107,6 +121,11 @@ function LoginForm() {
   const handleEmailContinue = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
+
+    if (noSso) {
+      setStep("password");
+      return;
+    }
 
     setCheckingSSO(true);
     try {
@@ -196,6 +215,16 @@ function LoginForm() {
               Continue
             </Button>
           </form>
+        )}
+
+        {/* Deliberately understated — see noSsoHref's docstring. Not for the
+            normal login path, just an escape hatch when SSO itself is broken. */}
+        {step === "email" && !noSso && (
+          <p className="text-center text-xs text-muted">
+            <Link href={noSsoHref(callbackUrl)} className="hover:text-ink hover:underline">
+              Trouble with SSO? Sign in with a password instead
+            </Link>
+          </p>
         )}
 
         {/* Password step */}

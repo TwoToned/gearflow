@@ -58,4 +58,8 @@ export const orgOperatingDetailsSchema = z.object({
   address: z.string().max(300).optional(),
 });
 
-export type OrgOperatingDetailsValues = z.input<typeof orgOperatingDetailsSchema>;
+// No exported `z.input<...>` type here (unlike orgDocumentSettingsSchema's
+// OrgDocumentSettingsValues, which predates this and is itself already an
+// unused-export ratchet baseline entry) — nothing outside this file needs to
+// name the shape yet, and an exported-but-unimported type is dead code
+// (R-4.2, the knip ratchet). Add one back only when a real consumer needs it.

@@ -34,7 +34,7 @@ import type { ReactNode } from "react";
 import { Text, View } from "@react-pdf/renderer";
 import type { DocumentLineItem, TablePluginConfig, DocumentType } from "@/lib/pdfme/types";
 import { formatCurrency } from "@/lib/pdfme/plugins/helpers";
-import { discountCellText, breakdownLabel, isSubhireIndicatorVisible, getAssetTag } from "@/lib/pdfme/plugins/gearflow-table";
+import { discountCellText, breakdownLabel, isSubhireIndicatorVisible, getAssetTag } from "@/lib/pdfme/line-item-format";
 import { COLORS, FONT_SIZE, CATEGORY_MUTED, BADGE_STYLES, lightenHex, type BadgeStyle } from "../styles";
 import { RichText } from "./rich-text";
 import { Checkbox } from "./checkbox";

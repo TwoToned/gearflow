@@ -24,12 +24,20 @@ describe("ReturnSheetDocument (react-pdf)", () => {
     expect(await pageCount(data)).toBe(1);
   });
 
-  it("paginates a long, varied line-item list (filtered to CHECKED_OUT/RETURNED) across multiple pages with no throw", async () => {
-    const items = makeLongLineItemList(60);
-    const data = makeSpikeData({ line_items: items, total_items: items.length });
-    const pages = await pageCount(data);
-    expect(pages).toBeGreaterThanOrEqual(1);
-  });
+  it(
+    "paginates a long, varied line-item list (filtered to CHECKED_OUT/RETURNED) across multiple pages with no throw",
+    async () => {
+      const items = makeLongLineItemList(60);
+      const data = makeSpikeData({ line_items: items, total_items: items.length });
+      const pages = await pageCount(data);
+      expect(pages).toBeGreaterThanOrEqual(1);
+    },
+    // 15s, not the 5s default — see the identical comment/timeout on
+    // src/lib/react-pdf/regression.test.tsx (PR #1210): rendering 60
+    // multi-page items is CPU-heavy enough to tip over the default budget
+    // under CI runner variance alone, with no code-path change involved.
+    15_000,
+  );
 
   it("renders condition columns (Good/Dmg/Missing) and per-unit checkboxes without throwing", async () => {
     const items = makeLongLineItemList(1);

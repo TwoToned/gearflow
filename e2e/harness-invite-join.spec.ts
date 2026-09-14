@@ -74,7 +74,12 @@ test.describe("harness: invite / join path", () => {
 
       await test.step("accept -> lands in the org's dashboard", async () => {
         await inviteePage.getByRole("button", { name: "Accept Invitation" }).click();
-        await expect(inviteePage.getByText("Invitation Accepted")).toBeVisible({ timeout: 20000 });
+        // A role locator, not getByText: sonner's own toast ("Invitation
+        // accepted!") is a case-insensitive substring match of the heading
+        // text too, and getByText's default matching is case-insensitive.
+        await expect(inviteePage.getByRole("heading", { name: "Invitation Accepted" })).toBeVisible({
+          timeout: 20000,
+        });
         await expect(inviteePage).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
         // The org this member landed in is the one they were invited to, not
         // a bare authenticated shell with no org context.

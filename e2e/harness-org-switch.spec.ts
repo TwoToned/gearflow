@@ -86,7 +86,10 @@ test.describe("harness: org switcher (cross-tenant isolation)", () => {
     await test.step("user A accepts the invite into org 2 -> now a member of both orgs", async () => {
       await page.goto(`/invite/${org2.invitationId}`);
       await page.getByRole("button", { name: "Accept Invitation" }).click();
-      await expect(page.getByText("Invitation Accepted")).toBeVisible({ timeout: 20000 });
+      // A role locator, not getByText: sonner's own toast ("Invitation
+      // accepted!") is a case-insensitive substring match of the heading
+      // text too, and getByText's default matching is case-insensitive.
+      await expect(page.getByRole("heading", { name: "Invitation Accepted" })).toBeVisible({ timeout: 20000 });
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     });
 

@@ -82,7 +82,9 @@ test.describe("harness: onboarding happy path (all five wizard screens, four mil
     await test.step("step 5: your team & your gear -> add the first model, then finish", async () => {
       await page.getByLabel("Model name").fill(modelName);
       await page.getByRole("button", { name: "Add", exact: true }).click();
-      await expect(page.getByText(modelName)).toBeVisible({ timeout: 20000 });
+      // exact: true — a non-exact match also resolves the toast ("<model>
+      // added"), which contains the model name as a substring.
+      await expect(page.getByText(modelName, { exact: true })).toBeVisible({ timeout: 20000 });
       await page.getByRole("button", { name: "Finish setup" }).click();
       await expect(page).toHaveURL(/\/dashboard\b/, { timeout: 20000 });
     });

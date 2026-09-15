@@ -7,6 +7,8 @@ sold product). **Stage:** has users (the company runs on it daily at flow.rvlt.a
 **Binding constraint:** [`DESIGN.md`](../../DESIGN.md). **Governing policy:** [`POLICY.md`](../../POLICY.md).
 **Wireframes:** [`mockups/work-layer-wireframes.html`](./mockups/work-layer-wireframes.html)
 (intentionally rough — hierarchy and interaction shape only; DESIGN.md governs visuals).
+**Review status:** three adversarial cold-read passes (independent reviewer, no session
+context): 16 → 14 → 7 findings, all applied. The one standing concern is recorded in §19.
 **Companion docs:** FEATUREDOCS [50](../../FEATUREDOCS/50-project-tasks.md) (current tasks),
 [55](../../FEATUREDOCS/55-project-collaboration.md) (comments), [63](../../FEATUREDOCS/63-client-contacts.md),
 [31](../../FEATUREDOCS/31-crew-management.md), [17](../../FEATUREDOCS/17-notifications.md),
@@ -47,7 +49,7 @@ That log decides the order of the system-source catalogue (§9) and the quick-ad
 | Area | What's there | What's missing |
 |---|---|---|
 | **Tasks** | One table `projectTasks` (`convex/schema.ts:3107`): TODO / IN_PROGRESS / DONE, LOW / NORMAL / HIGH, due date, assignee = user XOR crew, `checklist: v.any()`, `projectId` **required**. Reads `convex/projectTasks.ts`, writes `convex/projectTasksWrites.ts` (RBAC via `project:update`, rate-limited, audited, 18 backend tests in the two dedicated files plus `review2Bulk`). UI: project **Tasks** tab (`tasks-panel.tsx`, status-grouped list + edit dialog + bulk move/priority/delete), `/my-tasks` (Overdue / Today / This week / Later cards, one-way status cycle), dashboard top-5 block. 17 operations in the API registry. | Subtasks, comments, notifications, reminders, filters, sort, search, saved views, drag-drop (`reorderMany` exists, `requireService`-gated, with **zero production callers**), kanban/calendar/timeline views, labels, estimates, recurrence, watchers, standalone items, templates, a per-task page/deep link, Mira tool, curated MCP tool, global-search indexing, iCal presence, webhook events, readiness effect. `/activity` cannot even label a `ProjectTask` row. |
-| **Project management** | Lifecycle stepper (7 stages over 11 statuses), lock strip + unlock sessions, readiness checklist (5 checks, 4 severities, deep-links to the fixing tab), versions/snapshots on one shared counter, templates, groups/categories with dnd-kit, `projectManagers`, two-window dates, `locations`. Generic `commentThreads`/`comments` substrate (entityType + entityId + optional sub-target, blocking flag, `mentionUserIds`). | Notes are three plain strings. Comments wired on asset/client/supplier only. **@mentions generate no notification.** Two unconnected activity systems (`activityLogs` audit vs `activityEvents` feed). A 7-column project kanban (`project-board.tsx`) is dead code. No milestone/phase concept for work. |
+| **Project management** | Lifecycle stepper (7 stages over 11 statuses), lock strip + unlock sessions, readiness checklist (5 checks, 4 severities, deep-links to the fixing tab), versions/snapshots on one shared counter, templates, groups/categories with dnd-kit, `projectManagers`, two-window dates, `locations`. Generic `commentThreads`/`comments` substrate (entityType + entityId + optional sub-target, blocking flag, `mentionUserIds`). | Notes are three plain strings. Comment threads are mounted on projects, line items, assets, clients and suppliers only. **@mentions generate no notification.** Two unconnected activity systems (`activityLogs` audit vs `activityEvents` feed). A 7-column project kanban (`project-board.tsx`) is dead code. No milestone/phase concept for work. |
 | **Clients** | `clients` (type incl. VENUE, billing, payment profile, Xero link), `clientContacts` (primary, cap 50), `projects.clientContactId`. Client page: hero + 4 stats + Projects / Notes / Files + sidebar. `/finance` board segments Quotes out / Expiring / Never sent / Confirmed uninvoiced / Deposit due / Outstanding. Quote status is derived (`quoteState.ts`). | No pipeline, lead, next-step, follow-up, comms history, or contact-level timeline. No invoices tab on the client. A contact belongs to exactly one client; venues are `locations`, not people. **"Flow doesn't email clients"** by design (`send-quote-dialog.tsx`). |
 | **Time** | `crewAssignments` (PENDING → OFFERED → ACCEPTED/DECLINED → CONFIRMED), `crewShifts`, `crewAvailabilities`, `crewTimeEntries` (DRAFT → SUBMITTED → APPROVED → EXPORTED), `projectServices.crewCountRequired`, `/crew/planner` week grid, `/crew/timesheets`, call sheets, `crewConflicts`, `/overbookings` (incl. *Services missing crew*, *Unconfirmed crew*), crew offer email + `/api/crew/respond/[token]`. | Time entries never link to work or estimates; hours are captured for payroll, never for planning. No confirmation badges, no bulk availability request, no auto-nudge, no OT estimate at booking, no call-time reminder. **Four hand-rolled calendars** (availability page, booking calendar, crew planner, crew detail) with no shared engine. |
 | **Platform** | ⌘K palette with `@entity` scoping, slash commands and date parsing; 21 curated Mira/MCP tools (all gear/warehouse/crew-ops); `savedTableViews`; `tags`; `customFieldDefinitions`; sharded dashboard counters; PWA; Resend email + cron digest; `useKeyboardShortcut` (3 global shortcuts). | **Notifications are derived on read** (`src/server/notifications.ts`, 9 types) — there is no notifications table, so nothing can ever notify about a task, mention, due date or acceptance. No push. No rich-text editor, no list virtualisation, no charting library. |
@@ -345,11 +347,13 @@ Each source has a **dedupe key**, a **create condition**, a **resolve condition*
   responses, comment writes, quote send/accept, invoice issue): immediate, no cron needed.
 - **A scheduled sweep** for the *time-based* conditions only (expiring, unanswered, overdue,
   no-next-step, readiness re-evaluation): a Convex cron every **15 minutes** (the existing
-  cadence), bounded to **active, non-template projects** (status not in COMPLETED / INVOICED /
-  CANCELLED) with a **per-tick cap and a cursor** so one tick never scans the whole org. All
-  Convex crons are **dormant until `ENABLE_CONVEX_CRONS === "true"`** on the deployment
-  (`convex/scheduledJobs.ts`); flipping it on prod is a phase-1 exit criterion. Until then the
-  hook-driven sources work and the time-based ones simply don't fire.
+  cadence), bounded **per source** (see "Per-source bounds" below) with a per-tick cap and a
+  cursor so one tick never scans the whole org. The sweep runs as an **internal function**
+  (crons carry no identity, so it cannot call the public auth-guarded queries) and calls the
+  shared pure helpers those queries wrap. All Convex crons are **dormant until
+  `ENABLE_CONVEX_CRONS === "true"`** on the deployment (`convex/scheduledJobs.ts`); flipping
+  it on prod is a phase-1 exit criterion. Until then the hook-driven sources work and the
+  time-based ones simply don't fire.
 
 **Dedupe and lifecycle rules.** `by_organizationId_sourceKey` is a non-unique index, so the
 rules below are enforced in the writer, not by the index:
@@ -364,15 +368,23 @@ rules below are enforced in the writer, not by the index:
   offered on system items; the ⋯ menu says why.
 - **Cascade:** when the source entity is deleted or archived (project, assignment, quote), its
   open system items are cancelled with reason `source_removed` inside the same mutation.
-- **Readiness bound:** `projectReadiness.forProject` already computes gear / crew / services /
-  pricing per project with bounded range scans, and `reservationConflicts.projectConflicts` is
-  already a per-project read. Phase 1 turns all five checks into sources by calling exactly
-  those two per-project readers from the sweep — never a full-org reader.
+- **Readiness bound:** gear / crew / services / pricing come from the shared helpers behind
+  `projectReadiness.forProject` (`computeProject*Readiness`, `readPricingReadiness` — bounded
+  range scans per project), called from the internal sweep, never through the public query.
+  **Conflicts are the exception:** `reservationConflicts.projectConflicts` loads the whole org
+  graph (`loadOrgGraph()`, five org-wide collects — the registered R-8.3.3 "one-shot reads
+  only" exception), so it must **not** be called per project. The sweep loads that graph
+  **once per tick** and derives every active project's conflict check from the one load; if
+  the perf baseline (`perf-convex-measurement-baseline.md`) shows even one load per 15 min is
+  too heavy on the largest org, conflicts drop to hook-driven only (on line-item and date
+  writes) — a phase-1 measurement, not an assumption.
 - **Per-source bounds:** the sweep is bounded *per source* over that source's own indexed
   candidate set, not per project: `SENT` quotes by `validUntil`, `OFFERED` assignments by
   `offeredAt`, open work by `by_organizationId_status_dueDate` (covers project-less personal
-  items), overdue invoices by due date, maintenance by `nextDueAt`, and active non-template
-  projects for readiness / overbooking. Each set has a per-tick cap and a cursor.
+  items), overdue invoices by due date, maintenance records by
+  `by_organizationId_status_scheduledDate`, and active non-template projects (status not in
+  COMPLETED / INVOICED / CANCELLED) for readiness and overbooking only. Each set has a
+  per-tick cap and a cursor.
 - **Cancelled rows still track the condition:** when a cancelled system item's condition
   clears, the sweep stamps `autoResolvedAt` and leaves `status: "cancelled"`; a later
   recurrence therefore reopens it. Without that stamp "cleared and recurred" is undetectable.
@@ -391,7 +403,7 @@ unassigned item shows in the project Work card only.
 | Overbooking | `overbook:<projectId>:<modelId>` | `overbookingBoard` hard or pencilled overage | resolved | pm | prep | 2 |
 | Overdue return | `return:overdue:<projectId>` | existing derived notification condition | checked in | ops | return | 2 |
 | Sub-hire overdue | `subhire:overdue:<subHireId>` | existing condition | returned | ops | return | 2 |
-| Maintenance due | `maint:due:<assetId>` | existing condition | scheduled/done | ops | — | 2 |
+| Maintenance due | `maint:due:<maintenanceRecordId>` | existing per-record condition (`scheduledDate` past, not completed) | record completed / cancelled | ops | — | 2 |
 | Quote out, no next step | `quote:nonext:<quoteId>` | `SENT ≥ 24h` and no open `follow_up` linked to the client | a next step exists or quote leaves `SENT` | pm | quote | 3 |
 | Invoice overdue | `invoice:overdue:<invoiceId>` | balance past due | paid / voided | pm | close | 3 |
 | Crew unanswered | `crew:unanswered:<assignmentId>` | `OFFERED ≥ 48h` | responded | pm | prep | 4 |
@@ -447,8 +459,8 @@ workItems: defineTable({
   .index("by_organizationId_projectId", ["organizationId", "projectId"])
   .index("by_organizationId_sourceKey", ["organizationId", "sourceKey"])
   .index("by_organizationId_kind_status", ["organizationId", "kind", "status"])   // the sweep's "open system items" read
-  .index("by_assigneeUserId_status", ["assigneeUserId", "status"])
-  .index("by_assigneeCrewId_status", ["assigneeCrewId", "status"])
+  .index("by_organizationId_assigneeUserId_status", ["organizationId", "assigneeUserId", "status"])  // org-prefixed: users are multi-org, no global assignee index (R-8.4.3)
+  .index("by_organizationId_assigneeCrewId_status", ["organizationId", "assigneeCrewId", "status"])
   .index("by_organizationId_status_dueDate", ["organizationId", "status", "dueDate"])
   .index("by_parentId", ["parentId"])
   .searchIndex("search_title", { searchField: "title", filterFields: ["organizationId"] }),
@@ -462,7 +474,8 @@ workItemLinks: defineTable({
   .index("by_workItemId", ["workItemId"])
   .index("by_organizationId_entity", ["organizationId", "entityType", "entityId"]),
 
-workTemplates: defineTable({ id, organizationId, onStatus: enums.ProjectStatus, title, stage, offsetDays, offsetFrom: "start" | "end", assigneeRule: "pm" | "ops" | userId, priority?, sortOrder, isActive })
+workTemplates: defineTable({ id, organizationId, onStatus: enums.ProjectStatus, title, stage, offsetDays, offsetFrom: "trigger" | "start" | "end", assigneeRule: "pm" | "ops" | userId, priority?, sortOrder, isActive })
+  // offsetFrom "trigger" = days after the status transition ("+1d"); "start"/"end" = relative to the project window ("event −5d")
   .index("by_cuid", ["id"]).index("by_organizationId_onStatus", ["organizationId", "onStatus"]),
 ```
 
@@ -599,7 +612,7 @@ Effort is dual-scale: human team / Claude Code.
 | Phase | Ships | Exit criteria | Effort |
 |---|---|---|---|
 | **0 · Spine** | `workItems` + `workItemLinks` + migration (ids preserved); `notifications` table + bell reads it; mention → notification; `work` resource + grant table; registry/OpenAPI/MCP regenerated (reachability floor held); `/activity` labels; timeline read model v1; org-tz day-boundary helper | All 18 dedicated task tests (plus `review2Bulk`) green on the new table; a mention shows in the bell within one subscription tick; xtenant exhaustive sweep passes for every new op | 2 wks / 3 d |
-| **1 · Today** | `/today` (buckets, Triage, peek with subtasks + comments, keyboard verbs, quick-add grammar v1, agenda column v1 = shifts + services + blocks); phase-1 sources from §9 (readiness ×5 via the two per-project readers, mention, crew declined, quote expiring); the 15-min sweep; `workTemplates` v1 (adds `templateId`) seeded on `CONFIRMED`; `/my-tasks` redirects | `ENABLE_CONVEX_CRONS` on in prod; PMs open Today daily (PostHog); zero mentions lost; templates seed idempotently; one sweep tick stays under every per-source cap on the largest org | 3 wks / 4 d |
+| **1 · Today** | `/today` (buckets, Triage, peek with subtasks + comments, keyboard verbs, quick-add grammar v1, agenda column v1 = shifts + services + blocks); phase-1 sources from §9 (readiness ×5 via the shared helpers from an internal sweep, conflicts from one org-graph load per tick, mention, crew declined, quote expiring); `workTemplates` v1 (adds `templateId`) seeded on `CONFIRMED`; `/my-tasks` redirects | `ENABLE_CONVEX_CRONS` on in prod; PMs open Today daily (PostHog); zero mentions lost; templates seed idempotently; one sweep tick measured under every per-source cap **and** the single conflicts graph load measured against the perf baseline on the largest org | 3 wks / 4 d |
 | **2 · Project** | Work tab (list/board/calendar, filters, `reorderNative` DnD), Overview Work card **replacing** the readiness panel (no coexistence), phase-2 sources (overbooking, overdue return, sub-hire overdue, maintenance due) + the `ops` assignee setting, timeline row view, recurrence + watchers (fields and `every mon` grammar added now), board revived at `/projects?view=board` with drag-to-advance | Readiness panel deleted with no lost check; board drop honours locks | 3 wks / 4 d |
 | **3 · Client** | Client + contact timeline (writers consolidated), Log call/email/note, Next step + rotting, phase-3 sources (`quote:nonext`, invoice overdue), Pipeline view, Work-by-client | Every SENT quote has a dated next step within 24h (target 95%) | 3 wks / 4 d |
 | **4 · Crew time** | Planner badges + offer age, `crew:unanswered` source + 24h nudge, bulk availability requests, `crewTimeEntries.workItemId` + planned vs actual (derived), call-time reminder emails | Median decline → re-offer < 4 business hours; planner shows a confirmation state on 100% of shifts | 3 wks / 4 d |
@@ -614,11 +627,12 @@ agenda engine. If 2.1 starts first, phase 4 rebases onto it.
 
 1. Privacy default for unlinked personal items — private to assignee + admins (proposed) or
    org-visible?
-2. Rotting thresholds (7 / 14 days) and unanswered-offer threshold (48h) — org settings with
-   these defaults, or fixed?
+2. Should Triage show only items assigned to me, or also *unassigned* items on projects I
+   manage? (Proposed: assigned-to-me only; unassigned stays on the project Work card.)
 3. Should the project Work card show system items assigned to *other* people, or only mine
    plus unassigned? (Proposed: everyone's, grouped by stage — it is the job's list, not mine.)
-4. Recurrence scope for v1 — templates only, or user-defined recurring items too?
+4. Recurring items (phase 2): personal-only, or also org-shared rosters (e.g. a weekly
+   "chase balances" owned by whoever holds the `ops` role)?
 5. Large-org lists: no virtualisation library exists; cap + server pagination (proposed) or add
    `@tanstack/react-virtual`?
 6. Does `work:*` need a separate `work:manage` for editing others' private items?
@@ -680,3 +694,13 @@ Two things, before phase 1 is designed in detail:
   "personal first". Ambition, with a real seam to the crew overhaul to keep it honest.
 - You kept *"Flow doesn't email clients"* when a portal was on the table. That's a deliberate
   boundary, and it makes the CRM smaller and truer.
+
+## 19. Reviewer concerns (standing)
+
+- **Sweep read cost is a measurement, not a design fact.** The third review pass established
+  that the conflicts check depends on a whole-org graph load. §9 now limits it to one load per
+  tick with a fallback to hook-driven only, but whether even that is affordable on the largest
+  org is unknown until phase 1 measures it against
+  [`perf-convex-measurement-baseline.md`](./perf-convex-measurement-baseline.md). Treat it as
+  a phase-1 gate, and do not let readiness sources slip into calling public queries from the
+  cron.

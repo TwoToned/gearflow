@@ -11,6 +11,18 @@ model with a second tier input — a sent quote can lock pricing on an
 otherwise-OPEN project — and closes every previously-deferred gate site. See
 "The quote-send lock is a second INPUT, not a second lock" below.
 
+**#1160** adds a second WRITER of `projects.status` alongside
+`projectWrites.updateStatusNative`: the status automation
+(`convex/lib/projectAutoStatus.ts`, FEATUREDOCS/76) advances a job as a side
+effect of sending a quote, prepping, deploying or returning. It patches the
+project directly — the same authority argument the returns station shipped with
+(a `warehouse` role has `check_in`/`check_out` but only `project:read`) — and
+reproduces everything around the patch that matters here: `bumpProjectCounters`,
+`autoCommitOpenSession` (so an unlock session still never silently spans a status
+change) and the lock-tier-annotated audit row. It can never automate a move INTO
+`CONFIRMED`/`COMPLETED`/`INVOICED`, so no automatic move ever crosses into a
+snapshotting or `HARD_LOCKED` tier.
+
 ## Lock-tier model (single source of truth)
 
 `convex/lib/projectLocks.ts` exports `lockTierForStatus()` — the ONE place the

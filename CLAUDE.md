@@ -462,6 +462,32 @@ on one document — which is also why `buildFinanceLines` needs no counterpart
 (the group still bills as one line). Kit parents are excluded, and expand
 (warehouse) mode ignores the flag entirely — packers need the full list.
 
+### Project status advances itself — add a TRIGGER, never a second patch site
+`convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
+effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item
+packed → `PREPPING`, last packed item off the dock → `CHECKED_OUT`, last item back
+→ `RETURNED`. The returns station's old private `maybeAutoAdvanceProject` is gone —
+it calls in here. Three rules when you touch this:
+
+1. **Never hand-roll another "patch `projects.status` as a side effect".** Add a
+   row to `AUTO_STATUS_RULES` and call `maybeAutoAdvanceProjectStatus` ONCE at the
+   end of the mutation that did the real work — never inside a per-item loop, and
+   never before the writes it inspects have landed.
+2. **Never automate a move INTO `CONFIRMED`/`COMPLETED`/`INVOICED`.** Those snapshot
+   the project, hard-lock it, or commit stock and money (`updateStatusNative` gates
+   each one). Accepting a quote still only *offers* `CONFIRMED`. A table-level test
+   fails the build if a rule targets them.
+3. **A new switch key goes on BOTH sides.** The rule table's `settingKey` lives in
+   `convex/lib/projectAutoStatus.ts`; `AUTO_STATUS_KEYS` + labels + toast copy live
+   in `src/lib/project-status-automation.ts` (convex can't import from `src/`).
+   `convex/projectAutoStatus.test.ts` asserts parity — absent = ON, so the stored
+   blob only ever records an opt-OUT.
+
+"Everything deployed" is `prepStatus === "PACKED"` and not yet out — NOT "every
+`EQUIPMENT` line is `CHECKED_OUT`". Services, labour, sale and direct-to-site
+sub-hire lines sit at `CONFIRMED` forever and would pin a job at `PREPPING`; only
+physically picked gear is ever `PACKED`.
+
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
 (`validUntil < now && status === "SENT"`) and never stored, and the deprecated

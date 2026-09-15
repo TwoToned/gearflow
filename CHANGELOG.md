@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Jobs now move themselves through the lifecycle as the work happens.** Send a
+  quote and the job goes to Quoted; pack the first item and it goes to Prepping;
+  once nothing is left packed on the dock it goes to Deployed; when the last
+  outstanding item is checked back in it goes to Returned. Status stops being a
+  field someone has to remember to change, so the board reflects reality instead
+  of the last person who thought about it. Moves are forward-only and never
+  automatic into Confirmed, Completed or Invoiced — those commit stock, money or
+  a lock, so they stay a deliberate click. Every automatic move is announced
+  where you are (a line in the send dialog, a toast in the warehouse) and
+  recorded in the job's activity log, and each of the four rules can be switched
+  off per organization under Settings → General → Status automation.
+
+### Fixed
+
+- **Checking gear in from the project page now closes the job out too.** Only
+  the org-wide returns station advanced a project to Returned, so the same
+  physical act — the last case coming back — closed the job or didn't, depending
+  purely on which screen the operator happened to use.
+
 ## [0.27.2] - 2026-09-15
 
 ### Fixed

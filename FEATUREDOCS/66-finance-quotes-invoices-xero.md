@@ -2,6 +2,14 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-31 (review quarterly — POLICY.md R-5.5)_
 
+> **#1160** — sending a quote now also advances the project to `QUOTED` by
+> itself (org-configurable, on by default). `sendNative` returns
+> `autoStatusChange` when it acted and the pre-#1160 `offerStatusChange` only
+> when the org opted out, so the two are never both set. Accept/decline are
+> unchanged: `CONFIRMED`/`CANCELLED` stay offers. See
+> [76 — Project Status Automation](./76-project-status-automation.md).
+
+
 WS1 of #934 (#940) — the finance model. **RVLT Flow owns quote + invoice
 generation; Xero owns the ledger, payment collection, and reconciliation.**
 This reverses the earlier "no Flow-side finance" stance recorded in

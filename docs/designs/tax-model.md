@@ -1,4 +1,4 @@
-<!-- STATUS: DRAFT 2026-09-15 — design decisions for T3 (#1091) to implement against. -->
+<!-- STATUS: IMPLEMENTED 2026-09-15 — see FEATUREDOCS/75-tax-model.md for what T3 (#1091) shipped. -->
 # RVLT Flow — Tax Model (exemptions, per-line rates, and scope)
 
 **Created:** 2026-09-15

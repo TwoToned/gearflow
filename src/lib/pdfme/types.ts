@@ -274,6 +274,17 @@ export interface DocumentData {
   discount_amount: number;
   tax_label: string;
   tax_amount: number;
+  // T3 (#1091, docs/designs/tax-model.md §2/§5) — tax_status disambiguates WHY
+  // tax_amount is zero: "EXEMPT" (the client's flag applied — never a bare
+  // "$0.00", which reads as a determination), "UNSET" (nothing was ever
+  // configured anywhere in the cascade — same reasoning), or "COMPUTED" (a
+  // real resolved rate, including a deliberate 0% line). tax_breakdown is one
+  // entry per DISTINCT non-zero-taxable-base rate present (Article
+  // 226-shaped, not EU-specific) — a single-rate project has exactly one
+  // entry and renders identically to the pre-T3 single tax_amount row.
+  tax_status: "EXEMPT" | "UNSET" | "COMPUTED";
+  tax_breakdown: { rate: number; amount: number }[];
+  tax_exempt_reason: string;
   total: number;
   deposit_paid: number;
   balance_due: number;

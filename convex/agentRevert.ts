@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { isAgentAuthored } from "./activityLog";
 import { undeployItemsCore, unreturnItemsCore, undeployKitFull, unreturnKitFull } from "./warehouseOps";
+import { revertAutoAdvance } from "./lib/projectAutoStatus";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -124,6 +125,17 @@ async function attemptReverse(
       return { reverseOperation: "warehouseWrites.unreturnItems" };
     }
     return { skipReason: `No reverse rule for asset action "${row.action}".` };
+  }
+
+  // #1160 — a deploy/return that also tripped the status automation logged a
+  // second, derived row. Reverse it too, or the window's revert leaves a job at
+  // Deployed with nothing deployed. Only the AUTOMATIC move is undone here.
+  if (row.entityType === "project" && row.action === "STATUS_CHANGE") {
+    const res = await revertAutoAdvance(ctx, {
+      orgId: orgId, projectId: row.projectId, metadata: (row as { metadata?: unknown }).metadata, now,
+    });
+    if ("skipReason" in res) return res;
+    return { reverseOperation: "projectWrites.updateStatus" };
   }
 
   return { skipReason: `No reverse rule for entityType "${row.entityType}".` };

@@ -585,10 +585,14 @@ versioned table by project has to become a read by version. Counted on 2026-09-1
 
 | Table | `by_projectId` reads | `by_projectId_*` composite reads | Other index reads the ratchet must cover |
 |---|---|---|---|
-| `projectLineItems` | ~30 | ~24 (`_status`, `_sortOrder`) | `by_modelId`, `by_assetId`, `by_kitId`, `by_bulkAssetId`, `by_categoryId`, `by_groupId`, `by_parentLineItemId`, `by_organizationId*` |
-| `projectServices` | ~14 | 3 | `by_lineItemId`, `by_crewRoleId`, `by_organizationId*` |
-| `projectGroups` | ~12 | 10 | `by_categoryId`, `by_organizationId` |
-| `projectCategories` | ~6 | 6 | `by_organizationId` |
+*(Counts below are the **measured** ones from D45 — a static classification of every
+`query("<table>")` → next `withIndex(...)` across non-test `convex/` + `src/`. They replace the
+earlier estimates, which were roughly half the real figure.)*
+
+| `projectLineItems` | 42 | 7 (4 `_status`, 3 `_sortOrder`) | `by_modelId`, `by_assetId`, `by_kitId`, `by_bulkAssetId`, `by_categoryId`, `by_groupId`, `by_parentLineItemId`, `by_organizationId*` |
+| `projectServices` | 16 | 0 | `by_lineItemId`, `by_crewRoleId`, `by_organizationId*` |
+| `projectGroups` | 17 | 0 | `by_categoryId`, `by_organizationId` |
+| `projectCategories` | 10 | 0 | `by_organizationId` |
 | `categorySlots` | 0 (no such index) | — | `by_projectCategoryId`, `by_projectGroupId`, `by_lineItemId`, `by_subHireGroupId` |
 
 The cross-project index reads in `availabilityCore.ts`, `overbooking.ts`,
@@ -789,7 +793,7 @@ Planned as a forward migration with a rehearsal against a prod export:
 |---|---|---|---|---|
 | **0** | **Spike** | Rename `by_projectId*` → `by_versionId*` on `projectLineItems` in a scratch branch; classify every site (live-job vs version-specific vs cross-project); prove `duplicateNative` scoped to a version and a `lineItemMergeMaps`-style re-point of units/check records on a fixture | S | — |
 | **1** | **Model + live backfill** | `projectVersions`, optional `versionId`/`lineageId`/`liveVersionId`, `copyPlanGraph` extracted from `duplicateNative`, backfill of the LIVE version only (§6 step 1), coalescing helpers, invariants 1–2 + tests. Ships alone: live tables unchanged in meaning. | M | 0 |
-| **2** | **Reads and writes by version** | The sweep (§4.9): index rename incl. composites, every tab's data hook and every `*Native` mutation take `versionId`, `liveRows` helper, `assertVersionWritable` threaded through every mutation, version-aware recalc (D21), the viewed-version availability path (§4.7), ratchet, exhaustive live-only test; then §6 step 2 materialisation, which is the first moment non-live rows exist. | L | 1 |
+| **2** | **Reads and writes by version** | The sweep (§4.9): index rename incl. composites (92 measured sites / 37 files, D45), every tab's data hook and every `*Native` mutation take `versionId`, `liveRows` helper, money-write guard threaded through, **the `recalc.ts` pure/persist split (D59) — the most correctness-sensitive item in the program**, the viewed-version availability path (§4.7), ratchet, exhaustive live-only test; then §6 step 2 materialisation, which is the first moment non-live rows exist. | L | 1 |
 | **3** | **Make live + version verbs** | `makeLiveNative` with lineage re-pointing, plan-field/totals swap, conflicts and the size budget; `createNative`/`setLabelNative`/`deleteNative`; accept = make live (D20; exercised on the live version only until Phase 6 lets send target a non-live one); delete the promote/restore/auto-capture machinery | M | 2 |
 | **4** | **Lock simplification** (D37–D41) | Add `projects.pricingLocked` + set/clear mutations + strip toggle; delete `projectUnlockSessions` (table, writes, read, banner, dialog), the four-tier machinery (`LockTier`, `LOCK_TIER_RANK`, `resolveLockTier`, `bypassQuoteLock`), all per-edit justification (`requireJustification`, `use-justified-mutation.ts`, 32 structural gate sites) and the hard-lock override audience; replace 44 `assertLifecycleGuard` calls with ~8 `assertPricingUnlocked`; stamp `metadata.afterLock` on activity rows; `protected`/`correctQuoteNative`/`unacceptNative`/recall-to-edit removed; CANCELLED needs no special case any more (closes I-11, I-12, I-13, I-14, I-15). **Net deletion** — smaller than the original Phase 4. | S–M | 2 |
 | **5** | **UI** | Version menu, Versions panel, `VersionStrip`, Make-live dialog, Compare, Finance tab documents rail, composed-object wiring (D32), delete the projected read-only surfaces | L | 2, 3, 4 |
@@ -823,6 +827,9 @@ whole program ≈ XL at human-team scale.
 - **Live-only exhaustive sweep** — registry-driven (§4.9 item 3). This is the test that makes
   the model safe; it ships with Phase 2, not after.
 - **Cross-tenant** — every new read/mutation IDOR-tested (R-8.4.3); `by_versionId` is global.
+- **Totals** — the D59 differential test: for every fixture, `computeTotals` on the live version
+  equals the stored `projects.*` that `recalcProjectTotals` wrote. This is what stops a non-live
+  version's displayed total from differing from what you get when you make it live.
 - **Lock** — D54–D57 as four explicit cases (make-live leaves the flag alone; send/recall on a
   non-live version leave it alone; a status revert leaves it set), plus the three-row §4.5 table
   as a truth-table test (the shrunken successor to today's
@@ -922,6 +929,7 @@ before being accepted.
 | **D56** | **`recallNative` clears the lock only when recalling the live version's quote.** The mirror of D55 — recalling a dead option would otherwise unlock the live job. |
 | **D57** | **A status revert does not clear the lock.** `CONFIRMED → QUOTING` leaves it set; status raises the flag, only a person lowers it. A flag that silently un-set itself on a status change would be derived again in all but name — the I-11 defect §4.5 exists to remove. |
 | **D58** | **`unlockPricingNative` is `danger: "high"`** — CLAUDE.md lists lock-softening explicitly under `high`, so the dispatcher's confirmation gate requires `confirm: true` and Mira must stop and ask a human to click Confirm (she is never given a `confirm` parameter). The `agentOps` annotation is required or `pnpm run api:registry` fails the build. Re-locking is `danger: "low"`. |
+| **D59** | **`recalcProjectTotals` must be split into a pure half and a persist half before D34 is buildable** — flagged 2026-09-15 during a confidence pass, previously assumed rather than specified. Today it is a single 240-line `MutationCtx` function (`convex/lib/recalc.ts:206`, one of only two exports in the file) that reads, computes and `ctx.db.patch(project._id, …)` inline. D34 says a non-live version's totals are computed **on read**, which is a `QueryCtx` path that cannot call it. The split is `loadTotalsBundle(ctx, …)` (ctx-taking, `QueryCtx | MutationCtx`) + `computeTotals(bundle)` (pure) + `recalcProjectTotals` keeping the patch, exactly the shape `convex/lib/availabilityCore.ts` already proves with `loadModelAvailabilityBundle` + `computeModelAvailability`. **The arithmetic must have ONE definition** (R-3.1): a second copy for the read path would let a non-live version's displayed total differ from what you get the moment you make it live — the highest-consequence silent divergence in the program, since it is the number on the quote. `recalcVersionTotals` (D26) becomes a thin caller of the pure half, and compare's money bridge (D48) sums the same computation, which is what makes `sum(segments) == Δtotal` provable rather than coincidental. Sizing: this lands in Phase 2 (it is what "version-aware recalc" actually costs) and is the single most correctness-sensitive refactor in the program — group bundle pricing, category rollup, tax breakdown and crew/sub-hire cost folding all live inside it. Its test is a differential one: for every fixture, `computeTotals` on the live version equals the stored `projects.*` that `recalcProjectTotals` wrote. |
 
 **Also accepted from that review, folded into §4 rather than listed as decisions:** the sub-hire
 join runs from the versioned line (`projectLineItems.subHireId`) to the live order, not from

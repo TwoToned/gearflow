@@ -3,6 +3,8 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { listProjectVersions } from "./lib/projectVersionState";
+import { versionRows } from "./lib/versionScope";
 
 /**
  * D1 (#1105) — the four "Get started" activation milestones. Every field is
@@ -39,10 +41,16 @@ async function firstNonTemplateProject(ctx: QueryCtx, orgId: string) {
   return null;
 }
 
-async function hasLineItemReferencingModel(ctx: QueryCtx, projectId: string): Promise<boolean> {
-  const lineItems = ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId));
-  for await (const lineItem of lineItems) {
-    if (lineItem.modelId != null) return true;
+// VERSION-SCOPE: all-versions — a "has this org ever added equipment
+// referencing a model" activation check should count a model reference in
+// ANY version of the project, not just whatever is live right now (#1228
+// Phase 0 spike classification, ported as-is). Org-checked via
+// listProjectVersions (by_projectId_number is global).
+async function hasLineItemReferencingModel(ctx: QueryCtx, orgId: string, projectId: string): Promise<boolean> {
+  const versions = await listProjectVersions(ctx, orgId, projectId);
+  for (const version of versions) {
+    const lineItems = await versionRows(ctx, "projectLineItems", version.id);
+    if (lineItems.some((li) => li.modelId != null)) return true;
   }
   return false;
 }
@@ -84,7 +92,7 @@ export const state = query({
 
     const [hasAssetOnFirstModel, hasModelLineItemOnFirstProject] = await Promise.all([
       hasAssetForModel(ctx, firstModel?.id ?? MISSING_ID),
-      hasLineItemReferencingModel(ctx, firstProject?.id ?? MISSING_ID),
+      hasLineItemReferencingModel(ctx, orgId, firstProject?.id ?? MISSING_ID),
     ]);
 
     return buildMilestoneState(firstModel, hasAssetOnFirstModel, firstProject, hasModelLineItemOnFirstProject);

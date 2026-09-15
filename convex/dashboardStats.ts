@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { requireLiveVersionId } from "./lib/versionScope";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -97,15 +98,20 @@ export const bundle = query({
       )
       .map((p) => p.id);
 
+    // LIVE-ONLY (#1228): CHECKED_OUT status only ever applies to the live plan.
     let overdueReturns = 0;
     if (overdueProjectIds.length > 0) {
+      const overdueProjectById = new Map(overdueProjects.map((p) => [p.id, p]));
       const perProject = await Promise.all(
-        overdueProjectIds.map((pid) =>
-          ctx.db
+        overdueProjectIds.map(async (pid) => {
+          const project = overdueProjectById.get(pid);
+          if (!project) return [];
+          const versionId = requireLiveVersionId(project);
+          return ctx.db
             .query("projectLineItems")
-            .withIndex("by_projectId_status", (q) => q.eq("projectId", pid).eq("status", "CHECKED_OUT"))
-            .collect(),
-        ),
+            .withIndex("by_versionId_status", (q) => q.eq("versionId", versionId).eq("status", "CHECKED_OUT"))
+            .collect();
+        }),
       );
       overdueReturns = perProject.reduce((sum, rows) => sum + rows.length, 0);
     }

@@ -47,6 +47,8 @@ import { setAssetsStatus } from "./warehouseOps";
 import { removeLineItemCascadeCore } from "./projectLineItems";
 import { deleteCrewAssignmentCascadeCore } from "./crewAssignments";
 import { deleteAllForProjectCore } from "./projectCategories";
+import { liveRows, versionRows } from "./lib/versionScope";
+import { listProjectVersions, createLiveVersionForProject } from "./lib/projectVersionState";
 
 /**
  * Native PROJECT write mutations (Phase 5) — the MONEY-FREE project writes only:
@@ -801,7 +803,18 @@ export const createNative = mutation({
       (insertFields as Record<string, unknown>).liveRevision = 1;
     }
 
-    await ctx.db.insert("projects", insertFields);
+    const newProjectDocId = await ctx.db.insert("projects", insertFields);
+    // #1228 — bootstrap version 1 + liveVersionId so this project's plan
+    // rows are visible to every by_versionId-family read from the moment it
+    // exists (see createLiveVersionForProject's own comment for why this is
+    // mandatory, not optional, on every project-creating write path).
+    await createLiveVersionForProject(ctx, {
+      orgId: fields.organizationId,
+      projectId: fields.id,
+      projectDocId: newProjectDocId,
+      now,
+      createdById: actor.userId,
+    });
     await bumpProjectCounters(ctx, fields.organizationId, null, insertFields);
 
     await writeActivityLog(ctx, {
@@ -902,11 +915,13 @@ export const deleteNative = mutation({
     }
 
     // ── Step 0: scan the project's line items (org-filtered) → collect the assets
-    // and kits to free. by_projectId is a project-scoped index; the org re-check is
-    // defensive (a project's lines always share its org).
+    // and kits to free.
+    // VERSION-SCOPE: all-versions — deleting the whole project entity must
+    // cascade EVERY version's rows, not just the live one (#1228).
+    const deleteVersions = await listProjectVersions(ctx, orgId, id);
     const lineItems = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((li) => li.organizationId === orgId);
+      await Promise.all(deleteVersions.map((v) => versionRows(ctx, "projectLineItems", v.id)))
+    ).flat().filter((li) => li.organizationId === orgId);
 
     const checkedOutAssetIds: string[] = [];
     const checkedOutKitIds: string[] = [];
@@ -961,9 +976,10 @@ export const deleteNative = mutation({
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);
     for (const r of tasks) await ctx.db.delete(r._id);
+    // VERSION-SCOPE: all-versions — see the line-items note above.
     const services = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((r) => r.organizationId === orgId);
+      await Promise.all(deleteVersions.map((v) => versionRows(ctx, "projectServices", v.id)))
+    ).flat().filter((r) => r.organizationId === orgId);
     for (const r of services) await ctx.db.delete(r._id);
 
     // Step 7 — grouping (categories / groups / slots).
@@ -1047,7 +1063,7 @@ export const deleteTemplateNative = mutation({
       throw new ConvexError({ code: "NOT_A_TEMPLATE", message: "That ID points at a project, not a template." });
     }
 
-    // Project managers / tasks / services (org-filtered inline deletes).
+    // Project managers / tasks (org-filtered inline deletes).
     const pms = (
       await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);
@@ -1056,18 +1072,21 @@ export const deleteTemplateNative = mutation({
       await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
     ).filter((r) => r.organizationId === orgId);
     for (const r of tasks) await ctx.db.delete(r._id);
+    // VERSION-SCOPE: all-versions — deleting the whole template entity must
+    // cascade EVERY version's rows, not just the live one (#1228).
+    const templateDeleteVersions = await listProjectVersions(ctx, orgId, id);
     const services = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((r) => r.organizationId === orgId);
+      await Promise.all(templateDeleteVersions.map((v) => versionRows(ctx, "projectServices", v.id)))
+    ).flat().filter((r) => r.organizationId === orgId);
     for (const r of services) await ctx.db.delete(r._id);
 
     // Grouping (categories / groups / slots).
     await deleteAllForProjectCore(ctx, id);
 
-    // Template line items (top-level cascade → children + units).
+    // Template line items (top-level cascade → children + units). VERSION-SCOPE: all-versions.
     const lineItems = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", id)).collect()
-    ).filter((li) => li.organizationId === orgId);
+      await Promise.all(templateDeleteVersions.map((v) => versionRows(ctx, "projectLineItems", v.id)))
+    ).flat().filter((li) => li.organizationId === orgId);
     for (const li of lineItems) {
       if (li.parentLineItemId == null) await removeLineItemCascadeCore(ctx, li.id);
     }
@@ -1192,7 +1211,7 @@ export const duplicateNative = mutation({
     if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A project with code "${newProjectNumber}" already exists.` });
 
     // 1. New project row (children below reference its id).
-    await ctx.db.insert("projects", {
+    const newProjectDocId = await ctx.db.insert("projects", {
       id: newId,
       organizationId: orgId,
       projectNumber: newProjectNumber,
@@ -1203,11 +1222,16 @@ export const duplicateNative = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // #1228 — bootstrap version 1 + liveVersionId (see createNative's identical
+    // note). Every row inserted below is stamped with THIS new version's id and
+    // a FRESH lineageId (a duplicate starts its own lineage — it does not
+    // inherit the source's).
+    const newVersionId = await createLiveVersionForProject(ctx, {
+      orgId, projectId: newId, projectDocId: newProjectDocId, now, createdById: actor.userId,
+    });
 
-    // 2. Categories (sorted) → catIdMap.
-    const sourceCategories = (
-      await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    )
+    // 2. Categories (sorted) → catIdMap. LIVE-ONLY read of the source (#1228).
+    const sourceCategories = (await liveRows(ctx, source, "projectCategories"))
       .filter((c) => c.organizationId === orgId)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     const catIdMap = new Map<string, string>();
@@ -1218,6 +1242,8 @@ export const duplicateNative = mutation({
         id: nid,
         organizationId: orgId,
         projectId: newId,
+        versionId: newVersionId,
+        lineageId: nid,
         name: cat.name,
         sortOrder: cat.sortOrder ?? 0,
         createdAt: now,
@@ -1225,10 +1251,8 @@ export const duplicateNative = mutation({
       });
     }
 
-    // 3. Groups → groupIdMap (categoryId remapped).
-    const sourceGroups = (
-      await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    ).filter((g) => g.organizationId === orgId);
+    // 3. Groups → groupIdMap (categoryId remapped). LIVE-ONLY read (#1228).
+    const sourceGroups = (await liveRows(ctx, source, "projectGroups")).filter((g) => g.organizationId === orgId);
     const groupIdMap = new Map<string, string>();
     const groupById = new Map<string, (typeof sourceGroups)[number]>();
     for (const g of sourceGroups) groupById.set(g.id, g);
@@ -1239,6 +1263,8 @@ export const duplicateNative = mutation({
         id: nid,
         organizationId: orgId,
         projectId: newId,
+        versionId: newVersionId,
+        lineageId: nid,
         ...(group.categoryId ? { categoryId: catIdMap.get(group.categoryId) } : {}),
         title: group.title,
         ...(group.description != null ? { description: group.description } : {}),
@@ -1254,9 +1280,10 @@ export const duplicateNative = mutation({
     // 4. Line items — parents then their children. A parent's remapped
     //    category/group is inherited by its children (parity with the server's
     //    copyLineItem, which passes newCategoryId/newGroupId down to children).
-    const allLines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    ).filter((li) => li.organizationId === orgId) as unknown as SrcLine[];
+    // LIVE-ONLY read of the source (#1228).
+    const allLines = (await liveRows(ctx, source, "projectLineItems")).filter(
+      (li) => li.organizationId === orgId,
+    ) as unknown as SrcLine[];
     const childrenByParent = new Map<string, SrcLine[]>();
     for (const li of allLines) {
       if (li.isKitChild && li.parentLineItemId) {
@@ -1286,6 +1313,8 @@ export const duplicateNative = mutation({
         id: newParentId,
         organizationId: orgId,
         projectId: newId,
+        versionId: newVersionId,
+        lineageId: newParentId,
         ...(newCatId ? { categoryId: newCatId } : {}),
         ...(newGroupId ? { groupId: newGroupId } : {}),
         ...(li.type ? { type: li.type } : {}),
@@ -1313,10 +1342,13 @@ export const duplicateNative = mutation({
       } as Record<string, unknown> as never);
 
       for (const child of childrenByParent.get(li.id) ?? []) {
+        const newChildId = createId();
         await ctx.db.insert("projectLineItems", {
-          id: createId(),
+          id: newChildId,
           organizationId: orgId,
           projectId: newId,
+          versionId: newVersionId,
+          lineageId: newChildId,
           ...(newCatId ? { categoryId: newCatId } : {}),
           ...(newGroupId ? { groupId: newGroupId } : {}),
           ...(child.type ? { type: child.type } : {}),
@@ -1407,7 +1439,7 @@ export const saveAsTemplateNative = mutation({
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "create");
-    await resolveActor(ctx, suppliedActor);
+    const templateActor = await resolveActor(ctx, suppliedActor);
 
     // templateNumber/templateName — same "never Zod-parsed client-side" gap as
     // duplicateNative (see its comment); the ONLY bound check either ever gets (R-8.6.2).
@@ -1431,7 +1463,7 @@ export const saveAsTemplateNative = mutation({
 
     // 1. Template project row. Parity: saveAsTemplate copies FEWER scalars than
     //    duplicate — no taxRate, no billingWeeksOverride/DaysOverride.
-    await ctx.db.insert("projects", {
+    const newTemplateDocId = await ctx.db.insert("projects", {
       id: newId,
       organizationId: orgId,
       projectNumber: templateNumber,
@@ -1453,11 +1485,17 @@ export const saveAsTemplateNative = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // #1228 — bootstrap version 1 + liveVersionId (see createNative's note);
+    // every copied line below carries this new version's id + a fresh lineageId.
+    const newTemplateVersionId = await createLiveVersionForProject(ctx, {
+      orgId, projectId: newId, projectDocId: newTemplateDocId, now, createdById: templateActor.userId,
+    });
 
     // 2. Line items — parents then children. ★ categoryId/groupId OMITTED (parity).
-    const allLines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
-    ).filter((li) => li.organizationId === orgId) as unknown as SrcLine[];
+    // LIVE-ONLY read of the source (#1228).
+    const allLines = (await liveRows(ctx, source, "projectLineItems")).filter(
+      (li) => li.organizationId === orgId,
+    ) as unknown as SrcLine[];
     const childrenByParent = new Map<string, SrcLine[]>();
     for (const li of allLines) {
       if (li.isKitChild && li.parentLineItemId) {
@@ -1476,6 +1514,8 @@ export const saveAsTemplateNative = mutation({
         id: newParentId,
         organizationId: orgId,
         projectId: newId,
+        versionId: newTemplateVersionId,
+        lineageId: newParentId,
         ...(li.type ? { type: li.type } : {}),
         ...(li.modelId ? { modelId: li.modelId } : {}),
         ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
@@ -1501,10 +1541,13 @@ export const saveAsTemplateNative = mutation({
       } as Record<string, unknown> as never);
 
       for (const child of childrenByParent.get(li.id) ?? []) {
+        const newChildId = createId();
         await ctx.db.insert("projectLineItems", {
-          id: createId(),
+          id: newChildId,
           organizationId: orgId,
           projectId: newId,
+          versionId: newTemplateVersionId,
+          lineageId: newChildId,
           ...(child.type ? { type: child.type } : {}),
           ...(child.modelId ? { modelId: child.modelId } : {}),
           ...(child.bulkAssetId ? { bulkAssetId: child.bulkAssetId } : {}),

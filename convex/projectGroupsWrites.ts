@@ -14,6 +14,7 @@ import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { upsertSlotForLineItem } from "./categorySlotsWrites";
+import { liveRows, requireLiveVersionId } from "./lib/versionScope";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -278,15 +279,12 @@ export const createGroupNative = mutation({
       return { id: a.id, sortOrder: existing.sortOrder ?? 0 };
     }
 
-    // by_projectId is GLOBAL — org-filter, then max(sortOrder)+1 within the
-    // (project, category) bucket (null category is its own bucket).
+    // LIVE-ONLY (#1228) — max(sortOrder)+1 within the (project, category) bucket
+    // (null category is its own bucket).
     const bucket = a.categoryId ?? null;
-    const siblings = (
-      await ctx.db
-        .query("projectGroups")
-        .withIndex("by_projectId", (q) => q.eq("projectId", a.projectId))
-        .collect()
-    ).filter((g) => g.organizationId === a.orgId && (g.categoryId ?? null) === bucket);
+    const siblings = (await liveRows(ctx, project, "projectGroups")).filter(
+      (g) => g.organizationId === a.orgId && (g.categoryId ?? null) === bucket,
+    );
     const sortOrder = siblings.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1) + 1;
 
     // Capture the inserted _id (patch THIS directly if ever needed — never re-query
@@ -295,6 +293,8 @@ export const createGroupNative = mutation({
       id: a.id,
       organizationId: a.orgId,
       projectId: a.projectId,
+      versionId: requireLiveVersionId(project),
+      lineageId: a.id,
       categoryId: a.categoryId || undefined,
       title: a.title,
       description: a.description || undefined,
@@ -548,14 +548,11 @@ export const deleteGroupNative = mutation({
     if (!deleteGroupProject) throw new ConvexError("Project not found");
     const guard = await assertLifecycleGuard(ctx, deleteGroupProject, { kind: "structural", justification: a.justification });
 
-    // Lines in this group (by_projectId is global — org-filter). Clear groupId only
-    // (keep categoryId so items land standalone in the same category).
-    const lines = (
-      await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", group.projectId))
-        .collect()
-    ).filter((li) => li.organizationId === a.orgId && li.groupId === a.id);
+    // Lines in this group. LIVE-ONLY (#1228). Clear groupId only (keep
+    // categoryId so items land standalone in the same category).
+    const lines = (await liveRows(ctx, deleteGroupProject, "projectLineItems")).filter(
+      (li) => li.organizationId === a.orgId && li.groupId === a.id,
+    );
     for (const li of lines) {
       await ctx.db.patch(li._id, { groupId: undefined, updatedAt: a.now });
     }

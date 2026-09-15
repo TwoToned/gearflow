@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Model ROI reporting, read off the allocation the recalc pass already wrote.
@@ -365,9 +366,10 @@ export const zeroPricedGroups = query({
         truncated = true;
         break;
       }
+      // LIVE-ONLY (#1228).
       const [groups, lines] = await Promise.all([
-        ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).collect(),
-        ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).collect(),
+        liveRows(ctx, p, "projectGroups"),
+        liveRows(ctx, p, "projectLineItems"),
       ]);
       rowsRead += groups.length + lines.length;
 

@@ -95,6 +95,26 @@ export async function versionRows<T extends VersionedTableName>(
 }
 
 /**
+ * Convenience for a write call site that only has `projectId`/`orgId` in
+ * scope (no `Doc<"projects">` already loaded) and needs the live version id
+ * to stamp onto a NEW row it's about to insert into one of the four tables.
+ * Org-checks the same way every other `by_cuid` lookup in this codebase must
+ * (`by_cuid` is global). Throws (via `requireLiveVersionId`) if the project
+ * is missing/cross-org/un-backfilled — see the deploy-order note above.
+ */
+export async function resolveLiveVersionIdForProject(
+  ctx: QueryCtx | MutationCtx,
+  projectId: string,
+  orgId: string,
+): Promise<string> {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project || project.organizationId !== orgId) {
+    throw new ConvexError(`resolveLiveVersionIdForProject: project not found or cross-org: ${projectId}`);
+  }
+  return requireLiveVersionId(project);
+}
+
+/**
  * Resolves an OPTIONAL caller-supplied `versionId` against `project`,
  * defaulting to the live version — the shared "optional versionId param"
  * shape every `*Native` mutation and tab hook on the five tables takes in

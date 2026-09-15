@@ -94,19 +94,31 @@ async function planProjectWork(ctx: MutationCtx, project: Doc<"projects">): Prom
   if (project.liveVersionId != null) return null; // already migrated (idempotent no-op)
 
   const orgId = project.organizationId;
+  // #1228 Phase 2 deleted `by_projectId` on these four tables (the deliberate
+  // breaking change this backfill predates — see the deploy-order note in
+  // convex/lib/versionScope.ts: THIS backfill must already have run against
+  // production before that schema change ships). If this script is ever
+  // re-run against a post-Phase-2 schema (e.g. a fresh dev/sandbox reset), it
+  // still has to find a project's un-migrated rows, so it falls back to the
+  // org-wide `by_organizationId` index + a `projectId` filter — an
+  // O(org size) scan instead of O(project size), acceptable for a paginated,
+  // apply-gated, operator-run one-off migration (never a hot path), and only
+  // paid at all for a project not yet migrated (liveVersionId == null;
+  // planProjectWork already returns null and skips everything below once a
+  // project is done, so a fully-migrated org costs nothing here on a re-run).
+  // VERSION-SCOPE: all-versions — pre-migration rows have no versionId yet,
+  // by definition, so a by_versionId-family read cannot find them.
   const [categoriesRaw, groupsRaw, lineItemsRaw, servicesRaw, quotes] = await Promise.all([
-    ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect(),
-    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect(),
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect(),
-    ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect(),
+    ctx.db.query("projectCategories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ctx.db.query("projectGroups").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ctx.db.query("projectLineItems").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    ctx.db.query("projectServices").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
     listProjectQuotes(ctx, orgId, project.id),
   ]);
-  // `by_projectId` is global on every one of these tables (R-8.4.3) — re-check
-  // organizationId before treating a row as belonging to this project.
-  const categories = categoriesRaw.filter((c) => c.organizationId === orgId);
-  const groups = groupsRaw.filter((g) => g.organizationId === orgId);
-  const lineItems = lineItemsRaw.filter((li) => li.organizationId === orgId);
-  const services = servicesRaw.filter((s) => s.organizationId === orgId);
+  const categories = categoriesRaw.filter((c) => c.organizationId === orgId && c.projectId === project.id);
+  const groups = groupsRaw.filter((g) => g.organizationId === orgId && g.projectId === project.id);
+  const lineItems = lineItemsRaw.filter((li) => li.organizationId === orgId && li.projectId === project.id);
+  const services = servicesRaw.filter((s) => s.organizationId === orgId && s.projectId === project.id);
 
   // categorySlots carries no projectId of its own — resolved via the
   // project's own (already org-checked) categories.

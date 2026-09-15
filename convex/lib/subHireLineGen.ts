@@ -3,6 +3,7 @@ import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { loadSubHireContents } from "./subHireTotals";
 import { computeGroupSuggestedPrice } from "./suggestedPrice";
+import { liveRows, requireLiveVersionId } from "./versionScope";
 
 /**
  * BYTE-PARITY native port of src/server/sub-hires.ts `generateSubHireLineItems`
@@ -52,6 +53,9 @@ export async function regenerateSubHireLines(
   if (!head || head.organizationId !== orgId) return;
   const projectId = head.projectId;
   if (!projectId) return;
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project || project.organizationId !== orgId) return;
+  const liveVersionId = requireLiveVersionId(project);
 
   const { groups: allGroups, items: allItems } = await loadSubHireContents(ctx, subHireId);
   const subHire = {
@@ -71,9 +75,7 @@ export async function regenerateSubHireLines(
   // 1. Clean up existing line items first to prevent duplicates. Read the project's
   // lines once (org-filtered — by_projectId is a GLOBAL index) and reuse for both
   // the cleanup cascade AND the nextSort derivation (no extra round trip).
-  const existingLines = (
-    await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-  ).filter((l) => l.organizationId === orgId);
+  const existingLines = (await liveRows(ctx, project, "projectLineItems")).filter((l) => l.organizationId === orgId);
 
   // Delete this sub-hire's lines. Sub-hire lines have parent + children but NO
   // fulfillment units, so an inline cascade (children via by_parentLineItemId, then
@@ -144,6 +146,8 @@ export async function regenerateSubHireLines(
       id: parentId,
       organizationId: orgId,
       projectId,
+      versionId: liveVersionId,
+      lineageId: parentId,
       type: "EQUIPMENT",
       description: group.title,
       quantity: group.quantity,
@@ -171,10 +175,13 @@ export async function regenerateSubHireLines(
       const chargeAfterDiscount = Number(item.unitCharge) * (1 - Number(item.discount) / 100);
       const lineTotal = round(chargeAfterDiscount * item.quantity * item.duration);
 
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        id: createId(),
+        id: childId,
         organizationId: orgId,
         projectId,
+        versionId: liveVersionId,
+        lineageId: childId,
         type: "EQUIPMENT",
         description: item.description,
         quantity: item.quantity,
@@ -215,10 +222,13 @@ export async function regenerateSubHireLines(
     const chargeAfterDiscount = Number(item.unitCharge) * (1 - Number(item.discount) / 100);
     const lineTotal = round(chargeAfterDiscount * item.quantity * item.duration);
 
+    const standaloneId = createId();
     await ctx.db.insert("projectLineItems", {
-      id: createId(),
+      id: standaloneId,
       organizationId: orgId,
       projectId,
+      versionId: liveVersionId,
+      lineageId: standaloneId,
       type: "EQUIPMENT",
       description: item.description,
       quantity: item.quantity,

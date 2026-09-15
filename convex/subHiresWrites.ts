@@ -14,6 +14,7 @@ import { reserveSubHireOrderNumberCounter } from "./lib/subHireOrderCounter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { createId } from "@paralleldrive/cuid2";
 import * as enums from "./lib/validators";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
  * Native SUB-HIRE write mutations (Phase 3 browser-direct — PR-1 of 2, replaces the
@@ -1143,9 +1144,11 @@ export const changeSubHireProjectNative = mutation({
     // Delete the OLD project's lines for this sub-hire. Iterate TOP-LEVEL (!isKitChild)
     // only so each child is deleted once via its parent (sub-hire lines have no units).
     if (oldProjectId) {
-      const oldLines = (
-        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", oldProjectId)).collect()
-      ).filter((l) => l.organizationId === a.orgId && l.subHireId === a.subHireId);
+      // LIVE-ONLY (#1228) — a sub-hire's lines only ever live on the live plan.
+      const oldVersionId = await resolveLiveVersionIdForProject(ctx, oldProjectId, a.orgId);
+      const oldLines = (await versionRows(ctx, "projectLineItems", oldVersionId)).filter(
+        (l) => l.organizationId === a.orgId && l.subHireId === a.subHireId,
+      );
       for (const line of oldLines) {
         if (line.isKitChild) continue;
         const kids = (

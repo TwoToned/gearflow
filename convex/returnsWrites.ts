@@ -14,6 +14,7 @@ import { checkinItemsCore } from "./warehouseOps";
 import { syncLineItemRollup, assetStatusFromReturnCondition } from "./lib/fulfillment";
 import { distributeReturn, type CheckInItem } from "./lib/bulkCheckin";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { requireLiveVersionId, resolveLiveVersionIdForProject } from "./lib/versionScope";
 
 /**
  * Org-wide returns-station writes (issue #944 WS5) — the project-less scan/batch
@@ -78,9 +79,11 @@ async function loadProjectInOrg(ctx: MutationCtx, orgId: string, projectId: stri
  *  status, mirroring returnsLookup.resolveBulk's org-wide unit scan so a scan's
  *  reported "outstanding" and the write's actual distribution never disagree. */
 async function candidateBulkLines(ctx: MutationCtx, orgId: string, projectId: string, bulkAssetId: string) {
+  // LIVE-ONLY (#1228) — a checked-out line only ever exists on the live plan.
+  const versionId = await resolveLiveVersionIdForProject(ctx, projectId, orgId);
   const rows = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "CHECKED_OUT"))
+    .withIndex("by_versionId_status", (q) => q.eq("versionId", versionId).eq("status", "CHECKED_OUT"))
     .collect();
   return rows.filter((r) => r.organizationId === orgId && r.bulkAssetId === bulkAssetId);
 }
@@ -178,10 +181,10 @@ async function maybeAutoAdvanceProject(ctx: MutationCtx, orgId: string, projectI
   if (project.status !== "CHECKED_OUT" && project.status !== "ON_SITE") return false;
 
   // Existence check only (not a collect) — any remaining CHECKED_OUT line blocks
-  // the advance.
+  // the advance. LIVE-ONLY (#1228).
   const stillOut = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "CHECKED_OUT"))
+    .withIndex("by_versionId_status", (q) => q.eq("versionId", requireLiveVersionId(project)).eq("status", "CHECKED_OUT"))
     .first();
   if (stillOut) return false;
 

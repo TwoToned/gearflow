@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireService, requireOrgPermission } from "./lib/auth";
 import { getKitByCuid } from "./lib/kits";
+import { resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * ONE-round-trip read of everything `buildProjectEquipmentTree` needs to rebuild a
@@ -17,11 +18,22 @@ import { getKitByCuid } from "./lib/kits";
  * stays in src/lib unchanged, so this is parity-by-construction with the old
  * per-table reads (same index reads, same org filter).
  */
-async function readBundle(ctx: QueryCtx, projectId: string, orgId: string) {
+const EMPTY_EQUIPMENT_BUNDLE = {
+  lineItems: [], projectCategories: [], groups: [], units: [], assets: [],
+  bulkAssets: [], kits: [], models: [], suppliers: [], categories: [],
+};
+
+async function readBundle(ctx: QueryCtx, projectId: string, orgId: string, versionId?: string) {
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  // Missing/cross-org project: graceful empty, same as the old by_projectId
+  // reads (no version id to resolve without a project row).
+  if (!project || project.organizationId !== orgId) return EMPTY_EQUIPMENT_BUNDLE;
+  // #1228: the VIEWED version, defaulting to live.
+  const targetVersionId = resolveVersionId(project, versionId);
   const [lineItems, projectCategories, groups] = await Promise.all([
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    versionRows(ctx, "projectLineItems", targetVersionId),
+    versionRows(ctx, "projectCategories", targetVersionId),
+    versionRows(ctx, "projectGroups", targetVersionId),
   ]);
 
   const lineItemIds = lineItems.map((li) => li.id);
@@ -88,10 +100,10 @@ async function readBundle(ctx: QueryCtx, projectId: string, orgId: string) {
  * token). Returns `units`, which historically motivated the service-only gate.
  */
 export const bundle = query({
-  args: { projectId: v.string(), orgId: v.string() },
-  handler: async (ctx, { projectId, orgId }) => {
+  args: { projectId: v.string(), orgId: v.string(), versionId: v.optional(v.string()) },
+  handler: async (ctx, { projectId, orgId, versionId }) => {
     await requireService(ctx);
-    return readBundle(ctx, projectId, orgId);
+    return readBundle(ctx, projectId, orgId, versionId);
   },
 });
 
@@ -109,9 +121,9 @@ export const bundle = query({
  * behind a feature flag; until then this is additive and inert.
  */
 export const browserBundle = query({
-  args: { projectId: v.string(), orgId: v.string() },
-  handler: async (ctx, { projectId, orgId }) => {
+  args: { projectId: v.string(), orgId: v.string(), versionId: v.optional(v.string()) },
+  handler: async (ctx, { projectId, orgId, versionId }) => {
     await requireOrgPermission(ctx, orgId, "project", "read");
-    return readBundle(ctx, projectId, orgId);
+    return readBundle(ctx, projectId, orgId, versionId);
   },
 });

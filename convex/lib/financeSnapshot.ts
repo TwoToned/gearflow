@@ -1,4 +1,6 @@
+import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
+import { liveRows } from "./versionScope";
 
 export interface FinanceSnapshotLine {
   /** Mirrors `enums.InvoiceLineSourceType` (convex/lib/validators.ts).
@@ -125,12 +127,17 @@ export async function buildFinanceLines(
   projectId: string,
   orgId: string,
 ): Promise<FinanceSnapshotLine[]> {
-  const [groups, projectLines, services, project] = await Promise.all([
-    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    // `by_cuid` is GLOBAL — org-checked below like every other lookup here.
-    ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
+  // `by_cuid` is GLOBAL — org-checked below like every other lookup here.
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project || project.organizationId !== orgId) {
+    throw new ConvexError(`buildFinanceLines: project not found or cross-org: ${projectId}`);
+  }
+  // LIVE-ONLY (#1228): a quote/invoice snapshot always bills the LIVE plan —
+  // there is no "send a quote for a non-live version" concept in this phase.
+  const [groups, projectLines, services] = await Promise.all([
+    liveRows(ctx, project, "projectGroups"),
+    liveRows(ctx, project, "projectLineItems"),
+    liveRows(ctx, project, "projectServices"),
   ]);
 
   const { modelNameById, kitNameById } = await resolveModelAndKitNames(ctx, projectLines, orgId);

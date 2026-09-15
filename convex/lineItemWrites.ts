@@ -46,6 +46,7 @@ import {
   unsellSerializedAsset,
   type SaleActor,
 } from "./lib/saleStock";
+import { liveRows, requireLiveVersionId, resolveLiveVersionIdForProject } from "./lib/versionScope";
 
 /** Fetch the line's parent project, org-checked — every gate site needs the
  *  project's `status` to resolve its lock tier. */
@@ -1019,13 +1020,15 @@ export const patchManyNative = mutation({
   },
 });
 
-/** Next sort order for a project's lines (replica of nextLineSort). */
+/** Next sort order for a project's LIVE lines (replica of nextLineSort).
+ *  LIVE-ONLY (#1228). */
 async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string): Promise<number> {
-  // desc-first on by_projectId_sortOrder (1 doc) instead of collecting all the
-  // project's lines to reduce the max (O(N) per add, O(N^2) across a bulk add).
+  // desc-first on by_versionId_sortOrder (1 doc) instead of collecting all the
+  // version's lines to reduce the max (O(N) per add, O(N^2) across a bulk add).
+  const versionId = await resolveLiveVersionIdForProject(ctx, projectId, organizationId);
   const top = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_projectId_sortOrder", (q) => q.eq("projectId", projectId))
+    .withIndex("by_versionId_sortOrder", (q) => q.eq("versionId", versionId))
     .order("desc")
     .first();
   return ((top && top.organizationId === organizationId ? top.sortOrder : undefined) ?? -1) + 1;
@@ -1116,9 +1119,8 @@ export const projectPricingStaleness = query({
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
     if (!project || project.organizationId !== orgId) return { staleLineCount: 0 };
     const chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate);
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-    ).filter((li) => li.organizationId === orgId);
+    // LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
     let staleLineCount = 0;
     for (const li of lines) {
       const update = await computeAutoPricedLineUpdate(ctx, li, chargeableDays);
@@ -1155,9 +1157,8 @@ export const recalcAutoPricedLinesNative = mutation({
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
 
     const chargeableDays = inclusiveCalendarDays(project.rentalStartDate, project.rentalEndDate);
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-    ).filter((li) => li.organizationId === orgId);
+    // LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
 
     let linesUpdated = 0;
     const touchedGroupIds = new Set<string>();
@@ -1344,6 +1345,8 @@ export const addCustomNative = mutation({
       id,
       organizationId,
       projectId,
+      versionId: requireLiveVersionId(project),
+      lineageId: id,
       type: "EQUIPMENT",
       isCustomItem: true,
       ...fields,
@@ -1594,6 +1597,8 @@ export const addNative = mutation({
       id,
       organizationId,
       projectId,
+      versionId: requireLiveVersionId(addProject),
+      lineageId: id,
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
       pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
@@ -2185,9 +2190,10 @@ export const addLineItemSmartNative = mutation({
     // `type === "EQUIPMENT"`; a SALE line (any saleMode) always falls through to a fresh
     // insert below, never merging into an EQUIPMENT line or another SALE line.
     if (fields.type === "EQUIPMENT" && fields.modelId && !fields.assetId && !forceSeparate) {
-      const projectLines = (
-        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-      ).filter((li) => li.organizationId === organizationId);
+      // LIVE-ONLY (#1228) — a smart-add targets the live plan.
+      const projectLines = (await liveRows(ctx, smartProject, "projectLineItems")).filter(
+        (li) => li.organizationId === organizationId,
+      );
       const existing = projectLines.find(
         (li) =>
           li.modelId === fields.modelId &&
@@ -2353,6 +2359,8 @@ export const addLineItemSmartNative = mutation({
       id,
       organizationId,
       projectId,
+      versionId: requireLiveVersionId(smartProject),
+      lineageId: id,
       type: fields.type,
       saleMode: fields.type === "SALE" ? fields.saleMode : undefined,
       modelId: fields.modelId || undefined,

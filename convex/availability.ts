@@ -15,6 +15,7 @@ import {
   type DateWindowMs,
 } from "./lib/availabilityBookings";
 import type { Doc } from "./_generated/dataModel";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Equipment availability / bookings — browser-native replacement for the deleted
@@ -296,14 +297,15 @@ export const calendarData = query({
       .sort((a, b) => (a.rentalStartMs ?? 0) - (b.rentalStartMs ?? 0));
 
     // Per-project non-cancelled line-item count (parity with the calendar groupBy).
+    // LIVE-ONLY (#1228): a calendar summary counts the live plan, same as every
+    // other dashboard aggregation in this file.
+    const projectDocById = new Map(allProjects.map((doc) => [doc.id, doc]));
     const countByProject = new Map<string, number>();
     await Promise.all(
       calendarProjects.map(async (p) => {
-        // by_projectId is a GLOBAL index → org re-check per row (defense-in-depth,
-        // matching clients.detail; the project is already org-scoped above).
-        const lines = (
-          await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).collect()
-        )
+        const projectDoc = projectDocById.get(p.id);
+        if (!projectDoc) return;
+        const lines = (await liveRows(ctx, projectDoc, "projectLineItems"))
           .filter((d) => d.organizationId === orgId)
           .map(toBookingLineItem);
         const c = countLineItemsByProject([p.id], lines).get(p.id) ?? 0;

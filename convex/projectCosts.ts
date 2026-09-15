@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgPermission, getAuthContext, isAgentNoFinancials } from "./lib/auth";
+import { liveRows } from "./lib/versionScope";
 
 /**
  * Operational P&L for a project (Phase 3 browser-direct — replaces the
@@ -68,15 +69,13 @@ export const operationalCosts = query({
       .first();
     if (!project || project.organizationId !== orgId) return EMPTY;
 
-    // Service revenue: mirrors sumProjectServiceRevenue (non-cancelled, has a charge set).
-    const services = await ctx.db
-      .query("projectServices")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
+    // Service revenue: mirrors sumProjectServiceRevenue (non-cancelled, has a charge
+    // set). LIVE-ONLY (#1228).
+    const services = await liveRows(ctx, project, "projectServices");
     let serviceRevenue = 0;
     let labourServiceRevenue = 0;
     for (const s of services) {
-      if (s.organizationId !== orgId) continue; // defence-in-depth (by_projectId is not org-scoped)
+      if (s.organizationId !== orgId) continue; // defence-in-depth (by_versionId is not org-scoped)
       if (s.status === "CANCELLED") continue;
       if (!s.lineTotal || s.lineTotal <= 0) continue; // billable iff it has an actual charge
       serviceRevenue += s.lineTotal;

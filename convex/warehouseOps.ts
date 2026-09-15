@@ -17,6 +17,7 @@ import {
 } from "./lib/fulfillment";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
  * Warehouse checkout / check-in — Convex port of warehouse.ts checkOutItems /
@@ -1460,12 +1461,14 @@ export async function quickAddCore(ctx: Ctx, a: QuickAddArgs): Promise<{ id: str
     await assertTestTagAllowsCheckout(ctx, a.organizationId, {
       assetIds: a.assetId ? [a.assetId] : [], bulkAssetIds: a.bulkAssetId ? [a.bulkAssetId] : [],
     });
-    const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+    // LIVE-ONLY (#1228) — warehouse always operates on the live plan.
+    const quickAddVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+    const lines = (await versionRows(ctx, "projectLineItems", quickAddVersionId))
       .filter((l) => l.organizationId === a.organizationId);
     const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
     const id = createId();
     await ctx.db.insert("projectLineItems", {
-      id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId,
+      id, organizationId: a.organizationId, projectId: a.projectId, versionId: quickAddVersionId, lineageId: id, type: "EQUIPMENT", modelId: a.modelId,
       assetId: a.assetId, bulkAssetId: a.bulkAssetId, quantity: a.quantity ?? 1, sortOrder, status: "CONFIRMED",
       checkedOutQuantity: 0, prepStatus: "PENDING", prepContainer: a.prepContainer, createdAt: a.now, updatedAt: a.now,
     });
@@ -1493,12 +1496,14 @@ export async function ensureContainerOnProjectCore(ctx: Ctx, a: EnsureContainerA
   const existing = (await ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", a.assetId)).collect())
     .find((l) => l.projectId === a.projectId && l.organizationId === a.organizationId && l.isContainerLineItem);
   if (existing) return { id: existing.id, created: false };
-  const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+  // LIVE-ONLY (#1228).
+  const containerVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+  const lines = (await versionRows(ctx, "projectLineItems", containerVersionId))
     .filter((l) => l.organizationId === a.organizationId);
   const sortOrder = lines.reduce((m, l) => Math.max(m, l.sortOrder ?? -1), -1) + 1;
   const id = createId();
   await ctx.db.insert("projectLineItems", {
-    id, organizationId: a.organizationId, projectId: a.projectId, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
+    id, organizationId: a.organizationId, projectId: a.projectId, versionId: containerVersionId, lineageId: id, type: "EQUIPMENT", modelId: a.modelId, assetId: a.assetId,
     quantity: 1, sortOrder, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PACKED", prepContainer: a.containerName,
     isContainerLineItem: true, createdAt: a.now, updatedAt: a.now,
   });
@@ -1517,7 +1522,9 @@ export type ClearPrepContainerArgs = { organizationId: string; projectId: string
 
 /** Core clear-prep-container (strip prepContainer off every line in the container). Shared. */
 export async function clearPrepContainerCore(ctx: Ctx, a: ClearPrepContainerArgs): Promise<{ success: true }> {
-  const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+  // LIVE-ONLY (#1228).
+  const clearVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+  const lines = (await versionRows(ctx, "projectLineItems", clearVersionId))
     .filter((l) => l.organizationId === a.organizationId && l.prepContainer === a.containerName);
   for (const l of lines) {
     const { _id, _creationTime, prepContainer: _p, ...rest } = l;
@@ -1570,7 +1577,9 @@ export type SyncContainersBatchArgs = { organizationId: string; projectId: strin
 /** Core batch container roll-up (read lines once, bucket by prepContainer, flip each
  *  container line + asset when contents are uniformly deployed/returned). Shared. */
 export async function syncContainersBatchCore(ctx: Ctx, a: SyncContainersBatchArgs): Promise<{ results: Array<{ containerName: string; updated: boolean; status?: string }> }> {
-  const allLines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect())
+  // LIVE-ONLY (#1228).
+  const syncVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+  const allLines = (await versionRows(ctx, "projectLineItems", syncVersionId))
     .filter((l) => l.organizationId === a.organizationId);
   const results: Array<{ containerName: string; updated: boolean; status?: string }> = [];
   for (const containerName of a.containerNames) {
@@ -1619,12 +1628,14 @@ export const checkInBulkTotals = mutation({
     if (wanted.length === 0) return { returned: [] as Array<{ key: string; quantity: number; condition: string }> };
 
     const defaultLoc = await defaultLocationId(ctx, a.organizationId);
-    // Range-scan only CHECKED_OUT lines for this project via the composite index
-    // (was: collect ALL of the project's lines then JS-filter on status). The
-    // remaining predicate (org / not-subhire-group / accessory-or-not-kit-child)
-    // stays a JS post-filter over the now-smaller candidate set.
+    // Range-scan only CHECKED_OUT lines for this project's LIVE version via the
+    // composite index (was: collect ALL of the project's lines then JS-filter
+    // on status). LIVE-ONLY (#1228). The remaining predicate (org /
+    // not-subhire-group / accessory-or-not-kit-child) stays a JS post-filter
+    // over the now-smaller candidate set.
+    const checkInVersionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
     const rows = (await ctx.db.query("projectLineItems")
-      .withIndex("by_projectId_status", (q) => q.eq("projectId", a.projectId).eq("status", "CHECKED_OUT"))
+      .withIndex("by_versionId_status", (q) => q.eq("versionId", checkInVersionId).eq("status", "CHECKED_OUT"))
       .collect())
       .filter((r) => r.organizationId === a.organizationId && !r.subHireGroupId && (!r.isKitChild || r.childKind === "ACCESSORY"))
       .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));

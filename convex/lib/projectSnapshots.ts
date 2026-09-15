@@ -2,6 +2,7 @@ import { createId } from "@paralleldrive/cuid2";
 import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { LOCKED_GROUP_FIELDS, LOCKED_LINE_ITEM_FIELDS, LOCKED_PROJECT_FIELDS, LOCKED_SERVICE_FIELDS } from "./projectLocks";
+import { liveRows, requireLiveVersionId } from "./versionScope";
 
 /**
  * Whole-project snapshot capture + restore (#792's shared mechanism — #791's
@@ -108,24 +109,20 @@ export async function collectCurrentEntries(
   const out: SnapshotEntryLike[] = [];
   out.push({ entityType: "project", entityId: project.id, data: stripDoc(project as unknown as Record<string, unknown> & { _id: unknown; _creationTime: unknown }) });
 
-  const categories = (
-    await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((c) => c.organizationId === orgId);
+  // LIVE-ONLY (#1228): this snapshot mechanism captures/restores the
+  // project's CURRENT live plan only — it is unrelated to the new
+  // `projectVersions` table's own non-live versions (see FEATUREDOCS/76's
+  // callout on the two separate programs).
+  const categories = (await liveRows(ctx, project, "projectCategories")).filter((c) => c.organizationId === orgId);
   for (const c of categories) out.push({ entityType: "category", entityId: c.id, data: stripDoc(c) });
 
-  const groups = (
-    await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((g) => g.organizationId === orgId);
+  const groups = (await liveRows(ctx, project, "projectGroups")).filter((g) => g.organizationId === orgId);
   for (const g of groups) out.push({ entityType: "group", entityId: g.id, data: stripDoc(g) });
 
-  const lineItems = (
-    await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((li) => li.organizationId === orgId);
+  const lineItems = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
   for (const li of lineItems) out.push({ entityType: "lineItem", entityId: li.id, data: stripDoc(li) });
 
-  const services = (
-    await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((s) => s.organizationId === orgId);
+  const services = (await liveRows(ctx, project, "projectServices")).filter((s) => s.organizationId === orgId);
   for (const s of services) out.push({ entityType: "service", entityId: s.id, data: stripDoc(s) });
 
   const crew = (
@@ -189,24 +186,17 @@ export async function captureProjectSnapshot(ctx: MutationCtx, args: CaptureSnap
 
   await insertEntry("project", project.id, stripDoc(project as unknown as Record<string, unknown> & { _id: unknown; _creationTime: unknown }));
 
-  const categories = (
-    await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((c) => c.organizationId === orgId);
+  // LIVE-ONLY (#1228) — see the identical note on collectCurrentEntries above.
+  const categories = (await liveRows(ctx, project, "projectCategories")).filter((c) => c.organizationId === orgId);
   for (const c of categories) await insertEntry("category", c.id, stripDoc(c));
 
-  const groups = (
-    await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((g) => g.organizationId === orgId);
+  const groups = (await liveRows(ctx, project, "projectGroups")).filter((g) => g.organizationId === orgId);
   for (const g of groups) await insertEntry("group", g.id, stripDoc(g));
 
-  const lineItems = (
-    await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((li) => li.organizationId === orgId);
+  const lineItems = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
   for (const li of lineItems) await insertEntry("lineItem", li.id, stripDoc(li));
 
-  const services = (
-    await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((s) => s.organizationId === orgId);
+  const services = (await liveRows(ctx, project, "projectServices")).filter((s) => s.organizationId === orgId);
   for (const s of services) await insertEntry("service", s.id, stripDoc(s));
 
   const crew = (
@@ -429,10 +419,10 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
     await ctx.db.patch(project._id, patch);
   }
 
-  // ── Groups ──
-  const currentGroups = (
-    await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((g) => g.organizationId === orgId);
+  // ── Groups ── LIVE-ONLY (#1228) — see the file header's callout: this
+  // reconciles the project's CURRENT live plan against a whole-project
+  // snapshot, unrelated to the new `projectVersions` non-live versions.
+  const currentGroups = (await liveRows(ctx, project, "projectGroups")).filter((g) => g.organizationId === orgId);
   for (const g of currentGroups) {
     const entry = entries.get(`group:${g.id}`);
     if (entry) {
@@ -463,14 +453,17 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
       if (!key.startsWith("group:") || currentIds.has(entry.entityId)) continue;
       const data = entry.data as Doc<"projectGroups">;
       const { _id: _dropId, _creationTime: _dropTime, ...rest } = data as unknown as Record<string, unknown> & { _id: unknown; _creationTime: unknown };
-      await ctx.db.insert("projectGroups", { ...rest, updatedAt: now } as typeof data);
+      // Stamp the CURRENT live version id rather than trusting whatever the
+      // snapshot captured (#1228) — a structurally-recreated row must land
+      // back in the live plan `by_versionId` actually scans, even if the
+      // snapshot predates this phase's versionId column.
+      await ctx.db.insert("projectGroups", { ...rest, versionId: requireLiveVersionId(project), updatedAt: now } as typeof data);
     }
   }
 
   // ── Line items ── (never touch warehouse-backed structure automatically)
-  const currentLines = (
-    await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((li) => li.organizationId === orgId);
+  // LIVE-ONLY (#1228) — see the Groups section's note above.
+  const currentLines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === orgId);
   for (const li of currentLines) {
     const entry = entries.get(`lineItem:${li.id}`);
     if (entry) {
@@ -513,16 +506,16 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
         continue;
       }
       const { _id: _dropId, _creationTime: _dropTime, ...rest } = data as unknown as Record<string, unknown> & { _id: unknown; _creationTime: unknown };
-      await ctx.db.insert("projectLineItems", { ...rest, updatedAt: now } as Doc<"projectLineItems">);
+      // See the Groups section's note above on stamping the live version id.
+      await ctx.db.insert("projectLineItems", { ...rest, versionId: requireLiveVersionId(project), updatedAt: now } as Doc<"projectLineItems">);
     }
   }
 
   // ── Services ── (costTotal restore only applies to crew-less services — a
   // crew-attached service's cost is re-derived by recalcServiceCostFromCrew and
   // shouldn't be overwritten with a stale snapshot value)
-  const currentServices = (
-    await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect()
-  ).filter((s) => s.organizationId === orgId);
+  // LIVE-ONLY (#1228) — see the Groups section's note above.
+  const currentServices = (await liveRows(ctx, project, "projectServices")).filter((s) => s.organizationId === orgId);
   const crewByService = new Set(
     (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect())
       .filter((c) => c.organizationId === orgId && c.serviceId)
@@ -561,7 +554,8 @@ export async function restoreProjectSnapshot(ctx: MutationCtx, args: RestoreArgs
       if (!key.startsWith("service:") || currentIds.has(entry.entityId)) continue;
       const data = entry.data as unknown as Record<string, unknown> & { _id: unknown; _creationTime: unknown };
       const { _id: _dropId, _creationTime: _dropTime, ...rest } = data;
-      await ctx.db.insert("projectServices", { ...rest, updatedAt: now } as Doc<"projectServices">);
+      // See the Groups section's note above on stamping the live version id.
+      await ctx.db.insert("projectServices", { ...rest, versionId: requireLiveVersionId(project), updatedAt: now } as Doc<"projectServices">);
     }
   }
 

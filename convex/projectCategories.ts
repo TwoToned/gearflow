@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { resolveLiveVersionIdForProject, resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Thin CRUD for ProjectCategory (Convex table "projectCategories"). GENERATED — Phase 2/5.
@@ -35,14 +36,15 @@ export const getById = query({
 });
 
 export const listByProject = query({
-  args: { projectId: v.string(), orgId: v.string() },
-  handler: async (ctx, { projectId, orgId }) => {
+  // #1228: optional versionId, defaulting to the project's live version.
+  args: { projectId: v.string(), orgId: v.string(), versionId: v.optional(v.string()) },
+  handler: async (ctx, { projectId, orgId, versionId }) => {
     await requireOrgReadFor(ctx, orgId, "project");
-    // by_projectId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
-    return (await ctx.db
-      .query("projectCategories")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect()).filter((r) => r.organizationId === orgId);
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) return [];
+    // by_versionId is GLOBAL — filter to the caller's org (cross-tenant guard).
+    const rows = await versionRows(ctx, "projectCategories", resolveVersionId(project, versionId));
+    return rows.filter((r) => r.organizationId === orgId);
   },
 });
 
@@ -53,12 +55,16 @@ export const create = mutation({
     projectId: v.string(),
     name: v.string(),
     sortOrder: v.optional(v.number()),
+    // #1228 — optional on this legacy service-only mirror mutation too.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("projectCategories", args);
+    const versionId = args.versionId ?? (await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId));
+    return await ctx.db.insert("projectCategories", { ...args, versionId, lineageId: args.lineageId ?? args.id });
   },
 });
 
@@ -69,6 +75,8 @@ export const createIfMissing = mutation({
     projectId: v.string(),
     name: v.string(),
     sortOrder: v.optional(v.number()),
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   },
@@ -76,7 +84,8 @@ export const createIfMissing = mutation({
     await requireService(ctx);
     const existing = await ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
-    const _id = await ctx.db.insert("projectCategories", args);
+    const versionId = args.versionId ?? (await resolveLiveVersionIdForProject(ctx, args.projectId, args.organizationId));
+    const _id = await ctx.db.insert("projectCategories", { ...args, versionId, lineageId: args.lineageId ?? args.id });
     return { _id, created: true };
   },
 });
@@ -136,16 +145,16 @@ export const createAtEnd = mutation({
   },
   handler: async (ctx, { id, organizationId, projectId, name, now }) => {
     await requireService(ctx);
-    const existing = await ctx.db
-      .query("projectCategories")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect();
+    const versionId = await resolveLiveVersionIdForProject(ctx, projectId, organizationId);
+    const existing = await versionRows(ctx, "projectCategories", versionId);
     const maxSort = existing.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1);
     const sortOrder = maxSort + 1;
     await ctx.db.insert("projectCategories", {
       id,
       organizationId,
       projectId,
+      versionId,
+      lineageId: id,
       name,
       sortOrder,
       createdAt: now,
@@ -225,10 +234,19 @@ export async function deleteAllForProjectCore(
   ctx: MutationCtx,
   projectId: string,
 ): Promise<{ categories: number; groups: number }> {
-  const cats = await ctx.db
-    .query("projectCategories")
-    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
+  // VERSION-SCOPE: all-versions — a project delete purges EVERY version's
+  // categories/groups/slots, not just the live one (#1228). No org filter
+  // here (matches the pre-existing "callers org-scope the project first"
+  // contract) — `by_projectId_number` on projectVersions is global, so this
+  // is still safe only because the caller already validated project
+  // ownership before invoking this cascade.
+  const versions = await ctx.db
+    .query("projectVersions")
+    .withIndex("by_projectId_number", (q) => q.eq("projectId", projectId))
     .collect();
+  const cats = (
+    await Promise.all(versions.map((v) => versionRows(ctx, "projectCategories", v.id)))
+  ).flat();
   for (const c of cats) {
     const catSlots = await ctx.db
       .query("categorySlots")
@@ -236,10 +254,9 @@ export async function deleteAllForProjectCore(
       .collect();
     for (const s of catSlots) await ctx.db.delete(s._id);
   }
-  const groups = await ctx.db
-    .query("projectGroups")
-    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-    .collect();
+  const groups = (
+    await Promise.all(versions.map((v) => versionRows(ctx, "projectGroups", v.id)))
+  ).flat();
   for (const g of groups) {
     const gslots = await ctx.db
       .query("categorySlots")

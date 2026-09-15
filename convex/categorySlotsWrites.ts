@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { assertLifecycleGuard, lifecycleAuditMetadata, type LifecycleGuardResult } from "./lib/projectLocks";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { liveRows, requireLiveVersionId } from "./lib/versionScope";
 
 /**
  * Native CROSS-TYPE CATEGORY-SLOT write mutations (Phase 3 browser-direct —
@@ -292,8 +293,9 @@ export const moveSubHireGroupToCategory = mutation({
     const { group, subHire } = await requireSubHireGroupInOrg(ctx, a.groupId, a.orgId);
     const projectId = subHire.projectId ?? null;
     let guard: LifecycleGuardResult | null = null;
+    let project: Doc<"projects"> | null = null;
     if (projectId != null) {
-      const project = await getProjectInOrg(ctx, projectId, a.orgId);
+      project = await getProjectInOrg(ctx, projectId, a.orgId);
       if (!project) throw new ConvexError("Project not found");
       guard = await assertLifecycleGuard(ctx, project, { kind: "structural", justification: a.justification });
     }
@@ -314,11 +316,9 @@ export const moveSubHireGroupToCategory = mutation({
     });
 
     // 2. Keep the synthetic parent line items' categoryId in sync (top-level lines
-    //    for this sub-hire group). by_projectId is GLOBAL — org-filter.
-    if (projectId != null) {
-      const lines = (
-        await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect()
-      ).filter(
+    //    for this sub-hire group). LIVE-ONLY (#1228).
+    if (projectId != null && project) {
+      const lines = (await liveRows(ctx, project, "projectLineItems")).filter(
         (li) =>
           li.organizationId === a.orgId &&
           li.subHireGroupId === a.groupId &&
@@ -408,10 +408,10 @@ export const moveProjectGroupToCategory = mutation({
       return { ok: true, noop: true };
     }
 
-    // 1. Keep member line items' categoryId in sync. by_projectId is GLOBAL — org-filter.
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", group.projectId)).collect()
-    ).filter((li) => li.organizationId === a.orgId && li.groupId === a.groupId);
+    // 1. Keep member line items' categoryId in sync. LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter(
+      (li) => li.organizationId === a.orgId && li.groupId === a.groupId,
+    );
     for (const li of lines) {
       await ctx.db.patch(li._id, {
         categoryId: destCategoryId != null ? destCategoryId : undefined,
@@ -499,10 +499,11 @@ export const reorderMixedGroupsInCategory = mutation({
     }
 
     // Validate: every project group belongs to this category's project + org.
+    // LIVE-ONLY (#1228).
     if (projectGroupIds.length > 0) {
-      const projGroups = (
-        await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", category.projectId)).collect()
-      ).filter((g) => g.organizationId === a.orgId);
+      const projGroups = (await liveRows(ctx, categoryProject, "projectGroups")).filter(
+        (g) => g.organizationId === a.orgId,
+      );
       const groupIdSet = new Set(projGroups.map((g) => g.id));
       for (const id of projectGroupIds) {
         if (!groupIdSet.has(id)) throw new ConvexError("One or more project groups do not belong to this project");
@@ -647,14 +648,15 @@ export const createCategoryAndPlaceGroup = mutation({
       }
       sortOrder = existingCat.sortOrder ?? 0;
     } else {
-      const siblings = (
-        await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect()
-      ).filter((c) => c.organizationId === a.orgId);
+      // LIVE-ONLY (#1228).
+      const siblings = (await liveRows(ctx, project, "projectCategories")).filter((c) => c.organizationId === a.orgId);
       sortOrder = siblings.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
       await ctx.db.insert("projectCategories", {
         id: a.categoryId,
         organizationId: a.orgId,
         projectId: a.projectId,
+        versionId: requireLiveVersionId(project),
+        lineageId: a.categoryId,
         name: a.name,
         sortOrder,
         createdAt: a.now,
@@ -683,10 +685,8 @@ export const createCategoryAndPlaceGroup = mutation({
       updatedAt: a.now,
     });
 
-    // 4. Update group placement + sync member line items' categoryId.
-    const lines = (
-      await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect()
-    ).filter((li) => li.organizationId === a.orgId);
+    // 4. Update group placement + sync member line items' categoryId. LIVE-ONLY (#1228).
+    const lines = (await liveRows(ctx, project, "projectLineItems")).filter((li) => li.organizationId === a.orgId);
     if (projectGroupId && projGroupDoc) {
       await ctx.db.patch(projGroupDoc._id, { categoryId: a.categoryId, updatedAt: a.now });
       for (const li of lines.filter((li) => li.groupId === projectGroupId)) {

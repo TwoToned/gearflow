@@ -338,7 +338,7 @@ async function deriveDateMoveConflicts(
   projectDocsById.set(after.id, after);
   const candidateProjects = candidateBoardProjects([...projectDocsById.values()], window);
   const candidateProjectIds = candidateProjects.map((p) => p.id);
-  const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, organizationId, candidateProjectIds);
+  const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, organizationId, candidateProjectIds, projectDocsById);
   const overbookingRows = computePromoteOverbookingConflicts(
     projectId, window, candidateProjects, lineItems, models, assets, bulkAssetsForModels,
   );

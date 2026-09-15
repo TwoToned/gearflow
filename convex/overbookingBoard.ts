@@ -12,6 +12,7 @@ import {
   computeCrewDoubleBookings,
 } from "./lib/overbookingBoard";
 import { computeConfirmImpactModels, countUnconfirmedCrewForProject } from "./lib/overbookingConfirmImpact";
+import { liveRows } from "./lib/versionScope";
 
 /** Mirrors convex/overbooking.ts's own MIN_TS — see that file's comment for why
  *  an unbounded-below range scan needs this floor (undefined sorts before all
@@ -44,10 +45,19 @@ export async function fetchCandidateProjects(ctx: QueryCtx, orgId: string, range
 }
 
 /** Line items for candidate projects only (referenced-only) + the models/assets/
- *  bulkAssets those line items reference (also referenced-only). */
-export async function fetchGearData(ctx: QueryCtx, orgId: string, candidateProjectIds: string[]) {
+ *  bulkAssets those line items reference (also referenced-only). LIVE-ONLY
+ *  (#1228) — the overbooking board reads the live plan. */
+export async function fetchGearData(
+  ctx: QueryCtx,
+  orgId: string,
+  candidateProjectIds: string[],
+  projectDocsById: Map<string, Doc<"projects">>,
+) {
   const lineItemGroups = await Promise.all(
-    candidateProjectIds.map((pid) => ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", pid)).collect()),
+    candidateProjectIds.map(async (pid) => {
+      const p = projectDocsById.get(pid);
+      return p ? liveRows(ctx, p, "projectLineItems") : [];
+    }),
   );
   const lineItems = lineItemGroups.flat().filter((li) => li.organizationId === orgId);
 
@@ -172,7 +182,7 @@ async function computeBoardBundle(ctx: QueryCtx, orgId: string, rangeStart: numb
   const candidateProjects = candidateBoardProjects([...projectDocsById.values()], range);
   const candidateProjectIds = candidateProjects.map((p) => p.id);
 
-  const { lineItems, referencedModelIds, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds);
+  const { lineItems, referencedModelIds, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds, projectDocsById);
   const { models: modelsForSaleStock, saleLines } = await fetchSaleStockData(ctx, orgId, models, referencedModelIds);
   const { services, assignmentsByServiceId } = await fetchServicesData(ctx, orgId, rangeStart, rangeEnd);
   const { rangedAssignments, availabilityBlocks } = await fetchCrewData(ctx, orgId, rangeStart, rangeEnd);
@@ -294,7 +304,7 @@ export const confirmImpact = query({
     );
     const candidateProjectIds = candidateProjects.map((p) => p.id);
 
-    const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds);
+    const { lineItems, models, assets, bulkAssetsForModels } = await fetchGearData(ctx, orgId, candidateProjectIds, projectDocsById);
     const { modelCount, qty } = computeConfirmImpactModels(projectId, range, candidateProjects, lineItems, models, assets, bulkAssetsForModels);
 
     const ownAssignments = (

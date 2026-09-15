@@ -1,4 +1,5 @@
-import type { Doc } from "../_generated/dataModel";
+import { createId } from "@paralleldrive/cuid2";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 /**
@@ -51,6 +52,45 @@ export async function findVersionByNumber(
     .withIndex("by_projectId_number", (q) => q.eq("projectId", projectId).eq("number", number))
     .first();
   return row && row.organizationId === orgId ? row : null;
+}
+
+/**
+ * #1228 Phase 2 — bootstraps a brand-new project's version 1 (mirrors what
+ * `backfillProjectVersions.ts` does for a PRE-EXISTING project, but at
+ * CREATE time): inserts one `projectVersions` row and patches
+ * `liveVersionId` onto the project doc. Every write path that inserts a NEW
+ * `projects` row (`createNative`, `duplicateNative`, `saveAsTemplateNative`,
+ * the legacy `projects.ts` mirror CRUD, `wooCommerceInternal.ts`'s order-
+ * ingest project create) MUST call this immediately after — otherwise the
+ * new project has no `liveVersionId` and every Phase 2 `by_versionId` read
+ * on it throws (`requireLiveVersionId`) instead of silently working. Returns
+ * the new version's id so the caller can stamp it onto whatever child rows
+ * it inserts in the same mutation.
+ */
+export async function createLiveVersionForProject(
+  ctx: MutationCtx,
+  args: {
+    orgId: string;
+    projectId: string;
+    projectDocId: Id<"projects">;
+    now: number;
+    createdById: string;
+    label?: string;
+  },
+): Promise<string> {
+  const versionId = createId();
+  await ctx.db.insert("projectVersions", {
+    id: versionId,
+    organizationId: args.orgId,
+    projectId: args.projectId,
+    number: 1,
+    ...(args.label ? { label: args.label } : {}),
+    createdAt: args.now,
+    createdById: args.createdById,
+    contentState: "ready",
+  });
+  await ctx.db.patch(args.projectDocId, { liveVersionId: versionId });
+  return versionId;
 }
 
 /** Every `projectVersions` row for an org, org-checked. `by_organizationId` is

@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { getKitByCuid } from "./lib/kits";
+import { liveRows } from "./lib/versionScope";
 
 
 /**
@@ -22,10 +23,9 @@ async function readWarehouseDetail(ctx: QueryCtx, projectId: string, orgId: stri
   const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
   if (!project || project.organizationId !== orgId || project.isTemplate === true) return null;
 
-  const lineItems = await ctx.db
-    .query("projectLineItems")
-    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-    .collect();
+  // LIVE-ONLY (#1228) — warehouse dispatch/pack/return always operates on the
+  // live plan; there is no non-live-version warehouse concept.
+  const lineItems = await liveRows(ctx, project, "projectLineItems");
   const lineItemIds = lineItems.map((li) => li.id);
 
   const unitArrays = await Promise.all(

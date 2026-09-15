@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, getAuthContext, isMemberAuth } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
  * BROWSER-facing native replacements for the bounded project/thread dashboard
@@ -33,15 +34,14 @@ function isCurrentOrFutureProject(project: { status?: string; rentalEndDate?: nu
 
 type ProjectDoc = { id: string; isTemplate?: boolean; status?: string; rentalStartDate?: number; rentalEndDate?: number; projectNumber: string; name: string; clientId?: string; projectManagerId?: string; createdAt?: number };
 
-/** EQUIPMENT line-item count per project id (mirrors countEquipmentLineItemsByProject). */
-async function countEquipmentLineItems(ctx: QueryCtx, projectIds: string[]): Promise<Map<string, number>> {
+/** EQUIPMENT line-item count per project id (mirrors countEquipmentLineItemsByProject).
+ *  LIVE-ONLY (#1228) — a dashboard tile counts the live plan. */
+async function countEquipmentLineItems(ctx: QueryCtx, orgId: string, projectIds: string[]): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   await Promise.all(
     projectIds.map(async (pid) => {
-      const rows = await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", pid))
-        .collect();
+      const versionId = await resolveLiveVersionIdForProject(ctx, pid, orgId);
+      const rows = await versionRows(ctx, "projectLineItems", versionId);
       counts.set(pid, rows.filter((li) => (li.type ?? "EQUIPMENT") === "EQUIPMENT").length);
     }),
   );
@@ -97,7 +97,7 @@ export const upcoming = query({
       }
     }
 
-    const counts = await countEquipmentLineItems(ctx, candidates.map((p) => p.id));
+    const counts = await countEquipmentLineItems(ctx, orgId, candidates.map((p) => p.id));
     const clients = await resolveClients(ctx, candidates.map((p) => p.clientId).filter((x): x is string => !!x));
     return candidates.map((p) => projectTile(p, counts, clients));
   },
@@ -150,7 +150,7 @@ export const home = query({
       })
       .slice(0, 24);
 
-    const counts = await countEquipmentLineItems(ctx, candidates.map((p) => p.id));
+    const counts = await countEquipmentLineItems(ctx, orgId, candidates.map((p) => p.id));
     const clients = await resolveClients(ctx, candidates.map((p) => p.clientId).filter((x): x is string => !!x));
     return {
       userName: userDoc?.name ?? "",

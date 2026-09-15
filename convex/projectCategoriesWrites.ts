@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { assertProjectInOrg } from "./projectLineItems";
 import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
 import * as enums from "./lib/validators";
+import { liveRows, requireLiveVersionId } from "./lib/versionScope";
 
 /** Fetch a project by cuid, confirm it's the caller's org (needed for the tier check). */
 async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId: string) {
@@ -154,19 +155,16 @@ export const createCategoryNative = mutation({
       return { id, sortOrder: existing.sortOrder ?? 0 };
     }
 
-    // by_projectId is a GLOBAL index — org-filter before computing max(sortOrder).
-    const siblings = (
-      await ctx.db
-        .query("projectCategories")
-        .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-        .collect()
-    ).filter((c) => c.organizationId === orgId);
+    // LIVE-ONLY (#1228) — org-filter before computing max(sortOrder).
+    const siblings = (await liveRows(ctx, catProject, "projectCategories")).filter((c) => c.organizationId === orgId);
     const sortOrder = siblings.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
 
     await ctx.db.insert("projectCategories", {
       id,
       organizationId: orgId,
       projectId,
+      versionId: requireLiveVersionId(catProject),
+      lineageId: id,
       name,
       sortOrder,
       createdAt: now,
@@ -330,13 +328,8 @@ export const deleteCategoryNative = mutation({
     ).filter((g) => g.organizationId === orgId);
     const groupIds = new Set(groups.map((g) => g.id));
 
-    // 2. Affected top-level lines (by_projectId is global — org-filter).
-    const affected = (
-      await ctx.db
-        .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", category.projectId))
-        .collect()
-    ).filter(
+    // 2. Affected top-level lines. LIVE-ONLY (#1228).
+    const affected = (await liveRows(ctx, delCatProject, "projectLineItems")).filter(
       (li) =>
         li.organizationId === orgId &&
         ((li.groupId != null && groupIds.has(li.groupId)) ||

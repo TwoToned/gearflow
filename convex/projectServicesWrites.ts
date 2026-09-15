@@ -18,6 +18,7 @@ import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { assertLifecycleGuard, lifecycleAuditMetadata } from "./lib/projectLocks";
+import { liveRows, requireLiveVersionId } from "./lib/versionScope";
 
 /**
  * Native PROJECT-SERVICE write mutations (Phase 3 browser-direct — replaces the
@@ -477,16 +478,18 @@ export const createServiceNative = mutation({
 
     const { fields, serviceDate, serviceEndDate } = buildServiceFields(a);
 
-    // sortOrder = max+1 among the project's existing services (by_projectId is global → org-filter).
-    const projectServices = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect()
-    ).filter((s) => s.organizationId === a.orgId);
+    // sortOrder = max+1 among the project's existing LIVE services (#1228).
+    const projectServices = (await liveRows(ctx, svcProject, "projectServices")).filter(
+      (s) => s.organizationId === a.orgId,
+    );
     const sortOrder = projectServices.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
 
     await ctx.db.insert("projectServices", {
       id: a.id,
       organizationId: a.orgId,
       projectId: a.projectId,
+      versionId: requireLiveVersionId(svcProject),
+      lineageId: a.id,
       type: fields.type as Doc<"projectServices">["type"],
       title: fields.title,
       ...(fields.description != null ? { description: fields.description } : {}),
@@ -1057,10 +1060,10 @@ export const generateServicesNative = mutation({
       }
     }
 
-    // Existing services (idempotent dedup by type:date).
-    const existingServices = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", a.projectId)).collect()
-    ).filter((s) => s.organizationId === a.orgId);
+    // Existing services (idempotent dedup by type:date). LIVE-ONLY (#1228).
+    const existingServices = (await liveRows(ctx, project, "projectServices")).filter(
+      (s) => s.organizationId === a.orgId,
+    );
     const existingKey = new Set(existingServices.map((s) => `${s.type}:${dayKeyOf(s.date ?? null)}`));
 
     const toCreate: Array<{
@@ -1109,12 +1112,16 @@ export const generateServicesNative = mutation({
 
     let sortOrder = existingServices.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
     let created = 0;
+    const genVersionId = requireLiveVersionId(project);
     for (const svc of toCreate) {
       const lineTotal = svc.unitPrice != null ? calculateServiceLineTotal(svc.unitPrice, 0) : null;
+      const genId = createId();
       await ctx.db.insert("projectServices", {
-        id: createId(),
+        id: genId,
         organizationId: a.orgId,
         projectId: a.projectId,
+        versionId: genVersionId,
+        lineageId: genId,
         type: svc.type as Doc<"projectServices">["type"],
         title: svc.title,
         ...(svc.description != null ? { description: svc.description } : {}),
@@ -1179,9 +1186,8 @@ export const cloneServicesNative = mutation({
     // land; the source project isn't written to.
     const guard = await assertLifecycleGuard(ctx, target, { kind: "structural", justification: a.justification });
 
-    const sourceServices = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", a.sourceProjectId)).collect()
-    )
+    // LIVE-ONLY (#1228) — a clone copies FROM the source's live plan.
+    const sourceServices = (await liveRows(ctx, source, "projectServices"))
       .filter((s) => s.organizationId === a.orgId && s.status !== "CANCELLED")
       .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0));
 
@@ -1222,10 +1228,10 @@ export const cloneServicesNative = mutation({
       return ms + dayOffset * DAY;
     };
 
-    const targetServices = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", a.targetProjectId)).collect()
-    ).filter((s) => s.organizationId === a.orgId);
+    // LIVE-ONLY (#1228) — the clone lands ON the target's live plan.
+    const targetServices = (await liveRows(ctx, target, "projectServices")).filter((s) => s.organizationId === a.orgId);
     let sortOrder = targetServices.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
+    const targetVersionId = requireLiveVersionId(target);
 
     let cloned = 0;
     for (const svc of sourceServices) {
@@ -1245,6 +1251,8 @@ export const cloneServicesNative = mutation({
         id: newServiceId,
         organizationId: a.orgId,
         projectId: a.targetProjectId,
+        versionId: targetVersionId,
+        lineageId: newServiceId,
         type: svc.type,
         title: svc.title,
         ...(svc.description != null ? { description: svc.description } : {}),
@@ -1362,9 +1370,10 @@ export const convertLineItemToServiceNative = mutation({
       return { id: a.serviceId };
     }
 
-    const existingForProject = (
-      await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", line.projectId)).collect()
-    ).filter((s) => s.organizationId === a.orgId);
+    // LIVE-ONLY (#1228).
+    const existingForProject = (await liveRows(ctx, convertProject, "projectServices")).filter(
+      (s) => s.organizationId === a.orgId,
+    );
     const sortOrder = existingForProject.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
 
     const pricingType = line.pricingType && String(line.pricingType) !== "" ? line.pricingType : null;
@@ -1377,6 +1386,8 @@ export const convertLineItemToServiceNative = mutation({
       id: a.serviceId,
       organizationId: a.orgId,
       projectId: line.projectId,
+      versionId: requireLiveVersionId(convertProject),
+      lineageId: a.serviceId,
       type: serviceType as Doc<"projectServices">["type"],
       title: line.description || SERVICE_TYPE_LABELS[serviceType],
       showOnDocuments: true,

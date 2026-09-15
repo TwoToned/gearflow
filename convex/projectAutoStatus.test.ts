@@ -91,12 +91,24 @@ describe("AUTO_STATUS_RULES — table invariants", () => {
     expect(fromRules).toEqual([...AUTO_STATUS_KEYS].sort());
   });
 
-  test("no rule is allowed to advance INTO a snapshotting or hard-locked status", () => {
-    // Entering CONFIRMED snapshots + gates on an accepted quote; COMPLETED/INVOICED
-    // hard-lock the project. Both stay a deliberate human click.
+  test("no rule advances INTO the hard-locked tier", () => {
+    // Closing a job out is a human's call, and there is no event that means
+    // "the work is finished". CONFIRMED is the one deliberate exception — see
+    // the next test, which pins exactly which rule may reach it and why.
     for (const trigger of AUTO_STATUS_TRIGGERS) {
-      expect(["CONFIRMED", "COMPLETED", "INVOICED"]).not.toContain(AUTO_STATUS_RULES[trigger].to);
+      expect(["COMPLETED", "INVOICED"]).not.toContain(AUTO_STATUS_RULES[trigger].to);
     }
+  });
+
+  test("PAYMENT_SETTLED is the ONLY rule that may reach CONFIRMED", () => {
+    // #1228 relaxed "never automate into CONFIRMED" for exactly one rule,
+    // because in this business payment IS the confirmation. It is safe only
+    // because it re-checks the accepted-quote gate and takes the same snapshot
+    // the manual path does (see `maybeAutoAdvanceProjectStatus`). A second rule
+    // sneaking into CONFIRMED would not inherit either guarantee by accident —
+    // so this test exists to make adding one a deliberate, visible act.
+    const reaching = AUTO_STATUS_TRIGGERS.filter((t) => AUTO_STATUS_RULES[t].to === "CONFIRMED");
+    expect(reaching).toEqual(["PAYMENT_SETTLED"]);
   });
 
   test("no rule may fire from a terminal or already-past status", () => {
@@ -112,7 +124,10 @@ describe("AUTO_STATUS_RULES — table invariants", () => {
   });
 
   test("every move is forward, and never LOWERS the lock tier", () => {
-    const RANK = ["ENQUIRY", "QUOTING", "QUOTED", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED"];
+    const RANK = [
+      "ENQUIRY", "QUOTING", "QUOTED", "AWAITING_PAYMENT", "CONFIRMED",
+      "PREPPING", "CHECKED_OUT", "ON_SITE", "RETURNED",
+    ];
     const TIERS = ["OPEN", "FINANCE_LOCKED", "JUSTIFY", "HARD_LOCKED"];
     for (const trigger of AUTO_STATUS_TRIGGERS) {
       const rule = AUTO_STATUS_RULES[trigger];
@@ -193,6 +208,100 @@ describe("QUOTE_SENT", () => {
     expect(log?.metadata).toMatchObject({ autoAdvanceTrigger: "QUOTE_SENT", statusFrom: "ENQUIRY", statusTo: "QUOTED" });
     expect(log?.userName).toBe("Ash");
     expect(log?.summary).toContain("Auto-advanced to QUOTED");
+  });
+});
+
+// ─── The money phase (#1228) ───────────────────────────────────────────────
+
+/** Seed an ACCEPTED revision so the PAYMENT_SETTLED gate can pass. */
+async function seedAcceptedQuote(t: T, orgId = ORG) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("quotes", {
+      id: "q1",
+      organizationId: orgId,
+      projectId: PROJ,
+      version: 1,
+      status: "ACCEPTED",
+      snapshot: null,
+      acceptedAt: NOW - 1000,
+      createdAt: NOW - 2000,
+      updatedAt: NOW - 1000,
+    });
+  });
+}
+
+describe("QUOTE_ACCEPTED / INVOICE_ISSUED", () => {
+  test("accepting a quote moves a quoted job to AWAITING_PAYMENT", async () => {
+    const t = makeT();
+    await seedProject(t, "QUOTED");
+    expect(await advance(t, "QUOTE_ACCEPTED")).toBe("AWAITING_PAYMENT");
+  });
+
+  test("issuing an invoice moves a job that was never formally accepted", async () => {
+    const t = makeT();
+    await seedProject(t, "ENQUIRY");
+    expect(await advance(t, "INVOICE_ISSUED")).toBe("AWAITING_PAYMENT");
+  });
+
+  test("the second of the two is a no-op — they are two doors to one room", async () => {
+    const t = makeT();
+    await seedProject(t, "QUOTED");
+    expect(await advance(t, "QUOTE_ACCEPTED")).toBe("AWAITING_PAYMENT");
+    expect(await advance(t, "INVOICE_ISSUED")).toBeNull();
+  });
+
+  test("a balance invoice on a job already out on site never drags it back", async () => {
+    const t = makeT();
+    await seedProject(t, "ON_SITE");
+    expect(await advance(t, "INVOICE_ISSUED")).toBeNull();
+    expect(await projectStatus(t)).toBe("ON_SITE");
+  });
+});
+
+describe("PAYMENT_SETTLED", () => {
+  test("a settled invoice confirms the job", async () => {
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    await seedAcceptedQuote(t);
+    expect(await advance(t, "PAYMENT_SETTLED")).toBe("CONFIRMED");
+    expect(await projectStatus(t)).toBe("CONFIRMED");
+  });
+
+  test("fails CLOSED with no accepted quote — the manual confirm's own gate", async () => {
+    // updateStatusNative demands a justification from a narrow audience to
+    // confirm without an accepted revision. This path has nobody to ask, so it
+    // must leave the job where it is rather than route around the gate.
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    expect(await advance(t, "PAYMENT_SETTLED")).toBeNull();
+    expect(await projectStatus(t)).toBe("AWAITING_PAYMENT");
+  });
+
+  test("takes the same whole-project snapshot the manual confirm takes", async () => {
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    await seedAcceptedQuote(t);
+    await advance(t, "PAYMENT_SETTLED");
+    const snapshots = await t.run(async (ctx) => await ctx.db.query("projectSnapshots").collect());
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.reason).toBe("CONFIRMED");
+    expect(snapshots[0]?.statusFrom).toBe("AWAITING_PAYMENT");
+    expect(snapshots[0]?.statusTo).toBe("CONFIRMED");
+  });
+
+  test("never reaches a job that hasn't been through the money phase", async () => {
+    const t = makeT();
+    await seedProject(t, "QUOTED");
+    await seedAcceptedQuote(t);
+    expect(await advance(t, "PAYMENT_SETTLED")).toBeNull();
+  });
+
+  test("respects the org opt-out", async () => {
+    const t = makeT();
+    await seedProject(t, "AWAITING_PAYMENT");
+    await seedAcceptedQuote(t);
+    await optOut(t, "paymentSettled");
+    expect(await advance(t, "PAYMENT_SETTLED")).toBeNull();
   });
 });
 

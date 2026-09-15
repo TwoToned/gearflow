@@ -44,7 +44,14 @@ async function loadOrgSettingsBlob(
 /** Mirrors `src/lib/project-status-automation.ts`'s `AutoStatusKey` — the
  *  convex/src boundary has no shared module, so parity is proven by a test
  *  instead (`convex/projectAutoStatus.test.ts`). */
-export type AutoStatusSettingKey = "quoteSent" | "prepStarted" | "allCheckedOut" | "allReturned";
+export type AutoStatusSettingKey =
+  | "quoteSent"
+  | "quoteAccepted"
+  | "invoiceIssued"
+  | "paymentSettled"
+  | "prepStarted"
+  | "allCheckedOut"
+  | "allReturned";
 
 /**
  * Is a given status-automation trigger enabled for this org (#1160)? Absent —

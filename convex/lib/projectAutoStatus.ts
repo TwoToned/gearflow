@@ -1,10 +1,12 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { MutationCtx } from "../_generated/server";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { Actor } from "./auth";
 import { writeActivityLog } from "./audit";
 import { bumpProjectCounters } from "./counters";
-import { lockTierForStatus, LOCK_TIER_RANK } from "./projectLocks";
+import { lockTierForStatus, LOCK_TIER_RANK, crossesIntoSnapshotStatus } from "./projectLocks";
+import { captureProjectSnapshot } from "./projectSnapshots";
+import { hasAcceptedQuote } from "./quoteState";
 import { resolveAutoStatusEnabled, type AutoStatusSettingKey } from "./orgSettings";
 import { autoCommitOpenSession } from "../projectUnlockSessionsWrites";
 
@@ -26,13 +28,26 @@ import { autoCommitOpenSession } from "../projectUnlockSessionsWrites";
  *    COMPLETED or INVOICED job is never reopened by a warehouse scan, a job
  *    already past the target never goes backwards, and re-firing a trigger is a
  *    no-op because the `from` set no longer matches.
- * 2. **Never crosses INTO a snapshotting/hard-locking tier on its own.** The
- *    two transitions that `projectWrites.updateStatusNative` treats as
- *    ceremonies — entering CONFIRMED (snapshot + accepted-quote gate + the
- *    overbooking-impact dialog) and entering COMPLETED/INVOICED (HARD_LOCKED,
- *    snapshot) — are deliberately NOT automated. Accepting a quote still only
- *    *offers* CONFIRMED (`quotesWrites.markAcceptedNative`'s `offerStatusChange`),
- *    because confirming a job commits stock and money and is a human's call.
+ * 2. **Never crosses into the HARD_LOCKED tier, and reproduces every ceremony
+ *    it does cross.** COMPLETED/INVOICED are never automated — closing a job out
+ *    is a human's call and there is no event that means "the work is finished".
+ *
+ *    CONFIRMED is the one exception, added by #1228: `PAYMENT_SETTLED`. In the
+ *    business this models, payment IS the confirmation ("once it's paid, the job
+ *    is on"), so refusing to automate it would leave the app's most meaningful
+ *    status permanently behind the facts. It is safe because it reproduces both
+ *    ceremonies `updateStatusNative` performs on that transition rather than
+ *    skipping them:
+ *      - the **accepted-quote gate** (#986 decision 3) — no accepted revision,
+ *        no auto-advance. The manual path can override that with a justification
+ *        from a narrow audience; this path has nobody to collect one from, so it
+ *        fails CLOSED and leaves the job at AWAITING_PAYMENT for a human.
+ *      - the **whole-project snapshot** — `crossesIntoSnapshotStatus` is checked
+ *        here exactly as it is there, so an automatic confirm is as recoverable
+ *        as a manual one.
+ *    What it does NOT reproduce is the overbooking-impact dialog, which is a
+ *    client-side advisory that never blocked a confirm anyway (see
+ *    `ConfirmStatusImpactDialog`: "This is a heads-up, not a block").
  * 3. **It patches the project directly, on the authority of the gate the calling
  *    mutation already passed** — the same reasoning the returns station shipped
  *    with: routing through `updateStatusNative` would re-gate on `project:update`,
@@ -49,6 +64,9 @@ import { autoCommitOpenSession } from "../projectUnlockSessionsWrites";
 
 export const AUTO_STATUS_TRIGGERS = [
   "QUOTE_SENT",
+  "QUOTE_ACCEPTED",
+  "INVOICE_ISSUED",
+  "PAYMENT_SETTLED",
   "PREP_STARTED",
   "ALL_CHECKED_OUT",
   "ALL_RETURNED",
@@ -77,6 +95,30 @@ export const AUTO_STATUS_RULES: Record<AutoStatusTrigger, AutoStatusRule> = {
     from: ["ENQUIRY", "QUOTING"],
     settingKey: "quoteSent",
     because: "a quote was sent to the client",
+  },
+  // ── #1228, the money phase ────────────────────────────────────────────────
+  // Two ways in, one way out. A job is "agreed but unpaid" either because the
+  // client accepted the quote or because an invoice went out (some jobs skip
+  // straight to a full invoice with no accept step) — whichever happens first
+  // moves it, and the second is then a no-op because the `from` set no longer
+  // matches. Payment is the single way forward out of it.
+  QUOTE_ACCEPTED: {
+    to: "AWAITING_PAYMENT",
+    from: ["ENQUIRY", "QUOTING", "QUOTED"],
+    settingKey: "quoteAccepted",
+    because: "the client accepted the quote",
+  },
+  INVOICE_ISSUED: {
+    to: "AWAITING_PAYMENT",
+    from: ["ENQUIRY", "QUOTING", "QUOTED"],
+    settingKey: "invoiceIssued",
+    because: "an invoice was issued",
+  },
+  PAYMENT_SETTLED: {
+    to: "CONFIRMED",
+    from: ["AWAITING_PAYMENT"],
+    settingKey: "paymentSettled",
+    because: "an invoice was paid in full",
   },
   PREP_STARTED: {
     to: "PREPPING",
@@ -140,11 +182,25 @@ async function anyCheckedOut(ctx: MutationCtx, projectId: string): Promise<boole
  * which also makes them idempotent (the second item prepped finds the job already
  * at PREPPING). The two "all" triggers have to look at the rest of the project.
  */
-async function conditionMet(ctx: MutationCtx, trigger: AutoStatusTrigger, projectId: string): Promise<boolean> {
+async function conditionMet(
+  ctx: MutationCtx,
+  trigger: AutoStatusTrigger,
+  orgId: string,
+  projectId: string,
+  now: number,
+): Promise<boolean> {
   switch (trigger) {
     case "QUOTE_SENT":
+    case "QUOTE_ACCEPTED":
+    case "INVOICE_ISSUED":
     case "PREP_STARTED":
       return true;
+    case "PAYMENT_SETTLED":
+      // Fails CLOSED without an accepted revision — see property 2 above. The
+      // caller has already established that an invoice reached PAID; this is the
+      // gate the MANUAL confirm would have hit, and the automation must not be a
+      // way around it.
+      return await hasAcceptedQuote(ctx, orgId, projectId, now);
     case "ALL_CHECKED_OUT":
       // Nothing left on the dock AND something actually went out — otherwise a
       // job whose gear was never prepped would "finish" deploying instantly.
@@ -152,6 +208,38 @@ async function conditionMet(ctx: MutationCtx, trigger: AutoStatusTrigger, projec
     case "ALL_RETURNED":
       return !(await anyCheckedOut(ctx, projectId));
   }
+}
+
+/**
+ * The same whole-project snapshot `updateStatusNative` takes on the same
+ * crossings (#792) — an automatic confirm has to be exactly as recoverable as a
+ * manual one. Reads the project back AFTER the status patch so the snapshot's
+ * own `project` entry carries the new status too; `statusFrom`/`statusTo` record
+ * the transition separately.
+ */
+async function captureIfCrossing(
+  ctx: MutationCtx,
+  a: {
+    orgId: string;
+    projectRef: Id<"projects">;
+    from: string;
+    to: string;
+    actor: Actor;
+    now: number;
+  },
+): Promise<void> {
+  if (!crossesIntoSnapshotStatus(a.from, a.to)) return;
+  const patched = await ctx.db.get(a.projectRef);
+  if (!patched) return;
+  await captureProjectSnapshot(ctx, {
+    orgId: a.orgId,
+    project: patched,
+    reason: a.to as "CONFIRMED" | "COMPLETED",
+    statusFrom: a.from,
+    statusTo: a.to,
+    actor: a.actor,
+    now: a.now,
+  });
 }
 
 /**
@@ -179,10 +267,12 @@ export async function maybeAutoAdvanceProjectStatus(
   const from = project.status ?? "";
   if (!rule.from.includes(from)) return null;
   if (!(await resolveAutoStatusEnabled(ctx, a.orgId, rule.settingKey))) return null;
-  if (!(await conditionMet(ctx, a.trigger, a.projectId))) return null;
+  if (!(await conditionMet(ctx, a.trigger, a.orgId, a.projectId, a.now))) return null;
 
   await ctx.db.patch(project._id, { status: rule.to, updatedAt: a.now });
   await bumpProjectCounters(ctx, a.orgId, project, { ...project, status: rule.to });
+
+  await captureIfCrossing(ctx, { orgId: a.orgId, projectRef: project._id, from, to: rule.to, actor: a.actor, now: a.now });
 
   // Same invariant updateStatusNative enforces: an unlock session never silently
   // spans a status change. (The pre-#1160 returns auto-advance skipped this — a

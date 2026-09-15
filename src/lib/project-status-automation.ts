@@ -14,7 +14,15 @@
  * automation without a backfill — the setting only ever records an opt-OUT.
  */
 
-export const AUTO_STATUS_KEYS = ["quoteSent", "prepStarted", "allCheckedOut", "allReturned"] as const;
+export const AUTO_STATUS_KEYS = [
+  "quoteSent",
+  "quoteAccepted",
+  "invoiceIssued",
+  "paymentSettled",
+  "prepStarted",
+  "allCheckedOut",
+  "allReturned",
+] as const;
 
 export type AutoStatusKey = (typeof AUTO_STATUS_KEYS)[number];
 
@@ -27,6 +35,21 @@ export const AUTO_STATUS_LABELS: Record<AutoStatusKey, { title: string; moves: s
     title: "Quote sent",
     moves: "Quoted",
     detail: "When a quote revision goes out to the client.",
+  },
+  quoteAccepted: {
+    title: "Quote accepted",
+    moves: "Awaiting payment",
+    detail: "When the client approves a quote and the job is waiting on money.",
+  },
+  invoiceIssued: {
+    title: "Invoice issued",
+    moves: "Awaiting payment",
+    detail: "When a deposit or full invoice goes out on a job that hasn't been approved yet.",
+  },
+  paymentSettled: {
+    title: "Invoice paid",
+    moves: "Confirmed",
+    detail: "When an invoice is paid in full. Needs an accepted quote — without one the job waits for a human.",
   },
   prepStarted: {
     title: "Prep started",
@@ -67,6 +90,10 @@ export function autoStatusToast(status: string | null | undefined): { title: str
   switch (status) {
     case "QUOTED":
       return { title: "Job moved to Quoted", description: "The quote is out with the client." };
+    case "AWAITING_PAYMENT":
+      return { title: "Job moved to Awaiting payment", description: "Agreed — now waiting on the money." };
+    case "CONFIRMED":
+      return { title: "Job confirmed", description: "Paid in full — the job is on." };
     case "PREPPING":
       return { title: "Job moved to Prepping", description: "First item packed — the job is now in prep." };
     case "CHECKED_OUT":

@@ -34,7 +34,7 @@ export type LifecycleStageKey =
 const STAGES: { key: LifecycleStageKey; label: string; statuses: string[] }[] = [
   { key: "enquiry", label: "Enquiry", statuses: ["ENQUIRY"] },
   { key: "quote", label: "Quote", statuses: ["QUOTING", "QUOTED"] },
-  // #1228 — the agreed-but-unpaid phase. ONE stage, not three: "invoice sent"
+  // #1236 — the agreed-but-unpaid phase. ONE stage, not three: "invoice sent"
   // and "paid" are facts on the invoice and payment rows, so they render as
   // derived sub-steps under this node (`<PaymentProgressStrip>`) rather than
   // becoming statuses of their own. See FEATUREDOCS/77.

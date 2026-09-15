@@ -9,7 +9,7 @@
 > unchanged: `CONFIRMED`/`CANCELLED` stay offers. See
 > [76 — Project Status Automation](./76-project-status-automation.md).
 
-> **#1228** — the finance verbs now drive the lifecycle. Accepting a quote or
+> **#1236** — the finance verbs now drive the lifecycle. Accepting a quote or
 > issuing an invoice moves the project to the new `AWAITING_PAYMENT` status;
 > recording a payment that settles an invoice **in full** moves it to
 > `CONFIRMED`. `markAcceptedNative` reports `autoStatusChange` when it acted and

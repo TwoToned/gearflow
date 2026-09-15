@@ -159,7 +159,7 @@ export function useQuoteWrites() {
     }> => {
       const org = requireOrg();
       const parsed = quoteAcceptSchema.parse(data);
-      // #1228 — accepting moves the job to AWAITING_PAYMENT, not CONFIRMED: the
+      // #1236 — accepting moves the job to AWAITING_PAYMENT, not CONFIRMED: the
       // client has agreed, the money hasn't landed. Announced rather than
       // offered, matching send; the offer survives only for an opted-out org.
       const res = await acceptM({

@@ -1,4 +1,4 @@
--- #1228 — AWAITING_PAYMENT: the agreed-but-unpaid lifecycle phase.
+-- #1236 — AWAITING_PAYMENT: the agreed-but-unpaid lifecycle phase.
 --
 -- `ProjectStatus` is an ORPHANED Postgres type: the `Project` model moved to
 -- Convex in the Phase 3 native decommission and no Prisma model references it

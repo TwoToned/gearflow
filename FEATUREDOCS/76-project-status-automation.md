@@ -22,7 +22,7 @@ moments now advance it on their own:
 | `INVOICE_ISSUED` | an invoice is issued | `ENQUIRY` / `QUOTING` / `QUOTED` | `AWAITING_PAYMENT` |
 | `PAYMENT_SETTLED` | a payment settles an invoice in full | `AWAITING_PAYMENT` | `CONFIRMED` |
 
-The last three are #1228's money phase — see
+The last three are #1236's money phase — see
 [77 — The Money Phase](./77-money-phase-lifecycle.md). `PAYMENT_SETTLED` is the
 one relaxation of property 2 below, and the reason this module now takes a
 snapshot on a status crossing.
@@ -66,7 +66,7 @@ mutation that did the real work):
    it does cross.** `COMPLETED`/`INVOICED` are never automated: closing a job out
    is a human's call and no event means "the work is finished."
 
-   `CONFIRMED` has ONE sanctioned rule, `PAYMENT_SETTLED` (#1228) — in this
+   `CONFIRMED` has ONE sanctioned rule, `PAYMENT_SETTLED` (#1236) — in this
    business payment *is* the confirmation. It reproduces both ceremonies
    `updateStatusNative` performs rather than skipping them: the **accepted-quote
    gate** (#986 decision 3), which fails CLOSED because this path has nobody to

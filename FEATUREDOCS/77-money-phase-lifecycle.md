@@ -1,4 +1,4 @@
-# The Money Phase — `AWAITING_PAYMENT` (#1228)
+# The Money Phase — `AWAITING_PAYMENT` (#1236)
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-09-15 (review quarterly — POLICY.md R-5.5)_
 
@@ -99,7 +99,7 @@ ceremonies rather than skipping them:
    `AWAITING_PAYMENT` for a human.
 2. **The whole-project snapshot** — `crossesIntoSnapshotStatus` is checked in
    the shared module exactly as it is in `updateStatusNative`, so an automatic
-   confirm is as recoverable as a manual one. This also means the pre-#1228
+   confirm is as recoverable as a manual one. This also means the pre-#1236
    `ALL_RETURNED`/`PREP_STARTED` rules now snapshot correctly if a future rule
    ever crosses one of those boundaries.
 
@@ -149,7 +149,7 @@ Note the deliberate divergence this creates between the two same-named
 `isConfirmedOrLater` helpers: `availabilityCore.ts`'s (is the gig locked in for
 **stock** purposes?) answers **true** for `AWAITING_PAYMENT`, and
 `projectLocks.ts`'s (is the **money** locked by status?) answers **false**. They
-ask different questions and have always been separate functions; #1228 is the
+ask different questions and have always been separate functions; #1236 is the
 first status where their answers differ.
 
 ## Migration

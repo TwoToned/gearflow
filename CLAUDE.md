@@ -475,7 +475,7 @@ it calls in here. Three rules when you touch this:
    never before the writes it inspects have landed.
 2. **Never automate a move INTO `COMPLETED`/`INVOICED`.** Closing a job out is a
    human's call. `CONFIRMED` has exactly ONE sanctioned rule — `PAYMENT_SETTLED`
-   (#1228): in this business payment IS the confirmation. It is safe only because
+   (#1236): in this business payment IS the confirmation. It is safe only because
    it re-checks the accepted-quote gate (failing CLOSED — it has nobody to collect
    a justification from) and takes the same whole-project snapshot
    `updateStatusNative` does. A table-level test pins it as the only rule that may
@@ -492,7 +492,7 @@ sub-hire lines sit at `CONFIRMED` forever and would pin a job at `PREPPING`; onl
 physically picked gear is ever `PACKED`.
 
 ### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
-The money phase (#1228, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
+The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
 the client has agreed and/or an invoice is out, but the money hasn't landed.
 **Never add "deposit invoice sent" or "deposit paid" as statuses.** Both are
 already facts on rows that own them — an `invoices` row at `ISSUED`, and

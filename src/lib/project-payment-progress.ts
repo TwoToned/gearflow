@@ -1,5 +1,5 @@
 /**
- * The money phase, DERIVED (#1228).
+ * The money phase, DERIVED (#1236).
  *
  * `AWAITING_PAYMENT` is one project status covering the whole agreed-but-unpaid
  * phase. The finer sub-state a human actually wants to see — *"accepted, invoice

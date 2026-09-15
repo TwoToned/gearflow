@@ -101,7 +101,7 @@ describe("AUTO_STATUS_RULES — table invariants", () => {
   });
 
   test("PAYMENT_SETTLED is the ONLY rule that may reach CONFIRMED", () => {
-    // #1228 relaxed "never automate into CONFIRMED" for exactly one rule,
+    // #1236 relaxed "never automate into CONFIRMED" for exactly one rule,
     // because in this business payment IS the confirmation. It is safe only
     // because it re-checks the accepted-quote gate and takes the same snapshot
     // the manual path does (see `maybeAutoAdvanceProjectStatus`). A second rule
@@ -211,7 +211,7 @@ describe("QUOTE_SENT", () => {
   });
 });
 
-// ─── The money phase (#1228) ───────────────────────────────────────────────
+// ─── The money phase (#1236) ───────────────────────────────────────────────
 
 /** Seed an ACCEPTED revision so the PAYMENT_SETTLED gate can pass. */
 async function seedAcceptedQuote(t: T, orgId = ORG) {

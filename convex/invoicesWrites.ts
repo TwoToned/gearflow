@@ -334,7 +334,7 @@ export const issueNative = mutation({
   returns: v.object({
     id: v.string(),
     invoiceNumber: v.string(),
-    /** #1228 — non-null when the automation moved the job to AWAITING_PAYMENT. */
+    /** #1236 — non-null when the automation moved the job to AWAITING_PAYMENT. */
     autoStatus: v.union(v.string(), v.null()),
   }),
   args: {
@@ -417,7 +417,7 @@ export const issueNative = mutation({
       createdAt: now,
     });
 
-    // #1228 — a job with an invoice out is waiting on money, even if nobody ever
+    // #1236 — a job with an invoice out is waiting on money, even if nobody ever
     // clicked "accept" on a quote (some jobs go straight to a full invoice). A
     // no-op on a job already at AWAITING_PAYMENT or beyond.
     const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {

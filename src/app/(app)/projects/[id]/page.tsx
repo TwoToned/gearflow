@@ -569,7 +569,7 @@ export default function ProjectDetailPage({
               />
             )}
 
-            {/* #1228 — the money phase's derived sub-steps, directly under the
+            {/* #1236 — the money phase's derived sub-steps, directly under the
                 node they belong to. Renders only at AWAITING_PAYMENT; see
                 FEATUREDOCS/77 for why these are three derived facts rather than
                 three statuses. */}

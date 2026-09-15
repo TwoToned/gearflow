@@ -24,7 +24,7 @@ export function usePaymentWrites() {
   };
 
   return {
-    /** #1228 — a payment that settles an invoice in full confirms the job.
+    /** #1236 — a payment that settles an invoice in full confirms the job.
      *  Announced here, once, so the status never moves under the person who
      *  recorded it. `autoStatus` is non-null only on the payment that actually
      *  crossed the boundary. */

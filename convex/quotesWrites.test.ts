@@ -1116,8 +1116,8 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
       id: "q1", organizationId: ORG, reason: "Too expensive", actor, auditId: "a2", now: NOW + 1, ...over,
     } as never);
 
-  // #1228 — accepting advances the job to AWAITING_PAYMENT (agreed, unpaid),
-  // NOT to CONFIRMED. Confirming is what payment does. The pre-#1228
+  // #1236 — accepting advances the job to AWAITING_PAYMENT (agreed, unpaid),
+  // NOT to CONFIRMED. Confirming is what payment does. The pre-#1236
   // `offerStatusChange: "CONFIRMED"` survives only for an org that opted out.
   test("accept records the date + reference and advances to AWAITING_PAYMENT", async () => {
     const t = makeT();

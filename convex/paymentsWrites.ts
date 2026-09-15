@@ -139,7 +139,7 @@ export const recordNative = mutation({
       createdAt: now,
     });
 
-    // #1228 — payment is the confirmation. Only a FULL settlement counts: a
+    // #1236 — payment is the confirmation. Only a FULL settlement counts: a
     // partial payment leaves the job exactly where it was. The rule itself
     // re-checks the accepted-quote gate the manual confirm enforces and takes
     // the same snapshot, so this is not a way around either.

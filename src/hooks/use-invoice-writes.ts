@@ -106,7 +106,7 @@ export function useInvoiceWrites() {
       } catch {
         artifactReady = false;
       }
-      // #1228 — issuing an invoice on a still-unagreed job moves it to
+      // #1236 — issuing an invoice on a still-unagreed job moves it to
       // Awaiting payment. Announced, never asked: the status change is a
       // consequence of the document going out, not a decision to make.
       const copy = autoStatusToast(result.autoStatus);

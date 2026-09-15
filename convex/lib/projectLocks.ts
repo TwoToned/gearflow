@@ -23,7 +23,7 @@ import { currentRevisionQuoteStatus, projectLiveRevision, type EffectiveQuoteSta
  *                                                            no per-edit path)
  *   CANCELLED                            → OPEN            (ungated — #957 open Q)
  *
- * #1228's `AWAITING_PAYMENT` is deliberately **OPEN**, not FINANCE_LOCKED.
+ * #1236's `AWAITING_PAYMENT` is deliberately **OPEN**, not FINANCE_LOCKED.
  *
  * The instinct is the opposite — a job whose client has agreed to a price
  * surely shouldn't be repriced — but the lock that expresses that is already

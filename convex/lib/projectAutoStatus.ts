@@ -32,7 +32,7 @@ import { autoCommitOpenSession } from "../projectUnlockSessionsWrites";
  *    it does cross.** COMPLETED/INVOICED are never automated — closing a job out
  *    is a human's call and there is no event that means "the work is finished".
  *
- *    CONFIRMED is the one exception, added by #1228: `PAYMENT_SETTLED`. In the
+ *    CONFIRMED is the one exception, added by #1236: `PAYMENT_SETTLED`. In the
  *    business this models, payment IS the confirmation ("once it's paid, the job
  *    is on"), so refusing to automate it would leave the app's most meaningful
  *    status permanently behind the facts. It is safe because it reproduces both
@@ -96,7 +96,7 @@ export const AUTO_STATUS_RULES: Record<AutoStatusTrigger, AutoStatusRule> = {
     settingKey: "quoteSent",
     because: "a quote was sent to the client",
   },
-  // ── #1228, the money phase ────────────────────────────────────────────────
+  // ── #1236, the money phase ────────────────────────────────────────────────
   // Two ways in, one way out. A job is "agreed but unpaid" either because the
   // client accepted the quote or because an invoice went out (some jobs skip
   // straight to a full invoice with no accept step) — whichever happens first

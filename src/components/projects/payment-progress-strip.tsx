@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { api } from "../../../convex/_generated/api";
 
 /**
- * The money phase, rendered (#1228).
+ * The money phase, rendered (#1236).
  *
  * `AWAITING_PAYMENT` is ONE lifecycle stage, so the stepper shows one node. The
  * three things a human actually wants to know inside that stage — accepted?

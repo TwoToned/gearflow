@@ -1114,7 +1114,7 @@ export const markAcceptedNative = mutation({
   returns: v.object({
     id: v.string(),
     version: v.number(),
-    /** #1228 — non-null when the automation moved the job to AWAITING_PAYMENT. */
+    /** #1236 — non-null when the automation moved the job to AWAITING_PAYMENT. */
     autoStatusChange: v.union(v.literal("AWAITING_PAYMENT"), v.null()),
     offerStatusChange: offerValidator,
   }),
@@ -1171,7 +1171,7 @@ export const markAcceptedNative = mutation({
       createdAt: now,
     });
 
-    // #1228 — accepting now moves the job to AWAITING_PAYMENT (the client has
+    // #1236 — accepting now moves the job to AWAITING_PAYMENT (the client has
     // said yes; the money hasn't landed), NOT straight to CONFIRMED. The old
     // "offer CONFIRMED" is the opt-out fallback, exactly as it is for send.
     const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {

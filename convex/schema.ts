@@ -1638,15 +1638,24 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
-    // Composite: max(sortOrder) for a project via .order("desc").first() (1 doc)
-    // instead of collecting ALL of a project's lines to reduce the max (O(N) per
+    // #1228 Phase 2 (project versioning v2) — `by_projectId` DELETED on
+    // purpose (the deliberate breaking change, docs/designs/project-versioning-v2.md
+    // §4.9): every plan read must go through the version-scoped family below so a
+    // stray read can never silently see a non-live version's rows. See
+    // convex/lib/versionScope.ts (liveRows/versionRows) and
+    // scripts/version-scope-ratchet.mjs.
+    .index("by_versionId", ["versionId"])
+    // Lineage resolution — "the same logical row across versions" (find this
+    // lineage's row inside a given version, e.g. materialize/promote/compare).
+    .index("by_versionId_lineageId", ["versionId", "lineageId"])
+    // Composite: max(sortOrder) for a VERSION via .order("desc").first() (1 doc)
+    // instead of collecting ALL of a version's lines to reduce the max (O(N) per
     // add, O(N^2) across a bulk add). Used by nextLineSort.
-    .index("by_projectId_sortOrder", ["projectId", "sortOrder"])
-    // Composite: range-scan a project's lines by status (e.g. CHECKED_OUT) instead
-    // of collecting ALL of a project's lines and JS-filtering. Used by
+    .index("by_versionId_sortOrder", ["versionId", "sortOrder"])
+    // Composite: range-scan a version's lines by status (e.g. CHECKED_OUT) instead
+    // of collecting ALL of a version's lines and JS-filtering. Used by
     // warehouseOps.checkInBulkTotals (the hottest status-filtered read).
-    .index("by_projectId_status", ["projectId", "status"])
+    .index("by_versionId_status", ["versionId", "status"])
     // Composite: range-scan an org's CHECKED_OUT lines ORG-WIDE (no project
     // pre-selection) instead of collecting the whole org's lines and JS-filtering.
     // Used by warehouseReturns.bundle (WS5 returns station board, issue #944) —
@@ -1745,12 +1754,11 @@ export default defineSchema({
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
-    // #1226 Phase 1 (project versioning v2) — optional on arrival, NOT yet
-    // read/written by anything but `backfillProjectVersions.ts` and its
-    // tests. `versionId` names the `projectVersions` row this row belongs
-    // to; `lineageId` is the stable identity that survives a version swap
-    // (absent here ⇒ this row's own `id`, per the backfill). No index yet —
-    // nothing reads by these columns in this phase.
+    // #1226 Phase 1 (project versioning v2) — `versionId` names the
+    // `projectVersions` row this row belongs to; `lineageId` is the stable
+    // identity that survives a version swap (absent here ⇒ this row's own
+    // `id`, per the backfill). #1228 Phase 2 — now the READ index: see the
+    // `by_projectId` deletion note on projectLineItems above.
     versionId: v.optional(v.string()),
     lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
@@ -1758,7 +1766,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"]),
+    .index("by_versionId", ["versionId"])
+    .index("by_versionId_lineageId", ["versionId", "lineageId"]),
 
   // CategorySlot
   categorySlots: defineTable({
@@ -1778,7 +1787,14 @@ export default defineSchema({
     // #1226 Phase 1 — see projectCategories' comment above; identical
     // treatment. This table has no organizationId/projectId of its own
     // (PARENT_JOIN via projectCategoryId), so the backfill resolves the
-    // owning project through its projectCategoryId.
+    // owning project through its projectCategoryId. #1228 Phase 2 — this
+    // table never had a `by_projectId` index (no `projectId` column to key
+    // one on) and gets NO `by_versionId` index either: every read reaches it
+    // via `by_projectCategoryId`/`by_projectGroupId`/`by_lineItemId`/
+    // `by_subHireGroupId` (a PARENT_JOIN off an already version-scoped
+    // parent row), so `scripts/version-scope-ratchet.mjs` covers this table
+    // by checking those parent-join reads carry a live-filter marker, not by
+    // looking for a `by_versionId` index that would never exist here.
     versionId: v.optional(v.string()),
     lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
@@ -1827,7 +1843,8 @@ export default defineSchema({
     // a model/kit, so it has no level-2 equivalent in the cascade.
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
-    // #1226 Phase 1 — see projectCategories' comment above; identical treatment.
+    // #1226 Phase 1 — see projectCategories' comment above; identical
+    // treatment. #1228 Phase 2 — now the READ index, see that same note.
     versionId: v.optional(v.string()),
     lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
@@ -1835,7 +1852,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
+    .index("by_versionId", ["versionId"])
+    .index("by_versionId_lineageId", ["versionId", "lineageId"])
     .index("by_categoryId", ["categoryId"]),
 
   // ProjectManager
@@ -2583,7 +2601,8 @@ export default defineSchema({
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
     // #1226 Phase 1 (project versioning v2) — see projectCategories' comment
-    // near the CategorySlot table for the full rationale; identical treatment.
+    // near the CategorySlot table for the full rationale; identical
+    // treatment. #1228 Phase 2 — now the READ index, see that same note.
     versionId: v.optional(v.string()),
     lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
@@ -2591,11 +2610,12 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_projectId", ["projectId"])
+    .index("by_versionId", ["versionId"])
+    .index("by_versionId_lineageId", ["versionId", "lineageId"])
     .index("by_lineItemId", ["lineItemId"])
     .index("by_crewRoleId", ["crewRoleId"])
-    .index("by_projectId_type", ["projectId", "type"])
-    .index("by_projectId_date", ["projectId", "date"])
+    .index("by_versionId_type", ["versionId", "type"])
+    .index("by_versionId_date", ["versionId", "date"])
     // WS3 (#942) — range-scan an org's services by `date` for the Overbookings &
     // Gaps board's "services missing crew" section (bounded [MIN_TS, rangeEnd]
     // scan, the dashboardStats.ts MIN_TS idiom). `by_projectId_date` only serves a

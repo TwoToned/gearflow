@@ -1,6 +1,8 @@
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { Doc } from "../_generated/dataModel";
 import { applyProjectAllocation } from "./allocation";
 import { deriveBillingSummary } from "./billingDerivation";
+import { versionRows, resolveVersionId } from "./versionScope";
 
 /**
  * In-mutation project-totals recalculation (Phase 5, Option A — write-latency fix).
@@ -14,6 +16,27 @@ import { deriveBillingSummary } from "./billingDerivation";
  *
  * A convex-test (writeParity / recalcParity) proves this produces the same totals as
  * the server-side function for the same inputs — the money gate.
+ *
+ * D59 (#1228, Project Versioning v2 Phase 2): split into `loadTotalsBundle` (QueryCtx |
+ * MutationCtx, all reads) + `computeTotals` (PURE) + `recalcProjectTotals` (keeps the
+ * patch), mirroring the `loadModelAvailabilityBundle`/`computeModelAvailability` shape
+ * already proven in `availabilityCore.ts`. The arithmetic now has exactly one
+ * definition: a read-time totals-for-a-non-live-version path calls `loadTotalsBundle` +
+ * `computeTotals` only, never a second copy of this math. Ported from the Phase 0 spike
+ * (`worktree-agent-ab6397f97dceed5e7:convex/lib/recalc.ts`) and re-verified against this
+ * branch's `by_projectId` -> `by_versionId` index rename (the spike predates that
+ * rename, so its reads still used `by_projectId` — this version reads through
+ * `liveRows`/`versionRows` instead, see `convex/lib/versionScope.ts`).
+ *
+ * `recalcProjectTotals` (the PERSIST half, called from every write mutation on the five
+ * tables) is deliberately LIVE-ONLY — `projects.*` totals fields describe the live
+ * version only (a non-live version has no totals fields of its own, per
+ * `docs/designs/project-versioning-v2.md` §4.2: "totals depend partly on live crew
+ * assignments and sub-hire costs matched by lineage"). A future Compare feature that
+ * needs a non-live version's totals calls `loadTotalsBundle(ctx, projectId, orgId,
+ * orgDefaultTaxRate, someOtherVersionId)` + `computeTotals` directly (a read path, no
+ * mutation, no `ctx.db.patch`) — that plumbing is intentionally NOT built in this phase
+ * (see the FEATUREDOC), but the split above is what makes it a call, not a rewrite.
  */
 
 const round = (v: number): number => Math.round(v * 100) / 100;
@@ -46,10 +69,14 @@ type SaleCostLine = {
   quantity?: number | null;
 };
 
+const isCostedSaleLine = (li: SaleCostLine): boolean =>
+  li.type === "SALE" && li.status !== "CANCELLED" && !li.isOptional;
+
 /** Batch-fetch + dedupe the models/assets/bulkAssets a set of SALE lines
  *  reference — one lookup per distinct id, not per line. Split out of
- *  `computeSaleCostTotal` to keep its own cyclomatic complexity down. */
-async function loadSaleCostRefs(ctx: MutationCtx, saleLines: SaleCostLine[]) {
+ *  `computeSaleCostTotal` to keep its own cyclomatic complexity down.
+ *  Read-only (ctx just needs `.db.query`) — part of the LOAD half. */
+async function loadSaleCostRefs(ctx: QueryCtx | MutationCtx, saleLines: SaleCostLine[]) {
   const modelIds = [...new Set(saleLines.map((li) => li.modelId).filter((v): v is string => !!v))];
   const assetIds = [...new Set(saleLines.map((li) => li.assetId).filter((v): v is string => !!v))];
   const bulkAssetIds = [...new Set(saleLines.map((li) => li.bulkAssetId).filter((v): v is string => !!v))];
@@ -66,15 +93,11 @@ async function loadSaleCostRefs(ctx: MutationCtx, saleLines: SaleCostLine[]) {
   };
 }
 
-const isCostedSaleLine = (li: SaleCostLine): boolean =>
-  li.type === "SALE" && li.status !== "CANCELLED" && !li.isOptional;
+type SaleCostRefs = Awaited<ReturnType<typeof loadSaleCostRefs>>;
 
 /** One line's `unitCost × quantity` — split out of `computeSaleCostTotal` to
- *  keep its own cyclomatic complexity down. */
-function saleLineCost(
-  li: SaleCostLine,
-  refs: Awaited<ReturnType<typeof loadSaleCostRefs>>,
-): number {
+ *  keep its own cyclomatic complexity down. PURE. */
+function saleLineCost(li: SaleCostLine, refs: SaleCostRefs): number {
   const asset = li.assetId ? refs.assetById.get(li.assetId) : undefined;
   const model = li.modelId ? refs.modelById.get(li.modelId) : undefined;
   const bulkAsset = li.bulkAssetId ? refs.bulkAssetById.get(li.bulkAssetId) : undefined;
@@ -82,11 +105,10 @@ function saleLineCost(
   return unitCost * Math.max(1, li.quantity ?? 1);
 }
 
-async function computeSaleCostTotal(ctx: MutationCtx, projectLines: SaleCostLine[]): Promise<number> {
+/** PURE — given the already-loaded refs, sums SALE-line cost. */
+function computeSaleCostTotal(projectLines: SaleCostLine[], refs: SaleCostRefs): number {
   const saleLines = projectLines.filter(isCostedSaleLine);
   if (saleLines.length === 0) return 0;
-
-  const refs = await loadSaleCostRefs(ctx, saleLines);
   return saleLines.reduce((total, li) => total + saleLineCost(li, refs), 0);
 }
 
@@ -140,7 +162,7 @@ const isStandaloneSale = (li: TaxableLine): boolean =>
 /** One taxable-base contribution per revenue-bearing unit (§3.2). A priced
  *  group's bundle is one lump at the fallback rate (no per-group override
  *  exists, §3.4); its custom-item extras (unpriced groups only) get their
- *  own line's resolved rate. */
+ *  own line's resolved rate. PURE. */
 function buildTaxContributions(
   groups: TaxableGroup[],
   projectLines: TaxableLine[],
@@ -176,7 +198,7 @@ function buildTaxContributions(
  *  (not even an explicit 0%); otherwise COMPUTED distributes the
  *  already-rounded taxableAmount proportionally by each contribution's share
  *  of subtotal, so a single-rate project reproduces the pre-T3 flat
- *  computation to the cent (the equivalence gate, recalc.test.ts). */
+ *  computation to the cent (the equivalence gate, recalc.test.ts). PURE. */
 function computeTaxOutcome(params: {
   isExempt: boolean;
   anyRateConfigured: boolean;
@@ -203,24 +225,114 @@ function computeTaxOutcome(params: {
   return { taxAmount, taxStatus: "COMPUTED", breakdown };
 }
 
-export async function recalcProjectTotals(
-  ctx: MutationCtx,
+// ─── LOAD half (D59) — every read recalc/a future read-time totals path needs ───
+
+/**
+ * ONE bundle of everything the totals math needs, all reads backend-local. Mirrors
+ * `loadModelAvailabilityBundle`'s shape: org-checks happen HERE (the client lookup),
+ * business-rule filtering (ISSUED-only invoices, non-cancelled sub-hires, etc.) is
+ * left to `computeTotals` so the pure half stays the single definition of the rules.
+ *
+ * `QueryCtx | MutationCtx` — this is the half a future non-live-version read-time
+ * totals path (D34) can call without a mutation.
+ */
+export interface TotalsBundle {
+  project: Doc<"projects">;
+  groups: Doc<"projectGroups">[];
+  projectLines: Doc<"projectLineItems">[];
+  services: Doc<"projectServices">[];
+  assignments: Doc<"crewAssignments">[];
+  subHires: Doc<"subHires">[];
+  client: Doc<"clients"> | null;
+  invoices: Doc<"invoices">[];
+  saleCostRefs: SaleCostRefs;
+  orgDefaultTaxRate: number | null;
+}
+
+/**
+ * Loads everything `computeTotals` needs for `versionId` (defaults to the
+ * project's LIVE version — see `resolveVersionId`). #1228 Phase 2: reads the
+ * three versioned tables through `versionRows`/`by_versionId` instead of the
+ * deleted `by_projectId` index, so a bundle for a non-live version never
+ * mixes in another version's rows.
+ */
+export async function loadTotalsBundle(
+  ctx: QueryCtx | MutationCtx,
   projectId: string,
   orgId: string,
   orgDefaultTaxRate: number | null,
-  now: number,
-): Promise<void> {
+  versionId?: string,
+): Promise<TotalsBundle | null> {
   const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
   // Project gone (e.g. a delete that also removed it) — nothing to recalc.
-  if (!project || project.organizationId !== orgId) return;
+  if (!project || project.organizationId !== orgId) return null;
 
-  const [groups, projectLines, allServices, assignments, allSubHires] = await Promise.all([
-    ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
-    ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+  const targetVersionId = resolveVersionId(project, versionId);
+
+  const [groups, projectLines, allServices, assignments, allSubHires, invoices] = await Promise.all([
+    versionRows(ctx, "projectGroups", targetVersionId),
+    versionRows(ctx, "projectLineItems", targetVersionId),
+    versionRows(ctx, "projectServices", targetVersionId),
     ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("subHires").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    ctx.db
+      .query("invoices")
+      .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
+      .collect(),
   ]);
+
+  // T3 (#1091) — org-checked once here (by_cuid is global).
+  const client = project.clientId
+    ? await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", project.clientId!)).first()
+    : null;
+
+  const saleCostRefs = await loadSaleCostRefs(ctx, projectLines);
+
+  return {
+    project,
+    groups,
+    projectLines,
+    services: allServices.filter((s) => s.organizationId === orgId && s.status !== "CANCELLED"),
+    assignments,
+    subHires: allSubHires,
+    client: client && client.organizationId === orgId ? client : null,
+    invoices,
+    saleCostRefs,
+    orgDefaultTaxRate,
+  };
+}
+
+/** Everything `recalcProjectTotals` used to `ctx.db.patch` onto the project — now
+ *  the PURE output of `computeTotals`. `taxBreakdown` is pre-serialized (JSON
+ *  string) since that's the shape the `projects` schema field stores. */
+export interface Totals {
+  equipmentRevenue: number;
+  saleRevenue: number;
+  saleCostTotal: number;
+  serviceCostTotal: number;
+  labourCostTotal: number;
+  subHireCostTotal: number;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  taxBreakdown: string;
+  taxStatus: "EXEMPT" | "UNSET" | "COMPUTED";
+  total: number;
+  margin: number;
+  depositPaid: number;
+  invoicedTotal: number;
+}
+
+/**
+ * PURE — the single definition of "what are this project's totals", given an
+ * already-loaded bundle. No `ctx`, no I/O, no `Date.now()`. Byte-for-byte the same
+ * arithmetic `recalcProjectTotals` used to run inline (D59). A read-time path for a
+ * non-live version (D34) calls `loadTotalsBundle` + this and nothing else — there is
+ * no second copy of this math anywhere (grep for `equipmentRevenue =` / `saleRevenue =`
+ * across the repo to verify: this function is the only place that assigns them).
+ */
+export function computeTotals(bundle: TotalsBundle): Totals {
+  const { project, groups, projectLines, services, assignments, subHires, client, invoices, saleCostRefs, orgDefaultTaxRate } = bundle;
 
   // 1. Equipment revenue from groups. A priced group's flat price is the WHOLE
   // total for everything inside it — custom items included — so they are NOT added
@@ -299,15 +411,11 @@ export async function recalcProjectTotals(
   // -> model.defaultPurchasePrice -> bulkAsset.purchasePricePerUnit ->
   // model.replacementCost) times quantity, summed across this project's
   // non-cancelled, non-optional SALE lines — the cost row that makes sale
-  // margin visible in the P&L panel (projectCosts.ts). Reads are batched +
-  // deduplicated (one per referenced model/asset/bulkAsset), mirroring
-  // applyProjectAllocation's model-read pattern below.
-  const saleCostTotal = round(await computeSaleCostTotal(ctx, projectLines));
+  // margin visible in the P&L panel (projectCosts.ts). Refs were batch-loaded +
+  // deduplicated in loadTotalsBundle (one per referenced model/asset/bulkAsset).
+  const saleCostTotal = round(computeSaleCostTotal(projectLines, saleCostRefs));
 
-  // 3. Service financials (this project's non-CANCELLED rows).
-  const services = allServices.filter(
-    (s) => s.organizationId === orgId && s.status !== "CANCELLED",
-  );
+  // 3. Service financials (already org + non-CANCELLED filtered by loadTotalsBundle).
   const serviceCostTotal = round(services.reduce((sum, s) => sum + num(s.costTotal), 0));
   // Billable iff it has an actual charge — `lineTotal` is null/0 until a unitPrice
   // is typed or a crew charge rate auto-prices it, so a plain unconditional sum
@@ -326,8 +434,9 @@ export async function recalcProjectTotals(
   );
 
   // 5. Sub-hire costs (exclude CANCELLED/DRAFT).
-  const subHires = allSubHires.filter((sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT");
-  const subHireCostTotal = round(subHires.reduce((sum, sh) => sum + num(sh.totalCost), 0));
+  const subHireCostTotal = round(
+    subHires.filter((sh) => sh.status !== "CANCELLED" && sh.status !== "DRAFT").reduce((sum, sh) => sum + num(sh.totalCost), 0),
+  );
 
   // 6. Totals (equipment + billable services + WS11 #950 sale revenue).
   const subtotal = round(equipmentRevenue + serviceRevenue + saleRevenue);
@@ -338,12 +447,8 @@ export async function recalcProjectTotals(
   // T3 (#1091, docs/designs/tax-model.md §2) — an exempt client's projects
   // produce zero tax regardless of any project/line rate: a hard
   // short-circuit, never layered against the per-line/per-project resolution
-  // below. `by_cuid` is global — org-checked like every other cross-table
-  // lookup in this file.
-  const client = project.clientId
-    ? await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", project.clientId!)).first()
-    : null;
-  const isExempt = !!(client && client.organizationId === orgId && client.taxExempt);
+  // below.
+  const isExempt = !!(client && client.taxExempt);
 
   // §3.1 — per-line rate resolution: this line's own override wins, else the
   // project's rate, else the org default, else zero. No hardcoded fallback
@@ -392,14 +497,13 @@ export async function recalcProjectTotals(
   // means "invoiced" (Flow has no payment-collection signal in phase 1 — Xero
   // owns that; the phase-2 payment-status poll, once built, would separately
   // gate this on paymentStatus === "PAID" rather than presence).
-  const invoices = await ctx.db.query("invoices").withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId)).collect();
   const issuedInvoices = invoices.filter((inv) => inv.status === "ISSUED");
   const invoicedTotal = round(issuedInvoices.reduce((sum, inv) => sum + num(inv.total), 0));
   const depositPaid = round(
     issuedInvoices.filter((inv) => inv.kind === "DEPOSIT").reduce((sum, inv) => sum + num(inv.total), 0),
   );
 
-  await ctx.db.patch(project._id, {
+  return {
     equipmentRevenue,
     saleRevenue,
     saleCostTotal,
@@ -415,6 +519,32 @@ export async function recalcProjectTotals(
     margin,
     depositPaid,
     invoicedTotal,
+  };
+}
+
+// ─── PERSIST half (D59) — load + compute + the patch + the allocation fan-out ───
+
+/**
+ * LIVE-ONLY (see the file header comment) — loads the LIVE version's bundle
+ * (no `versionId` passed to `loadTotalsBundle`, so it defaults to
+ * `project.liveVersionId`), computes totals, patches them onto `projects`,
+ * then fans out allocation using that same bundle's `groups`/`projectLines`.
+ */
+export async function recalcProjectTotals(
+  ctx: MutationCtx,
+  projectId: string,
+  orgId: string,
+  orgDefaultTaxRate: number | null,
+  now: number,
+): Promise<void> {
+  const bundle = await loadTotalsBundle(ctx, projectId, orgId, orgDefaultTaxRate);
+  if (!bundle) return;
+  const { project, groups, projectLines } = bundle;
+
+  const totals = computeTotals(bundle);
+
+  await ctx.db.patch(project._id, {
+    ...totals,
     updatedAt: now,
   });
 
@@ -441,7 +571,7 @@ export async function recalcProjectTotals(
     billingWeeks: billingSummary.weeks,
     // Allocate what was BILLED, not what was listed: the project discount above
     // never reached the group/line prices the allocation pass reads.
-    discountPercent,
+    discountPercent: num(project.discountPercent),
     groups,
     lines: projectLines,
     now,

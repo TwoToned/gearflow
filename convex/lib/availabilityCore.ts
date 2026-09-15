@@ -131,16 +131,30 @@ export async function loadModelAvailabilityBundle(
     ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).unique(),
     ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
     ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
+    // VERSION-SCOPE: all-versions read (by_modelId is not a by_versionId-family
+    // index — it collects a model's lines across every project AND every
+    // version of each project). Join-filtered to each line's own project's
+    // LIVE version below (#1228 "Availability read cost": keep the join
+    // filter rather than pushing into the index yet; scanned-rows budget
+    // registered in docs/exceptions.md).
     ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).collect(),
   ]);
 
-  const lines = lineRaw.filter((r) => r.organizationId === orgId);
-  const projectIds = [...new Set(lines.map((li) => li.projectId))];
+  const orgLines = lineRaw.filter((r) => r.organizationId === orgId);
+  const projectIds = [...new Set(orgLines.map((li) => li.projectId))];
   const projectDocs = await Promise.all(
     projectIds.map((pid) =>
       ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", pid)).unique(),
     ),
   );
+  const projects = projectDocs.filter(
+    (p): p is NonNullable<typeof p> => !!p && p.organizationId === orgId,
+  );
+  const liveVersionByProject = new Map(projects.map((p) => [p.id, p.liveVersionId]));
+  // The join filter: a line only counts toward availability if it belongs to
+  // its OWN project's live version — a non-live version's booking (once
+  // materialization exists) must never affect stock math.
+  const lines = orgLines.filter((li) => li.versionId != null && li.versionId === liveVersionByProject.get(li.projectId));
 
   return {
     model: modelDoc && modelDoc.organizationId === orgId ? modelDoc : null,
@@ -151,9 +165,7 @@ export async function loadModelAvailabilityBundle(
     activeAssets: assetsRaw.filter((a) => a.organizationId === orgId && a.isActive !== false),
     activeBulkAssets: bulksRaw.filter((b) => b.organizationId === orgId && b.isActive !== false),
     lines,
-    projects: projectDocs.filter(
-      (p): p is NonNullable<typeof p> => !!p && p.organizationId === orgId,
-    ),
+    projects,
   };
 }
 
@@ -253,6 +265,9 @@ export async function findAssetConflict(
 ): Promise<Doc<"projects"> | null> {
   const { assetId, orgId, excludeProjectId, rentalStart, rentalEnd } = opts;
 
+  // VERSION-SCOPE: all-versions read (by_assetId is not a by_versionId-family
+  // index) — join-filtered below against each line's own project's LIVE
+  // version, same pattern as loadModelAvailabilityBundle above (#1228).
   const [assetLines, assetUnits] = await Promise.all([
     ctx.db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).collect(),
     ctx.db.query("projectLineItemUnits").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).collect(),
@@ -297,11 +312,15 @@ export async function findAssetConflict(
     }
   }
 
+  // The join filter: only a line/unit belonging to its own project's LIVE
+  // version can create a conflict.
+  const isLive = (row: { projectId: string; versionId?: string | null }): boolean =>
+    row.versionId != null && row.versionId === projectMap.get(row.projectId)?.liveVersionId;
   const lineConflict = lines.find(
-    (li) => li.status !== "CANCELLED" && conflictSet.has(li.projectId),
+    (li) => li.status !== "CANCELLED" && conflictSet.has(li.projectId) && isLive(li),
   );
   const unitConflictProjId = unitLines.find(
-    (ul) => ul.status !== "CANCELLED" && conflictSet.has(ul.projectId),
+    (ul) => ul.status !== "CANCELLED" && conflictSet.has(ul.projectId) && isLive(ul),
   )?.projectId;
   const conflictProjId = lineConflict?.projectId ?? unitConflictProjId;
   return conflictProjId ? (projectMap.get(conflictProjId) ?? null) : null;
@@ -327,6 +346,9 @@ export async function findKitConflict(
 ): Promise<Doc<"projects"> | null> {
   const { kitId, orgId, excludeProjectId, rentalStart, rentalEnd } = opts;
 
+  // VERSION-SCOPE: all-versions read (by_kitId is not a by_versionId-family
+  // index) — join-filtered below against each line's own project's LIVE
+  // version (#1228).
   const kitLinesRaw = await ctx.db
     .query("projectLineItems")
     .withIndex("by_kitId", (q) => q.eq("kitId", kitId))
@@ -361,6 +383,8 @@ export async function findKitConflict(
     }
   }
 
-  const conflict = kitLines.find((li) => conflictSet.has(li.projectId));
+  const conflict = kitLines.find(
+    (li) => conflictSet.has(li.projectId) && li.versionId != null && li.versionId === projectMap.get(li.projectId)?.liveVersionId,
+  );
   return conflict ? (projectMap.get(conflict.projectId) ?? null) : null;
 }

@@ -40,22 +40,27 @@ async function seedMember(t: ReturnType<typeof makeT>, role = "owner", orgId = O
  *  (0: project group, 1: sub-hire group, 2: standalone item) so the
  *  interleaving is real, not "groups happen to sort first". */
 async function seedProjectWithSubHire(t: ReturnType<typeof makeT>, orgId = ORG) {
+  // #1228 — every project needs a live projectVersions row + liveVersionId.
+  const versionId = "v1";
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: orgId, projectNumber: "RVLT-2026-0087", name: "Gig",
-      status: "QUOTING", isTemplate: false, revision: 1,
+      status: "QUOTING", isTemplate: false, revision: 1, liveVersionId: versionId,
       subtotal: 100, discountAmount: 0, taxAmount: 10, total: 110, taxRate: 10,
       createdAt: NOW, updatedAt: NOW,
     });
-    await ctx.db.insert("projectCategories", { id: "c1", organizationId: orgId, projectId: "p1", name: "Lighting", sortOrder: 0 });
-    await ctx.db.insert("projectGroups", { id: "g1", organizationId: orgId, projectId: "p1", categoryId: "c1", title: "MA3 kit", quantity: 1, price: 500, sortOrder: 0 });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
+    });
+    await ctx.db.insert("projectCategories", { id: "c1", organizationId: orgId, projectId: "p1", versionId, lineageId: "c1", name: "Lighting", sortOrder: 0 });
+    await ctx.db.insert("projectGroups", { id: "g1", organizationId: orgId, projectId: "p1", versionId, lineageId: "g1", categoryId: "c1", title: "MA3 kit", quantity: 1, price: 500, sortOrder: 0 });
     await ctx.db.insert("projectLineItems", {
-      id: "l1", organizationId: orgId, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+      id: "l1", organizationId: orgId, projectId: "p1", versionId, lineageId: "l1", status: "CONFIRMED", type: "EQUIPMENT",
       isKitChild: false, isOptional: false, description: "MA3", quantity: 1, unitPrice: 500, lineTotal: 500,
       groupId: "g1", sortOrder: 0,
     });
     await ctx.db.insert("projectLineItems", {
-      id: "l2", organizationId: orgId, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+      id: "l2", organizationId: orgId, projectId: "p1", versionId, lineageId: "l2", status: "CONFIRMED", type: "EQUIPMENT",
       isKitChild: false, isOptional: false, isCustomItem: true, description: "Gaffer tape", quantity: 2, unitPrice: 10, lineTotal: 20,
       categoryId: "c1", sortOrder: 0,
     });
@@ -119,9 +124,12 @@ describe("projectVersionsEquipment.bundle", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "RVLT-2026-0088", name: "Old Gig",
-        status: "QUOTING", isTemplate: false, revision: 1,
+        status: "QUOTING", isTemplate: false, revision: 1, liveVersionId: "v1",
         subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxRate: 0,
         createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectVersions", {
+        id: "v1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
       });
     });
     await saveVersion(t);

@@ -59,7 +59,9 @@ describe("privileged capability — project:unlock_session (denied by default)",
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "COMPLETED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
   }
 
@@ -106,7 +108,9 @@ describe("privileged arg — emitSideEffects (injected, never agent-controlled)"
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-2",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-2", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("projectLineItems", {
         id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1,
         sortOrder: 0, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PENDING",
@@ -152,7 +156,9 @@ describe("no_financials key flag — field-by-field, across multiple distinct re
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
         total: 1000, serviceCostTotal: 0, labourCostTotal: 0, subHireCostTotal: 0, saleCostTotal: 0, saleRevenue: 0,
+        liveVersionId: "v-p1-3",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-3", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("crewMembers", {
         id: "cm1", organizationId: ORG, firstName: "Sam", lastName: "Crew",
         defaultDayRate: 300, defaultHourlyRate: 40,
@@ -262,7 +268,9 @@ describe("revertAgentWindow", () => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW, total: 0,
+        liveVersionId: "v-p1-4",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-4", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("assets", {
         id: "a1", organizationId: ORG, modelId: "mdl1", assetTag: "A-1",
@@ -347,7 +355,9 @@ describe("gate parity — user token vs agent token", () => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW, total: 0,
+        liveVersionId: "v-p1-5",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-5", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("projectLineItems", {
         id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, unitPrice: 10,
         sortOrder: 0, status: "CONFIRMED", checkedOutQuantity: 0, prepStatus: "PENDING",

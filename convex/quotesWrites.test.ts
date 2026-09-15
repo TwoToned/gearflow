@@ -42,10 +42,14 @@ async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG, status: Doc
       status, isTemplate: false, revision: 1,
       subtotal: 100, discountAmount: 0, taxAmount: 10, total: 110, taxRate: 10,
       createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-p1",
     });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: orgId, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("projectLineItems", {
       id: "l1", organizationId: orgId, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
       isKitChild: false, isOptional: false, description: "PA System", quantity: 1, unitPrice: 100, lineTotal: 100,
+      versionId: "v-p1",
+      lineageId: "l1",
     });
   });
 }
@@ -1374,7 +1378,10 @@ describe("quotesWrites.repriceFromRevisionNative — 'use vN's pricing for v(N+1
     const t = makeT();
     await seedTwoSentRevisions(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "RVLT-2026-0088", name: "Other gig", isTemplate: false, revision: 1 });
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "RVLT-2026-0088", name: "Other gig", isTemplate: false, revision: 1,
+        liveVersionId: "v-p2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("quotes", { id: "qOther", organizationId: ORG, projectId: "p2", version: 1, status: "SENT", snapshot: null, snapshotId: "snap_other" });
     });
 

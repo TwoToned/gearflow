@@ -26,7 +26,10 @@ function makeT(): T {
 async function seed(t: T) {
   await t.run(async (ctx) => {
     await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "admin" });
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false,
+      liveVersionId: "v-p1",
+    });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", defaultDayRate: 500, isActive: true });
     await ctx.db.insert("crewRoles", { id: "r1", organizationId: ORG, name: "Rigger", defaultRate: 400, rateType: "DAILY" });
   });
@@ -145,7 +148,10 @@ describe("crewAssignmentsWrites", () => {
   test("create/update/delete on a service-linked assignment keeps the service's costTotal + project totals in sync (#796)", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false });
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Bump in", status: "CONFIRMED", showOnDocuments: false,
+        versionId: "v-p1",
+        lineageId: "s1",
+      });
     });
 
     // Create linked straight to the service (not via projectServicesWrites) — the
@@ -204,7 +210,10 @@ describe("crewAssignments reads", () => {
   test("membersForAssignment: active members + this-project assignments + conflicts/unavailability", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other", status: "CONFIRMED", isTemplate: false,
+        liveVersionId: "v-p2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", status: "CONFIRMED", phase: "EVENT" });
       // conflicting assignment on ANOTHER project in the window
       await ctx.db.insert("crewAssignments", { id: "a2", organizationId: ORG, projectId: "p2", crewMemberId: "c1", status: "CONFIRMED", startDate: NOW, endDate: NOW + DAY });

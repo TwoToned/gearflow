@@ -41,17 +41,32 @@ describe("activationMilestones.state", () => {
       await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "mdl2", assetTag: "a1", status: "AVAILABLE" });
 
       // A template project inserted before the real one must be skipped.
-      await ctx.db.insert("projects", { id: "pt", organizationId: ORG, projectNumber: "PT", name: "Template", status: "CONFIRMED", isTemplate: true });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Corporate Gala", status: "ENQUIRY", isTemplate: false });
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Later Job", status: "ENQUIRY", isTemplate: false });
+      await ctx.db.insert("projects", { id: "pt", organizationId: ORG, projectNumber: "PT", name: "Template", status: "CONFIRMED", isTemplate: true,
+        liveVersionId: "v-pt",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-pt", organizationId: ORG, projectId: "pt", number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Corporate Gala", status: "ENQUIRY", isTemplate: false,
+        liveVersionId: "v-p1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1" });
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Later Job", status: "ENQUIRY", isTemplate: false,
+        liveVersionId: "v-p2",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1" });
 
       // A line item with no modelId shouldn't satisfy milestone 4 on its own.
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "QUOTED", quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", status: "QUOTED", quantity: 1,
+        versionId: "v-p1",
+        lineageId: "li1",
+      });
 
       // Cross-tenant rows that must never leak into this org's read.
       await ctx.db.insert("members", { id: "m2", organizationId: OTHER_ORG, userId: "user_2", role: "viewer" });
       await ctx.db.insert("models", { id: "mdl_other", organizationId: OTHER_ORG, name: "Other org model" });
-      await ctx.db.insert("projects", { id: "p_other", organizationId: OTHER_ORG, projectNumber: "PO", name: "Other org project", status: "ENQUIRY", isTemplate: false });
+      await ctx.db.insert("projects", { id: "p_other", organizationId: OTHER_ORG, projectNumber: "PO", name: "Other org project", status: "ENQUIRY", isTemplate: false,
+        liveVersionId: "v-p_other",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p_other", organizationId: OTHER_ORG, projectId: "p_other", number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1" });
     });
 
     let state = await t.withIdentity(asUser(ORG)).query(api.activationMilestones.state, { orgId: ORG });
@@ -67,7 +82,10 @@ describe("activationMilestones.state", () => {
     // Add an asset on the FIRST model and a modelId-bearing line item on the FIRST project.
     await t.run(async (ctx) => {
       await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "mdl1", assetTag: "a2", status: "AVAILABLE" });
-      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", status: "QUOTED", quantity: 1, modelId: "mdl1" });
+      await ctx.db.insert("projectLineItems", { id: "li2", organizationId: ORG, projectId: "p1", status: "QUOTED", quantity: 1, modelId: "mdl1",
+        versionId: "v-p1",
+        lineageId: "li2",
+      });
     });
     state = await t.withIdentity(asUser(ORG)).query(api.activationMilestones.state, { orgId: ORG });
     expect(state.hasAssetOnFirstModel).toBe(true);

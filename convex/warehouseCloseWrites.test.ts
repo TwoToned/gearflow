@@ -37,6 +37,7 @@ async function seedProject(
   },
 ) {
   const orgId = opts.orgId ?? ORG;
+  const versionId = `v-${opts.projectId}-${orgId}`;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: opts.projectId,
@@ -44,13 +45,20 @@ async function seedProject(
       projectNumber: `PN-${opts.projectId}`,
       name: opts.name ?? "Show",
       isTemplate: opts.isTemplate ?? false,
+      liveVersionId: versionId,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: opts.projectId, number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1",
     });
     let i = 0;
     for (const li of opts.lines ?? []) {
+      const lid = `${opts.projectId}_li_${i++}`;
       await ctx.db.insert("projectLineItems", {
-        id: `${opts.projectId}_li_${i++}`,
+        id: lid,
         organizationId: orgId,
         projectId: opts.projectId,
+        versionId,
+        lineageId: lid,
         type: li.type ?? "EQUIPMENT",
         isKitChild: li.isKitChild ?? false,
         status: li.status,
@@ -324,12 +332,16 @@ describe("gearflow#797 — per-unit return syncs line.returnCondition", () => {
   async function seedDeployedItem(t: ReturnType<typeof convexTest>, id: string) {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "manager" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Test", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Test", createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("models", { id: "mdl1", organizationId: ORG, name: "Drum Shield", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("assets", { id, organizationId: ORG, modelId: "mdl1", assetTag: id.toUpperCase(), status: "CHECKED_OUT", isActive: true, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectLineItems", {
         id: `L_${id}`, organizationId: ORG, projectId: "p1", type: "EQUIPMENT", modelId: "mdl1", assetId: id,
         quantity: 1, status: "CHECKED_OUT", prepStatus: "PACKED", createdAt: NOW, updatedAt: NOW,
+        versionId: "v-p1",
       });
       await ctx.db.insert("projectLineItemUnits", {
         id: `u_${id}`, organizationId: ORG, lineItemId: `L_${id}`, ordinal: 1, assetId: id,

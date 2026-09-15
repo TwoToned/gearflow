@@ -51,7 +51,9 @@ async function seed(t: T, role: string, scopes: string[], keyId = KEY) {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
       status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-p1",
     });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
   });
 }
 
@@ -140,7 +142,9 @@ describe("scope ∩ RBAC — neither half can be widened by the other", () => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
         status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-2",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-2", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
 
     await expect(

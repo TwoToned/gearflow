@@ -364,37 +364,53 @@ describe("zeroPricedGroups — flags gear that can't earn revenue", () => {
       await ctx.db.insert("projects", {
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Wedding Gig",
         status: "COMPLETED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // Unpriced group with real gear inside — the case this report exists to catch.
       await ctx.db.insert("projectGroups", {
         id: "g_unpriced", organizationId: ORG, projectId: "p1", title: "RF Kit",
         quantity: 1, suggestedPrice: 450,
+        versionId: "v-p1",
+        lineageId: "g_unpriced",
       });
       await ctx.db.insert("projectLineItems", {
         id: "l1", organizationId: ORG, projectId: "p1", groupId: "g_unpriced", modelId: "rx",
+        versionId: "v-p1",
+        lineageId: "l1",
       });
       // A cancelled line inside the same group must not count toward gearLineCount.
       await ctx.db.insert("projectLineItems", {
         id: "l1b", organizationId: ORG, projectId: "p1", groupId: "g_unpriced", modelId: "rx",
         status: "CANCELLED",
+        versionId: "v-p1",
+        lineageId: "l1b",
       });
       // Priced group — not flagged, its gear earns normally.
       await ctx.db.insert("projectGroups", {
         id: "g_priced", organizationId: ORG, projectId: "p1", title: "Lighting Package",
         price: 900, quantity: 1,
+        versionId: "v-p1",
+        lineageId: "g_priced",
       });
       await ctx.db.insert("projectLineItems", {
         id: "l2", organizationId: ORG, projectId: "p1", groupId: "g_priced", modelId: "par",
+        versionId: "v-p1",
+        lineageId: "l2",
       });
       // Unpriced group with only a custom item, no gear — not flagged (nothing of
       // ours to attribute; the custom item bills on its own per recalc.ts).
       await ctx.db.insert("projectGroups", {
         id: "g_customs_only", organizationId: ORG, projectId: "p1", title: "Freight",
         quantity: 1,
+        versionId: "v-p1",
+        lineageId: "g_customs_only",
       });
       await ctx.db.insert("projectLineItems", {
         id: "l3", organizationId: ORG, projectId: "p1", groupId: "g_customs_only",
         isCustomItem: true,
+        versionId: "v-p1",
+        lineageId: "l3",
       });
     });
 
@@ -413,12 +429,18 @@ describe("zeroPricedGroups — flags gear that can't earn revenue", () => {
       await ctx.db.insert("projects", {
         id: "quote", organizationId: ORG, projectNumber: "Q1", name: "Just a quote",
         status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-quote",
       });
+      await ctx.db.insert("projectVersions", { id: "v-quote", organizationId: ORG, projectId: "quote", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("projectGroups", {
         id: "g1", organizationId: ORG, projectId: "quote", title: "RF Kit", quantity: 1,
+        versionId: "v-quote",
+        lineageId: "g1",
       });
       await ctx.db.insert("projectLineItems", {
         id: "l1", organizationId: ORG, projectId: "quote", groupId: "g1", modelId: "rx",
+        versionId: "v-quote",
+        lineageId: "l1",
       });
     });
 

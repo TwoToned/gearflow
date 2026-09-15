@@ -41,7 +41,9 @@ async function project(t: ReturnType<typeof convexTest>, status: string, extra: 
       id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Test Gig",
       status, isTemplate: false, taxRate: 10, discountPercent: 0, revision: 1,
       createdAt: NOW, updatedAt: NOW, ...extra,
+      liveVersionId: "v-p1",
     });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
   });
 }
 
@@ -474,7 +476,10 @@ describe("#792 snapshot capture at CONFIRMED/COMPLETED", () => {
     await project(t, "QUOTED");
     await acceptedQuote(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1,
+        versionId: "v-p1",
+        lineageId: "li1",
+      });
     });
     await t.withIdentity(asUser()).mutation(api.projectWrites.updateStatusNative, {
       id: "p1", orgId: ORG, status: "CONFIRMED", actor: ACTOR, auditId: "log1", now: NOW,
@@ -621,7 +626,10 @@ describe("#988 quote-derived lock tier", () => {
     await project(t, "QUOTED");
     await sentQuote(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false,
+        versionId: "v-p1",
+        lineageId: "li1",
+      });
     });
     await expect(
       t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
@@ -636,7 +644,10 @@ describe("#988 quote-derived lock tier", () => {
     await project(t, "QUOTED");
     await sentQuote(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false,
+        versionId: "v-p1",
+        lineageId: "li1",
+      });
     });
     await t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {
       id: "li1", orgId: ORG, set: { description: "Speaker (updated)" }, clear: [], entityName: "Speaker", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW,
@@ -799,7 +810,10 @@ describe("#1080/#1100 the quote-sent lock follows liveRevision, not the allocato
     await quoteAt(t, 3, "DRAFT");
     await quoteAt(t, 4, "DRAFT");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", description: "Speaker", unitPrice: 100, quantity: 1, isKitChild: false,
+        versionId: "v-p1",
+        lineageId: "li1",
+      });
     });
     await expect(
       t.withIdentity(asUser()).mutation(api.lineItemWrites.patchNative, {

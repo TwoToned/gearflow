@@ -28,18 +28,27 @@ async function member(t: ReturnType<typeof convexTest>, role: string) {
 }
 
 /** A minimal project so recalcProjectTotals has a row to sweep + patch. */
+/** #1228 — deterministic per-(project,org) version id. */
+function versionIdFor(id: string, orgId: string): string {
+  return `v-${id}-${orgId}`;
+}
+
 async function seedProject(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) {
+  const versionId = versionIdFor(id, orgId);
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-      total: 999,
+      total: 999, liveVersionId: versionId,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1, contentState: "ready", createdAt: 1_700_000_000_000, createdById: "u1",
     });
   });
 }
 
 async function seedCategory(t: ReturnType<typeof makeT>, id: string, projectId = "p1", orgId = ORG) {
   await t.run(async (ctx) => {
-    await ctx.db.insert("projectCategories", { id, organizationId: orgId, projectId, name: id, sortOrder: 0 });
+    await ctx.db.insert("projectCategories", { id, organizationId: orgId, projectId, versionId: versionIdFor(projectId, orgId), lineageId: id, name: id, sortOrder: 0 });
   });
 }
 
@@ -58,8 +67,7 @@ describe("categorySlotsWrites.moveSubHireGroupToCategory", () => {
       // Top-level synthetic parent line for the sub-hire group.
       await ctx.db.insert("projectLineItems", {
         id: "li1", organizationId: ORG, projectId: "p1", subHireId: "sh1", subHireGroupId: "shg1",
-        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
-      });
+        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
   }
 
@@ -173,11 +181,10 @@ describe("categorySlotsWrites.moveProjectGroupToCategory", () => {
     await seedCategory(t, "cat1");
     await seedCategory(t, "cat2");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
       await ctx.db.insert("projectLineItems", {
         id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", categoryId: "cat1",
-        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT",
-      });
+        quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
       await ctx.db.insert("categorySlots", { id: "slOld", projectCategoryId: "cat1", projectGroupId: "g1", sortOrder: 0 });
     });
   }
@@ -248,7 +255,7 @@ describe("categorySlotsWrites.moveProjectGroupToCategory", () => {
     const t = makeT();
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: "org_other", projectId: "p9", title: "Theirs", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: "org_other", projectId: "p9", title: "Theirs", sortOrder: 0, versionId: versionIdFor("p9", "org_other"), lineageId: "g1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.moveProjectGroupToCategory, {
@@ -291,7 +298,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     await seedProject(t);
     await seedCategory(t, "cat1");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
       await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "sup1", createdById: USER, projectId: "p1", orderNumber: "SO-1" });
       await ctx.db.insert("subHireGroups", { id: "shg1", subHireId: "sh1", title: "SHG", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "slPg", projectCategoryId: "cat1", projectGroupId: "g1", sortOrder: 0 });
@@ -322,7 +329,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     await seedProject(t);
     await seedCategory(t, "cat1");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", categoryId: "cat1", title: "PG", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
     });
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
       orgId: ORG, categoryId: "cat1",
@@ -396,7 +403,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     const t = makeT();
     await seedMixed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", description: "Standalone", quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", description: "Standalone", quantity: 1, versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     // Line item first, then the sub-hire group, then the project group.
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
@@ -423,7 +430,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     await seedMixed(t);
     await seedCategory(t, "cat2");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat2", description: "Elsewhere", quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat2", description: "Elsewhere", quantity: 1, versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
@@ -438,7 +445,7 @@ describe("categorySlotsWrites.reorderMixedGroupsInCategory", () => {
     const t = makeT();
     await seedMixed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", groupId: "g1", description: "Grouped", quantity: 1 });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", categoryId: "cat1", groupId: "g1", description: "Grouped", quantity: 1, versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.reorderMixedGroupsInCategory, {
@@ -460,9 +467,9 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
     await seedProject(t);
     await t.run(async (ctx) => {
       // Existing category so create-at-end computes sortOrder 1.
-      await ctx.db.insert("projectCategories", { id: "cat0", organizationId: ORG, projectId: "p1", name: "cat0", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectCategories", { id: "cat0", organizationId: ORG, projectId: "p1", name: "cat0", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "cat0",});
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1",});
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", groupId: "g1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, {
       ...base, slot: { projectGroupId: "g1" },
@@ -493,7 +500,7 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "sup1", createdById: USER, projectId: "p1", orderNumber: "SO-1" });
       await ctx.db.insert("subHireGroups", { id: "shg1", subHireId: "sh1", title: "SHG", sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", subHireId: "sh1", subHireGroupId: "shg1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT" });
+      await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p1", subHireId: "sh1", subHireGroupId: "shg1", quantity: 1, isKitChild: false, status: "CONFIRMED", type: "EQUIPMENT", versionId: versionIdFor("p1", ORG), lineageId: "li1",});
     });
     await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, {
       ...base, slot: { subHireGroupId: "shg1" },
@@ -524,7 +531,7 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
     await member(t, "member");
     await seedProject(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "pOther", title: "Elsewhere", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "pOther", title: "Elsewhere", sortOrder: 0, versionId: versionIdFor("pOther", ORG), lineageId: "g1",});
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, {

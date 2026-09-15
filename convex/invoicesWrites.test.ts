@@ -53,7 +53,9 @@ async function seedProjectAndClient(
       id: "p1", organizationId: orgId, projectNumber: "P1", name: "Gig", clientId: "c1",
       status, isTemplate: false, subtotal: 1000, discountAmount: 0, taxAmount: 100, total: 1100, taxRate: 10,
       createdAt: NOW, updatedAt: NOW,
+      liveVersionId: "v-p1",
     });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: orgId, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     if (quoteStatus) {
       await ctx.db.insert("quotes", {
         id: "q1", organizationId: orgId, projectId: "p1", version: 1, status: quoteStatus,
@@ -84,6 +86,8 @@ describe("invoicesWrites.createNative", () => {
       await ctx.db.insert("projectLineItems", {
         id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
         isKitChild: false, isOptional: false, description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
+        versionId: "v-p1",
+        lineageId: "l1",
       });
     });
 
@@ -790,6 +794,8 @@ describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) ===
       await ctx.db.insert("projectLineItems", {
         id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
         isKitChild: false, isOptional: false, description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
+        versionId: "v-p1",
+        lineageId: "l1",
       });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
@@ -821,7 +827,9 @@ describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) ===
         id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", clientId: "c1",
         status: "QUOTING", isTemplate: false, taxRate: 10, discountPercent: 10,
         createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-2",
       });
+      await ctx.db.insert("projectVersions", { id: "v-p1-2", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("quotes", {
         id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "ACCEPTED",
         snapshot: null, createdAt: NOW, updatedAt: NOW,
@@ -829,6 +837,8 @@ describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) ===
       await ctx.db.insert("projectLineItems", {
         id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
         isKitChild: false, isOptional: false, description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
+        versionId: "v-p1-2",
+        lineageId: "l1",
       });
     });
     // Recalc first so the project carries real discounted totals.

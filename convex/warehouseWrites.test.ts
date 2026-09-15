@@ -41,17 +41,27 @@ async function member(t: T, role: string, orgId = ORG) {
   });
 }
 
+/** #1228 — deterministic per-(project,org) version id. */
+function versionIdFor(id: string, orgId: string): string {
+  return `v-${id}-${orgId}`;
+}
+
 async function seedProject(t: T, id = "p1", orgId = ORG) {
+  const versionId = versionIdFor(id, orgId);
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "CONFIRMED",
-      total: 0,
+      total: 0, liveVersionId: versionId,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
 
 const baseLine = (id: string, extra: Record<string, unknown>, orgId = ORG) => ({
-  id, organizationId: orgId, projectId: "p1", type: "EQUIPMENT" as const, quantity: 1, sortOrder: 0,
+  id, organizationId: orgId, projectId: "p1", versionId: versionIdFor("p1", orgId), lineageId: id,
+  type: "EQUIPMENT" as const, quantity: 1, sortOrder: 0,
   status: "CONFIRMED" as const, checkedOutQuantity: 0, prepStatus: "PENDING" as const,
   isKitChild: false, createdAt: NOW, updatedAt: NOW, ...extra,
 });

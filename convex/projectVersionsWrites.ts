@@ -3,7 +3,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { requireOrgPermission, requireService, resolveActor } from "./lib/auth";
+import { versionRows, type VersionedTableName } from "./lib/versionScope";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -445,6 +446,198 @@ export const promoteRevisionNative = mutation({
 export const quoteSaveVersionFields = {
   label: v.optional(v.string()),
 };
+
+// ────────────────────────────────────────────────────────────────────────────
+// §6 step 2 MATERIALIZATION (#1228, Phase 2 of "Project versioning v2") —
+// distinct from everything above this line. Everything above
+// (saveVersionNative/promoteRevisionNative/`projectSnapshots`/`revision`/
+// `liveRevision`) is the OLDER "Project Version Switcher" program
+// (FEATUREDOCS/70) — a JSON-blob snapshot/restore mechanism. This is the
+// NEW `projectVersions` table's own row-level mechanism (FEATUREDOCS/76):
+// giving a non-live `projectVersions` row REAL, individually-queryable
+// `by_versionId`-tagged plan rows of its own, rather than a JSON blob.
+//
+// Internal/minimal by design — no UI calls this yet (SERVICE-only guard).
+// It exists so a later phase (the one that starts WRITING non-live versions
+// via "save a version") has a proven-safe primitive to build on, rather than
+// inventing row-cloning semantics under deadline at that point.
+//
+// ── DEPLOY-ORDER CONSTRAINT (read before wiring this up to anything) ──────
+// This mutation reads and writes EXCLUSIVELY through the `by_versionId`
+// index family (`versionRows`, `convex/lib/versionScope.ts`) — it has no
+// `by_projectId` fallback of any kind. It is therefore only correct to CALL
+// (not just deploy — call) once:
+//   1. Phase 1's backfill (`convex/backfillProjectVersions.ts`) has actually
+//      run against the target deployment, so every existing project has a
+//      `liveVersionId` and every existing row has a `versionId`; AND
+//   2. The Phase 2 schema (this same commit: `by_projectId` deleted,
+//      `by_versionId` added on the 4 plan tables) is the live schema.
+// Both conditions hold by construction for THIS codebase the moment it's
+// deployed (the backfill predates this phase per CLAUDE.md/the file-level
+// comment on `versionScope.ts`, and this mutation ships in the same commit
+// as the index rename) — but they are NOT independently re-verified at
+// call time beyond the ordinary `requireLiveVersionId` throw every other
+// Phase 2 read/write already gets. **This ordering has been validated only
+// against convex-test fixtures in this sandbox, never against a real Convex
+// deployment** (no live deployment was available to this session) — the
+// first real call against production should be treated as the actual proof,
+// not this test suite alone.
+//
+// SAFETY properties this mutation enforces (all mechanically checked, not
+// just documented):
+//   - Never targets the project's OWN live version (its rows already exist
+//     by definition — materializing over them would duplicate every lineage).
+//   - Refuses to run if the target version ALREADY has any rows in any of
+//     the 4 tables (no accidental double-materialize / silent duplication;
+//     unlike CLAUDE.md's `createIfMissing` convention for a single mirrored
+//     row, a multi-row clone has no natural idempotent merge, so this is an
+//     explicit check-then-refuse rather than an upsert).
+//   - Every cloned row gets a FRESH `id` but keeps the SOURCE row's
+//     `lineageId` (falling back to the source row's own `id` if it predates
+//     lineage tagging) — the same "a duplicate starts its own physical row
+//     but keeps the logical thread" rule `projectWrites.ts`'s
+//     `duplicateNative` uses for `versionId`, mirrored here for `lineageId`
+//     instead (a *duplicate* project wants a fresh lineage per row; THIS
+//     materialize is cloning the SAME project's plan into a sibling
+//     version, so the whole point is to let `by_versionId_lineageId` find
+//     "this same line across versions" — the opposite choice, deliberately).
+//   - Org- and project-checked on every `by_cuid`-resolved id it touches
+//     (`by_cuid` is global — R-8.4.3), same discipline as every other write
+//     in this codebase.
+export const VERSIONED_PLAN_TABLES: readonly VersionedTableName[] = [
+  "projectCategories",
+  "projectGroups",
+  "projectLineItems",
+  "projectServices",
+];
+
+/** Validates the request and resolves `{project, targetVersion, sourceId}` —
+ *  split out of the mutation body purely to keep the handler itself under
+ *  the max-lines-per-function ratchet (R-3.6), same rationale as
+ *  `assertPromotePreconditions` above. Every throw here mirrors the handler
+ *  doc's own error message text 1:1 — nothing behavioural moved, only the
+ *  lines. */
+async function resolveMaterializeTargets(
+  ctx: MutationCtx,
+  args: { organizationId: string; projectId: string; targetVersionId: string; sourceVersionId?: string },
+): Promise<{ project: Doc<"projects">; targetVersion: Doc<"projectVersions">; sourceId: string }> {
+  const { organizationId, projectId, targetVersionId, sourceVersionId } = args;
+
+  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+  if (!project || project.organizationId !== organizationId) {
+    throw new ConvexError(`materializeVersionRowsNative: project not found or cross-org: ${projectId}`);
+  }
+
+  const targetVersion = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", targetVersionId)).first();
+  if (!targetVersion || targetVersion.organizationId !== organizationId || targetVersion.projectId !== projectId) {
+    throw new ConvexError(`materializeVersionRowsNative: target version not found or cross-org/project: ${targetVersionId}`);
+  }
+  if (targetVersionId === project.liveVersionId) {
+    throw new ConvexError("materializeVersionRowsNative: refusing to materialize the LIVE version — its rows already exist by definition.");
+  }
+
+  // Idempotency / duplication guard — see the file-level comment above.
+  const existingByTable = await Promise.all(VERSIONED_PLAN_TABLES.map((t) => versionRows(ctx, t, targetVersionId)));
+  if (existingByTable.some((rows) => rows.length > 0)) {
+    throw new ConvexError(
+      `materializeVersionRowsNative: version ${targetVersionId} already has plan rows — refusing to double-materialize.`,
+    );
+  }
+
+  const sourceId = sourceVersionId ?? project.liveVersionId;
+  if (!sourceId) {
+    throw new ConvexError(
+      "materializeVersionRowsNative: project has no liveVersionId to materialize from — Phase 1's backfill must run first (#1228).",
+    );
+  }
+  if (sourceId !== project.liveVersionId) {
+    const sourceVersion = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", sourceId)).first();
+    if (!sourceVersion || sourceVersion.organizationId !== organizationId || sourceVersion.projectId !== projectId) {
+      throw new ConvexError(`materializeVersionRowsNative: source version not found or cross-org/project: ${sourceId}`);
+    }
+  }
+
+  return { project, targetVersion, sourceId };
+}
+
+export const materializeVersionRowsNative = mutation({
+  args: {
+    organizationId: v.string(),
+    projectId: v.string(),
+    /** The (non-live) version to populate with real rows. */
+    targetVersionId: v.string(),
+    /** Clone FROM this version's rows. Defaults to the project's current
+     *  live version — the common case ("branch a new version off what's
+     *  live right now"). */
+    sourceVersionId: v.optional(v.string()),
+  },
+  handler: async (ctx: MutationCtx, { organizationId, projectId, targetVersionId, sourceVersionId }) => {
+    await requireService(ctx);
+
+    const { targetVersion, sourceId } = await resolveMaterializeTargets(ctx, {
+      organizationId, projectId, targetVersionId, sourceVersionId,
+    });
+
+    // Two passes, because a clone must not leave a child pointing at a
+    // parent id that only exists in the SOURCE version. Every row gets a
+    // fresh `id` (pass 1), so `categoryId`/`groupId`/`parentLineItemId` —
+    // in-clone-set foreign keys that name another row of these same 4
+    // tables by its `id` — have to be rewritten through the old-id -> new-id
+    // map (pass 2) or a materialized line item would reference a group/
+    // category/parent that doesn't exist in its own version. FK fields that
+    // point OUTSIDE this clone set (modelId/assetId/kitId/subHireId/
+    // crewRoleId/…) are untouched — those name a different table's row
+    // entirely and aren't per-version.
+    type SourceRow = Record<string, unknown> & {
+      _id: unknown; _creationTime: unknown; id: string; versionId?: string; lineageId?: string;
+    };
+    const IN_CLONE_SET_FK_FIELDS = ["categoryId", "groupId", "parentLineItemId"] as const;
+
+    const idMap = new Map<string, string>(); // old row id -> new (materialized) row id
+    const toInsert: { table: VersionedTableName; doc: Record<string, unknown> }[] = [];
+
+    for (const table of VERSIONED_PLAN_TABLES) {
+      const rows = await versionRows(ctx, table, sourceId);
+      for (const row of rows) {
+        const source = row as unknown as SourceRow;
+        const { _id, _creationTime, id, versionId, lineageId, ...rest } = source;
+        void _id;
+        void _creationTime;
+        void versionId;
+        const newId = createId();
+        idMap.set(id, newId);
+        toInsert.push({
+          table,
+          doc: { ...rest, id: newId, versionId: targetVersionId, lineageId: lineageId ?? id },
+        });
+      }
+    }
+
+    let materialized = 0;
+    for (const { table, doc } of toInsert) {
+      for (const fk of IN_CLONE_SET_FK_FIELDS) {
+        const oldRef = doc[fk];
+        if (typeof oldRef === "string" && idMap.has(oldRef)) doc[fk] = idMap.get(oldRef);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table name is a loop variable over the 4 known versioned tables
+      await ctx.db.insert(table as any, doc);
+      materialized += 1;
+    }
+
+    // NOTE: `categorySlots` (ordering within a category/group) is NOT cloned
+    // here — it has no `versionId` of its own (schema.ts's PARENT_JOIN
+    // comment) and would need its own oldId->newId FK rewrite
+    // (`projectCategoryId`/`projectGroupId`/`lineItemId`) plus per-row
+    // `subHireGroupId`/`lineItemId` handling this internal-only, no-UI
+    // primitive doesn't yet need. A materialized version is therefore
+    // correct on MEMBERSHIP (every category/group/line/service exists, with
+    // valid in-version parent/group/category FKs) but starts with NO
+    // recorded slot order — callers that need slot ordering on a
+    // materialized non-live version must extend this before relying on it.
+    await ctx.db.patch(targetVersion._id, { contentState: "ready" });
+    return { materialized };
+  },
+});
 
 /** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
 export const agentOps: AgentOpsAnnotations = {

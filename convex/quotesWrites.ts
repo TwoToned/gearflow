@@ -13,6 +13,7 @@ import { captureProjectSnapshot, deleteSnapshotAndEntries, restoreProjectSnapsho
 import { buildFinanceLines } from "./lib/financeSnapshot";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate, resolveOrgQuoteConfig } from "./lib/orgSettings";
+import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { computeValidUntil, startOfDayInTimezone, QUOTE_VALIDITY_BOUNDS } from "./lib/quoteDates";
 import {
   effectiveQuoteStatus,
@@ -285,6 +286,8 @@ export const sendNative = mutation({
     id: v.string(),
     version: v.number(),
     validUntil: v.number(),
+    /** Non-null when #1160's automation ALREADY moved the job (UI confirms, never asks). */
+    autoStatusChange: v.union(v.literal("QUOTED"), v.null()),
     offerStatusChange: offerValidator,
   }),
   args: {
@@ -382,11 +385,21 @@ export const sendNative = mutation({
       createdAt: now,
     });
 
+    // #1160 — the job moves itself to QUOTED. `offerStatusChange` is kept, but is
+    // now only ever non-null when the automation did NOT act (the org opted out),
+    // so the send dialog's "Move it to QUOTED?" prompt is the fallback rather than
+    // the normal path. Status is still never decided by the browser either way.
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: organizationId, projectId, trigger: "QUOTE_SENT", actor, now,
+    });
+
     return {
       id: quoteId,
       version: revision,
       validUntil,
-      offerStatusChange: SEND_OFFERS_QUOTED_FROM.has(project.status ?? "") ? ("QUOTED" as const) : null,
+      autoStatusChange: autoStatus === "QUOTED" ? ("QUOTED" as const) : null,
+      offerStatusChange:
+        autoStatus === null && SEND_OFFERS_QUOTED_FROM.has(project.status ?? "") ? ("QUOTED" as const) : null,
     };
   },
 });

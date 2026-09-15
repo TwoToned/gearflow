@@ -117,12 +117,33 @@ describe("quotesWrites.sendNative", () => {
     expect(quotes[0]?.validityDays).toBe(7);
   });
 
-  test("offers QUOTED from ENQUIRY/QUOTING but never applies it itself", async () => {
+  // #1160 — sending now MOVES the job to QUOTED itself (the org can opt out), so
+  // the offer is the opt-out path rather than the normal one. The other quote verbs
+  // are unchanged: accept/decline still only offer.
+  test("advances QUOTING → QUOTED itself, and reports it instead of offering", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t, ORG, "QUOTING");
 
     const result = await send(t);
+    expect(result.autoStatusChange).toBe("QUOTED");
+    expect(result.offerStatusChange).toBeNull(); // nothing left to ask
+    expect((await getProject(t))?.status).toBe("QUOTED");
+  });
+
+  test("with the org opted out, it falls back to the passive offer and forces nothing", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t, ORG, "QUOTING");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", {
+        organizationId: ORG,
+        settings: JSON.stringify({ projectStatusAutomation: { quoteSent: false } }),
+      });
+    });
+
+    const result = await send(t);
+    expect(result.autoStatusChange).toBeNull();
     expect(result.offerStatusChange).toBe("QUOTED");
     expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
   });
@@ -1137,7 +1158,9 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
     const result = await decline(t);
     expect(result.offerStatusChange).toBe("CANCELLED");
     expect((await getQuotes(t))[0]?.status).toBe("DECLINED");
-    expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
+    // The send above auto-advanced QUOTING → QUOTED (#1160); declining must not
+    // move it again — CANCELLED stays an offer, never applied.
+    expect((await getProject(t))?.status).toBe("QUOTED");
     await expect(decline(t, { reason: "x" })).rejects.toThrow(/at least 3/i);
   });
 

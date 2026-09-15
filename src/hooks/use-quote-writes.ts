@@ -30,6 +30,12 @@ import {
  * caller to act on (advance to QUOTED / CONFIRMED / CANCELLED), never something
  * the mutation applied itself — status is never forced by a quote verb, matching
  * the existing "issuing an invoice offers to advance to INVOICED" precedent.
+ *
+ * #1160 narrows that for SEND only: when the org leaves the "Quote sent" status
+ * automation on (the default), `sendNative` moves the job to QUOTED itself and
+ * reports it as `autoStatusChange`, leaving `offerStatusChange` null. The offer is
+ * now the OPT-OUT path, not the normal one. Accept/decline are unchanged — entering
+ * CONFIRMED commits stock and money, so it stays a human's explicit click.
  */
 export type QuoteStatusOffer = "QUOTED" | "CONFIRMED" | "CANCELLED" | null;
 
@@ -77,6 +83,8 @@ export function useQuoteWrites() {
       id: string;
       version: number;
       validUntil: number;
+      /** Non-null when #1160's automation ALREADY moved the job to Quoted. */
+      autoStatusChange: "QUOTED" | null;
       offerStatusChange: QuoteStatusOffer;
       artifactReady: boolean;
     }> => {

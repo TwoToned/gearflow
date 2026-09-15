@@ -594,13 +594,101 @@ The canvas (https://claude.ai/artifact/EgwLTWJLKyyTeymqhjtNes) is the reference 
    matrix in §4.5.
 5. **Make live states what changes before it runs** (mockup 6): changes, what stays, warehouse
    conflicts, and the paperwork consequence ("Quote v3 hasn't been sent").
-6. **Compare is a mode on the real page** (mockup 7): comparing v3 with v4 renders v3 in the
-   normal tabs with changed rows highlighted in place and old → new values in the cells,
-   unchanged rows dimmed, a change count on each tab, and the strip carrying the summary, the
-   change stepper and "Make v3 live". No bespoke diff table. This is the reading of
-   "comparisons should feel similar to editing a project" (§9.1, to confirm).
-7. **Words.** "Version", "Live", "Frozen", "New version from vN", "Make vN live". Never
+6. **Compare is a mode on the real page** — fleshed out in §5.1 below (mockup 7).
+7. **Words.** "Version", "Live", "New version from vN", "Make vN live". Never
    "snapshot", "revision", "promote", "restore", "unlock session".
+
+### 5.1 Compare mode (D46–D52)
+
+The first draft of this was "the same table with changed rows highlighted", which is correct but
+is still, in the end, a list. The question a PM actually arrives with is not *which cells differ*
+— it is **"why is this version $3,280 more, and can I defend that to the client?"** Compare mode
+is built to answer that question first and show the rows second.
+
+#### Research → the four rules it follows
+
+| Finding | Source | What it decides here |
+|---|---|---|
+| Two independently scrolling panes are the wrong architecture for a diff: two scroll positions that must be kept in step, different content heights, and compared items landing in different places. Use **one scroll container, one grid, two cells per row** — the halves live in the same row element, so there is no state that can disagree. | [dev.to — *Two scrolling panes is the wrong way to build a side-by-side diff*](https://dev.to/hammad4june1999/two-scrolling-panes-is-the-wrong-way-to-build-a-side-by-side-diff-3ehn) | **D46.** No split panes ever. One table, one scroll container. |
+| Comparison-table layouts are for *interpretation*; avoid them when the task is creation or editing. Inline editing in the original table keeps the most context. | [uxpatterns.dev — Comparison Table](https://uxpatterns.dev/patterns/data-display/comparison-table), [Pencil & Paper — enterprise data tables](https://www.pencilandpaper.io/articles/ux-pattern-analysis-enterprise-data-tables) | **D47.** Compare is a **read mode**: inline editing is suspended while it is on, and the exit is one click. It reuses the real table so context is preserved, but it is not a place you type. |
+| A waterfall / bridge chart decomposes a variance into its contributors, connecting two totals with the step-by-step changes between them rather than showing only the endpoints. | [ClosePack — The Variance Waterfall](https://www.closepack.io/blog/the-variance-waterfall-how-to-actually-explain-what-changed), [Domo — Waterfall charts](https://www.domo.com/learn/charts/waterfall-charts), [Inforiver](https://inforiver.com/insights/waterfall-charts-finance-professionals-best-friend/) | **D48.** The top of compare mode is a **money bridge**, not a count of changes. |
+| Revision comparison in estimating tools is expected to report *what changed and what drove the total* — added scope, removed scope, repricing — as its primary output. | [BuildAI — Comparing Revisions](https://www.pelles.ai/university/articles/comparing-revisions-addendum-control) | **D49.** Changes are grouped by **kind** (added / removed / repriced / re-scoped), each with its own money contribution. |
+
+#### D48 — the money bridge is the headline
+
+A horizontal bridge across the top of the page, reading left to right:
+
+```
+v4 $18,120  ──┐
+              ├─ + LED wall package      +$3,280   (added)
+              ├─ − MA3 Light ×2          −$1,440   (removed)
+              ├─ ± Source Four LED S2      +$120   (repriced)
+              ├─ ± rental window 4→5 days  +$920   (plan field)
+              └─ → v3 $21,000
+```
+
+Each segment is clickable and scrolls the table to the row(s) behind it. This is the artefact a PM
+screenshots into an email. The change *count* becomes secondary text, not the headline.
+
+Two rules keep it honest:
+- **Every segment traces to rows.** The bridge is derived from the same diff that renders the
+  table — one computation, two presentations (R-3.1). A segment with no rows behind it is a bug,
+  and the test plan asserts `sum(segments) == v(b).total − v(a).total` exactly.
+- **Plan-field changes are first-class segments.** A rental window going 4 → 5 days moves the
+  total without any row changing. The first draft of compare had nowhere to put that; it was the
+  biggest hole in it.
+
+#### D50 — rows align by `lineageId`, so there is no pairing heuristic
+
+Text diffs have to *guess* which line matches which, which is why they buffer consecutive changes
+and pair edits off with `Math.max` logic. We don't: a line copied from v4 into v3 keeps its
+`lineageId` (§4.2), so alignment is **exact and free**. Four row states follow directly:
+
+| State | Test | Rendering |
+|---|---|---|
+| **Unchanged** | lineage in both, all compared fields equal | dimmed to ~55%, full row still readable |
+| **Changed** | lineage in both, ≥1 field differs | normal weight; **only the differing cells** show `old → new`, everything else renders once |
+| **Added** | lineage only in B | green tint, `Added in vN` pill |
+| **Removed** | lineage only in A | red-tinted left edge, strikethrough name, quantities as `n → 0` |
+| **Moved** | lineage in both, different `categoryId`/`groupId` | shown **in its new home** with a `Moved from Lighting` pill and a ghost placeholder in the old one |
+
+"Moved" is new — the first draft rendered a category change as a remove + an add, which
+double-counts it in the bridge and reads as scope churn that never happened.
+
+#### D51 — cell-level, not row-level, highlighting
+
+A changed row shows `$50.00 → $55.00` **in the unit-price cell only**. Every other cell renders
+its single current value. Highlighting the whole row and making the reader hunt for the delta is
+the failure mode of most diff tables; the row tint says *something here changed*, the cell says
+*this did*.
+
+#### D52 — three controls, no more
+
+- **Filter:** `All rows · Only changes` (default **Only changes** when there are >40 rows,
+  `All rows` otherwise — a 12-line quote reads better whole).
+- **Stepper:** `‹ Change 2 of 5 ›`, bound to `n` / `p`, scrolling and focusing the row.
+- **Direction:** the compare target is a small inline picker in the strip (`v4 · Live` /
+  `v2 · previous`), because "compare with what" is the only genuinely variable input.
+
+Everything else — per-tab change badges, the running subtotal/GST/total footer with old → new —
+is derived, not configured.
+
+#### What it composes with
+
+- **Tabs still work.** Each tab carries its change count; Overview renders the **plan-field**
+  changes (dates, client, venue, discount, notes) as the same old → new treatment. Compare is not
+  a screen you navigate *to*, it is a lens you turn on.
+- **Drift is the same lens.** "v4 has changed since quote v4 was sent" (strip state D) opens
+  compare mode with A = the sent document's money snapshot and B = the live version's rows. One
+  component answers both "how do two versions differ" and "how has this version drifted from what
+  the client holds" — which is why §4.5 can afford to make drift a warning rather than a lock.
+- **Make live lives here.** The make-live dialog (mockup 6) is compare mode's summary in a
+  dialog; it reuses the same diff and the same bridge.
+
+**Out of scope for the first release:** exporting a compare as a client-facing "variation" PDF.
+It is the obvious next ask (an AV client asking "what changed since the last quote?" is a weekly
+event) but it needs its own document type, and the §4.4 rule that finance documents are stored
+bytes applies to it. Logged in `TODOS.md`, not built.
 
 ---
 
@@ -774,6 +862,14 @@ before being accepted.
 | **D43** | **Post-invoice divergence is reported, not prevented.** Verified 2026-09-15: `pushInvoiceToXero` (`src/server/xero.ts:329`) reads `invoiceLines` — the invoice's own snapshotted lines, with account/tax coding snapshotted at push time — never live project rows, and an issued invoice is immutable (VOID + reissue, or a credit note). So a post-invoice edit cannot corrupt the client's PDF **or** the accounting system; the only real effect is that the project's own totals move away from what was invoiced. The Finance tab carries a derived line — *"Project total has moved +$1,240 since INV-023 was issued"* — computed from the invoice's stored total against the live version's current total, with a link to the activity rows stamped `metadata.afterLock`. No new stored field. |
 | **D44** | **The release is Phases 2–6, not 2–5.** Phase 6 is what makes `sendNative` target any version; without it the program ships switchable versions that cannot be separately quoted from — the refactor without the feature that motivated it. It also carries the locked non-live rendering and drift-against-the-sent-document work that §4.5's lock model assumes. |
 | **D45** | **Phase 0's sweep surface is measured, not estimated** (2026-09-15, static classification of every `query("<table>")` → next `withIndex(...)` across non-test `convex/` + `src/`): **92 `by_projectId*` read sites across 37 files** break on the rename — `projectLineItems` 42 + 4 (`_status`) + 3 (`_sortOrder`), `projectServices` 16, `projectGroups` 17, `projectCategories` 10, `categorySlots` **0** (it has no `by_projectId` index; it reaches versioned rows via `by_projectCategoryId`/`by_projectGroupId`/`by_lineItemId`/`by_subHireGroupId`, which is why the ratchet covers it instead). A further 101 `by_cuid` sites do not break but carry the org-check + version-check discipline. Heaviest files: `lib/projectSnapshots.ts` (11, mostly deleted by Phase 3), `projectWrites.ts` (8), `warehouseOps.ts` (5), `projectServicesWrites.ts` (5), `categorySlotsWrites.ts` (5). The spike still runs — this is a static approximation, and its job is to confirm the classification and prove `copyPlanGraph` + lineage re-point on a fixture — but Phase 2's "L" is now an informed L. |
+| **D46** | **Compare never uses split panes.** One scroll container, one grid, both halves of a row in the same row element — the two-scroll-position sync problem does not get to exist. |
+| **D47** | **Compare is a read mode.** Inline editing is suspended while it is on (comparison layouts are for interpretation, not creation), and the exit is one click. It reuses the real table, so context is kept, but it is not a place you type. |
+| **D48** | **The headline is a money bridge, not a change count.** A horizontal waterfall from v(a) total to v(b) total, one segment per contributor (added / removed / repriced / plan-field), each clickable to its rows. Derived from the same diff that renders the table; `sum(segments) == Δtotal` is a test-plan assertion. Plan-field changes (rental window, discount) are first-class segments — the first draft had nowhere to put a total that moved without a row changing. |
+| **D49** | **Changes group by kind**, each with its own money contribution: added, removed, repriced, re-scoped. This is what revision comparison in estimating tools is expected to output. |
+| **D50** | **Rows align by `lineageId`** — exact, with no pairing heuristic, because unlike a text diff we carry a stable identity. Adds a fifth row state the first draft lacked: **moved** (same lineage, different category/group) renders in its new home with a `Moved from X` pill and a ghost in the old one, instead of a remove + an add that double-counts in the bridge. |
+| **D51** | **Highlighting is cell-level.** Only the differing cells show `old → new`; the row tint says *something changed here*, the cell says *this did*. |
+| **D52** | **Three controls only:** filter (`All rows` / `Only changes`, defaulting to Only changes above 40 rows), the `‹ n of m ›` stepper bound to `n`/`p`, and the compare-target picker. Per-tab badges and the old → new totals footer are derived, not configured. |
+| **D53** | **Drift uses the same lens.** Strip state D opens compare mode with A = the sent document's money snapshot, B = the live version's rows. One component answers both "how do these versions differ" and "how has this drifted from what the client holds" — which is what lets §4.5 make drift a warning rather than a lock. Exporting a compare as a client-facing variation PDF is the obvious next ask and is deliberately out of the first release (own document type, §4.4 stored-bytes rule applies) — logged in `TODOS.md`. |
 
 **Also accepted from that review, folded into §4 rather than listed as decisions:** the sub-hire
 join runs from the versioned line (`projectLineItems.subHireId`) to the live order, not from

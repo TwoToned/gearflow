@@ -502,6 +502,14 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 
 ## Project Versioning
 
+### Client-facing "what changed" variation document
+**What:** Export a compare (v(a) vs v(b), or a version against the quote the client holds) as a client-facing variation PDF — added scope, removed scope, repricing, and the money bridge that explains the delta.
+**Why:** "What changed since the last quote?" is a weekly question on any AV job that goes through more than one round. Today the answer is a PM retyping it into an email; after versioning v2 the data exists and compare mode already renders it on screen.
+**Pros:** Turns the compare view into something sendable. Directly supports the multi-option quoting workflow the versioning program exists for.
+**Cons:** It is a new finance document type, so §4.4's stored-bytes rule applies in full (rendered once, attached to a row, no regeneration path, no overwrite) — that's the real cost, not the layout. Needs its own react-pdf component tree and the CLAUDE.md DocumentLineItem consumer audit.
+**Context:** Deliberately excluded from the versioning v2 first release (D53, `docs/designs/project-versioning-v2.md` §5.1). Compare mode ships as an on-screen lens only.
+**Depends on:** Versioning v2 Phases 2–6 shipped.
+
 ### Version indicator on project list / board / dashboard cards
 **What:** Show which project is on a non-default version (or has options out) in `project-table.tsx`, `project-board.tsx` and the dashboard's Upcoming list, the way `ProjectLockGlyph` shows lock state today.
 **Why:** `ProjectLockGlyph` is deliberately status-only (`src/components/projects/project-lock-glyph.tsx:20-26`): it cannot show the quote-sent case because that needs each row's current quote state, which `projects.listPage`/`listBoard` don't carry, and a per-row lookup would reintroduce the per-project-loop cost #942 flagged. The same limitation applies to version state after the versioning v2 program: from a list you can't tell a job with three live options from a plain one.

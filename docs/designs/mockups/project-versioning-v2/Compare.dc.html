@@ -60,48 +60,113 @@ td.r, th.r { text-align:right; }
 
   </style>
 </helmet>
-<div style="width:1200px; min-height:880px; background:#141210; padding:24px; box-sizing:border-box; display:flex; flex-direction:column; gap:16px;">
-  <!-- Compare is a MODE on the real page: the strip carries the summary and stepper, the tabs render as normal with changes highlighted inline -->
+<div style="width:1200px; min-height:1010px; background:#141210; padding:24px; box-sizing:border-box; display:flex; flex-direction:column; gap:14px;">
+  <!-- Compare is a MODE on the real page. Headline = the money bridge (D48), not a change count. -->
   <div class="strip strip-info">
     <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-      <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg><span><strong>Comparing v3 · With LED wall</strong> <span style="opacity:.85;">with</span></span>
-      <span class="tabs" style="padding:3px;"><span class="tab tab-active" style="padding:3px 10px; font-size:12px;">v4 · Live</span><span class="tab" style="padding:3px 10px; font-size:12px;">v2 · previous</span></span>
-      <span style="opacity:.85;">· <strong>5 changes</strong> · total <span class="num" style="color:#4FD888;">+$3,280</span> · same rental window</span>
+      <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg><span><strong>Comparing v3 &middot; With LED wall</strong> <span style="opacity:.85;">with</span></span>
+      <span class="tabs" style="padding:3px;"><span class="tab tab-active" style="padding:3px 10px; font-size:12px;">v4 &middot; Live</span><span class="tab" style="padding:3px 10px; font-size:12px;">v2 &middot; previous</span><span class="tab" style="padding:3px 10px; font-size:12px;">Quote sent 19 Jul</span></span>
+      <span class="muted" style="font-size:12px;">&middot; editing paused while comparing</span>
     </div>
     <div style="display:flex; align-items:center; gap:8px; flex:none;">
-      <span class="btn btn-ghost btn-sm">‹</span><span class="mono" style="font-size:12px; color:#F5EFE2;">Change 2 of 5</span><span class="btn btn-ghost btn-sm">›</span>
+      <span class="btn btn-ghost btn-sm">&lsaquo;</span><span class="mono" style="font-size:12px; color:#F5EFE2;">Change 2 of 5</span><span class="btn btn-ghost btn-sm">&rsaquo;</span><span class="kbd">n</span><span class="kbd">p</span>
       <span class="btn btn-primary btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M5 5a10 10 0 0 0 0 14"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg> Make v3 live</span>
       <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg> Exit compare</span>
     </div>
   </div>
 
+  <!-- THE MONEY BRIDGE (D48) — a true waterfall: each bar floats at the running total. -->
+  <div class="card" style="padding:16px 18px 14px;">
+    <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:10px;">
+      <span class="overline">Why v3 costs more</span>
+      <span class="muted" style="font-size:11px;">5 changes across 2 tabs &middot; click a step to jump to its rows</span>
+    </div>
+    <div style="display:flex; align-items:flex-end; gap:0; padding-bottom:34px;">
+      <div style="flex:0 0 110px; position:relative; height:150.0px;">
+        <div style="position:absolute; left:50%; transform:translateX(-50%); bottom:0; width:74px; height:37.3px; background:#3A332A; border-radius:5px 5px 0 0;"></div>
+        <div style="position:absolute; left:0; right:0; bottom:43.3px; text-align:center;" class="num"><span style="font-size:13px; color:#CDC4B2;">$18,120</span></div>
+      </div>
+      <div style="flex:1; position:relative; height:150.0px;">
+        <div style="position:absolute; left:0; right:0; bottom:37.3px; border-top:1px dashed #473E32;"></div>
+        <div style="position:absolute; left:50%; transform:translateX(-50%); bottom:37.3px; width:64px; height:109.3px; background:rgba(62,207,122,.55); border-radius:4px; box-shadow:0 1px 0 rgba(0,0,0,.45);"></div>
+        <div style="position:absolute; left:0; right:0; bottom:151.7px; text-align:center;" class="num"><span style="font-size:12px; color:#4FD888;">+$3,280</span></div>
+        <div style="position:absolute; left:0; right:0; top:100%; padding-top:8px; text-align:center; font-size:11px; color:#CDC4B2; line-height:1.35;">LED wall package<br><span class="faint">added · 2 lines</span></div>
+      </div>
+      <div style="flex:1; position:relative; height:150.0px;">
+        <div style="position:absolute; left:0; right:0; bottom:146.7px; border-top:1px dashed #473E32;"></div>
+        <div style="position:absolute; left:50%; transform:translateX(-50%); bottom:98.7px; width:64px; height:48.0px; background:rgba(224,54,61,.55); border-radius:4px; box-shadow:0 1px 0 rgba(0,0,0,.45);"></div>
+        <div style="position:absolute; left:0; right:0; bottom:151.7px; text-align:center;" class="num"><span style="font-size:12px; color:#F26F73;">−$1,440</span></div>
+        <div style="position:absolute; left:0; right:0; top:100%; padding-top:8px; text-align:center; font-size:11px; color:#CDC4B2; line-height:1.35;">MA3 Light ×2<br><span class="faint">removed</span></div>
+      </div>
+      <div style="flex:1; position:relative; height:150.0px;">
+        <div style="position:absolute; left:0; right:0; bottom:98.7px; border-top:1px dashed #473E32;"></div>
+        <div style="position:absolute; left:50%; transform:translateX(-50%); bottom:98.7px; width:64px; height:4.0px; background:rgba(235,165,58,.65); border-radius:4px; box-shadow:0 1px 0 rgba(0,0,0,.45);"></div>
+        <div style="position:absolute; left:0; right:0; bottom:107.7px; text-align:center;" class="num"><span style="font-size:12px; color:#EBA53A;">+$120</span></div>
+        <div style="position:absolute; left:0; right:0; top:100%; padding-top:8px; text-align:center; font-size:11px; color:#CDC4B2; line-height:1.35;">Source Four S2<br><span class="faint">repriced · $50→$55</span></div>
+      </div>
+      <div style="flex:1; position:relative; height:150.0px;">
+        <div style="position:absolute; left:0; right:0; bottom:102.7px; border-top:1px dashed #473E32;"></div>
+        <div style="position:absolute; left:50%; transform:translateX(-50%); bottom:102.7px; width:64px; height:30.7px; background:rgba(91,141,239,.65); border-radius:4px; box-shadow:0 1px 0 rgba(0,0,0,.45);"></div>
+        <div style="position:absolute; left:0; right:0; bottom:138.3px; text-align:center;" class="num"><span style="font-size:12px; color:#5B8DEF;">+$920</span></div>
+        <div style="position:absolute; left:0; right:0; top:100%; padding-top:8px; text-align:center; font-size:11px; color:#CDC4B2; line-height:1.35;">Rental window<br><span class="faint">4 → 5 days</span></div>
+      </div>
+      <div style="flex:0 0 110px; position:relative; height:150.0px;">
+        <div style="position:absolute; left:0; right:0; bottom:133.3px; border-top:1px dashed #473E32;"></div>
+        <div style="position:absolute; left:50%; transform:translateX(-50%); bottom:0; width:74px; height:133.3px; background:#E0363D; border-radius:5px 5px 0 0; box-shadow:inset 0 1px 0 rgba(255,253,248,.18);"></div>
+        <div style="position:absolute; left:0; right:0; bottom:139.3px; text-align:center;" class="num"><span style="font-size:14px; color:#F5EFE2; font-weight:700;">$21,000</span></div>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:space-between; border-top:1px solid #332C24; padding-top:8px; margin-top:6px;">
+      <span class="faint" style="font-size:11px;">v4 &middot; Live</span>
+      <span class="faint" style="font-size:11px;">scale starts at $17,000 so the steps stay readable</span>
+      <span class="faint" style="font-size:11px;">v3 &middot; With LED wall</span>
+    </div>
+  </div>
+
   <div style="display:flex; align-items:center; justify-content:space-between;">
-    <div class="tabs"><span class="tab">Overview</span><span class="tab tab-active">Equipment <span class="pill pill-warn" style="margin-left:6px; padding:2px 7px;">4</span></span><span class="tab">Labour &amp; logistics <span class="pill pill-warn" style="margin-left:6px; padding:2px 7px;">1</span></span><span class="tab">Finance</span><span class="tab">Tasks</span><span class="tab">Notes</span><span class="tab">Files (3)</span></div>
-    <span class="muted" style="font-size:12px;">Unchanged rows dimmed · cells show v4 → v3</span>
+    <div class="tabs"><span class="tab">Overview <span class="pill pill-info" style="margin-left:6px; padding:2px 7px;">1</span></span><span class="tab tab-active">Equipment <span class="pill pill-warn" style="margin-left:6px; padding:2px 7px;">4</span></span><span class="tab">Labour &amp; logistics</span><span class="tab">Finance</span><span class="tab">Tasks</span><span class="tab">Notes</span><span class="tab">Files (3)</span></div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span class="tabs" style="padding:3px;"><span class="tab" style="padding:3px 10px; font-size:12px;">All rows</span><span class="tab tab-active" style="padding:3px 10px; font-size:12px;">Only changes</span></span>
+      <span class="muted" style="font-size:12px;">cells show v4 &rarr; v3</span>
+    </div>
   </div>
 
   <div class="card" style="padding:0; overflow:hidden;">
     <table>
-      <thead><tr><th style="width:26px;"></th><th>Item</th><th class="r">Qty</th><th class="r">Days</th><th class="r">Unit</th><th class="r">Line</th><th>Availability</th><th style="width:60px;"></th></tr></thead>
+      <thead><tr><th style="width:26px;"></th><th>Item</th><th class="r">Qty</th><th class="r">Days</th><th class="r">Unit</th><th class="r">Line</th><th>Availability</th></tr></thead>
       <tbody>
-        <tr><td colspan="8" style="border-top:0; background:rgba(26,22,19,.5); padding:8px 12px;"><span class="overline">Video</span> <span class="muted" style="font-size:11px;">· 3 lines · <span class="num">$0 → $3,280</span></span></td></tr>
-        <tr style="background:rgba(62,207,122,.08);"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">LED wall 3.9 mm · 6 × 3 m</span><span class="pill pill-ok">Added in v3</span></div><div class="muted" style="font-size:11px;">18 × panels · Absen PL3.9</div></td><td class="r num">18</td><td class="r num">4</td><td class="r num">$40.00</td><td class="r num">$2,880</td><td><span class="pill pill-ok">18 of 24 free</span></td><td></td></tr>
-        <tr style="background:rgba(224,54,61,.12); box-shadow:inset 3px 0 0 #E0363D;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Novastar VX1000 processor</span><span class="pill pill-ok">Added in v3</span></div><div class="muted" style="font-size:11px;">Serialised · 1 unit</div></td><td class="r num">1</td><td class="r num">4</td><td class="r num">$100.00</td><td class="r num">$400</td><td><span class="pill pill-warn">1 short</span></td><td></td></tr>
-        <tr style="opacity:.55;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div class="ink2" style="font-weight:600;">Video technician</div><div class="muted" style="font-size:11px;">Service · 24 h</div></td><td class="r num">1</td><td class="r num">—</td><td class="r num">$95.00</td><td class="r num">$2,280</td><td><span class="muted" style="font-size:12px;">—</span></td><td></td></tr>
+        <tr><td colspan="7" style="border-top:0; background:rgba(26,22,19,.5); padding:8px 12px;"><span class="overline">Video</span> <span class="muted" style="font-size:11px;">&middot; 3 lines &middot; <span class="num">$2,280 &rarr; $5,560</span></span></td></tr>
 
-        <tr><td colspan="8" style="background:rgba(26,22,19,.5); padding:8px 12px;"><span class="overline">Lighting</span> <span class="muted" style="font-size:11px;">· 9 lines · <span class="num">$9,660 → $8,940</span></span></td></tr>
-        <tr style="opacity:.55;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Stage wash package</span><span class="pill pill-neutral">Group · 4</span></div><div class="muted" style="font-size:11px;">Bundle price</div></td><td class="r num">1</td><td class="r num">4</td><td class="r num">$1,320.00</td><td class="r num">$5,280</td><td><span class="pill pill-ok">All free</span></td><td></td></tr>
-        <tr style="background:rgba(235,165,58,.08);"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Source Four LED S2</span><span class="pill pill-warn">Price changed</span></div><div class="muted" style="font-size:11px;">Bulk · 6 of 12 owned</div></td><td class="r num">6</td><td class="r num">4</td><td class="r num"><span class="muted" style="text-decoration:line-through;">$50.00</span> → $55.00</td><td class="r num"><span class="muted" style="text-decoration:line-through;">$1,200</span> → $1,320</td><td><span class="pill pill-ok">6 of 6 free</span></td><td></td></tr>
-        <tr style="background:rgba(158,148,131,.10);"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600; text-decoration:line-through;">MA3 Light</span><span class="pill pill-rep">Removed in v3</span></div><div class="muted" style="font-size:11px;">2 checked out on v4 — stays on the job if v3 goes live</div></td><td class="r num"><span class="muted" style="text-decoration:line-through;">2</span> → 0</td><td class="r num muted">4</td><td class="r num muted">$180.00</td><td class="r num"><span class="muted" style="text-decoration:line-through;">$1,440</span> → $0</td><td><span class="pill pill-warn">2 checked out</span></td><td></td></tr>
+        <tr style="background:rgba(62,207,122,.08); box-shadow:inset 3px 0 0 #4FD888;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">LED wall 3.9 mm &middot; 6 &times; 3 m</span><span class="pill pill-ok">Added</span></div><div class="muted" style="font-size:11px;">18 &times; panels &middot; Absen PL3.9</div></td><td class="r num">18</td><td class="r num">5</td><td class="r num">$32.00</td><td class="r num">$2,880</td><td><span class="pill pill-ok">18 of 24 free</span></td></tr>
+
+        <tr style="background:rgba(62,207,122,.08); box-shadow:inset 3px 0 0 #4FD888;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Novastar VX1000 processor</span><span class="pill pill-ok">Added</span></div><div class="muted" style="font-size:11px;">Serialised &middot; 1 unit</div></td><td class="r num">1</td><td class="r num">5</td><td class="r num">$80.00</td><td class="r num">$400</td><td><span class="pill pill-warn">1 short</span></td></tr>
+
+        <!-- MOVED (D50) — same lineage, new category. Rendered in its NEW home. -->
+        <tr style="background:rgba(91,141,239,.08); box-shadow:inset 3px 0 0 #5B8DEF;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Video technician</span><span class="pill pill-info">Moved from Labour</span></div><div class="muted" style="font-size:11px;">Service &middot; 24 h &middot; no price change</div></td><td class="r num">1</td><td class="r num">&mdash;</td><td class="r num">$95.00</td><td class="r num">$2,280</td><td><span class="muted" style="font-size:12px;">&mdash;</span></td></tr>
+
+        <tr><td colspan="7" style="background:rgba(26,22,19,.5); padding:8px 12px;"><span class="overline">Lighting</span> <span class="muted" style="font-size:11px;">&middot; 9 lines &middot; <span class="num">$9,660 &rarr; $8,340</span></span></td></tr>
+
+        <!-- CHANGED — cell-level only (D51): qty/days/line render once, ONLY unit price shows old -> new -->
+        <tr style="background:rgba(235,165,58,.08); box-shadow:inset 3px 0 0 #EBA53A;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Source Four LED S2</span><span class="pill pill-warn">Repriced</span></div><div class="muted" style="font-size:11px;">Bulk &middot; 6 of 12 owned</div></td><td class="r num">6</td><td class="r num">4</td><td class="r num"><span class="faint" style="text-decoration:line-through;">$50.00</span> <span style="color:#EBA53A;">&rarr; $55.00</span></td><td class="r num"><span class="faint" style="text-decoration:line-through;">$1,200</span> <span style="color:#EBA53A;">&rarr; $1,320</span></td><td><span class="pill pill-ok">6 of 6 free</span></td></tr>
+
+        <!-- REMOVED -->
+        <tr style="background:rgba(224,54,61,.10); box-shadow:inset 3px 0 0 #E0363D;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600; text-decoration:line-through;">MA3 Light</span><span class="pill pill-out">Removed</span></div><div class="muted" style="font-size:11px;">2 checked out on v4 &mdash; stays on the job if v3 goes live</div></td><td class="r num"><span class="faint" style="text-decoration:line-through;">2</span> <span style="color:#F26F73;">&rarr; 0</span></td><td class="r num">4</td><td class="r num">$180.00</td><td class="r num"><span class="faint" style="text-decoration:line-through;">$1,440</span> <span style="color:#F26F73;">&rarr; $0</span></td><td><span class="pill pill-warn">2 checked out</span></td></tr>
+
+        <!-- UNCHANGED, dimmed but legible — visible because "All rows" would show it; kept as the anchor row -->
+        <tr style="opacity:.5;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Stage wash package</span><span class="pill pill-neutral">Group &middot; 4</span></div><div class="muted" style="font-size:11px;">Bundle price &middot; unchanged</div></td><td class="r num">1</td><td class="r num">4</td><td class="r num">$1,320.00</td><td class="r num">$5,280</td><td><span class="pill pill-ok">All free</span></td></tr>
+
+        <!-- MOVED-OUT GHOST — the placeholder left where the technician used to sit -->
+        <tr style="opacity:.4;"><td class="faint"></td><td colspan="6"><span class="muted" style="font-size:12px; font-style:italic;">Video technician moved to Video &mdash; counted there, not here</span></td></tr>
       </tbody>
     </table>
     <div style="padding:10px 12px; border-top:1px solid #332C24; display:flex; align-items:center; justify-content:flex-end; gap:16px;">
-      <span class="muted" style="font-size:12px;">Subtotal <span class="num"><span style="text-decoration:line-through;">$16,472</span> → <span class="ink2">$19,454</span></span></span>
-      <span class="muted" style="font-size:12px;">GST <span class="num"><span style="text-decoration:line-through;">$1,648</span> → <span class="ink2">$1,946</span></span></span>
-      <span class="muted" style="font-size:12px;">Total <span class="num"><span style="text-decoration:line-through;">$18,120</span> → <span style="color:#F5EFE2; font-weight:600;">$21,400</span></span></span>
+      <span class="muted" style="font-size:12px;">Subtotal <span class="num"><span class="faint" style="text-decoration:line-through;">$16,472</span> &rarr; <span class="ink2">$19,091</span></span></span>
+      <span class="muted" style="font-size:12px;">GST <span class="num"><span class="faint" style="text-decoration:line-through;">$1,648</span> &rarr; <span class="ink2">$1,909</span></span></span>
+      <span class="muted" style="font-size:12px;">Total <span class="num"><span class="faint" style="text-decoration:line-through;">$18,120</span> &rarr; <span style="color:#F5EFE2; font-weight:700;">$21,000</span></span></span>
     </div>
   </div>
-  <div class="note" style="font-size:13px;">Compare is not a separate diff screen: it is the same project page in a compare mode. The strip holds the summary and the change stepper; each tab shows its badge count and highlights its changed rows in place, with old → new values in the cells.</div>
+
+  <div class="note" style="font-size:13px;">One scroll container, never split panes. Rows align by lineageId, so there is no pairing guesswork &mdash; and a line that changed category reads as <em>moved</em>, not as a remove plus an add that would double-count in the bridge above.</div>
 </div>
 
 </x-dc>

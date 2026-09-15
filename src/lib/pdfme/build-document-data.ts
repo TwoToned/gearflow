@@ -92,6 +92,48 @@ export function invoiceLineToDocumentLineItem(line: {
   };
 }
 
+/**
+ * The "what is still owed on this document" pair (`deposit_paid` /
+ * `balance_due`) — the one place that decision is made, because getting it
+ * wrong puts two contradictory numbers for the same money on one page.
+ *
+ * A render that represents a SPECIFIC invoice describes THAT invoice and
+ * nothing else: the amount owed is its own `total`, which `invoicesWrites.ts`
+ * createNative already nets correctly for every kind (a DEPOSIT is its
+ * fraction of the project, a BALANCE is the project less every non-VOID
+ * partial already raised, a FULL is the whole project, a CREDIT is a
+ * negation). There is no deposit to deduct a second time, so the row is
+ * suppressed — `TotalsBlock` gates the pair on `depositInvoiced > 0`.
+ *
+ * This is the deposit-invoice bug (reported 2026-09-15, INV-260901): issuing a
+ * DEPOSIT invoice recalcs the project (`convex/lib/recalc.ts` step 6b), which
+ * sets `projects.depositPaid` to that invoice's OWN total. Reading the project
+ * figure here made the deposit invoice deduct itself from itself — it printed
+ * "Total $330.00 / Deposit Paid -$330.00 / Balance Due $990.00", where $990 was
+ * the PROJECT's balance and flatly contradicted the Total directly above it.
+ *
+ * The project-level fallback is the watermarked DRAFT PREVIEW
+ * (`/api/documents/[projectId]?type=invoice&preview=1`), which has no invoice
+ * row to speak for and correctly shows the project's position. Note the figure
+ * means "invoiced", not "received" — `recalcProjectTotals` derives it from
+ * ISSUED DEPOSIT invoices and Flow has no payment-collection signal (Xero owns
+ * that), which is why the label matches the in-app "Deposit invoiced" (R-3.10).
+ */
+export function resolveInvoiceAmountDue(input: {
+  /** The specific invoice being rendered, or null for a project-level render. */
+  invoice: { total: number } | null;
+  /** The live project's tax-inclusive total. */
+  projectTotal: number;
+  /** `projects.depositPaid` — sum of ISSUED DEPOSIT invoices, recalc-derived. */
+  projectDepositInvoiced: number;
+}): { depositInvoiced: number; balanceDue: number } {
+  if (input.invoice) return { depositInvoiced: 0, balanceDue: input.invoice.total };
+  return {
+    depositInvoiced: input.projectDepositInvoiced,
+    balanceDue: input.projectTotal - input.projectDepositInvoiced,
+  };
+}
+
 /** Serialize Decimal fields to numbers (Prisma v6 Decimal type) */
 function serializeDecimals<T>(obj: T): T {
   return JSON.parse(
@@ -779,6 +821,11 @@ export async function buildDocumentData(
 
   const totalNum = Number(serialized.total) || 0;
   const depositNum = Number(serialized.depositPaid) || 0;
+  const amountDue = resolveInvoiceAmountDue({
+    invoice: invoiceContext,
+    projectTotal: totalNum,
+    projectDepositInvoiced: depositNum,
+  });
   const now = new Date();
   // #986/#987 — the validity DEFAULT and the day-boundary maths come from the one
   // shared module (`quote-validity.ts`), resolved in the ORG's timezone rather
@@ -906,8 +953,11 @@ export async function buildDocumentData(
     tax_breakdown: taxBreakdown,
     tax_exempt_reason: client?.taxExemptReason || "",
     total: invoiceContext ? invoiceContext.total : totalNum,
-    deposit_paid: depositNum,
-    balance_due: totalNum - depositNum,
+    // See `resolveInvoiceAmountDue` — a specific invoice's document states
+    // its OWN amount owed; only the project-level preview deducts the
+    // project's deposit figure.
+    deposit_paid: amountDue.depositInvoiced,
+    balance_due: amountDue.balanceDue,
 
     // Notes
     client_notes: serialized.clientNotes || "",

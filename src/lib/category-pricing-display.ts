@@ -43,9 +43,9 @@
  * own price inside a rolled-up category — for the line the client asked to see
  * broken out. A revealed line is still **included in the section subtotal**:
  * the subtotal is the category's true total, not a remainder. That is why the
- * header amount is labelled as the category total (see `ROLLUP_SUBTOTAL_LABEL`)
- * rather than printed as a bare figure — an unlabelled amount next to a
- * revealed item's own price reads as double counting.
+ * header amount is labelled (see `ROLLUP_SUBTOTAL_LABEL`) rather than printed
+ * as a bare figure — an unlabelled amount next to a revealed item's own price
+ * reads as double counting.
  *
  * The flag is display-only and has NO effect in an `ITEMISED` category (where
  * every price already prints) — it is never consulted outside a rollup, so a
@@ -63,8 +63,13 @@ export const DEFAULT_CATEGORY_PRICING_DISPLAY: CategoryPricingDisplay = "ITEMISE
 
 /** The label printed beside a rolled-up section's amount. Explicit because a
  *  bare figure next to a revealed line's own price reads as double counting —
- *  see the file header. */
-export const ROLLUP_SUBTOTAL_LABEL = "Category total";
+ *  see the file header.
+ *
+ *  Wording matches the operator-facing toggle ("Show combined price") so the
+ *  person setting it and the client reading it see the same phrase. Deliberately
+ *  not "Category total": "category" is internal vocabulary the client never sees
+ *  anywhere else on the document. */
+export const ROLLUP_SUBTOTAL_LABEL = "Combined price";
 
 /** Narrowing guard for the untrusted boundaries (a stored doc field, a
  *  `v.any()` patch payload, a CSV cell). */

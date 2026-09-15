@@ -1,6 +1,6 @@
 # Project versioning v2 — versions as switchable workspaces
 
-> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **decisions recorded 2026-09-15 (§9) — ready for `/plan-eng-review`; two readings still to confirm (§9.1)**_
+> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **decisions recorded 2026-09-15 (§9) — ready for `/plan-eng-review`; one reading still to confirm (§9.1); cold-read revisions D16–D17 recorded**_
 
 **Driver:** Jayden — _"The version control stuff we have implemented feels very half baked and
 messy. The original goal was to be able to have complete snapshots of projects, with one being
@@ -192,16 +192,23 @@ projectVersions: {
 }
   .index("by_projectId_number")
 
-// projects — identity + lifecycle + pointer. The versioned fields above become a DERIVED
-// projection of the live version (written only by the make-live step, like recalc-owned totals).
+// projects — identity + lifecycle + pointer + THE LIVE VERSION'S plan fields (the swap model, D17):
+//   the live version's dates/discount/tax/billing overrides/notes stay exactly where every reader
+//   finds them today (projects.*); a NON-live version stores its own copy on projectVersions.*;
+//   make-live swaps the two in one transaction. One write helper, `patchPlanFields(ctx, version, patch)`,
+//   branches on "is this the live version" — zero reader changes anywhere in the app (R-3.1: one writer).
 projects.liveVersionId: string
 
-// EVERY versioned child table gains two fields + one index:
+// EVERY versioned table gains two fields; by_projectId AND its composite siblings are renamed:
 versionId: string                       // which version this row belongs to
 lineageId: string                       // stable across copies: = own id on first creation, copied on duplicate
-  .index("by_versionId", ["versionId"])   // REPLACES by_projectId on these tables (see 4.9 sweep)
-// tables: projectCategories, categorySlots, projectGroups, projectLineItems, projectServices,
-//         (+ subHireGroups/subHireItems if sub-hire LINES are versioned — Q2)
+  .index("by_versionId", ["versionId"])                 // replaces by_projectId
+  .index("by_versionId_sortOrder", ...) / by_versionId_status / by_versionId_type …   // replaces every by_projectId_* composite
+// versioned tables (D16): projectCategories, categorySlots, projectGroups, projectLineItems, projectServices
+// LIVE-ONLY tables keep by_projectId and gain a LINEAGE link to the plan row they concern:
+crewAssignments.serviceLineageId        // replaces serviceId as the join (a service exists per version; the person is live)
+subHireItems.lineLineageId / targetGroupLineageId / targetCategoryLineageId
+projectLineItemUnits / checkRecords / maintenanceRecords keep lineItemId (the LIVE line) and are re-pointed on make-live (§4.8)
 
 // quotes — the document only
 quotes.versionId: string                // replaces `version` as the join; `version` (number) stays for display/PDF
@@ -278,28 +285,31 @@ Two rules replace today's three mechanisms:
   COMPLETED/INVOICED), which is exactly where the existing override audience and justification
   bounds are reused (R-3.1).
 
-### 4.6 What is versioned — "the plan is versioned, reality is live and follows lineage" (D2)
+### 4.6 What is versioned — "the plan is versioned, commitments and reality stay live" (D16)
 
-A version is a **full snapshot of the project's plan**. Anything that describes what the job
-*is meant to be* is copied into every version. Anything that records what *physically happened*
-or what *a third party replied* is a fact about the job, lives once, and attaches to the plan
-row it concerns through `lineageId` so it follows that row across versions.
+A version is a complete copy of the **plan the client is quoted on**: the equipment list and its
+structure, the labour lines, and the project-level commercial fields. Anything that is a
+commitment to a third party (a crew member's assignment and reply, a supplier's purchase order)
+or a record of what physically happened (fulfilment, check records, prep state) lives once, on
+the job, and links to the plan row it concerns through `lineageId` so it follows that row across
+versions. The cold read (§3.3) showed the schema already draws this line by column: the 16
+warehouse fields `LINE_ITEM_WAREHOUSE_FIELDS` already refuses to restore sit inline on the
+line-item row, crew shifts and time entries hang off `assignmentId`, and a sub-hire order carries
+a unique `orderNumber`, `supplierOrderId` and `paymentStatus`.
 
-| Versioned (copied into every version) | Live-only reality (keyed by `lineageId` where it concerns a row) |
+| Versioned (copied into every version) | Live-only (one row per job, lineage-linked where it concerns a plan row) |
 |---|---|
-| Categories, category slots, groups, line items (kit children, accessories, custom, sale, sub-hire lines) | Fulfilment units, check records, prep state, returns, incidents, maintenance links |
-| Services (labour lines) | — |
-| Crew assignments: who, role, dates, rate, hours | The crew member's reply (offered / confirmed / declined), notifications sent |
-| Sub-hire orders, groups and items: supplier, lines, agreed cost | Supplier confirmation state, PO sent state, payment state |
-| Project-level plan fields: rental/project window, billing overrides, tax rate, discount, client contact, venue, site contact, notes, type, description | Identity, number, client, lifecycle status, PMs, tags |
-| The quote document(s) issued from it | Invoices (lineage-labelled), Xero state |
+| Categories, category slots, groups, line items (kit children, accessories, custom, sale, sub-hire lines) | Warehouse columns on the line item (`status`, `checkedOutQuantity`, `prepStatus`, …): **blanked on copy, carried outgoing → incoming by lineage on make-live** |
+| Services (labour lines, with their charge and cost) | Crew assignments, replies, shifts, time entries (`serviceLineageId` → the live version's service) |
+| Project-level plan fields: rental/project window, billing overrides, tax rate, discount, client contact, venue, site contact, notes, type, description (swap model, §4.2) | Sub-hire orders, groups and items (POs are supplier contracts; their target lines link by lineage) |
+| The quote document(s) issued from it | Fulfilment units, check records, returns, incidents, maintenance links |
+| | Invoices (lineage-labelled), Xero state, identity, number, client, lifecycle status, PMs, tags |
 | | Tasks, files, comments/threads (threads keyed by `lineageId`) |
 
-Consequence for the sweep in §4.9: `crewAssignments` and the three sub-hire tables are
-versioned too, so their `by_projectId` reads (49 + 61 sites) join the rename. The reply/
-confirmation facts that are live-only are the fields `restoreProjectSnapshot` already refuses
-to rewrite today (`CREW_WORKFLOW_FIELDS`, `LINE_ITEM_WAREHOUSE_FIELDS`); they move out of the
-versioned row into a lineage-keyed side record rather than being skipped by a restore.
+Consequence: the sweep in §4.9 covers five tables, not nine. A version can differ in gear,
+structure, services, prices, dates and notes. It cannot name a different crew or a different
+supplier order; those follow whichever version is live, which is also how today's restore
+behaves (`CREW_WORKFLOW_FIELDS` never rewritten, crew adds/removes surfaced as conflicts).
 
 ### 4.7 Availability and the warehouse
 
@@ -319,17 +329,28 @@ actions belong to the live version (D15). The tab is otherwise identical.
 makeLiveNative({ versionId: K })            // K ≠ liveVersionId, K exists, not template
  1. permission + lifecycle gate (4.5)        // the ONE place the lock bites for versions
  2. outgoing = liveVersionId; incoming = K
- 3. re-point warehouse rows by lineageId     // units, checkRecords, maintenance, threads
-      – outgoing line has state, incoming has same lineage → move
-      – outgoing line has state, no lineage match → CONFLICT (row stays attached to the job, flagged)
- 4. projects.liveVersionId = K; project the version's commercial fields onto projects.*
- 5. recalcProjectTotals; re-derive availability for the window; overbooking conflicts
- 6. activity log PROJECT_VERSION_LIVE {from, to, conflicts}
- 7. return { conflicts }                     // persistent panel, as today
+ 3. carry reality by lineageId               // the lineItemMergeMaps.ts re-point, generalised
+      – for each outgoing line with warehouse state (units, check records, maintenance links,
+        threads, the 16 warehouse columns): incoming line with the same lineage → move rows,
+        copy the columns; then blank them on the outgoing line
+      – outgoing line has state, no lineage match → the line is COPIED into K as an
+        `unplanned: true`, $0 line carrying its state, and listed as a CONFLICT. Reality is never
+        orphaned on a non-live version.
+      – incoming line quantity < carried fulfilment (2 checked out, plan says 1) → CONFLICT, not blocked
+ 4. swap plan fields: projectVersions[outgoing].* ← projects.*; projects.* ← projectVersions[K].*
+ 5. projects.liveVersionId = K; crewAssignments/subHireItems need nothing (they link by lineage)
+ 6. recalcProjectTotals; re-derive availability for the window; overbooking conflicts
+ 7. activity log PROJECT_VERSION_LIVE {from, to, conflicts}
+ 8. return { conflicts }                     // persistent panel, as today
 ```
 
 No auto-capture, no restore, no `PRE_PROMOTE`, no byte-equality check: the outgoing version is
 untouched and stays exactly where it was. Switching back is the same call in reverse.
+**Copy is `duplicateNative` (`convex/projectWrites.ts:1147`) scoped to a version**, which
+already remaps category → group → line ids parent-first; it is extended to `categorySlots` and
+the full intra-version FK set (`parentLineItemId`, `categoryId`, `groupId`, `subHire*`,
+`projectServices.lineItemId`, `categorySlots.*`) with a round-trip test. The same helper
+materialises snapshot entries during migration (§6).
 
 ### 4.9 What goes away, and the sweep it costs
 
@@ -344,23 +365,27 @@ dialog/banner; `saveVersionNative`, `newVersionNative`, `repriceFromRevisionNati
 **The sweep — the honest cost of "same components for every version":** every read of a
 versioned table by project has to become a read by version. Counted today:
 
-| Table | `db.query(...)` sites | Files |
+| Table | `by_projectId*` reads (convex/) | Other index reads that must filter live |
 |---|---|---|
-| `projectLineItems` | 114 | 43 |
-| `crewAssignments` | 49 | — |
-| `projectServices` | 28 | — |
-| `projectGroups` | 27 | — |
+| `projectLineItems` | ~52 direct + 18 via `by_projectId_status`/`_sortOrder` | `by_modelId`, `by_assetId`, `by_kitId`, `by_categoryId`, `by_groupId`, `by_parentLineItemId`, `by_organizationId` |
+| `projectServices` | 28 | `by_lineItemId`, `by_crewRoleId` |
+| `projectGroups` | 27 | `by_categoryId` |
 | `projectCategories` | 16 | — |
-| `categorySlots` | 9 | — |
-| `subHires`/`subHireItems`/`subHireGroups` | 18 / 22 / 21 | — |
+| `categorySlots` | 9 | `by_projectGroupId`, `by_lineItemId` |
 
-Plus the cross-project indexes (`by_modelId`, `by_assetId`, `by_kitId`) in `availabilityCore.ts`,
-`overbooking.ts`, `reservationConflicts.ts` etc., which must filter to the owning project's live
-version. This is made **safe by construction**, not by diligence:
+(Counts corrected after the cold read: the first draft counted every `db.query` call, not the
+`by_projectId` reads. Crew and sub-hire tables left the list with D16.)
 
-1. **Rename the index.** `by_projectId` is deleted on versioned tables and `by_versionId` added.
-   Every one of the 114 sites fails to typecheck until it is changed — the compiler is the
-   checklist. Sites that mean "the live job" call one helper, `liveRows(ctx, project, table)`.
+The cross-project indexes in `availabilityCore.ts`, `overbooking.ts`, `reservationConflicts.ts`
+already load each line's project row to check `isTemplate`/status, so the live filter is one
+predicate there (`line.versionId === liveVersionId(project)`), and `excludeProjectId` already
+does the own-project substitution D13 needs. This is made **safe by construction**, not by
+diligence:
+
+1. **Rename the indexes.** `by_projectId` **and every `by_projectId_*` composite** are deleted
+   on versioned tables and `by_versionId[_*]` added. Every site fails to typecheck until it is
+   changed — the compiler is the checklist. Sites that mean "the live job" call one helper,
+   `liveRows(ctx, project, table)`.
 2. **Ratchet.** A `scripts/version-scope-ratchet.mjs` (same shape as
    `xtenant-bycuid-ratchet.mjs`) fails CI on any `by_modelId`/`by_assetId`/`by_kitId` read of a
    versioned table that lacks a `versionId`/live filter.
@@ -440,11 +465,11 @@ Planned as a forward migration with a rehearsal against a prod export:
 
 | # | Phase | Scope | Effort | Depends |
 |---|---|---|---|---|
-| **0** | **Spike** | Rename `by_projectId` → `by_versionId` on `projectLineItems` in a scratch branch; count and classify the 114 sites (live-job vs version-specific vs cross-project); prototype `lineageId` re-pointing on units/check records | S | — |
+| **0** | **Spike** | Rename `by_projectId*` → `by_versionId*` on `projectLineItems` in a scratch branch; classify every site (live-job vs version-specific vs cross-project); prove `duplicateNative` scoped to a version and a `lineItemMergeMaps`-style re-point of units/check records on a fixture | S | — |
 | **1** | **Model + migration** | `projectVersions`, `versionId`/`lineageId`, `liveVersionId`, backfill (§6), `assertVersionWritable`, `resolveLocks` matrix, invariants + tests | L | 0 |
 | **2** | **Reads and writes by version** | The sweep (§4.9): every tab's data hook and every `*Native` mutation take `versionId`; `liveRows` helper; ratchet; exhaustive live-only test; as-if availability parameter | L | 1 |
 | **3** | **Make live + version verbs** | `makeLiveNative` with lineage re-pointing + conflicts; `createNative`/`setLabelNative`/`deleteNative`; delete the promote/restore/auto-capture machinery | M | 1 |
-| **4** | **Lock simplification** | Retire unlock sessions + `bypassQuoteLock` + `protected`; lifecycle lock applies to live only; justification threaded through add/update (closes I-14); CANCELLED decision (I-15) | M | 1 |
+| **4** | **Lock simplification** | Retire unlock sessions + `bypassQuoteLock` + `protected`; lifecycle lock applies to live only; `assertVersionWritable` needs the version threaded through every `*Native` mutation, so this follows the sweep; justification threaded through add/update (closes I-14); CANCELLED decision (I-15) | M | 2 |
 | **5** | **UI** | Version menu, Versions panel, `VersionStrip`, Make-live dialog, Compare, Finance tab documents rail, delete the projected read-only surfaces | L | 2, 3, 4 |
 | **6** | **Quotes from any version** | `sendNative({versionId})`, accept → offer make-live, frozen non-live rendering, drift against the current document | M | 3, 5 |
 | **7** | **Cleanup + docs** | Remove dead tables/fields after one release; FEATUREDOCS 62/66/70 rewritten as one doc; `docs/glossary.md`; CLAUDE.md conventions | S | 6 |
@@ -490,6 +515,8 @@ big visible change. Total ≈ XL at human-team scale.
 | **D12** | **Numbering stays `v1…vN`** in creation order, gaps allowed, labels optional and printable per send. |
 | **D13** | **No "as-if" availability.** The availability column on a non-live version looks exactly like the live tab (§4.7). |
 | **D14** | **Comparisons between versions are wanted** and should feel like the normal project page, not a separate diff screen (§5 item 6, mockup 7). |
+| **D16** | **Scope revised after the cold read: a version is the plan, not the commitments.** Categories, slots, groups, line items, services and the project's plan fields are versioned; crew assignments, sub-hire orders and warehouse reality stay live and link by lineage (§4.6). Supersedes the "full snapshot" wording of D2. |
+| **D17** | **Approach: ideal architecture reusing existing primitives** (`duplicateNative` for copy, `lineItemMergeMaps` for re-point, the swap model for plan fields, index rename incl. composites, ratchet + exhaustive test), shipped as one program rather than two releases or an options-first cut. |
 | **D15** | **Warehouse and outbound verbs are greyed out, not hidden, on a non-live version** (prep, check-out, dispatch, crew offers, supplier POs), with a tooltip naming the live version as the exit. |
 
 ### 9.1 Still to confirm

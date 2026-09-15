@@ -18,6 +18,14 @@ moments now advance it on their own:
 | `PREP_STARTED` | the warehouse packs the first item | `CONFIRMED` | `PREPPING` |
 | `ALL_CHECKED_OUT` | nothing is left packed on the dock | `CONFIRMED` / `PREPPING` | `CHECKED_OUT` |
 | `ALL_RETURNED` | the last outstanding item is checked back in | `CHECKED_OUT` / `ON_SITE` | `RETURNED` |
+| `QUOTE_ACCEPTED` | the client accepts a quote | `ENQUIRY` / `QUOTING` / `QUOTED` | `AWAITING_PAYMENT` |
+| `INVOICE_ISSUED` | an invoice is issued | `ENQUIRY` / `QUOTING` / `QUOTED` | `AWAITING_PAYMENT` |
+| `PAYMENT_SETTLED` | a payment settles an invoice in full | `AWAITING_PAYMENT` | `CONFIRMED` |
+
+The last three are #1228's money phase — see
+[77 — The Money Phase](./77-money-phase-lifecycle.md). `PAYMENT_SETTLED` is the
+one relaxation of property 2 below, and the reason this module now takes a
+snapshot on a status crossing.
 
 `ALL_RETURNED` is not new behaviour — the returns station shipped with its own
 private `maybeAutoAdvanceProject`. It is now the same rule as the other three
@@ -54,14 +62,20 @@ mutation that did the real work):
    `convex/projectAutoStatus.test.ts` asserts this over the whole table rather
    than per rule, so a new trigger inherits the guarantee.
 
-2. **It never crosses INTO a snapshotting or hard-locking tier.** The two
-   transitions `projectWrites.updateStatusNative` treats as ceremonies —
-   entering `CONFIRMED` (whole-project snapshot + the accepted-quote gate + the
-   overbooking-impact dialog) and entering `COMPLETED`/`INVOICED` (`HARD_LOCKED`
-   + snapshot) — are deliberately **not** automated. Accepting a quote still only
-   *offers* `CONFIRMED` (`markAcceptedNative`'s `offerStatusChange`): confirming a
-   job commits stock and money, so it stays a human's click. A table-level test
-   fails the build if a future rule targets one of those three.
+2. **It never crosses into the hard-locked tier, and reproduces every ceremony
+   it does cross.** `COMPLETED`/`INVOICED` are never automated: closing a job out
+   is a human's call and no event means "the work is finished."
+
+   `CONFIRMED` has ONE sanctioned rule, `PAYMENT_SETTLED` (#1228) — in this
+   business payment *is* the confirmation. It reproduces both ceremonies
+   `updateStatusNative` performs rather than skipping them: the **accepted-quote
+   gate** (#986 decision 3), which fails CLOSED because this path has nobody to
+   collect a justification from, and the **whole-project snapshot**, now taken
+   here via the same `crossesIntoSnapshotStatus` check. What it does not
+   reproduce is the overbooking-impact dialog, a client-side advisory that never
+   blocked a confirm anyway. A table-level test pins `PAYMENT_SETTLED` as the
+   only rule allowed to reach `CONFIRMED`, and still fails the build if any rule
+   targets `COMPLETED`/`INVOICED`.
 
 3. **It patches the project directly, on the authority of the gate the calling
    mutation already passed.** Routing through `updateStatusNative` would re-gate on

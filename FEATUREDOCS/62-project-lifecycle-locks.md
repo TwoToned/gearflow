@@ -53,6 +53,7 @@ FEATUREDOCS/24's "Finance events" section.
 | `CONFIRMED` / `PREPPING` / `CHECKED_OUT` | **FINANCE_LOCKED** | Financial fields locked behind a finance unlock session; new items/groups/services default to $0 |
 | `ON_SITE` / `RETURNED` | **FINANCE_LOCKED + JUSTIFY** | Above, plus structural mutations require per-edit confirm + written justification |
 | `COMPLETED` / `INVOICED` | **HARD_LOCKED** | All structural + financial mutations blocked; full unlock session restricted to org admins/owners + the project's assigned PM(s) |
+| `AWAITING_PAYMENT` | **OPEN** | Ungated by STATUS — but a sent/accepted quote escalates it to FINANCE_LOCKED through the `quoteState` input below, which is the whole point. See FEATUREDOCS/77 for why a status tier here would make `newVersionNative` unreachable. |
 | `CANCELLED` | OPEN | Ungated (open question — see below) |
 
 ### The quote-send lock is a second INPUT, not a second lock (#988, Phase C)

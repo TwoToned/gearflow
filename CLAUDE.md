@@ -473,10 +473,13 @@ it calls in here. Three rules when you touch this:
    row to `AUTO_STATUS_RULES` and call `maybeAutoAdvanceProjectStatus` ONCE at the
    end of the mutation that did the real work — never inside a per-item loop, and
    never before the writes it inspects have landed.
-2. **Never automate a move INTO `CONFIRMED`/`COMPLETED`/`INVOICED`.** Those snapshot
-   the project, hard-lock it, or commit stock and money (`updateStatusNative` gates
-   each one). Accepting a quote still only *offers* `CONFIRMED`. A table-level test
-   fails the build if a rule targets them.
+2. **Never automate a move INTO `COMPLETED`/`INVOICED`.** Closing a job out is a
+   human's call. `CONFIRMED` has exactly ONE sanctioned rule — `PAYMENT_SETTLED`
+   (#1228): in this business payment IS the confirmation. It is safe only because
+   it re-checks the accepted-quote gate (failing CLOSED — it has nobody to collect
+   a justification from) and takes the same whole-project snapshot
+   `updateStatusNative` does. A table-level test pins it as the only rule that may
+   reach `CONFIRMED`, so a second can't inherit the exception by accident.
 3. **A new switch key goes on BOTH sides.** The rule table's `settingKey` lives in
    `convex/lib/projectAutoStatus.ts`; `AUTO_STATUS_KEYS` + labels + toast copy live
    in `src/lib/project-status-automation.ts` (convex can't import from `src/`).
@@ -487,6 +490,31 @@ it calls in here. Three rules when you touch this:
 `EQUIPMENT` line is `CHECKED_OUT`". Services, labour, sale and direct-to-site
 sub-hire lines sit at `CONFIRMED` forever and would pin a job at `PREPPING`; only
 physically picked gear is ever `PACKED`.
+
+### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
+The money phase (#1228, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
+the client has agreed and/or an invoice is out, but the money hasn't landed.
+**Never add "deposit invoice sent" or "deposit paid" as statuses.** Both are
+already facts on rows that own them — an `invoices` row at `ISSUED`, and
+`invoices.paymentStatus`, itself derived from `payments` — so a copy on the
+project would be a second source of truth for whether the client's money landed
+(R-3.1), and the two WILL disagree the first time a payment is voided.
+`src/lib/project-payment-progress.ts` computes the three sub-steps on read;
+`<PaymentProgressStrip>` renders them under the stepper, only at
+`AWAITING_PAYMENT`.
+
+Two things about it that look wrong and aren't:
+- **Its lock tier is `OPEN`, not `FINANCE_LOCKED`.** #988's quote-sent input
+  already locks the pricing of anything that came through a quote, and a
+  status-driven lock here makes `newVersionNative`'s `bypassQuoteLock` (which
+  resolves from STATUS alone) unable to reach its own exit — a client asking for
+  a change after approving could never be re-quoted. The residual gap (an invoice
+  issued with no quote behind it locks nothing) is PRE-EXISTING and belongs in
+  `resolveLockTier` as a third input with its own void-and-reissue exit.
+- **It IS in `HARD_PROJECT_STATUSES`.** The gear is held from the moment the job
+  is agreed. So the two same-named `isConfirmedOrLater` helpers now disagree for
+  this one status: `availabilityCore.ts`'s (stock) says true,
+  `projectLocks.ts`'s (money) says false. They ask different questions.
 
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read

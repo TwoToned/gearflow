@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded in the job's activity log, and each of the four rules can be switched
   off per organization under Settings → General → Status automation.
 
+- **The lifecycle now has the money phase in it.** Jobs used to jump straight
+  from Quoted to Confirmed, skipping the part where most of the waiting actually
+  happens. A new **Awaiting payment** stage sits between them: accepting a quote
+  or issuing an invoice moves a job into it, and recording a payment that
+  settles an invoice in full moves it to Confirmed. Underneath the stage, the
+  job shows exactly what it's waiting on — quote accepted, invoice sent, paid —
+  read live from the quote and invoice themselves, so it can never disagree with
+  the ledger. The board gets a column for it, and the gear is held from the
+  moment the client says yes.
+
 ### Fixed
 
 - **Checking gear in from the project page now closes the job out too.** Only

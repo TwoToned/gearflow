@@ -143,7 +143,9 @@ describe("invoicesWrites.createNative", () => {
     expect(inv?.depositPercent).toBeUndefined();
 
     const lines = await getLines(t, "i1");
-    expect(lines[0]?.description).toBe("Deposit ($500.00)");
+    // The description states the basis only — printing the tax-inclusive
+    // figure beside an ex-tax line amount is the contradiction we removed.
+    expect(lines[0]?.description).toBe("Deposit");
   });
 
   test("rejects a $-mode deposit amount exceeding the project total", async () => {
@@ -692,9 +694,13 @@ describe("invoicesWrites.createCreditNative", () => {
  * refuses a push when this invariant is broken; these tests are what keep it
  * from ever needing to fire.
  */
-describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) === subtotal)", () => {
+describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) === taxable base)", () => {
   const sumLines = (lines: Doc<"invoiceLines">[]) =>
     Math.round(lines.reduce((sum, l) => sum + l.lineTotal, 0) * 100) / 100;
+  /** What Xero charges tax on, and the figure `assertLinesReconcileWithTaxableBase`
+   *  (src/server/xero.ts) holds the lines against. Equals `subtotal` for every
+   *  kind EXCEPT a FULL invoice on a discounted project. */
+  const taxableBase = (inv: Doc<"invoices">) => Math.round((inv.total - inv.taxAmount) * 100) / 100;
 
   test("a %-mode DEPOSIT line carries the ex-GST subtotal, not the GST-inclusive total", async () => {
     const t = makeT();
@@ -713,6 +719,7 @@ describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) ===
     expect(lines[0]?.lineTotal).toBeCloseTo(250, 2);
     expect(lines[0]?.unitPrice).toBeCloseTo(250, 2);
     expect(sumLines(lines)).toBeCloseTo(inv!.subtotal, 2);
+    expect(sumLines(lines)).toBeCloseTo(taxableBase(inv!), 2);
     // The description still quotes the inclusive basis the operator asked for.
     expect(lines[0]?.description).toBe("Deposit (25% of project total)");
   });
@@ -731,8 +738,10 @@ describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) ===
     expect(inv?.total).toBe(550);
     expect(sumLines(lines)).toBeCloseTo(inv!.subtotal, 2);
     expect(lines[0]?.lineTotal).toBeCloseTo(500, 2);
-    // The operator typed $550 inclusive — the description still says so.
-    expect(lines[0]?.description).toBe("Deposit ($550.00)");
+    // The description must NOT print the inclusive $550 next to a $500 line —
+    // the typed figure is on the document as the Total.
+    expect(lines[0]?.description).toBe("Deposit");
+    expect(lines[0]?.description).not.toContain("550");
   });
 
   test("a BALANCE line carries the ex-GST subtotal of what's left", async () => {
@@ -770,7 +779,7 @@ describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) ===
     expect(credit?.total).toBe(-1100);
     expect(credit?.taxAmount).toBe(-100);
     expect(lines[0]?.lineTotal).toBe(-1000);
-    expect(sumLines(lines)).toBeCloseTo(credit!.subtotal, 2);
+    expect(sumLines(lines)).toBeCloseTo(taxableBase(credit!), 2);
   });
 
   test("a FULL invoice already held the invariant — its lines are the project's ex-tax rows", async () => {
@@ -790,7 +799,59 @@ describe("invoicesWrites — invoice lines are tax-EXCLUSIVE (sum(lineTotal) ===
     const inv = await getInvoice(t, "i1");
     const lines = await getLines(t, "i1");
     expect(sumLines(lines)).toBeCloseTo(inv!.subtotal, 2);
+    expect(sumLines(lines)).toBeCloseTo(taxableBase(inv!), 2);
     expect(sumLines(lines)).not.toBeCloseTo(inv!.total, 2);
+  });
+
+  /**
+   * Adversarial review catch. `recalc.ts` applies `discountPercent` AFTER
+   * summing the rows, and `invoices` has no discount column — so a FULL
+   * invoice's `subtotal` is the PRE-discount figure while its `total` is
+   * post-discount. Without a discount line in the snapshot the Xero push
+   * (tax-exclusive `LineAmount`) bills the pre-discount base plus tax on it:
+   * a $1000 project at 10% issues by Flow at $990 and arrives in Xero at
+   * $1100. Bigger than the INV-260901 overbill this PR started from.
+   */
+  test("a project discount rides along as its own negative line, so the lines hit the taxable base", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme Events" });
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", clientId: "c1",
+        status: "QUOTING", isTemplate: false, taxRate: 10, discountPercent: 10,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("quotes", {
+        id: "q1", organizationId: ORG, projectId: "p1", version: 1, status: "ACCEPTED",
+        snapshot: null, createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        isKitChild: false, isOptional: false, description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
+      });
+    });
+    // Recalc first so the project carries real discounted totals.
+    await t.run(async (ctx) => {
+      const { recalcProjectTotals } = await import("./lib/recalc");
+      await recalcProjectTotals(ctx as never, "p1", ORG, 10, NOW);
+    });
+
+    await t.withIdentity(asUser(ORG)).mutation(api.invoicesWrites.createNative, {
+      id: "i1", organizationId: ORG, projectId: "p1", clientId: "c1", kind: "FULL", actor, auditId: "a1", now: NOW,
+    });
+
+    const inv = await getInvoice(t, "i1");
+    const lines = await getLines(t, "i1");
+    // subtotal 1000 (pre-discount), discount 100, taxable 900, GST 90, total 990.
+    expect(inv?.subtotal).toBe(1000);
+    expect(inv?.total).toBe(990);
+    expect(taxableBase(inv!)).toBe(900);
+    const discountLine = lines.find((l) => l.description.startsWith("Discount"));
+    expect(discountLine?.lineTotal).toBe(-100);
+    // The invariant that actually protects the client's bill.
+    expect(sumLines(lines)).toBe(900);
+    expect(sumLines(lines)).not.toBe(inv!.subtotal);
   });
 });
 

@@ -174,7 +174,7 @@ export const LOCKED_PROJECT_FIELDS = [
 // keeps printing "%" for a `$` discount (or vice versa).
 export const LOCKED_GROUP_FIELDS = ["price", "discount", "discountMode", "rentalPeriod", "rentalQuantity"] as const;
 
-export const LOCKED_LINE_ITEM_FIELDS = ["unitPrice", "discount", "discountMode", "duration"] as const;
+export const LOCKED_LINE_ITEM_FIELDS = ["unitPrice", "discount", "discountMode", "duration", "taxRate"] as const;
 
 /** `costTotal` is locked only for CREW-LESS services — a crew-attached service's
  *  costTotal keeps auto-deriving from the crew rate table even post-CONFIRMED

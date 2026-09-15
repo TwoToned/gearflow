@@ -621,7 +621,7 @@ export const patchNative = mutation({
     });
 
     assertLineMoneyFields(setObj as {
-      quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number;
+      quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number; taxRate?: number;
     });
     // #1012: `discountMode` describes `discount`, so it never outlives it — a patch
     // that clears the amount clears the mode too, whatever the client sent.
@@ -830,6 +830,9 @@ export const patchManyNative = mutation({
       discount: v.optional(v.union(v.object({ mode: v.string(), value: v.number() }), v.null())),
       notes: v.optional(v.union(v.string(), v.null())),
       isOptional: v.optional(v.boolean()),
+      // T3 (#1091) — per-line tax rate override, bulk-settable like discount.
+      // `null` clears back to inheriting the project/org rate.
+      taxRate: v.optional(v.union(v.number(), v.null())),
     }),
     actor: actorValidator,
     auditId: v.string(),
@@ -850,10 +853,10 @@ export const patchManyNative = mutation({
     const affected: string[] = [];
     const affectedSet = new Set<string>();
     const guardedProjectIds = new Set<string>();
-    // `discount` is the only money field patchMany touches — pricingType/notes/
-    // isOptional are structural (#793), so a bulk edit with no discount goes
+    // `discount`/`taxRate` are the money fields patchMany touches — pricingType/
+    // notes/isOptional are structural (#793), so a bulk edit with neither goes
     // through the JUSTIFY per-edit gate instead of the FINANCIAL unlock flow.
-    const touchesMoney = patch.discount !== undefined;
+    const touchesMoney = patch.discount !== undefined || patch.taxRate !== undefined;
 
     for (const id of ids) {
       const doc = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -913,10 +916,15 @@ export const patchManyNative = mutation({
         else set.lineTotal = lineTotal;
       }
 
+      if (patch.taxRate !== undefined) {
+        if (patch.taxRate == null) clear.push("taxRate");
+        else set.taxRate = patch.taxRate;
+      }
+
       // Belt-and-braces bound-check on the money fields this bulk edit can touch (a
       // browser-direct caller bypasses the server-side Zod).
       assertLineMoneyFields(set as {
-        quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number;
+        quantity?: number; unitPrice?: number; discount?: number; discountMode?: unknown; duration?: number; lineTotal?: number; taxRate?: number;
       });
 
       if (clear.length === 0) {
@@ -1217,6 +1225,8 @@ export const addCustomNative = mutation({
       // #1012 — entry shape of `discount` (display only; the number above is
       // still the resolved flat dollar amount every money path reads).
       discountMode: v.optional(enums.DiscountMode),
+      // T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3.
+      taxRate: v.optional(v.number()),
       notes: v.optional(v.string()),
       isOptional: v.optional(v.boolean()),
       categoryId: v.optional(v.string()),
@@ -1256,6 +1266,7 @@ export const addCustomNative = mutation({
       fields.unitPrice = 0;
       fields.discount = undefined;
       fields.discountMode = undefined; // #1012: no amount, no entry shape
+      fields.taxRate = undefined; // T3 (#1091) — same lock treatment as discount
     }
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
@@ -1371,6 +1382,8 @@ export const addNative = mutation({
       discount: v.optional(v.number()),
       // #1012 — entry shape of `discount` (display only).
       discountMode: v.optional(enums.DiscountMode),
+      // T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3.
+      taxRate: v.optional(v.number()),
       lineTotal: v.optional(v.number()),
       groupName: v.optional(v.string()),
       notes: v.optional(v.string()),
@@ -1417,6 +1430,7 @@ export const addNative = mutation({
       fields.unitPrice = 0;
       fields.discount = undefined;
       fields.discountMode = undefined; // #1012: no amount, no entry shape
+      fields.taxRate = undefined; // T3 (#1091) — same lock treatment as discount
     }
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
@@ -1697,6 +1711,9 @@ export const addKitNative = mutation({
     discount: v.optional(v.number()),
     /** #1012 — entry shape of the discount above (display only). */
     discountMode: v.optional(enums.DiscountMode),
+    // T3 (#1091) — per-line tax rate override on the kit's PARENT line, same
+    // scope as `discount` above; see docs/designs/tax-model.md §3.
+    taxRate: v.optional(v.number()),
     pricingMode: enums.KitPricingMode,
     groupName: v.optional(v.string()),
     categoryId: v.optional(v.string()),
@@ -1720,7 +1737,7 @@ export const addKitNative = mutation({
     justification: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, discountMode, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, justification, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, discountMode, taxRate, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, justification, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1737,12 +1754,14 @@ export const addKitNative = mutation({
     const effectiveDiscount = guard.defaultToZero ? undefined : discount;
     // #1012: no amount, no entry shape.
     const effectiveDiscountMode = effectiveDiscount != null ? discountMode : undefined;
+    // T3 (#1091) — same lock treatment as discount.
+    const effectiveTaxRate = guard.defaultToZero ? undefined : taxRate;
 
     // Every other add* mutation in this file bounds unitPrice/lineTotal before insert
     // (assertLineMoneyFields) — this one didn't, so a browser caller sending
     // `unitPrice: NaN` (or Infinity/negative) flowed straight into the line and then
     // poisoned recalcProjectTotals' project.total/subtotal/margin to NaN.
-    assertLineMoneyFields({ unitPrice: effectiveUnitPrice, discount: effectiveDiscount });
+    assertLineMoneyFields({ unitPrice: effectiveUnitPrice, discount: effectiveDiscount, taxRate: effectiveTaxRate });
 
     // Dup-guard the client-minted kit-line id (by_cuid is global + non-unique).
     const dupKit = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -1786,7 +1805,7 @@ export const addKitNative = mutation({
 
     await createKitLineItemCore(ctx, {
       id, organizationId, projectId, kitId, unitPrice: effectiveUnitPrice, discount: effectiveDiscount,
-      discountMode: effectiveDiscountMode, pricingMode, groupName, categoryId, groupId, now,
+      discountMode: effectiveDiscountMode, taxRate: effectiveTaxRate, pricingMode, groupName, categoryId, groupId, now,
       pricedUnderLock: guard.defaultToZero,
     });
 
@@ -1965,6 +1984,8 @@ export const addLineItemSmartNative = mutation({
       discount: v.optional(v.number()),
       // #1012 — entry shape of `discount` (display only).
       discountMode: v.optional(enums.DiscountMode),
+      // T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3.
+      taxRate: v.optional(v.number()),
       groupName: v.optional(v.string()),
       notes: v.optional(v.string()),
       isOptional: v.optional(v.boolean()),
@@ -2134,6 +2155,8 @@ export const addLineItemSmartNative = mutation({
         // client's discount is the one that wins, so is its mode; when the
         // existing line's amount is kept, its stored mode is kept too.
         const mergeDiscountModeInput = mergeDiscountInput != null ? fields.discountMode : undefined;
+        // T3 (#1091) — same lock treatment as discount above.
+        const mergeTaxRateInput = guard.defaultToZero ? undefined : fields.taxRate;
         // lineTotal recomputed server-side (never trusts the client). Mirrors the server
         // merge exactly: parsed value first, else the existing row's value.
         const mergedUnitPrice = mergeUnitPriceInput ?? (existing.unitPrice != null ? Number(existing.unitPrice) : undefined);
@@ -2153,6 +2176,9 @@ export const addLineItemSmartNative = mutation({
           duration: fields.duration || existing.duration || undefined,
           discount: mergeDiscountInput ?? existing.discount ?? undefined,
           discountMode: mergeDiscountModeInput ?? existing.discountMode ?? undefined,
+          // T3 (#1091) — same "client override wins, else keep the existing
+          // line's value" precedent as discount above.
+          taxRate: mergeTaxRateInput ?? existing.taxRate ?? undefined,
           lineTotal: newLineTotal ?? undefined,
           groupName: fields.groupName || existing.groupName || undefined,
           notes: mergedNotes || undefined,
@@ -2221,6 +2247,9 @@ export const addLineItemSmartNative = mutation({
     const insertDiscount = guard.defaultToZero ? undefined : fields.discount;
     // #1012: no amount, no entry shape (the lock drops both together).
     const insertDiscountMode = insertDiscount != null ? fields.discountMode : undefined;
+    // T3 (#1091) — same lock treatment as discount: a locked/no-session add
+    // can't smuggle a tax-rate override in any more than it can a price.
+    const insertTaxRate = guard.defaultToZero ? undefined : fields.taxRate;
     // `== null` (not `!unitPrice`) — an EXPLICIT $0 manual price (a free item) is a real
     // choice and must be kept, not overwritten by the model rate.
     if (fields.type === "SALE") {
@@ -2281,6 +2310,7 @@ export const addLineItemSmartNative = mutation({
       duration: autoDuration ?? undefined,
       discount: insertDiscount ?? undefined,
       discountMode: insertDiscountMode,
+      taxRate: insertTaxRate ?? undefined,
       lineTotal: lineTotal ?? undefined,
       pricedUnderLock: pricedUnderLockOnInsert(guard.defaultToZero),
       priceBreakdown: autoPriceBreakdown,

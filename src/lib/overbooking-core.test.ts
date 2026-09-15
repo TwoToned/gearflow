@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   reconstructOverbookedStatus,
   resolveModelAssetType,
+  isHardOverbooked,
   type OverbookingBundleData,
   type OverbookLineItem,
 } from "./overbooking-core";
@@ -250,9 +251,10 @@ describe("reconstructOverbookedStatus", () => {
 // ─── WS3 (#942) two-layer hard/pencilled split ────────────────────────────────
 
 describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", () => {
-  it("an isOptional line stays pencilled even on a CONFIRMED project — no hard flag", () => {
-    // stock 1; this CONFIRMED project's line is isOptional and books 2 → would
-    // have been flagged pre-WS3, but optional demand never counts toward hard.
+  it("an isOptional line stays pencilled (no hard flag) but still raises the badge as pencil-only", () => {
+    // stock 1; this CONFIRMED project's line is isOptional and books 2 — never
+    // counts toward hard demand, but a purely-pencilled overage now still flags
+    // the badge (per explicit product request), distinguishable via hardOverBy=0.
     const items: OverbookLineItem[] = [
       { id: "li1", modelId: "m1", quantity: 2, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED", isOptional: true },
     ];
@@ -262,13 +264,14 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
       projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "CONFIRMED" })],
       lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 2, isOptional: true })],
     });
-    const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
-    expect(map.has("li1")).toBe(false);
+    const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 0, pencilledOverBy: 1 });
   });
 
-  it("a QUOTED project's own (non-optional) demand stays entirely pencilled — no hard flag", () => {
+  it("a QUOTED project's own (non-optional) demand stays entirely pencilled (no hard flag) but still raises the badge", () => {
     // stock 1; this QUOTED project alone books 2 — the gig isn't locked in yet,
-    // so none of its demand counts toward the hard sum.
+    // so none of its demand counts toward the hard sum, but the badge still
+    // fires since the combined view is over capacity.
     const items: OverbookLineItem[] = [
       { id: "li1", modelId: "m1", quantity: 2, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
     ];
@@ -278,6 +281,22 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
       projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "QUOTED" })],
       lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 2 })],
     });
+    const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
+    expect(info).toMatchObject({ overBy: 1, hardOverBy: 0, pencilledOverBy: 1 });
+  });
+
+  it("no overage at all (combined within stock) still raises no flag", () => {
+    // stock 2; this QUOTED project's own demand is only 1 — nothing over,
+    // hard or pencilled, so the badge correctly stays off.
+    const items: OverbookLineItem[] = [
+      { id: "li1", modelId: "m1", quantity: 1, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
+    ];
+    const bundle = makeBundle({
+      models: [model("m1", "SERIALIZED")],
+      assets: [asset({ id: "a1", modelId: "m1" }), asset({ id: "a2", modelId: "m1" })],
+      projects: [project({ id: THIS_PROJECT, start: WINDOW_START.getTime(), end: WINDOW_END.getTime(), status: "QUOTED" })],
+      lineItems: [bundleLineItem({ id: "li1", projectId: THIS_PROJECT, modelId: "m1", quantity: 1 })],
+    });
     const map = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT);
     expect(map.has("li1")).toBe(false);
   });
@@ -286,7 +305,8 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
     // stock 2 (2 assets). THIS_PROJECT (CONFIRMED) books 3 → hard overBy 1.
     // A SEPARATE project (QUOTED) books 2 more of the same model — pencilled
     // demand that would push the overage to 3 if it were also confirmed, i.e.
-    // pencilledOverBy = 3 - 1 = 2.
+    // pencilledOverBy = 3 - 1 = 2. overBy is the COMBINED figure (badge-facing
+    // number): hardOverBy(1) + pencilledOverBy(2) = 3.
     const items: OverbookLineItem[] = [
       { id: "li1", modelId: "m1", quantity: 3, isKitChild: false, parentLineItemId: null, kitId: null, status: "QUOTED" },
     ];
@@ -303,7 +323,7 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
       ],
     });
     const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
-    expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 2 });
+    expect(info).toMatchObject({ overBy: 3, hardOverBy: 1, pencilledOverBy: 2 });
   });
 
   it("pencilledOverBy is 0 when there is no pencilled demand at all (pure hard case, unchanged)", () => {
@@ -318,6 +338,26 @@ describe("reconstructOverbookedStatus — two-layer hard/pencilled (WS3 #942)", 
     });
     const info = reconstructOverbookedStatus(bundle, items, WINDOW_START, WINDOW_END, THIS_PROJECT).get("li1");
     expect(info).toMatchObject({ overBy: 1, hardOverBy: 1, pencilledOverBy: 0 });
+  });
+});
+
+describe("isHardOverbooked", () => {
+  it("is false for no info at all", () => {
+    expect(isHardOverbooked(undefined)).toBe(false);
+    expect(isHardOverbooked(null)).toBe(false);
+  });
+
+  it("is false for a pencil-only entry (hardOverBy 0) — what a document must filter out", () => {
+    expect(isHardOverbooked({ overBy: 2, totalStock: 1, effectiveStock: 1, totalBooked: 2, hardOverBy: 0, pencilledOverBy: 2 })).toBe(false);
+  });
+
+  it("is true for a genuine hard overage", () => {
+    expect(isHardOverbooked({ overBy: 3, totalStock: 1, effectiveStock: 1, totalBooked: 3, hardOverBy: 1, pencilledOverBy: 2 })).toBe(true);
+  });
+
+  it("falls back to overBy when hardOverBy is absent (pre-WS3 shape, back-compat)", () => {
+    expect(isHardOverbooked({ overBy: 1, totalStock: 1, effectiveStock: 1, totalBooked: 2 })).toBe(true);
+    expect(isHardOverbooked({ overBy: 0, totalStock: 2, effectiveStock: 2, totalBooked: 2 })).toBe(false);
   });
 });
 

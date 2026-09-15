@@ -130,6 +130,19 @@ export interface OverbookedInfo {
   pencilledOverBy?: number;
 }
 
+/**
+ * True when an `OverbookedInfo` entry reflects a genuine HARD overage — i.e.
+ * would still be flagged under the pre-badge-widening rule (a confirmed-or-
+ * later project's non-optional demand alone exceeds stock). A map entry can
+ * now exist purely because of pencilled demand (`hardOverBy === 0`); a
+ * consumer that must not surface a speculative collision — a rendered/exported
+ * document, see `build-document-data.ts` — filters through this instead of
+ * a bare `!!info` truthiness check.
+ */
+export function isHardOverbooked(info: OverbookedInfo | null | undefined): boolean {
+  return !!info && (info.hardOverBy ?? info.overBy) > 0;
+}
+
 // ─── Window / booking aggregation (moved from availability-read.ts) ──────────
 
 /** Project statuses excluded from availability/booking windows (Prisma `notIn`). */
@@ -409,15 +422,19 @@ export function reconstructOverbookedStatus(
   }
 
   // For each model, check if this project's total booking exceeds available.
-  // WS3 (#942): the gate below now runs on the HARD-only sums (non-`isOptional`
-  // lines on a confirmed-or-later project) — an optional line, or ANY line on a
-  // still-quoted project, drops out of this sum entirely. This is the two-layer
-  // rule: existing per-project badges/PDFs/warehouse pull-sheet flags are
-  // UNCHANGED for the common case (no optional lines, confirmed project — hard
-  // === what totalBooked always was), and only lose a flag when the overage was
-  // caused purely by pencilled demand — "that's the rule working," not a
-  // regression. `totalBooked`/`totalStock`/`effectiveStock` stay full-combined
-  // values (unchanged meaning) for back-compat with every existing consumer.
+  // WS3 (#942) split hard (non-`isOptional` lines on a confirmed-or-later
+  // project) from pencilled (an optional line, or ANY line on a still-quoted
+  // project) demand and originally gated the badge on hard-only overage — a
+  // pencilled-only collision raised no flag anywhere. Per explicit product
+  // request, the gate now fires on COMBINED (hard + pencilled) overage: the
+  // badge should surface a pencilled collision too, not just a hard one.
+  // `hardOverBy`/`pencilledOverBy` stay on `OverbookedInfo` so a consumer that
+  // needs to tell the two apart (the equipment-tab/project-list badges, which
+  // show a softer "pencilled" treatment when `hardOverBy === 0`; the PDF
+  // pipeline, which deliberately keeps showing hard-only — see
+  // `build-document-data.ts`) still can. `totalBooked`/`totalStock`/
+  // `effectiveStock` stay full-combined values (unchanged meaning) for
+  // back-compat with every existing consumer.
   for (const modelId of modelIds) {
     const totalStock = stockByModel.get(modelId) || 0;
     const effectiveStock = effectiveStockByModel.get(modelId) || 0;
@@ -427,30 +444,40 @@ export function reconstructOverbookedStatus(
     const hardBookedByThisProject = hardThisProjectByModel.get(modelId) || 0;
     const hardBookedByOthers = (hardTotalByModel.get(modelId) || 0) - hardBookedByThisProject;
     const hardAvailableForProject = effectiveStock - hardBookedByOthers;
+    const hardOverBy = Math.max(0, hardBookedByThisProject - hardAvailableForProject);
 
-    if (hardBookedByThisProject > hardAvailableForProject) {
-      const overBy = hardBookedByThisProject - hardAvailableForProject;
-      // Would it be overbooked if all assets were available?
-      const wouldBeOverWithFullStock = hardBookedByThisProject > (totalStock - hardBookedByOthers);
+    // combinedOverBy: the SAME overage math, but counting every currently
+    // pencilled booking (org-wide) as if it were hard demand too — always
+    // >= hardOverBy, since combined demand/others can only be >= the hard
+    // subset. pencilledOverBy is the slice of that ONLY pencilled demand adds.
+    const combinedBookedByThisProject = thisProjectBookedByModel.get(modelId) || 0;
+    const combinedBookedByOthers = totalBooked - combinedBookedByThisProject;
+    const combinedAvailableForProject = effectiveStock - combinedBookedByOthers;
+    const combinedOverBy = Math.max(0, combinedBookedByThisProject - combinedAvailableForProject);
+    const pencilledOverBy = Math.max(0, combinedOverBy - hardOverBy);
+
+    if (combinedOverBy > 0) {
+      // Would it be overbooked if all assets were available? Basis matches
+      // whichever layer actually produced the overage: when hard demand alone
+      // is already over, this is BYTE-FOR-BYTE the original hard-only
+      // computation (so PDFs / any hard-only consumer see the exact same
+      // reducedOnly value as before this function started firing on pencilled
+      // overage too); a pencil-only overage falls back to the combined basis,
+      // since that's the only overage that exists in that case.
+      const wouldBeOverWithFullStock =
+        hardOverBy > 0
+          ? hardBookedByThisProject > totalStock - hardBookedByOthers
+          : combinedBookedByThisProject > totalStock - combinedBookedByOthers;
       const reducedOnly = !wouldBeOverWithFullStock && unavailable > 0;
 
-      // WS3 (#942) — pencilledOverBy: the ADDITIONAL overage if every currently
-      // pencilled booking for this model (org-wide, not just this project) also
-      // became hard demand, using the SAME (effectiveStock, others) baseline.
-      const combinedBookedByThisProject = thisProjectBookedByModel.get(modelId) || 0;
-      const combinedBookedByOthers = totalBooked - combinedBookedByThisProject;
-      const combinedAvailableForProject = effectiveStock - combinedBookedByOthers;
-      const combinedOverBy = Math.max(0, combinedBookedByThisProject - combinedAvailableForProject);
-      const pencilledOverBy = Math.max(0, combinedOverBy - overBy);
-
       const info: OverbookedInfo = {
-        overBy,
+        overBy: combinedOverBy,
         totalStock,
         effectiveStock,
         totalBooked,
         unavailableAssets: unavailable > 0 ? unavailable : undefined,
         reducedOnly,
-        hardOverBy: overBy,
+        hardOverBy,
         pencilledOverBy,
       };
       // Mark all line items of this model on this project as overbooked
@@ -477,6 +504,8 @@ export function reconstructOverbookedStatus(
         let anyReduced = false;
         let allReduced = true;
         let totalUnavailable = 0;
+        let totalHardOver = 0;
+        let totalPencilledOver = 0;
         for (const c of overbookedChildren) {
           const info = overbookedMap.get(c.id)!;
           const mid = c.modelId!;
@@ -487,6 +516,8 @@ export function reconstructOverbookedStatus(
             effectiveStock += info.effectiveStock;
             totalBooked += info.totalBooked;
             totalUnavailable += info.unavailableAssets || 0;
+            totalHardOver += info.hardOverBy ?? info.overBy;
+            totalPencilledOver += info.pencilledOverBy ?? 0;
             if (info.reducedOnly) anyReduced = true;
             else allReduced = false;
           }
@@ -503,6 +534,8 @@ export function reconstructOverbookedStatus(
           reducedOnly: allReduced && anyReduced,
           hasOverbookedChildren: anyOverbooked,
           hasReducedChildren: anyReduced,
+          hardOverBy: totalHardOver,
+          pencilledOverBy: totalPencilledOver,
         });
       }
     }

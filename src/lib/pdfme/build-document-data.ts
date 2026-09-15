@@ -26,6 +26,7 @@ import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
 import { getSubHiresByProject, getSubHireGroups } from "@/lib/sub-hire-read";
 import { getLatestInvoiceNumberForProject } from "@/lib/invoices-read";
 import { computeOverbookedStatus } from "@/lib/availability";
+import { isHardOverbooked } from "@/lib/overbooking-core";
 import { getFileAsDataUri } from "@/lib/storage";
 import { getProjectWindow, getProjectWindowDates } from "@/lib/project-window";
 import { formatDate } from "./plugins/helpers";
@@ -356,8 +357,17 @@ export async function buildDocumentData(
     const locId = row?.asset?.locationId ?? row?.bulkAsset?.locationId ?? null;
     return locId ? locationMap.get(locId)?.name ?? null : null;
   };
+  // PDFs stay HARD-only: `reconstructOverbookedStatus` now also flags a line
+  // whose overage is purely PENCILLED (still-quoted/optional demand elsewhere
+  // in the org) so the equipment-tab/project-list badges can show it, but a
+  // rendered document is a point-in-time artifact (client-facing quote/invoice
+  // are literally stored bytes — see CLAUDE.md) and a pencilled collision can
+  // resolve within the hour. Surfacing it there would print a warning that's
+  // both misleading to a client and potentially stale by the time anyone reads
+  // it, so a doc only ever reflects genuine hard overbooking.
   const enrichedLineItems = project.lineItems.map((li: LineItemRow) => {
-    const info = overbookedMap.get(li.id);
+    const rawInfo = overbookedMap.get(li.id);
+    const info = isHardOverbooked(rawInfo) ? rawInfo : undefined;
     const children = (li as unknown as { childLineItems?: LineItemRow[] }).childLineItems;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const liAny = li as any;
@@ -375,7 +385,8 @@ export async function buildDocumentData(
       overbookedHasOverbooked: info?.hasOverbookedChildren ?? false,
       overbookedHasReduced: info?.hasReducedChildren ?? false,
       childLineItems: children?.map((child: LineItemRow) => {
-        const childInfo = overbookedMap.get(child.id);
+        const rawChildInfo = overbookedMap.get(child.id);
+        const childInfo = isHardOverbooked(rawChildInfo) ? rawChildInfo : undefined;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const childAny = child as any;
         return {

@@ -48,6 +48,7 @@ import {
   isRollupCategory,
 } from "@/lib/category-pricing-display";
 import { canDiscloseGroupChild } from "@/lib/group-child-disclosure";
+import type { OverbookedInfo } from "@/lib/overbooking-core";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -207,17 +208,11 @@ import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
 
 // ─── Overbooked info type ───────────────────────────────────────────────────
 
-export type OverbookedInfo = {
-  overBy: number;
-  totalStock: number;
-  effectiveStock?: number;
-  totalBooked: number;
-  inherited?: boolean;
-  unavailableAssets?: number;
-  reducedOnly?: boolean;
-  hasOverbookedChildren?: boolean;
-  hasReducedChildren?: boolean;
-};
+// Re-exported for back-compat: consumers (equipment-tab.tsx) import this type
+// from here. The canonical shape lives in overbooking-core.ts — the single
+// source both the server (computeOverbookedStatus) and the native read layer
+// (reconstructOverbookedStatus) build, so it stays one definition (R-3.1).
+export type { OverbookedInfo };
 
 function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
   if (!info) return null;
@@ -258,11 +253,17 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
   }
 
   const isReduced = info.reducedOnly;
-  // Reduced = info (blue override on neutral); inherited-overbook = warn;
-  // direct overbook = error (t-out). Status §3 / §1.
-  const badgeStatus = isReduced ? "neutral" : info.inherited ? "warn" : "overbooked";
+  // Pencil-only: the overage is caused ENTIRELY by still-quoted/optional demand
+  // elsewhere in the org — nothing has hard-held this project's stock yet. Shown
+  // as a softer "warn" pill (same visual language as the Overbookings & Gaps
+  // board's amber "pencilled collisions" section) instead of the hard-error
+  // "overbooked" pill, so a genuine hard conflict still reads as more urgent.
+  const isPencilledOnly = !isReduced && !info.inherited && (info.hardOverBy ?? info.overBy) === 0;
+  // Reduced = info (blue override on neutral); inherited-overbook/pencil-only =
+  // warn; direct hard overbook = error (t-out). Status §3 / §1.
+  const badgeStatus = isReduced ? "neutral" : info.inherited || isPencilledOnly ? "warn" : "overbooked";
   const colorClass = isReduced ? "bg-blue-soft text-blue" : "";
-  const label = isReduced ? "Reduced stock" : "Overbooked";
+  const label = isReduced ? "Reduced stock" : isPencilledOnly ? "Pencilled overbook" : "Overbooked";
 
   function getTooltip() {
     if (info!.inherited) {
@@ -272,6 +273,9 @@ function OverbookedBadge({ info }: { info?: OverbookedInfo | null }) {
     }
     if (isReduced) {
       return `${info!.overBy} over usable stock — ${unavail} of ${info!.totalStock} in maintenance or lost (${effective} usable, ${info!.totalBooked} booked)`;
+    }
+    if (isPencilledOnly) {
+      return `${info!.overBy} over capacity if every pencilled (not-yet-confirmed) booking for this gear goes ahead — nothing is hard-booked over capacity yet (${info!.totalBooked} booked / ${effective} usable)`;
     }
     return `${info!.overBy} over capacity (${info!.totalBooked} booked / ${effective} usable${unavail > 0 ? `, ${unavail} unavailable` : ""})`;
   }

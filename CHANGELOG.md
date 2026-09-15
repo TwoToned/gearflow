@@ -80,6 +80,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that window means, so a project with an earlier/later committed
   load-in/load-out than its chargeable dates now shows the correct urgency.
 
+### Changed
+
+- The overbooked badge (equipment tab, project list/board, warehouse pull
+  sheet) now shows for a purely PENCILLED collision too — a still-quoted or
+  optional booking elsewhere in the org that would push a model over capacity
+  if it were confirmed — not just a hard (confirmed-project) overage. It
+  previously stayed hidden in that case, which didn't match the "this will
+  overbook this model — proceed anyway?" warning shown at add/edit time (that
+  warning has never distinguished hard from pencilled). A pencil-only overage
+  now shows a softer amber "Pencilled overbook" pill instead of the red
+  "Overbooked" one. Client-facing/exported PDFs (quote, invoice,
+  packing-list, return-sheet, delivery-docket) are the deliberate exception —
+  they keep showing ONLY genuine hard overbooking, since a rendered document
+  is a point-in-time artifact and a pencilled collision can resolve before
+  anyone reads it.
+
 ## [0.27.1] - 2026-09-15
 
 ### Fixed

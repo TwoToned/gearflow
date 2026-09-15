@@ -329,8 +329,8 @@ system that changes shape as you switch versions, and it is still a lot of refus
 
 > **The whole rule.** `projects.pricingLocked` is a plain boolean on the **project**. It applies
 > to the **live** version only. It is set automatically when a quote is sent or the project
-> reaches `CONFIRMED`, and cleared by one click from the strip by anyone with `project:update`.
-> Nothing else refuses a write.
+> reaches `CONFIRMED`, and cleared by one click from the strip by a manager/admin/owner or one
+> of the job's own PMs (D42). Nothing else refuses a write.
 
 ```ts
 projects.pricingLocked?: boolean       // v.optional on arrival; absent = false
@@ -344,7 +344,25 @@ projects.pricingLockedById?: string
 |---|---|---|---|---|
 | Viewing a **non-live** version | allowed | allowed | allowed | greyed (D15 — not live) |
 | Live, `pricingLocked` **off** | allowed | allowed | allowed | allowed |
-| Live, `pricingLocked` **on** | locked (one click to clear) | allowed, new adds default $0 + Unpriced badge | allowed | allowed |
+| Live, `pricingLocked` **on** | locked (one click to clear, D42) | allowed, new adds default $0 + Unpriced badge | allowed | allowed |
+
+#### Who can clear it (D42)
+
+```ts
+canUnlockPricing(ctx, orgId, projectId, userId) =
+     hasPermission(role, "invoice", "publish")        // owner · admin · manager
+  || isProjectManagerOf(projectId, userId)            // this job's own PM, whatever their role
+```
+
+`member` holds `project:update` but **not** `invoice:publish` (`permissionsCore.ts:140` —
+`invoice: ["create","read"]`), so a member can price a project freely while it is open and cannot
+re-open one whose quote has gone out. This is the same audience shape as today's
+`isHardLockOverrideAllowed` (admin/owner ∨ `projectManagers`), so that helper is **kept and
+renamed** rather than deleted — D39 said it went with the hard lock; D42 revises that. Its role
+test swaps from a hardcoded `owner|admin` to the `invoice:publish` permission, which is the
+existing definition of "may act on money that has left the building" (R-3.1).
+
+Locking is never gated: anyone with `project:update` can re-lock.
 
 Three columns collapsed to two values. There is no tier ordering, no reason union, no override
 audience, no session, and no free-text justification anywhere.
@@ -646,13 +664,22 @@ Planned as a forward migration with a rehearsal against a prod export:
 | **7** | **Cleanup + docs** | Remove dead tables/fields after one release; FEATUREDOCS 62/66/70 rewritten as one doc; `docs/glossary.md`; CLAUDE.md conventions | S | 6 |
 | **8** | **Optional line items** (D11) | Client-facing optional lines / single-select sections on a quote: `optional` + `optionGroup` on line items, excluded from totals until chosen, chosen state recorded on accept. Touches the `DocumentLineItem` shape, so the CLAUDE.md two-consumer PDF audit applies. Own design doc before build. | M | 6 |
 
-**Release grouping (D34).** Phase 0 is a scratch-branch spike, nothing ships. **Phase 1 ships alone**
-— a live-only backfill that changes nothing visible or readable. **Phases 2–5 ship as ONE release.**
-They cannot be split: Phase 2 deletes `by_projectId`, Phase 3 deletes the promote/restore machinery
-and Phase 4 deletes unlock sessions, but today's header switcher, `PromoteVersionDialog` and
-`UnlockSessionBanner` call exactly that machinery — shipping 2–4 without 5 leaves dead buttons on a
-tool the business runs on. Phases 6–8 are additive and ship separately afterwards. Phases 0–5 ≈ L,
-the whole program ≈ XL at human-team scale.
+**Release grouping (D35, revised by D44).** Phase 0 is a scratch-branch spike, nothing ships.
+**Phase 1 ships alone** — a live-only backfill that changes nothing visible or readable.
+**Phases 2–6 ship as ONE release.**
+
+2–5 cannot be split for a mechanical reason: Phase 2 deletes `by_projectId`, Phase 3 deletes the
+promote/restore machinery and Phase 4 deletes unlock sessions, but today's header switcher,
+`PromoteVersionDialog` and `UnlockSessionBanner` call exactly that machinery — shipping 2–4
+without 5 leaves dead buttons on a tool the business runs on.
+
+**6 joins them for a product reason (D44).** Without it, `sendNative` still targets the live
+version only, so the workflow this whole program exists for — quote the client two options, let
+them pick — cannot be run: you would have switchable versions you cannot separately quote from.
+Shipping 2–5 alone delivers the refactor without the feature. Phase 6 is also where the locked
+non-live rendering and drift-against-the-sent-document work lands, both of which the §4.5 lock
+model assumes. Phases 7–8 are additive and ship separately afterwards. Phases 0–6 ≈ L–XL, the
+whole program ≈ XL at human-team scale.
 
 ---
 
@@ -736,13 +763,17 @@ before being accepted.
 |---|---|
 | **D33** | **The composed project object** (§4.2). "Zero reader changes" was only true for the live version; ~16 files read `project.*` directly to render whatever version is on screen. The `?v=N` read returns `projects.*` overlaid with that version's plan fields, so readers genuinely stay unchanged. |
 | **D34** | **Non-live totals are computed on read, never stored** — reverses D21. Stored per-version totals would go stale whenever a live crew rate or sub-hire cost changed, with nothing to re-trigger them. `recalcProjectTotals` keeps writing only `projects.*`, for the live version. |
-| **D35** | **Phases 2–5 ship as one release** (§7). Splitting them leaves the existing version UI wired to machinery Phases 2–4 delete, i.e. dead buttons in production for the gap between releases. Phase 1 still ships alone; 6–8 follow separately. |
+| **D35** | ~~Phases 2–5 ship as one release.~~ **Revised by D44** — the grouping is 2–6. The mechanical reason (dead buttons across the 2–4 → 5 gap) is unchanged and still applies. |
 | **D36** | **Dead options drop out of the hot scans** (§4.7): versions whose only quote is superseded, declined or expired and which were never live are excluded from `by_modelId`/`by_assetId`/`by_kitId` reads. Rows are kept for Compare and history. Gives D22's budget alert a prescribed response instead of an open question. |
-| **D37** | **The lock is one boolean on the project.** `projects.pricingLocked` — set when a quote is sent or the project reaches `CONFIRMED`, cleared by one click from the strip by anyone holding `project:update`, both directions written to the activity log. It gates **money fields on the live version only**. No tiers, no reason union, no override audience, no session, no justification. (§4.5) |
+| **D37** | **The lock is one boolean on the project.** `projects.pricingLocked` — set when a quote is sent or the project reaches `CONFIRMED`, cleared by one click from the strip by anyone who passes `canUnlockPricing` (D42), both directions written to the activity log. It gates **money fields on the live version only**. No tiers, no reason union, no override audience, no session, no justification. (§4.5) |
 | **D38** | **The lock is decoupled from versions.** It lives on `projects`, not `projectVersions`, and **non-live versions are never locked** — nothing operational follows a draft, so a draft needs no lock. This is what makes hopping between versions feel native: nothing about the page's writability changes on a switch. Drift from the sent document is surfaced by the strip as a **warning**, which is the honest instrument; a refusal was not. |
 | **D39** | **`JUSTIFY` and `HARD_LOCKED` are deleted, not softened.** Per-edit justification (`requireJustification`, `JUSTIFICATION_BOUNDS`, `use-justified-mutation.ts`, 32 `kind: "structural"` gate sites) is replaced by `metadata.afterLock: true` on the activity rows written while locked — a queryable field instead of free text typed on a loading dock. `HARD_LOCKED` guarded against altering a client's document, which #987 already made impossible (issued PDFs are stored bytes with no regeneration path), while blocking the legitimate post-job correction. `isHardLockOverrideAllowed` / `requireHardLockOverrideAllowed` go with it. |
 | **D40** | **Quote status never reads back into the lock.** `sendNative` sets the flag once; `recallNative` clears it. `SUPERSEDED` / `DECLINED` / `EXPIRED` do nothing — closing I-11, where a declined quote froze pricing on an open enquiry. `resolveLockTier`, `LockTier`, `LOCK_TIER_RANK`, `LockTierReason`, `quoteStateKeepsOpen` and `bypassQuoteLock` are all deleted; `bypassQuoteLock` existed only to break the cycle a derived lock created, and a stored flag has no cycle. |
 | **D41** | **What is kept:** the `LOCKED_*_FIELDS` lists (the single definition of "which fields are money", R-3.1), `pricedUnderLock` (a display badge on a $0 default, not a gate), `LockedField` / `GatedButton` (now reading a two-value result), and the three real invariants — immutable issued documents, recalc-owned `PROJECT_MONEY_ANCHORS`, warehouse verbs on the live version only. |
+| **D42** | **The unlock audience is `invoice:publish` ∨ the job's assigned PM(s).** `project:update` was too wide — it includes `member`, who would otherwise be able to re-open pricing on a completed, invoiced job. `isHardLockOverrideAllowed` is kept (renamed `canUnlockPricing`) with its role test swapped for the `invoice:publish` permission check; D39's "it goes with the hard lock" is revised. Re-locking is ungated. |
+| **D43** | **Post-invoice divergence is reported, not prevented.** Verified 2026-09-15: `pushInvoiceToXero` (`src/server/xero.ts:329`) reads `invoiceLines` — the invoice's own snapshotted lines, with account/tax coding snapshotted at push time — never live project rows, and an issued invoice is immutable (VOID + reissue, or a credit note). So a post-invoice edit cannot corrupt the client's PDF **or** the accounting system; the only real effect is that the project's own totals move away from what was invoiced. The Finance tab carries a derived line — *"Project total has moved +$1,240 since INV-023 was issued"* — computed from the invoice's stored total against the live version's current total, with a link to the activity rows stamped `metadata.afterLock`. No new stored field. |
+| **D44** | **The release is Phases 2–6, not 2–5.** Phase 6 is what makes `sendNative` target any version; without it the program ships switchable versions that cannot be separately quoted from — the refactor without the feature that motivated it. It also carries the locked non-live rendering and drift-against-the-sent-document work that §4.5's lock model assumes. |
+| **D45** | **Phase 0's sweep surface is measured, not estimated** (2026-09-15, static classification of every `query("<table>")` → next `withIndex(...)` across non-test `convex/` + `src/`): **92 `by_projectId*` read sites across 37 files** break on the rename — `projectLineItems` 42 + 4 (`_status`) + 3 (`_sortOrder`), `projectServices` 16, `projectGroups` 17, `projectCategories` 10, `categorySlots` **0** (it has no `by_projectId` index; it reaches versioned rows via `by_projectCategoryId`/`by_projectGroupId`/`by_lineItemId`/`by_subHireGroupId`, which is why the ratchet covers it instead). A further 101 `by_cuid` sites do not break but carry the org-check + version-check discipline. Heaviest files: `lib/projectSnapshots.ts` (11, mostly deleted by Phase 3), `projectWrites.ts` (8), `warehouseOps.ts` (5), `projectServicesWrites.ts` (5), `categorySlotsWrites.ts` (5). The spike still runs — this is a static approximation, and its job is to confirm the classification and prove `copyPlanGraph` + lineage re-point on a fixture — but Phase 2's "L" is now an informed L. |
 
 **Also accepted from that review, folded into §4 rather than listed as decisions:** the sub-hire
 join runs from the versioned line (`projectLineItems.subHireId`) to the live order, not from

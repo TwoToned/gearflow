@@ -7,29 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-09-15
+
 ### Added
 
 - **Jobs now move themselves through the lifecycle as the work happens.** Send a
-  quote and the job goes to Quoted; pack the first item and it goes to Prepping;
-  once nothing is left packed on the dock it goes to Deployed; when the last
-  outstanding item is checked back in it goes to Returned. Status stops being a
-  field someone has to remember to change, so the board reflects reality instead
-  of the last person who thought about it. Moves are forward-only and never
-  automatic into Confirmed, Completed or Invoiced — those commit stock, money or
-  a lock, so they stay a deliberate click. Every automatic move is announced
-  where you are (a line in the send dialog, a toast in the warehouse) and
-  recorded in the job's activity log, and each of the four rules can be switched
-  off per organization under Settings → General → Status automation.
+  quote and the job goes to Quoted; the client approves it and the job goes to
+  Awaiting payment; pack the first item and it goes to Prepping; once nothing is
+  left packed on the dock it goes to Deployed; when the last outstanding item is
+  checked back in it goes to Returned. Status stops being a field someone has to
+  remember to change, so the board reflects reality instead of the last person
+  who thought about it. Moves are forward-only, and Completed and Invoiced are
+  never automatic — closing a job out stays a deliberate click. Every automatic
+  move is announced where you are (a line in the send dialog, a toast in the
+  warehouse) and recorded in the job's activity log, and every rule can be
+  switched off per organization under Settings → General → Status automation.
 
 - **The lifecycle now has the money phase in it.** Jobs used to jump straight
   from Quoted to Confirmed, skipping the part where most of the waiting actually
   happens. A new **Awaiting payment** stage sits between them: accepting a quote
-  or issuing an invoice moves a job into it, and recording a payment that
-  settles an invoice in full moves it to Confirmed. Underneath the stage, the
-  job shows exactly what it's waiting on — quote accepted, invoice sent, paid —
-  read live from the quote and invoice themselves, so it can never disagree with
-  the ledger. The board gets a column for it, and the gear is held from the
-  moment the client says yes.
+  or issuing an invoice moves a job into it, and recording a payment that settles
+  an invoice in full confirms it. Underneath the stage, the job shows exactly
+  what it is waiting on — quote accepted, invoice sent, paid — read live from the
+  quote and invoice themselves, so it can never disagree with the ledger. The
+  board gets a column for it, and gear is held from the moment the client says
+  yes, so nobody can book the same stock out from under an agreed job while a
+  transfer clears.
+
+  Confirming still needs an accepted quote. If a payment lands on a job that was
+  never formally approved, the job waits for a human rather than confirming
+  itself.
+
+### Changed
+
+- **Accepting a quote now moves the job to Awaiting payment**, rather than
+  offering to move it to Confirmed. Organizations that turn the rule off keep the
+  old prompt.
 
 ### Fixed
 
@@ -37,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the org-wide returns station advanced a project to Returned, so the same
   physical act — the last case coming back — closed the job or didn't, depending
   purely on which screen the operator happened to use.
+
+- **An open finance unlock session no longer straddles a status change.** The
+  returns station's own auto-advance skipped the auto-commit that every other
+  status change performs, leaving a session open across the Deployed → Returned
+  lock-tier boundary.
 
 ## [0.27.2] - 2026-09-15
 

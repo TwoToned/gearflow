@@ -408,6 +408,51 @@ Nothing new. The three existing hard invariants are unchanged and none of them i
 2. `PROJECT_MONEY_ANCHORS` are recalc-owned and stripped from client patches.
 3. Warehouse verbs run against the live version only (D15 — greyed, with a tooltip, not hidden).
 
+#### Review of the lock model, 2026-09-15 (D54–D58)
+
+An adversarial read of §4.5 after it was written. It found **four real gaps and one omission** —
+recorded here rather than discovered during Phase 4.
+
+**Gap 1 — nothing said what `makeLiveNative` does to the lock (D54).** Cut v3 off a locked live
+v2, edit its prices freely (non-live ⇒ unlocked), make v3 live: is the project still locked?
+**It is.** Making a version live never changes `pricingLocked` in either direction. The flag
+means "this job has a quote with a client", which is still true, and the fact that the newly-live
+version's prices were never quoted is exactly what the drift warning is for. Auto-clearing here
+would silently unlock every job the moment someone switched options.
+
+**Gap 2 — `sendNative` on a NON-live version must not set the lock (D55).** Phase 6 lets you
+quote any version. If sending a speculative v3 option set `projects.pricingLocked`, quoting an
+alternative would freeze pricing on the live v2 — a lock raised by an act that has nothing to do
+with the locked version. The rule: **`sendNative` sets `pricingLocked` only when the version it
+is sending IS the live version.** Sending a non-live version records the quote and leaves the
+lock untouched; the lock arrives later, if and when that version is accepted and made live.
+
+**Gap 3 — `recallNative` clears the lock only symmetrically (D56).** Same rule, mirrored:
+recalling the **live** version's quote clears `pricingLocked`; recalling a non-live version's
+quote does not, or recalling a dead option would unlock the job the client is actually holding a
+quote for.
+
+**Gap 4 — nothing said what a status revert does (D57).** `CONFIRMED → QUOTING` does **not**
+clear the lock. Status raises the flag; only a person lowers it. An explicit attribute that
+silently un-set itself on a status change would be derived again in all but name — which is the
+I-11 defect this whole section exists to remove.
+
+**Omission — the unlock mutation needs `danger: "high"` (D58).** CLAUDE.md's classification lists
+**lock-softening** explicitly under `high`, so `unlockPricingNative` is `danger: "high"` and the
+API dispatcher's confirmation gate requires `confirm: true` before the call reaches Convex. Two
+things fall out for free: an API key cannot unlock a job in a single unconfirmed call, and Mira
+can never unlock one herself — a `danger: "high"` tool always stops and asks a human to click
+Confirm (`confirmMiraPendingAction`), and the model is never given a `confirm` parameter. The
+`agentOps` annotation is required or `pnpm run api:registry` fails the build. Re-locking is
+`danger: "low"`.
+
+**Checked and found sound:** `defaultToZero` / `pricedUnderLock` become `project.pricingLocked &&
+version is live`, so a non-live version's new adds get normal auto-pricing (better than today);
+`LOCKED_SERVICE_FIELDS`'s `hasCrew` caveat survives untouched (a crew-attached service's
+`costTotal` still auto-derives); the `discountMode`-clears-with-`discount` rule (CLAUDE.md) still
+has its `defaultToZero` branch and needs a test, not a change; templates never reach a locked
+state; and the flag being `v.optional` makes the change rollback-safe.
+
 #### Cost of the change
 
 | | Before | After |
@@ -778,7 +823,9 @@ whole program ≈ XL at human-team scale.
 - **Live-only exhaustive sweep** — registry-driven (§4.9 item 3). This is the test that makes
   the model safe; it ships with Phase 2, not after.
 - **Cross-tenant** — every new read/mutation IDOR-tested (R-8.4.3); `by_versionId` is global.
-- **Lock** — the three-row §4.5 table as a truth-table test (the shrunken successor to today's
+- **Lock** — D54–D57 as four explicit cases (make-live leaves the flag alone; send/recall on a
+  non-live version leave it alone; a status revert leaves it set), plus the three-row §4.5 table
+  as a truth-table test (the shrunken successor to today's
   `projectLocks.test.ts`), plus: a non-live version is writable in every field family regardless
   of `pricingLocked`; clearing the lock writes an activity row; a write while locked stamps
   `metadata.afterLock`.
@@ -870,6 +917,11 @@ before being accepted.
 | **D51** | **Highlighting is cell-level.** Only the differing cells show `old → new`; the row tint says *something changed here*, the cell says *this did*. |
 | **D52** | **Three controls only:** filter (`All rows` / `Only changes`, defaulting to Only changes above 40 rows), the `‹ n of m ›` stepper bound to `n`/`p`, and the compare-target picker. Per-tab badges and the old → new totals footer are derived, not configured. |
 | **D53** | **Drift uses the same lens.** Strip state D opens compare mode with A = the sent document's money snapshot, B = the live version's rows. One component answers both "how do these versions differ" and "how has this drifted from what the client holds" — which is what lets §4.5 make drift a warning rather than a lock. Exporting a compare as a client-facing variation PDF is the obvious next ask and is deliberately out of the first release (own document type, §4.4 stored-bytes rule applies) — logged in `TODOS.md`. |
+| **D54** | **Making a version live never changes `pricingLocked`.** The flag means "this job has a quote with a client", which stays true across a switch. Auto-clearing on make-live would unlock every job the moment someone switched options; the newly-live version's unquoted prices are what the drift warning is for. |
+| **D55** | **`sendNative` sets the lock only when the version it sends is the live one.** Quoting a speculative non-live option must not freeze pricing on the version the client is actually holding a quote for. The lock arrives later, if that option is accepted and made live. |
+| **D56** | **`recallNative` clears the lock only when recalling the live version's quote.** The mirror of D55 — recalling a dead option would otherwise unlock the live job. |
+| **D57** | **A status revert does not clear the lock.** `CONFIRMED → QUOTING` leaves it set; status raises the flag, only a person lowers it. A flag that silently un-set itself on a status change would be derived again in all but name — the I-11 defect §4.5 exists to remove. |
+| **D58** | **`unlockPricingNative` is `danger: "high"`** — CLAUDE.md lists lock-softening explicitly under `high`, so the dispatcher's confirmation gate requires `confirm: true` and Mira must stop and ask a human to click Confirm (she is never given a `confirm` parameter). The `agentOps` annotation is required or `pnpm run api:registry` fails the build. Re-locking is `danger: "low"`. |
 
 **Also accepted from that review, folded into §4 rather than listed as decisions:** the sub-hire
 join runs from the versioned line (`projectLineItems.subHireId`) to the live order, not from

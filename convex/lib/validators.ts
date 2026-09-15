@@ -95,6 +95,12 @@ export const ProjectStatus = v.union(
   v.literal("ENQUIRY"),
   v.literal("QUOTING"),
   v.literal("QUOTED"),
+  // #1228 — the agreed-but-unpaid phase: the client has said yes and/or an
+  // invoice is out, but the money hasn't landed and the job isn't ours to prep
+  // yet. The finer sub-state ("deposit invoice sent" vs "deposit paid") is NOT
+  // stored here — it is derived from the invoice + payment rows
+  // (src/lib/project-payment-progress.ts). See FEATUREDOCS/77.
+  v.literal("AWAITING_PAYMENT"),
   v.literal("CONFIRMED"),
   v.literal("PREPPING"),
   v.literal("CHECKED_OUT"),

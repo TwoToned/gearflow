@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-09-15
+
+### Fixed
+
+- **Client-document toggles no longer appear where they do nothing.** "Show
+  this price" was offered on items inside a group, on sub-hire group contents,
+  and on kit contents — none of which print their own line on a quote or
+  invoice, so flipping it changed nothing and never said why. It is now offered
+  only on rows the client actually sees: a category's own items, and a group's
+  single collapsed line. An item in a group keeps the control that does apply
+  to it, "Show this item", which lists it under the group. Same fix for a kit
+  sitting inside a group, where "Show this item" was offered but the document
+  ignored it.
+
+### Changed
+
+- **Client-document toggles now read as one set of controls.** The four
+  switches that decide what a quote or invoice shows — a category's combined
+  price, a revealed price on a line or a group, and listing a group's member —
+  were each worded differently and scattered through their ⋯ menus. They now
+  sit together under a **Client documents** heading in every ⋯ menu, with
+  matching labels: "Show combined price" / "Show individual prices" on a
+  category, "Show this price" / "Hide this price" on a row, and "Show this
+  item" / "Hide this item" on a group's member. The category pill and the
+  label printed beside a rolled-up section's figure both say **Combined
+  price** too, so the phrase you pick is the phrase the client reads. Nothing
+  about what prints, or what anything costs, has changed.
+
 ## [0.27.0] - 2026-09-14
 
 ### Added

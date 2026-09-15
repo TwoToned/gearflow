@@ -5,7 +5,11 @@
  */
 import { describe, it, expect } from "vitest";
 import type { DocumentLineItem } from "@/lib/pdfme/types";
-import { isGroupChildDisclosed, disclosedGroupChildren } from "./group-child-disclosure";
+import {
+  isGroupChildDisclosed,
+  disclosedGroupChildren,
+  canDiscloseGroupChild,
+} from "./group-child-disclosure";
 
 function member(over: Partial<DocumentLineItem> & { id: string }): DocumentLineItem {
   return {
@@ -91,5 +95,32 @@ describe("disclosedGroupChildren", () => {
     expect(
       disclosedGroupChildren([member({ id: "kit", showInGroupOnDocs: true, kitId: "k1", isKitChild: false })]),
     ).toBeUndefined();
+  });
+});
+
+// The same rule `disclosedGroupChildren` filters by, exported so the equipment
+// tab can decide whether to OFFER the toggle. A toggle the renderer ignores is
+// worse than no toggle.
+describe("canDiscloseGroupChild", () => {
+  it("allows a plain member", () => {
+    expect(canDiscloseGroupChild({})).toBe(true);
+    expect(canDiscloseGroupChild({ kitId: null, isKitChild: false })).toBe(true);
+  });
+
+  it("refuses a kit parent", () => {
+    expect(canDiscloseGroupChild({ kitId: "k1", isKitChild: false })).toBe(false);
+  });
+
+  it("allows a kit's own child (it is never asked about at the group level)", () => {
+    expect(canDiscloseGroupChild({ kitId: "k1", isKitChild: true })).toBe(true);
+  });
+
+  it("agrees with what disclosedGroupChildren actually renders", () => {
+    const rows = [
+      member({ id: "kit", showInGroupOnDocs: true, kitId: "k1", isKitChild: false }),
+      member({ id: "plain", showInGroupOnDocs: true }),
+    ];
+    const rendered = disclosedGroupChildren(rows)?.map((m) => m.id) ?? [];
+    expect(rows.filter(canDiscloseGroupChild).map((m) => m.id)).toEqual(rendered);
   });
 });

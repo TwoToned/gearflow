@@ -941,8 +941,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       invalidate();
       toast.success(
         variables.pricingDisplay === "ROLLUP"
-          ? "Quotes and invoices will show one price for this category"
-          : "Quotes and invoices will show a price per item",
+          ? "Combined price shown for this category on client documents"
+          : "Individual prices shown for this category on client documents",
       );
     },
     onError: (e: Error) => toast.error(e.message),
@@ -960,8 +960,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       invalidate();
       toast.success(
         variables.item.revealPriceInRollup
-          ? "Price hidden on documents"
-          : "Price shown on documents",
+          ? "Price hidden on client documents"
+          : "Price shown on client documents",
       );
     },
     onError: (e: Error) => toast.error(e.message),
@@ -977,8 +977,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       invalidate();
       toast.success(
         variables.group.revealPriceInRollup
-          ? "Price hidden on documents"
-          : "Price shown on documents",
+          ? "Price hidden on client documents"
+          : "Price shown on client documents",
       );
     },
     onError: (e: Error) => toast.error(e.message),
@@ -997,8 +997,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
       invalidate();
       toast.success(
         variables.item.showInGroupOnDocs
-          ? "Hidden from client documents"
-          : "Listed on client documents under its group",
+          ? "Item hidden on client documents"
+          : "Item shown under its group on client documents",
       );
     },
     onError: (e: Error) => toast.error(e.message),

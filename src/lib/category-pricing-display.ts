@@ -43,9 +43,9 @@
  * own price inside a rolled-up category — for the line the client asked to see
  * broken out. A revealed line is still **included in the section subtotal**:
  * the subtotal is the category's true total, not a remainder. That is why the
- * header amount is labelled as the category total (see `ROLLUP_SUBTOTAL_LABEL`)
- * rather than printed as a bare figure — an unlabelled amount next to a
- * revealed item's own price reads as double counting.
+ * header amount is labelled (see `ROLLUP_SUBTOTAL_LABEL`) rather than printed
+ * as a bare figure — an unlabelled amount next to a revealed item's own price
+ * reads as double counting.
  *
  * The flag is display-only and has NO effect in an `ITEMISED` category (where
  * every price already prints) — it is never consulted outside a rollup, so a
@@ -63,8 +63,45 @@ export const DEFAULT_CATEGORY_PRICING_DISPLAY: CategoryPricingDisplay = "ITEMISE
 
 /** The label printed beside a rolled-up section's amount. Explicit because a
  *  bare figure next to a revealed line's own price reads as double counting —
- *  see the file header. */
-export const ROLLUP_SUBTOTAL_LABEL = "Category total";
+ *  see the file header.
+ *
+ *  Wording matches the operator-facing toggle ("Show combined price") so the
+ *  person setting it and the client reading it see the same phrase. Deliberately
+ *  not "Category total": "category" is internal vocabulary the client never sees
+ *  anywhere else on the document. */
+export const ROLLUP_SUBTOTAL_LABEL = "Combined price";
+
+/**
+ * Can this row's own price be revealed inside a rolled-up category?
+ *
+ * Only a row that PRINTS ITS OWN ROW on a client-facing document can. In
+ * collapse mode `structureLineItems` emits, per category, its ungrouped
+ * non-child lines plus ONE synthetic row per Project Group — and nothing else.
+ * A Project Group's members, a sub-hire group's children and a kit's children
+ * are all dropped, so `revealPriceInRollup` on one of them reveals a price on a
+ * row that is never drawn: the flag is inert, not subtle.
+ *
+ * Offering the toggle on such a row is therefore a lie — the operator flips it,
+ * the document doesn't change, and nothing says why. The controls that DO apply
+ * to those rows are their container's: a group member is disclosed with
+ * `showInGroupOnDocs` (and a disclosed member never prints a price at all — see
+ * `src/lib/group-child-disclosure.ts`), and a group's own collapsed row carries
+ * its own `revealPriceInRollup`.
+ *
+ * A stale `true` left on a line that later moves INTO a group stays harmless
+ * for the same reason the itemised-category case is harmless: the flag is only
+ * ever read for a row the document actually draws.
+ */
+export function canRevealPriceInRollup(row: {
+  /** Is the row a member of a Project Group? */
+  inProjectGroup?: boolean | null;
+  /** Is the row a child of a sub-hire group's parent line? */
+  isSubHireGroupChild?: boolean | null;
+  /** Is the row a kit member / accessory child? */
+  isKitChild?: boolean | null;
+}): boolean {
+  return !row.inProjectGroup && !row.isSubHireGroupChild && !row.isKitChild;
+}
 
 /** Narrowing guard for the untrusted boundaries (a stored doc field, a
  *  `v.any()` patch payload, a CSV cell). */

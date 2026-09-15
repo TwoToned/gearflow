@@ -41,14 +41,12 @@
 
 import type { DocumentLineItem } from "@/lib/pdfme/types";
 
-/** The reading applied to an absent/unrecognised value: not disclosed — the
- *  pre-feature behaviour for every row already in the database. */
-export const DEFAULT_GROUP_CHILD_DISCLOSED = false;
-
 /**
  * Is this member disclosed on client-facing documents? Strict: anything that
- * isn't exactly `true` fails closed, so a truthy non-boolean arriving through
- * an untrusted boundary can't leak a line onto a client's quote.
+ * isn't exactly `true` fails closed — so an absent value reads as "not
+ * disclosed" (the pre-feature behaviour for every row already in the database),
+ * and a truthy non-boolean arriving through an untrusted boundary can't leak a
+ * line onto a client's quote.
  */
 export function isGroupChildDisclosed(value: unknown): boolean {
   return value === true;

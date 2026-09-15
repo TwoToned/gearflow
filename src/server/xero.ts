@@ -299,6 +299,27 @@ export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResu
     if (!invoice.invoiceNumber) throw new Error("Invoice has no number — this should not happen for an ISSUED invoice.");
 
     const integration = await requireLinkedIntegration(convex, organizationId);
+
+    // Read + reconcile the lines BEFORE anything with a side effect. The
+    // contact block below creates or links a Xero contact and commits it back
+    // onto the client row, so a rejection after that point would leave both
+    // the Xero tenant and Flow mutated for a push that never happened. The
+    // connection check above stays first — it is a pure read, and "Xero isn't
+    // connected" is the more useful message when both are true.
+    const lines = await convex.query(api.invoiceLines.listForInvoice, { orgId: organizationId, invoiceId });
+    try {
+      assertLinesReconcileWithTaxableBase(lines, invoice, invoice.invoiceNumber);
+    } catch (reconcileErr) {
+      // Record it the same way a Xero-side failure is recorded. Without this
+      // the throw escapes to the outer catch, the operator gets a toast, and
+      // the invoice keeps its previous `xeroSyncStatus` (`SYNCED` on a
+      // re-push) with no `lastSyncError` and no sync-log entry — the failure
+      // would be invisible everywhere except that one toast.
+      const message = reconcileErr instanceof Error ? reconcileErr.message : "Invoice does not reconcile.";
+      await convex.mutation(api.xeroPush.markXeroPushFailedNative, { invoiceId, orgId: organizationId, error: message, now: Date.now() });
+      await logSyncEvent(organizationId, "PUSH_INVOICE", "FAILED", { error: message }, invoiceId, undefined, invoice.clientId);
+      throw reconcileErr;
+    }
     const project = await convex.query(api.projects.getById, { id: invoice.projectId });
     const client = await convex.query(api.clients.getById, { id: invoice.clientId });
     if (!client) throw new Error("Client not found.");
@@ -326,8 +347,7 @@ export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResu
       });
     }
 
-    const lines = await convex.query(api.invoiceLines.listForInvoice, { orgId: organizationId, invoiceId });
-    assertLinesReconcileWithSubtotal(lines, invoice.subtotal, invoice.invoiceNumber);
+
     const coding = await convex.query(api.xeroPush.resolveCodingForInvoice, { invoiceId, orgId: organizationId });
     const codingByLineId = new Map(coding.lines.map((l) => [l.lineId, l]));
 
@@ -390,39 +410,46 @@ export async function pushInvoiceToXero(invoiceId: string): Promise<XeroPushResu
 }
 
 /**
- * Refuse to push an invoice whose lines don't add up to its own tax-exclusive
- * subtotal.
+ * Refuse to push an invoice whose lines don't add up to the amount Xero will
+ * charge tax on.
  *
  * `LineAmount` is tax-EXCLUSIVE on Xero's side (we now say so explicitly — see
- * `upsertXeroDraftInvoice`), and Flow holds the matching invariant
- * `sum(invoiceLines.lineTotal) === invoices.subtotal`, with `taxAmount` added
- * on top. When the two disagree, nothing errors on its own: Xero happily
- * computes GST from whatever line amounts it was handed, and the client is
- * billed an amount Flow's own PDF never showed. That is exactly how
- * INV-260901 went out at $363.00 with $33.00 GST against a Flow invoice
- * reading $330.00 with $30.00 GST — a DEPOSIT invoice's summary line had been
- * written at the tax-INCLUSIVE total (fixed in `convex/invoicesWrites.ts`).
+ * `upsertXeroDraftInvoice`), so what Xero bills is `Σ LineAmount` plus the tax
+ * it derives from that. Flow's matching figure is the invoice's TAXABLE BASE,
+ * `total - taxAmount` — deliberately not `subtotal`, which for a FULL invoice
+ * is the PRE-discount project subtotal (`recalc.ts` applies `discountPercent`
+ * after summing, and `invoices` has no discount column). Comparing against
+ * `subtotal` would have waved through exactly the failure this guard exists to
+ * catch: a $1000 project at 10% discount issues by Flow at $990 and, with a
+ * line set summing to the pre-discount $1000, bills $1100 in Xero.
  *
- * This is the structural guard rather than a second place to be careful: a
- * silent 10% overbill is worth failing a push over, and any invoice DRAFTED
- * before that fix still carries the bad line, so re-pushing one must stop
- * here instead of repeating the overbill. The operator's remedy is in the
- * message — void and reissue, which rebuilds the lines correctly.
+ * When the two disagree, nothing errors on its own: Xero computes tax from
+ * whatever line amounts it was handed and the client is billed an amount
+ * Flow's own PDF never showed. That is how INV-260901 went out at $363.00 with
+ * $33.00 GST against a Flow invoice reading $330.00 / $30.00 — a DEPOSIT
+ * invoice's summary line written at the tax-INCLUSIVE total (fixed in
+ * `convex/invoicesWrites.ts`).
+ *
+ * Exact equality, not a tolerance: every contributing figure is already
+ * rounded to the cent before it is stored (`computeLineTotal`, `recalc.ts`'s
+ * `round`, and the `subtotal = total - taxAmount` splits in `createNative`),
+ * so a correctly-built invoice lands on zero difference. The `Math.round` on
+ * both sides is float-noise defence, not slack — anything that survives it is
+ * a real disagreement, not dust.
  */
-function assertLinesReconcileWithSubtotal(
+function assertLinesReconcileWithTaxableBase(
   lines: Array<{ lineTotal: number }>,
-  subtotal: number,
+  invoice: { total: number; taxAmount: number },
   invoiceNumber: string,
 ): void {
-  const lineSum = Math.round(lines.reduce((sum, l) => sum + (Number(l.lineTotal) || 0), 0) * 100) / 100;
-  const expected = Math.round((Number(subtotal) || 0) * 100) / 100;
-  // A cent of tolerance: an inclusive->exclusive split can leave rounding dust,
-  // and Xero reconciles that itself. Anything larger is a real disagreement.
-  if (Math.abs(lineSum - expected) <= 0.01) return;
+  const cents = (v: number) => Math.round((Number(v) || 0) * 100);
+  const lineSum = lines.reduce((sum, l) => sum + cents(l.lineTotal), 0);
+  const taxableBase = cents(invoice.total) - cents(invoice.taxAmount);
+  if (lineSum === taxableBase) return;
   throw new Error(
-    `Invoice ${invoiceNumber} does not reconcile: its lines total $${lineSum.toFixed(2)} but its subtotal is ` +
-      `$${expected.toFixed(2)}. Pushing it would bill a different amount than the invoice Flow issued. ` +
-      `Void and reissue this invoice, then push again.`,
+    `Invoice ${invoiceNumber} does not reconcile: its lines total $${(lineSum / 100).toFixed(2)} but the amount ` +
+      `Xero will charge tax on is $${(taxableBase / 100).toFixed(2)}. Pushing it would bill a different amount ` +
+      `than the invoice Flow issued. Void and reissue this invoice, then push again.`,
   );
 }
 

@@ -334,14 +334,38 @@ describe("pushInvoiceToXero — refuses to push an invoice whose lines don't rec
     expect(upsertXeroDraftInvoice).toHaveBeenCalled();
   });
 
-  test("tolerates a cent of rounding dust from an inclusive->exclusive split", async () => {
+  // Adversarial review catch: the original 1-cent tolerance guarded against
+  // dust that cannot occur here — every contributing figure is rounded to the
+  // cent before it is stored — while letting a real cent of overbill through.
+  // Exact equality in integer cents is both stricter and float-safe.
+  test("a single cent of disagreement is a real disagreement, not dust", async () => {
     queryMock.mockImplementation(queryImplFor(mappedClient));
     invoiceLines = [{ id: "line1", description: "Deposit", quantity: 1, unitPrice: 1000.01, lineTotal: 1000.01 }];
 
     const { pushInvoiceToXero } = await import("./xero");
     const result = await pushInvoiceToXero("inv1");
 
-    if (!result.ok) throw new Error(`expected ok, got: ${result.error}`);
-    expect(upsertXeroDraftInvoice).toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toMatch(/does not reconcile/i);
+  });
+
+  // Finding 5: the guard must not fire after the contact block has already
+  // mutated the Xero tenant and the client row, and its failure must be
+  // recorded like any other push failure rather than vanishing into a toast.
+  test("a rejected push creates no Xero contact and is recorded as a failure", async () => {
+    queryMock.mockImplementation(queryImplFor({ id: "c1", organizationId: "org_1", name: "Acme Events", contactEmail: "billing@acme.test" }));
+    findXeroContactByEmail.mockResolvedValue(null);
+    createXeroContact.mockResolvedValue({ ContactID: "new-contact-1", Name: "Acme Events" });
+    invoiceLines = [{ id: "line1", description: "Deposit", quantity: 1, unitPrice: 1100, lineTotal: 1100 }];
+
+    const { pushInvoiceToXero } = await import("./xero");
+    const result = await pushInvoiceToXero("inv1");
+
+    expect(result.ok).toBe(false);
+    expect(createXeroContact).not.toHaveBeenCalled();
+    expect(findXeroContactByEmail).not.toHaveBeenCalled();
+    const failedCall = mutationMock.mock.calls.find((c) => getFunctionName(c[0] as Parameters<typeof getFunctionName>[0]) === "xeroPush:markXeroPushFailedNative");
+    expect(failedCall?.[1]).toMatchObject({ invoiceId: "inv1" });
   });
 });

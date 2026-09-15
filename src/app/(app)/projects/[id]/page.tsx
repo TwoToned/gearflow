@@ -88,6 +88,7 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { FadeIn } from "@/components/ui/motion";
 import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
+import { PaymentProgressStrip } from "@/components/projects/payment-progress-strip";
 import { useCanDo } from "@/lib/use-permissions";
 import { formatCurrency } from "@/lib/formatters";
 import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
@@ -565,6 +566,19 @@ export default function ProjectDetailPage({
                   label: projectStatusLabels[s] || formatLabel(s),
                 }))}
                 onStatusChange={(s) => confirmGate.requestStatusChange(s)}
+              />
+            )}
+
+            {/* #1228 — the money phase's derived sub-steps, directly under the
+                node they belong to. Renders only at AWAITING_PAYMENT; see
+                FEATUREDOCS/77 for why these are three derived facts rather than
+                three statuses. */}
+            {!project.isTemplate && (
+              <PaymentProgressStrip
+                projectId={id}
+                orgId={orgId}
+                status={project.status}
+                now={lockNow}
               />
             )}
           </div>

@@ -14,8 +14,9 @@ import {
 /**
  * ProjectLifecycle — the RVLT job lifecycle as a hero stepper.
  *
- * Circular-node stepper (Enquiry → Quote → Confirmed → Prep → On site → Return →
- * Completed) matching the RVLT design-language lifecycle component:
+ * Circular-node stepper (Enquiry → Quote → Awaiting payment → Confirmed → Prep →
+ * On site → Return → Completed) matching the RVLT design-language lifecycle
+ * component:
  *   - completed stages: solid --ink filled node + white check
  *   - current stage: --card node with a 2px red ring + red number, bold label
  *   - upcoming stages: outlined (--line) node + muted number
@@ -28,11 +29,16 @@ import {
  */
 
 export type LifecycleStageKey =
-  | "enquiry" | "quote" | "confirmed" | "prep" | "onsite" | "return" | "completed";
+  | "enquiry" | "quote" | "payment" | "confirmed" | "prep" | "onsite" | "return" | "completed";
 
 const STAGES: { key: LifecycleStageKey; label: string; statuses: string[] }[] = [
   { key: "enquiry", label: "Enquiry", statuses: ["ENQUIRY"] },
   { key: "quote", label: "Quote", statuses: ["QUOTING", "QUOTED"] },
+  // #1228 — the agreed-but-unpaid phase. ONE stage, not three: "invoice sent"
+  // and "paid" are facts on the invoice and payment rows, so they render as
+  // derived sub-steps under this node (`<PaymentProgressStrip>`) rather than
+  // becoming statuses of their own. See FEATUREDOCS/77.
+  { key: "payment", label: "Awaiting payment", statuses: ["AWAITING_PAYMENT"] },
   { key: "confirmed", label: "Confirmed", statuses: ["CONFIRMED"] },
   { key: "prep", label: "Prep", statuses: ["PREPPING"] },
   { key: "onsite", label: "On site", statuses: ["CHECKED_OUT", "ON_SITE"] },
@@ -41,9 +47,9 @@ const STAGES: { key: LifecycleStageKey; label: string; statuses: string[] }[] = 
 ];
 
 const STAGE_ENTRY_STATUS: Record<LifecycleStageKey, string> = {
-  enquiry: "ENQUIRY", quote: "QUOTING", confirmed: "CONFIRMED",
-  prep: "PREPPING", onsite: "CHECKED_OUT", return: "RETURNED",
-  completed: "COMPLETED",
+  enquiry: "ENQUIRY", quote: "QUOTING", payment: "AWAITING_PAYMENT",
+  confirmed: "CONFIRMED", prep: "PREPPING", onsite: "CHECKED_OUT",
+  return: "RETURNED", completed: "COMPLETED",
 };
 
 function stageIndexForStatus(status: string): number {

@@ -4,6 +4,7 @@ import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
+import type { CategoryPricingDisplay } from "@/lib/category-pricing-display";
 
 /**
  * Browser-direct PROJECT-CATEGORY writes (Phase 3 — replaces the create/update/
@@ -52,6 +53,25 @@ export function useProjectCategoryWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
+      });
+    },
+    /** Flip a category between per-line pricing and one derived section
+     *  subtotal on client-facing documents (src/lib/category-pricing-display.ts).
+     *  Sent as its own call rather than folded into `update` so the audit entry
+     *  records the display change instead of a phantom rename. */
+    setPricingDisplay: async (
+      categoryId: string,
+      pricingDisplay: CategoryPricingDisplay,
+      opts: { justification?: string } = {},
+    ): Promise<void> => {
+      await updateM({
+        id: categoryId,
+        orgId: requireOrg(),
+        pricingDisplay,
+        now: Date.now(),
+        actor: actor(),
+        auditId: createId(),
+        justification: opts.justification,
       });
     },
     remove: async (categoryId: string): Promise<void> => {

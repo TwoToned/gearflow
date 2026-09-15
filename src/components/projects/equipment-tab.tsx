@@ -9,6 +9,10 @@ import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { readMigratedLocalStorage } from "@/lib/local-storage-migrate";
 import { api } from "../../../convex/_generated/api";
 import { useServerMutation } from "@/hooks/use-server-mutation";
+import {
+  type CategoryPricingDisplay,
+  isRollupCategory,
+} from "@/lib/category-pricing-display";
 import { refreshProjectDetail } from "@/hooks/use-project-detail";
 import { useProjectCategoryWrites } from "@/hooks/use-project-categories-writes";
 import { useProjectGroupWrites } from "@/hooks/use-project-groups-writes";
@@ -928,6 +932,78 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Category price rollup — flips a category between per-line pricing and one
+  // derived subtotal on client-facing documents (src/lib/category-pricing-display.ts).
+  const setCategoryPricingDisplayMut = useServerMutation({
+    mutationFn: ({ id, pricingDisplay }: { id: string; pricingDisplay: CategoryPricingDisplay }) =>
+      categoryWrites.setPricingDisplay(id, pricingDisplay),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.pricingDisplay === "ROLLUP"
+          ? "Quotes and invoices will show one price for this category"
+          : "Quotes and invoices will show a price per item",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Category price rollup, per-item reveal — prints ONE row's own price inside
+  // a rolled-up category. Display-only: `setPriceReveal` sends a minimal patch
+  // and patchNative recomputes lineTotal from the row's own unchanged inputs.
+  const togglePriceRevealMut = useServerMutation({
+    mutationFn: ({ item }: { item: LineItemData }) =>
+      lineItemWrites.setPriceReveal(item.id, !item.revealPriceInRollup, {
+        entityName: item.description ?? "Line item",
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.item.revealPriceInRollup
+          ? "Price hidden on documents"
+          : "Price shown on documents",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Category price rollup, per-item reveal for a GROUP's collapsed bundle row.
+  // Separate from the line-item toggle because a group is a different entity
+  // with its own mutation, not because the semantics differ.
+  const toggleGroupPriceRevealMut = useServerMutation({
+    mutationFn: ({ group }: { group: GroupData }) =>
+      groupWrites.setPriceReveal(group.id, !group.revealPriceInRollup),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.group.revealPriceInRollup
+          ? "Price hidden on documents"
+          : "Price shown on documents",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Group child disclosure — lists ONE member of a Project Group under the
+  // group's collapsed row on client-facing documents (description + quantity,
+  // never a price: the group's bundle price is the charge). Display-only, so
+  // like the reveal toggle it sends a minimal patch and moves no money.
+  const toggleGroupChildDisclosureMut = useServerMutation({
+    mutationFn: ({ item }: { item: LineItemData }) =>
+      lineItemWrites.setGroupChildDisclosure(item.id, !item.showInGroupOnDocs, {
+        entityName: item.description ?? "Line item",
+      }),
+    onSuccess: (_result, variables) => {
+      invalidate();
+      toast.success(
+        variables.item.showInGroupOnDocs
+          ? "Hidden from client documents"
+          : "Listed on client documents under its group",
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const deleteCategoryMut = useServerMutation({
     mutationFn: (id: string) => categoryWrites.remove(id),
     onSuccess: () => {
@@ -1570,6 +1646,9 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                           setRenameCategoryValue(cat.name);
                         }}
                         onDelete={() => deleteCategoryMut.mutate(cat.id)}
+                        onSetPricingDisplay={(pricingDisplay) =>
+                          setCategoryPricingDisplayMut.mutate({ id: cat.id, pricingDisplay })
+                        }
                         onAddEquipment={() => {
                           setUnifiedAddTarget({ categoryId: cat.id, label: cat.name });
                           setUnifiedAddKind("own-stock");
@@ -1642,6 +1721,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               onMoveToGroup={() => setMoveItemToGroup({
                                 lineItemId: item.id,
                               })}
+                              inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                              onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
                               onRemove={() => handleRemoveItem(item.id)}
                               onInlineUpdate={handleInlineLineItemUpdate}
                               moneyLocked={moneyLocked}
@@ -1722,6 +1803,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     setManagingSubHireId(shGroup.subHire.id);
                                     setShowSubHireOrderDialog(true);
                                   }}
+                                  inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                                  onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
                                   onRemove={() => handleRemoveItem(item.id)}
                                   onInlineUpdate={handleInlineLineItemUpdate}
                                 />
@@ -1781,6 +1864,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                 setShowUnifiedAdd(true);
                               }}
                               onSaveAsTemplate={() => setSaveAsTemplateGroup({ id: group.id, title: group.title })}
+                              inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                              onTogglePriceReveal={() => toggleGroupPriceRevealMut.mutate({ group })}
                               onMove={() => setMoveProjectGroup({ id: group.id, title: group.title })}
                               onInlinePriceUpdate={handleInlineGroupPriceUpdate}
                               moneyLocked={moneyLocked}
@@ -1837,6 +1922,10 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                                     lineItemId: item.id,
                                     initialGroupId: group.id,
                                   })}
+                                  inRollupCategory={isRollupCategory(cat.pricingDisplay)}
+                                  onTogglePriceReveal={() => togglePriceRevealMut.mutate({ item })}
+                                  inProjectGroup
+                                  onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
                                   onRemove={() => handleRemoveItem(item.id)}
                                   onInlineUpdate={handleInlineLineItemUpdate}
                                   moneyLocked={moneyLocked}
@@ -2043,6 +2132,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, addMen
                               lineItemId: item.id,
                               initialGroupId: group.id,
                             })}
+                            inProjectGroup
+                            onToggleGroupDisclosure={() => toggleGroupChildDisclosureMut.mutate({ item })}
                             onRemove={() => handleRemoveItem(item.id)}
                             onInlineUpdate={handleInlineLineItemUpdate}
                             moneyLocked={moneyLocked}

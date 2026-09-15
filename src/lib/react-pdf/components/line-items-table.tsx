@@ -36,6 +36,7 @@ import type { DocumentLineItem, TablePluginConfig, DocumentType } from "@/lib/pd
 import { formatCurrency } from "@/lib/pdfme/plugins/helpers";
 import { discountCellText, breakdownLabel, isSubhireIndicatorVisible, getAssetTag } from "@/lib/pdfme/line-item-format";
 import { COLORS, FONT_SIZE, CATEGORY_MUTED, BADGE_STYLES, lightenHex, type BadgeStyle } from "../styles";
+import { ROLLUP_SUBTOTAL_LABEL, rollupSubtotal } from "@/lib/category-pricing-display";
 import { RichText } from "./rich-text";
 import { Checkbox } from "./checkbox";
 
@@ -314,6 +315,11 @@ function priceCellText(item: DocumentLineItem, isItemized: boolean, hideSuffix: 
  *  pricing gate is checked once, not three times inline. */
 function priceGatedCellText(col: ColumnDef, item: DocumentLineItem, config: TablePluginConfig, display: RowDisplay): string | null {
   if (!config.showPricing) return null;
+  // Category price rollup: this row's money lives in its section header's one
+  // subtotal instead (src/lib/category-pricing-display.ts). Blank, deliberately
+  // NOT the "-" a missing value prints — an empty cell reads as "not shown
+  // here", a dash reads as "nothing to charge".
+  if (item.priceHidden && PRICING_COLUMN_KEYS.has(col.key)) return "";
   switch (col.key) {
     case "unitPrice":
       return priceCellText(item, display.isItemized, config.hidePricingPeriodSuffix);
@@ -324,6 +330,27 @@ function priceGatedCellText(col: ColumnDef, item: DocumentLineItem, config: Tabl
     default:
       return null;
   }
+}
+
+/**
+ * Category price rollup — the amount a section header prints, or `null` when
+ * this bucket isn't a rolled-up category (or the document prints no money at
+ * all, like every warehouse doc).
+ *
+ * Pure, and exported, so the arithmetic is testable without rendering a PDF.
+ * The sum covers EVERY row the section displays, revealed rows included: the
+ * header is the category's total, not the hidden remainder — which is exactly
+ * why it prints with a label (see `GroupHeaderRow`).
+ *
+ * Reads the rollup marker off the rows rather than taking it as a separate
+ * argument because `filterAndGroupItems` buckets by the section's display name
+ * and keeps no category metadata of its own; `structureLineItems` stamps every
+ * row in a rolled-up section, so any one of them answers the question.
+ */
+export function rollupAmountForBucket(items: DocumentLineItem[], config: TablePluginConfig): number | null {
+  if (!config.showPricing) return null;
+  if (!items.some((i) => i.rollupCategory)) return null;
+  return rollupSubtotal(items);
 }
 
 export function isCheckedForDocType(item: DocumentLineItem, documentType?: DocumentType): boolean {
@@ -399,7 +426,21 @@ function TableHeader({ columns }: { columns: ColumnDef[] }) {
   );
 }
 
-function GroupHeaderRow({ name, docColor }: { name: string; docColor: string }) {
+function GroupHeaderRow({
+  name,
+  docColor,
+  rollupAmount,
+}: {
+  name: string;
+  docColor: string;
+  /** Category price rollup — the section's one price, already formatted. When
+   *  set, the header becomes the only place this section's money appears; its
+   *  rows print blank money cells. Labelled rather than bare, because a
+   *  revealed row inside the section shows its own price and an unlabelled
+   *  figure beside it would read as double counting
+   *  (src/lib/category-pricing-display.ts). */
+  rollupAmount?: string | null;
+}) {
   return (
     <View
       // Reserve ~one item row's presence ahead so this header never strands
@@ -414,9 +455,16 @@ function GroupHeaderRow({ name, docColor }: { name: string; docColor: string }) 
         borderBottomStyle: "solid",
         paddingVertical: "1.5mm",
         paddingHorizontal: "1.5mm",
+        flexDirection: "row",
+        alignItems: "baseline",
       }}
     >
-      <Text style={{ fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>{name}</Text>
+      <Text style={{ flexGrow: 1, fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>{name}</Text>
+      {rollupAmount != null && (
+        <Text style={{ fontSize: FONT_SIZE.base, fontFamily: "Helvetica-Bold", color: docColor }}>
+          {`${ROLLUP_SUBTOTAL_LABEL}  ${rollupAmount}`}
+        </Text>
+      )}
     </View>
   );
 }
@@ -616,6 +664,11 @@ function renderCheckboxCell(col: ColumnDef, size: number, checked: boolean) {
  *  either tier instead of three times each. */
 function renderTierPricingCell(col: ColumnDef, config: TablePluginConfig, fontSize: number, color: string, row: DocumentLineItem) {
   if (!config.showPricing) return renderBlankCell(col);
+  // Defensive: child rows only render on warehouse docs, which never set
+  // `showPricing`, so a rolled-up child can't reach here today. Kept so a
+  // future client-facing doc that DOES expand children can't leak a price the
+  // section header has already rolled up.
+  if (row.priceHidden) return renderBlankCell(col);
   const text =
     col.key === "unitPrice"
       ? row.unitPrice != null
@@ -822,12 +875,30 @@ export function LineItemsTable({ items, config, docColor }: { items: DocumentLin
       <TableHeader columns={columns} />
       {Array.from(groups.entries()).map(([groupName, groupItems]) => (
         <View key={groupName}>
-          {groupName !== ungroupedKey && config.showGroupHeaders && <GroupHeaderRow name={groupName} docColor={docColor} />}
+          {groupName !== ungroupedKey && config.showGroupHeaders && (
+            <GroupHeaderRow
+              name={groupName}
+              docColor={docColor}
+              rollupAmount={(() => {
+                const amount = rollupAmountForBucket(groupItems, config);
+                return amount == null ? null : formatCurrency(amount);
+              })()}
+            />
+          )}
           {groupItems.map((item) => {
             globalIdx++;
             const idx = globalIdx;
             const display = deriveRowDisplay(item, config);
-            const shouldRenderChildren = display.isParentWithChildren && config.showKitChildren;
+            // `showKitChildren` exists to stop a CLIENT-facing doc exploding
+            // kits and accessories into sub-rows the client didn't ask for. A
+            // Project Group row is different: in collapse mode
+            // `structureLineItems` attaches ONLY the members the operator
+            // deliberately disclosed (src/lib/group-child-disclosure.ts), so
+            // the presence of children IS the intent — gating them behind
+            // `showKitChildren` would make the toggle silently do nothing on
+            // exactly the documents it exists for.
+            const shouldRenderChildren =
+              display.isParentWithChildren && (config.showKitChildren || item.isGroupRow === true);
 
             return (
               <View key={item.id}>

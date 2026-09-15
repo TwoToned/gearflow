@@ -26215,6 +26215,7 @@ export const OPENAPI_DOCUMENT = {
                       "name": {
                         "type": "string"
                       },
+                      "pricingDisplay": {},
                       "sortOrder": {
                         "type": "number"
                       }
@@ -27081,6 +27082,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "quantity": {
                         "type": "number"
+                      },
+                      "revealPriceInRollup": {
+                        "type": "boolean"
                       },
                       "sortOrder": {
                         "type": "number"

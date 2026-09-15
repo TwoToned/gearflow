@@ -27,6 +27,10 @@ import {
   reconstructScope,
 } from "@/lib/project-line-item-tree-read";
 import { reconstructProjectEquipmentTree } from "@/lib/project-equipment-reconstruct";
+import {
+  type CategoryPricingDisplay,
+  toCategoryPricingDisplay,
+} from "@/lib/category-pricing-display";
 
 /**
  * Convex read layer for the project **equipment line-item tree** — the I/O +
@@ -102,6 +106,8 @@ export type MappedLineItem = Omit<
   | "duration"
   | "discount"
   | "discountMode"
+  | "revealPriceInRollup"
+  | "showInGroupOnDocs"
   | "lineTotal"
   | "priceBreakdown"
   | "priceOverridden"
@@ -163,6 +169,16 @@ export type MappedLineItem = Omit<
   /** #1012 — how `discount` was ENTERED. Null on every pre-#1012 row, which the
    *  document renderer reads as `"$"` (the pre-#1012 behaviour, no backfill). */
   discountMode: "$" | "%" | null;
+  /** Category price rollup, per-item reveal — true when this line prints its own
+   *  price even inside a rolled-up category. Absent on the stored row is
+   *  normalised to `false` (the default: hidden inside a rollup, and irrelevant
+   *  outside one). See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on a client-facing document (description +
+   *  quantity, never a price). Absent on the row = false.
+   *  See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs: boolean;
   lineTotal: number | null;
   priceBreakdown: string | null;
   priceOverridden: boolean;
@@ -230,6 +246,8 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     duration: d.duration ?? 1,
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
+    showInGroupOnDocs: d.showInGroupOnDocs ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,
@@ -346,7 +364,16 @@ export function mapUnitDoc(d: UnitDoc): MappedUnit {
 }
 
 /** Derived from `Doc<"projectCategories">` (R-8.2.4) so schema drift is a compile error. */
-export type MappedCategory = Omit<CategoryDoc, "_id" | "_creationTime" | "sortOrder" | "createdAt" | "updatedAt"> & {
+export type MappedCategory = Omit<
+  CategoryDoc,
+  "_id" | "_creationTime" | "pricingDisplay" | "xeroAccountCode" | "xeroTaxType" | "sortOrder" | "createdAt" | "updatedAt"
+> & {
+  /** Category price rollup — normalised to one of the two literals here (absent
+   *  reads as `ITEMISED`) so no consumer downstream has to apply the default
+   *  itself. See src/lib/category-pricing-display.ts. */
+  pricingDisplay: CategoryPricingDisplay;
+  xeroAccountCode: string | null;
+  xeroTaxType: string | null;
   sortOrder: number;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -358,6 +385,9 @@ export function mapCategoryDoc(d: CategoryDoc): MappedCategory {
     organizationId: d.organizationId,
     projectId: d.projectId,
     name: d.name,
+    pricingDisplay: toCategoryPricingDisplay(d.pricingDisplay),
+    xeroAccountCode: orNull(d.xeroAccountCode),
+    xeroTaxType: orNull(d.xeroTaxType),
     sortOrder: d.sortOrder ?? 0,
     createdAt: msToDate(d.createdAt),
     updatedAt: msToDate(d.updatedAt),
@@ -375,6 +405,7 @@ export type MappedGroup = Omit<
   | "price"
   | "discount"
   | "discountMode"
+  | "revealPriceInRollup"
   | "suggestedPrice"
   | "sortOrder"
   | "pricedUnderLock"
@@ -390,6 +421,9 @@ export type MappedGroup = Omit<
   discount: number | null;
   /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
   discountMode: "$" | "%" | null;
+  /** Category price rollup, per-item reveal — prints this group's own collapsed
+   *  bundle price even inside a rolled-up category. Absent on the row = false. */
+  revealPriceInRollup: boolean;
   suggestedPrice: number | null;
   sortOrder: number;
   /** Mirrors `MappedLineItem.pricedUnderLock` — see that field's comment. */
@@ -412,6 +446,7 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     price: orNull(d.price),
     discount: orNull(d.discount),
     discountMode: orNull(d.discountMode),
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
     suggestedPrice: orNull(d.suggestedPrice),
     sortOrder: d.sortOrder ?? 0,
     pricedUnderLock: d.pricedUnderLock ?? false,
@@ -627,6 +662,9 @@ export interface DocCategoryWithGroups {
   id: string;
   name: string;
   sortOrder: number;
+  /** Category price rollup — drives whether this section's members print their
+   *  own prices or one derived subtotal on the header row. */
+  pricingDisplay: CategoryPricingDisplay;
   groups: MappedGroup[];
 }
 
@@ -726,6 +764,7 @@ export async function buildDocumentLineItemData(projectId: string, organizationI
       id: c.id,
       name: c.name,
       sortOrder: c.sortOrder,
+      pricingDisplay: c.pricingDisplay,
       groups: mappedGroups
         .filter((g) => g.categoryId === c.id)
         .sort((a, b) => a.sortOrder - b.sortOrder),
@@ -750,6 +789,9 @@ export async function buildDocumentLineItemData(projectId: string, organizationI
       id: "__uncategorized__",
       name: "Uncategorized",
       sortOrder: Number.MAX_SAFE_INTEGER,
+      // The synthetic bucket has no row to carry a setting, so it always
+      // itemises — there is no category for an operator to have rolled up.
+      pricingDisplay: "ITEMISED",
       groups: uncategorizedGroups,
     });
   }

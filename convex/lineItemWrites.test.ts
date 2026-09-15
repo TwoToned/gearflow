@@ -1488,3 +1488,108 @@ describe("lineItemWrites.recalcNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.recalcNative, { projectId: "p1", orgId: ORG, now: NOW })).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+// ─── Category price rollup, per-item reveal ──────────────────────────────────
+//
+// `revealPriceInRollup` is display-only (src/lib/category-pricing-display.ts),
+// but it arrives through patchNative's `v.any()` `set`, so the boundary rules
+// matter: strict boolean, `false` stored as an ABSENT field, and no money moved.
+describe("lineItemWrites.patchNative — revealPriceInRollup", () => {
+  const pargs = { id: "li1", orgId: ORG, entityName: "Light", allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
+
+  async function seedPricedLine(t: ReturnType<typeof makeT>, reveal?: boolean) {
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "li1", organizationId: ORG, projectId: "p1", description: "Light",
+        quantity: 2, unitPrice: 50, duration: 3, lineTotal: 300,
+        status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false,
+        ...(reveal === undefined ? {} : { revealPriceInRollup: reveal }),
+      });
+    });
+  }
+
+  const readLine = (t: ReturnType<typeof makeT>) =>
+    t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first());
+
+  test("sets the flag without moving any money", async () => {
+    const t = makeT();
+    await seedPricedLine(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { revealPriceInRollup: true, updatedAt: NOW }, clear: [], emitSideEffects: true,
+    });
+    const li = await readLine(t);
+    expect(li?.revealPriceInRollup).toBe(true);
+    // The toggle recomputes lineTotal from the line's OWN unchanged inputs, so
+    // it lands back on the same number rather than clearing it.
+    expect(li?.lineTotal).toBe(300);
+    expect(li?.unitPrice).toBe(50);
+    expect(li?.quantity).toBe(2);
+  });
+
+  test("clearing the flag removes the field entirely", async () => {
+    const t = makeT();
+    await seedPricedLine(t, true);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { updatedAt: NOW }, clear: ["revealPriceInRollup"], emitSideEffects: true,
+    });
+    expect((await readLine(t))?.revealPriceInRollup).toBeUndefined();
+    expect((await readLine(t))?.lineTotal).toBe(300);
+  });
+
+  // "hidden" must have exactly ONE representation, or a later read has to decide
+  // whether `false` and absent mean the same thing.
+  test("an explicit false is normalised to an absent field", async () => {
+    const t = makeT();
+    await seedPricedLine(t, true);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { revealPriceInRollup: false, updatedAt: NOW }, clear: [], emitSideEffects: true,
+    });
+    expect((await readLine(t))?.revealPriceInRollup).toBeUndefined();
+  });
+
+  test("a truthy non-boolean does not reveal the price (fails closed)", async () => {
+    const t = makeT();
+    await seedPricedLine(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { revealPriceInRollup: "yes", updatedAt: NOW }, clear: [], emitSideEffects: true,
+    });
+    expect((await readLine(t))?.revealPriceInRollup).toBeUndefined();
+  });
+
+  // The second client-document disclosure flag (src/lib/group-child-disclosure.ts)
+  // goes through the same normalisation loop, so it gets the same guarantees.
+  test("showInGroupOnDocs follows the identical boundary rules", async () => {
+    const t = makeT();
+    await seedPricedLine(t);
+    const set = (value: unknown) =>
+      t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+        ...pargs, set: { showInGroupOnDocs: value, updatedAt: NOW }, clear: [], emitSideEffects: true,
+      });
+
+    await set(true);
+    expect((await readLine(t))?.showInGroupOnDocs).toBe(true);
+    expect((await readLine(t))?.lineTotal).toBe(300);
+
+    await set(false);
+    expect((await readLine(t))?.showInGroupOnDocs).toBeUndefined();
+
+    await set("yes");
+    expect((await readLine(t))?.showInGroupOnDocs).toBeUndefined();
+  });
+
+  test("the two disclosure flags are independent", async () => {
+    const t = makeT();
+    await seedPricedLine(t);
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { revealPriceInRollup: true, updatedAt: NOW }, clear: [], emitSideEffects: true,
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.patchNative, {
+      ...pargs, set: { showInGroupOnDocs: true, updatedAt: NOW }, clear: [], emitSideEffects: true,
+    });
+    const li = await readLine(t);
+    expect(li?.revealPriceInRollup).toBe(true);
+    expect(li?.showInGroupOnDocs).toBe(true);
+  });
+});

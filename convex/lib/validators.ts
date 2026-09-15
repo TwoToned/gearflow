@@ -140,6 +140,15 @@ export const DiscountMode = v.union(
   v.literal("$"),
   v.literal("%"),
 );
+/** Category price rollup — how a project category prints its money on a
+ *  client-facing document. `ITEMISED` = every line prints its own price (the
+ *  legacy behaviour); `ROLLUP` = lines print description + quantity only and
+ *  the section header carries one derived subtotal. Absent on every
+ *  pre-feature row = `ITEMISED` (see src/lib/category-pricing-display.ts). */
+export const CategoryPricingDisplay = v.union(
+  v.literal("ITEMISED"),
+  v.literal("ROLLUP"),
+);
 export const PricingType = v.union(
   v.literal("PER_DAY"),
   v.literal("PER_WEEK"),
@@ -523,6 +532,10 @@ export const InvoiceLineSourceType = v.union(
   v.literal("EQUIPMENT"),
   v.literal("SERVICE"),
   v.literal("GROUP"),
+  // A `pricingDisplay: "ROLLUP"` project category billed as ONE line covering
+  // everything inside it — the finance-snapshot counterpart of the rolled-up
+  // section a quote/invoice PDF prints (convex/lib/financeSnapshot.ts).
+  v.literal("CATEGORY"),
   v.literal("CUSTOM"),
 );
 export const XeroSyncStatus = v.union(

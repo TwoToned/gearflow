@@ -7,6 +7,8 @@
  * circular-dependency cluster (POLICY.md R-3.5).
  */
 
+import type { CategoryPricingDisplay } from "@/lib/category-pricing-display";
+
 export interface LineItemData {
   id: string;
   modelId?: string | null;
@@ -19,6 +21,15 @@ export interface LineItemData {
   discount?: unknown;
   /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
   discountMode?: string | null;
+  /** Category price rollup, per-item reveal — this row prints its own price on
+   *  client-facing documents even though its category rolled up. Meaningless
+   *  (and never offered) outside a `pricingDisplay: "ROLLUP"` category.
+   *  See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup?: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on client-facing documents (description +
+   *  quantity, never a price). See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs?: boolean;
   notes?: string | null;
   isOptional?: boolean;
   type?: string;
@@ -96,6 +107,11 @@ export interface GroupData {
   discount: unknown;
   /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
   discountMode?: string | null;
+  /** Category price rollup, per-item reveal — this row prints its own price on
+   *  client-facing documents even though its category rolled up. Meaningless
+   *  (and never offered) outside a `pricingDisplay: "ROLLUP"` category.
+   *  See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup?: boolean;
   suggestedPrice: unknown;
   sortOrder: number;
   /** Mirrors `LineItemData.pricedUnderLock` — see that field's comment. */
@@ -170,6 +186,11 @@ export type MixedGroupSlot =
 export interface CategoryData {
   id: string;
   name: string;
+  /** Category price rollup — `ROLLUP` prints this category's lines with their
+   *  money columns blank and one derived subtotal on the section header of a
+   *  quote/invoice. Optional so fixtures predating the feature stay valid;
+   *  absent reads as `ITEMISED`. See src/lib/category-pricing-display.ts. */
+  pricingDisplay?: CategoryPricingDisplay;
   sortOrder: number;
   groups: GroupData[];
   subHireGroupTargets?: SubHireGroupData[];

@@ -420,6 +420,48 @@ module, so Convex mutations, Zod schemas, the seven add/edit forms and the PDF
 renderer share one definition. `line-item-form-fields.tsx` re-exports them for
 the forms; don't re-declare `"$" | "%"` anywhere else.
 
+### Category price rollup: the SECTION subtotal is derived, the per-line prices are hidden
+`projectCategories.pricingDisplay` (`"ITEMISED" | "ROLLUP"`, absent = `ITEMISED`,
+no backfill) decides whether a category prints a price per line or one price for
+the whole section with every line still listed (quantities intact, money columns
+blank). It is **not** a priced Project Group: a group HIDES its contents behind a
+typed bundle price; a rolled-up category SHOWS all its contents and DERIVES the
+one price as `sum(lineTotal)` over its members. Never store that subtotal — it is
+not a `PROJECT_MONEY_ANCHOR`, which is exactly why recalc/allocation/revenue need
+no changes (rollup regroups, it never reprices). Same reasoning as `discountMode`
+above: a second copy of a total the line items already determine would
+contradict the document the moment a price changed.
+
+`revealPriceInRollup` (on `projectLineItems` AND `projectGroups`) opts ONE row
+back into printing its own price. A revealed row is still **counted in the
+section subtotal** — the header is the category's total, not the remainder,
+which is why it prints with a label. The flag is consulted ONLY inside a rollup,
+so a stale `true` after switching back to `ITEMISED` changes nothing; `false` is
+stored as an absent field so "hidden" has one representation.
+
+The union, the per-row hidden/revealed decision and the subtotal arithmetic live
+in `src/lib/category-pricing-display.ts` — a plain module shared by the Zod
+schemas, the document pipeline, the equipment tab and the finance snapshot.
+Renderers read the DERIVED `priceHidden`/`rollupCategory` that
+`structureLineItems` stamps, never the stored fields, and those are stamped only
+in collapse mode (a warehouse doc expands groups, so summing a bucket would
+double-count). `buildFinanceLines` folds a rolled-up category into one
+`sourceType: "CATEGORY"` invoice line. See FEATUREDOCS/74.
+
+Its sibling, `projectLineItems.showInGroupOnDocs` ("group child disclosure"),
+lets a Project Group — which otherwise collapses to ONE row and drops
+everything inside it — list selected members under that row with description +
+quantity. Collapse mode attaches `disclosedGroupChildren(members)`
+(`src/lib/group-child-disclosure.ts`), each stamped the SAME derived
+`priceHidden` (one flag for "this row prints no money", not two), and
+`undefined` when none are disclosed so an untouched group keeps its exact
+pre-feature shape. A disclosed member **never** prints a price and gets no
+per-member override: the group's bundle price IS the charge, so printing a
+member's own figure too would put two contradictory numbers for the same gear
+on one document — which is also why `buildFinanceLines` needs no counterpart
+(the group still bills as one line). Kit parents are excluded, and expand
+(warehouse) mode ignores the flag entirely — packers need the full list.
+
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
 (`validUntil < now && status === "SENT"`) and never stored, and the deprecated

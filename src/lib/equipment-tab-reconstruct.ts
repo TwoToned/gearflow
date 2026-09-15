@@ -311,6 +311,7 @@ function buildGroupData(
     suggestedPrice: g.suggestedPrice,
     sortOrder: g.sortOrder,
     pricedUnderLock: g.pricedUnderLock,
+    revealPriceInRollup: g.revealPriceInRollup,
     lineItems: attachScope(lineItemsByGroupId.get(g.id) ?? [], ctx),
   };
 }
@@ -435,6 +436,7 @@ export function reconstructProjectCategories(bundle: EquipmentTabBundleData): Ca
       return {
         id: cat.id,
         name: cat.name,
+        pricingDisplay: cat.pricingDisplay,
         sortOrder: cat.sortOrder,
         groups: catGroups,
         subHireGroupTargets: catSubHireGroups,

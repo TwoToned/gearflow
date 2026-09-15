@@ -1299,6 +1299,52 @@ forms and this renderer all share one definition of the mode union,
 [FEATUREDOCS/10](./10-projects.md#groups-projectgroup--the-billable-unit) for
 the write side.
 
+### Category price rollup (FEATUREDOCS/74)
+
+Alongside the two bucketing modes above, `structureLineItems` resolves each
+category's `pricingDisplay` (plus each row's `revealPriceInRollup`) into two
+DERIVED fields renderers read instead of the stored ones:
+
+- **`priceHidden`** — blank this row's unitPrice/discount/total cells.
+- **`rollupCategory`** — this row is in a rolled-up section, so the section
+  header carries ONE derived subtotal (`rollupAmountForBucket` →
+  `formatCurrency`, printed with the `ROLLUP_SUBTOTAL_LABEL`). Stamped on
+  every row in the section, revealed ones included, because
+  `filterAndGroupItems` buckets by display NAME and holds no category
+  metadata — any row in the bucket has to answer "is this section rolled up?".
+
+Both are stamped **only in collapse mode**: a warehouse doc expands its
+groups, so a bucket would hold both a group's bundle total and that group's
+members, and summing it would double-count. (Warehouse docs print no money
+anyway — `rollupAmountForBucket` also returns null when `showPricing` is off.)
+
+The money cells go **blank**, not `"-"` — an empty cell reads as "not shown
+here", a dash reads as "nothing to charge". See
+`src/lib/category-pricing-display.ts` for why the subtotal is derived rather
+than stored.
+
+### Group child disclosure (FEATUREDOCS/74)
+
+Collapse mode used to attach NO children to a group's synthetic row
+(`childLineItems: undefined` — the group's contents were dropped entirely). It
+now attaches `disclosedGroupChildren(members)`
+(`src/lib/group-child-disclosure.ts`): the members whose
+`showInGroupOnDocs` is `true`, each stamped `priceHidden` so the renderer
+blanks its money cells. Still `undefined` when none are disclosed, so an
+untouched group keeps its exact pre-feature shape.
+
+A disclosed member NEVER prints a price and has no per-member override for it —
+the group's bundle price is the charge, and a member's own figure is an
+internal build-up the bundle supersedes. Kit parents are excluded (a kit is
+itself a collapsing container). Expand mode is untouched: warehouse docs list
+every member regardless, because the packers need the full pick list.
+
+`shouldRenderChildren` therefore ORs `item.isGroupRow` with
+`config.showKitChildren`. That gate exists to stop a client doc exploding
+kits/accessories; for a group row in collapse mode the attached children are
+*already* exactly the deliberate disclosures, so gating them would make the
+toggle silently do nothing on the documents it exists for.
+
 ## PDF Data-Shape Consumers (audit checklist)
 
 Any change to the `DocumentLineItem` shape (new field, new synthetic row

@@ -349,6 +349,64 @@ export function useLineItemWrites() {
       }
     },
 
+    /** Reveal (or re-hide) ONE line's own price inside a `pricingDisplay: "ROLLUP"`
+     *  category — src/lib/category-pricing-display.ts. A minimal patch: nothing but
+     *  the flag moves, and patchNative recomputes `lineTotal` from the line's own
+     *  unchanged inputs, so this cannot shift a number. `false` is sent as a CLEAR
+     *  (absent is the default reading) so "hidden" has exactly one representation.
+     *  No-op on the document when the line's category is ITEMISED — the flag is
+     *  never consulted there. */
+    setPriceReveal: async (
+      id: string,
+      reveal: boolean,
+      opts: { entityName: string },
+    ): Promise<{ projectId: string }> => {
+      try {
+        return await patchM({
+          id,
+          orgId: requireOrg(),
+          set: reveal ? { revealPriceInRollup: true, updatedAt: Date.now() } : { updatedAt: Date.now() },
+          clear: reveal ? [] : ["revealPriceInRollup"],
+          entityName: opts.entityName,
+          allowOverbook: false,
+          actor: actor(),
+          auditId: createId(),
+          emitSideEffects: true,
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
+    /** Group child disclosure — list (or stop listing) this group member under
+     *  its group's collapsed row on client-facing documents
+     *  (src/lib/group-child-disclosure.ts). Same minimal-patch shape as
+     *  `setPriceReveal`: nothing but the flag moves, and the disclosed row
+     *  never prints a price, so this cannot change a number either. */
+    setGroupChildDisclosure: async (
+      id: string,
+      disclosed: boolean,
+      opts: { entityName: string },
+    ): Promise<{ projectId: string }> => {
+      try {
+        return await patchM({
+          id,
+          orgId: requireOrg(),
+          set: disclosed ? { showInGroupOnDocs: true, updatedAt: Date.now() } : { updatedAt: Date.now() },
+          clear: disclosed ? [] : ["showInGroupOnDocs"],
+          entityName: opts.entityName,
+          allowOverbook: false,
+          actor: actor(),
+          auditId: createId(),
+          emitSideEffects: true,
+          now: Date.now(),
+        });
+      } catch (e) {
+        throw mapNativeWriteError(e);
+      }
+    },
+
     /** Remove a line — child-guard + cascade (children + units) + recalc + audit +
      *  collab, atomic. `justification` (#990) — forwarded to `removeNative`,
      *  required once the project is ON_SITE+ with no open unlock session

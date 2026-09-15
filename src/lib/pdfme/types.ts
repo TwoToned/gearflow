@@ -52,6 +52,40 @@ export interface DocumentLineItem {
    * — see `src/lib/discount-mode.ts` for why it isn't stored.
    */
   discountMode?: "$" | "%" | null;
+  /**
+   * Category price rollup, per-item reveal — the RAW stored flag off the line
+   * item / project group, carried in so `structureLineItems` can resolve it
+   * against the owning category's `pricingDisplay`. Renderers should read the
+   * derived `priceHidden` below, never this.
+   */
+  revealPriceInRollup?: boolean | null;
+  /**
+   * Group child disclosure — the RAW stored flag off a Project Group MEMBER:
+   * list this row under the group's collapsed row on a client-facing document,
+   * showing description + quantity and never a price.
+   * `structureLineItems` consumes it when deciding which members to attach;
+   * renderers see the result as an ordinary child row carrying `priceHidden`.
+   * See `src/lib/group-child-disclosure.ts`.
+   */
+  showInGroupOnDocs?: boolean | null;
+  /**
+   * DERIVED by `structureLineItems`: this row prints its description and
+   * quantity but leaves its unit price / discount / line total cells blank,
+   * because its category rolled up and this row wasn't explicitly revealed.
+   * Absent/false = price prints as normal (every itemised row, and every row
+   * on a document that isn't priced at all).
+   * See `src/lib/category-pricing-display.ts`.
+   */
+  priceHidden?: boolean;
+  /**
+   * DERIVED by `structureLineItems`: this row belongs to a rolled-up category,
+   * so its section header carries ONE subtotal for the whole section. Stamped
+   * on every row in the section — including revealed ones, which are still
+   * counted in that subtotal — so the renderer can identify a rolled-up bucket
+   * from any row in it. Only ever set in collapse (client-facing) mode; a
+   * warehouse doc expands groups and prints no money at all.
+   */
+  rollupCategory?: boolean;
   lineTotal: number | null;
   priceBreakdown?: string | null;
   priceOverridden?: boolean;

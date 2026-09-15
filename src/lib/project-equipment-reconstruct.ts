@@ -29,6 +29,10 @@ import {
   reconstructScope,
   reconstructCategories,
 } from "@/lib/project-line-item-tree-read";
+import {
+  type CategoryPricingDisplay,
+  toCategoryPricingDisplay,
+} from "@/lib/category-pricing-display";
 
 type LineItemDoc = Doc<"projectLineItems">;
 type UnitDoc = Doc<"projectLineItemUnits">;
@@ -167,6 +171,15 @@ export interface MappedLineItem {
   discount: number | null;
   /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
   discountMode: "$" | "%" | null;
+  /** Category price rollup, per-item reveal — true when this line prints its
+   *  own price even inside a rolled-up category (absent on the row = false).
+   *  See src/lib/category-pricing-display.ts. */
+  revealPriceInRollup: boolean;
+  /** Group child disclosure — this member of a Project Group is listed under
+   *  the group's collapsed row on a client-facing document (description +
+   *  quantity, never a price). Absent on the row = false.
+   *  See src/lib/group-child-disclosure.ts. */
+  showInGroupOnDocs: boolean;
   /** Set only when `type === "SALE"` — which stock pool the sale drew from. */
   saleMode: "NEW_STOCK" | "FROM_RENTAL_STOCK" | null;
   /** NEW_STOCK sale-item pick checklist timestamp — absent = to pick. */
@@ -238,6 +251,8 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     duration: d.duration ?? 1,
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
+    showInGroupOnDocs: d.showInGroupOnDocs ?? false,
     lineTotal: d.lineTotal ?? null,
     priceBreakdown: d.priceBreakdown ?? null,
     priceOverridden: d.priceOverridden ?? false,
@@ -335,6 +350,12 @@ export interface MappedCategory {
   organizationId: string;
   projectId: string;
   name: string;
+  /** Category price rollup — normalised to one of the two literals (absent
+   *  reads as `ITEMISED`). Drives the equipment tab's rollup badge and the
+   *  per-item reveal affordance. See src/lib/category-pricing-display.ts. */
+  pricingDisplay: CategoryPricingDisplay;
+  xeroAccountCode: string | null;
+  xeroTaxType: string | null;
   sortOrder: number;
   createdAt: Date | null;
   updatedAt: Date | null;
@@ -346,6 +367,9 @@ export function mapCategoryDoc(d: CategoryDoc): MappedCategory {
     organizationId: d.organizationId,
     projectId: d.projectId,
     name: d.name,
+    pricingDisplay: toCategoryPricingDisplay(d.pricingDisplay),
+    xeroAccountCode: orNull(d.xeroAccountCode),
+    xeroTaxType: orNull(d.xeroTaxType),
     sortOrder: d.sortOrder ?? 0,
     createdAt: msToDate(d.createdAt),
     updatedAt: msToDate(d.updatedAt),
@@ -364,6 +388,9 @@ export interface MappedGroup {
   discount: number | null;
   /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
   discountMode: "$" | "%" | null;
+  /** Category price rollup, per-item reveal — prints this group's own bundle
+   *  price even inside a rolled-up category. */
+  revealPriceInRollup: boolean;
   suggestedPrice: number | null;
   sortOrder: number;
   /** Mirrors `MappedLineItem.pricedUnderLock` — see that field's comment. */
@@ -386,6 +413,7 @@ export function mapGroupDoc(d: GroupDoc): MappedGroup {
     price: orNull(d.price),
     discount: orNull(d.discount),
     discountMode: orNull(d.discountMode),
+    revealPriceInRollup: d.revealPriceInRollup ?? false,
     suggestedPrice: orNull(d.suggestedPrice),
     sortOrder: d.sortOrder ?? 0,
     pricedUnderLock: d.pricedUnderLock ?? false,

@@ -352,6 +352,12 @@ export const updateGroupNative = mutation({
     sortOrder: v.optional(v.number()),
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
+    // Category price rollup, per-item reveal — prints this group's collapsed
+    // bundle price on client-facing documents even inside a `ROLLUP` category.
+    // Structural, not financial: it moves no amount, it only decides whether an
+    // amount the group already has is printed. See
+    // src/lib/category-pricing-display.ts.
+    revealPriceInRollup: v.optional(v.boolean()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -393,6 +399,12 @@ export const updateGroupNative = mutation({
     if (a.sortOrder !== undefined) patch.sortOrder = Number(a.sortOrder);
     if (a.xeroAccountCode !== undefined) patch.xeroAccountCode = a.xeroAccountCode || undefined;
     if (a.xeroTaxType !== undefined) patch.xeroTaxType = a.xeroTaxType || undefined;
+    // `false` is stored as an ABSENT field (the default reading), so "hidden"
+    // has exactly one representation — same rule patchNative applies to the
+    // line-item flag.
+    if (a.revealPriceInRollup !== undefined) {
+      patch.revealPriceInRollup = a.revealPriceInRollup || undefined;
+    }
     await ctx.db.patch(group._id, patch);
 
     // Audit uses the PRE-patch title (parity with the server action).

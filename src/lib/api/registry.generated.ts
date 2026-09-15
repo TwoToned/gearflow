@@ -34390,6 +34390,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "pricingDisplay",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "sortOrder",
         "optional": true,
         "type": "number"
@@ -34398,7 +34403,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "dabb4f36ffb247dc",
+    "argsSha": "8527d69f9ae1392c",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
@@ -35412,6 +35417,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "revealPriceInRollup",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "sortOrder",
         "optional": true,
         "type": "number"
@@ -35435,7 +35445,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "199436120346f869",
+    "argsSha": "085e3dcb64afb731",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,

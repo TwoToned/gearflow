@@ -44,12 +44,26 @@
  * category (via the pseudo-category), not each individual member row.
  */
 import type { DocumentLineItem } from "./types";
+import {
+  type CategoryPricingDisplay,
+  isLinePriceHidden,
+  isRollupCategory,
+} from "@/lib/category-pricing-display";
+import { disclosedGroupChildren } from "@/lib/group-child-disclosure";
 
 /** Category metadata as already loaded by build-document-data's project include. */
 export interface CategoryForStructuring {
   id: string;
   name: string;
   sortOrder: number;
+  /**
+   * Category price rollup — `"ROLLUP"` blanks the money cells on every row in
+   * this category and hands the section header ONE derived subtotal instead.
+   * Optional so the many existing fixtures/callers that predate the feature
+   * stay valid; absent reads as `"ITEMISED"` (the legacy behaviour).
+   * See `src/lib/category-pricing-display.ts`.
+   */
+  pricingDisplay?: CategoryPricingDisplay | null;
   groups: Array<{
     id: string;
     title: string;
@@ -60,6 +74,9 @@ export interface CategoryForStructuring {
     /** #1012 — how `discount` was entered; carried onto the synthetic group row
      *  so the Discount column can print "10%" instead of "-$120.00". */
     discountMode?: "$" | "%" | null;
+    /** Category price rollup, per-item reveal — prints this collapsed group
+     *  row's own bundle price even inside a rolled-up category. */
+    revealPriceInRollup?: boolean | null;
     sortOrder: number;
   }>;
 }
@@ -212,6 +229,27 @@ export function structureLineItems(
   const structured: DocumentLineItem[] = [];
 
   for (const cat of categories) {
+    // Category price rollup — only ever active in collapse (client-facing)
+    // mode. A warehouse doc expands its groups and prints no money at all, and
+    // summing a bucket that holds BOTH a group's own bundle total and that
+    // group's member rows would double-count, so the marker is never stamped
+    // there. See src/lib/category-pricing-display.ts.
+    const rollup = !expand && isRollupCategory(cat.pricingDisplay);
+    /** Stamp a row with its rollup state: `rollupCategory` marks the section
+     *  (every row, revealed ones included — they still count toward the
+     *  subtotal), `priceHidden` marks THIS row's money cells as blank. */
+    const withRollup = <T extends DocumentLineItem>(li: T, reveal?: boolean | null): T =>
+      rollup
+        ? {
+            ...li,
+            rollupCategory: true,
+            priceHidden: isLinePriceHidden({
+              pricingDisplay: cat.pricingDisplay,
+              revealPriceInRollup: reveal ?? li.revealPriceInRollup ?? false,
+            }),
+          }
+        : li;
+
     // Ungrouped items in this category (have categoryId but no groupId).
     // Sub-hire items are excluded — they get their own section below.
     const ungroupedInCat = rawLineItems.filter(
@@ -258,15 +296,16 @@ export function structureLineItems(
       // doc its outer section header.
       const bucketLabel = cat.name;
 
-      const groupChildren = expand
-        ? rawLineItems.filter(
-            li =>
-              isGroupMember(li, group, cat.name) &&
-              !li.isKitChild &&
-              !li.isContainerLineItem &&
-              !isInSubHireSection(li),
-          )
-        : [];
+      // Both modes need the group's members now: expand mode renders all of
+      // them, collapse mode renders only the ones deliberately disclosed
+      // (src/lib/group-child-disclosure.ts).
+      const groupChildren = rawLineItems.filter(
+        li =>
+          isGroupMember(li, group, cat.name) &&
+          !li.isKitChild &&
+          !li.isContainerLineItem &&
+          !isInSubHireSection(li),
+      );
 
       // Kit parents inside the group break out to their own `[Kit] X`
       // section at the top level. Non-kit members render indented under
@@ -282,7 +321,7 @@ export function structureLineItems(
       // In collapse mode we still emit the synthetic row (legacy).
       if (expand && groupChildren.length === 0) continue;
 
-      structured.push({
+      structured.push(withRollup({
         id: `group-${group.id}`,
         description: group.description || null,
         quantity: group.quantity,
@@ -304,10 +343,12 @@ export function structureLineItems(
         model: { name: group.title },
         asset: null,
         bulkAsset: null,
-        // Attach non-kit members so the renderer indents them under the
-        // group parent. Empty array in collapse mode (children dropped).
-        childLineItems: expand ? maybeSort(groupInlineMembers) : undefined,
-      });
+        // Expand mode (warehouse): every non-kit member, indented under the
+        // group parent. Collapse mode (client-facing): ONLY the members the
+        // operator disclosed — `undefined` when none are, which is the exact
+        // shape this row had before the feature existed.
+        childLineItems: expand ? maybeSort(groupInlineMembers) : disclosedGroupChildren(groupChildren),
+      }, group.revealPriceInRollup));
 
       // Kit parents that lived inside this group still get their own
       // `[Kit] <name>` section per the kit-boundary contract.
@@ -322,7 +363,7 @@ export function structureLineItems(
     // sorted in packer-walk order when the option is on. Kit parents
     // get promoted to a `[Kit] <name>` section instead.
     for (const li of maybeSort(ungroupedInCat)) {
-      structured.push({ ...li, groupName: kitBucketLabel(li, cat.name) });
+      structured.push(withRollup({ ...li, groupName: kitBucketLabel(li, cat.name) }));
     }
   }
 

@@ -1416,6 +1416,23 @@ export default defineSchema({
     // reads; this only lets a document print it back as "15%" instead of
     // "-$150.00". Absent = "$" (every pre-#1012 row; no backfill needed).
     discountMode: v.optional(enums.DiscountMode),
+    // Category price rollup, per-item reveal — opts THIS line back into
+    // printing its own price inside a `pricingDisplay: "ROLLUP"` category.
+    // Display-only and consulted ONLY in a rollup (never in an ITEMISED
+    // category, where every price already prints), so a stale `true` left
+    // behind by switching the category back changes nothing. A revealed line
+    // is still INCLUDED in the section subtotal — see
+    // src/lib/category-pricing-display.ts.
+    revealPriceInRollup: v.optional(v.boolean()),
+    // Group child disclosure — this member of a Project Group is listed under
+    // the group's collapsed row on a client-facing document, showing its
+    // description and quantity and NEVER a price (the group's bundle price is
+    // the charge; a member's own figure is an internal build-up the bundle
+    // supersedes). Absent = not disclosed, the pre-feature behaviour, so no
+    // backfill. Consulted only for a line with a `groupId`, and only on
+    // quote/invoice — a warehouse doc lists every member regardless.
+    // See src/lib/group-child-disclosure.ts.
+    showInGroupOnDocs: v.optional(v.boolean()),
     lineTotal: v.optional(v.number()),
     allocatedRevenue: v.optional(v.number()),
     allocationBasis: v.optional(enums.AllocationBasis),
@@ -1568,6 +1585,20 @@ export default defineSchema({
     organizationId: v.string(),
     projectId: v.string(),
     name: v.string(),
+    // Category price rollup — `ROLLUP` prints every member line with its money
+    // columns blank and ONE derived subtotal on the section header; `ITEMISED`
+    // (absent = this, no backfill) is the legacy per-line pricing. Display +
+    // billing-grouping only: the subtotal is always `sum(lineTotal)` over the
+    // members, never a stored override, so no revenue/allocation math changes.
+    // See src/lib/category-pricing-display.ts.
+    pricingDisplay: v.optional(enums.CategoryPricingDisplay),
+    // Xero account-coding override for this category's rolled-up invoice line
+    // (convex/lib/financeSnapshot.ts's "a ROLLUP category bills as ONE line").
+    // Cascade: this override -> org default. A project category has no
+    // org-level equivalent to inherit from, so there is no middle level —
+    // unlike projectGroups, whose own two fields this mirrors.
+    xeroAccountCode: v.optional(v.string()),
+    xeroTaxType: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
@@ -1617,6 +1648,12 @@ export default defineSchema({
     // discount above ($ off vs % of `price × quantity`), for document display
     // only. Absent = "$".
     discountMode: v.optional(enums.DiscountMode),
+    // Category price rollup, per-item reveal — mirrors
+    // projectLineItems.revealPriceInRollup for a group's own collapsed row, so
+    // a priced bundle isn't the one line on the document that can't be shown
+    // with its price. Display-only; consulted only inside a
+    // `pricingDisplay: "ROLLUP"` category. See src/lib/category-pricing-display.ts.
+    revealPriceInRollup: v.optional(v.boolean()),
     suggestedPrice: v.optional(v.number()),
     sortOrder: v.optional(v.number()),
     // Mirrors projectLineItems.pricedUnderLock — true when this group's own `price`/

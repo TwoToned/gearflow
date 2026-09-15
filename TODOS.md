@@ -508,7 +508,7 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 **Pros:** Turns the compare view into something sendable. Directly supports the multi-option quoting workflow the versioning program exists for.
 **Cons:** It is a new finance document type, so §4.4's stored-bytes rule applies in full (rendered once, attached to a row, no regeneration path, no overwrite) — that's the real cost, not the layout. Needs its own react-pdf component tree and the CLAUDE.md DocumentLineItem consumer audit.
 **Context:** Deliberately excluded from the versioning v2 first release (D53, `docs/designs/project-versioning-v2.md` §5.1). Compare mode ships as an on-screen lens only.
-**Depends on:** Versioning v2 Phases 2–6 shipped.
+**Depends on:** Versioning v2 Phases 2–6 shipped (#1221).
 
 ### Version indicator on project list / board / dashboard cards
 **What:** Show which project is on a non-default version (or has options out) in `project-table.tsx`, `project-board.tsx` and the dashboard's Upcoming list, the way `ProjectLockGlyph` shows lock state today.
@@ -516,7 +516,7 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 **Pros:** Answers "which jobs have options out?" without opening each one, which is the one question the org Finance section can't answer at project granularity.
 **Cons:** Needs `liveVersionId` + a version count denormalised onto the list query, or a batched second read; both add cost to the busiest list in the app. Not worth doing until someone actually misses it.
 **Context:** Carried out of the `/plan-eng-review` of `docs/designs/project-versioning-v2.md` (2026-09-15). The program deliberately leaves list surfaces alone — I-19 in that doc. The header chip and the strip resolve version state correctly once a project is open.
-**Depends on:** Versioning v2 Phases 1–5 shipped.
+**Depends on:** Versioning v2 Phases 1–6 shipped (#1221).
 **Priority:** P3
 
 ### Optional line items and single-select sections on a quote

@@ -801,6 +801,27 @@ Planned as a forward migration with a rehearsal against a prod export:
 | **7** | **Cleanup + docs** | Remove dead tables/fields after one release; FEATUREDOCS 62/66/70 rewritten as one doc; `docs/glossary.md`; CLAUDE.md conventions | S | 6 |
 | **8** | **Optional line items** (D11) | Client-facing optional lines / single-select sections on a quote: `optional` + `optionGroup` on line items, excluded from totals until chosen, chosen state recorded on accept. Touches the `DocumentLineItem` shape, so the CLAUDE.md two-consumer PDF audit applies. Own design doc before build. | M | 6 |
 
+### Tracking issues
+
+| Phase | Issue | Ships |
+|---|---|---|
+| — | **[#1221](https://github.com/TwoToned/gearflow/issues/1221)** — parent tracking issue | — |
+| 0 | [#1224](https://github.com/TwoToned/gearflow/issues/1224) — spike | nothing (scratch branch) |
+| 1 | [#1226](https://github.com/TwoToned/gearflow/issues/1226) — `projectVersions` + live backfill | alone, to `main` |
+| 2 | [#1228](https://github.com/TwoToned/gearflow/issues/1228) — reads/writes by version + the recalc split | 2–6 as one release |
+| 3 | [#1229](https://github.com/TwoToned/gearflow/issues/1229) — make live + the version verbs | ↑ |
+| 4 | [#1230](https://github.com/TwoToned/gearflow/issues/1230) — lock simplification | ↑ |
+| 5 | [#1231](https://github.com/TwoToned/gearflow/issues/1231) — UI | ↑ |
+| 5b | [#1232](https://github.com/TwoToned/gearflow/issues/1232) — Compare mode | ↑ |
+| 6 | [#1233](https://github.com/TwoToned/gearflow/issues/1233) — quotes from any version | ↑ |
+| 7 | [#1234](https://github.com/TwoToned/gearflow/issues/1234) — cleanup + docs | separately |
+| 8 | [#1235](https://github.com/TwoToned/gearflow/issues/1235) — optional line items | separately, own design doc first |
+
+Each issue carries its own **Done when** checklist — the per-phase acceptance criteria this
+section deliberately does not duplicate (R-3.1: one definition, and the issue is where work is
+tracked). Compare (5b) is split out of Phase 5 because it depends on `computeTotals` from
+Phase 2, not just on the page shell.
+
 **Release grouping (D35, revised by D44).** Phase 0 is a scratch-branch spike, nothing ships.
 **Phase 1 ships alone** — a live-only backfill that changes nothing visible or readable.
 **Phases 2–6 ship as ONE release.**

@@ -307,9 +307,11 @@ Only the live version's rows book gear. On a non-live version the availability c
 **identical to the live tab** — same chips, same copy, no "if vN were live" caveat (Jayden,
 2026-09-15). Internally the engine is run with `{ versionId }`: demand from the viewed version's
 lines with the project's own live lines swapped out, so a duplicate of the live version does not
-read as double-booked against itself. That substitution is invisible in the UI. No warehouse
-verbs (prep, check-out, dispatch) are offered on a non-live version; the tab is otherwise
-identical.
+read as double-booked against itself. That substitution is invisible in the UI. Warehouse and
+outbound verbs (prep, check-out, dispatch, send crew offer, send supplier PO) stay **visible but
+greyed** on a non-live version through the existing `GatedButton` pattern (`aria-disabled`,
+tooltip: "v3 isn't live. Make it live to prep or check out."), so a PM sees at a glance which
+actions belong to the live version (D15). The tab is otherwise identical.
 
 ### 4.8 Make live
 
@@ -488,16 +490,13 @@ big visible change. Total ≈ XL at human-team scale.
 | **D12** | **Numbering stays `v1…vN`** in creation order, gaps allowed, labels optional and printable per send. |
 | **D13** | **No "as-if" availability.** The availability column on a non-live version looks exactly like the live tab (§4.7). |
 | **D14** | **Comparisons between versions are wanted** and should feel like the normal project page, not a separate diff screen (§5 item 6, mockup 7). |
+| **D15** | **Warehouse and outbound verbs are greyed out, not hidden, on a non-live version** (prep, check-out, dispatch, crew offers, supplier POs), with a tooltip naming the live version as the exit. |
 
 ### 9.1 Still to confirm
 
 - **Compare as a mode on the real page** (mockup 7) is my reading of "comparisons should feel
   similar to editing a project". If you meant something else — e.g. two versions side by side —
   say so and mockup 7 changes.
-- **Warehouse verbs on a non-live version** (prep, check-out, dispatch) are absent rather than
-  shown-but-gated, because they only mean something for the live version. Shout if you would
-  rather see them greyed with a "v3 isn't live" tooltip.
-
 ---
 
 ## 10. POLICY.md notes (BUILD mode)

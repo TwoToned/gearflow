@@ -109,9 +109,13 @@ async function planProjectWork(ctx: MutationCtx, project: Doc<"projects">): Prom
   // VERSION-SCOPE: all-versions — pre-migration rows have no versionId yet,
   // by definition, so a by_versionId-family read cannot find them.
   const [categoriesRaw, groupsRaw, lineItemsRaw, servicesRaw, quotes] = await Promise.all([
+    // r9.8-ok: see docs/exceptions.md R-9.8 backfillProjectVersions.ts
     ctx.db.query("projectCategories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    // r9.8-ok: see docs/exceptions.md R-9.8 backfillProjectVersions.ts
     ctx.db.query("projectGroups").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    // r9.8-ok: see docs/exceptions.md R-9.8 backfillProjectVersions.ts
     ctx.db.query("projectLineItems").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
+    // r9.8-ok: see docs/exceptions.md R-9.8 backfillProjectVersions.ts
     ctx.db.query("projectServices").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(),
     listProjectQuotes(ctx, orgId, project.id),
   ]);

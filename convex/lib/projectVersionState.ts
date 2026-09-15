@@ -93,19 +93,3 @@ export async function createLiveVersionForProject(
   return versionId;
 }
 
-/** Every `projectVersions` row for an org, org-checked. `by_organizationId` is
- *  already scoped to the query's own `orgId` argument — the check here is
- *  belt-and-braces against a future caller accidentally passing a
- *  caller-supplied value that was never verified against the caller's own
- *  membership (the `requireOrgRead`/`requireOrgReadFor` job, done by whoever
- *  calls this — this helper can't see the auth context itself). */
-export async function listOrgVersions(
-  ctx: QueryCtx | MutationCtx,
-  orgId: string,
-): Promise<Doc<"projectVersions">[]> {
-  const rows = await ctx.db
-    .query("projectVersions")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))
-    .collect();
-  return rows.filter((r) => r.organizationId === orgId);
-}

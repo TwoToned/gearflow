@@ -216,6 +216,23 @@ export const createNative = mutation({
     // A DEPOSIT/BALANCE invoice doesn't carry the full equipment/service line
     // breakdown (the % is against the total, not itemised) — snapshot a
     // single summary line instead of the full FULL-invoice breakdown.
+    //
+    // The line amount is `subtotal`, i.e. tax-EXCLUSIVE — the invariant every
+    // invoice kind holds: `sum(invoiceLines.lineTotal) === invoices.subtotal`,
+    // with `taxAmount` added on top. FULL already satisfies it (its lines come
+    // straight from `buildFinanceLines`, which sums to the project's ex-tax
+    // subtotal). Writing the tax-INCLUSIVE `total` here instead was a real
+    // billing bug (reported 2026-09-15, INV-260901) with two faces: Flow's own
+    // PDF printed a $330.00 line above a $300.00 Subtotal that it didn't
+    // reconcile with, and the Xero push — whose `LineAmount` contract is
+    // explicitly tax-exclusive (src/lib/xero-client.ts) — had GST added on top
+    // of the already-inclusive figure, billing the client $363.00 with $33.00
+    // GST for an invoice Flow said was $330.00 with $30.00 GST.
+    //
+    // The deposit BASIS is unchanged: it is still a % of the tax-INCLUSIVE
+    // project total (matching how an operator quotes "25% deposit"), which is
+    // what `total` above holds and what the description below prints. Only the
+    // stored LINE is ex-tax, because that is what a line amount means.
     const linesToWrite =
       fields.kind === "DEPOSIT" || fields.kind === "BALANCE"
         ? [
@@ -228,8 +245,8 @@ export const createNative = mutation({
                     : `Deposit (${fields.depositPercent ?? 25}% of project total)`
                   : "Balance due",
               quantity: 1,
-              unitPrice: total,
-              lineTotal: total,
+              unitPrice: subtotal,
+              lineTotal: subtotal,
             },
           ]
         : lines;
@@ -685,8 +702,14 @@ export const createCreditNative = mutation({
       sourceType: "CUSTOM",
       description: `Credit for invoice ${original.invoiceNumber ?? creditForInvoiceId}`,
       quantity: 1,
-      unitPrice: -original.total,
-      lineTotal: -original.total,
+      // Tax-EXCLUSIVE, same invariant as createNative's summary line above
+      // (`sum(lineTotal) === subtotal`): the credit negates the original's
+      // ex-tax subtotal, and `taxAmount: -original.taxAmount` negates its GST
+      // separately. Negating `total` here double-counted the tax — on the Xero
+      // push (ex-tax `LineAmount` contract) the credit came back GST-inclusive
+      // with a further 10% added on top of it.
+      unitPrice: -original.subtotal,
+      lineTotal: -original.subtotal,
       sortOrder: 0,
     });
 

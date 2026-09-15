@@ -8273,11 +8273,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
-        "name": "actor",
-        "optional": true,
-        "type": "object"
-      },
-      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -8299,7 +8294,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c6aab3d2d0b9a5d5",
+    "argsSha": "c4e7cd4ad7822730",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -33290,7 +33285,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "d4426a9053f52295",
     "stability": "tracks-app",
     "summary": null,
-    "danger": "medium",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null

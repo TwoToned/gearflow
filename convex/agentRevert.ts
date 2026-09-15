@@ -83,11 +83,31 @@ function lineItemIdFromEntityName(entityName: unknown): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * May this caller move a project's status? `requireOrgPermission` throws, and
+ * here a refusal must SKIP one row rather than abort the whole window — so the
+ * throw is caught and turned into a boolean. Deliberately NOT a new
+ * `hasOrgPermission` helper: a second, non-throwing permission entry point is
+ * exactly the parallel authz path R-3.1 warns about. One gate, two callers.
+ */
+async function callerMayRevertStatus(
+  ctx: Parameters<typeof undeployItemsCore>[0],
+  orgId: string,
+): Promise<boolean> {
+  try {
+    await requireOrgPermission(ctx, orgId, "project", "update");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function attemptReverse(
   ctx: Parameters<typeof undeployItemsCore>[0],
   row: LogRow & { entityName?: unknown },
   orgId: string,
   userId: string,
+  userName: string,
   now: number,
 ): Promise<{ reverseOperation: string } | { skipReason: string }> {
   if (!row.projectId) return { skipReason: "No projectId recorded on this entry." };
@@ -130,9 +150,26 @@ async function attemptReverse(
   // #1160 — a deploy/return that also tripped the status automation logged a
   // second, derived row. Reverse it too, or the window's revert leaves a job at
   // Deployed with nothing deployed. Only the AUTOMATIC move is undone here.
+  //
+  // ⚠️ This branch needs its OWN permission check. `revertAgentWindow` gates on
+  // `warehouse:check_in` — the permission a human needs to undo the GEAR — and
+  // the `warehouse` role holds only `project: ["read"]`. Without this, a
+  // warehouse operator could walk a project's status backwards, and
+  // CONFIRMED → AWAITING_PAYMENT drops the lock tier FINANCE_LOCKED → OPEN,
+  // re-opening the project's money fields to someone who cannot edit them by any
+  // other route. The equivalent manual move (`updateStatusNative`) requires
+  // `project:update`, so this one does too.
+  //
+  // It SKIPS rather than throws: the operator's gear revert should still work,
+  // and the reason names exactly what did not happen. Skipping restores the
+  // pre-#1236 behaviour (status stays forward) — now visible instead of silent.
   if (row.entityType === "project" && row.action === "STATUS_CHANGE") {
+    if (!(await callerMayRevertStatus(ctx, orgId))) {
+      return { skipReason: "Reverting a project's status needs the `project:update` permission." };
+    }
     const res = await revertAutoAdvance(ctx, {
-      orgId: orgId, projectId: row.projectId, metadata: (row as { metadata?: unknown }).metadata, now,
+      orgId, projectId: row.projectId, metadata: (row as { metadata?: unknown }).metadata,
+      actor: { userId, userName }, now,
     });
     if ("skipReason" in res) return res;
     return { reverseOperation: "projectWrites.updateStatus" };
@@ -188,7 +225,7 @@ export const revertAgentWindow = mutation({
     for (const row of mine) {
       const common = { entryId: row.id, action: row.action, entityType: row.entityType, entityId: row.entityId };
       try {
-        const result = await attemptReverse(ctx, row, a.orgId, actor.userId, a.now);
+        const result = await attemptReverse(ctx, row, a.orgId, actor.userId, actor.userName, a.now);
         if ("skipReason" in result) {
           skipped.push({ ...common, reason: result.skipReason });
           continue;

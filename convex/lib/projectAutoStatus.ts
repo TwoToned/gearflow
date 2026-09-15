@@ -9,6 +9,7 @@ import { captureProjectSnapshot } from "./projectSnapshots";
 import { hasAcceptedQuote } from "./quoteState";
 import { resolveAutoStatusEnabled, type AutoStatusSettingKey } from "./orgSettings";
 import { autoCommitOpenSession } from "../projectUnlockSessionsWrites";
+import { assertWritesEnabled } from "./writeGuard";
 
 /**
  * Project status automation (#1160) — the ONE place a job's status moves on its
@@ -256,6 +257,15 @@ export async function maybeAutoAdvanceProjectStatus(
 ): Promise<string | null> {
   const rule = AUTO_STATUS_RULES[a.trigger];
 
+  // The status patch belongs to the `project` write domain, not to whichever
+  // domain the CALLING mutation gated on (quote / invoice / warehouse). Without
+  // this, `disabledDomains: ["project"]` — the emergency brake for a runaway
+  // client corrupting project rows — would still let a browser move
+  // `projects.status` by sending a quote or scanning gear. Service tokens are
+  // exempt inside `assertWritesEnabled`, so the requireService prep triggers are
+  // unaffected.
+  await assertWritesEnabled(ctx, "project");
+
   const project = await ctx.db
     .query("projects")
     .withIndex("by_cuid", (q) => q.eq("id", a.projectId))
@@ -326,7 +336,7 @@ export async function maybeAutoAdvanceProjectStatus(
  */
 export async function revertAutoAdvance(
   ctx: MutationCtx,
-  a: { orgId: string; projectId: string; metadata: unknown; now: number },
+  a: { orgId: string; projectId: string; metadata: unknown; actor: Actor; now: number },
 ): Promise<{ from: string; to: string } | { skipReason: string }> {
   const meta = (a.metadata ?? {}) as Record<string, unknown>;
   if (typeof meta.autoAdvanceTrigger !== "string") {
@@ -349,5 +359,63 @@ export async function revertAutoAdvance(
 
   await ctx.db.patch(project._id, { status: statusFrom as ProjectStatus, updatedAt: a.now });
   await bumpProjectCounters(ctx, a.orgId, project, { ...project, status: statusFrom as ProjectStatus });
+
+  await auditRevert(ctx, {
+    orgId: a.orgId, project, trigger: meta.autoAdvanceTrigger,
+    from: statusTo, to: statusFrom, actor: a.actor, now: a.now,
+  });
+
   return { from: statusTo, to: statusFrom };
+}
+
+/**
+ * A revert is a status change like any other, and this module's whole claim is
+ * that "who moved this job?" is answerable. Before this, the only trace was
+ * `agentRevert`'s aggregate REVERT_AGENT_WINDOW row, which records counts — not
+ * which project moved, or between which statuses. A backwards move that crosses
+ * a lock tier (CONFIRMED → AWAITING_PAYMENT is FINANCE_LOCKED → OPEN) was
+ * invisible in the project's own activity log, and left an unlock session
+ * straddling two tiers.
+ */
+async function auditRevert(
+  ctx: MutationCtx,
+  a: {
+    orgId: string;
+    project: Doc<"projects">;
+    trigger: string;
+    from: string;
+    to: string;
+    actor: Actor;
+    now: number;
+  },
+): Promise<void> {
+  await autoCommitOpenSession(ctx, a.orgId, a.project.id, a.project.projectNumber, a.actor, a.now);
+
+  const fromTier = lockTierForStatus(a.from);
+  const toTier = lockTierForStatus(a.to);
+  const tierDelta = LOCK_TIER_RANK[toTier] - LOCK_TIER_RANK[fromTier];
+  const lockTierSuffix =
+    tierDelta > 0 ? ` — project locked (${toTier})` : tierDelta < 0 ? ` — project unlocked (${toTier})` : "";
+
+  await writeActivityLog(ctx, {
+    id: createId(),
+    organizationId: a.orgId,
+    action: "STATUS_CHANGE",
+    entityType: "project",
+    entityId: a.project.id,
+    entityName: a.project.projectNumber,
+    userId: a.actor.userId,
+    userName: a.actor.userName,
+    summary: `Reverted the automatic move to ${a.from} — back to ${a.to}${lockTierSuffix}`,
+    details: { from: a.from, to: a.to },
+    metadata: {
+      revertOfTrigger: a.trigger,
+      statusFrom: a.from,
+      statusTo: a.to,
+      lockTierFrom: fromTier,
+      lockTierTo: toTier,
+    },
+    projectId: a.project.id,
+    createdAt: a.now,
+  });
 }

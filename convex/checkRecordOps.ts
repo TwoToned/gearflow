@@ -384,7 +384,6 @@ export const deprepItems = mutation({
       }),
     ),
     now: v.number(),
-    actor: serviceActorValidator,
   },
   handler: async (ctx, a) => {
     await requireService(ctx);

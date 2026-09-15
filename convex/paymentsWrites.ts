@@ -206,7 +206,13 @@ export const voidNative = mutation({
 export const agentOps: AgentOpsAnnotations = {
   // Real money-record creation, but reversible via voidNative — same tier as
   // invoicesWrites.createNative.
-  recordNative: { danger: "medium" },
+  // `high`, not `medium` (#1236): recording a payment that settles an invoice in
+  // full now advances the project to CONFIRMED — raising the lock tier, taking a
+  // whole-project snapshot and auto-committing any open unlock session. The two
+  // sibling triggers that reach the same money phase (`markAcceptedNative`,
+  // `issueNative`) are both `high`, and a narrowly-scoped agent should not move a
+  // job's lifecycle without the dispatcher's confirmation gate.
+  recordNative: { danger: "high" },
   // Reduces a recorded payment, which can move an invoice back out of PAID —
   // financial, same tier as invoicesWrites.voidNative.
   voidNative: { danger: "high" },

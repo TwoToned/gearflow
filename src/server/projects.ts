@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/org-context";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { resolvePrimaryDateRange } from "@/lib/project-dates";
+import { getProjectWindowDates } from "@/lib/project-window";
 import {
   getCallSheetData,
   getProjectsByOrgMapped,
@@ -373,8 +374,11 @@ export async function getProjectIssueFlags(projectIds: string[]) {
     const items = itemsByProject.get(project.id) ?? [];
     if (items.length === 0) continue;
 
+    // Availability reads the gear-committed window (projectStartDate/projectEndDate,
+    // falling back to rental), not the raw rental dates — see project-window.ts.
+    const window = getProjectWindowDates(project);
     const overbookedMap = await computeOverbookedStatus(
-      organizationId, items, project.rentalStartDate, project.rentalEndDate, project.id,
+      organizationId, items, window.start, window.end, project.id,
     );
 
     if (overbookedMap.size === 0) continue;
@@ -432,6 +436,8 @@ export async function getProject(id: string) {
   // independent of each other → parallel.
   const sortedPmRows = [...pmRows].sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0));
   const pmUserIds = [...new Set(sortedPmRows.map((pm) => pm.userId))];
+  // Gear-committed window, not the raw rental dates — see project-window.ts.
+  const availabilityWindow = getProjectWindowDates(projectScalars);
   // NOTE: pm.user left as a prisma.user join (NOT the Convex mirror): the project
   // page reads pm.user.id non-null, so a best-effort-mirror gap would crash it —
   // waits for the surface-conversion PR.
@@ -442,7 +448,7 @@ export async function getProject(id: string) {
           select: { id: true, name: true, email: true, image: true },
         })
       : Promise.resolve([] as Array<{ id: string; name: string; email: string; image: string | null }>),
-    computeOverbookedStatus(organizationId, topLineItems, projectScalars.rentalStartDate, projectScalars.rentalEndDate, id),
+    computeOverbookedStatus(organizationId, topLineItems, availabilityWindow.start, availabilityWindow.end, id),
   ]);
   const pmUserMap = new Map(pmUsers.map((u) => [u.id, u]));
   const projectManagers = sortedPmRows.map((pm) => ({

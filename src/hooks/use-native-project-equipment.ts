@@ -13,6 +13,7 @@ import {
   type NativeProjectDetail,
 } from "@/lib/project-detail-reconstruct";
 import { relevantOverbookModelIds } from "@/lib/overbooking-core";
+import { getProjectWindowDates } from "@/lib/project-window";
 
 /**
  * Native equipment tree for the project detail page: subscribes to
@@ -81,6 +82,8 @@ export function useNativeProjectDetail(
     () => (base ? relevantOverbookModelIds(base.lineItems) : undefined),
     [base],
   );
+  // Gear-committed window, not the raw rental dates — see project-window.ts.
+  const availabilityWindow = useMemo(() => (base ? getProjectWindowDates(base) : null), [base]);
   const overbooking = useAuthedQuery(
     api.overbooking.bundle,
     enabled && orgId && modelIds && modelIds.length > 0
@@ -88,8 +91,8 @@ export function useNativeProjectDetail(
           orgId: orgId!,
           modelIds,
           thisProjectId: projectId!,
-          rentalStartDate: base?.rentalStartDate?.getTime(),
-          rentalEndDate: base?.rentalEndDate?.getTime(),
+          rentalStartDate: availabilityWindow?.start?.getTime(),
+          rentalEndDate: availabilityWindow?.end?.getTime(),
         }
       : "skip",
   );

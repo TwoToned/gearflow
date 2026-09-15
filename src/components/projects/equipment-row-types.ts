@@ -21,6 +21,8 @@ export interface LineItemData {
   discount?: unknown;
   /** #1012 — how `discount` was entered ("$" | "%"). Absent = "$". */
   discountMode?: string | null;
+  /** T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3. */
+  taxRate?: unknown;
   /** Category price rollup, per-item reveal — this row prints its own price on
    *  client-facing documents even though its category rolled up. Meaningless
    *  (and never offered) outside a `pricingDisplay: "ROLLUP"` category.

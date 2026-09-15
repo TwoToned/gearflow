@@ -84,6 +84,9 @@ export interface ProjectRow {
   discountPercent: number | null;
   discountAmount: number | null;
   taxAmount: number | null;
+  // T3 (#1091, docs/designs/tax-model.md §5) — recalc outputs alongside taxAmount.
+  taxBreakdown: string | null;
+  taxStatus: "EXEMPT" | "UNSET" | "COMPUTED" | null;
   total: number | null;
   // WS1 (#940) — depositPercent moved to the client payment profile; these two
   // stay here as recalc-derived reads (never hand-typed — see convex/lib/recalc.ts).
@@ -142,6 +145,8 @@ export function mapProject(d: ConvexProject): ProjectRow {
     discountPercent: orNull(d.discountPercent),
     discountAmount: orNull(d.discountAmount),
     taxAmount: orNull(d.taxAmount),
+    taxBreakdown: orNull(d.taxBreakdown),
+    taxStatus: orNull(d.taxStatus),
     total: orNull(d.total),
     depositPaid: orNull(d.depositPaid),
     invoicedTotal: orNull(d.invoicedTotal),

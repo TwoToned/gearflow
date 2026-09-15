@@ -97,6 +97,9 @@ export const DIRECT_TABLES = [
   "projectSnapshots",
   "projectTasks",
   "projectUnlockSessions",
+  // #1226 Phase 1 ("Project versioning v2", parent #1221) — has its own
+  // `by_organizationId` index, same as every other project child table above.
+  "projectVersions",
   "quotes",
   "savedTableViews",
   "serviceSchedules",
@@ -244,7 +247,7 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // dismissal — same export posture as notificationDismissals above).
 // #1105 (D1): +1 — orgActivationDismissals (DIRECT, per-user "Get started"
 // activation-checklist dismissal — same export posture as orgSetupDismissals).
-export const EXPECTED_TABLE_COUNT = 119;
+export const EXPECTED_TABLE_COUNT = 120;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

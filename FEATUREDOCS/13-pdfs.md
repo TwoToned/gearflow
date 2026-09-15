@@ -1299,7 +1299,7 @@ forms and this renderer all share one definition of the mode union,
 [FEATUREDOCS/10](./10-projects.md#groups-projectgroup--the-billable-unit) for
 the write side.
 
-### Category price rollup (FEATUREDOCS/73)
+### Category price rollup (FEATUREDOCS/74)
 
 Alongside the two bucketing modes above, `structureLineItems` resolves each
 category's `pricingDisplay` (plus each row's `revealPriceInRollup`) into two
@@ -1323,7 +1323,7 @@ here", a dash reads as "nothing to charge". See
 `src/lib/category-pricing-display.ts` for why the subtotal is derived rather
 than stored.
 
-### Group child disclosure (FEATUREDOCS/73)
+### Group child disclosure (FEATUREDOCS/74)
 
 Collapse mode used to attach NO children to a group's synthetic row
 (`childLineItems: undefined` — the group's contents were dropped entirely). It

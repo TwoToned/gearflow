@@ -446,7 +446,7 @@ Renderers read the DERIVED `priceHidden`/`rollupCategory` that
 `structureLineItems` stamps, never the stored fields, and those are stamped only
 in collapse mode (a warehouse doc expands groups, so summing a bucket would
 double-count). `buildFinanceLines` folds a rolled-up category into one
-`sourceType: "CATEGORY"` invoice line. See FEATUREDOCS/73.
+`sourceType: "CATEGORY"` invoice line. See FEATUREDOCS/74.
 
 Its sibling, `projectLineItems.showInGroupOnDocs` ("group child disclosure"),
 lets a Project Group — which otherwise collapses to ONE row and drops

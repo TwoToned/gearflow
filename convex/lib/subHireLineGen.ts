@@ -85,6 +85,7 @@ export async function regenerateSubHireLines(
   for (const line of existingLines) {
     if (line.subHireId !== subHireId || line.isKitChild) continue;
     const children = (
+      // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
       await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id)).collect()
     ).filter((c) => c.organizationId === orgId);
     for (const c of children) await ctx.db.delete(c._id);

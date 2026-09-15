@@ -148,6 +148,7 @@ async function checkoutAccessoryChildren(
   p: { organizationId: string; projectId: string; parentLineItemId: string; parentUnitAssetId: string | null; userId: string; projectLocationId: string | null; includeAccessoryIds?: Set<string> | null; now: number },
 ): Promise<{ assetsTouched: string[] }> {
   const children = (
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
     await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", p.parentLineItemId)).collect()
   ).filter((c) => c.organizationId === p.organizationId && c.childKind === "ACCESSORY");
   if (children.length === 0) return { assetsTouched: [] };
@@ -387,6 +388,7 @@ async function kitParentLine(ctx: Ctx, projectId: string, organizationId: string
   return rows.find((r) => r.projectId === projectId && r.organizationId === organizationId && !r.isKitChild) ?? null;
 }
 async function childLines(ctx: Ctx, parentId: string, organizationId: string) {
+  // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
   return (await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", parentId)).collect())
     .filter((c) => c.organizationId === organizationId);
 }

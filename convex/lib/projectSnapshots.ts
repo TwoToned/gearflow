@@ -86,6 +86,7 @@ async function collectSubHireRelatedEntities(
   const [itemArrays, groupArrays, slotArrays] = await Promise.all([
     Promise.all(subHireIds.map((id) => ctx.db.query("subHireItems").withIndex("by_subHireId", (q) => q.eq("subHireId", id)).collect())),
     Promise.all(subHireIds.map((id) => ctx.db.query("subHireGroups").withIndex("by_subHireId", (q) => q.eq("subHireId", id)).collect())),
+    // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
     Promise.all(categoryIds.map((id) => ctx.db.query("categorySlots").withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", id)).collect())),
   ]);
 

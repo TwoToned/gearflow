@@ -52,7 +52,7 @@
  * `categorySlots` has NO `by_versionId` index at all (see its schema.ts
  * comment) — every read of it (other than by_cuid) needs a marker.
  *
- * Usage: node scripts/version-scope-ratchet.mjs [--write]
+ * Usage: node scripts/version-scope-ratchet.mjs [--write] [--list]
  */
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -165,6 +165,11 @@ for (const file of listConvexFiles(CONVEX_DIR)) {
     const line = source.slice(0, m.index).split("\n").length;
     offenders.push(`${file}:${line}: ${table} via "${index}"`);
   }
+}
+
+if (process.argv.includes("--list")) {
+  console.log(offenders.join("\n"));
+  process.exit(0);
 }
 
 const baseline = Number(readFileSync(BASELINE_FILE, "utf8").trim() || "0");

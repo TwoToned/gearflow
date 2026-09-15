@@ -57,6 +57,7 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string,
   // Category slots: one indexed read per category (typically ≤10).
   const slotArrays = await Promise.all(
     categories.map((c) =>
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       ctx.db.query("categorySlots").withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", c.id)).collect(),
     ),
   );

@@ -804,6 +804,7 @@ export async function removeLineItemCascadeCore(ctx: MutationCtx, id: string): P
   const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
   if (!line) throw new ConvexError("projectLineItems not found: " + id);
   const children = await ctx.db
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
     .query("projectLineItems")
     .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
     .collect();

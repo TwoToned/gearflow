@@ -559,6 +559,7 @@ export const deleteGroupNative = mutation({
 
     // Cascade: the group's category slots, then the group itself.
     const slots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", a.id))
       .collect();

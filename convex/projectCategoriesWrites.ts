@@ -322,6 +322,7 @@ export const deleteCategoryNative = mutation({
     // 1. Groups in this category (by_categoryId is global — org-filter).
     const groups = (
       await ctx.db
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         .query("projectGroups")
         .withIndex("by_categoryId", (q) => q.eq("categoryId", id))
         .collect()
@@ -344,6 +345,7 @@ export const deleteCategoryNative = mutation({
     // 4. Delete each group's slots then the group itself.
     for (const g of groups) {
       const gslots = await ctx.db
+        // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
         .query("categorySlots")
         .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", g.id))
         .collect();
@@ -353,6 +355,7 @@ export const deleteCategoryNative = mutation({
 
     // 5. Delete the category's own slots.
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", id))
       .collect();

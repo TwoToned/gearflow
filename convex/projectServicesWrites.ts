@@ -300,6 +300,7 @@ async function cascadeDeleteLineItem(ctx: MutationCtx, lineItemId: string): Prom
   const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", lineItemId)).first();
   if (!line) return;
   const children = await ctx.db
+    // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
     .query("projectLineItems")
     .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id))
     .collect();

@@ -448,6 +448,7 @@ export const deleteSubHireNative = mutation({
     for (const line of linkedLines) {
       if (line.isKitChild) continue;
       const children = (
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id)).collect()
       ).filter((c) => c.organizationId === a.orgId);
       for (const c of children) await ctx.db.delete(c._id);
@@ -1152,6 +1153,7 @@ export const changeSubHireProjectNative = mutation({
       for (const line of oldLines) {
         if (line.isKitChild) continue;
         const kids = (
+          // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
           await ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id)).collect()
         ).filter((c) => c.organizationId === a.orgId);
         for (const c of kids) await ctx.db.delete(c._id);

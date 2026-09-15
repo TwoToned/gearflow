@@ -194,11 +194,13 @@ export const deleteCascade = mutation({
   handler: async (ctx, { categoryId }) => {
     await requireService(ctx);
     const groups = await ctx.db
+      // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
       .query("projectGroups")
       .withIndex("by_categoryId", (q) => q.eq("categoryId", categoryId))
       .collect();
     for (const g of groups) {
       const gslots = await ctx.db
+        // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
         .query("categorySlots")
         .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", g.id))
         .collect();
@@ -206,6 +208,7 @@ export const deleteCascade = mutation({
       await ctx.db.delete(g._id);
     }
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", categoryId))
       .collect();

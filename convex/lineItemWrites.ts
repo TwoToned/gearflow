@@ -382,6 +382,7 @@ export const removeNative = mutation({
     // Cascade-delete the children (+ their units) and the line (+ its units) — the
     // exact removeLineItemCascade sequence, now atomic with the guard + audit.
     const children = (await ctx.db
+      // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
       .query("projectLineItems")
       .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
       .collect()).filter((c) => c.organizationId === orgId);
@@ -486,6 +487,7 @@ export const removeManyNative = mutation({
         guardedProjectIds.add(line.projectId);
       }
       const children = (await ctx.db
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         .query("projectLineItems")
         .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
         .collect()).filter((c) => c.organizationId === orgId);
@@ -1901,6 +1903,7 @@ export const addKitNative = mutation({
     // description is `${assetTag} - ${name}`), so the summary reads it from kitLabel.
     if (emitActivity === true) {
       const memberChildren = await ctx.db
+        // VERSION-SCOPE: safe — child/group rows are always stamped with their parent's versionId at write time (insert-side stamping + materializeVersionRowsNative's FK remap), and reached here only via an already-resolved, version-specific parent id — never mixes versions.
         .query("projectLineItems")
         .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", id))
         .collect();

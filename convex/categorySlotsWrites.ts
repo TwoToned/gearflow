@@ -168,12 +168,14 @@ async function upsertSlotForProjectGroup(
   now: number,
 ): Promise<void> {
   const existing = await ctx.db
+    // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
     .query("categorySlots")
     .withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId))
     .collect();
   for (const slot of existing) await ctx.db.delete(slot._id);
   if (destCategoryId) {
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
       .collect();
@@ -199,12 +201,14 @@ async function upsertSlotForSubHireGroup(
   now: number,
 ): Promise<void> {
   const existing = await ctx.db
+    // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
     .query("categorySlots")
     .withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId))
     .collect();
   for (const slot of existing) await ctx.db.delete(slot._id);
   if (destCategoryId) {
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
       .collect();
@@ -240,12 +244,14 @@ export async function upsertSlotForLineItem(
   now: number,
 ): Promise<void> {
   const existing = await ctx.db
+    // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
     .query("categorySlots")
     .withIndex("by_lineItemId", (q) => q.eq("lineItemId", lineItemId))
     .collect();
   for (const slot of existing) await ctx.db.delete(slot._id);
   if (destCategoryId) {
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", destCategoryId))
       .collect();
@@ -537,6 +543,7 @@ export const reorderMixedGroupsInCategory = mutation({
 
     // Rewrite slot sortOrder = position in `items` (missing slots are minted).
     const catSlots = await ctx.db
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       .query("categorySlots")
       .withIndex("by_projectCategoryId", (q) => q.eq("projectCategoryId", a.categoryId))
       .collect();
@@ -666,9 +673,11 @@ export const createCategoryAndPlaceGroup = mutation({
 
     // 2. Delete any existing slot for this group (re-categorise leaks otherwise).
     if (projectGroupId) {
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       const slots = await ctx.db.query("categorySlots").withIndex("by_projectGroupId", (q) => q.eq("projectGroupId", projectGroupId)).collect();
       for (const s of slots) await ctx.db.delete(s._id);
     } else if (subHireGroupId) {
+      // VERSION-SCOPE: safe — categorySlots has no versionId of its own — reached only through an already version-scoped parent row (projectCategoryId/projectGroupId/subHireGroupId/lineItemId); see categorySlots' schema.ts comment.
       const slots = await ctx.db.query("categorySlots").withIndex("by_subHireGroupId", (q) => q.eq("subHireGroupId", subHireGroupId)).collect();
       for (const s of slots) await ctx.db.delete(s._id);
     }

@@ -127,10 +127,20 @@ before any build. (iCal correctness already handled in Phase 0.)
 Net-new capability. Valuable, but not daily-pain — sequence after the core
 workflows are solid.
 
-### 3.1 — Project todo lists
-**Effort:** M
-Add Asana-style todo/task lists to projects so project management lives in
-RVLT Flow instead of scattered across chat and email.
+### 3.1 — Project todo lists → the Work layer
+**Effort:** M (v1, ✅ shipped as [FEATUREDOCS/50](../FEATUREDOCS/50-project-tasks.md)) ·
+**XL** (program, design drafted 2026-09-15)
+v1 added Asana-style todo/task lists to projects so project management lives in
+RVLT Flow instead of scattered across chat and email. It shipped as a per-project
+checklist and was never revisited. The follow-on program reframes it as one
+**work layer** under tasks, project management, client relationships and time:
+a `workItems` spine (human tasks + system-generated work in one model), a stored
+per-user notification inbox, a unified timeline, one agenda engine, and three
+surfaces on top — **Today**, the project **Work** card/board, and the client
+record with next-step + timeline — plus the crew planner's confirmation and
+availability layer. Design:
+[`docs/designs/work-layer.md`](./designs/work-layer.md) (phases 0–4; phase 4 is
+the seam with 2.1 above — whichever starts first, the other rebases onto it).
 
 ### 3.2 — Public API
 **Effort:** L

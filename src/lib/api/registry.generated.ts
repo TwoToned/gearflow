@@ -19022,10 +19022,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
+    "argsSha": "1e8af8c4963d2c03",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -33850,6 +33855,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "lineageId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "name",
         "optional": false,
         "type": "string"
@@ -33873,10 +33883,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "updatedAt",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1514bd0097c8769a",
+    "argsSha": "97506d826332f0bc",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -33954,6 +33969,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "lineageId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "name",
         "optional": false,
         "type": "string"
@@ -33977,10 +33997,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "updatedAt",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1514bd0097c8769a",
+    "argsSha": "97506d826332f0bc",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -34132,10 +34157,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
+    "argsSha": "1e8af8c4963d2c03",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "List categories belonging to one project.",
@@ -34595,10 +34625,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
+    "argsSha": "1e8af8c4963d2c03",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -34627,10 +34662,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
+    "argsSha": "1e8af8c4963d2c03",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -34986,10 +35026,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
+    "argsSha": "1e8af8c4963d2c03",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -35722,6 +35767,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "lineageId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "lineTotal",
         "optional": true,
         "type": "number"
@@ -35890,12 +35940,17 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "updatedAt",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [
       "overrideReason"
     ],
-    "argsSha": "7fc2dd184d79c833",
+    "argsSha": "8fd25dae21b03607",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -36068,6 +36123,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "lineageId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "lineTotal",
         "optional": true,
         "type": "number"
@@ -36236,12 +36296,17 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "updatedAt",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [
       "overrideReason"
     ],
-    "argsSha": "7fc2dd184d79c833",
+    "argsSha": "8fd25dae21b03607",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -36402,7 +36467,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "4c8923b1558999a6",
+    "argsSha": "903e6c7d48e32b72",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -36685,10 +36750,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
+    "argsSha": "1e8af8c4963d2c03",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "List line items belonging to one project.",
@@ -39934,6 +40004,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "lineageId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "lineItemId",
         "optional": true,
         "type": "string"
@@ -40032,10 +40107,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "vehicleDescription",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7d6e4636a8649560",
+    "argsSha": "95bc0d9950df5b63",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -40131,6 +40211,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "lineageId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "lineItemId",
         "optional": true,
         "type": "string"
@@ -40229,10 +40314,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "vehicleDescription",
         "optional": true,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7d6e4636a8649560",
+    "argsSha": "95bc0d9950df5b63",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -40330,10 +40420,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fefad8ad30daf59f",
+    "argsSha": "1e8af8c4963d2c03",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "List services belonging to one project.",
@@ -42706,6 +42801,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": "List a project's versions with state, date and total for the switcher.",
     "danger": "low",
     "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectVersionsWrites.materializeVersionRowsNative",
+    "module": "projectVersionsWrites",
+    "fn": "materializeVersionRowsNative",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "sourceVersionId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "targetVersionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "67ad356f34c5c88e",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -61707,10 +61844,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1193,
+  total: 1194,
   agentReachable: 573,
   queries: 424,
-  mutations: 769,
+  mutations: 770,
   agentReachableQueries: 294,
   agentReachableMutations: 279,
 } as const;

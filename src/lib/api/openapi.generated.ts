@@ -15159,6 +15159,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "projectId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -25903,6 +25906,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "projectId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -26444,6 +26450,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "projectId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -26583,6 +26592,9 @@ export const OPENAPI_DOCUMENT = {
                     "type": "object",
                     "properties": {
                       "projectId": {
+                        "type": "string"
+                      },
+                      "versionId": {
                         "type": "string"
                       }
                     },
@@ -27884,6 +27896,9 @@ export const OPENAPI_DOCUMENT = {
                     "properties": {
                       "projectId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -29177,6 +29192,9 @@ export const OPENAPI_DOCUMENT = {
                     "type": "object",
                     "properties": {
                       "projectId": {
+                        "type": "string"
+                      },
+                      "versionId": {
                         "type": "string"
                       }
                     },

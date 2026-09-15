@@ -118,13 +118,31 @@ blocks** — it never disables a write, it only surfaces as a heads-up.
   pattern as `getProjectWindow`.
 - `OverbookLineItem` gained `isOptional?: boolean` (defaults `false` — no
   behaviour change for a caller that doesn't pass it). `OverbookedInfo` gained
-  `hardOverBy` (== `overBy`, an explicit alias — existing badges/PDFs/pull-sheets
-  are UNCHANGED for the common case) and `pencilledOverBy` (the additional
-  overage if every currently-pencilled booking for that model also went hard).
-  `reconstructOverbookedStatus`'s hard-overbooked gate runs on hard-only sums —
-  an optional line, or a still-quoted project's own demand, drops out of the
-  hard sum entirely (existing per-project badges only lose a flag when the
-  overage was purely pencilled — "that's the rule working," not a regression).
+  `hardOverBy` (the hard-layer overage alone) and `pencilledOverBy` (the
+  additional overage if every currently-pencilled booking for that model also
+  went hard); `overBy` is the COMBINED figure, `hardOverBy + pencilledOverBy`.
+- **Superseded (2026-09):** the badge originally gated on hard-only sums — a
+  purely-pencilled overage raised no flag anywhere, matching the add/edit-time
+  warning's asymmetry (that gate has no hard/pencilled distinction at all — see
+  `computeModelAvailability` in `convex/lib/availabilityCore.ts`) but confusing
+  in practice: a user got the "this will overbook, confirm?" prompt with no
+  badge to match. Per explicit product request, `reconstructOverbookedStatus`
+  (`src/lib/overbooking-core.ts`) now fires whenever `combinedOverBy > 0` —
+  ANY overage, hard or pencilled-only, raises the map entry — for the
+  **interactive UI** (equipment tab, project list/board, warehouse pull-sheet):
+  `hardOverBy`/`pencilledOverBy` are always both populated (including on the
+  kit-parent inherited aggregate) so a consumer can still tell the two apart.
+  `equipment-rows.tsx`'s `OverbookedBadge` uses this to show a softer amber
+  "Pencilled overbook" pill (`hardOverBy === 0`) instead of the red "Overbooked"
+  one — a genuine hard conflict still reads as more urgent.
+  **The PDF pipeline is the deliberate exception**: `build-document-data.ts`
+  filters every `isOverbooked` flag (top-level AND kit children) through
+  `isHardOverbooked()` (`overbooking-core.ts`), so a rendered/exported document
+  — a client-facing quote/invoice is literally STORED BYTES, see CLAUDE.md —
+  never prints a warning for a collision that's purely speculative and may
+  resolve before anyone reads the document. Warehouse pull-sheet
+  (`getProjectPullSheet`) is a live-rendered internal page, not a stored
+  artifact, so it stays combined like the rest of the UI.
 - **The Overbookings & Gaps board** (`convex/overbookingBoard.ts` +
   `convex/lib/overbookingBoard.ts`) is the org-wide, date-ranged rollup of this
   same two-layer split — a SEPARATE aggregation from the per-project engine
@@ -146,7 +164,8 @@ When a project has **no rental dates**, availability is still calculated:
 - Returns `Map<lineItemId, { overBy, totalStock, effectiveStock, totalBooked, reducedOnly, inherited }>`
 - Kit parents inherit overbooking from children (`hasOverbookedChildren`, `hasReducedChildren`)
 ## UI Indicators
-- **Red badge**: "OVERBOOKED" — shown on project list (AlertTriangle), project detail, all 5 PDFs
+- **Red badge**: "OVERBOOKED" — shown on project list (AlertTriangle), project detail, and the 5 PDFs (PDFs only ever show this for a genuine HARD overage — see "Superseded" above)
+- **Amber badge**: "Pencilled overbook" — equipment-tab/project-detail only, when the overage is purely from still-quoted/optional demand elsewhere (`hardOverBy === 0`); never shown on PDFs
 - **Purple badge**: "REDUCED STOCK" — shown when overbooking is caused only by unavailable assets
 - Overbooking allowed with explicit checkbox confirmation in add/edit dialogs
 

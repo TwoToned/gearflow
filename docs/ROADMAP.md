@@ -154,7 +154,7 @@ rather than a toast after you've tried. Design:
 ---
 
 ### 3.4 — Project versioning v2: versions as switchable workspaces
-**Effort:** XL · **Status:** design draft, awaiting decisions
+**Effort:** XL · **Status:** decisions recorded 2026-09-15, ready for eng review
 **Depends on:** 3.3 (shipped)
 3.3 and its follow-ups (#1026, #1080) shipped a revision model, immutable
 artifacts and a version switcher — but a version is still a `quotes` row plus

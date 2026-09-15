@@ -1,6 +1,6 @@
 # Project versioning v2 — versions as switchable workspaces
 
-> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **DRAFT — awaiting answers to §9**_
+> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **decisions recorded 2026-09-15 (§9) — ready for `/plan-eng-review`; two readings still to confirm (§9.1)**_
 
 **Driver:** Jayden — _"The version control stuff we have implemented feels very half baked and
 messy. The original goal was to be able to have complete snapshots of projects, with one being
@@ -247,7 +247,7 @@ and no counterpart in the incoming version is a *conflict* — the same concept
 | **Recall** | Finance | `recallNative` (unchanged semantics) | Unfreezes. Kept as the pre-client typo fix. |
 | **Accept / Decline** | Finance | unchanged | Accepting a **non-live** version offers "Make vN live" in the success step. |
 | **Make live** | strip, panel, compare | `versions.makeLiveNative({ versionId })` | §4.8. Not blocked by issued invoices (Q6). |
-| **Compare** | header menu, panel, strip | existing `diffSnapshotEntries` over two versions' rows | The row shapes *are* the entry shapes, so the diff engine is reused, not rewritten. |
+| **Compare** | header menu, panel, strip | existing `diffSnapshotEntries` over two versions' rows | A **mode on the real page**, not a separate diff screen (§5 item 6). The row shapes *are* the entry shapes, so the diff engine is reused, not rewritten. |
 | **Delete** | panel | `versions.deleteNative` | Non-live, never-sent: manager. Ever-sent: the existing owner-only, typed-confirm, audit-surviving path. Live: never. |
 
 Removed verbs: Save version, Reprice from revision, Recall-to-edit, Protect/Unprotect, Unlock
@@ -278,23 +278,38 @@ Two rules replace today's three mechanisms:
   COMPLETED/INVOICED), which is exactly where the existing override audience and justification
   bounds are reused (R-3.1).
 
-### 4.6 What is versioned
+### 4.6 What is versioned — "the plan is versioned, reality is live and follows lineage" (D2)
 
-| Versioned (copied into every version) | Live-only (belongs to the job) |
+A version is a **full snapshot of the project's plan**. Anything that describes what the job
+*is meant to be* is copied into every version. Anything that records what *physically happened*
+or what *a third party replied* is a fact about the job, lives once, and attaches to the plan
+row it concerns through `lineageId` so it follows that row across versions.
+
+| Versioned (copied into every version) | Live-only reality (keyed by `lineageId` where it concerns a row) |
 |---|---|
-| Categories, category slots, groups, line items (incl. kit children, accessories, custom, sale, sub-hire *lines* — Q2) | Fulfilment units, check records, prep state, returns, incidents, maintenance links |
-| Services (labour lines the client pays for) | Crew *assignments* and their offer/confirm workflow (Q2 — recommended live-only) |
-| Project-level commercial fields: rental/project window, billing overrides, tax rate, discount, client contact, venue, site contact, notes, type, description | Identity, number, client, lifecycle status, PMs, tags |
+| Categories, category slots, groups, line items (kit children, accessories, custom, sale, sub-hire lines) | Fulfilment units, check records, prep state, returns, incidents, maintenance links |
+| Services (labour lines) | — |
+| Crew assignments: who, role, dates, rate, hours | The crew member's reply (offered / confirmed / declined), notifications sent |
+| Sub-hire orders, groups and items: supplier, lines, agreed cost | Supplier confirmation state, PO sent state, payment state |
+| Project-level plan fields: rental/project window, billing overrides, tax rate, discount, client contact, venue, site contact, notes, type, description | Identity, number, client, lifecycle status, PMs, tags |
 | The quote document(s) issued from it | Invoices (lineage-labelled), Xero state |
-| | Tasks, files, comments/threads (keyed by `lineageId` so they follow a line across versions) |
+| | Tasks, files, comments/threads (threads keyed by `lineageId`) |
+
+Consequence for the sweep in §4.9: `crewAssignments` and the three sub-hire tables are
+versioned too, so their `by_projectId` reads (49 + 61 sites) join the rename. The reply/
+confirmation facts that are live-only are the fields `restoreProjectSnapshot` already refuses
+to rewrite today (`CREW_WORKFLOW_FIELDS`, `LINE_ITEM_WAREHOUSE_FIELDS`); they move out of the
+versioned row into a lineage-keyed side record rather than being skipped by a restore.
 
 ### 4.7 Availability and the warehouse
 
-Only the live version's rows exist to the availability engine. A non-live version shows
-**"as-if" availability**: the same engine run with `{ versionId }` — demand from that version's
-lines, the project's own live lines excluded — rendered with the same chips but labelled "if vN
-were live" (mockup 3). No warehouse verbs (prep, check-out, dispatch) are offered on a non-live
-version; the tab is otherwise identical.
+Only the live version's rows book gear. On a non-live version the availability column is
+**identical to the live tab** — same chips, same copy, no "if vN were live" caveat (Jayden,
+2026-09-15). Internally the engine is run with `{ versionId }`: demand from the viewed version's
+lines with the project's own live lines swapped out, so a duplicate of the live version does not
+read as double-booked against itself. That substitution is invisible in the UI. No warehouse
+verbs (prep, check-out, dispatch) are offered on a non-live version; the tab is otherwise
+identical.
 
 ### 4.8 Make live
 
@@ -365,15 +380,18 @@ The canvas (https://claude.ai/artifact/EgwLTWJLKyyTeymqhjtNes) is authoritative 
    `QuoteDriftIndicator` collapse into one `VersionStrip` fed by one query, with five states
    (mockup 2). Absent when there is nothing to say (live, open, nothing sent).
 3. **A non-live version is the real page.** Same tabs, same rows, same inline editing, same add
-   menu; only warehouse verbs are absent and availability is labelled "if vN were live"
-   (mockup 3). Tasks/Files/Comments stay live with the existing inline note.
+   menu, same availability column (mockup 3); only warehouse verbs are absent.
+   Tasks/Files/Comments stay live with the existing inline note.
 4. **Frozen reads as read-only, not disabled** (Carbon): text stays legible, field chrome
    changes, a tooltip names the exit. `LockedField`/`GatedButton` are kept and now read the
    matrix in §4.5.
 5. **Make live states what changes before it runs** (mockup 6): changes, what stays, warehouse
    conflicts, and the paperwork consequence ("Quote v3 hasn't been sent").
-6. **Compare is always available** between any version and live or its predecessor (mockup 7),
-   with the existing change stepper and always-on highlighting.
+6. **Compare is a mode on the real page** (mockup 7): comparing v3 with v4 renders v3 in the
+   normal tabs with changed rows highlighted in place and old → new values in the cells,
+   unchanged rows dimmed, a change count on each tab, and the strip carrying the summary, the
+   change stepper and "Make v3 live". No bespoke diff table. This is the reading of
+   "comparisons should feel similar to editing a project" (§9.1, to confirm).
 7. **Words.** "Version", "Live", "Frozen", "New version from vN", "Make vN live". Never
    "snapshot", "revision", "promote", "restore", "unlock session".
 
@@ -381,8 +399,24 @@ The canvas (https://claude.ai/artifact/EgwLTWJLKyyTeymqhjtNes) is authoritative 
 
 ## 6. Migration
 
-Volumes to confirm first (Q9). Planned as a forward migration with a rehearsal against a prod
-export:
+**Production volumes (read via the API on 2026-09-15):**
+
+| Fact | Count |
+|---|---|
+| Projects | 54 |
+| Projects carrying a `revision` at all | 8 (the other 46 read as v1 with no quote row) |
+| Projects with more than one version | 4 (260801 ×7, 260802 ×2, 260719 ×2, 260402 ×2) |
+| Version rows in total | 13 |
+| Sent quote documents | 6 |
+| "Auto-saved before switching" duplicates | 3 (all on 260801 / 260802) |
+| Non-live versions without captured content | 0 — every one has a snapshot |
+
+260801 (Roundhouse UNSW) is the real-world case this program is for: "High End PA Option" and
+"Budget PA Option" saved as versions, switched between, then quoted twice. The migration is
+therefore small (seconds), and the "write-freeze" in D9 means only that nobody edits a project
+while it runs — a late-evening run, not downtime.
+
+Planned as a forward migration with a rehearsal against a prod export:
 
 1. For every non-template project: create `projectVersions` row for `liveRevision` (label from the
    quote), set `liveVersionId`, stamp `versionId` + `lineageId = id` on every live child row.
@@ -412,6 +446,7 @@ export:
 | **5** | **UI** | Version menu, Versions panel, `VersionStrip`, Make-live dialog, Compare, Finance tab documents rail, delete the projected read-only surfaces | L | 2, 3, 4 |
 | **6** | **Quotes from any version** | `sendNative({versionId})`, accept → offer make-live, frozen non-live rendering, drift against the current document | M | 3, 5 |
 | **7** | **Cleanup + docs** | Remove dead tables/fields after one release; FEATUREDOCS 62/66/70 rewritten as one doc; `docs/glossary.md`; CLAUDE.md conventions | S | 6 |
+| **8** | **Optional line items** (D11) | Client-facing optional lines / single-select sections on a quote: `optional` + `optionGroup` on line items, excluded from totals until chosen, chosen state recorded on accept. Touches the `DocumentLineItem` shape, so the CLAUDE.md two-consumer PDF audit applies. Own design doc before build. | M | 6 |
 
 Phases 1–4 are server-only and independently shippable behind the existing UI. Phase 5 is the
 big visible change. Total ≈ XL at human-team scale.
@@ -435,24 +470,33 @@ big visible change. Total ≈ XL at human-team scale.
 
 ---
 
-## 9. Clarifying questions
+## 9. Decisions (Jayden, 2026-09-15)
 
-Each with a recommendation so a one-word answer is enough.
+| # | Decision |
+|---|---|
+| **D1** | **Non-live versions are directly editable.** A version is a workspace. This commits to the §4.9 sweep. |
+| **D2** | **A version is a full snapshot of the project's plan** — equipment, services, crew assignments, sub-hires, dates, notes. Reality (fulfilment, replies, confirmations, invoices, tasks, files, comments) stays live and follows lineage (§4.6). |
+| **D3** | **A quote can be sent from any version**, not only the live one. Accepting a non-live version's quote offers "Make vN live". |
+| **D4** | **Unlock sessions are retired.** Changing a locked live job is: new version → edit → make live. Per-edit justification stays for ON_SITE structural edits on the live version. |
+| **D5** | **The four lifecycle tiers stay**, applied to the live version only. CANCELLED from CONFIRMED+ is gated with a justification (closes I-15). |
+| **D6** | **Make live is allowed while an issued invoice exists.** The dialog shows the invoiced total; the balance invoice is computed from whatever is live when issued. At INVOICED status it needs the admin/PM override like any other hard-locked change. |
+| **D7** | **`protected` is folded into "accepted ⇒ frozen, owner-only unaccept".** `correctQuoteNative` (dates only, no version bump) is kept. |
+| **D8** | **Versions panel is a right-side sheet plus the header pill.** |
+| **D9** | **Migration** sized from production (§6): 54 projects, 4 with more than one version, 13 version rows, none without content. Run as a short evening migration; the only constraint is nobody editing a project while it runs. |
+| **D10** | **Drop the "Auto-saved before switching" duplicates; keep the CONFIRMED/COMPLETED audit captures** in a read-only table for one release. |
+| **D11** | **Optional line items are in scope** as their own later phase (Phase 8). |
+| **D12** | **Numbering stays `v1…vN`** in creation order, gaps allowed, labels optional and printable per send. |
+| **D13** | **No "as-if" availability.** The availability column on a non-live version looks exactly like the live tab (§4.7). |
+| **D14** | **Comparisons between versions are wanted** and should feel like the normal project page, not a separate diff screen (§5 item 6, mockup 7). |
 
-| # | Question | Recommendation |
-|---|---|---|
-| **Q1** | **Should non-live versions be directly editable** (a workspace), or stay read-only with "make live to edit"? This is the whole model: editable requires the §4.9 sweep; read-only keeps most of today's shape and only polishes it. | **Editable.** It is what "look and feel as if they are live" means, and it is what makes options possible without disturbing the live booking. |
-| **Q2** | **What is in a version?** Specifically: (a) crew assignments — versioned or live-only? (b) sub-hire supplier orders — live-only, with sub-hire *lines* versioned? (c) anything else you consider commercial? | (a) live-only (people and their yes/no are scheduling reality; the *service* line they fill is versioned). (b) yes. (c) as per §4.6. |
-| **Q3** | **Can a quote be sent from a non-live version?** (Enables "send the client v3 as an option" while v4 stays live.) | **Yes.** Accepting it then offers "Make v3 live". |
-| **Q4** | **Retire unlock sessions** in favour of "new version → edit → make live"? Any case where a quick in-place override must survive? | **Retire.** The version path is two clicks and leaves a real record. Keep per-edit justification for ON_SITE structural edits on the live version. |
-| **Q5** | **Lifecycle lock scope:** keep the four tiers as they are (applied to live only), or simplify further (e.g. drop the JUSTIFY tier, gate CANCELLED)? | Keep the tiers; gate CANCELLED from CONFIRMED+ with a justification (closes I-15). |
-| **Q6** | **Make live while an issued invoice exists?** Today it is blocked. | **Allow**, with the invoiced total shown in the dialog. A variation after a deposit invoice is the normal case; the balance invoice is computed from whatever is live when it is issued. Block only at INVOICED status without admin override. |
-| **Q7** | **Protect / correction / unaccept:** fold `protected` into "accepted ⇒ frozen, owner-only unaccept", keep `correctQuoteNative` (dates-only, no version bump)? | Yes to both. |
-| **Q8** | **Versions panel as a right-side sheet** (mockup 5) plus the header pill, or dropdown-only? Also: should "Compare" be a full overlay (mockup 7) or a side-by-side page? | Sheet + pill; overlay. |
-| **Q9** | **Production data:** how many projects have >1 version today, and are there open unlock sessions? Is a short write-freeze acceptable for the migration? | Needed to size §6; the migration is rehearsed either way. |
-| **Q10** | **Old audit captures** (`CONFIRMED`/`COMPLETED` snapshots) and "Auto-saved before switching" versions: keep, or drop during migration? | Drop the auto-saved duplicates; keep audit captures in a renamed read-only table for one release, then decide. |
-| **Q11** | **Optional line items / single-select sections on a quote** (client picks add-ons; every proposal tool has it, no rental tool does) — in scope as a later phase, or out? | Out of this program; note as a follow-up. Most "with LED wall" cases would be an optional section rather than a version. |
-| **Q12** | **Numbering:** keep `v1…vN` in creation order with gaps allowed, labels optional, label printable per send? | Yes. |
+### 9.1 Still to confirm
+
+- **Compare as a mode on the real page** (mockup 7) is my reading of "comparisons should feel
+  similar to editing a project". If you meant something else — e.g. two versions side by side —
+  say so and mockup 7 changes.
+- **Warehouse verbs on a non-live version** (prep, check-out, dispatch) are absent rather than
+  shown-but-gated, because they only mean something for the live version. Shout if you would
+  rather see them greyed with a "v3 isn't live" tooltip.
 
 ---
 

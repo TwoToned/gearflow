@@ -13,7 +13,7 @@ browser; the `support.js` reference is the canvas editor's hook and 404s harmles
 | `FinanceTab.dc.html` | Finance tab as a documents-per-version list |
 | `VersionsPanel.dc.html` | Versions panel (right sheet) |
 | `MakeLive.dc.html` | Make-live dialog |
-| `Compare.dc.html` | Compare overlay |
+| `Compare.dc.html` | Compare as a mode on the real page (changed rows highlighted in place) |
 
 Tokens, type and component anatomy are lifted from `DESIGN.md`, `src/app/globals.css`,
 `src/components/ui/{badge,tabs}.tsx` and `src/components/projects/project-lock-strip.tsx`.

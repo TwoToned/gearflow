@@ -60,56 +60,48 @@ td.r, th.r { text-align:right; }
 
   </style>
 </helmet>
-<div style="width:1120px; min-height:820px; background:rgba(14,12,10,.9); padding:24px; box-sizing:border-box;">
-  <div class="dialog" style="padding:0; display:flex; flex-direction:column; min-height:610px;">
-    <div style="padding:18px 22px 14px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #332C24;">
-      <div style="display:flex; align-items:center; gap:14px;">
-        <div style="font-family:Archivo, sans-serif; font-weight:800; font-size:20px; letter-spacing:-0.02em;">Compare</div>
-        <span class="btn btn-line btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="6" r="3"></circle><path d="M6 9v6"></path><path d="M18 9a9 9 0 0 1-9 9"></path></svg> v3 · With LED wall <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></span>
-        <span class="muted">against</span>
-        <span class="tabs" style="padding:3px;"><span class="tab tab-active" style="padding:4px 10px; font-size:12px;">v4 · Live</span><span class="tab" style="padding:4px 10px; font-size:12px;">v2 · previous</span></span>
-      </div>
-      <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></span>
+<div style="width:1200px; min-height:880px; background:#141210; padding:24px; box-sizing:border-box; display:flex; flex-direction:column; gap:16px;">
+  <!-- Compare is a MODE on the real page: the strip carries the summary and stepper, the tabs render as normal with changes highlighted inline -->
+  <div class="strip strip-info">
+    <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+      <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg><span><strong>Comparing v3 · With LED wall</strong> <span style="opacity:.85;">with</span></span>
+      <span class="tabs" style="padding:3px;"><span class="tab tab-active" style="padding:3px 10px; font-size:12px;">v4 · Live</span><span class="tab" style="padding:3px 10px; font-size:12px;">v2 · previous</span></span>
+      <span style="opacity:.85;">· <strong>5 changes</strong> · total <span class="num" style="color:#4FD888;">+$3,280</span> · same rental window</span>
     </div>
-
-    <div style="display:flex; flex:1;">
-      <div style="flex:1; padding:16px 22px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-          <div class="ink2" style="font-size:13px;"><strong style="color:#F5EFE2;">5 changes</strong> · total <span class="num" style="color:#4FD888;">+$3,280</span> (+18.1%) · same rental window</div>
-          <div style="display:flex; align-items:center; gap:6px;"><span class="btn btn-ghost btn-sm">‹</span><span class="mono ink2">Change 2 of 5</span><span class="btn btn-ghost btn-sm">›</span></div>
-        </div>
-        <table>
-          <thead><tr><th style="width:40%;">Line</th><th>Change</th><th class="r">v4 · Live</th><th class="r">v3</th></tr></thead>
-          <tbody>
-            <tr><td colspan="4" style="border-top:0; padding-top:6px;"><span class="overline">Video</span></td></tr>
-            <tr style="background:rgba(62,207,122,.08);"><td><span class="pill pill-ok" style="margin-right:8px;">Added</span>LED wall 3.9 mm · 6 × 3 m</td><td class="muted">new line, 4 days</td><td class="r num muted">—</td><td class="r num">$2,880</td></tr>
-            <tr style="background:rgba(224,54,61,.12); box-shadow:inset 3px 0 0 #E0363D;"><td><span class="pill pill-ok" style="margin-right:8px;">Added</span>Novastar VX1000 processor</td><td class="muted">new line, 4 days</td><td class="r num muted">—</td><td class="r num">$400</td></tr>
-            <tr><td colspan="4" style="padding-top:6px;"><span class="overline">Lighting</span></td></tr>
-            <tr style="background:rgba(235,165,58,.08);"><td><span class="pill pill-warn" style="margin-right:8px;">Price</span>Source Four LED S2 · 6</td><td class="muted">unit price</td><td class="r num">$1,200</td><td class="r num">$1,320</td></tr>
-            <tr style="background:rgba(235,165,58,.08);"><td><span class="pill pill-warn" style="margin-right:8px;">Qty</span>MA3 Light</td><td class="muted">quantity</td><td class="r num">2</td><td class="r num">0</td></tr>
-            <tr><td colspan="4" style="padding-top:6px;"><span class="overline">Labour</span></td></tr>
-            <tr style="background:rgba(235,165,58,.08);"><td><span class="pill pill-warn" style="margin-right:8px;">Hours</span>Video technician</td><td class="muted">estimated hours</td><td class="r num">16</td><td class="r num">24</td></tr>
-            <tr><td colspan="4" style="padding-top:6px;"><span class="overline">Totals</span></td></tr>
-            <tr><td>Subtotal</td><td></td><td class="r num">$16,472</td><td class="r num">$19,454</td></tr>
-            <tr><td>GST</td><td></td><td class="r num">$1,648</td><td class="r num">$1,946</td></tr>
-            <tr><td style="font-weight:700;">Total</td><td></td><td class="r num" style="font-weight:700;">$18,120</td><td class="r num" style="font-weight:700;">$21,400</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div style="width:250px; border-left:1px solid #332C24; padding:16px; display:flex; flex-direction:column; gap:8px;">
-        <div class="overline">Versions</div>
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px; background:#332C24;"><span><span class="mono">v4</span> <span class="pill pill-primary" style="margin-left:6px;">Live</span></span><span class="num" style="font-size:12px;">$18,120</span></div>
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px; box-shadow:inset 0 0 0 2px #E0363D;"><span><span class="mono">v3</span> <span class="ink2" style="font-size:12px; margin-left:6px;">With LED wall</span></span><span class="num" style="font-size:12px;">$21,400</span></div>
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px;"><span><span class="mono">v2</span> <span class="pill pill-rep" style="margin-left:6px;">Superseded</span></span><span class="num muted" style="font-size:12px;">$16,900</span></div>
-        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px;"><span><span class="mono">v1</span> <span class="pill pill-rep" style="margin-left:6px;">Superseded</span></span><span class="num muted" style="font-size:12px;">$16,400</span></div>
-      </div>
-    </div>
-
-    <div style="padding:14px 22px; border-top:1px solid #332C24; display:flex; justify-content:space-between; align-items:center;">
-      <span class="muted" style="font-size:12px;">Unchanged lines are hidden. Highlighting is always on.</span>
-      <div style="display:flex; gap:8px;"><span class="btn btn-line">Open v3</span><span class="btn btn-primary"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M5 5a10 10 0 0 0 0 14"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg> Make v3 live</span></div>
+    <div style="display:flex; align-items:center; gap:8px; flex:none;">
+      <span class="btn btn-ghost btn-sm">‹</span><span class="mono" style="font-size:12px; color:#F5EFE2;">Change 2 of 5</span><span class="btn btn-ghost btn-sm">›</span>
+      <span class="btn btn-primary btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M5 5a10 10 0 0 0 0 14"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg> Make v3 live</span>
+      <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg> Exit compare</span>
     </div>
   </div>
+
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <div class="tabs"><span class="tab">Overview</span><span class="tab tab-active">Equipment <span class="pill pill-warn" style="margin-left:6px; padding:2px 7px;">4</span></span><span class="tab">Labour &amp; logistics <span class="pill pill-warn" style="margin-left:6px; padding:2px 7px;">1</span></span><span class="tab">Finance</span><span class="tab">Tasks</span><span class="tab">Notes</span><span class="tab">Files (3)</span></div>
+    <span class="muted" style="font-size:12px;">Unchanged rows dimmed · cells show v4 → v3</span>
+  </div>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <table>
+      <thead><tr><th style="width:26px;"></th><th>Item</th><th class="r">Qty</th><th class="r">Days</th><th class="r">Unit</th><th class="r">Line</th><th>Availability</th><th style="width:60px;"></th></tr></thead>
+      <tbody>
+        <tr><td colspan="8" style="border-top:0; background:rgba(26,22,19,.5); padding:8px 12px;"><span class="overline">Video</span> <span class="muted" style="font-size:11px;">· 3 lines · <span class="num">$0 → $3,280</span></span></td></tr>
+        <tr style="background:rgba(62,207,122,.08);"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">LED wall 3.9 mm · 6 × 3 m</span><span class="pill pill-ok">Added in v3</span></div><div class="muted" style="font-size:11px;">18 × panels · Absen PL3.9</div></td><td class="r num">18</td><td class="r num">4</td><td class="r num">$40.00</td><td class="r num">$2,880</td><td><span class="pill pill-ok">18 of 24 free</span></td><td></td></tr>
+        <tr style="background:rgba(224,54,61,.12); box-shadow:inset 3px 0 0 #E0363D;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Novastar VX1000 processor</span><span class="pill pill-ok">Added in v3</span></div><div class="muted" style="font-size:11px;">Serialised · 1 unit</div></td><td class="r num">1</td><td class="r num">4</td><td class="r num">$100.00</td><td class="r num">$400</td><td><span class="pill pill-warn">1 short</span></td><td></td></tr>
+        <tr style="opacity:.55;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div class="ink2" style="font-weight:600;">Video technician</div><div class="muted" style="font-size:11px;">Service · 24 h</div></td><td class="r num">1</td><td class="r num">—</td><td class="r num">$95.00</td><td class="r num">$2,280</td><td><span class="muted" style="font-size:12px;">—</span></td><td></td></tr>
+
+        <tr><td colspan="8" style="background:rgba(26,22,19,.5); padding:8px 12px;"><span class="overline">Lighting</span> <span class="muted" style="font-size:11px;">· 9 lines · <span class="num">$9,660 → $8,940</span></span></td></tr>
+        <tr style="opacity:.55;"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Stage wash package</span><span class="pill pill-neutral">Group · 4</span></div><div class="muted" style="font-size:11px;">Bundle price</div></td><td class="r num">1</td><td class="r num">4</td><td class="r num">$1,320.00</td><td class="r num">$5,280</td><td><span class="pill pill-ok">All free</span></td><td></td></tr>
+        <tr style="background:rgba(235,165,58,.08);"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600;">Source Four LED S2</span><span class="pill pill-warn">Price changed</span></div><div class="muted" style="font-size:11px;">Bulk · 6 of 12 owned</div></td><td class="r num">6</td><td class="r num">4</td><td class="r num"><span class="muted" style="text-decoration:line-through;">$50.00</span> → $55.00</td><td class="r num"><span class="muted" style="text-decoration:line-through;">$1,200</span> → $1,320</td><td><span class="pill pill-ok">6 of 6 free</span></td><td></td></tr>
+        <tr style="background:rgba(158,148,131,.10);"><td class="faint"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="18" r="1"></circle></svg></td><td><div style="display:flex; align-items:center; gap:8px;"><span class="ink2" style="font-weight:600; text-decoration:line-through;">MA3 Light</span><span class="pill pill-rep">Removed in v3</span></div><div class="muted" style="font-size:11px;">2 checked out on v4 — stays on the job if v3 goes live</div></td><td class="r num"><span class="muted" style="text-decoration:line-through;">2</span> → 0</td><td class="r num muted">4</td><td class="r num muted">$180.00</td><td class="r num"><span class="muted" style="text-decoration:line-through;">$1,440</span> → $0</td><td><span class="pill pill-warn">2 checked out</span></td><td></td></tr>
+      </tbody>
+    </table>
+    <div style="padding:10px 12px; border-top:1px solid #332C24; display:flex; align-items:center; justify-content:flex-end; gap:16px;">
+      <span class="muted" style="font-size:12px;">Subtotal <span class="num"><span style="text-decoration:line-through;">$16,472</span> → <span class="ink2">$19,454</span></span></span>
+      <span class="muted" style="font-size:12px;">GST <span class="num"><span style="text-decoration:line-through;">$1,648</span> → <span class="ink2">$1,946</span></span></span>
+      <span class="muted" style="font-size:12px;">Total <span class="num"><span style="text-decoration:line-through;">$18,120</span> → <span style="color:#F5EFE2; font-weight:600;">$21,400</span></span></span>
+    </div>
+  </div>
+  <div class="note" style="font-size:13px;">Compare is not a separate diff screen: it is the same project page in a compare mode. The strip holds the summary and the change stepper; each tab shows its badge count and highlights its changed rows in place, with old → new values in the cells.</div>
 </div>
 
 </x-dc>

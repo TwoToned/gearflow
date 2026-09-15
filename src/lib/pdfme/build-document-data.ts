@@ -819,6 +819,27 @@ export async function buildDocumentData(
         ? await getLatestInvoiceNumberForProject(projectId, organizationId)
         : null;
 
+  // T3 (#1091, docs/designs/tax-model.md §2/§5) — an EXEMPT/UNSET status only
+  // applies to the LIVE project's own resolution; a specific DEPOSIT/BALANCE/
+  // CREDIT invoice's frozen `taxAmount` (invoiceContext, same "stored bytes"
+  // snapshot the subtotal/total above already defer to) has no per-rate
+  // breakdown recorded on it — it renders as a single COMPUTED row, exactly
+  // the one tax line every invoice rendered before this feature already did.
+  const taxStatus: "EXEMPT" | "UNSET" | "COMPUTED" = invoiceContext
+    ? "COMPUTED"
+    : (serialized.taxStatus as "EXEMPT" | "UNSET" | "COMPUTED" | null) ?? "COMPUTED";
+  const taxBreakdown: { rate: number; amount: number }[] = invoiceContext
+    ? invoiceContext.taxAmount > 0
+      ? [{ rate: Number(orgSettings.taxRate) || 0, amount: invoiceContext.taxAmount }]
+      : []
+    : (() => {
+        try {
+          return JSON.parse(serialized.taxBreakdown || "[]");
+        } catch {
+          return [];
+        }
+      })();
+
   return {
     // Org
     org_name: org?.name || "",
@@ -881,6 +902,9 @@ export async function buildDocumentData(
     discount_amount: Number(serialized.discountAmount) || 0,
     tax_label: (orgSettings.taxLabel as string) || (country?.taxLabel ?? "GST"),
     tax_amount: invoiceContext ? invoiceContext.taxAmount : Number(serialized.taxAmount) || 0,
+    tax_status: taxStatus,
+    tax_breakdown: taxBreakdown,
+    tax_exempt_reason: client?.taxExemptReason || "",
     total: invoiceContext ? invoiceContext.total : totalNum,
     deposit_paid: depositNum,
     balance_due: totalNum - depositNum,

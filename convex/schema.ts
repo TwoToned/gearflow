@@ -1178,6 +1178,14 @@ export default defineSchema({
     shippingLatitude: v.optional(v.number()),
     shippingLongitude: v.optional(v.number()),
     taxId: v.optional(v.string()),
+    // T3 (#1091) — a hard short-circuit read by recalcProjectTotals: an exempt
+    // client's projects produce zero tax regardless of any project/line rate,
+    // never layered against them. taxExemptReason is free text (e.g. a
+    // government PO or resale-certificate reference) — see
+    // docs/designs/tax-model.md §2 for why there's no separate certificate-ref
+    // field and no jurisdiction/scope/expiry (M2 scope only).
+    taxExempt: v.optional(v.boolean()),
+    taxExemptReason: v.optional(v.string()),
     paymentTerms: v.optional(v.string()),
     defaultDiscount: v.optional(v.number()),
     notes: v.optional(v.string()),
@@ -1299,6 +1307,19 @@ export default defineSchema({
     discountPercent: v.optional(v.number()),
     discountAmount: v.optional(v.number()),
     taxAmount: v.optional(v.number()),
+    // T3 (#1091, docs/designs/tax-model.md §5) — recalc OUTPUTS alongside
+    // taxAmount, stripped from client patches the same way (PROJECT_MONEY_ANCHORS
+    // in projectWrites.ts). taxBreakdown is a JSON-stringified array of
+    // { rate: number; amount: number }, one entry per distinct non-zero-taxable-base
+    // rate group, descending by rate — [] means "computed, no taxable lines";
+    // absent means "never recalculated" (pre-T3 rows). taxStatus disambiguates
+    // WHY a resolved rate is zero: EXEMPT (the client's flag applied), UNSET
+    // (nothing was ever configured anywhere in the cascade), or COMPUTED
+    // (a real resolved rate, including a deliberate 0% line) — a document must
+    // never render a bare "$0.00" for EXEMPT/UNSET, since that reads as a
+    // determination rather than what it actually is.
+    taxBreakdown: v.optional(v.string()),
+    taxStatus: v.optional(v.union(v.literal("EXEMPT"), v.literal("UNSET"), v.literal("COMPUTED"))),
     total: v.optional(v.number()),
     // #940 (WS1 — finance model) landed: deposit % now lives on the CLIENT payment
     // profile (clients.paymentProfile/profileDepositPercent), not the project — a
@@ -1416,6 +1437,13 @@ export default defineSchema({
     // reads; this only lets a document print it back as "15%" instead of
     // "-$150.00". Absent = "$" (every pre-#1012 row; no backfill needed).
     discountMode: v.optional(enums.DiscountMode),
+    // T3 (#1091, docs/designs/tax-model.md §3) — per-line tax rate override.
+    // Precedence: this line's own rate wins, else the project's taxRate, else
+    // the org default, else zero (same direction as the Xero account-coding
+    // cascade). Absent = inherit, same as every other override field on this
+    // table. Bounded 0-100 in assertLineItemFields, same range as the
+    // project-level taxRate in moneyGuards.ts.
+    taxRate: v.optional(v.number()),
     // Category price rollup, per-item reveal — opts THIS line back into
     // printing its own price inside a `pricingDisplay: "ROLLUP"` category.
     // Display-only and consulted ONLY in a rollup (never in an ITEMISED

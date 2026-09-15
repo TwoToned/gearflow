@@ -33,6 +33,9 @@ export interface BulkLineItemPatch {
   /** `null`/empty clears the note. */
   notes?: string | null;
   isOptional?: boolean;
+  /** T3 (#1091) — per-line tax rate override; `null` clears back to
+   *  inheriting the project/org rate. See docs/designs/tax-model.md §3. */
+  taxRate?: number | null;
 }
 
 /** The durable per-line accessory selection (issue #794) — mirrors
@@ -66,6 +69,28 @@ export interface AccessoryPlanInput {
  * (by_cuid is a GLOBAL index — every referenced row is org-validated in-mutation).
  */
 
+/** The Convex `fields` payload addCustomNative expects — split out of `addCustom` below
+ *  to keep its complexity down (R-3.6), mirroring `buildAddFields` above. `taxRate` is
+ *  T3 (#1091)'s per-line override, see docs/designs/tax-model.md §3. */
+function buildCustomAddFields(parsed: ParsedCustomLineItem, groupName: string | undefined, lineTotal: number | null) {
+  return {
+    description: parsed.description,
+    quantity: parsed.quantity,
+    unitPrice: parsed.unitPrice ?? undefined,
+    pricingType: parsed.pricingType,
+    duration: parsed.duration,
+    discount: parsed.discount ?? undefined,
+    discountMode: parsed.discountMode,
+    taxRate: parsed.taxRate ?? undefined,
+    notes: parsed.notes ?? undefined,
+    isOptional: parsed.isOptional,
+    categoryId: parsed.categoryId ?? undefined,
+    groupId: parsed.groupId ?? undefined,
+    groupName: groupName ?? undefined,
+    lineTotal: lineTotal ?? undefined,
+  };
+}
+
 /** The Convex `fields` payload addLineItemSmartNative expects — built EXACTLY as the
  *  server's addLineItem does (src/server/line-items.ts ~81-100). lineTotal is NOT
  *  passed: the mutation recomputes it after auto-pricing (the client is never trusted). */
@@ -86,6 +111,8 @@ function buildAddFields(parsed: ParsedLineItem) {
     // #1012 — the entry shape rides with the resolved amount. The mutations
     // enforce "no amount, no mode" server-side, so no client-side guard here.
     discountMode: parsed.discountMode,
+    // T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3.
+    taxRate: parsed.taxRate ?? undefined,
     groupName: parsed.groupName || undefined,
     notes: parsed.notes || undefined,
     isOptional: parsed.isOptional,
@@ -143,6 +170,10 @@ export function buildLineItemSetClear(parsed: ParsedLineItem): {
   if (parsed.discount != null) set.discountMode = parsed.discountMode ?? "$";
   else clear.push("discountMode");
   setNum("lineTotal", lineTotal);
+  // T3 (#1091) — blank clears the override back to inheriting the project/org
+  // rate, same "empty means clear" convention every other optional numeric
+  // override on this table already follows.
+  setNum("taxRate", parsed.taxRate ?? null);
   setStr("groupName", parsed.groupName);
   setStr("notes", parsed.notes);
   setStr("subhireOrderNumber", parsed.subhireOrderNumber);
@@ -238,21 +269,7 @@ export function useLineItemWrites() {
           id: createId(),
           organizationId: requireOrg(),
           projectId,
-          fields: {
-            description: parsed.description,
-            quantity: parsed.quantity,
-            unitPrice: parsed.unitPrice ?? undefined,
-            pricingType: parsed.pricingType,
-            duration: parsed.duration,
-            discount: parsed.discount ?? undefined,
-            discountMode: parsed.discountMode,
-            notes: parsed.notes ?? undefined,
-            isOptional: parsed.isOptional,
-            categoryId: parsed.categoryId ?? undefined,
-            groupId: parsed.groupId ?? undefined,
-            groupName: opts?.groupName ?? undefined,
-            lineTotal: lineTotal ?? undefined,
-          },
+          fields: buildCustomAddFields(parsed, opts?.groupName, lineTotal),
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
@@ -274,6 +291,9 @@ export function useLineItemWrites() {
         discount?: number;
         /** #1012 — how `discount` was entered; stored for document display. */
         discountMode?: DiscountMode;
+        /** T3 (#1091) — per-line tax rate override, applied to the kit's
+         *  PARENT line only; see docs/designs/tax-model.md §3. */
+        taxRate?: number;
         groupName?: string;
         categoryId?: string;
         groupId?: string;
@@ -289,6 +309,7 @@ export function useLineItemWrites() {
           unitPrice: opts.unitPrice ?? undefined,
           discount: opts.discount ?? undefined,
           discountMode: opts.discount != null ? opts.discountMode : undefined,
+          taxRate: opts.taxRate ?? undefined,
           pricingMode: opts.pricingMode,
           groupName: opts.groupName || undefined,
           categoryId: opts.categoryId || undefined,

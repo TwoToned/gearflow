@@ -17,6 +17,10 @@ const discountField = z.coerce.number().min(0).max(999999.99).optional();
 // `discount` stays the resolved flat dollar amount; this rides alongside it so
 // documents can print the discount the way it was typed. Optional/absent = "$".
 export const discountModeField = z.enum(DISCOUNT_MODES).optional();
+// T3 (#1091, docs/designs/tax-model.md §3/§6) — per-line tax rate override,
+// same 0-100 bound as the project-level rate (src/lib/validations/project.ts)
+// and moneyGuards.ts's server-side re-check. Blank = inherit.
+const taxRateField = z.coerce.number().min(0).max(100).optional();
 const categoryIdField = z.string().optional();
 const groupIdField = z.string().optional();
 const isOptionalField = z.boolean().default(false);
@@ -43,6 +47,7 @@ export const lineItemSchema = z.object({
   duration: durationField,
   discount: discountField,
   discountMode: discountModeField,
+  taxRate: taxRateField,
   priceBreakdown: z.string().optional(),
   priceOverridden: z.boolean().default(false),
   overrideReason: z.string().max(200).optional(),
@@ -67,6 +72,7 @@ export const customLineItemSchema = z.object({
   duration: durationField,
   discount: discountField,
   discountMode: discountModeField,
+  taxRate: taxRateField,
   categoryId: categoryIdField,
   groupId: groupIdField,
   notes: z.string().max(500).optional(),

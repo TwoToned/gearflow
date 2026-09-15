@@ -48,6 +48,7 @@ function li(over: Partial<MappedLineItem>): MappedLineItem {
     duration: 1,
     discount: null,
     discountMode: null,
+    taxRate: null,
     lineTotal: null,
     priceBreakdown: null,
     priceOverridden: false,

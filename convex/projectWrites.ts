@@ -401,6 +401,10 @@ const PROJECT_MONEY_ANCHORS = [
   // project's invoices (convex/lib/recalc.ts), same anchor treatment as the
   // rest of this list — never client-writable, regardless of lock tier.
   "depositPaid", "invoicedTotal",
+  // T3 (#1091, docs/designs/tax-model.md §5) — recalc OUTPUTS alongside
+  // taxAmount: the per-rate breakdown and the EXEMPT/UNSET/COMPUTED
+  // disambiguator. Same anchor treatment — never client-writable.
+  "taxBreakdown", "taxStatus",
 ] as const;
 
 /**

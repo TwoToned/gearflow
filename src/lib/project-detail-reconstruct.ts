@@ -97,6 +97,9 @@ export function mapProject(d: ProjectDoc): ProjectRow {
     discountPercent: orNull(d.discountPercent),
     discountAmount: orNull(d.discountAmount),
     taxAmount: orNull(d.taxAmount),
+    // T3 (#1091, docs/designs/tax-model.md §5) — recalc outputs alongside taxAmount.
+    taxBreakdown: orNull(d.taxBreakdown),
+    taxStatus: orNull(d.taxStatus),
     total: orNull(d.total),
     // WS1 (#940) — depositPercent moved off the project (client payment profile
     // now owns it); depositPaid/invoicedTotal stay here as recalc-derived reads.

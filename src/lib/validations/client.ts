@@ -13,6 +13,12 @@ export const clientSchema = z.object({
   shippingLatitude: z.union([z.null(), z.coerce.number()]).optional(),
   shippingLongitude: z.union([z.null(), z.coerce.number()]).optional(),
   taxId: z.string().max(50).optional(),
+  // T3 (#1091, docs/designs/tax-model.md §2) — a hard short-circuit read by
+  // recalc: an exempt client's projects produce zero tax regardless of any
+  // project/line rate. No jurisdiction/scope/expiry fields — see the design
+  // doc for why a boolean + free-text reason is the right M2-scope shape.
+  taxExempt: z.boolean().optional(),
+  taxExemptReason: z.string().max(500).optional(),
   paymentTerms: z.string().max(100).optional(),
   defaultDiscount: z.coerce.number().min(0).max(100).optional(),
   notes: z.string().max(2000).optional(),

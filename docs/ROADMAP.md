@@ -153,6 +153,20 @@ rather than a toast after you've tried. Design:
 
 ---
 
+### 3.4 — Project versioning v2: versions as switchable workspaces
+**Effort:** XL · **Status:** design draft, awaiting decisions
+**Depends on:** 3.3 (shipped)
+3.3 and its follow-ups (#1026, #1080) shipped a revision model, immutable
+artifacts and a version switcher — but a version is still a `quotes` row plus
+a snapshot blob, non-live versions render through a separate read-only
+reconstruction of every tab, and "make live" is a destructive restore. This
+program makes a version a first-class, editable row set with a live pointer,
+collapses the three locking mechanisms into one matrix, and retires unlock
+sessions and the projected read-only UI. Design + open questions:
+[`docs/designs/project-versioning-v2.md`](./designs/project-versioning-v2.md).
+
+---
+
 ## Phase 4 — Experience pass
 
 Polishing a clunky workflow is backwards — fix the flow first (Phases 1–2), then

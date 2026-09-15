@@ -33,6 +33,7 @@ import {
   type OverbookedInfo,
   type OverbookingBundleData,
 } from "@/lib/overbooking-core";
+import { getProjectWindowDates } from "@/lib/project-window";
 
 type ProjectDetailBundle = NonNullable<FunctionReturnType<typeof api.projectDetail.bundle>>;
 type ProjectDoc = ProjectDetailBundle["project"];
@@ -305,12 +306,8 @@ export function enrichProjectDetailOverbooked(
   overbooking: OverbookingBundleData | undefined,
 ): NativeProjectDetail {
   if (!overbooking) return base;
-  const map = reconstructOverbookedStatus(
-    overbooking,
-    base.lineItems,
-    base.rentalStartDate,
-    base.rentalEndDate,
-    base.id,
-  );
+  // Gear-committed window, not the raw rental dates — see project-window.ts.
+  const window = getProjectWindowDates(base);
+  const map = reconstructOverbookedStatus(overbooking, base.lineItems, window.start, window.end, base.id);
   return { ...base, lineItems: applyOverbookedMap(base.lineItems, map) };
 }

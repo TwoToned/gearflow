@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadDocFor } from "./lib/auth";
+import { getProjectWindow } from "./lib/projectWindow";
 import {
   overlappingProjectIds,
   collectHereAssetRefs,
@@ -57,8 +58,8 @@ export const projectConflicts = query({
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
     await requireOrgReadDocFor(ctx, project, "project"); // authorizes + confirms the project is in the caller's org — Phase 2 read bootstrap (#998)
     if (!project) return [];
-    const startMs = project.rentalStartDate ?? null;
-    const endMs = project.rentalEndDate ?? null;
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const { start: startMs, end: endMs } = getProjectWindow(project);
     if (startMs == null || endMs == null) return [];
 
     const orgId = project.organizationId;
@@ -109,9 +110,9 @@ export const swapCandidates = query({
     const g = await loadOrgGraph(ctx, orgId);
 
     const lineItemProject = g.projectMap.get(lineItem.projectId) ?? null;
-    if (!lineItemProject?.rentalStartDate || !lineItemProject.rentalEndDate) return [];
-    const startMs = lineItemProject.rentalStartDate;
-    const endMs = lineItemProject.rentalEndDate;
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const { start: startMs, end: endMs } = getProjectWindow(lineItemProject ?? {});
+    if (startMs == null || endMs == null) return [];
 
     const assets = filterSwapCandidateAssets(g.assets, lineItem.modelId);
     if (assets.length === 0) return [];

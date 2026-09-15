@@ -27,7 +27,7 @@ import { getSubHiresByProject, getSubHireGroups } from "@/lib/sub-hire-read";
 import { getLatestInvoiceNumberForProject } from "@/lib/invoices-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
-import { getProjectWindow } from "@/lib/project-window";
+import { getProjectWindow, getProjectWindowDates } from "@/lib/project-window";
 import { formatDate } from "./plugins/helpers";
 import {
   structureLineItems,
@@ -374,12 +374,13 @@ export async function buildDocumentData(
     })),
   };
 
-  // Compute overbooking status
+  // Compute overbooking status — gear-committed window, not raw rental dates.
+  const documentAvailabilityWindow = getProjectWindowDates(project);
   const overbookedMap = await computeOverbookedStatus(
     organizationId,
     project.lineItems,
-    project.rentalStartDate,
-    project.rentalEndDate,
+    documentAvailabilityWindow.start,
+    documentAvailabilityWindow.end,
     project.id
   );
 

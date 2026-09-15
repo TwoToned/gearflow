@@ -813,6 +813,12 @@ export const reorderLineItems = mutation({
 
 const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"]);
 
+// Mirrors convex/overbooking.ts's own MIN_TS — an unbounded-below range scan on
+// projectStartDate sweeps in every not-yet-backfilled project (undefined sorts
+// first in a Convex index), degrading the scoped scan below back into a
+// whole-org read. See that file's comment for the full rationale.
+const MIN_TS = -8_640_000_000_000_000;
+
 /** Reassign a line's asset, re-checking free-in-window + writing in ONE mutation
  *  (the double-booking TOCTOU guard — OCC makes the check+write race-safe). */
 export const swapLineItemAsset = mutation({
@@ -842,8 +848,8 @@ export const swapLineItemAsset = mutation({
     if (newAsset.status === "RETIRED" || newAsset.status === "LOST" || newAsset.status === "SOLD") throw new ConvexError(`Asset ${newAsset.assetTag} is ${(newAsset.status as string).toLowerCase()}`);
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", line.projectId)).unique();
-    const startMs = project?.rentalStartDate ?? null;
-    const endMs = project?.rentalEndDate ?? null;
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const { start: startMs, end: endMs } = getProjectWindow(project ?? {});
     if (startMs != null && endMs != null) {
       // Range-scan only projects that could overlap [startMs, endMs] — instead of
       // collecting the whole org projects table on every asset reassign. TWO scans
@@ -864,7 +870,7 @@ export const swapLineItemAsset = mutation({
       for await (const p of ctx.db
         .query("projects")
         .withIndex("by_organizationId_projectStartDate", (q) =>
-          q.eq("organizationId", a.organizationId).lte("projectStartDate", endMs),
+          q.eq("organizationId", a.organizationId).gt("projectStartDate", MIN_TS).lte("projectStartDate", endMs),
         )) {
         candidates.set(p.id, p);
       }

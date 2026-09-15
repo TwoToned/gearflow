@@ -25,6 +25,8 @@ export function useNativeWarehouseList(orgId: string | undefined): {
         status: string;
         rentalStartDate: number | null;
         rentalEndDate: number | null;
+        projectStartDate: number | null;
+        projectEndDate: number | null;
         client: { name: string } | null;
         lineItems: Array<{ status: string; type: string; isKitChild: boolean }>;
       }>

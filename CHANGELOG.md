@@ -43,6 +43,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a fixed bundle price — the project total counted it, but the invoice
   pushed to Xero didn't, so those jobs were under-billed by the sub-hire
   amount.
+- Overbooked badges (project list, equipment tab) no longer go missing, and
+  the "this will overbook this model — proceed anyway?" checkbox in the
+  add/edit-line-item dialogs now shows up reliably, on a project whose rental
+  dates aren't set yet but which has an explicit gear-committed window
+  (load-in/load-out dates that diverge from the rental dates). `getProject`,
+  `getProjectIssueFlags`, the native equipment-tab subscription, and the
+  project detail page's equipment tab were all reading
+  `rentalStartDate`/`rentalEndDate` raw instead of resolving the project's
+  actual availability window, which silently dropped into single-project-only
+  checking and missed overlapping demand from other jobs.
+- Full follow-up sweep of every booking/overbooking/stock-control code path
+  for the same class of bug, this time in the actual server-side enforcement
+  (not just badge display): adding, editing, or reassigning an asset on a
+  line item (`patchNative`/`addNative`/`addLineItemSmartNative`/kit-add),
+  swapping an asset (`swapLineItemAsset`), the org-wide conflicts banner and
+  swap-candidate list, the post-promote overbooking re-check, the warehouse
+  pull sheet and Online Pick List, all 5 project PDFs, and the "add by asset
+  tag" / "add kit" availability lookups could all silently under-enforce or
+  fully skip a genuine double-booking on a project whose committed gear
+  window diverged from its rental dates. All now resolve the correct window
+  first.
+- `patchNative` (editing an existing line item) now validates a reassigned
+  `modelId`/`assetId`/`bulkAssetId`/`groupId`/`categoryId`/`supplierId`
+  belongs to the caller's own organization, and running the same
+  kit-membership/status/double-booking checks the dedicated asset-swap
+  mutation already ran — it previously had neither, so a client could point
+  a line at another organization's row, or silently double-book/revive a
+  retired asset, with no validation at all.
+- A returned asset unit no longer keeps showing as "booked" on that asset's
+  own availability calendar for the rest of the project window.
+- The warehouse landing page's urgency badges (Overdue/Today/Out/Upcoming)
+  and the org-wide Returns board's overdue-first ordering now read the
+  project's gear-committed window (falling back to rental when unset)
+  instead of raw rental dates — "is this gear physically due back" is what
+  that window means, so a project with an earlier/later committed
+  load-in/load-out than its chargeable dates now shows the correct urgency.
 
 ## [0.27.1] - 2026-09-15
 

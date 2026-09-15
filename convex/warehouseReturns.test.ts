@@ -66,6 +66,25 @@ describe("warehouseReturns.bundle", () => {
     expect(res.truncated).toBe(false);
   });
 
+  test("urgency reads the gear-committed window, not raw rental dates", async () => {
+    const t = makeT();
+    await member(t);
+    await seedModel(t);
+    // p1: rentalEndDate is in the FUTURE (would read "out" from raw rental), but
+    // its committed projectEndDate (an earlier pack-out than the chargeable
+    // window) is in the PAST — must read "overdue".
+    const realNow = Date.now();
+    await seedProject(t, "p1", {
+      rentalEndDate: realNow + 5 * DAY,
+      projectEndDate: realNow - 2 * DAY,
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", baseLine("li1", "p1", { modelId: "m1", assetId: "a1" }));
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.warehouseReturns.bundle, { orgId: ORG });
+    expect(res.projects[0].urgency).toBe("overdue");
+  });
+
   test("includes partially-returned lines (status stays CHECKED_OUT until every unit is back)", async () => {
     const t = makeT();
     await member(t);

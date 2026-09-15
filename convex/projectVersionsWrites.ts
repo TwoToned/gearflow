@@ -21,6 +21,7 @@ import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { candidateBoardProjects } from "./lib/overbookingBoard";
 import { computePromoteOverbookingConflicts } from "./lib/overbookingConfirmImpact";
 import { fetchCandidateProjects, fetchGearData } from "./overbookingBoard";
+import { getProjectWindow } from "./lib/projectWindow";
 import {
   findQuoteAtRevision,
   projectLiveRevision,
@@ -321,13 +322,18 @@ async function deriveDateMoveConflicts(
   ctx: MutationCtx,
   organizationId: string,
   projectId: string,
-  before: Pick<Doc<"projects">, "rentalStartDate" | "rentalEndDate">,
+  before: Pick<Doc<"projects">, "rentalStartDate" | "rentalEndDate" | "projectStartDate" | "projectEndDate">,
   after: Doc<"projects">,
 ): Promise<string[]> {
-  const datesMoved = after.rentalStartDate !== before.rentalStartDate || after.rentalEndDate !== before.rentalEndDate;
-  if (!datesMoved || after.rentalStartDate == null || after.rentalEndDate == null) return [];
+  // Compare the RESOLVED (gear-committed) window, not raw rental dates — see
+  // project-window.ts. A promote that only moves projectStartDate/projectEndDate
+  // (no rental change) still needs this re-derive.
+  const beforeWindow = getProjectWindow(before);
+  const afterWindow = getProjectWindow(after);
+  const windowMoved = afterWindow.start !== beforeWindow.start || afterWindow.end !== beforeWindow.end;
+  if (!windowMoved || afterWindow.start == null || afterWindow.end == null) return [];
 
-  const window = { start: after.rentalStartDate, end: after.rentalEndDate };
+  const window = { start: afterWindow.start, end: afterWindow.end };
   const projectDocsById = await fetchCandidateProjects(ctx, organizationId, window.end);
   projectDocsById.set(after.id, after);
   const candidateProjects = candidateBoardProjects([...projectDocsById.values()], window);

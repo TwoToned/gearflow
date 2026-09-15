@@ -221,7 +221,9 @@ export function buildAssetBookings(
   const unitRows: BookingRow[] = [];
   for (const u of units) {
     if (u.assetId !== assetId) continue;
-    if (u.status === "CANCELLED") continue;
+    // Parity with findAssetConflict (availabilityCore.ts) — a returned unit no
+    // longer occupies the asset, so it must not still show as booked.
+    if (u.status === "CANCELLED" || u.status === "RETURNED") continue;
     if (seenLineIds.has(u.lineItemId)) continue;
     const li = liById.get(u.lineItemId);
     // Prisma joined `lineItem: { status not CANCELLED, project: window }`.

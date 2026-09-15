@@ -29,9 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is why those invoices printed a line that didn't add up to the subtotal
   beneath it. Lines are now written GST-exclusive for every invoice type, Flow
   states that explicitly when it pushes, and a push is refused outright if an
-  invoice's lines don't add up to its own subtotal. Invoices raised before
-  this fix keep their figures — void and reissue to correct one, and fix any
-  already-pushed copy in Xero.
+  invoice's lines don't add up to the amount Xero will charge tax on. Invoices
+  raised before this fix keep their figures — void and reissue to correct one,
+  and fix any already-pushed copy in Xero.
+- **A project discount now reaches Xero.** A percentage discount on a project
+  was applied to the invoice's total but never appeared on any line, so the
+  push billed the full pre-discount amount plus tax on it — a $1,000 job at 10%
+  off, invoiced by Flow at $990, arrived in Xero at $1,100. The discount now
+  rides along as its own line. Credit notes had the matching fault and credited
+  the pre-discount figure, refunding a discount that was never charged.
+- **Sub-hired gear inside a priced group is no longer left off the Xero
+  invoice.** A sub-hire carries its own charge even when it sits in a group
+  with a fixed bundle price — the project total counted it, but the invoice
+  pushed to Xero didn't, so those jobs were under-billed by the sub-hire
+  amount.
 
 ## [0.27.1] - 2026-09-15
 

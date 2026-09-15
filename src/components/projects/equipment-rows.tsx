@@ -36,6 +36,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -376,17 +377,31 @@ export function GroupRow({
 
   /** Category price rollup, per-item reveal — a priced group collapses to ONE
    *  row on a client-facing document, so it needs the same control every other
-   *  row in the section has. Defined once, rendered in both kebabs. */
-  const priceRevealItem =
+   *  row in the section has. Defined once, rendered in both kebabs.
+   *
+   *  It sits under a "Client documents" heading rather than spelling the
+   *  context out in each label: every toggle in that section answers the one
+   *  question "what does the client see on the quote?", so the heading carries
+   *  it and the labels stay short and parallel across category, group and item
+   *  rows. The section closes with its own separator because the destructive
+   *  Delete follows it — without one, Delete reads as part of the section. */
+  const clientDocsSection =
     inRollupCategory && onTogglePriceReveal ? (
-      <DropdownMenuItem onClick={onTogglePriceReveal}>
-        {group.revealPriceInRollup ? (
-          <EyeOff className="mr-2 h-3.5 w-3.5" />
-        ) : (
-          <Eye className="mr-2 h-3.5 w-3.5" />
-        )}
-        {group.revealPriceInRollup ? "Hide this price on documents" : "Show this price on documents"}
-      </DropdownMenuItem>
+      <>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Client documents</DropdownMenuLabel>
+          <DropdownMenuItem onClick={onTogglePriceReveal}>
+            {group.revealPriceInRollup ? (
+              <EyeOff className="mr-2 h-3.5 w-3.5" />
+            ) : (
+              <Eye className="mr-2 h-3.5 w-3.5" />
+            )}
+            {group.revealPriceInRollup ? "Hide this price" : "Show this price"}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+      </>
     ) : null;
 
   // ── Mobile: group header card (children render as sibling cards below). ──
@@ -410,7 +425,6 @@ export function GroupRow({
             <Pencil className="mr-2 h-3.5 w-3.5" />
             Edit
           </DropdownMenuItem>
-          {priceRevealItem}
           <DropdownMenuItem onClick={onAddEquipment}>
             <Plus className="mr-2 h-3.5 w-3.5" />
             Add equipment
@@ -431,14 +445,15 @@ export function GroupRow({
               Move to category
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem
-            onClick={onDelete}
-            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Delete
-          </DropdownMenuItem>
         </DropdownMenuGroup>
+        {clientDocsSection}
+        <DropdownMenuItem
+          onClick={onDelete}
+          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -625,7 +640,6 @@ export function GroupRow({
                       Edit price
                     </DropdownMenuItem>
                   )}
-                  {priceRevealItem}
                   <DropdownMenuItem onClick={onAddEquipment}>
                     <Plus className="mr-2 h-3.5 w-3.5" />
                     Add equipment
@@ -646,14 +660,15 @@ export function GroupRow({
                       Move to category
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem
-                    onClick={onDelete}
-                    className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                  >
-                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                    Delete
-                  </DropdownMenuItem>
                 </DropdownMenuGroup>
+                {clientDocsSection}
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -933,20 +948,34 @@ export function CategoryRow({
   const isRollup = isRollupCategory(cat.pricingDisplay);
 
   /** The pricing-display toggle, shared by the mobile kebab and the desktop
-   *  one so the two menus can't drift. */
-  const pricingDisplayItem = onSetPricingDisplay ? (
-    <DropdownMenuItem onClick={() => onSetPricingDisplay(isRollup ? "ITEMISED" : "ROLLUP")}>
-      {isRollup ? <ListOrdered className="mr-2 h-3.5 w-3.5" /> : <Layers className="mr-2 h-3.5 w-3.5" />}
-      {isRollup ? "Show a price per item" : "Show one price for the category"}
-    </DropdownMenuItem>
+   *  one so the two menus can't drift.
+   *
+   *  Under the same "Client documents" heading the per-row price and
+   *  group-member toggles use — that shared heading is what makes the four
+   *  controls read as one system instead of four unrelated switches. The
+   *  wording matches ROLLUP_SUBTOTAL_LABEL ("Combined price"), so the phrase
+   *  the operator picks is the phrase the client reads on the document. */
+  const clientDocsSection = onSetPricingDisplay ? (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Client documents</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => onSetPricingDisplay(isRollup ? "ITEMISED" : "ROLLUP")}>
+          {isRollup ? <ListOrdered className="mr-2 h-3.5 w-3.5" /> : <Layers className="mr-2 h-3.5 w-3.5" />}
+          {isRollup ? "Show individual prices" : "Show combined price"}
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+    </>
   ) : null;
 
   /** Shown next to the name so the operator can see, without opening a menu,
    *  that this category's documents won't carry per-item prices. Labelled, not
-   *  colour-only (DESIGN.md §3.3). */
+   *  colour-only (DESIGN.md §3.3), and worded exactly like the toggle that set
+   *  it. */
   const rollupBadge = isRollup ? (
     <Badge status="info" className="font-normal">
-      One price
+      Combined price
     </Badge>
   ) : null;
 
@@ -982,19 +1011,19 @@ export function CategoryRow({
               )}
             </>
           )}
-          {pricingDisplayItem}
           <DropdownMenuItem onClick={onRename}>
             <Pencil className="mr-2 h-3.5 w-3.5" />
             Rename
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onDelete}
-            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Delete
-          </DropdownMenuItem>
         </DropdownMenuGroup>
+        {clientDocsSection}
+        <DropdownMenuItem
+          onClick={onDelete}
+          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1070,19 +1099,19 @@ export function CategoryRow({
                     )}
                   </>
                 )}
-                {pricingDisplayItem}
                 <DropdownMenuItem onClick={onRename}>
                   <Pencil className="mr-2 h-3.5 w-3.5" />
                   Rename
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={onDelete}
-                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Delete
-                </DropdownMenuItem>
               </DropdownMenuGroup>
+              {clientDocsSection}
+              <DropdownMenuItem
+                onClick={onDelete}
+                className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1204,8 +1233,7 @@ export function LineItemRow({
   const isSubHireGroupChild = item.subHireGroupId != null;
 
   /** Category price rollup, per-item reveal — only offered inside a rolled-up
-   *  category, where the flag actually changes what a client sees. Defined once
-   *  and rendered in both the desktop and mobile kebabs so they can't drift. */
+   *  category, where the flag actually changes what a client sees. */
   const priceRevealItem =
     inRollupCategory && onTogglePriceReveal ? (
       <DropdownMenuItem onClick={onTogglePriceReveal}>
@@ -1214,13 +1242,18 @@ export function LineItemRow({
         ) : (
           <Eye className="mr-2 h-3.5 w-3.5" />
         )}
-        {item.revealPriceInRollup ? "Hide this price on documents" : "Show this price on documents"}
+        {item.revealPriceInRollup ? "Hide this price" : "Show this price"}
       </DropdownMenuItem>
     ) : null;
 
   /** Group child disclosure — list this member under its group's collapsed row
    *  on quotes/invoices. Offered only for a row that's actually in a group;
-   *  elsewhere there is no collapsed row to appear under. */
+   *  elsewhere there is no collapsed row to appear under.
+   *
+   *  "Show this item", not "show this price": a disclosed member never prints a
+   *  price (the group's bundle price is the charge), so the pair reads as the
+   *  price toggle's sibling — same verb, different noun — rather than a second
+   *  way of saying the same thing. */
   const groupDisclosureItem =
     inProjectGroup && onToggleGroupDisclosure ? (
       <DropdownMenuItem onClick={onToggleGroupDisclosure}>
@@ -1229,8 +1262,32 @@ export function LineItemRow({
         ) : (
           <Eye className="mr-2 h-3.5 w-3.5" />
         )}
-        {item.showInGroupOnDocs ? "Hide from client documents" : "List on client documents"}
+        {item.showInGroupOnDocs ? "Hide this item" : "Show this item"}
       </DropdownMenuItem>
+    ) : null;
+
+  /** Both toggles under ONE "Client documents" heading — a row can be in a
+   *  rolled-up category AND in a group, so two self-heading sections would put
+   *  the label on screen twice. Defined once and rendered in both the desktop
+   *  and mobile kebabs so they can't drift.
+   *
+   *  It sits under a "Client documents" heading rather than spelling the
+   *  context out in each label: every toggle in that section answers the one
+   *  question "what does the client see on the quote?", so the heading carries
+   *  it and the labels stay short and parallel across category, group and item
+   *  rows. The section closes with its own separator because the destructive
+   *  Delete follows it — without one, Delete reads as part of the section. */
+  const clientDocsSection =
+    priceRevealItem || groupDisclosureItem ? (
+      <>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Client documents</DropdownMenuLabel>
+          {priceRevealItem}
+          {groupDisclosureItem}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+      </>
     ) : null;
 
   // Captures the shift key on checkbox click so the row-level handler can extend
@@ -1365,8 +1422,6 @@ export function LineItemRow({
             <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
             Move to group
           </DropdownMenuItem>
-          {priceRevealItem}
-          {groupDisclosureItem}
           <DropdownMenuItem onClick={() => handleMarker("needs_review")}>
             <BookmarkPlus className="mr-2 h-3.5 w-3.5" />
             Needs review
@@ -1390,14 +1445,15 @@ export function LineItemRow({
               Report issue
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem
-            onClick={onRemove}
-            className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-          >
-            <Trash2 className="mr-2 h-3.5 w-3.5" />
-            Delete
-          </DropdownMenuItem>
         </DropdownMenuGroup>
+        {clientDocsSection}
+        <DropdownMenuItem
+          onClick={onRemove}
+          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
+          Delete
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1913,8 +1969,6 @@ export function LineItemRow({
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to category
                 </DropdownMenuItem>
-                {priceRevealItem}
-                {groupDisclosureItem}
                 <DropdownMenuItem onClick={onMoveToGroup}>
                   <ArrowRightLeft className="mr-2 h-3.5 w-3.5" />
                   Move to group
@@ -1942,14 +1996,15 @@ export function LineItemRow({
                     Report issue
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem
-                  onClick={onRemove}
-                  className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Delete
-                </DropdownMenuItem>
               </DropdownMenuGroup>
+              {clientDocsSection}
+              <DropdownMenuItem
+                onClick={onRemove}
+                className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
+              >
+                <Trash2 className="mr-2 h-3.5 w-3.5" />
+                Delete
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

@@ -1,6 +1,6 @@
 # Project versioning v2 — versions as switchable workspaces
 
-> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **decisions recorded 2026-09-15 (§9) — ready for `/plan-eng-review`; one reading still to confirm (§9.1); cold-read revisions D16–D17 recorded**_
+> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **decisions recorded 2026-09-15 (§9) — ready for `/plan-eng-review`; engineering review complete (§9.2, D22–D32); one reading still to confirm (§9.1)**_
 
 **Driver:** Jayden — _"The version control stuff we have implemented feels very half baked and
 messy. The original goal was to be able to have complete snapshots of projects, with one being
@@ -606,6 +606,32 @@ the big visible change. Phases 0–4 ≈ L, the whole program ≈ XL at human-te
 - **Compare as a mode on the real page** (mockup 7) is my reading of "comparisons should feel
   similar to editing a project". If you meant something else — e.g. two versions side by side —
   say so and mockup 7 changes.
+---
+
+
+### 9.2 Engineering review decisions (`/plan-eng-review`, 2026-09-15)
+
+| # | Decision |
+|---|---|
+| **D22** | **Availability keeps the join filter** on `by_modelId`/`by_assetId`/`by_kitId` (drop non-live rows after loading the project row) with a registered scanned-rows budget per availability call in `docs/exceptions.md`; denormalised `isLive` + `_isLive` indexes is the documented escalation if the alert fires. |
+| **D23** | **Warehouse mutations remap a stale line id to the live row of the same lineage** (`resolveLiveLine`, logged as an activity entry); refuse with `LINE_NOT_LIVE` when no live row shares the lineage. Office mutations refuse a non-live id outright (`VERSION_NOT_LIVE`). |
+| **D24** | **Hard index cut** in the Phases 2–4 release; rollback runbook = redeploy the previous Convex functions and re-add `by_projectId*` (rows keep `projectId`). Runbook lives in §6. |
+| **D25** | **One definition of the versioned tables** in `convex/lib/versionedTables.ts` (table list, FK-remap map for `copyPlanGraph`, row types inferred from the schema validators), imported by `src/`. Replaces the five-copy `SnapshotEntityType`. |
+| **D26** | **One `planHome(ctx, version)` resolver** plus exported `PLAN_FIELDS`/`TOTAL_FIELDS`; `patchPlanFields`, `recalcVersionTotals`, make-live's swap and the client-patch stripping lists all consume them. |
+| **D27** | **New error codes** (`PRICING_LOCKED`, `VERSION_LOCKED`, `VERSION_NOT_LIVE`, `LINE_NOT_LIVE`, `VERSION_REFERENCED`, `VERSION_TOO_LARGE`, `UNACCEPT_TOO_LATE`) map through `resolveLockCopy` so toasts name the exit; `isJustificationRequired` recognises `UserFacingError` (closes I-14). |
+| **D28** | **ASCII diagrams in code** as acceptance criteria of Phases 2–3: version × quote state machine in `convex/versions.ts` (replacing `quotesWrites.ts`'s old one), the make-live pipeline in `makeLiveNative`, the swap in `convex/lib/planHome.ts`, the lock matrix in `convex/lib/projectLocks.ts`. |
+| **D29** | **One Playwright journey spec** `e2e/harness-versions.spec.ts` (create → new version → edit → send → accept/make live → warehouse follows) on the existing harness, in CI's e2e job. |
+| **D30** | **Order-independence tests** for scan-then-make-live and make-live-then-stale-scan (units end on the live lineage), plus the no-lineage-match `unplanned` carry. |
+| **D31** | **`financeOrg` loads `projectVersions.by_organizationId` once per call** and groups several SENT quotes per project into one row; a read-count assertion in `financeOrg.test.ts`. |
+| **D32** | Housekeeping folded into Phase 7: stale doc references (I-16) and stale phase comments (I-17). |
+
+**Rollback runbook (D24).** If the Phases 2–4 release misbehaves: (1) `pnpm exec convex deploy` the previous
+tagged functions; (2) re-add `by_projectId` and its composites to the five versioned tables in
+`convex/schema.ts` (rows never lost `projectId`, so the index rebuilds from data); (3) leave
+`projectVersions` and the new columns in place (they are `v.optional` and unread by the old code);
+(4) non-live rows materialised by §6 step 2 would be visible to old readers, so step 2 runs only
+after the release has soaked for one working day.
+
 ---
 
 ## 10. POLICY.md notes (BUILD mode)

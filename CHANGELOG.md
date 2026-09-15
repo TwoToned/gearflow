@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Client-document toggles now read as one set of controls.** The four
+  switches that decide what a quote or invoice shows — a category's combined
+  price, a revealed price on a line or a group, and listing a group's member —
+  were each worded differently and scattered through their ⋯ menus. They now
+  sit together under a **Client documents** heading in every ⋯ menu, with
+  matching labels: "Show combined price" / "Show individual prices" on a
+  category, "Show this price" / "Hide this price" on a row, and "Show this
+  item" / "Hide this item" on a group's member. The category pill and the
+  label printed beside a rolled-up section's figure both say **Combined
+  price** too, so the phrase you pick is the phrase the client reads. Nothing
+  about what prints, or what anything costs, has changed.
+
 ## [0.27.0] - 2026-09-14
 
 ### Added

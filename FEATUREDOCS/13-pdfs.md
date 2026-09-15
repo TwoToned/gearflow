@@ -1360,7 +1360,8 @@ DERIVED fields renderers read instead of the stored ones:
 - **`priceHidden`** — blank this row's unitPrice/discount/total cells.
 - **`rollupCategory`** — this row is in a rolled-up section, so the section
   header carries ONE derived subtotal (`rollupAmountForBucket` →
-  `formatCurrency`, printed with the `ROLLUP_SUBTOTAL_LABEL`). Stamped on
+  `formatCurrency`, printed with the `ROLLUP_SUBTOTAL_LABEL` — the same
+  phrase as the operator-facing toggle). Stamped on
   every row in the section, revealed ones included, because
   `filterAndGroupItems` buckets by display NAME and holds no category
   metadata — any row in the bucket has to answer "is this section rolled up?".

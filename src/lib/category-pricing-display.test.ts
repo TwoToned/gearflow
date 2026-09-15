@@ -13,6 +13,7 @@ import {
   isRollupCategory,
   isLinePriceHidden,
   rollupSubtotal,
+  canRevealPriceInRollup,
 } from "./category-pricing-display";
 
 describe("toCategoryPricingDisplay", () => {
@@ -95,5 +96,35 @@ describe("rollupSubtotal", () => {
 
   it("is zero for an empty section", () => {
     expect(rollupSubtotal([])).toBe(0);
+  });
+});
+
+// The reveal prints a price on THIS row. A row the document never draws has no
+// price to print, so the flag is inert there — see the module header. These are
+// the three kinds of row collapse mode drops.
+describe("canRevealPriceInRollup", () => {
+  it("allows a plain top-level row", () => {
+    expect(canRevealPriceInRollup({})).toBe(true);
+    expect(
+      canRevealPriceInRollup({ inProjectGroup: false, isSubHireGroupChild: false, isKitChild: false }),
+    ).toBe(true);
+  });
+
+  it("refuses a member of a Project Group", () => {
+    expect(canRevealPriceInRollup({ inProjectGroup: true })).toBe(false);
+  });
+
+  it("refuses a sub-hire group child", () => {
+    expect(canRevealPriceInRollup({ isSubHireGroupChild: true })).toBe(false);
+  });
+
+  it("refuses a kit child", () => {
+    expect(canRevealPriceInRollup({ isKitChild: true })).toBe(false);
+  });
+
+  it("treats absent/null flags as 'not a child'", () => {
+    expect(
+      canRevealPriceInRollup({ inProjectGroup: null, isSubHireGroupChild: null, isKitChild: null }),
+    ).toBe(true);
   });
 });

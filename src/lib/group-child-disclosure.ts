@@ -53,6 +53,26 @@ export function isGroupChildDisclosed(value: unknown): boolean {
 }
 
 /**
+ * Can this member be disclosed at all?
+ *
+ * A kit parent cannot: a kit inside a group is itself a collapsing container,
+ * and listing it here would either disclose a second level of contents nobody
+ * asked for or print a container row whose contents are invisible. Kit CHILDREN
+ * never reach this question — they hang off their kit parent, not the group.
+ *
+ * Exported so the equipment tab can decide whether to OFFER the toggle using
+ * the same rule `disclosedGroupChildren` renders by. A toggle the renderer then
+ * ignores is worse than no toggle: the operator flips it and the document
+ * doesn't change.
+ */
+export function canDiscloseGroupChild(member: {
+  kitId?: string | null;
+  isKitChild?: boolean | null;
+}): boolean {
+  return !(member.kitId && !member.isKitChild);
+}
+
+/**
  * The members of a group that a client-facing document should list under the
  * group's collapsed row, each stamped `priceHidden` so the renderer blanks its
  * money cells (the same derived field a rolled-up category's rows carry — one
@@ -72,7 +92,7 @@ export function disclosedGroupChildren(
 ): DocumentLineItem[] | undefined {
   const disclosed = members
     .filter((m) => isGroupChildDisclosed(m.showInGroupOnDocs))
-    .filter((m) => !(m.kitId && !m.isKitChild))
+    .filter(canDiscloseGroupChild)
     .map((m) => ({ ...m, priceHidden: true }));
   return disclosed.length > 0 ? disclosed : undefined;
 }

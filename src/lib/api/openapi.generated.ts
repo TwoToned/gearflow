@@ -7819,6 +7819,12 @@ export const OPENAPI_DOCUMENT = {
                       "tags": {
                         "type": "array"
                       },
+                      "taxExempt": {
+                        "type": "boolean"
+                      },
+                      "taxExemptReason": {
+                        "type": "string"
+                      },
                       "taxId": {
                         "type": "string"
                       },
@@ -19767,6 +19773,9 @@ export const OPENAPI_DOCUMENT = {
                       "pricingMode": {},
                       "projectId": {
                         "type": "string"
+                      },
+                      "taxRate": {
+                        "type": "number"
                       },
                       "unitPrice": {
                         "type": "number"

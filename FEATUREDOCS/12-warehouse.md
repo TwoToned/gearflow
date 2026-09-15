@@ -294,6 +294,12 @@ job(s) it belongs to as you go."
   ordered **overdue-first** (a server-side port of `getProjectUrgency` from
   `src/app/(app)/warehouse/page.tsx`'s "The floor" landing page — kept in
   lockstep deliberately, not imported, since that file is a client component).
+  Both copies (and the landing page's own list query, `convex/warehouseList.ts`)
+  read the **gear-committed window** (`getProjectWindow` — `projectStartDate`/
+  `projectEndDate`, falling back to rental when unset), never raw
+  `rentalStartDate`/`rentalEndDate` — "is this gear physically overdue" is
+  exactly what the committed window means (2026-09 fix; see FEATUREDOCS/11
+  invariant #4).
 - **One-shot fetch, not a live subscription.** The `/warehouse/*` route group's
   LCP budget is already over its registered threshold
   (`docs/exceptions.md` R-8.9.3) — a whole-org reactive subscription here would

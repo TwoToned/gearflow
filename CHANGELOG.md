@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retired asset, with no validation at all.
 - A returned asset unit no longer keeps showing as "booked" on that asset's
   own availability calendar for the rest of the project window.
+- The warehouse landing page's urgency badges (Overdue/Today/Out/Upcoming)
+  and the org-wide Returns board's overdue-first ordering now read the
+  project's gear-committed window (falling back to rental when unset)
+  instead of raw rental dates — "is this gear physically due back" is what
+  that window means, so a project with an earlier/later committed
+  load-in/load-out than its chargeable dates now shows the correct urgency.
 
 ## [0.27.0] - 2026-09-14
 

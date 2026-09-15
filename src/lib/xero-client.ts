@@ -448,6 +448,15 @@ export async function upsertXeroDraftInvoice(
         InvoiceNumber: input.invoiceNumber,
         Reference: input.reference,
         Status: "DRAFT",
+        // Flow's `invoiceLines` are tax-EXCLUSIVE by invariant
+        // (`sum(lineTotal) === invoices.subtotal`, with `taxAmount` on top —
+        // see convex/invoicesWrites.ts), so say so rather than relying on
+        // Xero's default. Getting this wrong does not error: Xero simply adds
+        // GST on top of an already-inclusive figure and the client is billed
+        // more than Flow's own document says (INV-260901: $363.00 against a
+        // $330.00 invoice). An explicit declaration is the only thing that
+        // makes the two sides' agreement visible at the boundary.
+        LineAmountTypes: "Exclusive",
         LineItems: input.lineItems.map((li) => ({
           Description: li.description,
           Quantity: li.quantity,

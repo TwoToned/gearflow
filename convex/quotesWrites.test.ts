@@ -1116,18 +1116,41 @@ describe("quotesWrites.markAcceptedNative / markDeclinedNative", () => {
       id: "q1", organizationId: ORG, reason: "Too expensive", actor, auditId: "a2", now: NOW + 1, ...over,
     } as never);
 
-  test("accept records the date + reference and offers CONFIRMED", async () => {
+  // #1228 — accepting advances the job to AWAITING_PAYMENT (agreed, unpaid),
+  // NOT to CONFIRMED. Confirming is what payment does. The pre-#1228
+  // `offerStatusChange: "CONFIRMED"` survives only for an org that opted out.
+  test("accept records the date + reference and advances to AWAITING_PAYMENT", async () => {
     const t = makeT();
     await seedMember(t);
     await seedProject(t);
     await send(t);
 
     const result = await accept(t, { acceptanceRef: "PO-4821" });
-    expect(result.offerStatusChange).toBe("CONFIRMED");
+    expect(result.autoStatusChange).toBe("AWAITING_PAYMENT");
+    expect(result.offerStatusChange).toBeNull();
+    expect((await getProject(t))?.status).toBe("AWAITING_PAYMENT");
     const quotes = await getQuotes(t);
     expect(quotes[0]?.status).toBe("ACCEPTED");
     expect(quotes[0]?.acceptanceRef).toBe("PO-4821");
     expect(quotes[0]?.acceptedById).toBe(USER);
+  });
+
+  test("with the org opted out, accept falls back to offering CONFIRMED", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", {
+        organizationId: ORG,
+        settings: JSON.stringify({ projectStatusAutomation: { quoteSent: false, quoteAccepted: false } }),
+      });
+    });
+    await send(t);
+
+    const result = await accept(t);
+    expect(result.autoStatusChange).toBeNull();
+    expect(result.offerStatusChange).toBe("CONFIRMED");
+    expect((await getProject(t))?.status).toBe("QUOTING"); // NOT forced
   });
 
   test("an EXPIRED revision cannot be accepted without a re-send", async () => {

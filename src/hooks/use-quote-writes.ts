@@ -2,6 +2,8 @@
 
 import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
+import { toast } from "sonner";
+import { autoStatusToast } from "@/lib/project-status-automation";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { generateQuoteArtifact } from "@/server/finance-documents";
 import { api } from "../../convex/_generated/api";
@@ -149,10 +151,18 @@ export function useQuoteWrites() {
     markAccepted: async (
       quoteId: string,
       data: QuoteAcceptValues = {},
-    ): Promise<{ id: string; version: number; offerStatusChange: QuoteStatusOffer }> => {
+    ): Promise<{
+      id: string;
+      version: number;
+      autoStatusChange: "AWAITING_PAYMENT" | null;
+      offerStatusChange: QuoteStatusOffer;
+    }> => {
       const org = requireOrg();
       const parsed = quoteAcceptSchema.parse(data);
-      return await acceptM({
+      // #1228 — accepting moves the job to AWAITING_PAYMENT, not CONFIRMED: the
+      // client has agreed, the money hasn't landed. Announced rather than
+      // offered, matching send; the offer survives only for an opted-out org.
+      const res = await acceptM({
         id: quoteId,
         organizationId: org,
         acceptedAt: parsed.acceptedAt?.getTime(),
@@ -161,6 +171,9 @@ export function useQuoteWrites() {
         auditId: createId(),
         now: Date.now(),
       });
+      const copy = autoStatusToast(res.autoStatusChange);
+      if (copy) toast(copy.title, { description: copy.description });
+      return res;
     },
 
     /** Unapprove (#1032) — the reverse of `markAccepted`: `ACCEPTED → SENT`,

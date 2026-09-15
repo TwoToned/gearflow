@@ -10,6 +10,7 @@ import * as enums from "./lib/validators";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 
 /**
  * Payment write mutations (#1055) — browser-direct, standard 4-guard shape,
@@ -44,7 +45,7 @@ function round(v: number): number {
 /** Recompute `amountPaid`/`paymentStatus` from this invoice's own non-voided
  *  payments and patch the invoice row — called from inside the same mutation
  *  that just wrote or voided a payment, so the two can never drift apart. */
-async function recomputeInvoicePaymentState(ctx: MutationCtx, invoice: Doc<"invoices">, now: number): Promise<void> {
+async function recomputeInvoicePaymentState(ctx: MutationCtx, invoice: Doc<"invoices">, now: number): Promise<string> {
   // Bounded by invoiceId (R-9.8) — a single invoice never realistically carries
   // more than a handful of payments; 500 is a generous safety cap, not an
   // expected count.
@@ -56,6 +57,7 @@ async function recomputeInvoicePaymentState(ctx: MutationCtx, invoice: Doc<"invo
   const total = Number(invoice.total) || 0;
   const paymentStatus = amountPaid <= 0 ? "UNPAID" : amountPaid >= total ? "PAID" : "PARTIALLY_PAID";
   await ctx.db.patch(invoice._id, { amountPaid, paymentStatus, updatedAt: now });
+  return paymentStatus;
 }
 
 /** The client-input subset of recordNative's args (mirrors paymentSchema in
@@ -71,7 +73,7 @@ export const paymentFields = {
 };
 
 export const recordNative = mutation({
-  returns: v.object({ id: v.string() }),
+  returns: v.object({ id: v.string(), autoStatus: v.union(v.string(), v.null()) }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -121,7 +123,7 @@ export const recordNative = mutation({
       updatedAt: now,
     });
 
-    await recomputeInvoicePaymentState(ctx, invoice, now);
+    const paymentStatus = await recomputeInvoicePaymentState(ctx, invoice, now);
 
     await writeActivityLog(ctx, {
       id: auditId,
@@ -137,7 +139,18 @@ export const recordNative = mutation({
       createdAt: now,
     });
 
-    return { id };
+    // #1228 — payment is the confirmation. Only a FULL settlement counts: a
+    // partial payment leaves the job exactly where it was. The rule itself
+    // re-checks the accepted-quote gate the manual confirm enforces and takes
+    // the same snapshot, so this is not a way around either.
+    const autoStatus =
+      paymentStatus === "PAID"
+        ? await maybeAutoAdvanceProjectStatus(ctx, {
+            orgId, projectId: invoice.projectId, trigger: "PAYMENT_SETTLED", actor, now,
+          })
+        : null;
+
+    return { id, autoStatus };
   },
 });
 

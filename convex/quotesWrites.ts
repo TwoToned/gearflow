@@ -1111,7 +1111,13 @@ export const repriceFromRevisionNative = mutation({
  * the client's window closed, and re-sending is the honest way to reopen it.
  */
 export const markAcceptedNative = mutation({
-  returns: v.object({ id: v.string(), version: v.number(), offerStatusChange: offerValidator }),
+  returns: v.object({
+    id: v.string(),
+    version: v.number(),
+    /** #1228 — non-null when the automation moved the job to AWAITING_PAYMENT. */
+    autoStatusChange: v.union(v.literal("AWAITING_PAYMENT"), v.null()),
+    offerStatusChange: offerValidator,
+  }),
   args: {
     id: v.string(),
     organizationId: v.string(),
@@ -1165,10 +1171,21 @@ export const markAcceptedNative = mutation({
       createdAt: now,
     });
 
+    // #1228 — accepting now moves the job to AWAITING_PAYMENT (the client has
+    // said yes; the money hasn't landed), NOT straight to CONFIRMED. The old
+    // "offer CONFIRMED" is the opt-out fallback, exactly as it is for send.
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: organizationId, projectId: project.id, trigger: "QUOTE_ACCEPTED", actor, now,
+    });
+
     return {
       id: quote.id,
       version: quote.version,
-      offerStatusChange: ACCEPT_OFFERS_CONFIRMED_FROM.has(project.status ?? "") ? ("CONFIRMED" as const) : null,
+      autoStatusChange: autoStatus === "AWAITING_PAYMENT" ? ("AWAITING_PAYMENT" as const) : null,
+      offerStatusChange:
+        autoStatus === null && ACCEPT_OFFERS_CONFIRMED_FROM.has(project.status ?? "")
+          ? ("CONFIRMED" as const)
+          : null,
     };
   },
 });

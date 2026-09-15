@@ -2,6 +2,8 @@
 
 import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
+import { toast } from "sonner";
+import { autoStatusToast } from "@/lib/project-status-automation";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import { paymentSchema, type PaymentFormValues } from "@/lib/validations/payment";
@@ -22,10 +24,17 @@ export function usePaymentWrites() {
   };
 
   return {
-    record: async (invoiceId: string, data: PaymentFormValues): Promise<{ id: string }> => {
+    /** #1228 — a payment that settles an invoice in full confirms the job.
+     *  Announced here, once, so the status never moves under the person who
+     *  recorded it. `autoStatus` is non-null only on the payment that actually
+     *  crossed the boundary. */
+    record: async (
+      invoiceId: string,
+      data: PaymentFormValues,
+    ): Promise<{ id: string; autoStatus: string | null }> => {
       const org = requireOrg();
       const parsed = paymentSchema.parse(data);
-      return await recordM({
+      const res = await recordM({
         id: createId(),
         orgId: org,
         invoiceId,
@@ -38,6 +47,9 @@ export function usePaymentWrites() {
         auditId: createId(),
         now: Date.now(),
       });
+      const copy = autoStatusToast(res.autoStatus);
+      if (copy) toast(copy.title, { description: copy.description });
+      return res;
     },
     void: async (id: string, reason: string): Promise<void> => {
       const org = requireOrg();

@@ -144,6 +144,91 @@ describe("category price rollup — structuring", () => {
   });
 });
 
+// The fact the equipment tab's menu rule encodes (`canRevealPriceInRollup`):
+// a row the client-facing document never draws has no price to reveal. If this
+// ever changes, the menu must offer the toggle again — these assertions are
+// what keeps the two honest.
+describe("category price rollup — rows the reveal cannot reach", () => {
+  const CAT: CategoryForStructuring[] = [
+    {
+      id: "cat-lx",
+      name: ROLLUP_CAT,
+      sortOrder: 0,
+      pricingDisplay: "ROLLUP",
+      groups: [
+        {
+          id: "g1",
+          title: "Lighting Package",
+          description: null,
+          quantity: 1,
+          price: 5000,
+          discount: null,
+          sortOrder: 0,
+        },
+      ],
+    },
+  ];
+
+  it("drops a Project Group's member, revealed or not", () => {
+    const structured = structureLineItems(
+      [
+        line({
+          id: "li-member",
+          categoryName: ROLLUP_CAT,
+          groupTitle: "Lighting Package",
+          groupId: "g1",
+          lineTotal: 900,
+          revealPriceInRollup: true,
+          model: { name: "Group Member" },
+        }),
+      ],
+      CAT,
+      { expandProjectGroups: false },
+    );
+    expect(structured.find((i) => i.id === "li-member")).toBeUndefined();
+    // The group's own row is what prints — and it carries its OWN reveal flag,
+    // which is the control that actually applies here.
+    expect(structured.find((i) => i.isGroupRow)).toMatchObject({ priceHidden: true });
+  });
+
+  it("drops a sub-hire group child and a kit child, revealed or not", () => {
+    const structured = structureLineItems(
+      [
+        line({
+          id: "li-sh-parent",
+          categoryName: ROLLUP_CAT,
+          lineTotal: 700,
+          subHireGroupId: "shg1",
+          model: { name: "Sub-hire" },
+        }),
+        line({
+          id: "li-sh-child",
+          categoryName: ROLLUP_CAT,
+          lineTotal: 700,
+          subHireGroupId: "shg1",
+          isKitChild: true,
+          revealPriceInRollup: true,
+          model: { name: "Sub-hire child" },
+        }),
+        line({
+          id: "li-kit-child",
+          categoryName: ROLLUP_CAT,
+          lineTotal: 120,
+          isKitChild: true,
+          revealPriceInRollup: true,
+          model: { name: "Kit child" },
+        }),
+      ],
+      CAT,
+      { expandProjectGroups: false },
+    );
+    expect(structured.find((i) => i.id === "li-sh-child")).toBeUndefined();
+    expect(structured.find((i) => i.id === "li-kit-child")).toBeUndefined();
+    // The row that DOES print is the one the toggle belongs on.
+    expect(structured.find((i) => i.id === "li-sh-parent")).toMatchObject({ priceHidden: true });
+  });
+});
+
 describe("category price rollup — section subtotal", () => {
   it("totals the whole section, revealed line included", () => {
     const { structured } = makeScenario();

@@ -21,6 +21,23 @@ the `VERSION_SAVED`/`PRE_PROMOTE` snapshot reasons. Phase 2 (#1089, merged) —
 revision can be made live, but editing it afterwards is still refused by the
 existing quote-derived lock until that phase lands.
 
+> **⚠️ Not to be confused with "Project versioning v2" (#1226, parent #1221,
+> `docs/designs/project-versioning-v2.md`).** That is a SEPARATE, newer
+> program that eventually SUPERSEDES the snapshot-based model this whole doc
+> describes, replacing the numeric-only `revision`/`liveRevision` pair with a
+> real `projectVersions` table (one row per version) and `versionId`/
+> `lineageId` FKs stamped directly onto `projectCategories`/`projectGroups`/
+> `projectLineItems`/`projectServices`/`categorySlots`, plus `projects.liveVersionId`
+> pointing at the live row. Phase 1 of that program (#1226) landed the table,
+> the columns and a one-time backfill (`convex/backfillProjectVersions.ts`) —
+> **purely additive**: every project (templates included) now has exactly one
+> `projectVersions` row and a `liveVersionId`, and every current child row is
+> stamped, but NOTHING on this page (or anywhere else in the app) reads any of
+> it yet. The switcher, the read-only bar and everything else below this line
+> still run entirely on `revision`/`liveRevision`/`projectSnapshots` — this
+> doc stays accurate until a later phase of #1221 actually migrates the read
+> path, at which point this doc gets rewritten, not just appended to.
+
 ## The model (unchanged from Phase 1, restated for this phase)
 
 ```

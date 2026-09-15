@@ -147,6 +147,48 @@ describe("enrichProjectDetailOverbooked", () => {
     expect(out.lineItems[0].overbookedInfo).toMatchObject({ overBy: 1, totalStock: 2, effectiveStock: 2 });
   });
 
+  it("uses the gear-committed project window, not raw rental dates, to catch cross-project overlaps", () => {
+    // p1 has NO rental dates set (a real shape — rental dates land later in the
+    // quoting flow) but DOES have an explicit projectStartDate/projectEndDate (the
+    // WS2 #941 gear-committed window). p1's own demand (qty 1) alone fits within
+    // stock (2), but p2's overlapping demand (qty 2) pushes the model over.
+    // Before the fix, passing p1's raw (null) rental dates instead of resolving
+    // getProjectWindow made this look "dateless", which only sums THIS project's
+    // own bookings and silently drops p2 — undercounting the overbooking.
+    const dateless = detailBundle({
+      project: d({
+        id: "p1", organizationId: "o1", projectNumber: "P-1", name: "Gig", createdAt: 1000,
+        rentalStartDate: undefined, rentalEndDate: undefined,
+        projectStartDate: WIN_START, projectEndDate: WIN_END,
+      }),
+    });
+    const equipmentP1: EquipmentBundleData = {
+      ...EMPTY_EQUIPMENT,
+      lineItems: [d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 1, status: "QUOTED" })],
+    };
+    const ob: OverbookingBundleData = {
+      lineItems: [
+        d({ id: "li1", organizationId: "o1", projectId: "p1", modelId: "m1", quantity: 1, status: "QUOTED" }),
+        d({ id: "li2", organizationId: "o1", projectId: "p2", modelId: "m1", quantity: 2, status: "QUOTED" }),
+      ],
+      assets: [
+        d({ id: "a1", organizationId: "o1", modelId: "m1", status: "AVAILABLE", isActive: true }),
+        d({ id: "a2", organizationId: "o1", modelId: "m1", status: "AVAILABLE", isActive: true }),
+      ],
+      bulkAssets: [],
+      projects: [
+        d({ id: "p1", organizationId: "o1", projectNumber: "P-1", name: "Gig", status: "CONFIRMED", isTemplate: false, projectStartDate: WIN_START, projectEndDate: WIN_END }),
+        d({ id: "p2", organizationId: "o1", projectNumber: "P-2", name: "Other Gig", status: "CONFIRMED", isTemplate: false, rentalStartDate: WIN_START, rentalEndDate: WIN_END }),
+      ],
+      models: [d({ id: "m1", organizationId: "o1", assetType: "SERIALIZED" })],
+    } as never;
+
+    const base = reconstructProjectDetail(dateless, equipmentP1);
+    const out = enrichProjectDetailOverbooked(base, ob);
+    expect(out.lineItems[0].isOverbooked).toBe(true);
+    expect(out.lineItems[0].overbookedInfo).toMatchObject({ overBy: 1, totalStock: 2 });
+  });
+
   it("leaves non-overbooked items false when within stock", () => {
     const within: EquipmentBundleData = {
       ...EMPTY_EQUIPMENT,

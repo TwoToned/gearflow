@@ -194,16 +194,16 @@ export async function lookupAssetByTag(
 
     const lookupAllProjects = await getProjectsByOrg(organizationId);
     const lookupConflictProjectIds = lookupAllProjects
-      .filter(
-        (p) =>
-          !p.isTemplate &&
-          !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-          p.rentalStartDate != null &&
-          p.rentalEndDate != null &&
-          (p.rentalStartDate as number) <= endDate.getTime() &&
-          (p.rentalEndDate as number) >= startDate.getTime() &&
-          (excludeProjectId ? p.id !== excludeProjectId : true),
-      )
+      .filter((p) => {
+        if (p.isTemplate) return false;
+        if (["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "")) return false;
+        if (excludeProjectId && p.id === excludeProjectId) return false;
+        // WS2 (#941) — availability reads the PROJECT window (falls back to rental
+        // when unset), not the rental window directly.
+        const { start: pStart, end: pEnd } = getProjectWindow(p);
+        if (pStart == null || pEnd == null) return false;
+        return pStart <= endDate.getTime() && pEnd >= startDate.getTime();
+      })
       .map((p) => p.id);
     const lookupProjectMap = new Map(lookupAllProjects.map((p) => [p.id, p]));
     const lookupConflictSet = new Set(lookupConflictProjectIds);
@@ -294,16 +294,16 @@ export async function checkKitAvailability(
 
   const kitAvailAllProjects = await getProjectsByOrg(organizationId);
   const kitAvailConflictProjectIds = kitAvailAllProjects
-    .filter(
-      (p) =>
-        !p.isTemplate &&
-        !["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "") &&
-        p.rentalStartDate != null &&
-        p.rentalEndDate != null &&
-        (p.rentalStartDate as number) <= endDate.getTime() &&
-        (p.rentalEndDate as number) >= startDate.getTime() &&
-        (excludeProjectId ? p.id !== excludeProjectId : true),
-    )
+    .filter((p) => {
+      if (p.isTemplate) return false;
+      if (["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"].includes(p.status ?? "")) return false;
+      if (excludeProjectId && p.id === excludeProjectId) return false;
+      // WS2 (#941) — availability reads the PROJECT window (falls back to rental
+      // when unset), not the rental window directly.
+      const { start: pStart, end: pEnd } = getProjectWindow(p);
+      if (pStart == null || pEnd == null) return false;
+      return pStart <= endDate.getTime() && pEnd >= startDate.getTime();
+    })
     .map((p) => p.id);
   const kitAvailProjectMap = new Map(kitAvailAllProjects.map((p) => [p.id, p]));
   const kitAvailConflictSet = new Set(kitAvailConflictProjectIds);

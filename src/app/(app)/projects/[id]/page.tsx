@@ -82,6 +82,7 @@ import { MediaUploader, type MediaItem } from "@/components/media/media-uploader
 import { NotesEditor } from "@/components/ui/notes-editor";
 import { useOptimisticProjectNotes, useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
 import { useConfirmStatusGate } from "@/hooks/use-confirm-status-gate";
+import { getProjectWindowDates } from "@/lib/project-window";
 import { ConfirmStatusImpactDialog } from "@/components/projects/confirm-status-impact-dialog";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -319,12 +320,28 @@ export default function ProjectDetailPage({
     );
   }
 
+  // Billing (FinanceTabSlot below) reads the raw rental window directly — pricing
+  // never runs on the gear-committed window (see project-dates.ts).
   const rentalStart = project.rentalStartDate
     ? new Date(project.rentalStartDate as unknown as string)
     : null;
   const rentalEnd = project.rentalEndDate
     ? new Date(project.rentalEndDate as unknown as string)
     : null;
+  const projectWindowStart = project.projectStartDate
+    ? new Date(project.projectStartDate as unknown as string)
+    : null;
+  const projectWindowEnd = project.projectEndDate
+    ? new Date(project.projectEndDate as unknown as string)
+    : null;
+  // Availability/overbooking checks (equipment tab add/edit dialogs) read the
+  // gear-committed window, not the raw rental dates — see project-window.ts.
+  const availabilityWindow = getProjectWindowDates({
+    projectStartDate: projectWindowStart,
+    projectEndDate: projectWindowEnd,
+    rentalStartDate: rentalStart,
+    rentalEndDate: rentalEnd,
+  });
 
   return (
     <RequirePermission resource="project" action="read">
@@ -694,8 +711,8 @@ export default function ProjectDetailPage({
                   <div className="pt-4">
                     <EquipmentTabSlot
                       projectId={id}
-                      rentalStartDate={rentalStart}
-                      rentalEndDate={rentalEnd}
+                      rentalStartDate={availabilityWindow.start}
+                      rentalEndDate={availabilityWindow.end}
                       addMenuSlot={equipmentAddSlot}
                       autoOpenAddModelId={autoOpenAddModelId}
                     />

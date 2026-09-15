@@ -30,6 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { focusRing } from "@/lib/utils";
+import { getProjectWindow } from "@/lib/project-window";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,6 +93,8 @@ type Project = {
   status: string;
   rentalStartDate?: string | null;
   rentalEndDate?: string | null;
+  projectStartDate?: string | null;
+  projectEndDate?: string | null;
   client?: { name: string } | null;
   lineItems?: Array<{ status: string; type: string; isKitChild: boolean }>;
 };
@@ -104,6 +107,23 @@ type PendingAction = {
 
 type UrgencyGroup = "overdue" | "today" | "out" | "upcoming" | "returned";
 
+/** The gear-committed window (falls back to rental when unset) — when gear is
+ *  physically due out/back is exactly what projectStartDate/projectEndDate
+ *  mean, so nothing in this file should read rentalStartDate/rentalEndDate
+ *  directly. See project-window.ts / FEATUREDOCS/11 invariant #4. The fields
+ *  arrive as epoch-ms numbers (native Convex bundle) despite the `Project`
+ *  type's loose `string | null` annotation — see useNativeWarehouseList. */
+function projectWindowOf(project: Project): { start: number | null; end: number | null } {
+  return getProjectWindow({
+    projectStartDate: project.projectStartDate as unknown as number | null | undefined,
+    projectEndDate: project.projectEndDate as unknown as number | null | undefined,
+    rentalStartDate: project.rentalStartDate as unknown as number | null | undefined,
+    rentalEndDate: project.rentalEndDate as unknown as number | null | undefined,
+  });
+}
+
+/** Port of convex/warehouseReturns.ts's projectUrgency — kept in lockstep
+ *  deliberately rather than imported (this is a client component). */
 function getProjectUrgency(project: Project): UrgencyGroup {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -117,18 +137,20 @@ function getProjectUrgency(project: Project): UrgencyGroup {
   // close-out bar). Never "overdue" — it's already returned.
   if (project.status === "RETURNED") return "returned";
 
+  const window = projectWindowOf(project);
+
   const isOut = project.status === "CHECKED_OUT" || project.status === "ON_SITE";
   if (isOut) {
     // Deployed gear is OVERDUE only when it's past its due-back (in / end) date
     // and still out — NOT just because the out date has passed. Otherwise it's
     // out on site and on schedule.
-    const end = project.rentalEndDate ? dayOf(new Date(project.rentalEndDate)) : null;
+    const end = window.end != null ? dayOf(new Date(window.end)) : null;
     if (end && end < today) return "overdue";
     return "out";
   }
 
   // Not yet out (confirmed / prepping): the prep queue, ordered by the out date.
-  const start = project.rentalStartDate ? dayOf(new Date(project.rentalStartDate)) : null;
+  const start = window.start != null ? dayOf(new Date(window.start)) : null;
   if (!start) return "upcoming";
   if (start < dayAfterTomorrow) return "today";
   return "upcoming";
@@ -865,14 +887,16 @@ function ProjectCard({
         )}
       </div>
 
-      {/* Dates + lifecycle stepper */}
+      {/* Dates + lifecycle stepper — the gear-committed window (falls back to
+          rental), so this stays consistent with the urgency badge above, which
+          reads the same window via getProjectUrgency. */}
       <div className="mt-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-caption text-ink-2">
           <CalendarDays className="h-3.5 w-3.5 text-muted" />
           <span className="tabular-nums">
             {formatDateRange(
-              project.rentalStartDate as string | null,
-              project.rentalEndDate as string | null
+              projectWindowOf(project).start as unknown as string | null,
+              projectWindowOf(project).end as unknown as string | null,
             )}
           </span>
         </div>

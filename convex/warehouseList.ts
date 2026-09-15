@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
+import { getProjectWindow } from "./lib/projectWindow";
 
 /**
  * BROWSER-facing native replacement for the warehouse LANDING list
@@ -37,6 +38,8 @@ type ProjectDoc = {
   projectNumber: string;
   rentalStartDate?: number;
   rentalEndDate?: number;
+  projectStartDate?: number;
+  projectEndDate?: number;
   clientId?: string;
 };
 
@@ -59,7 +62,7 @@ export const bundle = query({
     );
     const pipeline = (byStatus.flat() as unknown as ProjectDoc[])
       .filter((p) => p.isTemplate !== true)
-      .sort((a, b) => (a.rentalStartDate ?? 0) - (b.rentalStartDate ?? 0));
+      .sort((a, b) => (getProjectWindow(a).start ?? 0) - (getProjectWindow(b).start ?? 0));
 
     // Thin line items per project (only the 3 fields the stage counter reads).
     const lineItemsByProject = new Map<
@@ -101,6 +104,11 @@ export const bundle = query({
         status: p.status ?? "",
         rentalStartDate: p.rentalStartDate ?? null,
         rentalEndDate: p.rentalEndDate ?? null,
+        // Gear-committed window — falls back to rental when unset (see
+        // project-window.ts). The list's urgency classifier reads THESE, not the
+        // raw rental pair above (kept for reference/other display uses).
+        projectStartDate: p.projectStartDate ?? null,
+        projectEndDate: p.projectEndDate ?? null,
         client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
         lineItems: lineItemsByProject.get(p.id) ?? [],
       })),

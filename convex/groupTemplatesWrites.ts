@@ -10,6 +10,7 @@ import { writeActivityLog } from "./lib/audit";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { createKitLineItemCore } from "./projectLineItems";
 import { findKitConflict } from "./lib/availabilityCore";
+import { getProjectWindow } from "./lib/projectWindow";
 import { recalcProjectTotals } from "./lib/recalc";
 import { assertRefInOrg } from "./lib/orgRef";
 import { getKitByCuid } from "./lib/kits";
@@ -498,7 +499,9 @@ export const applyNative = mutation({
 
     // ── Kit items → expand via the shared core, with a NON-THROWING pre-check ──
     const kitWarnings: string[] = [];
-    const hasDates = project.rentalStartDate != null && project.rentalEndDate != null;
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const { start: kitTemplateWinStart, end: kitTemplateWinEnd } = getProjectWindow(project);
+    const hasDates = kitTemplateWinStart != null && kitTemplateWinEnd != null;
     for (const item of templateItems) {
       if (!item.kitId) continue;
       const kitId = item.kitId; // hoist so the narrowing survives the closure below
@@ -517,8 +520,8 @@ export const applyNative = mutation({
           kitId,
           orgId: a.orgId,
           excludeProjectId: a.projectId,
-          rentalStart: project.rentalStartDate!,
-          rentalEnd: project.rentalEndDate!,
+          rentalStart: kitTemplateWinStart!,
+          rentalEnd: kitTemplateWinEnd!,
         });
         if (conflict) {
           kitWarnings.push(

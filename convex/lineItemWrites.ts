@@ -16,6 +16,7 @@ import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { assertRefInOrg } from "./lib/orgRef";
+import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, type AccessoryPlan } from "./lib/fulfillment";
@@ -609,11 +610,24 @@ export const patchNative = mutation({
     // fields it CAN set — a browser-direct caller bypasses the server-side Zod.
     const setObj = sanitizeClientSet(set, LINE_IMMUTABLE_ON_PATCH);
 
+    // Org-validate every referenced FK the client can patch (by_cuid is global — the
+    // row could be another org's). Same block as addNative/addLineItemSmartNative —
+    // patchNative was missing this entirely, letting a browser-direct caller point a
+    // line at another org's model/asset/bulkAsset/category/group/supplier.
+    if (setObj.modelId) await assertRefInOrg(ctx, "models", setObj.modelId as string, orgId);
+    if (setObj.assetId) await assertRefInOrg(ctx, "assets", setObj.assetId as string, orgId);
+    if (setObj.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", setObj.bulkAssetId as string, orgId);
+    if (setObj.groupId) await assertRefInOrg(ctx, "projectGroups", setObj.groupId as string, orgId);
+    if (setObj.categoryId) await assertRefInOrg(ctx, "projectCategories", setObj.categoryId as string, orgId);
+    if (setObj.supplierId) await assertRefInOrg(ctx, "suppliers", setObj.supplierId as string, orgId);
+
     // #791/#793 lock gate: a money-field edit goes through the FINANCIAL unlock-
     // session flow only (never ALSO prompted by the structural justify dialog —
     // #957 precedence); a purely structural edit (description/notes/quantity/...)
     // goes through the JUSTIFY-tier per-edit gate instead.
     const project = await requireLineProjectInOrg(ctx, doc.projectId, orgId);
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const patchWindow = getProjectWindow(project);
     const touchesMoney = LOCKED_LINE_ITEM_FIELDS.some((f) => f in setObj || clear.includes(f));
     const guard = await assertLifecycleGuard(ctx, project, {
       kind: touchesMoney ? "financial" : "structural",
@@ -693,6 +707,44 @@ export const patchNative = mutation({
     const effType = effField("type");
     const effModelId = effField("modelId") as string | undefined;
     const newQty = clearSet.has("quantity") ? currentQty : ((setObj.quantity as number | undefined) ?? currentQty);
+
+    // Asset REASSIGNMENT (`assetId` actually changing to a different value) — the same
+    // hard guards the dedicated `swapLineItemAsset` mutation runs (model match, kit
+    // membership, RETIRED/LOST/SOLD status, dated double-booking). UNCONDITIONAL, no
+    // `allowOverbook` escape hatch — these aren't soft stock-count warnings, they're
+    // invariants on which physical asset a line may reference. Previously patchNative
+    // let a client repoint `assetId` at any asset in the org (or, pre-task-1, any org)
+    // with zero validation, silently double-booking or reviving a retired asset.
+    const effAssetId = effField("assetId") as string | undefined;
+    if (effAssetId && effAssetId !== doc.assetId) {
+      const newAsset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", effAssetId)).unique();
+      if (!newAsset || newAsset.organizationId !== orgId) throw new ConvexError("Target asset not found");
+      if (effModelId && newAsset.modelId !== effModelId) {
+        throw new ConvexError("Target asset is a different model");
+      }
+      if (newAsset.kitId) {
+        throw new ConvexError(`Asset ${newAsset.assetTag} is part of a kit and can't be assigned directly`);
+      }
+      if (newAsset.status === "RETIRED" || newAsset.status === "LOST" || newAsset.status === "SOLD") {
+        throw new ConvexError(`Asset ${newAsset.assetTag} is ${(newAsset.status as string).toLowerCase()}`);
+      }
+      if (patchWindow.start != null && patchWindow.end != null) {
+        const conflict = await findAssetConflict(ctx, {
+          assetId: effAssetId,
+          orgId,
+          excludeProjectId: doc.projectId,
+          rentalStart: patchWindow.start,
+          rentalEnd: patchWindow.end,
+        });
+        if (conflict) {
+          throw new ConvexError({
+            code: "ASSET_DOUBLE_BOOKED",
+            message: `This asset is booked on ${conflict.projectNumber} — ${conflict.name} during those dates.`,
+          });
+        }
+      }
+    }
+
     // Gate is `newQty > currentQty` (NOT `!sameModel || ...`) to stay BYTE-parity with
     // updateLineItem (src/server/line-items.ts:565-573), which ALSO skips enforcement when
     // the new qty isn't an increase — even on a model change. Over-enforcing here would
@@ -706,12 +758,11 @@ export const patchNative = mutation({
       !allowOverbook &&
       newQty > currentQty
     ) {
-      const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", doc.projectId)).unique();
       const bundle = await loadModelAvailabilityBundle(ctx, effModelId, orgId);
       if (bundle.model) {
         const { available, booked, unavailable, totalStock } = computeModelAvailability(bundle, {
-          rentalStart: project?.rentalStartDate ?? null,
-          rentalEnd: project?.rentalEndDate ?? null,
+          rentalStart: patchWindow.start,
+          rentalEnd: patchWindow.end,
           excludeProjectId: doc.projectId,
         });
         // If the model is UNCHANGED, this line's currentQty is already in `booked`, so
@@ -1422,6 +1473,8 @@ export const addNative = mutation({
     // (stamped with their org) into ANOTHER org's project, which recalcProjectTotals
     // (collects lines by projectId, no org filter) would sweep into that org's totals.
     const addProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const addProjectWindow = getProjectWindow(addProject);
 
     // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
     // structural mutation at JUSTIFY+.
@@ -1469,8 +1522,7 @@ export const addNative = mutation({
     // does, so it's non-breaking for the legit path and self-sufficient for a future
     // browser-direct caller. Sub-hire items never consume our stock (excluded).
     if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
-      const rentalStart = addProject.rentalStartDate ?? null;
-      const rentalEnd = addProject.rentalEndDate ?? null;
+      const { start: rentalStart, end: rentalEnd } = addProjectWindow;
       const hasDates = rentalStart != null && rentalEnd != null;
 
       if (fields.assetId) {
@@ -1574,8 +1626,8 @@ export const addNative = mutation({
       orgId: organizationId,
       projectId,
       lineItemId: id,
-      rentalStart: addProject.rentalStartDate ?? null,
-      rentalEnd: addProject.rentalEndDate ?? null,
+      rentalStart: addProjectWindow.start,
+      rentalEnd: addProjectWindow.end,
       actor,
       now,
     });
@@ -1784,13 +1836,15 @@ export const addKitNative = mutation({
         });
       }
       // (b) Dated double-booking on an overlapping project (parent kit line only).
-      if (kitProject.rentalStartDate != null && kitProject.rentalEndDate != null) {
+      // Gear-committed window, not raw rental dates — see project-window.ts.
+      const { start: kitWinStart, end: kitWinEnd } = getProjectWindow(kitProject);
+      if (kitWinStart != null && kitWinEnd != null) {
         const conflict = await findKitConflict(ctx, {
           kitId,
           orgId: organizationId,
           excludeProjectId: projectId,
-          rentalStart: kitProject.rentalStartDate,
-          rentalEnd: kitProject.rentalEndDate,
+          rentalStart: kitWinStart,
+          rentalEnd: kitWinEnd,
         });
         if (conflict) {
           throw new ConvexError({
@@ -2031,6 +2085,8 @@ export const addLineItemSmartNative = mutation({
     // Client-supplied projectId: prove it's the caller's org before reading/sweeping its
     // lines (by_cuid + by_projectId are GLOBAL). Then bound-check the money inputs.
     const smartProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    // Gear-committed window, not raw rental dates — see project-window.ts.
+    const smartProjectWindow = getProjectWindow(smartProject);
 
     // #791: adding while locked defaults to $0 (server-enforced). #793: adding is a
     // structural mutation at JUSTIFY+. `guard.defaultToZero` is applied differently
@@ -2060,8 +2116,7 @@ export const addLineItemSmartNative = mutation({
 
     // ── Availability / double-booking (copied verbatim from addNative) ─────────
     if (fields.type === "EQUIPMENT" && fields.modelId && !allowOverbook) {
-      const rentalStart = smartProject.rentalStartDate ?? null;
-      const rentalEnd = smartProject.rentalEndDate ?? null;
+      const { start: rentalStart, end: rentalEnd } = smartProjectWindow;
       const hasDates = rentalStart != null && rentalEnd != null;
 
       if (fields.assetId) {
@@ -2352,8 +2407,8 @@ export const addLineItemSmartNative = mutation({
       orgId: organizationId,
       projectId,
       lineItemId: id,
-      rentalStart: smartProject.rentalStartDate ?? null,
-      rentalEnd: smartProject.rentalEndDate ?? null,
+      rentalStart: smartProjectWindow.start,
+      rentalEnd: smartProjectWindow.end,
       actor,
       now,
     });

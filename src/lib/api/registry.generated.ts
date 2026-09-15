@@ -8273,6 +8273,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "actor",
+        "optional": true,
+        "type": "object"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -8294,7 +8299,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c4e7cd4ad7822730",
+    "argsSha": "c6aab3d2d0b9a5d5",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -8357,6 +8362,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": false,
     "args": [
       {
+        "name": "actor",
+        "optional": true,
+        "type": "object"
+      },
+      {
         "name": "assetId",
         "optional": true,
         "type": "string"
@@ -8403,7 +8413,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "aaa65aaf14dc537e",
+    "argsSha": "42781f7266793b99",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -8423,6 +8433,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "scopePairs": [],
     "agentReachable": false,
     "args": [
+      {
+        "name": "actor",
+        "optional": true,
+        "type": "object"
+      },
       {
         "name": "items",
         "optional": false,
@@ -8445,7 +8460,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "326d15e9c8f30c6f",
+    "argsSha": "ad890b4e938f51aa",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -8465,6 +8480,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "scopePairs": [],
     "agentReachable": false,
     "args": [
+      {
+        "name": "actor",
+        "optional": true,
+        "type": "object"
+      },
       {
         "name": "now",
         "optional": false,
@@ -8487,7 +8507,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d0d0e61dd09f072a",
+    "argsSha": "df05d25b24ad1628",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -8507,6 +8527,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "scopePairs": [],
     "agentReachable": false,
     "args": [
+      {
+        "name": "actor",
+        "optional": true,
+        "type": "object"
+      },
       {
         "name": "now",
         "optional": false,
@@ -8529,7 +8554,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "571d3f01e5d2ad17",
+    "argsSha": "f5bd2d794d55adff",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -44215,7 +44240,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "7aded01b9d5488ea",
-    "returnsSha": "ca599837ab6ba347",
+    "returnsSha": "9a3571d9d35bce15",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",

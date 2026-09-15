@@ -118,6 +118,9 @@ export async function prepItemDirect(
     prepContainer: prepContainer ?? undefined,
     ...(includeAccessoryIds ? { includeAccessoryIds } : {}),
     now,
+    // #1160 — attributes the "Auto-advanced to Prepping" audit row this mutation
+    // may write to the operator who actually prepped, not to the platform.
+    actor: { userId, userName },
   });
   const result = await convex.query(api.projectLineItems.getById, { id: lineItemId });
 
@@ -195,6 +198,7 @@ export async function prepItemsBatch(
     projectId,
     items,
     now,
+    actor: { userId, userName },
   });
 
   // Re-read the touched lines once and log one activity entry per prepped item
@@ -455,6 +459,7 @@ export async function prepKitChildren(
   });
 
   await convex.mutation(api.checkRecordOps.prepKitChildren, {
+    actor: { userId, userName },
     organizationId,
     projectId,
     parentLineItemId,
@@ -527,6 +532,7 @@ export async function prepKitsBatch(
 
   // ONE atomic array mutation preps every kit tree (partial-success on org/project).
   const { succeeded, errors } = await convex.mutation(api.checkRecordOps.prepKitsBatch, {
+    actor: { userId, userName },
     organizationId,
     projectId,
     parentLineItemIds: unique,

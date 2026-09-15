@@ -125,10 +125,12 @@ export async function buildFinanceLines(
   projectId: string,
   orgId: string,
 ): Promise<FinanceSnapshotLine[]> {
-  const [groups, projectLines, services] = await Promise.all([
+  const [groups, projectLines, services, project] = await Promise.all([
     ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
     ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect(),
+    // `by_cuid` is GLOBAL — org-checked below like every other lookup here.
+    ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first(),
   ]);
 
   const { modelNameById, kitNameById } = await resolveModelAndKitNames(ctx, projectLines, orgId);
@@ -178,7 +180,22 @@ export async function buildFinanceLines(
 
   for (const li of projectLines) {
     if (li.isKitChild || li.isOptional || li.status === "CANCELLED") continue;
-    if (li.groupId && pricedGroupIds.has(li.groupId)) continue; // rolled into the group's flat price above
+    // A priced group's flat price covers its OWN gear, so its members don't
+    // bill separately — EXCEPT a sub-hire line, which carries its own client
+    // charge independent of the host group's bundle price. `recalc.ts`'s
+    // `subHireGroupedRevenue` counts exactly that (it filters on `groupId !=
+    // null && subHireId != null` with NO priced-group exclusion, pinned by
+    // `recalc.test.ts` "counts a sub-hire line placed inside a priced project
+    // group (issue #8)"), so dropping it here put this snapshot permanently
+    // BELOW `projects.subtotal` for any project with one. Two consequences,
+    // the first of which shipped silently for as long as the Xero push has
+    // existed:
+    //   - the pushed Xero invoice UNDER-billed by the sub-hire's charge;
+    //   - once `assertLinesReconcileWithSubtotal` (src/server/xero.ts) started
+    //     enforcing `sum(lineTotal) === subtotal`, every such invoice became
+    //     unpushable, with a "void and reissue" remedy that regenerates the
+    //     same short lines.
+    if (li.groupId && pricedGroupIds.has(li.groupId) && li.subHireId == null) continue;
     if (li.groupId && !pricedGroupIds.has(li.groupId) && !li.isCustomItem && li.subHireId == null) {
       // Member of an UNPRICED group that isn't a custom-item extra or a
       // sub-hire charge — recalc doesn't bill this on its own either (only
@@ -258,5 +275,41 @@ export async function buildFinanceLines(
     lines[slot] = { ...lines[slot], unitPrice: total, lineTotal: total };
   }
 
+  // The PROJECT-level discount, as its own negative line.
+  //
+  // `recalc.ts` applies `discountPercent` AFTER summing the rows above
+  // (`discountAmount = round(subtotal * pct/100)`, `taxableAmount = subtotal -
+  // discountAmount`), and `invoices` has no discount column — so without this
+  // line the snapshot sums to the PRE-discount figure while the invoice's
+  // `total` is post-discount. The Xero push sends these lines as
+  // tax-exclusive `LineAmount`s, so a discounted project was billed the
+  // pre-discount base plus tax on it: a $1000 + 10% discount project issued
+  // by Flow at $990 arrived in Xero at $1100. Same defect class as the
+  // GST-inclusive deposit line (INV-260901), one level up.
+  //
+  // Emitted last so it reads as a deduction from everything above it, and
+  // never folded into a rollup category — it belongs to the whole project,
+  // not to one section.
+  const discountPercent = project && project.organizationId === orgId ? Number(project.discountPercent) || 0 : 0;
+  if (discountPercent > 0) {
+    const gross = round2(lines.reduce((sum, l) => sum + l.lineTotal, 0));
+    const discountAmount = round2(gross * (discountPercent / 100));
+    if (discountAmount > 0) {
+      lines.push({
+        sourceType: "CUSTOM",
+        description: `Discount (${discountPercent}%)`,
+        quantity: 1,
+        unitPrice: -discountAmount,
+        lineTotal: -discountAmount,
+      });
+    }
+  }
+
   return lines;
+}
+
+/** Mirrors `recalc.ts`'s `round` so the discount computed here lands on the
+ *  same cent the project's stored `discountAmount` did. */
+function round2(v: number): number {
+  return Math.round(v * 100) / 100;
 }

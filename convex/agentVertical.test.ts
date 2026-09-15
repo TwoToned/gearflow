@@ -93,6 +93,9 @@ async function project(
   org = ORG,
   extra: Record<string, unknown> = {},
 ) {
+  // #1228 — every project needs a live projectVersions row + liveVersionId,
+  // or every by_versionId-family read/write on it throws.
+  const versionId = `v-${id}`;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id,
@@ -101,9 +104,14 @@ async function project(
       name: "Gig",
       status,
       isTemplate: false,
+      liveVersionId: versionId,
       createdAt: NOW,
       updatedAt: NOW,
       ...extra,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: org, projectId: id, number: 1,
+      contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -169,7 +177,7 @@ describe("assertion 1 — overbooking under concurrency", () => {
     await t.run(async (ctx) => {
       const lines = await ctx.db
         .query("projectLineItems")
-        .withIndex("by_projectId", (q) => q.eq("projectId", "p1"))
+        .withIndex("by_versionId", (q) => q.eq("versionId", "v-p1"))
         .collect();
       expect(lines).toHaveLength(1);
     });
@@ -193,7 +201,7 @@ describe("assertion 2 — allowOverbook is separately scoped", () => {
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
       await ctx.db.insert("assets", { id: "a0", organizationId: ORG, modelId: "m1", assetTag: "A-0", status: "AVAILABLE", isActive: true });
       await ctx.db.insert("projectLineItems", {
-        id: "lx", organizationId: ORG, projectId: "p1", modelId: "m1",
+        id: "lx", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "lx", modelId: "m1",
         type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", isKitChild: false,
       });
     });
@@ -265,7 +273,7 @@ describe("assertion 3 — financial lock tier", () => {
     await project(t, "CONFIRMED");
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
-        id: "li1", organizationId: ORG, projectId: "p1", description: "Light",
+        id: "li1", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "li1", description: "Light",
         status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false,
       });
     });

@@ -37,11 +37,15 @@ async function ownerMember(t: ReturnType<typeof makeT>) {
 // which would otherwise make every unitPrice assertion below fail for the
 // wrong reason).
 async function seedProject(t: ReturnType<typeof makeT>, over: Record<string, unknown> = {}) {
+  // #1228 — every project needs a live projectVersions row + liveVersionId.
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
-      status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+      status: "QUOTED", isTemplate: false, liveVersionId: "v1", createdAt: NOW, updatedAt: NOW,
       ...over,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: "v1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -221,7 +225,7 @@ describe("new-stock sale (Model.saleStockQuantity)", () => {
     expect(r1.merged).toBe(false);
     expect(r2.merged).toBe(false);
     const lines = await t.run(async (ctx) =>
-      ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect(),
+      ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "v1")).collect(),
     );
     expect(lines.filter((l) => l.type === "SALE")).toHaveLength(2);
   });

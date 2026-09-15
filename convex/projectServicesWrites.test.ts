@@ -30,11 +30,19 @@ async function member(t: T, role: string) {
   });
 }
 
+/** #1228 — every project needs a live projectVersions row + liveVersionId
+ *  (deterministic `v-${id}`), or every by_versionId-family read/write on it
+ *  throws. */
 async function seedProject(t: T, id = "p1", orgId = ORG, extra: Record<string, unknown> = {}) {
+  const versionId = `v-${id}`;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id, organizationId: orgId, projectNumber: `P-${id}`, name: "Gig", status: "QUOTED",
-      total: 999, taxRate: 10, ...extra,
+      total: 999, taxRate: 10, liveVersionId: versionId, ...extra,
+    });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: id, number: 1,
+      contentState: "ready", createdAt: NOW, createdById: "u1",
     });
   });
 }
@@ -476,7 +484,7 @@ describe("cloneServicesNative", () => {
       targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 5, actor: ACTOR, auditId: "logcl",
     });
     expect(res.cloned).toBe(1);
-    const targetServices = await t.run(async (ctx) => (await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect()));
+    const targetServices = await t.run(async (ctx) => (await ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p2")).collect()));
     expect(targetServices).toHaveLength(1);
     expect(targetServices[0].status).toBe("PLANNED");
     expect(targetServices[0].id).not.toBe("s1"); // fresh cuid
@@ -500,7 +508,7 @@ describe("cloneServicesNative", () => {
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.cloneServicesNative, {
       targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 5, actor: ACTOR, auditId: "logcl",
     });
-    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect());
+    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p2")).collect());
     expect(targetServices).toHaveLength(1);
     expect(targetServices[0].date).toBe(NOW + 3 * DAY); // shifted by the 3-day window offset
   });
@@ -667,7 +675,7 @@ describe("#988 previously-deferred gate sites", () => {
       projectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logg",
     });
     expect(res.created).toBe(1);
-    const svcs = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+    const svcs = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1")).collect());
     expect(svcs[0].unitPrice).toBeUndefined(); // template's defaultUnitPrice was zeroed, not copied
   });
 
@@ -700,7 +708,7 @@ describe("#988 previously-deferred gate sites", () => {
       targetProjectId: "p2", sourceProjectId: "p1", orgId: ORG, now: NOW + 1, actor: ACTOR, auditId: "logcl",
     });
     expect(res.cloned).toBe(1);
-    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "p2")).collect());
+    const targetServices = await t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p2")).collect());
     expect(targetServices[0].unitPrice).toBeUndefined();
   });
 

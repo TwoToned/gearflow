@@ -30,10 +30,12 @@ async function seed(t: ReturnType<typeof makeT>) {
   await t.run(async (ctx) => {
     await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "owner" });
     // A project + line item belonging to ANOTHER org.
-    await ctx.db.insert("projects", { id: "projB", organizationId: OTHER, projectNumber: "B-1", name: "Foreign", createdAt: NOW, updatedAt: NOW });
-    await ctx.db.insert("projectLineItems", { id: "liB", organizationId: OTHER, projectId: "projB", description: "secret", lineTotal: 999, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projects", { id: "projB", organizationId: OTHER, projectNumber: "B-1", name: "Foreign", liveVersionId: "vB", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "vB", organizationId: OTHER, projectId: "projB", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    await ctx.db.insert("projectLineItems", { id: "liB", organizationId: OTHER, projectId: "projB", versionId: "vB", lineageId: "liB", description: "secret", lineTotal: 999, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
     // A project belonging to the CALLER's org.
-    await ctx.db.insert("projects", { id: "projA", organizationId: ORG, projectNumber: "A-1", name: "Mine", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projects", { id: "projA", organizationId: ORG, projectNumber: "A-1", name: "Mine", liveVersionId: "vA", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "vA", organizationId: ORG, projectId: "projA", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
   });
 }
 
@@ -64,7 +66,7 @@ describe("line-item cross-tenant isolation", () => {
     ).rejects.toThrow(/forbidden|another organization/i);
     // No phantom row was written into the foreign project.
     const count = await t.run(async (ctx) =>
-      (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "projB")).collect()).length,
+      (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "vB")).collect()).length,
     );
     expect(count).toBe(1); // only the original liB
   });

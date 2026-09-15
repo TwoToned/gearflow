@@ -974,7 +974,8 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
   ) => {
     await member(t, "member");
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, taxRate: 10, discountPercent: 0, ...projExtra });
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "QUOTED", isTemplate: false, taxRate: 10, discountPercent: 0, liveVersionId: "v1", ...projExtra });
+      await ctx.db.insert("projectVersions", { id: "v1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED", ...modelExtra });
     });
   };
@@ -1054,7 +1055,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     await seedProjectModel(t, { dailyRate: 20 });
     await t.run(async (ctx) => {
       await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Stage", suggestedPrice: 0, sortOrder: 0 });
-      await ctx.db.insert("projectLineItems", { id: "ex", organizationId: ORG, projectId: "p1", modelId: "m1", type: "EQUIPMENT", quantity: 2, unitPrice: 10, duration: 1, groupId: "g1", status: "CONFIRMED", isKitChild: false, notes: "first" });
+      await ctx.db.insert("projectLineItems", { id: "ex", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "ex", modelId: "m1", type: "EQUIPMENT", quantity: 2, unitPrice: 10, duration: 1, groupId: "g1", status: "CONFIRMED", isKitChild: false, notes: "first" });
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(
       api.lineItemWrites.addLineItemSmartNative,
@@ -1063,7 +1064,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     expect(res.merged).toBe(true);
     expect(res.id).toBe("ex");
     await t.run(async (ctx) => {
-      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect()).filter((l) => l.modelId === "m1");
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "v1")).collect()).filter((l) => l.modelId === "m1");
       expect(lines).toHaveLength(1); // merged, no new row
       const ex = lines[0];
       expect(ex.quantity).toBe(5); // 2 + 3
@@ -1118,7 +1119,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     const t = makeT();
     await seedProjectModel(t, { dailyRate: 20 });
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectLineItems", { id: "ex", organizationId: ORG, projectId: "p1", modelId: "m1", type: "EQUIPMENT", quantity: 2, unitPrice: 10, duration: 1, status: "CONFIRMED", isKitChild: false });
+      await ctx.db.insert("projectLineItems", { id: "ex", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "ex", modelId: "m1", type: "EQUIPMENT", quantity: 2, unitPrice: 10, duration: 1, status: "CONFIRMED", isKitChild: false });
     });
     const res = await t.withIdentity(asUser(ORG)).mutation(
       api.lineItemWrites.addLineItemSmartNative,
@@ -1126,7 +1127,7 @@ describe("lineItemWrites.addLineItemSmartNative", () => {
     );
     expect(res.merged).toBe(false);
     await t.run(async (ctx) => {
-      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect()).filter((l) => l.modelId === "m1");
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "v1")).collect()).filter((l) => l.modelId === "m1");
       expect(lines).toHaveLength(2); // separate row created
     });
   });

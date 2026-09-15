@@ -22,9 +22,12 @@ const SERVICE = { subject: "gearflow-service", svc: true };
 const asUser = (orgId: string) => ({ subject: USER, orgId });
 const ACTOR = { userId: USER, userName: "Alice" };
 
+/** #1228 — every project needs a live projectVersions row + liveVersionId,
+ *  or every by_versionId-family read/write on it throws. */
 async function seedProject(t: ReturnType<typeof convexTest>, role?: string, isTemplate = false, status = "CONFIRMED") {
   await t.run(async (ctx) => {
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status, isTemplate, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status, isTemplate, liveVersionId: "v1", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     if (role) await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
   });
 }
@@ -1159,21 +1162,21 @@ describe("projectWrites.duplicateNative", () => {
       expect(proj?.taxRate).toBe(5); // scalar copied
 
       // Categories — new id, same name.
-      const cats = (await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      const cats = (await ctx.db.query("projectCategories").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect());
       expect(cats.length).toBe(1);
       expect(cats[0].id).not.toBe("cat1");
       expect(cats[0].name).toBe("Audio");
       const newCatId = cats[0].id;
 
       // Groups — new id, categoryId remapped to the NEW category.
-      const groups = (await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      const groups = (await ctx.db.query("projectGroups").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect());
       expect(groups.length).toBe(1);
       expect(groups[0].id).not.toBe("grp1");
       expect(groups[0].categoryId).toBe(newCatId);
       const newGroupId = groups[0].id;
 
       // Line items — parents + children, remapped, status QUOTED.
-      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect());
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect());
       expect(lines.length).toBe(3);
       const parents = lines.filter((l) => !l.isKitChild);
       const children = lines.filter((l) => l.isKitChild);
@@ -1198,7 +1201,7 @@ describe("projectWrites.duplicateNative", () => {
       expect(pms[0].userId).toBe(USER);
 
       // NOT copied.
-      expect((await ctx.db.query("projectServices").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", proj!.liveVersionId!)).collect()).length).toBe(0);
       expect((await ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
       expect((await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", "dup1")).collect()).length).toBe(0);
 
@@ -1298,7 +1301,7 @@ describe("projectWrites.saveAsTemplateNative", () => {
       expect(tpl?.projectNumber).toBe("TPL-0001");
 
       // Lines copied — parent + child — but category/group OMITTED.
-      const lines = (await ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect());
+      const lines = (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", tpl!.liveVersionId!)).collect());
       expect(lines.length).toBe(2);
       for (const l of lines) {
         expect(l.status).toBe("QUOTED");
@@ -1310,8 +1313,8 @@ describe("projectWrites.saveAsTemplateNative", () => {
       expect(child.parentLineItemId).toBe(parent.id);
 
       // No categories / groups / PMs copied.
-      expect((await ctx.db.query("projectCategories").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
-      expect((await ctx.db.query("projectGroups").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectCategories").withIndex("by_versionId", (q) => q.eq("versionId", tpl!.liveVersionId!)).collect()).length).toBe(0);
+      expect((await ctx.db.query("projectGroups").withIndex("by_versionId", (q) => q.eq("versionId", tpl!.liveVersionId!)).collect()).length).toBe(0);
       expect((await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", "tpl1")).collect()).length).toBe(0);
 
       // Recalc ran: no groups on the copy → equipmentRevenue = the ungrouped parent's

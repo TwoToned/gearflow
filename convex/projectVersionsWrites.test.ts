@@ -35,16 +35,23 @@ async function seedMember(t: ReturnType<typeof makeT>, role = "owner", orgId = O
 }
 
 async function seedProject(t: ReturnType<typeof makeT>, orgId = ORG, over: Partial<Doc<"projects">> = {}) {
+  // #1228 — every project needs a live projectVersions row + liveVersionId,
+  // or every by_versionId-family read/write on it throws.
+  const versionId = "v1";
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
       id: "p1", organizationId: orgId, projectNumber: "RVLT-2026-0087", name: "Gig",
-      status: "QUOTING", isTemplate: false, revision: 1,
+      status: "QUOTING", isTemplate: false, revision: 1, liveVersionId: versionId,
       subtotal: 100, discountAmount: 0, taxAmount: 10, total: 110, taxRate: 10,
       createdAt: NOW, updatedAt: NOW,
       ...over,
     });
+    await ctx.db.insert("projectVersions", {
+      id: versionId, organizationId: orgId, projectId: "p1", number: 1,
+      contentState: "ready", createdAt: NOW, createdById: "u1",
+    });
     await ctx.db.insert("projectLineItems", {
-      id: "l1", organizationId: orgId, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+      id: "l1", organizationId: orgId, projectId: "p1", versionId, lineageId: "l1", status: "CONFIRMED", type: "EQUIPMENT",
       isKitChild: false, isOptional: false, description: "PA System", quantity: 1, unitPrice: 100, lineTotal: 100,
     });
   });
@@ -315,7 +322,7 @@ const promote = (t: ReturnType<typeof makeT>, targetRevision: number, over: Part
   t.withIdentity(asUser(ORG)).mutation(api.projectVersionsWrites.promoteRevisionNative, promoteArgs(targetRevision, over) as never);
 
 const getLineItems = (t: ReturnType<typeof makeT>) =>
-  t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_projectId", (q) => q.eq("projectId", "p1")).collect());
+  t.run(async (ctx) => ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "v1")).collect());
 
 describe("promoteRevisionNative — preconditions, checked in order", () => {
   test("rejects a template project", async () => {

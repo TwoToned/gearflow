@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `rentalStartDate`/`rentalEndDate` raw instead of resolving the project's
   actual availability window, which silently dropped into single-project-only
   checking and missed overlapping demand from other jobs.
+- Full follow-up sweep of every booking/overbooking/stock-control code path
+  for the same class of bug, this time in the actual server-side enforcement
+  (not just badge display): adding, editing, or reassigning an asset on a
+  line item (`patchNative`/`addNative`/`addLineItemSmartNative`/kit-add),
+  swapping an asset (`swapLineItemAsset`), the org-wide conflicts banner and
+  swap-candidate list, the post-promote overbooking re-check, the warehouse
+  pull sheet and Online Pick List, all 5 project PDFs, and the "add by asset
+  tag" / "add kit" availability lookups could all silently under-enforce or
+  fully skip a genuine double-booking on a project whose committed gear
+  window diverged from its rental dates. All now resolve the correct window
+  first.
+- `patchNative` (editing an existing line item) now validates a reassigned
+  `modelId`/`assetId`/`bulkAssetId`/`groupId`/`categoryId`/`supplierId`
+  belongs to the caller's own organization, and running the same
+  kit-membership/status/double-booking checks the dedicated asset-swap
+  mutation already ran — it previously had neither, so a client could point
+  a line at another organization's row, or silently double-book/revive a
+  retired asset, with no validation at all.
+- A returned asset unit no longer keeps showing as "booked" on that asset's
+  own availability calendar for the rest of the project window.
 
 ## [0.27.0] - 2026-09-14
 

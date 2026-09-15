@@ -37,11 +37,13 @@ version through the same components and the same mutations**, so a non-live vers
 editable workspace, not a relic. "Make live" becomes a pointer flip plus warehouse
 reconciliation — nothing is overwritten, so nothing needs auto-saving. Quotes become immutable
 **documents issued from a version** (any version, not only the live one), invoices are issued
-from the live version and record which one. Locking collapses to one explicit matrix: a version
-carries an explicit **`pricingLocked`** flag (set when a quote goes out), and the **live** version
-additionally carries the project's lifecycle lock. Unlock sessions, their private snapshots, `PRE_PROMOTE` auto-saves,
-the `protected` flag, three overlapping "create a version" mutations and ~1,000 lines of
-projected read-only UI all go away.
+from the live version and record which one. Locking collapses to **one boolean on the project**
+(`pricingLocked`, set when a quote goes out or the job is confirmed, cleared by one click) that
+applies to the live version only — non-live versions are never locked (D37–D41, §4.5). The four
+lifecycle tiers, unlock sessions and their private snapshots, per-edit justification, the
+hard-lock override audience, `PRE_PROMOTE` auto-saves, the `protected` flag, three overlapping
+"create a version" mutations and ~1,900 lines of projected read-only UI and lock machinery all go
+away.
 
 ---
 
@@ -173,8 +175,8 @@ flip, so it is not a restore and never falsifies a document.
 | **Live** | The one version the warehouse, availability, bookings and invoices follow. A pointer. | "Latest" — v2 can be live while v5 exists |
 | **Quote** | An immutable **document** issued from a version: PDF bytes + money snapshot + dates + recipient + outcome (sent → accepted / declined / recalled / superseded / expired). The pre-send row (today's `DRAFT`) is the send dialog's working record and is deleted with its version. | The version's identity |
 | **Invoice** | Issued from the **live** version only; records `versionId` for lineage; project-level ledger | Versioned |
-| **`pricingLocked`** (D18) | An explicit flag on the version, set by send, cleared by recall, **kept** after superseded / declined / expired. While set, every field the quote priced is refused: prices, discounts, quantities of priced lines, rental window, tax, billing overrides. Structure (adding a line) stays allowed on the **live** version at $0 with the Unpriced badge; a non-live locked version is fully read-only because nothing operational happens to it. | Derived from quote status at read time (that is the I-11 defect) |
-| **Lifecycle lock** | The project-status lock (CONFIRMED+ pricing, ON_SITE justify, COMPLETED hard) — applies to the **live** version only, because only the live version has operational consequences | Applied to non-live versions |
+| **`pricingLocked`** (D37, revised) | A plain boolean on the **project**, set when a quote is sent or the project reaches `CONFIRMED`, cleared by one click from the strip by anyone with `project:update`. While set, money fields on the **live** version are read-only and new adds default to $0 with the Unpriced badge. That is the entire lock system. | A flag on the version · derived from quote status · a tier · something only an admin can clear |
+| **Lifecycle lock** | *Gone (D39).* The four-tier `OPEN`/`FINANCE_LOCKED`/`JUSTIFY`/`HARD_LOCKED` table, unlock sessions, per-edit justification and the hard-lock override audience are all removed — see §4.5 for why each is safe to drop. Status still drives *when* `pricingLocked` switches on; it no longer drives what is writable. | A permission model |
 
 ### 4.2 Data model
 
@@ -186,9 +188,10 @@ projectVersions: {
   label?: string,                       // ≤60, internal unless printed (existing labelOnDocument rule)
   basedOnVersionId?: string,            // lineage of the copy
   createdAt, createdById,
-  pricingLocked: boolean,               // D18. set by sendNative, cleared by recallNative
-  pricingLockedAt?, pricingLockedById?,
-  contentState: "ready" | "copying" | "missing",  // "copying" while a batched copy is in flight; "missing" for a pre-versioning revision with no captured content
+  // NO pricingLocked (D37/D38 reverse D18): the lock is one boolean on `projects`, applies to
+  // the LIVE version only, and non-live versions are never locked. A per-version flag is what
+  // made the page re-shape on every switch — see §4.5.
+  contentState: "ready" | "missing",    // "missing" = a pre-versioning revision with no captured content
   // PLAN FIELDS — present ONLY on non-live versions (swap model, below):
   rentalStartDate?, rentalEndDate?, projectStartDate?, projectStartTime?, projectEndDate?, projectEndTime?,
   billingWeeksOverride?, billingDaysOverride?, taxRate?, discountPercent?, discountAmount?,
@@ -214,7 +217,11 @@ projectVersions: {
 // its own rows, plus the live crew assignments and sub-hire orders whose lineage matches one of
 // its services/lines (recalc.ts:221-222 sums these into labourCostTotal/subHireCostTotal/margin);
 // unmatched commitments are excluded; the count the strip shows is DERIVED by its query, not stored. PROJECT_MONEY_ANCHORS stripping (projectWrites.ts) extends to projectVersions.* patches.
-projects.liveVersionId: string          // v.optional on arrival, required after the backfill (§6)
+projects.liveVersionId: string          // v.optional on arrival
+projects.pricingLocked?: boolean        // D37 — the whole lock system (absent = false)
+projects.pricingLockedAt?: number
+projects.pricingLockedById?: string
+// (liveVersionId is v.optional on arrival, required after the backfill — §6)
 
 // THE COMPOSED OBJECT (D32): the swap keeps `projects.*` correct for readers of the LIVE version
 // only. ~16 non-test files in `src/` read `project.rentalStartDate`/`discountPercent`/etc. directly
@@ -244,14 +251,17 @@ subHireItems.lineLineageId / targetGroupLineageId / targetCategoryLineageId
 
 // quotes — the document only
 quotes.versionId: string                // the join; the `version` column is kept until Phase 7, but from Phase 2 every reader takes the number from projectVersions.number via versionId
-// pricingLocked, label, labelOnDocument move to projectVersions; snapshotId, protected* are removed;
+// label, labelOnDocument move to projectVersions; pricingLocked becomes projects.pricingLocked
+// (D37); snapshotId, protected* are removed;
 // recalledPdfFileIds is KEPT under its current name (no rename)
 
 // invoices
 invoices.versionId: string              // replaces sourceRevision (number)
 
 // REMOVED: projects.revision, projects.liveRevision, projectSnapshots.revision,
-//          reasons QUOTE_SENT | VERSION_SAVED | PRE_PROMOTE, projectUnlockSessions (§4.9)
+//          reasons QUOTE_SENT | VERSION_SAVED | PRE_PROMOTE, projectUnlockSessions (§4.9),
+//          and the whole lifecycle-tier machinery: LockTier, LOCK_TIER_RANK, LockTierReason,
+//          resolveLockTier, bypassQuoteLock, requireJustification, isHardLockOverrideAllowed (D39)
 ```
 
 **Field arrival.** Every new field is `v.optional` while the backfill runs (the `depositPercent`
@@ -269,18 +279,18 @@ counterpart in the incoming version is carried across as an `unplanned` line, ne
 
 1. Every project, **templates included**, has ≥1 version and `liveVersionId` points at one of
    its own. (Templates version too so that `saveAsTemplateNative` / create-from-template read
-   through the same index; a template's single version is never `pricingLocked`.)
+   through the same index; a template's project is never `pricingLocked`.)
 2. `number` is unique per project and never reused; gaps are honest.
 3. **Exactly one quote row per version** (created lazily by the first send). **Any number of
    `SENT` quotes across versions** (D19); **at most one `ACCEPTED` per project**; accepting one
    supersedes every other open quote. Re-sending a version **reuses its row**: status back to
    `SENT`, the previous PDF pushed onto `recalledPdfFileIds`, nothing superseded (today's
    recall→resend shape, #1027).
-4. `assertVersionWritable(ctx, version, { fields })` is the one guard every versioned-table
-   mutation calls: a money field on a `pricingLocked` version is refused (`PRICING_LOCKED`); any
-   structural write on a `pricingLocked` **non-live** version is refused (`VERSION_LOCKED`); the
-   live version additionally passes through the lifecycle tier (§4.5). It replaces
-   `assertLifecycleGuard`'s quote arm and `bypassQuoteLock`.
+4. `assertPricingUnlocked(ctx, project, version)` is the one guard, called **only by money-field
+   writes** (~8 sites, down from 44): it refuses with `PRICING_LOCKED` when
+   `project.pricingLocked` and the version is the live one. Structural and plan-field writes call
+   nothing. It replaces `assertLifecycleGuard` in full, along with `bypassQuoteLock`,
+   `resolveLockTier` and the unlock-session lookup (D37–D39, §4.5).
 5. Rows of a non-live version are invisible to availability, overbooking, warehouse, dispatch,
    readiness, revenue allocation, Xero push, the dashboard and every org-level list. **Enforced
    by construction** (§4.9) and by an exhaustive test in the `xtenantExhaustive` style.
@@ -296,10 +306,10 @@ counterpart in the incoming version is carried across as an `unplanned` line, ne
 |---|---|---|---|
 | **New version** | header menu, Versions panel | `versions.createNative({ fromVersionId?, label? })` | Copies the source version's plan (default: the version you are looking at) via `copyPlanGraph` (§4.8). Replaces `newVersionNative`, `saveVersionNative`, `repriceFromRevisionNative`. |
 | **Open** | header menu, panel | `?v=N` | Renders the version in every tab, editable per §4.5. |
-| **Edit** | every tab | the existing `*Native` mutations, now taking `versionId` (optional in the public API, default live) | Guard: `assertVersionWritable`. |
+| **Edit** | every tab | the existing `*Native` mutations, now taking `versionId` (optional in the public API, default live) | Money-field writes call `assertPricingUnlocked`; everything else calls nothing (D37). |
 | **Rename** | panel | `versions.setLabelNative` | |
-| **Send quote** | strip, panel, Finance | `quotesWrites.sendNative({ versionId })` | **Any** version. Sets `pricingLocked`, renders the PDF; a re-send reuses the version's row (invariant 3). Never supersedes another version's quote (D19). |
-| **Recall** | Finance | `recallNative` | Clears `pricingLocked`; PDF retained. Kept as the pre-client typo fix. |
+| **Send quote** | strip, panel, Finance | `quotesWrites.sendNative({ versionId })` | **Any** version. Sets `projects.pricingLocked` (only meaningful once that version is live — D38), renders the PDF; a re-send reuses the version's row (invariant 3). Never supersedes another version's quote (D19). |
+| **Recall** | Finance | `recallNative` | Clears `projects.pricingLocked`; PDF retained. Kept as the pre-client typo fix. |
 | **Accept** | Finance, strip | `quotesWrites.acceptNative({ quoteId })` | **Accept = make live in the same transaction** (D20): the dialog embeds the make-live summary and conflicts; on confirm the version goes live, the quote is `ACCEPTED`, every other open quote is `SUPERSEDED`, `CONFIRMED` is offered. `CONFIRMED` always requires the **live** version's quote to be `ACCEPTED` or the existing admin override. |
 | **Decline** | Finance | unchanged | |
 | **Unaccept** | Finance (owner) | `unacceptNative` | `ACCEPTED → SENT` on the document only. It does **not** flip `liveVersionId` back and does **not** un-supersede the other quotes (they were superseded by a business decision, re-send them if needed). Refused once an invoice has been issued from the version or gear has been checked out (`UNACCEPT_TOO_LATE`). |
@@ -311,33 +321,89 @@ counterpart in the incoming version is carried across as an `unplanned` line, ne
 Removed verbs: Save version, Reprice from revision, Recall-to-edit, Protect/Unprotect, Unlock
 session (open/commit/discard). Correction stays (a metadata fix on the document, not the version).
 
-### 4.5 The locking matrix — explicit, one table, shown in the UI
+### 4.5 The lock — one project flag, one click to clear (D37)
 
-`resolveLocks(project, version) → { money: Perm; structure: Perm; planFields: Perm; warehouse: Perm; exit: Exit }`
-where `Perm = "allowed" | "unpriced" | "justify" | "locked"` and `Exit` names the affordance the
-strip shows. The strip and every `LockedField`/`GatedButton` read this one result.
+**Revised 2026-09-15 (D37–D41).** The earlier draft of this section kept a nine-row matrix
+keyed on `(live?, pricingLocked, status)` with four permission values. That is still a lock
+system that changes shape as you switch versions, and it is still a lot of refusals. Both go.
 
-| Situation | Money fields | Structure (add/remove/qty) | Plan fields (dates/client/notes) | Warehouse verbs | Exit |
-|---|---|---|---|---|---|
-| Non-live, not locked | allowed | allowed | allowed | greyed (D15) | — |
-| Non-live, `pricingLocked` | locked | locked | locked | greyed | New version from it · Recall |
-| Live, OPEN status, not locked | allowed | allowed | allowed | allowed | — |
-| Live, OPEN status, `pricingLocked` | locked | unpriced ($0 + badge, drift flagged) | locked (window/tax are priced) · notes allowed | allowed | New version · Recall |
-| Live, CONFIRMED / PREPPING / CHECKED_OUT | locked | unpriced | notes allowed, dates justify | allowed | New version → make live |
-| Live, ON_SITE / RETURNED | locked | justify | justify | allowed | New version → make live |
-| Live, COMPLETED / INVOICED | locked | locked | locked | locked | New version → make live (admin/PM + justification) |
-| Any, CANCELLED | locked | locked | locked | greyed | Re-open status (D5, justified from CONFIRMED+) |
+> **The whole rule.** `projects.pricingLocked` is a plain boolean on the **project**. It applies
+> to the **live** version only. It is set automatically when a quote is sent or the project
+> reaches `CONFIRMED`, and cleared by one click from the strip by anyone with `project:update`.
+> Nothing else refuses a write.
 
-Two rules replace today's three mechanisms:
-- **`pricingLocked` ⇒ priced fields locked everywhere; structure locked unless live** (D18). The
-  live version must be able to take on-site reality; that reality is flagged as drift against the
-  client's document by the strip (the `QuoteDriftIndicator` component is deleted; its state
-  moves into `VersionStrip`).
-- **Lifecycle ⇒ applies to the live version only.** "Unlock" is gone: you change a locked live
-  job by making a new version and making it live. Making live on a locked project is the gated,
-  audited act (`invoice:publish` up to RETURNED; `isHardLockOverrideAllowed` + justification at
-  COMPLETED/INVOICED), which is exactly where the existing override audience and justification
-  bounds are reused (R-3.1).
+```ts
+projects.pricingLocked?: boolean       // v.optional on arrival; absent = false
+projects.pricingLockedAt?: number
+projects.pricingLockedById?: string
+```
+
+`resolveLocks(project, version) → { money: "allowed" | "locked"; warehouse: "allowed" | "greyed" }`
+
+| Situation | Money fields | Structure | Plan fields | Warehouse verbs |
+|---|---|---|---|---|
+| Viewing a **non-live** version | allowed | allowed | allowed | greyed (D15 — not live) |
+| Live, `pricingLocked` **off** | allowed | allowed | allowed | allowed |
+| Live, `pricingLocked` **on** | locked (one click to clear) | allowed, new adds default $0 + Unpriced badge | allowed | allowed |
+
+Three columns collapsed to two values. There is no tier ordering, no reason union, no override
+audience, no session, and no free-text justification anywhere.
+
+#### Why each piece of the old system goes
+
+| Removed | Why it is safe to remove |
+|---|---|
+| **`HARD_LOCKED` at COMPLETED/INVOICED** | It protects against a danger #987 already eliminated. A sent quote / issued invoice is **stored bytes** with no regeneration path anywhere (CLAUDE.md, `src/server/finance-documents.ts`), so editing the project afterwards cannot alter any document the client holds. The tier was defending a file that is already immutable — while blocking the one edit you actually want, which is fixing a number you discovered was wrong after the job. |
+| **`JUSTIFY` tier + per-edit justification** (`requireJustification`, `JUSTIFICATION_BOUNDS`, `use-justified-mutation.ts`, 32 `kind: "structural"` gate sites) | The stated value was an audit trail of post-checkout changes. `logActivity` already records who changed what, when, and the before/after value on **every** write. The free text adds nothing a reviewer can query, and it is typed by a warehouse hand under time pressure on a loading dock. Replaced by a queryable field: every activity row written while `pricingLocked` carries `metadata.afterLock: true`. Better signal, zero typing. |
+| **`projectUnlockSessions`** (table, `openNative`/`commitNative`/`discardNative`, its own `UNLOCK` snapshot + restore + diff + conflict list, banner, dialog, `autoCommitOpenSession`) | It is "edit a copy, then keep or discard" — which is exactly what a version is (I-12). With versions as real workspaces the session has no job left. The toggle is the unlock. |
+| **`isHardLockOverrideAllowed` / `requireHardLockOverrideAllowed`** | A second, narrower permission audience (admin/owner/assigned-PM) existing only to gate hard-lock escapes. With no hard lock, `project:update` is the one audience. |
+| **`resolveLockTier`, `LockTier`, `LOCK_TIER_RANK`, `LockTierReason`, `quoteStateKeepsOpen`, `currentRevisionQuoteStatus` as a lock input** | The quote-derived escalation (I-11) is the defect where a *declined* or *superseded* quote freezes pricing on an open enquiry. Sending sets the flag once; quote state never reads back into it again. |
+| **`bypassQuoteLock`** | Existed only because the escalation was derived and created a chicken-and-egg deadlock for the two mutations that clear it (`projectLocks.ts:241-245`, with six mutations setting it against that comment). A stored flag has no such cycle. |
+| **`protected` quotes, `correctQuoteNative`, `unacceptNative`, recall-to-edit** | Four bars and branches layered on the five verbs to work around the derived lock (I-13). Recall is the one that survives. |
+
+#### Why it is decoupled from versions (D38)
+
+The flag lives on `projects`, not `projectVersions`, and **non-live versions are never locked**.
+
+This is the piece that serves "feel native hopping between versions". Under the old draft the
+lock state changed as you switched — v2 (sent) read-only, v3 (draft) editable, v4 (sent, not
+live) read-only — so every hop re-shaped the page and every component had to ask "which version
+am I on, and what does that version allow". Now: hop to any non-live version and it is a plain
+editable plan; hop to live and the strip shows the lock if it is on. One flag, read once, off the
+project you already loaded — no per-version lock lookup, nothing that flickers on switch.
+
+Locking a non-live version bought nothing anyway. Nothing operational follows a non-live
+version: no stock is held, no warehouse verb runs, no invoice can be issued from it. It is a
+draft. Drafts do not need locks.
+
+The honesty cost is handled where it belongs: if the live version drifts from the document the
+client is holding, the strip says so (the drift diff between the sent quote's money snapshot and
+the live version's current rows, which `VersionStrip` already computes — §5). A drift **warning**
+is the right instrument; a refusal was not.
+
+#### What still genuinely refuses
+
+Nothing new. The three existing hard invariants are unchanged and none of them is a "lock":
+
+1. An issued finance document's bytes are never overwritten or deleted (`attach*Artifact`
+   returns `attached: false` rather than replacing — CLAUDE.md).
+2. `PROJECT_MONEY_ANCHORS` are recalc-owned and stripped from client patches.
+3. Warehouse verbs run against the live version only (D15 — greyed, with a tooltip, not hidden).
+
+#### Cost of the change
+
+| | Before | After |
+|---|---|---|
+| Lock tiers | 4 (`OPEN`/`FINANCE_LOCKED`/`JUSTIFY`/`HARD_LOCKED`) | 1 boolean |
+| Lock inputs | status + live-revision quote state + open session + override audience | one stored field |
+| Gate call sites | 44 non-test `assertLifecycleGuard` (32 structural, 8 financial, 4 mixed) | ~8 `assertPricingUnlocked`, money writes only |
+| Mechanisms | 3 (lifecycle tiers, quote-derived escalation, unlock sessions) | 1 |
+| Deleted modules | — | `projectUnlockSessionsWrites.ts` (280), unlock parts of `projectLocksRead.ts` (209), `unlock-session-dialog.tsx` (93), `unlock-session-banner.tsx` (140), `use-justified-mutation.ts` (113); `projectLocks.ts` 421 → ~90; `lock-copy.ts` 203 → ~60 |
+
+`LOCKED_PROJECT_FIELDS` / `LOCKED_GROUP_FIELDS` / `LOCKED_LINE_ITEM_FIELDS` /
+`LOCKED_SERVICE_FIELDS` / `LOCKED_CREW_FIELDS` are **kept** — they are the single definition of
+"which fields are money" (R-3.1) and are still what `assertPricingUnlocked` and `LockedField`
+read. `pricedUnderLock` is **kept**: it is a display badge on a $0 default, not a gate.
 
 ### 4.6 What is versioned — "the plan is versioned, commitments and reality stay live" (D16)
 
@@ -388,9 +454,9 @@ live to prep or check out."), so a PM sees at a glance which actions belong to t
 
 ```
 makeLiveNative({ versionId: K })            // K ≠ liveVersionId, K.contentState === "ready", not a template-only op
- 1. permission + lifecycle gate (4.5)        // the ONE place the lock bites for versions;
-    //  at COMPLETED/INVOICED takes `justification` (a privileged arg, needs its policy row in
-    //  src/lib/api/privileged-args.ts) with the existing 10–1000 bounds
+ 1. permission check (project:update)        // no lock gate at all (D37/D39): making a version
+    //  live is a pointer flip, never a destructive restore, so there is nothing for a lock to
+    //  protect. It is `danger: "high"` in the API registry and fully activity-logged.
  2. outgoing = liveVersionId; incoming = K
  3. carry reality by lineageId               // generalises convex/projectLineItems.ts ~L930-965 (units + checkRecords)
       – for each outgoing line with reality (units, check records, maintenance links, threads,
@@ -442,7 +508,11 @@ CONFIRMED/COMPLETED audit captures stay in a read-only table for one release —
 `PromoteVersionDialog` (replaced), the three `version-projected-*.tsx`,
 `project-version-projection.ts`, `projectVersionsEquipment.ts`, `VersionReadOnlyBar`,
 `QuoteDriftIndicator` (state moves into `VersionStrip`), `UnlockSessionBanner/Dialog`;
-`bypassQuoteLock`; `recallNative`'s un-supersede branch (`quotesWrites.ts:455-461`, meaningless once
+the whole lifecycle-tier module surface — `LockTier`, `TIER_BY_STATUS`, `lockTierForStatus`,
+`LOCK_TIER_RANK`, `LockTierReason`, `resolveLockTier`, `quoteStateKeepsOpen`,
+`getOpenUnlockSession`, `requireJustification`, `JUSTIFICATION_BOUNDS`,
+`isHardLockOverrideAllowed`, `requireHardLockOverrideAllowed`, `assertLifecycleGuard`,
+`bypassQuoteLock`, `use-justified-mutation.ts` (D37–D41); `recallNative`'s un-supersede branch (`quotesWrites.ts:455-461`, meaningless once
 send no longer supersedes across versions); `quotes.version` (number) in Phase 7, derived through
 `versionId` → `projectVersions.number` until then (R-3.1).
 
@@ -495,7 +565,9 @@ The canvas (https://claude.ai/artifact/EgwLTWJLKyyTeymqhjtNes) is the reference 
    lists *documents* per version and no longer manages versions (mockups 1, 4, 5).
 2. **One strip.** `ProjectLockStrip`, `UnlockSessionBanner`, `VersionReadOnlyBar` and
    `QuoteDriftIndicator` collapse into one `VersionStrip` fed by one query (`resolveLocks` + the drift diff between the sent document's snapshot and the version's rows), with five states
-   (mockup 2). Absent when there is nothing to say (live, open, nothing sent).
+   (mockup 2) — now three, since the justify and hard-lock states are gone (D39). Absent when
+   there is nothing to say (live, unlocked). When locked it carries the **Unlock pricing** button:
+   one click, no dialog, logged (D37).
 3. **A non-live version is the real page.** Same tabs, same rows, same inline editing, same add
    menu, same availability column (mockup 3); only warehouse verbs are absent.
    Tasks/Files/Comments stay live with the existing inline note.
@@ -552,7 +624,9 @@ Planned as a forward migration with a rehearsal against a prod export:
    after #1097 (stamped from `liveRevision` at issue time, `invoicesWrites.ts:201`); earlier rows
    keep it absent rather than trusting the allocator-based backfill (I-3). Drop `PRE_PROMOTE`
    "Auto-saved" versions that are byte-identical to their neighbour (D10).
-5. Refuse to run while any unlock session is `OPEN`.
+5. Refuse to run while any unlock session is `OPEN`; set `projects.pricingLocked` for every
+   project whose live revision has a `SENT`/`ACCEPTED` quote or whose status is `CONFIRMED`+,
+   so nothing that is locked today silently unlocks on deploy (D37).
 6. Every removed field stays declared `v.optional` for one release (the `depositPercent`
    precedent), then a cleanup backfill strips it.
 
@@ -566,7 +640,7 @@ Planned as a forward migration with a rehearsal against a prod export:
 | **1** | **Model + live backfill** | `projectVersions`, optional `versionId`/`lineageId`/`liveVersionId`, `copyPlanGraph` extracted from `duplicateNative`, backfill of the LIVE version only (§6 step 1), coalescing helpers, invariants 1–2 + tests. Ships alone: live tables unchanged in meaning. | M | 0 |
 | **2** | **Reads and writes by version** | The sweep (§4.9): index rename incl. composites, every tab's data hook and every `*Native` mutation take `versionId`, `liveRows` helper, `assertVersionWritable` threaded through every mutation, version-aware recalc (D21), the viewed-version availability path (§4.7), ratchet, exhaustive live-only test; then §6 step 2 materialisation, which is the first moment non-live rows exist. | L | 1 |
 | **3** | **Make live + version verbs** | `makeLiveNative` with lineage re-pointing, plan-field/totals swap, conflicts and the size budget; `createNative`/`setLabelNative`/`deleteNative`; accept = make live (D20; exercised on the live version only until Phase 6 lets send target a non-live one); delete the promote/restore/auto-capture machinery | M | 2 |
-| **4** | **Lock simplification** | Retire unlock sessions + `bypassQuoteLock` + `protected`; lifecycle lock applies to live only; `assertVersionWritable` needs the version threaded through every `*Native` mutation, so this follows the sweep; justification threaded through add/update (closes I-14); CANCELLED decision (I-15) | M | 2 |
+| **4** | **Lock simplification** (D37–D41) | Add `projects.pricingLocked` + set/clear mutations + strip toggle; delete `projectUnlockSessions` (table, writes, read, banner, dialog), the four-tier machinery (`LockTier`, `LOCK_TIER_RANK`, `resolveLockTier`, `bypassQuoteLock`), all per-edit justification (`requireJustification`, `use-justified-mutation.ts`, 32 structural gate sites) and the hard-lock override audience; replace 44 `assertLifecycleGuard` calls with ~8 `assertPricingUnlocked`; stamp `metadata.afterLock` on activity rows; `protected`/`correctQuoteNative`/`unacceptNative`/recall-to-edit removed; CANCELLED needs no special case any more (closes I-11, I-12, I-13, I-14, I-15). **Net deletion** — smaller than the original Phase 4. | S–M | 2 |
 | **5** | **UI** | Version menu, Versions panel, `VersionStrip`, Make-live dialog, Compare, Finance tab documents rail, composed-object wiring (D32), delete the projected read-only surfaces | L | 2, 3, 4 |
 | **6** | **Quotes from any version** | `sendNative({versionId})`, multiple SENT with one ACCEPTED (D19), accept = make live from a non-live version (D20), locked non-live rendering, drift against the sent document | M | 3, 5 |
 | **7** | **Cleanup + docs** | Remove dead tables/fields after one release; FEATUREDOCS 62/66/70 rewritten as one doc; `docs/glossary.md`; CLAUDE.md conventions | S | 6 |
@@ -589,7 +663,10 @@ the whole program ≈ XL at human-team scale.
 - **Live-only exhaustive sweep** — registry-driven (§4.9 item 3). This is the test that makes
   the model safe; it ships with Phase 2, not after.
 - **Cross-tenant** — every new read/mutation IDOR-tested (R-8.4.3); `by_versionId` is global.
-- **Locking matrix** — the full §4.5 table as a truth-table test, like `projectLocks.test.ts` today.
+- **Lock** — the three-row §4.5 table as a truth-table test (the shrunken successor to today's
+  `projectLocks.test.ts`), plus: a non-live version is writable in every field family regardless
+  of `pricingLocked`; clearing the lock writes an activity row; a write while locked stamps
+  `metadata.afterLock`.
 - **Migration rehearsal** — against a prod export; materialised rows equal the projected view
   the old code produced for the same snapshot (parity), then the old code is deleted.
 - **jsdom smoke** — the version menu *opens*, the panel opens, the strip renders each state,
@@ -606,8 +683,8 @@ the whole program ≈ XL at human-team scale.
 | **D1** | **Non-live versions are directly editable.** A version is a workspace. This commits to the §4.9 sweep. |
 | **D2** | ~~A version is a full snapshot including crew assignments and sub-hires.~~ **Superseded by D16** after the cold read; the plan-only scope stands. |
 | **D3** | **A quote can be sent from any version**, not only the live one. Accepting a non-live version's quote offers "Make vN live". |
-| **D4** | **Unlock sessions are retired.** Changing a locked live job is: new version → edit → make live. Per-edit justification stays for ON_SITE structural edits on the live version. |
-| **D5** | **The four lifecycle tiers stay**, applied to the live version only. CANCELLED from CONFIRMED+ is gated with a justification (closes I-15). |
+| **D4** | **Unlock sessions are retired.** Changing a locked live job is: clear the lock (one click, logged) or cut a new version → edit → make live. *Per-edit justification also goes — superseded by D39.* |
+| **D5** | ~~The four lifecycle tiers stay, applied to the live version only; CANCELLED from CONFIRMED+ gated with a justification.~~ **Superseded by D37/D39** — the tiers are deleted. CANCELLED needs no special case: it is a status like any other, and `pricingLocked` carries over whatever it was (closes I-15 by removing the question). |
 | **D6** | **Make live is allowed while an issued invoice exists.** The dialog shows the invoiced total; the balance invoice is computed from whatever is live when issued. At INVOICED status it needs the admin/PM override like any other hard-locked change. |
 | **D7** | **`protected` is folded into "accepted ⇒ frozen, owner-only unaccept".** `correctQuoteNative` (dates only, no version bump) is kept. |
 | **D8** | **Versions panel is a right-side sheet plus the header pill.** |
@@ -619,7 +696,7 @@ the whole program ≈ XL at human-team scale.
 | **D14** | **Comparisons between versions are wanted** and should feel like the normal project page, not a separate diff screen (§5 item 6, mockup 7). |
 | **D16** | **Scope revised after the cold read: a version is the plan, not the commitments.** Categories, slots, groups, line items, services and the project's plan fields are versioned; crew assignments, sub-hire orders and warehouse reality stay live and link by lineage (§4.6). Supersedes the "full snapshot" wording of D2. |
 | **D17** | **Approach: ideal architecture reusing existing primitives** (`duplicateNative` for copy, `lineItemMergeMaps` for re-point, the swap model for plan fields, index rename incl. composites, ratchet + exhaustive test), shipped as one program rather than two releases or an options-first cut. |
-| **D18** | **`pricingLocked` is an explicit flag on the version** (set by send, cleared by recall, kept after superseded/declined/expired): priced fields locked everywhere; structure adds allowed on the live version at $0; a locked non-live version is read-only (§4.5). |
+| **D18** | ~~`pricingLocked` is an explicit flag on the **version**; a locked non-live version is read-only.~~ **Superseded by D37/D38** — the flag moved to the project and non-live versions are never locked. The "explicit, not derived" half of D18 stands; the "on the version" half was what made the page re-shape on every switch. |
 | **D19** | **Multiple SENT quotes may be out at once, one per version; at most one ACCEPTED per project;** accepting one supersedes the others; re-sending supersedes only that version's own earlier document. |
 | **D20** | **Accept = make live in the same transaction.** CONFIRMED always requires the live version's quote to be ACCEPTED or the admin override. |
 | **D21** | ~~Recalc is version-aware and totals are stored per version.~~ **Superseded by D33** after the outside-voice review: recalc stays version-aware, but non-live totals are computed on read, never stored. |
@@ -642,8 +719,8 @@ the whole program ≈ XL at human-team scale.
 | **D24** | **Hard index cut** in the Phases 2–4 release; rollback runbook = redeploy the previous Convex functions and re-add `by_projectId*` (rows keep `projectId`). Runbook lives in §6. |
 | **D25** | **One definition of the versioned tables** in `convex/lib/versionedTables.ts` (table list, FK-remap map for `copyPlanGraph`, row types inferred from the schema validators), imported by `src/`. Replaces the five-copy `SnapshotEntityType`. |
 | **D26** | **One `planHome(ctx, version)` resolver** plus exported `PLAN_FIELDS`/`TOTAL_FIELDS`; `patchPlanFields`, `recalcVersionTotals`, make-live's swap and the client-patch stripping lists all consume them. |
-| **D27** | **New error codes** (`PRICING_LOCKED`, `VERSION_LOCKED`, `VERSION_NOT_LIVE`, `LINE_NOT_LIVE`, `VERSION_REFERENCED`, `VERSION_TOO_LARGE`, `UNACCEPT_TOO_LATE`) map through `resolveLockCopy` so toasts name the exit; `isJustificationRequired` recognises `UserFacingError` (closes I-14). |
-| **D28** | **ASCII diagrams in code** as acceptance criteria of Phases 2–3: version × quote state machine in `convex/versions.ts` (replacing `quotesWrites.ts`'s old one), the make-live pipeline in `makeLiveNative`, the swap in `convex/lib/planHome.ts`, the lock matrix in `convex/lib/projectLocks.ts`. |
+| **D27** | **New error codes** (`PRICING_LOCKED`, `VERSION_NOT_LIVE`, `LINE_NOT_LIVE`, `VERSION_REFERENCED`, `VERSION_TOO_LARGE`) map through `resolveLockCopy` so toasts name the exit. `VERSION_LOCKED` and `UNACCEPT_TOO_LATE` are dropped with the mechanisms that raised them; I-14 closes by deleting `useJustifiedMutation` rather than fixing it (D39). |
+| **D28** | **ASCII diagrams in code** as acceptance criteria of Phases 2–3: version × quote state machine in `convex/versions.ts` (replacing `quotesWrites.ts`'s old one), the make-live pipeline in `makeLiveNative`, the swap in `convex/lib/planHome.ts`, the three-row lock table in `convex/lib/projectLocks.ts`. |
 | **D29** | **One Playwright journey spec** `e2e/harness-versions.spec.ts` (create → new version → edit → send → accept/make live → warehouse follows) on the existing harness, in CI's e2e job. |
 | **D30** | **Order-independence tests** for scan-then-make-live and make-live-then-stale-scan (units end on the live lineage), plus the no-lineage-match `unplanned` carry. |
 | **D31** | **`financeOrg` loads `projectVersions.by_organizationId` once per call** and groups several SENT quotes per project into one row; a read-count assertion in `financeOrg.test.ts`. |
@@ -661,6 +738,11 @@ before being accepted.
 | **D34** | **Non-live totals are computed on read, never stored** — reverses D21. Stored per-version totals would go stale whenever a live crew rate or sub-hire cost changed, with nothing to re-trigger them. `recalcProjectTotals` keeps writing only `projects.*`, for the live version. |
 | **D35** | **Phases 2–5 ship as one release** (§7). Splitting them leaves the existing version UI wired to machinery Phases 2–4 delete, i.e. dead buttons in production for the gap between releases. Phase 1 still ships alone; 6–8 follow separately. |
 | **D36** | **Dead options drop out of the hot scans** (§4.7): versions whose only quote is superseded, declined or expired and which were never live are excluded from `by_modelId`/`by_assetId`/`by_kitId` reads. Rows are kept for Compare and history. Gives D22's budget alert a prescribed response instead of an open question. |
+| **D37** | **The lock is one boolean on the project.** `projects.pricingLocked` — set when a quote is sent or the project reaches `CONFIRMED`, cleared by one click from the strip by anyone holding `project:update`, both directions written to the activity log. It gates **money fields on the live version only**. No tiers, no reason union, no override audience, no session, no justification. (§4.5) |
+| **D38** | **The lock is decoupled from versions.** It lives on `projects`, not `projectVersions`, and **non-live versions are never locked** — nothing operational follows a draft, so a draft needs no lock. This is what makes hopping between versions feel native: nothing about the page's writability changes on a switch. Drift from the sent document is surfaced by the strip as a **warning**, which is the honest instrument; a refusal was not. |
+| **D39** | **`JUSTIFY` and `HARD_LOCKED` are deleted, not softened.** Per-edit justification (`requireJustification`, `JUSTIFICATION_BOUNDS`, `use-justified-mutation.ts`, 32 `kind: "structural"` gate sites) is replaced by `metadata.afterLock: true` on the activity rows written while locked — a queryable field instead of free text typed on a loading dock. `HARD_LOCKED` guarded against altering a client's document, which #987 already made impossible (issued PDFs are stored bytes with no regeneration path), while blocking the legitimate post-job correction. `isHardLockOverrideAllowed` / `requireHardLockOverrideAllowed` go with it. |
+| **D40** | **Quote status never reads back into the lock.** `sendNative` sets the flag once; `recallNative` clears it. `SUPERSEDED` / `DECLINED` / `EXPIRED` do nothing — closing I-11, where a declined quote froze pricing on an open enquiry. `resolveLockTier`, `LockTier`, `LOCK_TIER_RANK`, `LockTierReason`, `quoteStateKeepsOpen` and `bypassQuoteLock` are all deleted; `bypassQuoteLock` existed only to break the cycle a derived lock created, and a stored flag has no cycle. |
+| **D41** | **What is kept:** the `LOCKED_*_FIELDS` lists (the single definition of "which fields are money", R-3.1), `pricedUnderLock` (a display badge on a $0 default, not a gate), `LockedField` / `GatedButton` (now reading a two-value result), and the three real invariants — immutable issued documents, recalc-owned `PROJECT_MONEY_ANCHORS`, warehouse verbs on the live version only. |
 
 **Also accepted from that review, folded into §4 rather than listed as decisions:** the sub-hire
 join runs from the versioned line (`projectLineItems.subHireId`) to the live order, not from

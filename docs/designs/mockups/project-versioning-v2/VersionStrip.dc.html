@@ -77,10 +77,10 @@ td.r, th.r { text-align:right; }
   </div>
 
   <div>
-    <div class="overline" style="margin-bottom:8px;">B · Viewing a non-live version that was sent (frozen: the client holds this document)</div>
+    <div class="overline" style="margin-bottom:8px;">B · Viewing a non-live version that was sent (still fully editable — the PDF the client holds is a separate, immutable document)</div>
     <div class="strip strip-open" style="color:#CDC4B2;">
       <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span><strong>v2 · Frozen</strong> <span style="opacity:.85;">— sent 19 Jul, accepted 21 Jul, superseded by v4. Read-only because a client holds this exact document.</span></span>
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v5h5"></path></svg><span><strong>v2</strong> <span style="opacity:.85;">— quoted 19 Jul, accepted 21 Jul, superseded by v4. Edit freely: the sent PDF is its own document and never changes.</span></span>
       </div>
       <div style="display:flex; gap:8px; flex:none;">
         <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span>
@@ -92,13 +92,14 @@ td.r, th.r { text-align:right; }
   </div>
 
   <div>
-    <div class="overline" style="margin-bottom:8px;">C · Live version, project confirmed (the lifecycle lock — replaces the unlock-session banner)</div>
+    <div class="overline" style="margin-bottom:8px;">C · Live version, pricing locked (the ONLY lock state there is — replaces four tiers, unlock sessions and the justify prompt)</div>
     <div class="strip strip-info">
       <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span><strong>v4 is live and confirmed</strong> <span style="opacity:.85;">— pricing is locked. Gear added now lands unpriced until someone prices it. To change pricing, start a new version.</span></span>
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span><strong>Pricing is locked</strong> <span style="opacity:.85;">— quote v4 went out on 19 Jul. Gear added now lands unpriced. Everything else edits normally.</span></span>
       </div>
       <div style="display:flex; gap:8px; flex:none;">
-        <span class="btn btn-line btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> New version from v4</span>
+        <span class="btn btn-line btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg> Unlock pricing</span>
+        <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> New version from v4</span>
       </div>
     </div>
   </div>
@@ -117,13 +118,13 @@ td.r, th.r { text-align:right; }
   </div>
 
   <div>
-    <div class="overline" style="margin-bottom:8px;">E · Live version, job completed (hard lock — a new version + make live is the only path, admin/PM only)</div>
+    <div class="overline" style="margin-bottom:8px;">E · Pricing unlocked by a person (no hard lock anywhere — the completed job is corrected in place, and the strip says who opened it)</div>
     <div class="strip strip-primary">
       <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span><strong>v4 is live and the job is completed</strong> <span style="opacity:.85;">— nothing on this version can change. Corrections go through a new version that an admin or this job's PM makes live, with a reason.</span></span>
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg><span><strong>Pricing unlocked by Jayden, 11:04</strong> <span style="opacity:.85;">— this job is completed and invoiced. Edits are recorded against the invoice for review; the issued PDF never changes.</span></span>
       </div>
       <div style="display:flex; gap:8px; flex:none;">
-        <span class="btn btn-line btn-sm" style="color:#F5EFE2; opacity:.6;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> New version from v4</span>
+        <span class="btn btn-line btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg> Re-lock pricing</span>
       </div>
     </div>
   </div>

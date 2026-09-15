@@ -44,8 +44,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   type CategoryPricingDisplay,
+  canRevealPriceInRollup,
   isRollupCategory,
 } from "@/lib/category-pricing-display";
+import { canDiscloseGroupChild } from "@/lib/group-child-disclosure";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TableCell, TableRow } from "@/components/ui/table";
@@ -1233,9 +1235,15 @@ export function LineItemRow({
   const isSubHireGroupChild = item.subHireGroupId != null;
 
   /** Category price rollup, per-item reveal — only offered inside a rolled-up
-   *  category, where the flag actually changes what a client sees. */
+   *  category AND on a row that prints its own row on a client-facing document.
+   *  A group member, a sub-hire group child and a kit child are all dropped by
+   *  `structureLineItems` in collapse mode, so revealing "this row's price"
+   *  reveals a price on a row the client never sees. `canRevealPriceInRollup`
+   *  is the shared rule — see src/lib/category-pricing-display.ts. */
   const priceRevealItem =
-    inRollupCategory && onTogglePriceReveal ? (
+    inRollupCategory &&
+    canRevealPriceInRollup({ inProjectGroup, isSubHireGroupChild, isKitChild: item.isKitChild }) &&
+    onTogglePriceReveal ? (
       <DropdownMenuItem onClick={onTogglePriceReveal}>
         {item.revealPriceInRollup ? (
           <EyeOff className="mr-2 h-3.5 w-3.5" />
@@ -1247,15 +1255,18 @@ export function LineItemRow({
     ) : null;
 
   /** Group child disclosure — list this member under its group's collapsed row
-   *  on quotes/invoices. Offered only for a row that's actually in a group;
-   *  elsewhere there is no collapsed row to appear under.
+   *  on quotes/invoices. Offered only for a row that's actually in a group
+   *  (elsewhere there is no collapsed row to appear under) and that the
+   *  renderer will actually list: `canDiscloseGroupChild` is the same rule
+   *  `disclosedGroupChildren` filters by, so the menu can't offer a toggle the
+   *  document then ignores.
    *
    *  "Show this item", not "show this price": a disclosed member never prints a
    *  price (the group's bundle price is the charge), so the pair reads as the
    *  price toggle's sibling — same verb, different noun — rather than a second
    *  way of saying the same thing. */
   const groupDisclosureItem =
-    inProjectGroup && onToggleGroupDisclosure ? (
+    inProjectGroup && canDiscloseGroupChild(item) && onToggleGroupDisclosure ? (
       <DropdownMenuItem onClick={onToggleGroupDisclosure}>
         {item.showInGroupOnDocs ? (
           <EyeOff className="mr-2 h-3.5 w-3.5" />
@@ -1266,10 +1277,13 @@ export function LineItemRow({
       </DropdownMenuItem>
     ) : null;
 
-  /** Both toggles under ONE "Client documents" heading — a row can be in a
-   *  rolled-up category AND in a group, so two self-heading sections would put
-   *  the label on screen twice. Defined once and rendered in both the desktop
-   *  and mobile kebabs so they can't drift.
+  /** Whichever toggle applies, under ONE "Client documents" heading — the same
+   *  section the category and group kebabs carry. The two are mutually
+   *  exclusive on a line item by construction (the price reveal requires a row
+   *  the document draws, which a group member never is), so the section holds
+   *  exactly one item; it stays generic so neither rule has to know that.
+   *  Defined once and rendered in both the desktop and mobile kebabs so they
+   *  can't drift.
    *
    *  It sits under a "Client documents" heading rather than spelling the
    *  context out in each label: every toggle in that section answers the one

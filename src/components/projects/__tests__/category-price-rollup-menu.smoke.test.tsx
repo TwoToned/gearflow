@@ -187,17 +187,58 @@ describe("group child disclosure (smoke)", () => {
     expect(screen.queryByText("Show this item")).toBeNull();
   });
 
-  // The two flags are separate decisions on the same row: one is about a
-  // category's pricing, the other about a group's contents.
-  it("can offer both toggles at once without conflating them", async () => {
+  // A kit inside a group is itself a collapsing container, so
+  // `disclosedGroupChildren` drops it — offering the toggle would let the
+  // operator flip a flag the document ignores.
+  it("never offers the disclosure on a kit parent inside a group", async () => {
+    const { container } = renderItem({
+      inProjectGroup: true,
+      onToggleGroupDisclosure: vi.fn(),
+      item: { ...baseItem, kitId: "k1", isKitChild: false },
+    });
+    await openKebab(container);
+    expect(screen.queryByText("Show this item")).toBeNull();
+    // A plain member in the same position still gets it.
+    const plain = renderItem({ inProjectGroup: true, onToggleGroupDisclosure: vi.fn() });
+    await openKebab(plain.container);
+    expect(screen.getByText("Show this item")).toBeTruthy();
+  });
+});
+
+// A rolled-up category hides the prices of the rows it PRINTS. A group member,
+// a sub-hire group child and a kit child are not printed at all on a
+// client-facing document — `structureLineItems` drops them in collapse mode —
+// so "show this row's price" has no row to show it on. Offering it anyway is a
+// toggle that silently does nothing, which is the bug these three cover.
+describe("the price reveal is offered only where a row actually prints", () => {
+  it("never offers it to a member of a Project Group", async () => {
     const { container } = renderItem({
       inRollupCategory: true,
       inProjectGroup: true,
       onToggleGroupDisclosure: vi.fn(),
     });
     await openKebab(container);
-    expect(screen.getByText("Show this price")).toBeTruthy();
+    expect(screen.queryByText("Show this price")).toBeNull();
+    // The control that DOES apply to a group member is still there.
     expect(screen.getByText("Show this item")).toBeTruthy();
+  });
+
+  it("never offers it to a sub-hire group child", async () => {
+    const { container } = renderItem({
+      inRollupCategory: true,
+      item: { ...baseItem, subHireGroupId: "shg1", isKitChild: true },
+    });
+    await openKebab(container);
+    expect(screen.queryByText("Show this price")).toBeNull();
+  });
+
+  it("never offers it to a kit child", async () => {
+    const { container } = renderItem({
+      inRollupCategory: true,
+      item: { ...baseItem, isKitChild: true },
+    });
+    await openKebab(container);
+    expect(screen.queryByText("Show this price")).toBeNull();
   });
 });
 
@@ -212,7 +253,7 @@ describe("the Client documents menu section", () => {
     expect(screen.getByText("Client documents")).toBeTruthy();
   });
 
-  it("heads both row toggles exactly once, not once each", async () => {
+  it("heads a row's toggle exactly once", async () => {
     const { container } = renderItem({
       inRollupCategory: true,
       inProjectGroup: true,

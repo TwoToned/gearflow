@@ -309,3 +309,176 @@ describe("recalcProjectTotals — WS11 (#950) sale revenue + COGS", () => {
     expect(p?.saleCostTotal).toBe(0);
   });
 });
+
+/**
+ * T3 (#1091, docs/designs/tax-model.md) — per-client exemption + per-line tax
+ * rate override. The equivalence gate the design doc calls for: every
+ * pre-existing test above (no line has its own taxRate) still passes
+ * unmodified, proving the new grouped computation reproduces the old flat
+ * one to the cent whenever nothing is overridden.
+ */
+describe("recalcProjectTotals — T3 (#1091) tax exemption + per-line rate", () => {
+  test("single project rate, no line overrides: COMPUTED with one breakdown entry (equivalence case)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxStatus).toBe("COMPUTED");
+    expect(p?.taxAmount).toBe(10);
+    expect(JSON.parse(p!.taxBreakdown!)).toEqual([{ rate: 10, amount: 10 }]);
+  });
+
+  test("mixed per-line rates fold into one breakdown row per distinct rate", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      // Inherits the project's 10% rate.
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      // Overridden to a deliberate 0% (e.g. a zero-rated item).
+      await ctx.db.insert("projectLineItems", { id: "l2", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 0, lineTotal: 50 });
+      // Overridden to a reduced rate.
+      await ctx.db.insert("projectLineItems", { id: "l3", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 5, lineTotal: 40 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    // subtotal = 190, no discount -> taxableAmount = 190, split 100/50/40 by rate.
+    expect(p?.subtotal).toBe(190);
+    expect(p?.taxStatus).toBe("COMPUTED");
+    // 100*10% + 50*0% + 40*5% = 10 + 0 + 2 = 12
+    expect(p?.taxAmount).toBe(12);
+    expect(JSON.parse(p!.taxBreakdown!)).toEqual([
+      { rate: 10, amount: 10 },
+      { rate: 5, amount: 2 },
+      { rate: 0, amount: 0 },
+    ]);
+  });
+
+  test("a line's own rate wins over the project rate (precedence)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 20, lineTotal: 100 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    // The line's 20% wins, not the project's 10%.
+    expect(p?.taxAmount).toBe(20);
+  });
+
+  test("the org default applies only when neither the project nor the line has a rate", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await recalcProjectTotals(ctx, "p1", ORG, 8, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxStatus).toBe("COMPUTED");
+    expect(p?.taxAmount).toBe(8);
+  });
+
+  test("nothing configured anywhere: UNSET, not a silent zero rate", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxStatus).toBe("UNSET");
+    expect(p?.taxAmount).toBe(0);
+  });
+
+  test("an explicit 0% project rate is COMPUTED, not UNSET", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 0, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxStatus).toBe("COMPUTED");
+    expect(p?.taxAmount).toBe(0);
+    expect(JSON.parse(p!.taxBreakdown!)).toEqual([{ rate: 0, amount: 0 }]);
+  });
+
+  test("an exempt client zeroes tax regardless of project or line rate", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Gov Dept", taxExempt: true, taxExemptReason: "Government purchase order" });
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0, clientId: "c1",
+        createdAt: NOW, updatedAt: NOW,
+      });
+      // Even a line with its own explicit override doesn't survive exemption.
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, taxRate: 25, lineTotal: 100 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxStatus).toBe("EXEMPT");
+    expect(p?.taxAmount).toBe(0);
+    expect(p?.total).toBe(p?.subtotal);
+    expect(JSON.parse(p!.taxBreakdown!)).toEqual([]);
+  });
+
+  test("a non-exempt client in the SAME org as an exempt one elsewhere is unaffected (org-scoped)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Regular Client", taxExempt: false });
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0, clientId: "c1",
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, isOptional: false, lineTotal: 100 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxStatus).toBe("COMPUTED");
+    expect(p?.taxAmount).toBe(10);
+  });
+
+  test("a priced group's bundle revenue falls back to the project rate (no per-group override)", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        status: "CONFIRMED", isTemplate: false, taxRate: 10, discountPercent: 0,
+        createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Lighting", price: 100, quantity: 1, sortOrder: 0 });
+      await recalcProjectTotals(ctx, "p1", ORG, null, NOW + 1);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxAmount).toBe(10);
+    expect(JSON.parse(p!.taxBreakdown!)).toEqual([{ rate: 10, amount: 10 }]);
+  });
+});

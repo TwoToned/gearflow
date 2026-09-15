@@ -171,6 +171,8 @@ export interface MappedLineItem {
   discount: number | null;
   /** #1012 — how `discount` was ENTERED. Null = `"$"` (every pre-#1012 row). */
   discountMode: "$" | "%" | null;
+  /** T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3. */
+  taxRate: number | null;
   /** Category price rollup, per-item reveal — true when this line prints its
    *  own price even inside a rolled-up category (absent on the row = false).
    *  See src/lib/category-pricing-display.ts. */
@@ -251,6 +253,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     duration: d.duration ?? 1,
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
+    taxRate: d.taxRate ?? null,
     revealPriceInRollup: d.revealPriceInRollup ?? false,
     showInGroupOnDocs: d.showInGroupOnDocs ?? false,
     lineTotal: d.lineTotal ?? null,

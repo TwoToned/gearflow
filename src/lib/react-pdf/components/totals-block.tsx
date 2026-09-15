@@ -21,7 +21,7 @@
 import { Text, View } from "@react-pdf/renderer";
 import type { DocumentData } from "@/lib/pdfme/types";
 import { formatCurrency } from "@/lib/pdfme/plugins/helpers";
-import { COLORS } from "../styles";
+import { COLORS, FONT_SIZE } from "../styles";
 
 function Row({
   label,
@@ -51,6 +51,46 @@ function Row({
   );
 }
 
+/**
+ * T3 (#1091, docs/designs/tax-model.md §2.3/§3.3) — a reader can't tell "no
+ * tax applies" from "tax wasn't calculated" from a bare `$0.00`, so EXEMPT/
+ * UNSET each get their own label rather than a plain amount. COMPUTED with
+ * more than one distinct rate present gets one row per rate (Article
+ * 226-shaped) with a `(N%)` suffix; a single rate (the pre-T3 case, and the
+ * overwhelming majority of documents) renders identically to before — no
+ * suffix needed when there's nothing to disambiguate from.
+ */
+function TaxRows({ data, docColor }: { data: DocumentData; docColor: string }) {
+  const label = data.tax_label || "GST";
+
+  if (data.tax_status === "EXEMPT") {
+    return (
+      <>
+        <Row label={label} value="Exempt" docColor={docColor} />
+        {data.tax_exempt_reason && (
+          <View style={{ marginTop: "-1mm", marginBottom: "1.5mm" }}>
+            <Text style={{ fontSize: FONT_SIZE.note, color: COLORS.note }}>{data.tax_exempt_reason}</Text>
+          </View>
+        )}
+      </>
+    );
+  }
+  if (data.tax_status === "UNSET") {
+    return <Row label={label} value="Rate not set" docColor={docColor} />;
+  }
+  const breakdown = data.tax_breakdown.length > 0 ? data.tax_breakdown : [{ rate: 0, amount: data.tax_amount }];
+  if (breakdown.length === 1) {
+    return <Row label={label} value={formatCurrency(breakdown[0].amount)} docColor={docColor} />;
+  }
+  return (
+    <>
+      {breakdown.map((entry) => (
+        <Row key={entry.rate} label={`${label} (${entry.rate}%)`} value={formatCurrency(entry.amount)} docColor={docColor} />
+      ))}
+    </>
+  );
+}
+
 export function TotalsBlock({ data, itemDiscountTotal }: { data: DocumentData; itemDiscountTotal: number }) {
   const docColor = data.org_document_color || "#0d4f4f";
 
@@ -71,7 +111,7 @@ export function TotalsBlock({ data, itemDiscountTotal }: { data: DocumentData; i
             docColor={docColor}
           />
         )}
-        <Row label={data.tax_label || "GST"} value={formatCurrency(data.tax_amount)} docColor={docColor} />
+        <TaxRows data={data} docColor={docColor} />
         <Row label="Total" value={formatCurrency(data.total)} bold divider docColor={docColor} />
         {data.deposit_paid > 0 && (
           <>

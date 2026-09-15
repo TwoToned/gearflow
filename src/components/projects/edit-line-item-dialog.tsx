@@ -48,6 +48,7 @@ import {
   SectionTitle,
   Field,
   DiscountField,
+  TaxRateField,
   type DiscountMode,
 } from "./line-item-form-fields";
 import {
@@ -298,6 +299,32 @@ function EditLineItemDialogBody({
               </LockedField>
             )}
           />
+        </section>
+
+        {/* T3 (#1091, docs/designs/tax-model.md §3) — collapsed by default:
+            a per-line rate override is the uncommon case, most lines
+            inherit the project's rate. */}
+        <section className="border-t border-line pt-5">
+          <Accordion type="single" collapsible>
+            <AccordionItem value="tax-rate" className="border-line">
+              <AccordionTrigger>Advanced: tax rate</AccordionTrigger>
+              <AccordionContent>
+                <div className="pt-1">
+                  <Controller
+                    control={form.control}
+                    name="taxRate"
+                    render={({ field }) => (
+                      <TaxRateField
+                        id="edit-tax-rate"
+                        value={field.value == null ? "" : String(field.value)}
+                        onValueChange={(v) => field.onChange(v === "" ? undefined : v)}
+                      />
+                    )}
+                  />
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </section>
 
         {xeroLinked && (

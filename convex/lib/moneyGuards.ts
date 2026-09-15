@@ -53,8 +53,17 @@ export function assertLineMoneyFields(f: {
   discountMode?: unknown;
   duration?: number | null;
   lineTotal?: number | null;
+  taxRate?: number | null;
 }): void {
   assertDiscountMode(f.discountMode);
+  // T3 (#1091) — same 0-100 bound as the project-level taxRate below
+  // (assertProjectMoneyFields), since this is the identical "percent" shape
+  // one level down the resolution cascade.
+  if (f.taxRate != null) {
+    if (!Number.isFinite(f.taxRate) || f.taxRate < 0 || f.taxRate > 100) {
+      throw new ConvexError({ code: "INVALID_TAX_RATE", message: "Tax rate must be between 0 and 100." });
+    }
+  }
   if (f.quantity != null) {
     // No upper cap — the merge path sums two Zod-capped quantities (see doc above).
     if (!Number.isFinite(f.quantity) || !Number.isInteger(f.quantity) || f.quantity < 1) {

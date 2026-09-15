@@ -11152,6 +11152,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "taxExempt",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "taxExemptReason",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "taxId",
         "optional": true,
         "type": "string"
@@ -11168,7 +11178,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "cde5156c25c201f6",
+    "argsSha": "1d62b323745df1c5",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -11225,7 +11235,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "0960873b9e1b300b",
+    "argsSha": "6fd0fdc4cd6efbce",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -24658,7 +24668,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "9398503fdb975de4",
+    "argsSha": "077ba980ed4f91f9",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -24769,6 +24779,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "taxRate",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "unitPrice",
         "optional": true,
         "type": "number"
@@ -24777,7 +24792,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "55cfc9c05853293e",
+    "argsSha": "746f62537ad89d32",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -24882,7 +24897,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "forceSeparate",
       "justification"
     ],
-    "argsSha": "5770d4dbaf53b101",
+    "argsSha": "76c059a9a967bfbc",
     "returnsSha": "6f1a1d586199c07b",
     "stability": "tracks-app",
     "summary": null,
@@ -24976,7 +24991,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       "allowOverbook",
       "justification"
     ],
-    "argsSha": "44de6ce05a129219",
+    "argsSha": "d6341d0f2d134bf5",
     "returnsSha": "b462b96a443b48b3",
     "stability": "stable",
     "summary": null,
@@ -25040,7 +25055,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [
       "justification"
     ],
-    "argsSha": "aadfb3939912ebd2",
+    "argsSha": "6f1e05bdbabb5712",
     "returnsSha": "04471d174c91281a",
     "stability": "tracks-app",
     "summary": null,

@@ -106,6 +106,7 @@ export type MappedLineItem = Omit<
   | "duration"
   | "discount"
   | "discountMode"
+  | "taxRate"
   | "revealPriceInRollup"
   | "showInGroupOnDocs"
   | "lineTotal"
@@ -169,6 +170,8 @@ export type MappedLineItem = Omit<
   /** #1012 — how `discount` was ENTERED. Null on every pre-#1012 row, which the
    *  document renderer reads as `"$"` (the pre-#1012 behaviour, no backfill). */
   discountMode: "$" | "%" | null;
+  /** T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3. */
+  taxRate: number | null;
   /** Category price rollup, per-item reveal — true when this line prints its own
    *  price even inside a rolled-up category. Absent on the stored row is
    *  normalised to `false` (the default: hidden inside a rollup, and irrelevant
@@ -246,6 +249,7 @@ export function mapLineItemDoc(d: LineItemDoc): MappedLineItem {
     duration: d.duration ?? 1,
     discount: d.discount ?? null,
     discountMode: d.discountMode ?? null,
+    taxRate: d.taxRate ?? null,
     revealPriceInRollup: d.revealPriceInRollup ?? false,
     showInGroupOnDocs: d.showInGroupOnDocs ?? false,
     lineTotal: d.lineTotal ?? null,

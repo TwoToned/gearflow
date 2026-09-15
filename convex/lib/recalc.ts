@@ -101,6 +101,108 @@ export async function orgDefaultTaxRate(ctx: MutationCtx, orgId: string): Promis
   return row?.defaultTaxRate ?? null;
 }
 
+// ─── T3 (#1091, docs/designs/tax-model.md §3) — tax contribution grouping ───
+// Split out of recalcProjectTotals to keep its own cyclomatic complexity down
+// (R-3.6). Each predicate below mirrors ONE of the exact filters already used
+// for groupRevenue/standaloneRevenue/subHireGroupedRevenue/saleRevenue above —
+// kept in sync deliberately, same byte-for-byte discipline as the rest of this
+// file — so `Σ contributions.amount` reproduces `subtotal`.
+
+type TaxableLine = {
+  groupId?: string | null;
+  subHireId?: string | null;
+  isOptional?: boolean | null;
+  isKitChild?: boolean | null;
+  status?: string | null;
+  type?: string | null;
+  isCustomItem?: boolean | null;
+  lineTotal?: number | null;
+  taxRate?: number | null;
+};
+type TaxableGroup = { id: string; price?: number | null; quantity?: number | null; discount?: number | null };
+type TaxContribution = { rate: number; amount: number };
+
+const isActiveLine = (li: TaxableLine): boolean =>
+  !li.isOptional && !li.isKitChild && li.status !== "CANCELLED";
+
+const isGroupCustomExtra = (li: TaxableLine, groupId: string): boolean =>
+  li.groupId === groupId && li.isCustomItem === true && isActiveLine(li);
+
+const isStandaloneNonSale = (li: TaxableLine): boolean =>
+  li.groupId == null && li.type !== "SALE" && isActiveLine(li);
+
+const isGroupedSubHire = (li: TaxableLine): boolean =>
+  li.groupId != null && li.subHireId != null && isActiveLine(li);
+
+const isStandaloneSale = (li: TaxableLine): boolean =>
+  li.groupId == null && li.type === "SALE" && isActiveLine(li);
+
+/** One taxable-base contribution per revenue-bearing unit (§3.2). A priced
+ *  group's bundle is one lump at the fallback rate (no per-group override
+ *  exists, §3.4); its custom-item extras (unpriced groups only) get their
+ *  own line's resolved rate. */
+function buildTaxContributions(
+  groups: TaxableGroup[],
+  projectLines: TaxableLine[],
+  resolveLineRate: (li: TaxableLine) => number,
+  fallbackRate: number,
+  serviceRevenue: number,
+): TaxContribution[] {
+  const contributions: TaxContribution[] = [];
+  const contribute = (rate: number, amount: number): void => {
+    if (amount !== 0) contributions.push({ rate, amount });
+  };
+  for (const g of groups) {
+    const bundlePrice = num(g.price);
+    if (bundlePrice > 0) {
+      contribute(fallbackRate, Math.max(0, bundlePrice * (g.quantity ?? 0) - num(g.discount)));
+    } else {
+      for (const li of projectLines) {
+        if (isGroupCustomExtra(li, g.id)) contribute(resolveLineRate(li), num(li.lineTotal));
+      }
+    }
+  }
+  for (const li of projectLines) {
+    if (isStandaloneNonSale(li)) contribute(resolveLineRate(li), num(li.lineTotal));
+    if (isGroupedSubHire(li)) contribute(resolveLineRate(li), num(li.lineTotal));
+    if (isStandaloneSale(li)) contribute(resolveLineRate(li), num(li.lineTotal));
+  }
+  contribute(fallbackRate, serviceRevenue);
+  return contributions;
+}
+
+/** §2.3/§5 status + amount resolution: EXEMPT (client flag) short-circuits
+ *  everything; UNSET means nothing was configured ANYWHERE in the cascade
+ *  (not even an explicit 0%); otherwise COMPUTED distributes the
+ *  already-rounded taxableAmount proportionally by each contribution's share
+ *  of subtotal, so a single-rate project reproduces the pre-T3 flat
+ *  computation to the cent (the equivalence gate, recalc.test.ts). */
+function computeTaxOutcome(params: {
+  isExempt: boolean;
+  anyRateConfigured: boolean;
+  contributions: TaxContribution[];
+  subtotal: number;
+  taxableAmount: number;
+}): { taxAmount: number; taxStatus: "EXEMPT" | "UNSET" | "COMPUTED"; breakdown: TaxContribution[] } {
+  const { isExempt, anyRateConfigured, contributions, subtotal, taxableAmount } = params;
+  if (isExempt) return { taxAmount: 0, taxStatus: "EXEMPT", breakdown: [] };
+  if (!anyRateConfigured) return { taxAmount: 0, taxStatus: "UNSET", breakdown: [] };
+
+  const discountFactor = subtotal > 0 ? taxableAmount / subtotal : 1;
+  const baseByRate = new Map<number, number>();
+  for (const c of contributions) {
+    baseByRate.set(c.rate, (baseByRate.get(c.rate) ?? 0) + c.amount * discountFactor);
+  }
+  let taxAmount = 0;
+  const breakdown: TaxContribution[] = [];
+  for (const rate of [...baseByRate.keys()].sort((a, b) => b - a)) {
+    const groupTax = round(baseByRate.get(rate)! * (rate / 100));
+    taxAmount = round(taxAmount + groupTax);
+    breakdown.push({ rate, amount: groupTax });
+  }
+  return { taxAmount, taxStatus: "COMPUTED", breakdown };
+}
+
 export async function recalcProjectTotals(
   ctx: MutationCtx,
   projectId: string,
@@ -233,15 +335,49 @@ export async function recalcProjectTotals(
   const discountAmount = round(subtotal * (discountPercent / 100));
   const taxableAmount = round(subtotal - discountAmount);
 
-  // Tax rate: project override → org default (Postgres, passed in) → zero.
-  // No hardcoded fallback rate (#1088) — a US org ships with no default tax
-  // rate by design (there is no national rate), and an org with neither
-  // value set must produce zero tax, not an invented Australian GST rate.
-  let taxRate = 0;
-  if (project.taxRate != null) taxRate = Number(project.taxRate);
-  else if (orgDefaultTaxRate != null) taxRate = Number(orgDefaultTaxRate);
+  // T3 (#1091, docs/designs/tax-model.md §2) — an exempt client's projects
+  // produce zero tax regardless of any project/line rate: a hard
+  // short-circuit, never layered against the per-line/per-project resolution
+  // below. `by_cuid` is global — org-checked like every other cross-table
+  // lookup in this file.
+  const client = project.clientId
+    ? await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", project.clientId!)).first()
+    : null;
+  const isExempt = !!(client && client.organizationId === orgId && client.taxExempt);
 
-  const taxAmount = round(taxableAmount * (taxRate / 100));
+  // §3.1 — per-line rate resolution: this line's own override wins, else the
+  // project's rate, else the org default, else zero. No hardcoded fallback
+  // rate (#1088) — a US org ships with no default tax rate by design (there
+  // is no national rate), and nothing configured anywhere must produce zero
+  // tax, not an invented Australian GST rate.
+  const resolveLineRate = (li: { taxRate?: number | null }): number => {
+    if (li.taxRate != null) return Number(li.taxRate);
+    if (project.taxRate != null) return Number(project.taxRate);
+    if (orgDefaultTaxRate != null) return Number(orgDefaultTaxRate);
+    return 0;
+  };
+  // Groups and services have no rate field of their own (out of scope,
+  // §3.4) — both always fall through to the project/org rate.
+  const fallbackRate = resolveLineRate({ taxRate: null });
+
+  const contributions = buildTaxContributions(groups, projectLines, resolveLineRate, fallbackRate, serviceRevenue);
+
+  // "Nothing was ever configured anywhere in the cascade" — the ONLY
+  // condition for UNSET (§2.3/§5). A project/org rate of an explicit 0, or a
+  // line explicitly overridden to 0%, is a deliberate choice (COMPUTED),
+  // not an absence.
+  const anyRateConfigured =
+    project.taxRate != null || orgDefaultTaxRate != null || projectLines.some((li) => li.taxRate != null);
+
+  const { taxAmount, taxStatus, breakdown } = computeTaxOutcome({
+    isExempt,
+    anyRateConfigured,
+    contributions,
+    subtotal,
+    taxableAmount,
+  });
+  const taxBreakdown = JSON.stringify(breakdown);
+
   const total = round(taxableAmount + taxAmount);
   // WS11 (#950) — saleCostTotal joins the cost side so a sale's margin (sale
   // price minus its COGS) is visible, same as every other cost bucket here.
@@ -273,6 +409,8 @@ export async function recalcProjectTotals(
     subtotal,
     discountAmount,
     taxAmount,
+    taxBreakdown,
+    taxStatus,
     total,
     margin,
     depositPaid,

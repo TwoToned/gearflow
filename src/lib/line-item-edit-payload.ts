@@ -27,6 +27,8 @@ export interface EditLineItemPayload {
   discount?: number;
   /** #1012 — how the discount above was entered; persisted for document display. */
   discountMode?: DiscountMode;
+  /** T3 (#1091) — per-line tax rate override; see docs/designs/tax-model.md §3. */
+  taxRate?: number;
   notes?: string;
   isOptional: boolean;
   xeroAccountCode?: string;
@@ -60,6 +62,7 @@ export function buildLineItemFormDefaults(item: LineItemData): LineItemFormValue
     pricingType: (item.pricingType as LineItemFormValues["pricingType"]) ?? "PER_DAY",
     duration: item.duration ?? 1,
     discount: initialDiscount.value !== "" ? Number(initialDiscount.value) : undefined,
+    taxRate: item.taxRate != null ? Number(item.taxRate) : undefined,
     notes: item.notes ?? "",
     isOptional: item.isOptional ?? false,
     xeroAccountCode: item.xeroAccountCode ?? "",
@@ -90,6 +93,7 @@ export function computeEditLineItemPayload(
     duration: dur,
     discount: disc,
     discountMode,
+    taxRate: data.taxRate != null ? Number(data.taxRate) : undefined,
     notes: data.notes || undefined,
     isOptional: data.isOptional ?? false,
     xeroAccountCode: data.xeroAccountCode || undefined,

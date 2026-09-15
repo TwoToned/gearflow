@@ -32,7 +32,10 @@ import {
 } from "@/components/ui/select";
 import { DialogFooter } from "@/components/ui/dialog";
 import { PlacementFields } from "./placement-fields";
-import { SectionTitle, Field, DiscountField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
+import { SectionTitle, Field, DiscountField, TaxRateField, resolveDiscountAmount, type DiscountMode } from "./line-item-form-fields";
 import type { CategoryData } from "./equipment-rows";
 
 type CustomItemPricingType = "PER_DAY" | "PER_WEEK" | "FLAT" | "PER_HOUR";
@@ -217,6 +220,27 @@ export function CustomItemAddForm({
             />
           )}
         />
+        {/* T3 (#1091, docs/designs/tax-model.md §3) — collapsed by default. */}
+        <Accordion type="single" collapsible>
+          <AccordionItem value="tax-rate" className="border-line">
+            <AccordionTrigger>Advanced: tax rate</AccordionTrigger>
+            <AccordionContent>
+              <div className="pt-1">
+                <Controller
+                  control={form.control}
+                  name="taxRate"
+                  render={({ field }) => (
+                    <TaxRateField
+                      id="custom-item-tax-rate"
+                      value={field.value == null ? "" : String(field.value)}
+                      onValueChange={(v) => field.onChange(v === "" ? undefined : v)}
+                    />
+                  )}
+                />
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
         <label className="flex cursor-pointer items-center gap-2.5">
           <Controller
             control={form.control}

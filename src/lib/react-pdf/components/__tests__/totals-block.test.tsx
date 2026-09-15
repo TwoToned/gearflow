@@ -13,6 +13,7 @@ import { renderToBuffer, Document, Page } from "@react-pdf/renderer";
 import { PDFDocument as PdfLibDocument } from "@pdfme/pdf-lib";
 import { TotalsBlock } from "../totals-block";
 import { makeSpikeData } from "../../fixture";
+import { renderPdfPages } from "../../pdf-test-utils";
 
 async function pageCount(data: ReturnType<typeof makeSpikeData>, itemDiscountTotal = 0) {
   const buffer = await renderToBuffer(
@@ -24,6 +25,17 @@ async function pageCount(data: ReturnType<typeof makeSpikeData>, itemDiscountTot
   );
   const pdf = await PdfLibDocument.load(buffer);
   return pdf.getPageCount();
+}
+
+async function totalsText(data: ReturnType<typeof makeSpikeData>) {
+  const { fullText } = await renderPdfPages(
+    <Document>
+      <Page size="A4">
+        <TotalsBlock data={data} itemDiscountTotal={0} />
+      </Page>
+    </Document>,
+  );
+  return fullText;
 }
 
 describe("TotalsBlock", () => {
@@ -55,5 +67,64 @@ describe("TotalsBlock", () => {
   it("renders the full invoice shape (deposit + balance + due date) together without throwing", async () => {
     const data = makeSpikeData({ deposit_paid: 500, balance_due: 18560.8, invoice_due_date: "2026-09-17" });
     await expect(pageCount(data)).resolves.toBe(1);
+  });
+});
+
+/**
+ * T3 (#1091, docs/designs/tax-model.md §2.3/§3.3) — a reader can't tell
+ * "no tax applies" from "tax wasn't calculated" from a bare "$0.00", so
+ * EXEMPT/UNSET must never render as a plain amount, and a mixed-rate
+ * project must show one row per distinct rate rather than folding them
+ * into a single number that hides the split.
+ */
+describe("TotalsBlock — T3 (#1091) tax status rendering", () => {
+  it("COMPUTED with a single rate renders exactly the pre-T3 single tax row", async () => {
+    const text = await totalsText(makeSpikeData({ tax_status: "COMPUTED", tax_breakdown: [{ rate: 10, amount: 1732.8 }], tax_label: "GST" }));
+    expect(text).toContain("GST");
+    expect(text).not.toContain("GST (10%)");
+    expect(text).not.toContain("Exempt");
+    expect(text).not.toContain("Rate not set");
+  });
+
+  it("EXEMPT renders 'Exempt', never a bare amount, plus the reason when set", async () => {
+    const text = await totalsText(makeSpikeData({ tax_status: "EXEMPT", tax_breakdown: [], tax_amount: 0, tax_exempt_reason: "Government purchase order #4471" }));
+    expect(text).toContain("Exempt");
+    expect(text).toContain("Government purchase order #4471");
+    expect(text).not.toContain("$0.00");
+  });
+
+  it("EXEMPT with no recorded reason still says Exempt, no reason line", async () => {
+    const text = await totalsText(makeSpikeData({ tax_status: "EXEMPT", tax_breakdown: [], tax_amount: 0, tax_exempt_reason: "" }));
+    expect(text).toContain("Exempt");
+  });
+
+  it("UNSET renders 'Rate not set', never a bare amount", async () => {
+    const text = await totalsText(makeSpikeData({ tax_status: "UNSET", tax_breakdown: [], tax_amount: 0 }));
+    expect(text).toContain("Rate not set");
+    expect(text).not.toContain("$0.00");
+  });
+
+  it("a deliberate 0% line under COMPUTED still prints a real $0.00 row (not UNSET's wording)", async () => {
+    const text = await totalsText(makeSpikeData({ tax_status: "COMPUTED", tax_breakdown: [{ rate: 0, amount: 0 }], tax_amount: 0, tax_label: "GST" }));
+    expect(text).not.toContain("Rate not set");
+    expect(text).not.toContain("Exempt");
+  });
+
+  it("mixed rates render one row per distinct rate with a (N%) suffix, summing to the total tax", async () => {
+    const text = await totalsText(
+      makeSpikeData({
+        tax_status: "COMPUTED",
+        tax_label: "GST",
+        tax_breakdown: [
+          { rate: 10, amount: 10 },
+          { rate: 5, amount: 2 },
+          { rate: 0, amount: 0 },
+        ],
+        tax_amount: 12,
+      }),
+    );
+    expect(text).toContain("GST (10%)");
+    expect(text).toContain("GST (5%)");
+    expect(text).toContain("GST (0%)");
   });
 });

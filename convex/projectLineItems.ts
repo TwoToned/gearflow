@@ -640,6 +640,9 @@ export async function createKitLineItemCore(
     /** #1012 — entry shape of `discount` ($ off vs % of `unitPrice`). Display
      *  only; stored alongside the resolved dollar amount above. */
     discountMode?: "$" | "%";
+    /** T3 (#1091) — per-line tax rate override on the PARENT line only, same
+     *  scope as `discount` above; see docs/designs/tax-model.md §3. */
+    taxRate?: number;
     pricingMode: "KIT_PRICE" | "ITEMIZED";
     groupName?: string;
     categoryId?: string;
@@ -668,6 +671,7 @@ export async function createKitLineItemCore(
       description: `${kit.assetTag} - ${kit.name}`, quantity: 1, unitPrice: a.unitPrice, pricingType: "PER_DAY",
       duration: 1, discount: a.unitPrice != null ? a.discount : undefined,
       discountMode: a.unitPrice != null && a.discount != null ? a.discountMode : undefined,
+      taxRate: a.taxRate,
       lineTotal: kitLineTotal, sortOrder: sort++, pricingMode: a.pricingMode,
       groupName: a.groupName, categoryId: a.categoryId, groupId: a.groupId, status: "CONFIRMED",
       pricedUnderLock: pricedUnderLockOnInsert(a.pricedUnderLock),

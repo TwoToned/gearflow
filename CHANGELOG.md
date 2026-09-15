@@ -9,14 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Overbooked badges (project list, equipment tab) no longer go missing on a
-  project whose rental dates aren't set yet but which has an explicit
-  gear-committed window (load-in/load-out dates that diverge from the rental
-  dates). `getProject`, `getProjectIssueFlags`, and the native equipment-tab
-  subscription were reading `rentalStartDate`/`rentalEndDate` raw instead of
-  resolving the project's actual availability window, which silently dropped
-  into single-project-only checking and missed overlapping demand from other
-  jobs.
+- Overbooked badges (project list, equipment tab) no longer go missing, and
+  the "this will overbook this model — proceed anyway?" checkbox in the
+  add/edit-line-item dialogs now shows up reliably, on a project whose rental
+  dates aren't set yet but which has an explicit gear-committed window
+  (load-in/load-out dates that diverge from the rental dates). `getProject`,
+  `getProjectIssueFlags`, the native equipment-tab subscription, and the
+  project detail page's equipment tab were all reading
+  `rentalStartDate`/`rentalEndDate` raw instead of resolving the project's
+  actual availability window, which silently dropped into single-project-only
+  checking and missed overlapping demand from other jobs.
 
 ## [0.27.0] - 2026-09-14
 

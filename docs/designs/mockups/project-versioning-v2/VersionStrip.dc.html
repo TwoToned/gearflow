@@ -1,0 +1,136 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Archivo:wght@700;800&family=Geist+Mono:wght@400;500&display=swap');
+body { margin:0; background:#141210; color:#F5EFE2; font-family:"Hanken Grotesk", "Helvetica Neue", Arial, sans-serif; font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+a { color:#5B8DEF; text-decoration:none; } a:hover { color:#7FA6F5; }
+.mono { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-size:12px; }
+.num { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-variant-numeric:tabular-nums; }
+.card { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.muted { color:#9E9483; } .ink2 { color:#CDC4B2; } .faint { color:#6E665A; }
+.h1 { font-family:Archivo, "Hanken Grotesk", sans-serif; font-weight:800; font-size:24px; letter-spacing:-0.02em; line-height:1.15; margin:0; }
+.overline { font-size:11px; font-weight:600; letter-spacing:0.02em; color:#9E9483; }
+.pill { display:inline-flex; align-items:center; gap:6px; border-radius:9999px; font-weight:700; font-size:11px; line-height:1; padding:4px 10px; white-space:nowrap; }
+.pill-neutral { color:#CDC4B2; background:#1A1613; }
+.pill-info { color:#5B8DEF; background:rgba(91,141,239,.15); }
+.pill-primary { color:#fff; background:#E0363D; }
+.pill-ok { color:#4FD888; background:rgba(62,207,122,.14); }
+.pill-warn { color:#EBA53A; background:rgba(235,165,58,.15); }
+.pill-out { color:#F26F73; background:rgba(224,54,61,.18); }
+.pill-rep { color:#B6AC9A; background:rgba(158,148,131,.14); }
+.btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:14px; font-weight:600; font-size:13px; line-height:1; border:2px solid transparent; cursor:default; white-space:nowrap; }
+.btn-primary { background:#E0363D; color:#fff; box-shadow:2px 4px 0 rgba(0,0,0,.5), inset 0 1px 0 rgba(255,253,248,.14); }
+.btn-line { background:transparent; color:#F5EFE2; border-color:#473E32; }
+.btn-ghost { background:transparent; color:#CDC4B2; }
+.btn-danger { background:transparent; color:#F26F73; border-color:#473E32; }
+.btn-sm { height:28px; padding:0 10px; font-size:12px; }
+.strip { display:flex; align-items:center; justify-content:space-between; gap:12px; border-radius:14px; border-left:3px solid; padding:12px 16px; font-size:14px; }
+.strip-info { border-left-color:#5B8DEF; background:rgba(91,141,239,.15); color:#5B8DEF; }
+.strip-warn { border-left-color:#EBA53A; background:rgba(235,165,58,.15); color:#EBA53A; }
+.strip-open { border-left-color:#332C24; background:#1A1613; color:#9E9483; }
+.strip-primary { border-left-color:#E0363D; background:rgba(224,54,61,.16); color:#F5EFE2; }
+.tabs { display:inline-flex; align-items:center; gap:4px; border-radius:9999px; border:2px solid #473E32; background:#1A1613; padding:4px; }
+.tab { border-radius:8px; padding:6px 12px; font-size:14px; font-weight:500; color:#9E9483; }
+.tab-active { background:#2A241D; color:#F5EFE2; box-shadow:inset 0 1px 0 rgba(255,253,248,.14); }
+.menu { background:#2A241D; border:2px solid #473E32; border-radius:14px; box-shadow:0 3px 0 #0C0A08; padding:6px; min-width:300px; }
+.menu-label { padding:6px 10px 4px; font-size:11px; font-weight:600; color:#9E9483; letter-spacing:.02em; }
+.menu-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:8px; font-size:13.5px; color:#F5EFE2; }
+.menu-item.hover { background:#332C24; }
+.menu-sep { height:1px; background:#473E32; margin:6px 4px; }
+.dialog { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.notice { border-radius:14px; border-left:3px solid; background:#211C17; padding:10px 14px; font-size:13px; }
+.notice-warn { border-left-color:#EBA53A; } .notice-info { border-left-color:#5B8DEF; } .notice-ok { border-left-color:#4FD888; } .notice-out { border-left-color:#E0363D; }
+table { border-collapse:collapse; width:100%; }
+th { text-align:left; font-size:11px; font-weight:600; letter-spacing:.02em; color:#9E9483; padding:8px 12px; }
+td { border-top:1px solid #332C24; padding:10px 12px; font-size:13.5px; vertical-align:middle; }
+td.r, th.r { text-align:right; }
+.ico { width:16px; height:16px; flex:none; }
+.ico14 { width:14px; height:14px; flex:none; }
+.avatar { width:24px; height:24px; border-radius:9999px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#1D1A15; }
+.kbd { font-family:"Geist Mono", monospace; font-size:11px; border:1px solid #473E32; border-radius:6px; padding:1px 5px; color:#CDC4B2; }
+.dot { width:7px; height:7px; border-radius:9999px; display:inline-block; }
+.note { font-family:"Kalam", "Hanken Grotesk", cursive; color:#9E9483; }
+
+  </style>
+</helmet>
+<div style="width:1200px; min-height:860px; background:#141210; padding:24px; box-sizing:border-box; display:flex; flex-direction:column; gap:28px;">
+  <div>
+    <div class="overline" style="margin-bottom:8px;">A · Viewing a non-live draft version (editable — it is a workspace, not a relic)</div>
+    <div class="strip strip-info">
+      <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="6" r="3"></circle><path d="M6 9v6"></path><path d="M18 9a9 9 0 0 1-9 9"></path></svg><span><strong>v3 · With LED wall</strong> <span style="opacity:.85;">— a draft version, fully editable. Not live: the warehouse, availability and invoices follow v4.</span></span>
+      </div>
+      <div style="display:flex; gap:8px; flex:none;">
+        <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg> Compare with v4</span>
+        <span class="btn btn-line btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"></path><path d="M22 2 11 13"></path></svg> Send quote v3</span>
+        <span class="btn btn-primary btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M5 5a10 10 0 0 0 0 14"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg> Make v3 live</span>
+        <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg> Back to v4</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="overline" style="margin-bottom:8px;">B · Viewing a non-live version that was sent (frozen: the client holds this document)</div>
+    <div class="strip strip-open" style="color:#CDC4B2;">
+      <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span><strong>v2 · Frozen</strong> <span style="opacity:.85;">— sent 19 Jul, accepted 21 Jul, superseded by v4. Read-only because a client holds this exact document.</span></span>
+      </div>
+      <div style="display:flex; gap:8px; flex:none;">
+        <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span>
+        <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg> Compare with v4</span>
+        <span class="btn btn-line btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> New version from v2</span>
+        <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"></path><path d="M19 12H5"></path></svg> Back to v4</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="overline" style="margin-bottom:8px;">C · Live version, project confirmed (the lifecycle lock — replaces the unlock-session banner)</div>
+    <div class="strip strip-info">
+      <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span><strong>v4 is live and confirmed</strong> <span style="opacity:.85;">— pricing is locked. Gear added now lands unpriced until someone prices it. To change pricing, start a new version.</span></span>
+      </div>
+      <div style="display:flex; gap:8px; flex:none;">
+        <span class="btn btn-line btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> New version from v4</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="overline" style="margin-bottom:8px;">D · Live version has drifted from the quote the client holds (drift folds into the same strip — no second banner)</div>
+    <div class="strip strip-warn">
+      <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg><span><strong>v4 has changed since quote v4 was sent</strong> <span style="opacity:.9;">— 3 lines added (unpriced), rental window +2 days. The client's document no longer matches the job.</span></span>
+      </div>
+      <div style="display:flex; gap:8px; flex:none;">
+        <span class="btn btn-ghost btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg> See what changed</span>
+        <span class="btn btn-line btn-sm" style="color:#F5EFE2;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Re-quote as v5</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="overline" style="margin-bottom:8px;">E · Live version, job completed (hard lock — a new version + make live is the only path, admin/PM only)</div>
+    <div class="strip strip-primary">
+      <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+        <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span><strong>v4 is live and the job is completed</strong> <span style="opacity:.85;">— nothing on this version can change. Corrections go through a new version that an admin or this job's PM makes live, with a reason.</span></span>
+      </div>
+      <div style="display:flex; gap:8px; flex:none;">
+        <span class="btn btn-line btn-sm" style="color:#F5EFE2; opacity:.6;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> New version from v4</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note" style="font-size:13px;">One component, one query. Today this is four stacked components (lock strip, unlock banner, read-only bar, drift indicator) fed by three queries.</div>
+</div>
+
+</x-dc>
+</body>
+</html>

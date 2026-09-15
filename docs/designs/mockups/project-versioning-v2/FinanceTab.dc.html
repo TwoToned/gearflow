@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Archivo:wght@700;800&family=Geist+Mono:wght@400;500&display=swap');
+body { margin:0; background:#141210; color:#F5EFE2; font-family:"Hanken Grotesk", "Helvetica Neue", Arial, sans-serif; font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+a { color:#5B8DEF; text-decoration:none; } a:hover { color:#7FA6F5; }
+.mono { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-size:12px; }
+.num { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-variant-numeric:tabular-nums; }
+.card { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.muted { color:#9E9483; } .ink2 { color:#CDC4B2; } .faint { color:#6E665A; }
+.h1 { font-family:Archivo, "Hanken Grotesk", sans-serif; font-weight:800; font-size:24px; letter-spacing:-0.02em; line-height:1.15; margin:0; }
+.overline { font-size:11px; font-weight:600; letter-spacing:0.02em; color:#9E9483; }
+.pill { display:inline-flex; align-items:center; gap:6px; border-radius:9999px; font-weight:700; font-size:11px; line-height:1; padding:4px 10px; white-space:nowrap; }
+.pill-neutral { color:#CDC4B2; background:#1A1613; }
+.pill-info { color:#5B8DEF; background:rgba(91,141,239,.15); }
+.pill-primary { color:#fff; background:#E0363D; }
+.pill-ok { color:#4FD888; background:rgba(62,207,122,.14); }
+.pill-warn { color:#EBA53A; background:rgba(235,165,58,.15); }
+.pill-out { color:#F26F73; background:rgba(224,54,61,.18); }
+.pill-rep { color:#B6AC9A; background:rgba(158,148,131,.14); }
+.btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:14px; font-weight:600; font-size:13px; line-height:1; border:2px solid transparent; cursor:default; white-space:nowrap; }
+.btn-primary { background:#E0363D; color:#fff; box-shadow:2px 4px 0 rgba(0,0,0,.5), inset 0 1px 0 rgba(255,253,248,.14); }
+.btn-line { background:transparent; color:#F5EFE2; border-color:#473E32; }
+.btn-ghost { background:transparent; color:#CDC4B2; }
+.btn-danger { background:transparent; color:#F26F73; border-color:#473E32; }
+.btn-sm { height:28px; padding:0 10px; font-size:12px; }
+.strip { display:flex; align-items:center; justify-content:space-between; gap:12px; border-radius:14px; border-left:3px solid; padding:12px 16px; font-size:14px; }
+.strip-info { border-left-color:#5B8DEF; background:rgba(91,141,239,.15); color:#5B8DEF; }
+.strip-warn { border-left-color:#EBA53A; background:rgba(235,165,58,.15); color:#EBA53A; }
+.strip-open { border-left-color:#332C24; background:#1A1613; color:#9E9483; }
+.strip-primary { border-left-color:#E0363D; background:rgba(224,54,61,.16); color:#F5EFE2; }
+.tabs { display:inline-flex; align-items:center; gap:4px; border-radius:9999px; border:2px solid #473E32; background:#1A1613; padding:4px; }
+.tab { border-radius:8px; padding:6px 12px; font-size:14px; font-weight:500; color:#9E9483; }
+.tab-active { background:#2A241D; color:#F5EFE2; box-shadow:inset 0 1px 0 rgba(255,253,248,.14); }
+.menu { background:#2A241D; border:2px solid #473E32; border-radius:14px; box-shadow:0 3px 0 #0C0A08; padding:6px; min-width:300px; }
+.menu-label { padding:6px 10px 4px; font-size:11px; font-weight:600; color:#9E9483; letter-spacing:.02em; }
+.menu-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:8px; font-size:13.5px; color:#F5EFE2; }
+.menu-item.hover { background:#332C24; }
+.menu-sep { height:1px; background:#473E32; margin:6px 4px; }
+.dialog { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.notice { border-radius:14px; border-left:3px solid; background:#211C17; padding:10px 14px; font-size:13px; }
+.notice-warn { border-left-color:#EBA53A; } .notice-info { border-left-color:#5B8DEF; } .notice-ok { border-left-color:#4FD888; } .notice-out { border-left-color:#E0363D; }
+table { border-collapse:collapse; width:100%; }
+th { text-align:left; font-size:11px; font-weight:600; letter-spacing:.02em; color:#9E9483; padding:8px 12px; }
+td { border-top:1px solid #332C24; padding:10px 12px; font-size:13.5px; vertical-align:middle; }
+td.r, th.r { text-align:right; }
+.ico { width:16px; height:16px; flex:none; }
+.ico14 { width:14px; height:14px; flex:none; }
+.avatar { width:24px; height:24px; border-radius:9999px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#1D1A15; }
+.kbd { font-family:"Geist Mono", monospace; font-size:11px; border:1px solid #473E32; border-radius:6px; padding:1px 5px; color:#CDC4B2; }
+.dot { width:7px; height:7px; border-radius:9999px; display:inline-block; }
+.note { font-family:"Kalam", "Hanken Grotesk", cursive; color:#9E9483; }
+
+  </style>
+</helmet>
+<div style="width:1000px; min-height:800px; background:#141210; padding:24px; box-sizing:border-box; display:flex; flex-direction:column; gap:16px;">
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <div class="tabs"><span class="tab">Overview</span><span class="tab">Equipment</span><span class="tab">Labour &amp; logistics</span><span class="tab tab-active">Finance</span><span class="tab">Tasks</span><span class="tab">Notes</span><span class="tab">Files (3)</span></div>
+  </div>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div style="padding:14px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #332C24;">
+      <div><div style="font-weight:700; font-size:14px;">Quotes</div><div class="muted" style="font-size:12px;">One document per version. The client currently holds <span class="mono ink2">RVLT-2026-0087 v4</span>.</div></div>
+      <span class="btn btn-line btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></svg> Manage versions</span>
+    </div>
+    <table>
+      <thead><tr><th style="width:70px;">Version</th><th>Document</th><th>Sent</th><th>Valid until</th><th class="r">Total</th><th style="width:220px;"></th></tr></thead>
+      <tbody>
+        <tr style="background:rgba(224,54,61,.06);"><td><span class="mono" style="font-weight:500;">v4</span> <span class="pill pill-primary" style="margin-left:4px;">Live</span></td><td><span class="pill pill-ok">Accepted 28 Jul</span> <span class="muted" style="font-size:12px; margin-left:6px;">PO 4471</span></td><td class="ink2">26 Jul · Jayden</td><td class="ink2">25 Aug</td><td class="r num">$18,120</td><td class="r"><span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span><span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span></td></tr>
+        <tr><td><span class="mono" style="font-weight:500;">v3</span></td><td><span class="ink2" style="font-weight:600;">With LED wall</span> <span class="pill pill-neutral" style="margin-left:6px;">Not sent</span></td><td class="muted">—</td><td class="muted">—</td><td class="r num">$21,400</td><td class="r"><span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M16 13H8"></path><path d="M16 17H8"></path></svg> Preview</span><span class="btn btn-line btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"></path><path d="M22 2 11 13"></path></svg> Send quote v3</span></td></tr>
+        <tr><td><span class="mono" style="font-weight:500;">v2</span></td><td><span class="pill pill-rep">Superseded</span> <span class="muted" style="font-size:12px; margin-left:6px;">accepted 21 Jul</span></td><td class="ink2">19 Jul · Jayden</td><td class="muted">18 Aug</td><td class="r num muted">$16,900</td><td class="r"><span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span><span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span></td></tr>
+        <tr><td><span class="mono" style="font-weight:500;">v1</span></td><td><span class="pill pill-rep">Superseded</span></td><td class="ink2">12 Jul · Jayden</td><td class="muted">11 Aug</td><td class="r num muted">$16,400</td><td class="r"><span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span><span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div style="padding:14px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #332C24;">
+      <div><div style="font-weight:700; font-size:14px;">Invoices</div><div class="muted" style="font-size:12px;">Always issued from the live version. Deposit invoiced <span class="num ink2">$4,530</span> · outstanding <span class="num ink2">$13,590</span></div></div>
+      <span class="btn btn-line btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg> New invoice <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></span>
+    </div>
+    <table>
+      <thead><tr><th>Number</th><th>Kind</th><th>Status</th><th>From</th><th>Issued</th><th>Due</th><th class="r">Amount</th><th style="width:150px;"></th></tr></thead>
+      <tbody>
+        <tr><td class="mono">INV-2026-0043</td><td>Deposit 25%</td><td><span class="pill pill-info">Issued</span> <span class="pill pill-ok" style="margin-left:4px;">Xero ✓</span></td><td><span class="mono">v4</span></td><td class="ink2">25 Jul</td><td class="ink2">8 Aug</td><td class="r num">$4,530</td><td class="r"><span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span></td></tr>
+        <tr><td class="muted">— draft —</td><td>Balance</td><td><span class="pill pill-neutral">Draft</span></td><td><span class="mono">v4</span></td><td class="muted">—</td><td class="muted">—</td><td class="r num">$13,590</td><td class="r"><span class="btn btn-line btn-sm">Issue…</span><span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg></span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note" style="font-size:13px;">The Finance tab stops being the version manager. It lists documents (quotes, invoices) per version; creating, switching, comparing and deleting versions live in one place — the Versions panel.</div>
+</div>
+
+</x-dc>
+</body>
+</html>

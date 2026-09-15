@@ -1,0 +1,156 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Archivo:wght@700;800&family=Geist+Mono:wght@400;500&display=swap');
+body { margin:0; background:#141210; color:#F5EFE2; font-family:"Hanken Grotesk", "Helvetica Neue", Arial, sans-serif; font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+a { color:#5B8DEF; text-decoration:none; } a:hover { color:#7FA6F5; }
+.mono { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-size:12px; }
+.num { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-variant-numeric:tabular-nums; }
+.card { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.muted { color:#9E9483; } .ink2 { color:#CDC4B2; } .faint { color:#6E665A; }
+.h1 { font-family:Archivo, "Hanken Grotesk", sans-serif; font-weight:800; font-size:24px; letter-spacing:-0.02em; line-height:1.15; margin:0; }
+.overline { font-size:11px; font-weight:600; letter-spacing:0.02em; color:#9E9483; }
+.pill { display:inline-flex; align-items:center; gap:6px; border-radius:9999px; font-weight:700; font-size:11px; line-height:1; padding:4px 10px; white-space:nowrap; }
+.pill-neutral { color:#CDC4B2; background:#1A1613; }
+.pill-info { color:#5B8DEF; background:rgba(91,141,239,.15); }
+.pill-primary { color:#fff; background:#E0363D; }
+.pill-ok { color:#4FD888; background:rgba(62,207,122,.14); }
+.pill-warn { color:#EBA53A; background:rgba(235,165,58,.15); }
+.pill-out { color:#F26F73; background:rgba(224,54,61,.18); }
+.pill-rep { color:#B6AC9A; background:rgba(158,148,131,.14); }
+.btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:14px; font-weight:600; font-size:13px; line-height:1; border:2px solid transparent; cursor:default; white-space:nowrap; }
+.btn-primary { background:#E0363D; color:#fff; box-shadow:2px 4px 0 rgba(0,0,0,.5), inset 0 1px 0 rgba(255,253,248,.14); }
+.btn-line { background:transparent; color:#F5EFE2; border-color:#473E32; }
+.btn-ghost { background:transparent; color:#CDC4B2; }
+.btn-danger { background:transparent; color:#F26F73; border-color:#473E32; }
+.btn-sm { height:28px; padding:0 10px; font-size:12px; }
+.strip { display:flex; align-items:center; justify-content:space-between; gap:12px; border-radius:14px; border-left:3px solid; padding:12px 16px; font-size:14px; }
+.strip-info { border-left-color:#5B8DEF; background:rgba(91,141,239,.15); color:#5B8DEF; }
+.strip-warn { border-left-color:#EBA53A; background:rgba(235,165,58,.15); color:#EBA53A; }
+.strip-open { border-left-color:#332C24; background:#1A1613; color:#9E9483; }
+.strip-primary { border-left-color:#E0363D; background:rgba(224,54,61,.16); color:#F5EFE2; }
+.tabs { display:inline-flex; align-items:center; gap:4px; border-radius:9999px; border:2px solid #473E32; background:#1A1613; padding:4px; }
+.tab { border-radius:8px; padding:6px 12px; font-size:14px; font-weight:500; color:#9E9483; }
+.tab-active { background:#2A241D; color:#F5EFE2; box-shadow:inset 0 1px 0 rgba(255,253,248,.14); }
+.menu { background:#2A241D; border:2px solid #473E32; border-radius:14px; box-shadow:0 3px 0 #0C0A08; padding:6px; min-width:300px; }
+.menu-label { padding:6px 10px 4px; font-size:11px; font-weight:600; color:#9E9483; letter-spacing:.02em; }
+.menu-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:8px; font-size:13.5px; color:#F5EFE2; }
+.menu-item.hover { background:#332C24; }
+.menu-sep { height:1px; background:#473E32; margin:6px 4px; }
+.dialog { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.notice { border-radius:14px; border-left:3px solid; background:#211C17; padding:10px 14px; font-size:13px; }
+.notice-warn { border-left-color:#EBA53A; } .notice-info { border-left-color:#5B8DEF; } .notice-ok { border-left-color:#4FD888; } .notice-out { border-left-color:#E0363D; }
+table { border-collapse:collapse; width:100%; }
+th { text-align:left; font-size:11px; font-weight:600; letter-spacing:.02em; color:#9E9483; padding:8px 12px; }
+td { border-top:1px solid #332C24; padding:10px 12px; font-size:13.5px; vertical-align:middle; }
+td.r, th.r { text-align:right; }
+.ico { width:16px; height:16px; flex:none; }
+.ico14 { width:14px; height:14px; flex:none; }
+.avatar { width:24px; height:24px; border-radius:9999px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#1D1A15; }
+.kbd { font-family:"Geist Mono", monospace; font-size:11px; border:1px solid #473E32; border-radius:6px; padding:1px 5px; color:#CDC4B2; }
+.dot { width:7px; height:7px; border-radius:9999px; display:inline-block; }
+.note { font-family:"Kalam", "Hanken Grotesk", cursive; color:#9E9483; }
+
+  </style>
+</helmet>
+<div style="width:520px; min-height:1080px; background:#141210; padding:0; box-sizing:border-box; position:relative;">
+  <div style="position:absolute; inset:0; background:rgba(14,12,10,.66);"></div>
+  <!-- Sheet -->
+  <div style="position:absolute; top:0; right:0; bottom:0; width:460px; background:#211C17; border-left:2px solid #332C24; display:flex; flex-direction:column;">
+    <div style="padding:20px 20px 12px; display:flex; align-items:flex-start; justify-content:space-between; border-bottom:1px solid #332C24;">
+      <div>
+        <div style="font-family:Archivo, sans-serif; font-weight:800; font-size:20px; letter-spacing:-0.02em;">Versions</div>
+        <div class="muted" style="font-size:12px; margin-top:2px;"><span class="mono ink2">RVLT-2026-0087</span> · 4 versions · v4 is live</div>
+      </div>
+      <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></span>
+    </div>
+    <div style="padding:12px 20px 0; display:flex; flex-direction:column; gap:10px; flex:1;">
+
+      <!-- v4 live -->
+      <div style="border:2px solid #E0363D; border-radius:14px; padding:12px 14px; background:#1A1613; display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span style="display:flex; align-items:center; gap:8px;"><span class="mono" style="font-size:13px; font-weight:500;">v4</span><span class="pill pill-primary">Live</span><span class="pill pill-ok">Accepted 28 Jul</span></span>
+          <span class="num" style="font-weight:500;">$18,120</span>
+        </div>
+        <div class="muted" style="font-size:12px;">Sent 26 Jul by Jayden · valid until 25 Aug · 1 invoice issued from this version</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span>
+          <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg> Compare</span>
+          <span style="flex:1;"></span>
+          <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span>
+        </div>
+      </div>
+
+      <!-- v3 draft, menu open -->
+      <div style="border:2px solid #473E32; border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; position:relative;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span style="display:flex; align-items:center; gap:8px;"><span class="mono" style="font-size:13px; font-weight:500;">v3</span><span class="ink2" style="font-weight:600;">With LED wall</span><span class="pill pill-neutral">Draft</span></span>
+          <span class="num" style="font-weight:500;">$21,400</span>
+        </div>
+        <div class="muted" style="font-size:12px;">Duplicated from v2 on 24 Jul by Sam · 16 lines · not sent</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="btn btn-line btn-sm">Open</span>
+          <span class="btn btn-primary btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M5 5a10 10 0 0 0 0 14"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg> Make live</span>
+          <span style="flex:1;"></span>
+          <span class="btn btn-ghost btn-sm" style="background:#332C24;"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span>
+        </div>
+        <div class="menu" style="position:absolute; right:14px; top:96px; min-width:230px; z-index:2;">
+          <div class="menu-item"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg> Rename</div>
+          <div class="menu-item"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Duplicate as v5</div>
+          <div class="menu-item"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"></path><path d="M22 2 11 13"></path></svg> Send quote v3…</div>
+          <div class="menu-item"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M5 10h14"></path><path d="M5 21h14"></path></svg> Compare with v4 (live)</div>
+          <div class="menu-sep"></div>
+          <div class="menu-item" style="color:#F26F73;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg> Delete v3</div>
+        </div>
+      </div>
+
+      <!-- v2 superseded -->
+      <div style="border:2px solid #332C24; border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; margin-top:120px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span style="display:flex; align-items:center; gap:8px;"><span class="mono" style="font-size:13px; font-weight:500;">v2</span><span class="pill pill-rep">Superseded</span><span class="muted" style="font-size:12px;">accepted 21 Jul</span></span>
+          <span class="num muted" style="font-weight:500;">$16,900</span>
+        </div>
+        <div class="muted" style="font-size:12px;">Sent 19 Jul by Jayden · frozen · the version the job was confirmed on</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="btn btn-ghost btn-sm">Open</span>
+          <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span>
+          <span style="flex:1;"></span>
+          <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span>
+        </div>
+      </div>
+
+      <!-- v1 -->
+      <div style="border:2px solid #332C24; border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span style="display:flex; align-items:center; gap:8px;"><span class="mono" style="font-size:13px; font-weight:500;">v1</span><span class="pill pill-rep">Superseded</span><span class="muted" style="font-size:12px;">sent 12 Jul</span></span>
+          <span class="num muted" style="font-weight:500;">$16,400</span>
+        </div>
+        <div class="muted" style="font-size:12px;">Sent 12 Jul by Jayden · frozen</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="btn btn-ghost btn-sm">Open</span>
+          <span class="btn btn-ghost btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg> PDF</span>
+          <span style="flex:1;"></span>
+          <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:14px 20px 20px; border-top:1px solid #332C24; display:flex; flex-direction:column; gap:10px;">
+      <div style="display:flex; gap:8px;">
+        <span class="btn btn-primary" style="flex:1; justify-content:center;"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg> New version from v4</span>
+        <span class="btn btn-line"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></span>
+      </div>
+      <div class="muted" style="font-size:11px;">Only the live version drives the warehouse, availability and invoices. Everything else is a saved, switchable copy of the job.</div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>

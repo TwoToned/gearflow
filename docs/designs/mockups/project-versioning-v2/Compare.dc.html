@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Archivo:wght@700;800&family=Geist+Mono:wght@400;500&display=swap');
+body { margin:0; background:#141210; color:#F5EFE2; font-family:"Hanken Grotesk", "Helvetica Neue", Arial, sans-serif; font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+a { color:#5B8DEF; text-decoration:none; } a:hover { color:#7FA6F5; }
+.mono { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-size:12px; }
+.num { font-family:"Geist Mono", ui-monospace, Menlo, monospace; font-variant-numeric:tabular-nums; }
+.card { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.muted { color:#9E9483; } .ink2 { color:#CDC4B2; } .faint { color:#6E665A; }
+.h1 { font-family:Archivo, "Hanken Grotesk", sans-serif; font-weight:800; font-size:24px; letter-spacing:-0.02em; line-height:1.15; margin:0; }
+.overline { font-size:11px; font-weight:600; letter-spacing:0.02em; color:#9E9483; }
+.pill { display:inline-flex; align-items:center; gap:6px; border-radius:9999px; font-weight:700; font-size:11px; line-height:1; padding:4px 10px; white-space:nowrap; }
+.pill-neutral { color:#CDC4B2; background:#1A1613; }
+.pill-info { color:#5B8DEF; background:rgba(91,141,239,.15); }
+.pill-primary { color:#fff; background:#E0363D; }
+.pill-ok { color:#4FD888; background:rgba(62,207,122,.14); }
+.pill-warn { color:#EBA53A; background:rgba(235,165,58,.15); }
+.pill-out { color:#F26F73; background:rgba(224,54,61,.18); }
+.pill-rep { color:#B6AC9A; background:rgba(158,148,131,.14); }
+.btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:14px; font-weight:600; font-size:13px; line-height:1; border:2px solid transparent; cursor:default; white-space:nowrap; }
+.btn-primary { background:#E0363D; color:#fff; box-shadow:2px 4px 0 rgba(0,0,0,.5), inset 0 1px 0 rgba(255,253,248,.14); }
+.btn-line { background:transparent; color:#F5EFE2; border-color:#473E32; }
+.btn-ghost { background:transparent; color:#CDC4B2; }
+.btn-danger { background:transparent; color:#F26F73; border-color:#473E32; }
+.btn-sm { height:28px; padding:0 10px; font-size:12px; }
+.strip { display:flex; align-items:center; justify-content:space-between; gap:12px; border-radius:14px; border-left:3px solid; padding:12px 16px; font-size:14px; }
+.strip-info { border-left-color:#5B8DEF; background:rgba(91,141,239,.15); color:#5B8DEF; }
+.strip-warn { border-left-color:#EBA53A; background:rgba(235,165,58,.15); color:#EBA53A; }
+.strip-open { border-left-color:#332C24; background:#1A1613; color:#9E9483; }
+.strip-primary { border-left-color:#E0363D; background:rgba(224,54,61,.16); color:#F5EFE2; }
+.tabs { display:inline-flex; align-items:center; gap:4px; border-radius:9999px; border:2px solid #473E32; background:#1A1613; padding:4px; }
+.tab { border-radius:8px; padding:6px 12px; font-size:14px; font-weight:500; color:#9E9483; }
+.tab-active { background:#2A241D; color:#F5EFE2; box-shadow:inset 0 1px 0 rgba(255,253,248,.14); }
+.menu { background:#2A241D; border:2px solid #473E32; border-radius:14px; box-shadow:0 3px 0 #0C0A08; padding:6px; min-width:300px; }
+.menu-label { padding:6px 10px 4px; font-size:11px; font-weight:600; color:#9E9483; letter-spacing:.02em; }
+.menu-item { display:flex; align-items:center; gap:10px; padding:7px 10px; border-radius:8px; font-size:13.5px; color:#F5EFE2; }
+.menu-item.hover { background:#332C24; }
+.menu-sep { height:1px; background:#473E32; margin:6px 4px; }
+.dialog { background:#211C17; border:2px solid #332C24; border-radius:20px; box-shadow:0 3px 0 #0C0A08; }
+.notice { border-radius:14px; border-left:3px solid; background:#211C17; padding:10px 14px; font-size:13px; }
+.notice-warn { border-left-color:#EBA53A; } .notice-info { border-left-color:#5B8DEF; } .notice-ok { border-left-color:#4FD888; } .notice-out { border-left-color:#E0363D; }
+table { border-collapse:collapse; width:100%; }
+th { text-align:left; font-size:11px; font-weight:600; letter-spacing:.02em; color:#9E9483; padding:8px 12px; }
+td { border-top:1px solid #332C24; padding:10px 12px; font-size:13.5px; vertical-align:middle; }
+td.r, th.r { text-align:right; }
+.ico { width:16px; height:16px; flex:none; }
+.ico14 { width:14px; height:14px; flex:none; }
+.avatar { width:24px; height:24px; border-radius:9999px; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#1D1A15; }
+.kbd { font-family:"Geist Mono", monospace; font-size:11px; border:1px solid #473E32; border-radius:6px; padding:1px 5px; color:#CDC4B2; }
+.dot { width:7px; height:7px; border-radius:9999px; display:inline-block; }
+.note { font-family:"Kalam", "Hanken Grotesk", cursive; color:#9E9483; }
+
+  </style>
+</helmet>
+<div style="width:1120px; min-height:820px; background:rgba(14,12,10,.9); padding:24px; box-sizing:border-box;">
+  <div class="dialog" style="padding:0; display:flex; flex-direction:column; min-height:610px;">
+    <div style="padding:18px 22px 14px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #332C24;">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <div style="font-family:Archivo, sans-serif; font-weight:800; font-size:20px; letter-spacing:-0.02em;">Compare</div>
+        <span class="btn btn-line btn-sm"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="6" r="3"></circle><path d="M6 9v6"></path><path d="M18 9a9 9 0 0 1-9 9"></path></svg> v3 · With LED wall <svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></span>
+        <span class="muted">against</span>
+        <span class="tabs" style="padding:3px;"><span class="tab tab-active" style="padding:4px 10px; font-size:12px;">v4 · Live</span><span class="tab" style="padding:4px 10px; font-size:12px;">v2 · previous</span></span>
+      </div>
+      <span class="btn btn-ghost btn-sm"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></span>
+    </div>
+
+    <div style="display:flex; flex:1;">
+      <div style="flex:1; padding:16px 22px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <div class="ink2" style="font-size:13px;"><strong style="color:#F5EFE2;">5 changes</strong> · total <span class="num" style="color:#4FD888;">+$3,280</span> (+18.1%) · same rental window</div>
+          <div style="display:flex; align-items:center; gap:6px;"><span class="btn btn-ghost btn-sm">‹</span><span class="mono ink2">Change 2 of 5</span><span class="btn btn-ghost btn-sm">›</span></div>
+        </div>
+        <table>
+          <thead><tr><th style="width:40%;">Line</th><th>Change</th><th class="r">v4 · Live</th><th class="r">v3</th></tr></thead>
+          <tbody>
+            <tr><td colspan="4" style="border-top:0; padding-top:6px;"><span class="overline">Video</span></td></tr>
+            <tr style="background:rgba(62,207,122,.08);"><td><span class="pill pill-ok" style="margin-right:8px;">Added</span>LED wall 3.9 mm · 6 × 3 m</td><td class="muted">new line, 4 days</td><td class="r num muted">—</td><td class="r num">$2,880</td></tr>
+            <tr style="background:rgba(224,54,61,.12); box-shadow:inset 3px 0 0 #E0363D;"><td><span class="pill pill-ok" style="margin-right:8px;">Added</span>Novastar VX1000 processor</td><td class="muted">new line, 4 days</td><td class="r num muted">—</td><td class="r num">$400</td></tr>
+            <tr><td colspan="4" style="padding-top:6px;"><span class="overline">Lighting</span></td></tr>
+            <tr style="background:rgba(235,165,58,.08);"><td><span class="pill pill-warn" style="margin-right:8px;">Price</span>Source Four LED S2 · 6</td><td class="muted">unit price</td><td class="r num">$1,200</td><td class="r num">$1,320</td></tr>
+            <tr style="background:rgba(235,165,58,.08);"><td><span class="pill pill-warn" style="margin-right:8px;">Qty</span>MA3 Light</td><td class="muted">quantity</td><td class="r num">2</td><td class="r num">0</td></tr>
+            <tr><td colspan="4" style="padding-top:6px;"><span class="overline">Labour</span></td></tr>
+            <tr style="background:rgba(235,165,58,.08);"><td><span class="pill pill-warn" style="margin-right:8px;">Hours</span>Video technician</td><td class="muted">estimated hours</td><td class="r num">16</td><td class="r num">24</td></tr>
+            <tr><td colspan="4" style="padding-top:6px;"><span class="overline">Totals</span></td></tr>
+            <tr><td>Subtotal</td><td></td><td class="r num">$16,472</td><td class="r num">$19,454</td></tr>
+            <tr><td>GST</td><td></td><td class="r num">$1,648</td><td class="r num">$1,946</td></tr>
+            <tr><td style="font-weight:700;">Total</td><td></td><td class="r num" style="font-weight:700;">$18,120</td><td class="r num" style="font-weight:700;">$21,400</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="width:250px; border-left:1px solid #332C24; padding:16px; display:flex; flex-direction:column; gap:8px;">
+        <div class="overline">Versions</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px; background:#332C24;"><span><span class="mono">v4</span> <span class="pill pill-primary" style="margin-left:6px;">Live</span></span><span class="num" style="font-size:12px;">$18,120</span></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px; box-shadow:inset 0 0 0 2px #E0363D;"><span><span class="mono">v3</span> <span class="ink2" style="font-size:12px; margin-left:6px;">With LED wall</span></span><span class="num" style="font-size:12px;">$21,400</span></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px;"><span><span class="mono">v2</span> <span class="pill pill-rep" style="margin-left:6px;">Superseded</span></span><span class="num muted" style="font-size:12px;">$16,900</span></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:10px;"><span><span class="mono">v1</span> <span class="pill pill-rep" style="margin-left:6px;">Superseded</span></span><span class="num muted" style="font-size:12px;">$16,400</span></div>
+      </div>
+    </div>
+
+    <div style="padding:14px 22px; border-top:1px solid #332C24; display:flex; justify-content:space-between; align-items:center;">
+      <span class="muted" style="font-size:12px;">Unchanged lines are hidden. Highlighting is always on.</span>
+      <div style="display:flex; gap:8px;"><span class="btn btn-line">Open v3</span><span class="btn btn-primary"><svg class="ico14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M5 5a10 10 0 0 0 0 14"></path><path d="M19 5a10 10 0 0 1 0 14"></path></svg> Make v3 live</span></div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>

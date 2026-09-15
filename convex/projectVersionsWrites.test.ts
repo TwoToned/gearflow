@@ -509,7 +509,7 @@ describe("promoteRevisionNative — auto-capture rule", () => {
     // (same fields `seedProject` inserted for "l1") — no drift.
     await seedSnapshotAt(t, 2, "QUOTE_SENT", {
       lineItems: [{
-        id: "l1", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        id: "l1", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "l1", status: "CONFIRMED", type: "EQUIPMENT",
         isKitChild: false, isOptional: false, description: "PA System", quantity: 1, unitPrice: 100, lineTotal: 100,
       }],
     });
@@ -598,7 +598,7 @@ describe("promoteRevisionNative — warehouse conflicts (never forced)", () => {
     // Live state has an asset-backed line NOT present in the target snapshot.
     await t.run(async (ctx) => {
       await ctx.db.insert("projectLineItems", {
-        id: "l_extra", organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT",
+        id: "l_extra", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "l_extra", status: "CONFIRMED", type: "EQUIPMENT",
         isKitChild: false, isOptional: false, description: "Extra asset line", quantity: 1, unitPrice: 300,
         lineTotal: 300, assetId: "A2",
       });
@@ -635,10 +635,13 @@ describe("promoteRevisionNative — availability re-derive on a moved rental win
       // Another CONFIRMED project books the same single-stock model over the OLD window.
       await ctx.db.insert("projects", {
         id: "p_other", organizationId: ORG, projectNumber: "OTHER-1", name: "Other job", status: "CONFIRMED",
-        isTemplate: false, rentalStartDate: oldStart, rentalEndDate: oldEnd, createdAt: NOW, updatedAt: NOW,
+        isTemplate: false, rentalStartDate: oldStart, rentalEndDate: oldEnd, liveVersionId: "v-p_other", createdAt: NOW, updatedAt: NOW,
+      });
+      await ctx.db.insert("projectVersions", {
+        id: "v-p_other", organizationId: ORG, projectId: "p_other", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1",
       });
       await ctx.db.insert("projectLineItems", {
-        id: "l_other", organizationId: ORG, projectId: "p_other", status: "CONFIRMED", type: "EQUIPMENT",
+        id: "l_other", organizationId: ORG, projectId: "p_other", versionId: "v-p_other", lineageId: "l_other", status: "CONFIRMED", type: "EQUIPMENT",
         isKitChild: false, isOptional: false, description: "Camera", quantity: 1, unitPrice: 10, lineTotal: 10, modelId: "mdl",
       });
     });

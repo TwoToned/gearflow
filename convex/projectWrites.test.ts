@@ -474,7 +474,8 @@ describe("projectWrites.updateNative", () => {
   test("clear removes a field", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, clientNotes: "x", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, clientNotes: "x", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await t.withIdentity(SERVICE).mutation(api.projectWrites.updateNative, { ...uargs, set: { updatedAt: NOW }, clear: ["clientNotes"] });
     await t.run(async (ctx) => {
@@ -490,7 +491,8 @@ describe("projectWrites.updateNative", () => {
   test("strips forged money totals + isTemplate from a client set (injection guard)", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, total: 500, margin: 100, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, total: 500, margin: 100, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
     });
     await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
@@ -745,7 +747,8 @@ describe("projectWrites.createNative", () => {
   test("returns created:false + no insert/audit on a number clash", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "existing", organizationId: ORG, projectNumber: "P-100", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-existing", id: "existing", organizationId: ORG, projectNumber: "P-100", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-existing", organizationId: ORG, projectId: "existing", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     const res = await t.withIdentity(SERVICE).mutation(api.projectWrites.createNative, cargs);
     expect(res).toEqual({ created: false, id: "existing" });
@@ -881,22 +884,23 @@ describe("projectWrites.deleteNative", () => {
   async function seedFullCancelledProject(t: ReturnType<typeof convexTest>, role = "owner") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       // The org's default location (the delete mutation org-validates defaultLocationId).
       await ctx.db.insert("locations", { id: "loc1", organizationId: ORG, name: "Warehouse", createdAt: NOW, updatedAt: NOW });
 
       // A loose serialized asset, checked out on a line.
       await ctx.db.insert("assets", { id: "asset_loose", organizationId: ORG, modelId: "model1", assetTag: "A-1", status: "CHECKED_OUT", isActive: true, locationId: "old_loc", createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "li_loose", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_loose", quantity: 1, status: "CHECKED_OUT", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "li_loose", id: "li_loose", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_loose", quantity: 1, status: "CHECKED_OUT", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectLineItemUnits", { id: "unit_loose", organizationId: ORG, lineItemId: "li_loose", assetId: "asset_loose", status: "CHECKED_OUT", ordinal: 0, createdAt: NOW, updatedAt: NOW });
 
       // A checked-out kit + its serialized member asset + the kit parent line.
       await ctx.db.insert("kits", { id: "kit1", organizationId: ORG, assetTag: "K-1", name: "Kit One", status: "CHECKED_OUT", locationId: "old_loc", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("assets", { id: "asset_kit", organizationId: ORG, modelId: "model1", assetTag: "A-2", status: "CHECKED_OUT", isActive: true, locationId: "old_loc", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("kitSerializedItems", { id: "ksi1", organizationId: ORG, kitId: "kit1", assetId: "asset_kit", addedById: USER, addedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "li_kit", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", kitId: "kit1", quantity: 1, status: "CHECKED_OUT", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "li_kit", id: "li_kit", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", kitId: "kit1", quantity: 1, status: "CHECKED_OUT", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
       // A kit-child line + unit (must be cascaded via the parent).
-      await ctx.db.insert("projectLineItems", { id: "li_kit_child", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_kit", quantity: 1, status: "CHECKED_OUT", sortOrder: 2, isKitChild: true, parentLineItemId: "li_kit", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: "li_kit_child", id: "li_kit_child", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", assetId: "asset_kit", quantity: 1, status: "CHECKED_OUT", sortOrder: 2, isKitChild: true, parentLineItemId: "li_kit", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectLineItemUnits", { id: "unit_kit_child", organizationId: ORG, lineItemId: "li_kit_child", assetId: "asset_kit", status: "CHECKED_OUT", ordinal: 0, createdAt: NOW, updatedAt: NOW });
 
       // Crew assignment → shift → time entry.
@@ -907,11 +911,11 @@ describe("projectWrites.deleteNative", () => {
       // PM / task / service.
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "p1", userId: USER, addedAt: NOW });
       await ctx.db.insert("projectTasks", { id: "task1", organizationId: ORG, projectId: "p1", title: "Load in", createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectServices", { id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Labour", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectServices", { versionId: "v-p1", lineageId: "svc1", id: "svc1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Labour", createdAt: NOW, updatedAt: NOW });
 
       // Grouping: category + group + slots.
-      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "p1", title: "Stage", sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { versionId: "v-p1", lineageId: "cat1", id: "cat1", organizationId: ORG, projectId: "p1", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { versionId: "v-p1", lineageId: "grp1", id: "grp1", organizationId: ORG, projectId: "p1", title: "Stage", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "slot_cat", projectCategoryId: "cat1", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "slot_grp", projectCategoryId: "cat1", projectGroupId: "grp1", sortOrder: 0 });
 
@@ -967,7 +971,8 @@ describe("projectWrites.deleteNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs),
@@ -978,7 +983,8 @@ describe("projectWrites.deleteNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "T", status: "CANCELLED", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "T", status: "CANCELLED", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(
       t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs),
@@ -989,7 +995,8 @@ describe("projectWrites.deleteNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "member" });
-      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteNative, dargs)).rejects.toThrow(/insufficient permissions/i);
   });
@@ -1016,10 +1023,11 @@ describe("projectWrites.deleteTemplateNative", () => {
   async function seedTemplate(t: ReturnType<typeof convexTest>, role = "owner", isTemplate = true) {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "tli1", organizationId: ORG, projectId: "t1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-t1", id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-t1", organizationId: ORG, projectId: "t1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { versionId: "v-t1", lineageId: "tli1", id: "tli1", organizationId: ORG, projectId: "t1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "tpm1", organizationId: ORG, projectId: "t1", userId: USER, addedAt: NOW });
-      await ctx.db.insert("projectCategories", { id: "tcat1", organizationId: ORG, projectId: "t1", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectCategories", { versionId: "v-t1", lineageId: "tcat1", id: "tcat1", organizationId: ORG, projectId: "t1", name: "Audio", sortOrder: 0 });
       await ctx.db.insert("categorySlots", { id: "tslot1", projectCategoryId: "tcat1", sortOrder: 0 });
       await ctx.db.insert("projectModelRevenues", { id: "tpmr1", organizationId: ORG, projectId: "t1", modelId: "model1", allocatedRevenue: 0, updatedAt: NOW });
     });
@@ -1102,7 +1110,8 @@ describe("projectWrites.createNative auto-number", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "m", organizationId: ORG, userId: USER, role: "member" });
       // 260701 already exists (e.g. entered manually) — the auto loop must skip past it.
-      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "260701", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-taken", id: "taken", organizationId: ORG, projectNumber: "260701", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-taken", organizationId: ORG, projectId: "taken", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     expect(await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.createNative, autoArgs("a1", "log1"))).toEqual({ created: true, id: "a1" });
     await t.run(async (ctx) => {
@@ -1130,17 +1139,18 @@ describe("projectWrites.duplicateNative", () => {
   async function seedSource(t: ReturnType<typeof convexTest>, role = "owner") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, taxRate: 5, discountPercent: 0, tags: ["a"], createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 100, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, taxRate: 5, discountPercent: 0, tags: ["a"], createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: ORG, projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectCategories", { versionId: "v-src", lineageId: "cat1", id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { versionId: "v-src", lineageId: "grp1", id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 100, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       // Grouped parent + kit child.
-      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 50, lineTotal: 50, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", childKind: "KIT", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp1", id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 50, lineTotal: 50, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lc1", id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", childKind: "KIT", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       // Ungrouped standalone line (bills its own lineTotal).
-      await ctx.db.insert("projectLineItems", { id: "lp2", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 30, lineTotal: 30, isKitChild: false, status: "CONFIRMED", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp2", id: "lp2", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 30, lineTotal: 30, isKitChild: false, status: "CONFIRMED", sortOrder: 1, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "src", userId: USER, addedAt: NOW });
       // NOT copied:
-      await ctx.db.insert("projectServices", { id: "svc1", organizationId: ORG, projectId: "src", type: "LABOUR", title: "Labour", costTotal: 20, lineTotal: 40, showOnDocuments: true, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectServices", { versionId: "v-src", lineageId: "svc1", id: "svc1", organizationId: ORG, projectId: "src", type: "LABOUR", title: "Labour", costTotal: 20, lineTotal: 40, showOnDocuments: true, status: "CONFIRMED", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectTasks", { id: "task1", organizationId: ORG, projectId: "src", title: "Load in", createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("crewAssignments", { id: "ca1", organizationId: ORG, projectId: "src", crewMemberId: "cm1", status: "CONFIRMED", estimatedCost: 200, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("categorySlots", { id: "slot1", projectCategoryId: "cat1", sortOrder: 0 });
@@ -1216,7 +1226,8 @@ describe("projectWrites.duplicateNative", () => {
     const t = makeT();
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
-      await ctx.db.insert("projects", { id: "src", organizationId: "other_org", projectNumber: "SRC-1", name: "Foreign", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: "other_org", projectNumber: "SRC-1", name: "Foreign", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: "other_org", projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/not found/i);
   });
@@ -1225,7 +1236,8 @@ describe("projectWrites.duplicateNative", () => {
     const t = makeT();
     await seedSource(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "P-DUP", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-taken", id: "taken", organizationId: ORG, projectNumber: "P-DUP", name: "Taken", status: "CONFIRMED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-taken", organizationId: ORG, projectId: "taken", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.duplicateNative, dupArgs)).rejects.toThrow(/already exists/i);
   });
@@ -1240,8 +1252,9 @@ describe("projectWrites.duplicateNative", () => {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role: "owner" });
       // Source project has NO taxRate of its own, so the copy falls back to the org default.
-      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: ORG, projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp1", id: "lp1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, unitPrice: 100, lineTotal: 100, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("orgSettings", { organizationId: ORG, defaultTaxRate: 7 });
     });
     // A malicious/stale client sends 99 — must be ignored in favor of the orgSettings row (7).
@@ -1278,12 +1291,13 @@ describe("projectWrites.saveAsTemplateNative", () => {
   async function seedSource(t: ReturnType<typeof convexTest>, role = "owner") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectCategories", { id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
-      await ctx.db.insert("projectGroups", { id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 0, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-src", id: "src", organizationId: ORG, projectNumber: "SRC-1", name: "Original", status: "CONFIRMED", type: "DRY_HIRE", isTemplate: false, tags: [], createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-src", organizationId: ORG, projectId: "src", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectCategories", { versionId: "v-src", lineageId: "cat1", id: "cat1", organizationId: ORG, projectId: "src", name: "Audio", sortOrder: 0 });
+      await ctx.db.insert("projectGroups", { versionId: "v-src", lineageId: "grp1", id: "grp1", organizationId: ORG, projectId: "src", categoryId: "cat1", title: "Stage", quantity: 1, price: 0, sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       // A grouped parent + child — the template must copy the LINES but drop category/group.
-      await ctx.db.insert("projectLineItems", { id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 40, lineTotal: 40, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
-      await ctx.db.insert("projectLineItems", { id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lp1", id: "lp1", organizationId: ORG, projectId: "src", categoryId: "cat1", groupId: "grp1", type: "EQUIPMENT", quantity: 1, unitPrice: 40, lineTotal: 40, isKitChild: false, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v-src", lineageId: "lc1", id: "lc1", organizationId: ORG, projectId: "src", type: "EQUIPMENT", quantity: 1, isKitChild: true, parentLineItemId: "lp1", status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "pm1", organizationId: ORG, projectId: "src", userId: USER, addedAt: NOW });
     });
   }
@@ -1327,7 +1341,8 @@ describe("projectWrites.saveAsTemplateNative", () => {
     const t = makeT();
     await seedSource(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "taken", organizationId: ORG, projectNumber: "TPL-0001", name: "Taken", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-taken", id: "taken", organizationId: ORG, projectNumber: "TPL-0001", name: "Taken", isTemplate: true, createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("projectVersions", { id: "v-taken", organizationId: ORG, projectId: "taken", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
     });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.saveAsTemplateNative, tplArgs)).rejects.toThrow(/already exists/i);
   });

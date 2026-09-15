@@ -170,6 +170,106 @@ describe("buildFinanceLines", () => {
 // prints on that section's header. The safety property throughout: rollup
 // REGROUPS, it never reprices, so the snapshot must keep summing to exactly what
 // the itemised snapshot summed to.
+/**
+ * The invariant the Xero push now enforces
+ * (`assertLinesReconcileWithTaxableBase`, src/server/xero.ts): these lines sum
+ * to the amount Xero charges tax on, i.e. `recalc.ts`'s `taxableAmount`
+ * (subtotal less the project discount). Nothing asserted this before, and two
+ * ways of breaking it were already shipped — found by adversarial review of
+ * the INV-260901 fix.
+ */
+describe("buildFinanceLines — sums to recalc's taxable amount", () => {
+  test("a sub-hire line inside a PRICED group bills on its own, as recalc already counts it", async () => {
+    // recalc.ts's subHireGroupedRevenue filters on `groupId != null &&
+    // subHireId != null` with NO priced-group exclusion (pinned by
+    // recalc.test.ts "counts a sub-hire line placed inside a priced project
+    // group (issue #8)"). This builder used to drop the line with the rest of
+    // the priced group's members, so the snapshot sat permanently BELOW
+    // project.subtotal: Xero under-billed by the sub-hire's charge, and once
+    // the reconcile guard landed such an invoice became unpushable.
+    const t = makeT();
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Audio", price: 100, quantity: 1, sortOrder: 0 });
+      // Ordinary member — absorbed by the group's flat price.
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: ORG, projectId: "p1", groupId: "g1",
+        isKitChild: false, isOptional: false, status: "CONFIRMED",
+        description: "Speaker", quantity: 1, unitPrice: 40, lineTotal: 40,
+      });
+      // Sub-hire member — carries its OWN client charge.
+      await ctx.db.insert("projectLineItems", {
+        id: "l2", organizationId: ORG, projectId: "p1", groupId: "g1", subHireId: "sh1",
+        isKitChild: false, isOptional: false, status: "CONFIRMED",
+        description: "Hired Console", quantity: 1, unitPrice: 60, lineTotal: 60,
+      });
+    });
+
+    const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+    const sum = lines.reduce((s, l) => s + l.lineTotal, 0);
+    // recalc: groupRevenue 100 + subHireGroupedRevenue 60 = 160.
+    expect(sum).toBe(160);
+    expect(lines.map((l) => l.description)).toContain("Hired Console");
+    expect(lines.map((l) => l.description)).not.toContain("Speaker");
+  });
+
+  test("a project discount rides along as its own negative line", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig",
+        isTemplate: false, discountPercent: 10, createdAt: 0, updatedAt: 0,
+      });
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: ORG, projectId: "p1",
+        isKitChild: false, isOptional: false, status: "CONFIRMED",
+        description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
+      });
+    });
+
+    const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+    const discount = lines.find((l) => l.description.startsWith("Discount"));
+    expect(discount?.lineTotal).toBe(-100);
+    expect(discount?.description).toBe("Discount (10%)");
+    // recalc: subtotal 1000, discountAmount 100, taxableAmount 900.
+    expect(lines.reduce((s, l) => s + l.lineTotal, 0)).toBe(900);
+    // The deduction reads last, after everything it applies to.
+    expect(lines[lines.length - 1]).toBe(discount);
+  });
+
+  test("no discount line when the project carries no discount", async () => {
+    const t = makeT();
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: ORG, projectId: "p1",
+        isKitChild: false, isOptional: false, status: "CONFIRMED",
+        description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
+      });
+    });
+
+    const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+    expect(lines).toHaveLength(1);
+    expect(lines.reduce((s, l) => s + l.lineTotal, 0)).toBe(1000);
+  });
+
+  test("another org's project row never supplies the discount", async () => {
+    // `by_cuid` is global — a cross-org project must not decide this org's bill.
+    const t = makeT();
+    await seedProject(t, OTHER);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", {
+        id: "l1", organizationId: OTHER, projectId: "p1",
+        isKitChild: false, isOptional: false, status: "CONFIRMED",
+        description: "PA System", quantity: 1, unitPrice: 1000, lineTotal: 1000,
+      });
+    });
+
+    const lines = await t.run((ctx) => buildFinanceLines(ctx, "p1", ORG));
+    expect(lines.find((l) => l.description.startsWith("Discount"))).toBeUndefined();
+  });
+});
+
 describe("buildFinanceLines — category price rollup", () => {
   async function seedRollupCategory(t: ReturnType<typeof makeT>, pricingDisplay?: "ITEMISED" | "ROLLUP") {
     await t.run(async (ctx) => {

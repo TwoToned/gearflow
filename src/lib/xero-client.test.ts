@@ -312,6 +312,32 @@ describe("upsertXeroDraftInvoice", () => {
     expect(body.Invoices[0].LineItems[0].LineAmount).toBe(170);
   });
 
+  // GST regression (INV-260901): LineAmountTypes was never sent, so Xero fell
+  // back to its own default and interpreted every LineAmount as tax-EXCLUSIVE.
+  // That happens to be the right reading of Flow's data — but relying on a
+  // vendor default for it is exactly how a $330.00 invoice went out of Xero at
+  // $363.00 once a line was written GST-inclusive upstream. Declaring it makes
+  // the two sides' agreement explicit at the boundary, and asserting it here
+  // means a silent change to that declaration can't ship unnoticed.
+  it("declares LineAmountTypes: Exclusive so Xero never adds GST on top of Flow's amounts", async () => {
+    const fixture = { Invoices: [{ InvoiceID: "inv-1", InvoiceNumber: "INV-2026-0001", Status: "DRAFT", Type: "ACCREC" }] };
+    const { impl, calls } = mockFetch(fixture);
+    await upsertXeroDraftInvoice(
+      {
+        contactId: "c1",
+        invoiceNumber: "INV-2026-0001",
+        date: "2026-07-26",
+        lineItems: [{ description: "Deposit (25% of project total)", quantity: 1, unitAmount: 300, lineAmount: 300 }],
+      },
+      { ...authOpts, fetchImpl: impl },
+    );
+    const body = JSON.parse(calls[0]!.init!.body as string);
+    expect(body.Invoices[0].LineAmountTypes).toBe("Exclusive");
+    // The ex-GST figure goes up, and Xero derives the $30 GST from it — never
+    // the other way round.
+    expect(body.Invoices[0].LineItems[0].LineAmount).toBe(300);
+  });
+
   // The "make Push to Xero also update" feature: a re-push threads the prior
   // xeroInvoiceId through so Xero's own upsert semantics (InvoiceID present
   // -> update that invoice; absent -> create a new one) edit the SAME Xero

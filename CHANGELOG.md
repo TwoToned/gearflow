@@ -7,8 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2] - 2026-09-15
+
 ### Fixed
 
+- **A deposit invoice no longer reads as though the deposit has already been
+  paid.** Issuing one made the project record the deposit as invoiced, and the
+  invoice's own PDF then read that figure back and subtracted it from itself —
+  printing "Deposit Paid -$330.00" and a "Balance Due" taken from the whole
+  project, directly beneath its own "Total $330.00". An invoice's document now
+  states what is owed **on that invoice**: its own total, with no deduction.
+  The project's deposit position still appears on the internal draft preview,
+  where it now reads **Deposit invoiced** — the figure counts deposits
+  invoiced, not payments received, which is what the rest of the app has
+  always called it.
+- **Xero no longer adds GST on top of an amount that already included it.**
+  Deposit, remaining-balance and credit invoices wrote their line at the
+  GST-inclusive amount, but Xero reads a line amount as GST-exclusive and adds
+  tax to it — so a $330.00 invoice with $30.00 GST arrived in Xero as $363.00
+  with $33.00 GST, and the client was billed 10% too much. The same mismatch
+  is why those invoices printed a line that didn't add up to the subtotal
+  beneath it. Lines are now written GST-exclusive for every invoice type, Flow
+  states that explicitly when it pushes, and a push is refused outright if an
+  invoice's lines don't add up to the amount Xero will charge tax on. Invoices
+  raised before this fix keep their figures — void and reissue to correct one,
+  and fix any already-pushed copy in Xero.
+- **A project discount now reaches Xero.** A percentage discount on a project
+  was applied to the invoice's total but never appeared on any line, so the
+  push billed the full pre-discount amount plus tax on it — a $1,000 job at 10%
+  off, invoiced by Flow at $990, arrived in Xero at $1,100. The discount now
+  rides along as its own line. Credit notes had the matching fault and credited
+  the pre-discount figure, refunding a discount that was never charged.
+- **Sub-hired gear inside a priced group is no longer left off the Xero
+  invoice.** A sub-hire carries its own charge even when it sits in a group
+  with a fixed bundle price — the project total counted it, but the invoice
+  pushed to Xero didn't, so those jobs were under-billed by the sub-hire
+  amount.
 - Overbooked badges (project list, equipment tab) no longer go missing, and
   the "this will overbook this model — proceed anyway?" checkbox in the
   add/edit-line-item dialogs now shows up reliably, on a project whose rental

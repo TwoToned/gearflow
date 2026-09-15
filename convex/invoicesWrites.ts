@@ -216,20 +216,46 @@ export const createNative = mutation({
     // A DEPOSIT/BALANCE invoice doesn't carry the full equipment/service line
     // breakdown (the % is against the total, not itemised) — snapshot a
     // single summary line instead of the full FULL-invoice breakdown.
+    //
+    // The line amount is `subtotal`, i.e. tax-EXCLUSIVE — the invariant every
+    // invoice kind holds: `sum(invoiceLines.lineTotal) === invoices.subtotal`,
+    // with `taxAmount` added on top. FULL already satisfies it (its lines come
+    // straight from `buildFinanceLines`, which sums to the project's ex-tax
+    // subtotal). Writing the tax-INCLUSIVE `total` here instead was a real
+    // billing bug (reported 2026-09-15, INV-260901) with two faces: Flow's own
+    // PDF printed a $330.00 line above a $300.00 Subtotal that it didn't
+    // reconcile with, and the Xero push — whose `LineAmount` contract is
+    // explicitly tax-exclusive (src/lib/xero-client.ts) — had GST added on top
+    // of the already-inclusive figure, billing the client $363.00 with $33.00
+    // GST for an invoice Flow said was $330.00 with $30.00 GST.
+    //
+    // The deposit BASIS is unchanged: it is still a % of the tax-INCLUSIVE
+    // project total (matching how an operator quotes "25% deposit"), which is
+    // what `total` above holds and what the description below prints. Only the
+    // stored LINE is ex-tax, because that is what a line amount means.
     const linesToWrite =
       fields.kind === "DEPOSIT" || fields.kind === "BALANCE"
         ? [
             {
               sourceType: "CUSTOM" as const,
+              // The description states the BASIS, never the line's own amount.
+              // `Deposit ($550.00)` against a $500.00 ex-tax line (the $550 is
+              // the tax-INCLUSIVE figure the operator typed) put two different
+              // numbers for the same charge on one row — the same
+              // self-contradiction the inclusive line amount itself caused.
+              // The typed figure is still on the document: it IS the Total.
+              // The `%` wording is a basis statement against the project's
+              // tax-inclusive total, which is what this invoice's own Total
+              // resolves to, so it stays as-is.
               description:
                 fields.kind === "DEPOSIT"
                   ? depositMode === "$"
-                    ? `Deposit ($${total.toFixed(2)})`
+                    ? "Deposit"
                     : `Deposit (${fields.depositPercent ?? 25}% of project total)`
                   : "Balance due",
               quantity: 1,
-              unitPrice: total,
-              lineTotal: total,
+              unitPrice: subtotal,
+              lineTotal: subtotal,
             },
           ]
         : lines;
@@ -679,14 +705,22 @@ export const createCreditNative = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    const creditTaxableBase = round((Number(original.total) || 0) - (Number(original.taxAmount) || 0));
     await ctx.db.insert("invoiceLines", {
       id: createId(),
       invoiceId: id,
       sourceType: "CUSTOM",
       description: `Credit for invoice ${original.invoiceNumber ?? creditForInvoiceId}`,
       quantity: 1,
-      unitPrice: -original.total,
-      lineTotal: -original.total,
+      // Tax-EXCLUSIVE, and specifically the negated TAXABLE BASE
+      // (`total - taxAmount`), not the negated `subtotal`. They differ for a
+      // FULL invoice on a discounted project, where `subtotal` is the
+      // PRE-discount figure — crediting that would refund the discount the
+      // client never paid. Negating `total` (the original bug here) was worse
+      // still: on the Xero push, whose `LineAmount` is tax-exclusive, a
+      // GST-inclusive credit line had a further 10% credited on top of it.
+      unitPrice: -creditTaxableBase,
+      lineTotal: -creditTaxableBase,
       sortOrder: 0,
     });
 

@@ -2,7 +2,7 @@
  * gearflowFinancialSummary → react-pdf port. Row set and ordering mirror
  * gearflow-financial-summary.ts exactly: subtotal (+ optional pre-discount
  * transparency rows), discount, tax, Total (bold, divider), then — invoice
- * only — Deposit Paid / Balance Due / Due Date. `document-layouts.ts`'s
+ * only — Deposit invoiced / Balance Due / Due Date. `document-layouts.ts`'s
  * `defaultTotals` turns the last 3 off for quote; invoice's totals config
  * turns `showDeposit`/`showBalance`/`showDueDate` on, so this component
  * gates each on the corresponding data being present rather than on a
@@ -113,9 +113,19 @@ export function TotalsBlock({ data, itemDiscountTotal }: { data: DocumentData; i
         )}
         <TaxRows data={data} docColor={docColor} />
         <Row label="Total" value={formatCurrency(data.total)} bold divider docColor={docColor} />
+        {/* Only the PROJECT-level render (the watermarked DRAFT PREVIEW at
+         *  `/api/documents/[projectId]?type=invoice&preview=1`) ever reaches
+         *  this pair: `buildDocumentData` zeroes `deposit_paid` when the
+         *  render represents a SPECIFIC invoice, whose own `total` IS the
+         *  amount owed. The label says "invoiced", not "paid", because that
+         *  is what the number is — `recalcProjectTotals` derives
+         *  `projects.depositPaid` from ISSUED DEPOSIT invoices, and Flow has
+         *  no payment-collection signal (Xero owns that). The in-app
+         *  financial summary already calls it "Deposit invoiced"; this is the
+         *  same figure, so it gets the same name (R-3.10). */}
         {data.deposit_paid > 0 && (
           <>
-            <Row label="Deposit Paid" value={`-${formatCurrency(data.deposit_paid)}`} docColor={docColor} />
+            <Row label="Deposit invoiced" value={`-${formatCurrency(data.deposit_paid)}`} docColor={docColor} />
             <Row label="Balance Due" value={formatCurrency(data.balance_due)} bold docColor={docColor} />
           </>
         )}

@@ -529,6 +529,67 @@ Shipped on branch `fix/ical-timezone`. Root cause: `formatICalDate` used `Date.g
 
 ## Platform Integrations
 
+### Xero Tax Type Ignores taxExempt Clients and Per-Line Tax Rates
+**What:** `resolveTaxType` (`convex/lib/xeroAccountCascade.ts`) resolves a pushed line's Xero
+`TaxType` as `lineOverride ?? orgDefaultTaxType`. It is unaware of two things the rest of the
+system models properly: `clients.taxExempt` (recalc short-circuits an exempt client to
+`taxAmount: 0` / `taxStatus: "EXEMPT"` and the PDF prints "GST: Exempt") and T3's per-line
+`taxRate` overrides (#1091). So an exempt client's invoice is pushed with the org's default
+`OUTPUT2` and **Xero adds 10% GST to an invoice Flow issued tax-free**, and a 15%-override
+line pushes as the org's single default rate.
+**Why:** Same defect class as INV-260901 (Flow and Xero disagreeing about tax) but on the RATE
+rather than the BASE. `assertLinesReconcileWithTaxableBase` (`src/server/xero.ts`) does not
+catch it — the lines DO sum to the taxable base; it is the tax Xero derives from them that is
+wrong. `convex/xeroPush.ts`'s `varianceNote` only emits prose when a line's tax type differs
+from the org default; it never compares a numeric rate and never blocks.
+**Context:** Found by adversarial review of the INV-260901 fix (finding 7). Deliberately out of
+scope there: the reconcile guard's remit was the line BASE, and fixing the rate needs a real
+mapping from Flow's tax model (exempt / per-line rate / T3 breakdown) onto Xero tax types,
+plus a UI for orgs to declare their exempt-sales tax type.
+**Priority:** P1
+
+### Xero LineAmount Disagrees With Quantity × UnitAmount
+**What:** `buildFinanceLines` emits `quantity`, `unitPrice` and `lineTotal` where
+`lineTotal = unitPrice × quantity × duration − discount`, so a 5-day 2-unit hire pushes as
+Quantity 2 / UnitAmount 100 / LineAmount 1000. Services are worse: `calculateServiceLineTotal`
+(`convex/projectServicesWrites.ts`) never multiplies by quantity, yet the snapshot still emits
+`quantity: s.quantity ?? 1` — Quantity 3 / UnitAmount 100 / LineAmount 100.
+**Why:** Flow relies on Xero honouring an explicit `LineAmount` over its own
+`Quantity × UnitAmount`. That is the documented behaviour but it is not verified against a real
+tenant, and the numbers as displayed in Xero are nonsense to a human reading the invoice even
+when the total is right. Either send duration-aware `quantity`/`unitPrice` that multiply out
+correctly, or send `quantity: 1` with the resolved amount.
+**Context:** Adversarial review finding 8 on the INV-260901 fix. The reconcile guard sums
+`LineAmount` only and cannot see this.
+**Priority:** P2
+
+### A Pre-Fix DRAFT Invoice Can Still Issue a Contradictory PDF
+**What:** `issueNative` does not check that an invoice's lines reconcile with its taxable base.
+A DEPOSIT/BALANCE/CREDIT invoice drafted before the tax-exclusive line fix still carries the
+GST-inclusive line; issuing it freezes a permanently contradictory stored PDF (a $330.00 line
+above a $300.00 Subtotal), and only the Xero push later refuses it.
+**Why:** Issue is the point of no return — `attachInvoiceArtifact` never overwrites. The same
+`sum(lines) === total - taxAmount` check, applied in `issueNative`, would close the window at
+the moment it becomes irreversible instead of after.
+**Context:** Adversarial review finding 10 on the INV-260901 fix. Needs the check in Convex
+(the current one lives in `src/server/xero.ts`), so the arithmetic wants extracting into a
+shared module first.
+**Priority:** P1
+
+### FULL Invoice After a Partial Does Not Net Off the Partials
+**What:** `createNative`'s FULL branch keeps the project's full totals and never consults
+`priorPartialTotal()`, and there is no server-side refusal when partials already exist. The UI
+won't offer FULL in that state (`deriveRemainingStep` returns FULL only when no live invoices
+exist), but `createNative` is agent-reachable (`agentOps.createNative: { danger: "medium" }`),
+so an API/MCP caller can raise a FULL invoice on a project that already has an issued deposit —
+billing the deposit a second time.
+**Why:** Server is the authority (R-9.3); a UI-only guard on a money-creating mutation is not a
+guard. Either refuse FULL when `priorPartialTotal() > 0`, or net it the way BALANCE does.
+**Context:** Adversarial review finding 4 on the INV-260901 fix. Related: `resolveInvoiceAmountDue`
+suppresses the deposit row for every specific invoice on the stated grounds that every kind is
+netted at creation time — true for DEPOSIT/BALANCE/CREDIT, not for FULL.
+**Priority:** P1
+
 ### Public REST/GraphQL API
 **What:** Build a public API for integrating with external tools. Read endpoints for projects, assets, availability; write endpoints for creating projects, line items, checkouts. Auth via API keys scoped per organisation. Rate limiting, audit logging, OpenAPI spec.
 **Why:** Operators want to integrate with their accounting (Xero), CRM (HubSpot), or custom dashboards. Currently the only integration is WooCommerce. A general API unlocks every other workflow.

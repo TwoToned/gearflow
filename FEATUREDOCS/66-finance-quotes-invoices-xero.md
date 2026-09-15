@@ -120,6 +120,133 @@ FEATUREDOCS/13's "`invoice` rendering is keyed to a SPECIFIC invoice" for the
 fix (`invoiceId` threaded through `generatePdf`/`buildDocumentData`,
 `convex/financeArtifacts.ts invoiceArtifactContext`).
 
+### Invoice lines are tax-EXCLUSIVE: `sum(lineTotal) === the taxable base`
+
+Every invoice kind holds one invariant: **the lines add up to the amount Xero
+charges tax on** — the invoice's TAXABLE BASE, `total - taxAmount` — with
+`taxAmount` sitting on top of it.
+
+Deliberately not `subtotal`. For `DEPOSIT`/`BALANCE`/`CREDIT` the two are the
+same number by construction, but for a `FULL` invoice `subtotal` is the
+**pre-discount** project subtotal: `recalc.ts` applies `discountPercent` after
+summing the rows (`taxableAmount = subtotal - discountAmount`) and `invoices`
+has no discount column, so on a discounted project `subtotal + taxAmount ≠
+total` on the row itself. `assertLinesReconcileWithTaxableBase`
+(`src/server/xero.ts`) holds the lines against the taxable base for that
+reason — see "The project discount" below for what checking `subtotal` would
+have waved through.
+
+**Live bug fixed (reported 2026-09-15 against INV-260901).** `DEPOSIT`/`BALANCE`
+(`createNative`) and `CREDIT` (`createCreditNative`) wrote their single summary
+line at the tax-**inclusive** `total` instead of the ex-tax `subtotal`. Nothing
+threw; two things went wrong quietly:
+
+- **Flow's own PDF contradicted itself** — a deposit invoice printed a `$330.00`
+  line above a `$300.00` Subtotal, with `$30.00` GST and a `$330.00` Total. The
+  line simply didn't reconcile with the subtotal beneath it.
+- **The Xero push overbilled by the tax rate.** Xero's `LineAmount` is
+  tax-exclusive, so it added 10% GST on top of an already-inclusive figure: the
+  same invoice posted to Xero as **$363.00 with $33.00 GST**, against a Flow
+  invoice reading **$330.00 with $30.00 GST**.
+
+The deposit **basis** is unchanged — still a percentage (or a dollar amount) of
+the tax-**inclusive** project total, which is what an operator means by "25%
+deposit", and still what the description prints (`Deposit (25% of project
+total)`, `Deposit ($550.00)`). Only the stored line is ex-tax, because that is
+what a line amount means everywhere else in the system.
+
+Two structural guards now stand behind it, because this class of defect is
+silent by nature — the numbers are all plausible, they just describe different
+tax bases:
+
+1. `upsertXeroDraftInvoice` declares **`LineAmountTypes: "Exclusive"`**
+   explicitly rather than relying on Xero's default. The default happens to be
+   the right reading of Flow's data, but a vendor default is not where a
+   billing contract should live.
+2. `pushInvoiceToXero` calls `assertLinesReconcileWithTaxableBase` and
+   **refuses the push** when the lines and the invoice row disagree. A silent
+   10% overbill is worth failing a push over. Three details, each one an
+   adversarial-review catch on the first cut of this guard:
+   - It compares in **integer cents, exactly** — no tolerance. Every
+     contributing figure is already rounded to the cent before it is stored
+     (`computeLineTotal`, `recalc.ts`'s `round`, and `createNative`'s
+     `subtotal = total - taxAmount` splits), so a correctly-built invoice
+     lands on zero difference. A 1-cent tolerance guarded against dust that
+     cannot occur here while letting a real cent of overbill through.
+   - It runs **after** the connection check but **before** the contact block,
+     which creates or links a Xero contact and commits it onto the client row.
+     A rejection after that point would leave the Xero tenant and Flow both
+     mutated for a push that never happened.
+   - A rejection is recorded through `markXeroPushFailedNative` +
+     `logSyncEvent(... "FAILED")` like any Xero-side failure. Left to escape to
+     the outer catch it produced a toast and nothing else: the invoice kept its
+     previous `xeroSyncStatus` (`SYNCED` on a re-push) with no `lastSyncError`
+     and no sync-log entry.
+
+#### Two ways the invariant was already broken
+
+Enforcing it surfaced two pre-existing defects that had been silently mis-billing
+Xero for as long as the push has existed. Both are fixed here, because shipping
+the detector without them would have turned a silent underbill into an
+unpushable invoice.
+
+**A sub-hire line inside a PRICED group.** `recalc.ts`'s `subHireGroupedRevenue`
+counts it (it filters on `groupId != null && subHireId != null` with no
+priced-group exclusion — a sub-hire carries its own client charge independent of
+the host group's bundle price, pinned by `recalc.test.ts` "counts a sub-hire line
+placed inside a priced project group (issue #8)"), but `buildFinanceLines`
+dropped it with the rest of the priced group's members. The snapshot sat
+permanently below `projects.subtotal`, so Xero **under-billed** by the sub-hire's
+charge — and once the guard landed, every such invoice became unpushable with a
+"void and reissue" remedy that regenerates the same short lines.
+
+**The project discount.** `projects.discountPercent` reached neither the invoice
+row (no discount column) nor the snapshot, so the lines summed to the
+**pre-discount** figure. The Xero push sends them as tax-exclusive
+`LineAmount`s: a $1000 project at 10% that Flow issues at $990 arrived in Xero
+at **$1100** — a bigger overbill, in dollars and as a share of the bill, than
+the INV-260901 case that started this. `buildFinanceLines` now emits the
+discount as its own trailing negative line, so the lines land on the taxable
+base. Same reasoning for `createCreditNative`, which now negates the taxable
+base rather than `subtotal` — crediting the pre-discount figure would refund a
+discount the client never paid.
+
+Neither changes any PDF: `FULL` renders the live structured breakdown
+(`usesLiveBreakdown`) and `DEPOSIT`/`BALANCE` write their own summary line, so
+`invoiceLines` for a `FULL` invoice is read by the Xero push and nothing else.
+
+**Invoices drafted before this fix still carry the bad line.** They are not
+backfilled — an `ISSUED` invoice is immutable and its stored PDF may already be
+in the client's hands (see "A client-facing finance document is STORED BYTES").
+Guard 2 stops such an invoice from being pushed or re-pushed; the remedy, named
+in the error message, is **void and reissue**, which rebuilds the lines
+correctly. Already-pushed Xero invoices need correcting in Xero.
+
+### The deposit/balance rows on an invoice PDF describe THAT invoice
+
+Reported in the same report as the bug above, and the reason a deposit invoice
+"looked like the deposit was already paid": the PDF's `Deposit Paid` /
+`Balance Due` rows read the **live project's** `depositPaid` and `total`, no
+matter which invoice was being rendered. Issuing a `DEPOSIT` invoice recalcs
+the project (`recalcProjectTotals` step 6b sets `projects.depositPaid` to the
+sum of `ISSUED` `DEPOSIT` invoices), so the invoice **deducted itself from
+itself** — `Total $330.00` immediately above `Deposit Paid -$330.00` and a
+`Balance Due $990.00` lifted from the project's position, flatly contradicting
+the Total it sat under.
+
+`resolveInvoiceAmountDue` (`src/lib/pdfme/build-document-data.ts`) is now the
+single place that decision is made: when the render represents a **specific**
+invoice, the amount owed is that invoice's own `total` and the deposit row is
+suppressed — every kind is already netted correctly at creation time, so any
+deduction here is a double-count. The project-level fallback survives only for
+the watermarked DRAFT PREVIEW (`?type=invoice&preview=1`), which has no invoice
+row to speak for.
+
+That surviving row is also **relabelled "Deposit invoiced"**, matching the
+in-app financial summary (R-3.10): `projects.depositPaid` is derived from
+`ISSUED` `DEPOSIT` invoices, and Flow has no payment-collection signal at all —
+Xero owns that — so "paid" was never what the number meant.
+
 ## Quote revisions (#986 — Phase A of #985)
 
 WS1 shipped `quotes.version` as a number bumped inside `publishNative` by

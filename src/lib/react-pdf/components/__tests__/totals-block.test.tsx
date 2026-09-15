@@ -1,5 +1,5 @@
 /**
- * #1152 — coverage for TotalsBlock's invoice-only addition: Deposit Paid /
+ * #1152 — coverage for TotalsBlock's invoice-only addition: Deposit invoiced /
  * Balance Due / Due Date rows, gated on the data being present (mirrors
  * gearflow-financial-summary.ts's `depositPaid > 0` / `dueDate` truthy
  * gates) rather than a separate config flag, since `document-layouts.ts`'s
@@ -44,17 +44,29 @@ describe("TotalsBlock", () => {
     await expect(pageCount(data)).resolves.toBe(1);
   });
 
-  it("renders Deposit Paid + Balance Due when deposit_paid > 0", async () => {
+  it("renders Deposit invoiced + Balance Due when deposit_paid > 0", async () => {
     const data = makeSpikeData({ deposit_paid: 500, balance_due: 18560.8, invoice_due_date: "" });
     await expect(pageCount(data)).resolves.toBe(1);
+    // The figure is recalc-derived from ISSUED DEPOSIT invoices — "invoiced",
+    // not "received" (Flow has no payment-collection signal; Xero owns that),
+    // matching the in-app financial summary's wording (R-3.10).
+    const text = await totalsText(data);
+    expect(text).toContain("Deposit invoiced");
+    expect(text).not.toContain("Deposit Paid");
   });
 
-  it("omits Deposit Paid + Balance Due when deposit_paid is 0, even if balance_due is set", async () => {
+  it("omits the deposit/balance pair when deposit_paid is 0 — the gate a SPECIFIC invoice's render relies on", async () => {
     // balance_due can legitimately equal total with no deposit taken —
     // the row pair is gated on deposit_paid, not balance_due, matching
     // gearflow-financial-summary.ts's `config.depositPaid > 0` check.
+    // `resolveInvoiceAmountDue` leans on exactly this: it zeroes
+    // deposit_paid for a specific invoice so a DEPOSIT invoice can't print a
+    // deduction of itself (see invoice-amount-due.test.ts).
     const data = makeSpikeData({ deposit_paid: 0, balance_due: 19060.8, invoice_due_date: "" });
     await expect(pageCount(data)).resolves.toBe(1);
+    const text = await totalsText(data);
+    expect(text).not.toContain("Deposit");
+    expect(text).not.toContain("Balance Due");
   });
 
   it("renders the Due Date row only when invoice_due_date is set", async () => {

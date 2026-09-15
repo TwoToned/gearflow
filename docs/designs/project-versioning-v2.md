@@ -1,6 +1,6 @@
 # Project versioning v2 — versions as switchable workspaces
 
-> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **decisions recorded 2026-09-15 (§9) — ready for `/plan-eng-review`; engineering review complete (§9.2, D22–D32); one reading still to confirm (§9.1)**_
+> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **decisions recorded 2026-09-15 (§9) — ready for `/plan-eng-review`; **PLAN COMPLETE** — 36 decisions, engineering review (§9.2) and outside-voice review (§9.3) closed**_
 
 **Driver:** Jayden — _"The version control stuff we have implemented feels very half baked and
 messy. The original goal was to be able to have complete snapshots of projects, with one being
@@ -194,9 +194,12 @@ projectVersions: {
   billingWeeksOverride?, billingDaysOverride?, taxRate?, discountPercent?, discountAmount?,
   clientContactId?, locationId?, siteContactName?, siteContactPhone?, siteContactEmail?,
   type?, description?, crewNotes?, internalNotes?, clientNotes?,
-  // RECALC OUTPUTS — present ONLY on non-live versions (D21):
-  subtotal?, taxAmount?, taxBreakdown?, taxStatus?, total?, margin?, equipmentRevenue?, saleRevenue?,
-  serviceRevenue?, saleCostTotal?, serviceCostTotal?, labourCostTotal?, subHireCostTotal?,
+  // NO totals fields (D33 reverses D21): a non-live version's totals are COMPUTED on read,
+  // never stored. They depend partly on LIVE crew assignments and sub-hire costs matched by
+  // lineage (recalc.ts:221-222), which change without anyone touching the version — a stored
+  // copy would go stale with nothing to re-trigger it, the exact defect CLAUDE.md forbids for
+  // discounts and rollups. `recalcProjectTotals` stays the ONE writer of stored totals and
+  // writes only `projects.*`, for the live version, which is its existing job.
 }
   .index("by_projectId_number", ["projectId", "number"])
   .index("by_organizationId", ["organizationId"])
@@ -212,6 +215,16 @@ projectVersions: {
 // its services/lines (recalc.ts:221-222 sums these into labourCostTotal/subHireCostTotal/margin);
 // unmatched commitments are excluded; the count the strip shows is DERIVED by its query, not stored. PROJECT_MONEY_ANCHORS stripping (projectWrites.ts) extends to projectVersions.* patches.
 projects.liveVersionId: string          // v.optional on arrival, required after the backfill (§6)
+
+// THE COMPOSED OBJECT (D32): the swap keeps `projects.*` correct for readers of the LIVE version
+// only. ~16 non-test files in `src/` read `project.rentalStartDate`/`discountPercent`/etc. directly
+// to render whatever version is on screen — including `getProjectWindow` (src/lib/project-window.ts),
+// the billing derivation and the PDF builder. So the project-detail read for `?v=N` returns a
+// COMPOSED project: `projects.*` overlaid with `projectVersions[N]`'s plan fields and its computed
+// totals when N is not live. Every component keeps reading `project.rentalStartDate` unchanged.
+// One function, `composeProjectForVersion(project, version)`, tested by the property "the composed
+// object for vN equals what `projects.*` would hold if vN were made live". Server actions and API
+// routes that take a bare project doc take the composed one on a version-scoped path.
 
 // VERSIONED tables (D16): projectCategories, projectGroups, projectLineItems, projectServices, categorySlots.
 // Each gains two fields; by_projectId AND every by_projectId_* composite is renamed (categorySlots
@@ -358,7 +371,13 @@ the **same presentation and copy as the live tab** — same chips, no "if vN wer
 Internally this is a **new engine path, not a predicate**: `availabilityCore.ts` (L175) documents
 that the dated `booked` sum deliberately *includes* the project's own live lines, so the
 viewed-version computation must exclude the project's live lines and include the viewed
-version's lines (`{ viewedVersionId }`). The `excludeProjectId` occurrences (25 across 6 non-test files outside `availabilityCore.ts`) are the seam.
+version's lines (`{ viewedVersionId }`). The `excludeProjectId` occurrences (25 across 6 non-test files outside `availabilityCore.ts`) are the
+seam. **Dead options never reach the scan at all (D35):** the join filter also drops versions whose
+only quote is `SUPERSEDED`/`DECLINED`/`EXPIRED` and which were never live, so the losing halves of a
+two-option quote stop costing anything on every model scan the moment the client picks one. Their
+rows are untouched — Compare, the version list and the audit trail still read them — they are simply
+never candidates for a booking. This is what the scanned-rows budget (D22) escalates to if it fires;
+having it from day one means the alert has a prescribed response instead of an open question.
 The substitution is invisible in the UI. Warehouse and outbound verbs (prep, check-out,
 dispatch, send crew offer, send supplier PO) stay **visible but greyed** on a non-live version
 through the existing `GatedButton` pattern (`aria-disabled`, tooltip: "v3 isn't live. Make it
@@ -548,13 +567,18 @@ Planned as a forward migration with a rehearsal against a prod export:
 | **2** | **Reads and writes by version** | The sweep (§4.9): index rename incl. composites, every tab's data hook and every `*Native` mutation take `versionId`, `liveRows` helper, `assertVersionWritable` threaded through every mutation, version-aware recalc (D21), the viewed-version availability path (§4.7), ratchet, exhaustive live-only test; then §6 step 2 materialisation, which is the first moment non-live rows exist. | L | 1 |
 | **3** | **Make live + version verbs** | `makeLiveNative` with lineage re-pointing, plan-field/totals swap, conflicts and the size budget; `createNative`/`setLabelNative`/`deleteNative`; accept = make live (D20; exercised on the live version only until Phase 6 lets send target a non-live one); delete the promote/restore/auto-capture machinery | M | 2 |
 | **4** | **Lock simplification** | Retire unlock sessions + `bypassQuoteLock` + `protected`; lifecycle lock applies to live only; `assertVersionWritable` needs the version threaded through every `*Native` mutation, so this follows the sweep; justification threaded through add/update (closes I-14); CANCELLED decision (I-15) | M | 2 |
-| **5** | **UI** | Version menu, Versions panel, `VersionStrip`, Make-live dialog, Compare, Finance tab documents rail, delete the projected read-only surfaces | L | 2, 3, 4 |
+| **5** | **UI** | Version menu, Versions panel, `VersionStrip`, Make-live dialog, Compare, Finance tab documents rail, composed-object wiring (D32), delete the projected read-only surfaces | L | 2, 3, 4 |
 | **6** | **Quotes from any version** | `sendNative({versionId})`, multiple SENT with one ACCEPTED (D19), accept = make live from a non-live version (D20), locked non-live rendering, drift against the sent document | M | 3, 5 |
 | **7** | **Cleanup + docs** | Remove dead tables/fields after one release; FEATUREDOCS 62/66/70 rewritten as one doc; `docs/glossary.md`; CLAUDE.md conventions | S | 6 |
 | **8** | **Optional line items** (D11) | Client-facing optional lines / single-select sections on a quote: `optional` + `optionGroup` on line items, excluded from totals until chosen, chosen state recorded on accept. Touches the `DocumentLineItem` shape, so the CLAUDE.md two-consumer PDF audit applies. Own design doc before build. | M | 6 |
 
-Phases 1–4 are server-only; 1 ships alone (a live-only backfill leaks nothing), 2–4 ship together behind the existing UI. Phase 5 is
-the big visible change. Phases 0–4 ≈ L, the whole program ≈ XL at human-team scale.
+**Release grouping (D34).** Phase 0 is a scratch-branch spike, nothing ships. **Phase 1 ships alone**
+— a live-only backfill that changes nothing visible or readable. **Phases 2–5 ship as ONE release.**
+They cannot be split: Phase 2 deletes `by_projectId`, Phase 3 deletes the promote/restore machinery
+and Phase 4 deletes unlock sessions, but today's header switcher, `PromoteVersionDialog` and
+`UnlockSessionBanner` call exactly that machinery — shipping 2–4 without 5 leaves dead buttons on a
+tool the business runs on. Phases 6–8 are additive and ship separately afterwards. Phases 0–5 ≈ L,
+the whole program ≈ XL at human-team scale.
 
 ---
 
@@ -598,7 +622,7 @@ the big visible change. Phases 0–4 ≈ L, the whole program ≈ XL at human-te
 | **D18** | **`pricingLocked` is an explicit flag on the version** (set by send, cleared by recall, kept after superseded/declined/expired): priced fields locked everywhere; structure adds allowed on the live version at $0; a locked non-live version is read-only (§4.5). |
 | **D19** | **Multiple SENT quotes may be out at once, one per version; at most one ACCEPTED per project;** accepting one supersedes the others; re-sending supersedes only that version's own earlier document. |
 | **D20** | **Accept = make live in the same transaction.** CONFIRMED always requires the live version's quote to be ACCEPTED or the admin override. |
-| **D21** | **Recalc is version-aware and totals are stored per version**: `projects.*` for the live version, `projectVersions.*` otherwise, swapped on make-live. |
+| **D21** | ~~Recalc is version-aware and totals are stored per version.~~ **Superseded by D33** after the outside-voice review: recalc stays version-aware, but non-live totals are computed on read, never stored. |
 | **D15** | **Warehouse and outbound verbs are greyed out, not hidden, on a non-live version** (prep, check-out, dispatch, crew offers, supplier POs), with a tooltip naming the live version as the exit. |
 
 ### 9.1 Still to confirm
@@ -625,6 +649,33 @@ the big visible change. Phases 0–4 ≈ L, the whole program ≈ XL at human-te
 | **D31** | **`financeOrg` loads `projectVersions.by_organizationId` once per call** and groups several SENT quotes per project into one row; a read-count assertion in `financeOrg.test.ts`. |
 | **D32** | Housekeeping folded into Phase 7: stale doc references (I-16) and stale phase comments (I-17). |
 
+### 9.3 Outside-voice decisions (independent plan challenge, 2026-09-15)
+
+An independent cold read of the reviewed plan found four load-bearing gaps that the review itself
+missed. All four are recorded here; every one of its factual claims was verified against the code
+before being accepted.
+
+| # | Decision |
+|---|---|
+| **D33** | **The composed project object** (§4.2). "Zero reader changes" was only true for the live version; ~16 files read `project.*` directly to render whatever version is on screen. The `?v=N` read returns `projects.*` overlaid with that version's plan fields, so readers genuinely stay unchanged. |
+| **D34** | **Non-live totals are computed on read, never stored** — reverses D21. Stored per-version totals would go stale whenever a live crew rate or sub-hire cost changed, with nothing to re-trigger them. `recalcProjectTotals` keeps writing only `projects.*`, for the live version. |
+| **D35** | **Phases 2–5 ship as one release** (§7). Splitting them leaves the existing version UI wired to machinery Phases 2–4 delete, i.e. dead buttons in production for the gap between releases. Phase 1 still ships alone; 6–8 follow separately. |
+| **D36** | **Dead options drop out of the hot scans** (§4.7): versions whose only quote is superseded, declined or expired and which were never live are excluded from `by_modelId`/`by_assetId`/`by_kitId` reads. Rows are kept for Compare and history. Gives D22's budget alert a prescribed response instead of an open question. |
+
+**Also accepted from that review, folded into §4 rather than listed as decisions:** the sub-hire
+join runs from the versioned line (`projectLineItems.subHireId`) to the live order, not from
+`subHireItems` (which has no `lineItemId`), so the make-live conflict rule is evaluated line-side;
+a `by_versionId_lineageId` index is required for lineage resolution (scan remap, crew links,
+unplanned carry) and an in-version duplicate or kit explode mints a FRESH `lineageId`; the index
+rename is `by_projectId_versionId`, not `by_versionId` alone, so project-scoped cross-version reads
+(delete cascade, compare, budget pre-count, migration) stay cheap and the IDOR check stays
+`projectId`-anchored; `PLAN_FIELDS` includes `depositPercent`, the `loadIn*`/`event*`/`loadOut*`
+dates and `clientId`; and the batched copy is **dropped entirely** — `copyPlanGraph` refuses above
+budget with `VERSION_TOO_LARGE` on create as well, which deletes the `copying` state, its spinner
+row and the Phase 5 reactive dependency (production is an order of magnitude under the bound).
+Unaccept is refused at CONFIRMED+ rather than being allowed to leave a confirmed project whose live
+quote is merely `SENT`, closing the D20 invariant hole.
+
 **Rollback runbook (D24).** If the Phases 2–4 release misbehaves: (1) `pnpm exec convex deploy` the previous
 tagged functions; (2) re-add `by_projectId` and its composites to the five versioned tables in
 `convex/schema.ts` (rows never lost `projectId`, so the index rebuilds from data); (3) leave
@@ -634,7 +685,45 @@ after the release has soaked for one working day.
 
 ---
 
-## 10. POLICY.md notes (BUILD mode)
+## 10. What already exists, and what is NOT in scope
+
+### 10.1 What already exists (reused, not rebuilt)
+
+The program is smaller than its phase count suggests because most primitives are already in the
+repo and already tested. Rebuilding any of these would be the defect, not the plan.
+
+| Existing | Where | Reused as |
+|---|---|---|
+| Parent-first copy with category → group → line id remapping | `convex/projectWrites.ts:1147` (`duplicateNative`) | The core of `copyPlanGraph`; extended with `categorySlots`, services and the full FK set |
+| Re-pointing units and check records from one line to another | `convex/projectLineItems.ts` ~L930-965 (the merge-map path) | The make-live lineage carry |
+| Entity-set diffing | `src/lib/project-snapshot-diff.ts` (`diffSnapshotEntries`) | Compare mode, retargeted from snapshot entries to row shapes |
+| Warehouse-vs-plan field split | `LINE_ITEM_WAREHOUSE_FIELDS`, `CREW_WORKFLOW_FIELDS` (`convex/lib/projectSnapshots.ts:337`) | The blank-on-copy / carry-on-make-live column list |
+| Lock copy, chip, strip, `LockedField`, `GatedButton` | `src/lib/lock-copy.ts` + `src/components/` (#990) | The one strip and every greyed warehouse verb (D15) |
+| Registry-driven exhaustive IDOR sweep | `convex/xtenantExhaustive.test.ts` | The shape of the live-only sweep |
+| Static ratchet with a CI baseline | `scripts/xtenant-bycuid-ratchet.mjs` | The shape of `version-scope-ratchet.mjs` |
+| Immutable stored finance artifacts | `convex/financeArtifacts.ts`, `src/server/finance-documents.ts` (#987) | Unchanged; the migration must keep sent PDFs byte-identical |
+| Playwright harness with DB reset | `e2e/harness-*.spec.ts` | The journey spec (D29) |
+| Org aggregation pattern for finance lists | `convex/financeOrg.ts` (#992) | The batched version read (D31) |
+
+### 10.2 NOT in scope
+
+Considered and deliberately excluded. Each would be a separate program.
+
+| Excluded | Why |
+|---|---|
+| **Versioning crew assignments and sub-hire orders** (D16) | They are commitments to third parties, not plan. Copying them clones POs and crew offers, and their replies/shifts/timesheets would need lineage side-tables. They stay live and link by lineage. |
+| **Optional line items / single-select sections on a quote** (D11) | Real and wanted, but it changes the `DocumentLineItem` shape and triggers the PDF consumer audit. Phase 8, its own design doc. |
+| **Client-facing option picking** (the client choosing between two sent quotes in a portal) | No client portal exists; quotes are PDFs the operator sends. Would need an entire authenticated client surface. |
+| **Per-version invoices** | Invoices stay one project-level ledger, lineage-labelled (D3 of the original program). Versioning them competes with VOID + reissue, which is the accounting-correct model. |
+| **Retro-snapshotting pre-versioning revisions** | A revision with no captured content stays `contentState: "missing"`. Manufacturing content from today's rows would fabricate a version that never existed. |
+| **Org-level version reporting** ("all options out across all jobs") | The org Finance section already answers the quote-level question. No demand for a version-level one. |
+| **Merging two versions** | Nobody asked; the workflow is pick one and make it live. Would need three-way diff semantics on equipment. |
+| **Real-time collaborative version editing** | Convex is already reactive, so two people editing one version works. Presence/conflict UI beyond that is not in demand. |
+| **Retiring the CONFIRMED/COMPLETED audit snapshots** | Kept read-only for one release (D10), then decided separately. They serve audit, not versioning. |
+
+---
+
+## 11. POLICY.md notes (BUILD mode)
 
 - **R-3.1** — one version identity (`projectVersions`), one live pointer, one lock resolver, one
   strip, one diff engine, one restore path (none: make-live is a pointer flip), one version list.
@@ -651,3 +740,21 @@ after the release has soaked for one working day.
 - **R-5.2 / R-5.3 / R-5.8** — FEATUREDOCS 62/66/70 and this doc update in the same PRs.
 - **R-14.4** — §1.3 of `project-version-switching.md` recorded a reversal of #985's no-restore
   decision; this doc reverses it back by removing the restore entirely, and records that here.
+
+---
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | not run (scope set by the driver's own 21 decisions) |
+| Codex Review | `/codex review` | Independent 2nd opinion | 0 | — | codex CLI not installed in this environment |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR | 15 issues (3 architecture, 4 code quality, 2 test, 1 performance, 4 cross-model), 0 unresolved, 1 critical gap closed (migration PDF byte-identity) |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | mockups reviewed inline with the driver (7 artboards, 2 revisions) |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | not run |
+
+- **OUTSIDE VOICE:** 1 run (Claude subagent, codex unavailable). 11 findings; 4 became decisions D33–D36, 6 folded into §4 as corrections, 1 (strategic ROI) answered by the driver's own use case (Roundhouse UNSW, two PA options quoted in parallel).
+- **SPEC REVIEW:** 3 adversarial rounds on the design doc, 5/10 → 7/10 → 8/10, 45 issues fixed, 0 open.
+- **CROSS-MODEL:** the cold read and the outside voice independently identified the plan/commitment boundary (crew and sub-hires) as the scope error, and independently flagged `duplicateNative` and the merge-map re-point as existing primitives the plan was rebuilding. Both were accepted.
+- **UNRESOLVED:** 0.
+- **VERDICT:** ENG CLEARED — ready to implement. Start with Phase 0 (the spike).

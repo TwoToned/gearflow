@@ -500,6 +500,26 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 **Estimate:** human ~5-6 weeks / CC ~1-2 days
 **Priority:** P3 (re-evaluate on trigger)
 
+## Project Versioning
+
+### Version indicator on project list / board / dashboard cards
+**What:** Show which project is on a non-default version (or has options out) in `project-table.tsx`, `project-board.tsx` and the dashboard's Upcoming list, the way `ProjectLockGlyph` shows lock state today.
+**Why:** `ProjectLockGlyph` is deliberately status-only (`src/components/projects/project-lock-glyph.tsx:20-26`): it cannot show the quote-sent case because that needs each row's current quote state, which `projects.listPage`/`listBoard` don't carry, and a per-row lookup would reintroduce the per-project-loop cost #942 flagged. The same limitation applies to version state after the versioning v2 program: from a list you can't tell a job with three live options from a plain one.
+**Pros:** Answers "which jobs have options out?" without opening each one, which is the one question the org Finance section can't answer at project granularity.
+**Cons:** Needs `liveVersionId` + a version count denormalised onto the list query, or a batched second read; both add cost to the busiest list in the app. Not worth doing until someone actually misses it.
+**Context:** Carried out of the `/plan-eng-review` of `docs/designs/project-versioning-v2.md` (2026-09-15). The program deliberately leaves list surfaces alone — I-19 in that doc. The header chip and the strip resolve version state correctly once a project is open.
+**Depends on:** Versioning v2 Phases 1–5 shipped.
+**Priority:** P3
+
+### Optional line items and single-select sections on a quote
+**What:** Let a quote carry lines the client opts into (checkbox add-ons) and mutually-exclusive package sections (pick one of three), with unselected lines excluded from the total and dropped on acceptance.
+**Why:** Every proposal tool has this (Jobber, Quoter, Qwilr, PandaDoc); no rental competitor does. Most "with LED wall" cases are an optional section, not a whole alternative version — this is the cheaper 80% of the option workflow at line granularity instead of job granularity.
+**Pros:** Removes most reasons to spin up a second version at all; the client composes their own quote; a real competitive gap in the rental category.
+**Cons:** Changes the `DocumentLineItem` shape, so it triggers CLAUDE.md's PDF consumer audit (the react-pdf table render + `filterAndGroupItems`). Needs acceptance to record which options were chosen, and recalc to exclude unselected lines. Deserves its own design doc.
+**Context:** Recorded as D11 and Phase 8 of `docs/designs/project-versioning-v2.md`; explicitly outside that program's gate (§10.2) so the model work isn't held up by a PDF-shape change.
+**Depends on:** Versioning v2 Phases 1–6 shipped.
+**Priority:** P2
+
 ## Project Management
 
 ### ~~Configurable Auto-Incrementing Project Codes~~ ✅ SHIPPED

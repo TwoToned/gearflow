@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
+import { SendQuoteStatusNotice } from "@/components/projects/finance/send-quote-status-notice";
 import type { QuoteStatusOffer } from "@/hooks/use-quote-writes";
 
 function todayStr(): string {
@@ -53,6 +54,8 @@ interface SentState {
   validUntil: number;
   quoteId: string;
   artifactReady: boolean;
+  /** #1160 — set when the job was ALREADY moved for you (confirm, don't ask). */
+  autoStatusChange: "QUOTED" | null;
   offerStatusChange: QuoteStatusOffer;
 }
 
@@ -133,6 +136,7 @@ export function SendQuoteDialog({
         validUntil: result.validUntil,
         quoteId: result.id,
         artifactReady: result.artifactReady,
+        autoStatusChange: result.autoStatusChange,
         offerStatusChange: result.offerStatusChange,
       });
       if (!result.artifactReady) {
@@ -426,14 +430,12 @@ function SendQuoteHandover({
         </Button>
       </div>
 
-      {sent.offerStatusChange && !statusMoved && projectStatus !== sent.offerStatusChange && (
-        <p className="rounded-[var(--radius)] border border-line px-3 py-2 text-sm">
-          This job is at {projectStatus}. Move it to {sent.offerStatusChange}?{" "}
-          <button type="button" className="font-semibold underline underline-offset-2" onClick={onMoveStatus}>
-            Move
-          </button>
-        </p>
-      )}
+      <SendQuoteStatusNotice
+        sent={sent}
+        projectStatus={projectStatus}
+        statusMoved={statusMoved}
+        onMoveStatus={onMoveStatus}
+      />
 
       <DialogFooter>
         <Button type="button" onClick={onDone}>

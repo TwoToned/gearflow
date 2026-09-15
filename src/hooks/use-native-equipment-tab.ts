@@ -20,6 +20,7 @@ import type {
   LineItemData,
 } from "@/components/projects/equipment-rows";
 import type { OverbookedInfo } from "@/lib/overbooking-core";
+import { getProjectWindow } from "@/lib/project-window";
 import {
   applyOptimisticEdits,
   applyOrderOverlay,
@@ -118,8 +119,14 @@ export function useNativeEquipmentTab(
     return { ...rawBundle, lineItems, groups, subHireGroups, categorySlots, categories };
   }, [rawBundle, optimisticEdits, orderOverlay, groupOrderOverlay, categoryOrderOverlay]);
 
-  // The project doc supplies the rental window the overbooked computation needs.
+  // The project doc supplies the availability window the overbooked computation
+  // needs — resolved via getProjectWindow (gear-committed window, falling back to
+  // rental), never the raw rental dates directly. See project-window.ts.
   const project = useProject(enabled ? projectId : undefined);
+  const availabilityWindow = useMemo(
+    () => (project ? getProjectWindow(project) : { start: null, end: null }),
+    [project],
+  );
 
   // Overbooked: referenced models from the FLAT non-cancelled line items (mirrors
   // getProjectOverbookedStatus's modelIds AND relevantOverbookModelIds). Skip the
@@ -144,8 +151,8 @@ export function useNativeEquipmentTab(
           orgId: orgId!,
           modelIds,
           thisProjectId: projectId!,
-          rentalStartDate: project?.rentalStartDate ?? undefined,
-          rentalEndDate: project?.rentalEndDate ?? undefined,
+          rentalStartDate: availabilityWindow.start ?? undefined,
+          rentalEndDate: availabilityWindow.end ?? undefined,
         }
       : "skip",
   );
@@ -176,12 +183,12 @@ export function useNativeEquipmentTab(
         ? reconstructOverbookedRecord(
             bundle,
             overbooking ?? undefined,
-            toDate(project?.rentalStartDate),
-            toDate(project?.rentalEndDate),
+            toDate(availabilityWindow.start),
+            toDate(availabilityWindow.end),
             projectId,
           )
         : {},
-    [bundle, overbooking, project?.rentalStartDate, project?.rentalEndDate, projectId],
+    [bundle, overbooking, availabilityWindow, projectId],
   );
 
   return {

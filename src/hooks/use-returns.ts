@@ -3,6 +3,8 @@
 import { useCallback } from "react";
 import { useMutation, useConvex } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
+import { toast } from "sonner";
+import { autoStatusToast } from "@/lib/project-status-automation";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
@@ -74,6 +76,18 @@ export function useReturnsWrites() {
     return orgId;
   };
 
+  /**
+   * #1160 — the returns station has no project header to watch, so the one signal
+   * that a job just closed out is this toast. `autoAdvanced` is only ever true on
+   * the scan that returned the LAST outstanding item, so a 90-item unload announces
+   * once, at the end.
+   */
+  const announce = <T extends { autoAdvanced: boolean }>(res: T): T => {
+    const copy = res.autoAdvanced ? autoStatusToast("RETURNED") : null;
+    if (copy) toast(copy.title, { description: copy.description });
+    return res;
+  };
+
   return {
     orgId,
 
@@ -86,7 +100,7 @@ export function useReturnsWrites() {
       returnCondition?: ReturnCondition;
       notes?: string;
     }): Promise<{ updatedLineIds: string[]; projectId: string; autoAdvanced: boolean }> => {
-      return returnScanM({
+      return announce(await returnScanM({
         orgId: requireOrg(),
         lineItemId: item.lineItemId,
         assetId: item.assetId,
@@ -97,7 +111,7 @@ export function useReturnsWrites() {
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
-      });
+      }));
     },
 
     /** Bulk-tag scan resolved to a single project — quantity across whichever
@@ -111,7 +125,7 @@ export function useReturnsWrites() {
       returnCondition?: ReturnCondition;
       notes?: string;
     }): Promise<{ distributed: number; updatedLineIds: string[]; autoAdvanced: boolean }> => {
-      return returnBulkM({
+      return announce(await returnBulkM({
         orgId: requireOrg(),
         bulkAssetId: item.bulkAssetId,
         projectId: item.projectId,
@@ -121,7 +135,7 @@ export function useReturnsWrites() {
         auditId: createId(),
         now: Date.now(),
         actor: actor(),
-      });
+      }));
     },
 
     /** Multi-select batch return — cap enforced server-side too (100). */

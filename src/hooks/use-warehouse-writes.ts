@@ -1,9 +1,11 @@
 "use client";
 
 import { useMutation, useConvex } from "convex/react";
+import { toast } from "sonner";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
+import { autoStatusToast } from "@/lib/project-status-automation";
 
 type ReturnCondition = "GOOD" | "DAMAGED" | "MISSING";
 
@@ -58,6 +60,21 @@ export function useWarehouseWrites() {
     return orgId;
   };
 
+  /**
+   * #1160 — surface a status the server just advanced on its own.
+   *
+   * Done HERE, once, rather than at each warehouse call site: the automation is a
+   * property of the mutation, not of the button that happened to call it, and a
+   * status must never change under an operator without the app saying so. Safe to
+   * apply blindly — `autoStatus` is only ever non-null on the ONE call that
+   * actually crossed the boundary, so a 40-item deploy toasts at most once.
+   */
+  const announce = <T extends { autoStatus?: string | null }>(res: T): T => {
+    const copy = autoStatusToast(res.autoStatus);
+    if (copy) toast(copy.title, { description: copy.description });
+    return res;
+  };
+
   return {
     // ── PR-C: checkout keystone ──────────────────────────────────────────────────
     checkOutItems: async (
@@ -67,8 +84,8 @@ export function useWarehouseWrites() {
       // hatch (issue #794 follow-up), mirroring the kit prep dialog's UX.
       items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }>,
       includeAccessories = true,
-    ): Promise<{ updatedLineIds: string[] }> => {
-      return checkOutItemsM({
+    ): Promise<{ updatedLineIds: string[]; autoStatus: string | null }> => {
+      return announce(await checkOutItemsM({
         orgId: requireOrg(),
         projectId,
         items,
@@ -76,7 +93,7 @@ export function useWarehouseWrites() {
         auditIds: items.map(() => createId()),
         now: Date.now(),
         actor: actor(),
-      });
+      }));
     },
 
     /** Records the Deploy accessory gate's override — a typed (or manager-tier
@@ -103,15 +120,15 @@ export function useWarehouseWrites() {
     checkOutKit: async (
       projectId: string,
       kitId: string,
-    ): Promise<{ kitId: string; affectedKitIds: string[] }> => {
-      return checkOutKitM({ orgId: requireOrg(), projectId, kitId, auditId: createId(), now: Date.now(), actor: actor() });
+    ): Promise<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }> => {
+      return announce(await checkOutKitM({ orgId: requireOrg(), projectId, kitId, auditId: createId(), now: Date.now(), actor: actor() }));
     },
 
     checkOutKitsBatch: async (
       projectId: string,
       kitIds: string[],
-    ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[] }> => {
-      return checkOutKitsBatchM({
+    ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }> => {
+      return announce(await checkOutKitsBatchM({
         orgId: requireOrg(),
         projectId,
         kitIds,
@@ -120,7 +137,7 @@ export function useWarehouseWrites() {
         auditIds: kitIds.map(() => createId()),
         now: Date.now(),
         actor: actor(),
-      });
+      }));
     },
 
     quickAddAndCheckOut: async (
@@ -162,15 +179,15 @@ export function useWarehouseWrites() {
     checkInItems: async (
       projectId: string,
       items: Array<{ lineItemId: string; assetId?: string; returnCondition: ReturnCondition; quantity?: number; notes?: string }>,
-    ): Promise<{ updatedLineIds: string[] }> => {
-      return checkInItemsM({
+    ): Promise<{ updatedLineIds: string[]; autoStatus: string | null }> => {
+      return announce(await checkInItemsM({
         orgId: requireOrg(),
         projectId,
         items,
         auditIds: items.map(() => createId()),
         now: Date.now(),
         actor: actor(),
-      });
+      }));
     },
 
     undeployItems: async (
@@ -225,21 +242,21 @@ export function useWarehouseWrites() {
       projectId: string,
       kitId: string,
       returnCondition: ReturnCondition = "GOOD",
-    ): Promise<{ kitId: string; affectedKitIds: string[] }> => {
-      return checkInKitM({ orgId: requireOrg(), projectId, kitId, returnCondition, auditId: createId(), now: Date.now(), actor: actor() });
+    ): Promise<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }> => {
+      return announce(await checkInKitM({ orgId: requireOrg(), projectId, kitId, returnCondition, auditId: createId(), now: Date.now(), actor: actor() }));
     },
 
     checkInKitsBatch: async (
       projectId: string,
       kits: Array<{ kitId: string; returnCondition: ReturnCondition }>,
-    ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[] }> => {
-      return checkInKitsBatchM({
+    ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }> => {
+      return announce(await checkInKitsBatchM({
         orgId: requireOrg(),
         projectId,
         items: kits.map((k) => ({ ...k, auditId: createId() })),
         now: Date.now(),
         actor: actor(),
-      });
+      }));
     },
 
     clearPrepContainer: async (projectId: string, containerName: string): Promise<{ success: true }> => {

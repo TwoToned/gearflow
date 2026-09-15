@@ -120,6 +120,77 @@ FEATUREDOCS/13's "`invoice` rendering is keyed to a SPECIFIC invoice" for the
 fix (`invoiceId` threaded through `generatePdf`/`buildDocumentData`,
 `convex/financeArtifacts.ts invoiceArtifactContext`).
 
+### Invoice lines are tax-EXCLUSIVE: `sum(lineTotal) === invoices.subtotal`
+
+Every invoice kind holds one invariant: **the lines add up to the invoice's own
+`subtotal`, and `taxAmount` sits on top.** `FULL` gets this for free — its lines
+come straight from `buildFinanceLines`, which is the project's ex-tax rows. The
+three summary-line kinds have to be written to match.
+
+**Live bug fixed (reported 2026-09-15 against INV-260901).** `DEPOSIT`/`BALANCE`
+(`createNative`) and `CREDIT` (`createCreditNative`) wrote their single summary
+line at the tax-**inclusive** `total` instead of the ex-tax `subtotal`. Nothing
+threw; two things went wrong quietly:
+
+- **Flow's own PDF contradicted itself** — a deposit invoice printed a `$330.00`
+  line above a `$300.00` Subtotal, with `$30.00` GST and a `$330.00` Total. The
+  line simply didn't reconcile with the subtotal beneath it.
+- **The Xero push overbilled by the tax rate.** Xero's `LineAmount` is
+  tax-exclusive, so it added 10% GST on top of an already-inclusive figure: the
+  same invoice posted to Xero as **$363.00 with $33.00 GST**, against a Flow
+  invoice reading **$330.00 with $30.00 GST**.
+
+The deposit **basis** is unchanged — still a percentage (or a dollar amount) of
+the tax-**inclusive** project total, which is what an operator means by "25%
+deposit", and still what the description prints (`Deposit (25% of project
+total)`, `Deposit ($550.00)`). Only the stored line is ex-tax, because that is
+what a line amount means everywhere else in the system.
+
+Two structural guards now stand behind it, because this class of defect is
+silent by nature — the numbers are all plausible, they just describe different
+tax bases:
+
+1. `upsertXeroDraftInvoice` declares **`LineAmountTypes: "Exclusive"`**
+   explicitly rather than relying on Xero's default. The default happens to be
+   the right reading of Flow's data, but a vendor default is not where a
+   billing contract should live.
+2. `pushInvoiceToXero` calls `assertLinesReconcileWithSubtotal` before anything
+   reaches Xero and **refuses the push** (with a cent of tolerance for
+   inclusive→exclusive rounding dust) when the lines and the invoice row
+   disagree. A silent 10% overbill is worth failing a push over.
+
+**Invoices drafted before this fix still carry the bad line.** They are not
+backfilled — an `ISSUED` invoice is immutable and its stored PDF may already be
+in the client's hands (see "A client-facing finance document is STORED BYTES").
+Guard 2 stops such an invoice from being pushed or re-pushed; the remedy, named
+in the error message, is **void and reissue**, which rebuilds the lines
+correctly. Already-pushed Xero invoices need correcting in Xero.
+
+### The deposit/balance rows on an invoice PDF describe THAT invoice
+
+Reported in the same report as the bug above, and the reason a deposit invoice
+"looked like the deposit was already paid": the PDF's `Deposit Paid` /
+`Balance Due` rows read the **live project's** `depositPaid` and `total`, no
+matter which invoice was being rendered. Issuing a `DEPOSIT` invoice recalcs
+the project (`recalcProjectTotals` step 6b sets `projects.depositPaid` to the
+sum of `ISSUED` `DEPOSIT` invoices), so the invoice **deducted itself from
+itself** — `Total $330.00` immediately above `Deposit Paid -$330.00` and a
+`Balance Due $990.00` lifted from the project's position, flatly contradicting
+the Total it sat under.
+
+`resolveInvoiceAmountDue` (`src/lib/pdfme/build-document-data.ts`) is now the
+single place that decision is made: when the render represents a **specific**
+invoice, the amount owed is that invoice's own `total` and the deposit row is
+suppressed — every kind is already netted correctly at creation time, so any
+deduction here is a double-count. The project-level fallback survives only for
+the watermarked DRAFT PREVIEW (`?type=invoice&preview=1`), which has no invoice
+row to speak for.
+
+That surviving row is also **relabelled "Deposit invoiced"**, matching the
+in-app financial summary (R-3.10): `projects.depositPaid` is derived from
+`ISSUED` `DEPOSIT` invoices, and Flow has no payment-collection signal at all —
+Xero owns that — so "paid" was never what the number meant.
+
 ## Quote revisions (#986 — Phase A of #985)
 
 WS1 shipped `quotes.version` as a number bumped inside `publishNative` by

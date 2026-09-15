@@ -658,6 +658,58 @@ whatever bytes were rendered before this fix (`attachInvoiceArtifact` refuses
 to overwrite — the client may already hold that copy, same "never regenerate"
 rule as everywhere else in this file). Only new renders are correct.
 
+### The totals block's deposit/balance rows describe the invoice being rendered
+
+Threading `invoiceId` through (above) fixed `subtotal`/`tax_amount`/`total` and
+the line items, but **`deposit_paid`/`balance_due` were left reading the live
+project** — so a `DEPOSIT` invoice's own document deducted the deposit from
+itself. Reported 2026-09-15 against INV-260901, which printed:
+
+```
+Deposit (25% of project total)   1   $330.00   -   $330.00
+Subtotal                                           $300.00
+GST                                                 $30.00
+Total                                              $330.00
+Deposit Paid                                      -$330.00     ← itself
+Balance Due                                        $990.00     ← the PROJECT's
+```
+
+Issuing a `DEPOSIT` invoice recalcs the project, and `recalcProjectTotals`
+derives `projects.depositPaid` from `ISSUED` `DEPOSIT` invoices — so by the
+time the artifact rendered, the project figure WAS this invoice's own total.
+The `Balance Due` beneath it was `projectTotal − depositPaid`, which
+contradicted the `Total` row directly above it.
+
+`resolveInvoiceAmountDue` (exported from `build-document-data.ts`, unit-tested
+in `invoice-amount-due.test.ts` the same way `invoiceLineToDocumentLineItem`
+is) makes the decision once:
+
+- **Rendering a specific invoice** → `deposit_paid: 0`, `balance_due:
+  invoiceContext.total`. Every kind is already netted at creation time
+  (`invoicesWrites.ts createNative`: a `DEPOSIT` is its fraction of the
+  project, a `BALANCE` is the project less every non-VOID partial already
+  raised, a `FULL` is the whole project, a `CREDIT` is a negation), so any
+  deduction here is a double-count. `TotalsBlock` gates the row pair on
+  `deposit_paid > 0`, so zeroing it removes both rows and the `Total` row
+  states the amount owed on its own.
+- **No invoice** (the watermarked DRAFT PREVIEW at `?type=invoice&preview=1`)
+  → unchanged: the project's own deposit/balance position, which is the
+  correct thing for an internal preview of the project as an invoice.
+
+That surviving row is relabelled **"Deposit invoiced"** — `projects.depositPaid`
+counts `ISSUED` `DEPOSIT` invoices, and Flow has no payment-collection signal
+(Xero owns that), so "Deposit Paid" was never what the figure meant. The in-app
+financial summary already said "Deposit invoiced"; this is the same number, so
+it now carries the same name (R-3.10).
+
+Related, and fixed in the same pass: the `$330.00` line above a `$300.00`
+Subtotal in that render is a **separate** defect — the stored `invoiceLines`
+row was written tax-INCLUSIVE. See FEATUREDOCS/66's "Invoice lines are
+tax-EXCLUSIVE", which also covers what it did to the Xero push.
+
+**Not retroactive**, for the same reason as the section above: an already-issued
+invoice keeps its stored bytes. Correcting one means void + reissue.
+
 ## Global Document Settings
 
 Org-level, stored in the existing `orgSettings` Convex blob (`OrgSettings.documents`,

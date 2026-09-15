@@ -88,6 +88,11 @@ export const PENCILLED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
  * hard-hold everything except optional lines" rule).
  */
 export const HARD_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  // #1228 — an agreed-but-unpaid job HARD-holds its gear. The client has said
+  // yes and/or an invoice is out; letting someone else book the same stock while
+  // a bank transfer clears is how you end up double-booked on the one job you
+  // were most sure of. CANCELLED still releases it, as it always did.
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",

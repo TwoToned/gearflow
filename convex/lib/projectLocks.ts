@@ -14,13 +14,35 @@ import { currentRevisionQuoteStatus, projectLiveRevision, type EffectiveQuoteSta
  * tier boundary would be a defect even if in sync (POLICY.md R-3.1).
  *
  * Tier table (see #957 tracking issue):
- *   ENQUIRY / QUOTING / QUOTED           → OPEN            (nothing gated)
+ *   ENQUIRY / QUOTING / QUOTED /
+ *     AWAITING_PAYMENT                   → OPEN            (nothing gated)
  *   CONFIRMED / PREPPING / CHECKED_OUT   → FINANCE_LOCKED  (money fields gated)
  *   ON_SITE / RETURNED                   → JUSTIFY         (+ structural mutations
  *                                                            need confirm+justify)
  *   COMPLETED / INVOICED                 → HARD_LOCKED     (everything gated,
  *                                                            no per-edit path)
  *   CANCELLED                            → OPEN            (ungated — #957 open Q)
+ *
+ * #1228's `AWAITING_PAYMENT` is deliberately **OPEN**, not FINANCE_LOCKED.
+ *
+ * The instinct is the opposite — a job whose client has agreed to a price
+ * surely shouldn't be repriced — but the lock that expresses that is already
+ * here: #988's `quoteState` input escalates any project holding a SENT or
+ * ACCEPTED revision to FINANCE_LOCKED regardless of status. Giving
+ * AWAITING_PAYMENT its own status-driven FINANCE_LOCKED tier on top of it
+ * breaks #985 decision 2 — "cutting a new version is the unlock" — because
+ * `newVersionNative`'s `bypassQuoteLock` resolves the tier from STATUS alone,
+ * so a status-locked AWAITING_PAYMENT would make the sanctioned exit
+ * unreachable: a client asking for a change after approving could no longer be
+ * re-quoted without an unlock session. (This is not hypothetical — it is what
+ * `quotesWrites.test.ts`'s "supersedes an ACCEPTED revision" case caught.)
+ *
+ * The residual gap that leaves — an invoice issued on a job with NO quote
+ * behind it locks nothing — is real, and is **pre-existing**: an ISSUED invoice
+ * has never been an input to this resolver. Closing it belongs in
+ * `resolveLockTier` as a third input with its own sanctioned exit (void and
+ * reissue), not smuggled in as a status tier that deadlocks the quote verbs.
+ * See FEATUREDOCS/77, "Deliberately out of scope".
  *
  * #988 (Phase C, part of #985's finance version-control program) folds ONE
  * more input into this same resolver rather than adding a second lock: a
@@ -35,6 +57,10 @@ const TIER_BY_STATUS: Record<string, LockTier> = {
   ENQUIRY: "OPEN",
   QUOTING: "OPEN",
   QUOTED: "OPEN",
+  // OPEN, not FINANCE_LOCKED — see the long note above. The quote-sent input
+  // already locks the pricing of anything that came through a quote, and a
+  // status lock here would make "cut a new version" unreachable.
+  AWAITING_PAYMENT: "OPEN",
   CONFIRMED: "FINANCE_LOCKED",
   PREPPING: "FINANCE_LOCKED",
   CHECKED_OUT: "FINANCE_LOCKED",
@@ -127,8 +153,8 @@ export function resolveLockTier(input: {
  *  status — see FEATUREDOCS/10 Status Flow). Used only to detect a snapshot-
  *  worthy transition and the HARD_LOCKED-revert boundary, not for RBAC. */
 const STATUS_ORDER = [
-  "ENQUIRY", "QUOTING", "QUOTED", "CONFIRMED", "PREPPING", "CHECKED_OUT",
-  "ON_SITE", "RETURNED", "COMPLETED", "INVOICED",
+  "ENQUIRY", "QUOTING", "QUOTED", "AWAITING_PAYMENT", "CONFIRMED", "PREPPING",
+  "CHECKED_OUT", "ON_SITE", "RETURNED", "COMPLETED", "INVOICED",
 ] as const;
 
 /** True for any transition that lands exactly on CONFIRMED or COMPLETED —

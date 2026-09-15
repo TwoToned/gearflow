@@ -346,7 +346,7 @@ export async function getProjectIssueFlags(projectIds: string[]) {
   // Only compute for active projects. `project` is dual-written to Convex — read
   // all org projects (Prisma-row-shaped) and filter to the requested ids + active
   // statuses in JS (pure, reversible swap of the old Prisma findMany).
-  const activeStatuses: ProjectStatus[] = ["ENQUIRY", "QUOTING", "QUOTED", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"];
+  const activeStatuses: ProjectStatus[] = ["ENQUIRY", "QUOTING", "QUOTED", "AWAITING_PAYMENT", "CONFIRMED", "PREPPING", "CHECKED_OUT", "ON_SITE"];
   const idSet = new Set(projectIds);
   const activeStatusSet = new Set<string>(activeStatuses);
   const projects = (await getProjectsByOrgMapped(organizationId)).filter(

@@ -176,6 +176,14 @@ which screen the operator happened to use.
   would be worse than a slightly stale status. The one exception is
   `revertAutoAdvance`, which is a whole-window agent revert, not an operator fix.
 
+
+> **Follow-ons.** Four more QOL changes in the same "the app should do the obvious
+> thing, and tell you it did" track are specced in
+> [`docs/designs/qol-sweep-2026-09.md`](../docs/designs/qol-sweep-2026-09.md) —
+> undo on warehouse actions (which reuses `revertAutoAdvance` and closes the
+> prep-toast gap noted above), quote follow-up nudges, a date-move impact
+> preview, and scan haptics + a scan history strip.
+
 ## Related
 
 - [62 — Project Lifecycle Locks](./62-project-lifecycle-locks.md) — the tier a

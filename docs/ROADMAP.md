@@ -175,6 +175,17 @@ operator-facing list table to cards on mobile — see
 `docs/designs/archive/mobile-data-table-framework.md`. Remaining mobile work
 should be scoped against what those docs didn't cover, not restarted.
 
+### 4.3 — QOL sweep
+**Effort:** M · **Status:** #1160 (status automation) shipped; the rest specced
+The "the app should do the obvious thing, and tell you it did" track. #1160 made
+a job's status a consequence of the work
+([FEATUREDOCS/76](../FEATUREDOCS/76-project-status-automation.md)); the four
+follow-ons — undo on warehouse actions, quote follow-up nudges, a date-move
+impact preview, haptics + a scan history strip — are specced in
+[`docs/designs/qol-sweep-2026-09.md`](./designs/qol-sweep-2026-09.md) with a
+decisions record and a build order. Each is independently shippable; none is a
+prerequisite for anything else in Phase 4.
+
 ---
 
 ## Continuous tracks

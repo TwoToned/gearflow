@@ -1360,6 +1360,21 @@ export default defineSchema({
     // (belt-and-braces, not a correctness dependency — the coalesce already
     // makes every pre-existing project read correctly).
     liveRevision: v.optional(v.number()),
+    // #1226 — Phase 1 of "Project versioning v2" (parent #1221,
+    // docs/designs/project-versioning-v2.md §4.2/§6/§7). Points at the
+    // `projectVersions` row that is this project's LIVE version — a real FK,
+    // unlike the numeric-only `revision`/`liveRevision` pair above (the
+    // OLDER snapshot-based version-switching model, `projectVersionsWrites.ts`
+    // / `projectSnapshots`, which this program supersedes in a later phase —
+    // the two are independent for now, do not conflate them). Optional on
+    // arrival so every pre-existing project row stays valid; the backfill
+    // (`backfillProjectVersions.ts`) stamps one onto every project INCLUDING
+    // templates. Narrowing to required is a later step once the backfill is
+    // proven complete in prod (not part of this PR). SERVER-OWNED, same
+    // treatment as `revision`/`liveRevision` — Phase 1 has no writer of this
+    // field other than the backfill; a later phase adds the real mutations.
+    // NOTHING reads this field yet — it is purely additive in this phase.
+    liveVersionId: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
     isTemplate: v.optional(v.boolean()),
     createdAt: v.optional(v.number()),
@@ -1390,6 +1405,104 @@ export default defineSchema({
   // (No project search index: the app never picks a project in a combobox — projects
   // are created/edited, never selected — so its `convex/search.ts` query was removed
   // 2026-07-07. Re-add both alongside a real single-select project picker.)
+
+  // ProjectVersion — #1226, Phase 1 of "Project versioning v2" (parent #1221,
+  // docs/designs/project-versioning-v2.md §4.2/§6/§7). A real row per version
+  // of a project, replacing the numeric-only `revision`/`liveRevision`
+  // counters (above) with an actual entity a child row can point at. This
+  // phase only adds the table + columns and backfills exactly one version per
+  // project (`backfillProjectVersions.ts`) — NOTHING in the app reads this
+  // table or the new `versionId`/`lineageId`/`liveVersionId` columns yet, so
+  // it changes no existing behaviour. A later phase adds the save/switch/
+  // promote mutations and wires reads up to it.
+  //
+  // `number` — v1..vN, allocated by the PROJECT (not global), never reused.
+  // No uniqueness constraint exists at the Convex-index level (CLAUDE.md);
+  // enforced by construction instead — this phase's backfill gives every
+  // project exactly one version, numbered 1, so no collision is possible yet.
+  // A later phase's allocator must continue to hand out numbers by reading
+  // this project's current max and never reusing one.
+  //
+  // `contentState` — "ready" (this version's content is fully represented,
+  // either by its own PLAN FIELDS + the live tables' versionId-tagged rows
+  // for the live version, or eventually by a captured snapshot for a
+  // non-live one) vs "missing" (a pre-versioning revision — e.g. a sent quote
+  // from before this program existed — whose exact content was never
+  // captured and can't be reconstructed). This phase's backfill only ever
+  // writes "ready": it creates ONE version representing each project's
+  // CURRENT state, which by definition it can fully represent by tagging the
+  // live rows. "missing" is for a future phase that may synthesize
+  // placeholder rows for un-capturable history.
+  //
+  // PLAN FIELDS (rentalStartDate .. clientNotes below) are present ONLY on a
+  // NON-live version (the swap model, later phase): a live version's plan
+  // lives on `projects` itself, which is what the live tables' versionId tag
+  // points at. This phase's backfill creates only LIVE versions, so it never
+  // populates any of them — they exist here so the column shape is already
+  // correct for the phase that starts writing non-live versions.
+  //
+  // Deliberately NO totals fields (a non-live version's totals depend partly
+  // on live crew assignments and sub-hire costs matched by lineage —
+  // `convex/lib/recalc.ts` — which drift without anyone touching the
+  // version; a stored copy would go stale, R-3.1) and NO `pricingLocked`
+  // (that's one boolean on `projects`, added in a later phase — Phase 4).
+  projectVersions: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    projectId: v.string(),
+    number: v.number(),
+    label: v.optional(v.string()), // bounded ≤60 by the writer, mirrors quotes.label
+    basedOnVersionId: v.optional(v.string()),
+    createdAt: v.number(),
+    createdById: v.string(),
+    contentState: v.union(v.literal("ready"), v.literal("missing")),
+    // Plan fields — see block comment above. Mirrors the shape/types of the
+    // matching field on `projects` 1:1 (R-3.1: one definition of what a
+    // project's plan looks like, not a hand-maintained second copy).
+    rentalStartDate: v.optional(v.number()),
+    rentalEndDate: v.optional(v.number()),
+    projectStartDate: v.optional(v.number()),
+    projectStartTime: v.optional(v.string()),
+    projectEndDate: v.optional(v.number()),
+    projectEndTime: v.optional(v.string()),
+    loadInDate: v.optional(v.number()),
+    loadInTime: v.optional(v.string()),
+    eventStartDate: v.optional(v.number()),
+    eventStartTime: v.optional(v.string()),
+    eventEndDate: v.optional(v.number()),
+    eventEndTime: v.optional(v.string()),
+    loadOutDate: v.optional(v.number()),
+    loadOutTime: v.optional(v.string()),
+    billingWeeksOverride: v.optional(v.number()),
+    billingDaysOverride: v.optional(v.number()),
+    taxRate: v.optional(v.number()),
+    discountPercent: v.optional(v.number()),
+    discountAmount: v.optional(v.number()),
+    depositPercent: v.optional(v.number()),
+    clientId: v.optional(v.string()),
+    clientContactId: v.optional(v.string()),
+    locationId: v.optional(v.string()),
+    siteContactName: v.optional(v.string()),
+    siteContactPhone: v.optional(v.string()),
+    siteContactEmail: v.optional(v.string()),
+    type: v.optional(enums.ProjectType),
+    description: v.optional(v.string()),
+    crewNotes: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
+    clientNotes: v.optional(v.string()),
+  })
+    // Point lookup for a project's numbered versions + the future allocator's
+    // "what's the max number so far" scan. `projectId` alone is a GLOBAL
+    // index (same shape as `quotes.by_projectId_version` /
+    // `by_cuid` elsewhere) — every reader MUST also check `organizationId`
+    // against the caller's own org (see convex/lib/projectVersionState.ts).
+    .index("by_projectId_number", ["projectId", "number"])
+    .index("by_organizationId", ["organizationId"])
+    // Not in the issue's literal index list, but every other table in this
+    // schema (Prisma-mirrored or Convex-native) carries a `by_cuid` lookup on
+    // its stored cuid `id` — `basedOnVersionId` will need exactly this once a
+    // later phase starts resolving it.
+    .index("by_cuid", ["id"]),
 
   // ProjectLineItem
   projectLineItems: defineTable({
@@ -1516,6 +1629,10 @@ export default defineSchema({
     // convex/lib/xeroAccountCascade.ts.
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
+    // #1226 Phase 1 (project versioning v2) — see projectCategories' comment
+    // near the CategorySlot table for the full rationale; identical treatment.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1628,6 +1745,14 @@ export default defineSchema({
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
+    // #1226 Phase 1 (project versioning v2) — optional on arrival, NOT yet
+    // read/written by anything but `backfillProjectVersions.ts` and its
+    // tests. `versionId` names the `projectVersions` row this row belongs
+    // to; `lineageId` is the stable identity that survives a version swap
+    // (absent here ⇒ this row's own `id`, per the backfill). No index yet —
+    // nothing reads by these columns in this phase.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1650,6 +1775,12 @@ export default defineSchema({
     // a different category, clears this slot the same way a group leaving a
     // category clears its own).
     lineItemId: v.optional(v.string()),
+    // #1226 Phase 1 — see projectCategories' comment above; identical
+    // treatment. This table has no organizationId/projectId of its own
+    // (PARENT_JOIN via projectCategoryId), so the backfill resolves the
+    // owning project through its projectCategoryId.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1696,6 +1827,9 @@ export default defineSchema({
     // a model/kit, so it has no level-2 equivalent in the cascade.
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
+    // #1226 Phase 1 — see projectCategories' comment above; identical treatment.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -2448,6 +2582,10 @@ export default defineSchema({
     // Xero-gated. See convex/lib/xeroAccountCascade.ts resolveServiceAccountCode.
     xeroAccountCode: v.optional(v.string()),
     xeroTaxType: v.optional(v.string()),
+    // #1226 Phase 1 (project versioning v2) — see projectCategories' comment
+    // near the CategorySlot table for the full rationale; identical treatment.
+    versionId: v.optional(v.string()),
+    lineageId: v.optional(v.string()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

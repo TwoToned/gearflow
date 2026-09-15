@@ -210,8 +210,7 @@ projectVersions: {
 // anywhere in the app (R-3.1: one writer per field group). Recalc inputs for a NON-live version:
 // its own rows, plus the live crew assignments and sub-hire orders whose lineage matches one of
 // its services/lines (recalc.ts:221-222 sums these into labourCostTotal/subHireCostTotal/margin);
-// unmatched commitments are excluded and counted in the version's `unmatchedCommitments` for the
-// strip. PROJECT_MONEY_ANCHORS stripping (projectWrites.ts) extends to projectVersions.* patches.
+// unmatched commitments are excluded; the count the strip shows is DERIVED by its query, not stored. PROJECT_MONEY_ANCHORS stripping (projectWrites.ts) extends to projectVersions.* patches.
 projects.liveVersionId: string          // v.optional on arrival, required after the backfill (§6)
 
 // VERSIONED tables (D16): projectCategories, projectGroups, projectLineItems, projectServices, categorySlots.
@@ -231,7 +230,7 @@ subHireItems.lineLineageId / targetGroupLineageId / targetCategoryLineageId
 // projectLineItemUnits / checkRecords / maintenanceRecords keep lineItemId (the LIVE line) and are re-pointed on make-live (§4.8)
 
 // quotes — the document only
-quotes.versionId: string                // the join; `version` (number) stays for display and the PDF header
+quotes.versionId: string                // the join; the `version` column is kept until Phase 7, but from Phase 2 every reader takes the number from projectVersions.number via versionId
 // pricingLocked, label, labelOnDocument move to projectVersions; snapshotId, protected* are removed;
 // recalledPdfFileIds is KEPT under its current name (no rename)
 
@@ -294,7 +293,7 @@ counterpart in the incoming version is carried across as an `unplanned` line, ne
 | **Make live** | strip, panel, compare | `versions.makeLiveNative({ versionId })` | §4.8. Not blocked by issued invoices (D6). |
 | **Compare** | header menu, panel, strip | `diffSnapshotEntries` retargeted to row shapes | A **mode on the real page** (§5 item 6). The five-copy `SnapshotEntityType` union (I-2) collapses to ONE definition in `src/lib/project-snapshot-diff.ts`, typed from the row validators; the engine's inputs become `{ table, rows }` pairs for the two versions. |
 | **Delete** | panel | `versions.deleteNative` | Live: never. Non-live and never sent: manager; deletes its rows and its pre-send quote row. Ever sent: the existing owner-only, typed-confirm, audit-surviving path, which erases the quote row and its PDF too (#1029's decision), so nothing dangles. **Refused** while an invoice carries its `versionId` (`VERSION_REFERENCED`). Crew and sub-hire lineage links are unaffected (they resolve against live). |
-| **Duplicate project / Save as template / Create from template** | existing | `duplicateNative`, `saveAsTemplateNative`, `createFromTemplateNative` (the create path that reads a template's rows) | All three go through `copyPlanGraph`; copy the **live** version by default, `fromVersionId?` optional; the result starts at v1. |
+| **Duplicate project / Save as template / Create from template** | existing | `duplicateNative` (also the instantiate-a-template path, `projectWrites.ts:1201`), `saveAsTemplateNative` | Both go through `copyPlanGraph`; copy the **live** version by default, `fromVersionId?` optional; the result starts at v1. |
 
 Removed verbs: Save version, Reprice from revision, Recall-to-edit, Protect/Unprotect, Unlock
 session (open/commit/discard). Correction stays (a metadata fix on the document, not the version).
@@ -359,7 +358,7 @@ the **same presentation and copy as the live tab** — same chips, no "if vN wer
 Internally this is a **new engine path, not a predicate**: `availabilityCore.ts` (L175) documents
 that the dated `booked` sum deliberately *includes* the project's own live lines, so the
 viewed-version computation must exclude the project's live lines and include the viewed
-version's lines (`{ viewedVersionId }`). The `excludeProjectId` occurrences (11 non-test files outside `availabilityCore.ts`) are the seam.
+version's lines (`{ viewedVersionId }`). The `excludeProjectId` occurrences (25 across 6 non-test files outside `availabilityCore.ts`) are the seam.
 The substitution is invisible in the UI. Warehouse and outbound verbs (prep, check-out,
 dispatch, send crew offer, send supplier PO) stay **visible but greyed** on a non-live version
 through the existing `GatedButton` pattern (`aria-disabled`, tooltip: "v3 isn't live. Make it
@@ -547,7 +546,7 @@ Planned as a forward migration with a rehearsal against a prod export:
 | **0** | **Spike** | Rename `by_projectId*` → `by_versionId*` on `projectLineItems` in a scratch branch; classify every site (live-job vs version-specific vs cross-project); prove `duplicateNative` scoped to a version and a `lineItemMergeMaps`-style re-point of units/check records on a fixture | S | — |
 | **1** | **Model + live backfill** | `projectVersions`, optional `versionId`/`lineageId`/`liveVersionId`, `copyPlanGraph` extracted from `duplicateNative`, backfill of the LIVE version only (§6 step 1), coalescing helpers, invariants 1–2 + tests. Ships alone: live tables unchanged in meaning. | M | 0 |
 | **2** | **Reads and writes by version** | The sweep (§4.9): index rename incl. composites, every tab's data hook and every `*Native` mutation take `versionId`, `liveRows` helper, `assertVersionWritable` threaded through every mutation, version-aware recalc (D21), the viewed-version availability path (§4.7), ratchet, exhaustive live-only test; then §6 step 2 materialisation, which is the first moment non-live rows exist. | L | 1 |
-| **3** | **Make live + version verbs** | `makeLiveNative` with lineage re-pointing, plan-field/totals swap, conflicts and the size budget; `createNative`/`setLabelNative`/`deleteNative`; accept = make live (D20); delete the promote/restore/auto-capture machinery | M | 2 |
+| **3** | **Make live + version verbs** | `makeLiveNative` with lineage re-pointing, plan-field/totals swap, conflicts and the size budget; `createNative`/`setLabelNative`/`deleteNative`; accept = make live (D20; exercised on the live version only until Phase 6 lets send target a non-live one); delete the promote/restore/auto-capture machinery | M | 2 |
 | **4** | **Lock simplification** | Retire unlock sessions + `bypassQuoteLock` + `protected`; lifecycle lock applies to live only; `assertVersionWritable` needs the version threaded through every `*Native` mutation, so this follows the sweep; justification threaded through add/update (closes I-14); CANCELLED decision (I-15) | M | 2 |
 | **5** | **UI** | Version menu, Versions panel, `VersionStrip`, Make-live dialog, Compare, Finance tab documents rail, delete the projected read-only surfaces | L | 2, 3, 4 |
 | **6** | **Quotes from any version** | `sendNative({versionId})`, multiple SENT with one ACCEPTED (D19), accept = make live from a non-live version (D20), locked non-live rendering, drift against the sent document | M | 3, 5 |

@@ -71,7 +71,7 @@ for a collapsed group row) opts **one** row back into printing its own price
 inside a rolled-up category — for the line the client asked to see broken
 out. "Show this price" in the row's kebab, under **Client documents**.
 
-Two rules govern it:
+Three rules govern it:
 
 1. **A revealed row is still INCLUDED in the section subtotal.** The header
    is the category's *total*, not the hidden remainder. This is why the
@@ -83,9 +83,31 @@ Two rules govern it:
    price already prints, so the flag does nothing there — which is why the
    menu entry is not offered there either. A row left carrying a stale `true`
    after its category is switched back changes nothing.
+3. **It only applies to a row the document actually DRAWS.** In collapse mode
+   `structureLineItems` emits a category's ungrouped non-child lines plus one
+   synthetic row per Project Group — nothing else. A group's member, a
+   sub-hire group's child and a kit's child are dropped, so a reveal flag on
+   one of them would reveal a price on a row the client never sees. The
+   equipment tab therefore does not offer the toggle on those rows;
+   `canRevealPriceInRollup` (`src/lib/category-pricing-display.ts`) is the one
+   definition of the rule, and
+   `src/lib/pdfme/category-price-rollup.test.tsx` pins the renderer's half of
+   it so the two can't drift.
+
+   The control that DOES apply to those rows belongs to their container: a
+   group's member is disclosed with `showInGroupOnDocs` (below), and the
+   group's own collapsed row carries its own `revealPriceInRollup`.
 
 `false` is stored as an **absent** field on both entities, so "hidden" has
 exactly one representation.
+
+### Known gap: a sub-hire group's own row
+
+A sub-hire group's charge line DOES print on a client-facing document and its
+money cells ARE blanked inside a rolled-up category — but that row renders as
+`SubHireGroupRow`, which carries no reveal toggle. So a sub-hire charge cannot
+currently be broken out of a rollup the way a Project Group's can. Not a
+correctness bug (the subtotal still includes it); a missing control.
 
 ## Where it lives
 
@@ -93,7 +115,9 @@ exactly one representation.
 src/lib/category-pricing-display.ts    — THE shared module: the union, the default
                                           reading, isLinePriceHidden, rollupSubtotal,
                                           ROLLUP_SUBTOTAL_LABEL
+                                          ROLLUP_SUBTOTAL_LABEL, canRevealPriceInRollup
 src/lib/group-child-disclosure.ts      — the sibling module: isGroupChildDisclosed +
+                                          canDiscloseGroupChild +
                                           disclosedGroupChildren (the pure selector)
 convex/lib/validators.ts               — CategoryPricingDisplay validator;
                                           InvoiceLineSourceType += "CATEGORY"
@@ -224,7 +248,12 @@ Two deliberate exclusions:
 
 - **Kit parents.** A kit inside a group is itself a collapsing container;
   exploding one here would disclose a second level of contents nobody asked
-  for.
+  for. The exclusion is exported as `canDiscloseGroupChild` and the equipment
+  tab gates the menu entry on the same predicate, so a kit inside a group is
+  never offered a toggle the renderer would then ignore. (Making disclosure
+  work for a kit — listing the kit's own name and quantity with its contents
+  still hidden — is a reasonable future call; it is a change to what prints,
+  so it is not made here.)
 - **Expand (warehouse) mode.** A packing list / return sheet / delivery docket
   lists every member regardless — the packers need the full pick list — so the
   flag is never consulted there. A stale `true` on a line that later leaves its

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Client-document toggles no longer appear where they do nothing.** "Show
+  this price" was offered on items inside a group, on sub-hire group contents,
+  and on kit contents — none of which print their own line on a quote or
+  invoice, so flipping it changed nothing and never said why. It is now offered
+  only on rows the client actually sees: a category's own items, and a group's
+  single collapsed line. An item in a group keeps the control that does apply
+  to it, "Show this item", which lists it under the group. Same fix for a kit
+  sitting inside a group, where "Show this item" was offered but the document
+  ignored it.
+
 ### Changed
 
 - **Client-document toggles now read as one set of controls.** The four

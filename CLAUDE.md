@@ -486,10 +486,23 @@ it calls in here. Three rules when you touch this:
    `convex/projectAutoStatus.test.ts` asserts parity — absent = ON, so the stored
    blob only ever records an opt-OUT.
 
-"Everything deployed" is `prepStatus === "PACKED"` and not yet out — NOT "every
-`EQUIPMENT` line is `CHECKED_OUT`". Services, labour, sale and direct-to-site
-sub-hire lines sit at `CONFIRMED` forever and would pin a job at `PREPPING`; only
-physically picked gear is ever `PACKED`.
+"Everything deployed" is a POSITIVE test — **no deployable row still has ordered
+quantity in the warehouse** (`stillInBuilding`), not "nothing is still `PACKED`".
+The absence-of-a-PACKED-marker version was wrong twice: a partially deployed bulk
+line rolls up to `{ status: CHECKED_OUT, prepStatus: PACKED }` on its FIRST unit
+out (`deriveOrderLineStatus` is a `some`), and never-prepped gear has no
+`prepStatus` at all — so one deployed item flipped a job with everything else
+still on the shelf, permanently (the `from` set stops matching, so it can't
+self-correct).
+
+Deployable mirrors the warehouse page's own `equipmentItems` filter: `type ??
+"EQUIPMENT"` is `EQUIPMENT`, not a container row, not a sub-hire GROUP wrapper.
+Scoping by type is what keeps services / labour / transport / MISC / sale lines —
+which sit at `CONFIRMED` for the life of the job — from pinning it at `PREPPING`.
+
+Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical work
+is the second way out of the money phase, for orgs that reconcile payments in Xero
+and never write a `payments` row. See FEATUREDOCS/76.
 
 ### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
 The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:

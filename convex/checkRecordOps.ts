@@ -43,6 +43,19 @@ async function autoAdvanceOnPrep(
   });
 }
 
+/** Same, but only when the batch actually prepped something. An empty `items`
+ *  array is a no-op, not "the warehouse started prepping" — firing on it would
+ *  move the job with nothing on the bench and write a false audit row. Both
+ *  batch mutations go through here so that rule lives in ONE place. */
+async function autoAdvanceIfPrepped(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; actor?: { userId: string; userName: string }; now: number },
+  preppedCount: number,
+): Promise<void> {
+  if (preppedCount === 0) return;
+  await autoAdvanceOnPrep(ctx, a);
+}
+
 async function lineByCuid(ctx: Ctx, id: string) {
   return await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
 }
@@ -149,11 +162,8 @@ export const prepItems = mutation({
       });
       touched.add(item.lineItemId);
     }
-    // Once per batch, after every unit has landed — never inside the loop, and
-    // only if the batch actually prepped something (an empty `items` array is a
-    // no-op, not "the warehouse started prepping" — it would write a false audit
-    // row and move the job with nothing on the bench). Mirrors prepKitsBatch.
-    if (touched.size > 0) await autoAdvanceOnPrep(ctx, a);
+    // Once per batch, after every unit has landed — never inside the loop.
+    await autoAdvanceIfPrepped(ctx, a, touched.size);
     return { ids: [...touched] };
   },
 });
@@ -352,7 +362,7 @@ export const prepKitsBatch = mutation({
       await setKitTreePrep(ctx, parentLineItemId, a.organizationId, a.now, "PREP");
       succeeded.push(parentLineItemId);
     }
-    if (succeeded.length > 0) await autoAdvanceOnPrep(ctx, a);
+    await autoAdvanceIfPrepped(ctx, a, succeeded.length);
     return { succeeded, errors };
   },
 });

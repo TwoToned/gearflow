@@ -1181,38 +1181,142 @@ at the top of `quotesWrites.ts`) — the two compose via `quotes.versionId`.
 
 ### What's deferred (honest gap, not silently swept under the rug)
 
-- **No UI to CHOOSE a version when sending.** `project-quote-rail.tsx` (the
-  Finance tab, still the OLDER live-revision-only program) has no "send this
-  non-live version's quote" trigger. `useQuoteWrites().send()` now accepts
-  an optional `versionId` (threaded straight to `sendNative`), so the
-  capability is a call away, but the UI itself — a trigger, a confirmation
-  surface, and a Finance tab that can display MULTIPLE simultaneously-SENT
-  quotes (one per version, per D19) rather than assuming exactly one — is
-  real, separate UI work not attempted this phase (per this phase's own
-  "prioritize correctness over completeness, don't rush the UI" instruction).
-  E2E spec 3 (`e2e/harness-project-versioning.spec.ts`) stays `.skip()`'d
-  for exactly this reason — its docstring was rewritten to say so precisely,
-  rather than either faking a passing click-through or leaving a stale
-  "blocked on Phase 6 entirely" reason now that the backend exists.
+- ~~**No UI to CHOOSE a version when sending.**~~ **Closed — see "#1221
+  follow-up — the version-aware Send quote UI" below.**
 - **Accepting a non-live quote's `conflicts`/`unplannedLineItemIds`** (from
   the composed `performMakeLive`) are returned by `markAcceptedNative` but
   have no UI surface of their own yet — `finance/make-live-dialog.tsx`
   renders this same list for the EXPLICIT make-live flow; wiring the accept
-  flow's own toast/dialog to show it too is left for the UI follow-up above.
+  flow's own toast/dialog to show it too is left for a further follow-up
+  (NOT closed by "#1221 follow-up — the version-aware Send quote UI" below,
+  which only touches the SEND trigger).
 - Services/Labour in the quote PDF (see above) — bundled with the existing
   "wire Labour onto `versionId`" follow-up, not new to this phase.
+
+## #1221 follow-up — the version-aware Send quote UI (post-Phase 6)
+
+Closes Phase 6's own top deferred item above: `project-quote-rail.tsx` (the
+Finance tab) can now send a quote FROM a non-live version, not just the live
+one, and never hides a second version's SENT quote. This is UI-only —
+`sendNative({ versionId })`, `buildQuoteSnapshot`, and the react-pdf render
+path were already correct from Phase 6; nothing on the write/render side
+changed here (#987's invariants stay exactly as documented above — no new
+render path was added, see below).
+
+### `versionContext` — an explicit prop, not a second `useProjectVersion()` call site
+
+`ProjectQuoteRail` stays context-FREE: it takes an optional `versionContext:
+{ versions: {id,number,label}[]; viewing: {id,number,label} | null }` prop
+instead of calling `useProjectVersion()` itself. `ProjectFinancePanel` (the
+Finance tab's own wrapper, always rendered under `ProjectVersionProvider`) is
+the ONE caller that builds one, from the exact same `versions`/
+`isViewingVersion`/`viewingVersion` fields `VersionStrip`/the header pill
+already subscribe to (R-3.1 — no new query). The Overview tab's `QuoteCard`/
+`QuoteManagerDialog` (`overview/quote-card.tsx`, `finance/quote-manager-dialog.tsx`)
+deliberately do NOT pass it — Overview stays live-only (this doc's Phase 5
+section), so `versionContext` omitted is byte-identical to every pre-follow-up
+caller, verified by the existing `quote-manager-dialog.smoke.test.tsx` and
+`send-quote-dialog.smoke.test.tsx` staying green untouched.
+
+### The header verb — version-labelled, never the quote-revision counter
+
+While viewing a non-live version, the header offers **"Send v{N}'s quote"**
+— `{N}` is the PROJECT version's own number (`versionContext.viewing.number`),
+never the quote-revision "v{N}" the live branch prints (`quotes.version`, the
+OLDER per-project allocator `newVersionNative` still owns) — the two are
+genuinely different counters (see Phase 6's own "two numbering schemes" note
+above), and this label exists specifically so a user is never looking at one
+number while the system means the other. The button is withheld once the
+viewed version already has a non-draft quote (SENT/ACCEPTED/DECLINED/
+SUPERSEDED/EXPIRED) — mirroring `assertSendTargetIsWritable` server-side
+exactly, so the UI never offers a click `sendNative` would reject with
+`QUOTE_ALREADY_SENT`. There's no "Create next revision" equivalent for a
+non-live version (unlike the live branch's "Create quote v{revision+1}") —
+opening another option entirely is a Versions-panel verb ("New version"), not
+a per-send action here.
+
+`SendQuoteDialog` takes the matching optional `targetVersion` prop, threaded
+straight to `useQuoteWrites().send()`'s existing `versionId` argument
+(already wired in Phase 6). Its copy branches on `targetVersion`:
+
+- Title/description: "Send v{N}'s quote" / "this does not lock v{N} for
+  editing" — the send DOES capture a frozen snapshot into the document
+  (identical mechanism to a live send), but a non-live target never raises
+  `pricingLocked` (D55 — only a LIVE send does), so the dialog doesn't claim
+  it does.
+- Post-send handover: "v{N}'s quote sent" / "v{N} stays fully editable —
+  send again anytime", never "Pricing is now locked at v{N}".
+
+### The two things this follow-up deliberately did NOT build
+
+1. **No pre-send pricing preview for a non-live target.** The dialog's
+   "Summary" panel (subtotal/tax/total) and its "Preview draft" link both
+   come from `subtotal`/`taxAmount`/`total` props and
+   `/api/documents/[projectId]?preview=1` — both are the LIVE project's own
+   figures (Labour/Finance were never made version-aware, this doc's Phase
+   5/6 sections), and the preview route has no `versionId` arg at all (only
+   `quoteId`, which needs an already-sent row to exist). Showing either while
+   targeting a DIFFERENT version would print a wrong number under a
+   "preview"/"summary" label. Rather than build a new version-aware preview
+   render path — which CLAUDE.md's finance-document rules (#987) forbid
+   adding casually — both are replaced with a plain text note for a non-live
+   target, and the actual SENT document (computed correctly server-side from
+   the target version's own line items, Phase 6) is what a user checks by
+   downloading it. Closing this for real means either extending the preview
+   route with a `versionId` arg (a genuinely new, reviewable surface) or
+   making Finance-tab money figures version-aware generally — left as a
+   follow-up, not attempted here.
+2. **No dedicated UI for the accept-a-non-live-quote conflicts list.** Still
+   open, per Phase 6's own "What's deferred" note above (unchanged by this
+   follow-up).
+
+### Testing
+
+jsdom smoke tests that actually RENDER and OPEN the dialog (mirroring
+`model-roi-tab.smoke.test.tsx`'s pattern per CLAUDE.md), covering both the
+live-viewed and non-live-viewed cases:
+`src/components/projects/__tests__/project-quote-rail-versioning.smoke.test.tsx`
+(`versionContext` omitted / `viewing: null` behave identically to
+pre-follow-up; the non-live "Send v{N}'s quote" trigger, its
+already-non-draft-quote withholding, and the recalled-draft-still-offers-Send
+case; the multiple-simultaneously-SENT-quotes banner + per-row "for project
+version N" tag, and their absence in the common single-version case) and
+`send-quote-dialog.smoke.test.tsx`'s new `targetVersion` describe block (the
+version-labelled title, the absent preview link, the absent Summary panel,
+`versionId` threaded to `send()`, and the handover copy never claiming a
+lock). All pre-existing tests on these files/embed sites (`quote-manager-dialog.smoke.test.tsx`,
+`send-quote-dialog.smoke.test.tsx`'s original suite, `quote-row-actions.test.ts`)
+stayed green untouched. `pnpm test` (full suite, 530 files / 6353 tests) and
+`pnpm exec tsc --noEmit` both pass; `git stash` diffs against this branch's
+own HEAD confirm this follow-up adds ZERO new `complexity`/`knip` ratchet
+violations (both ratchets already fail by exactly 1 at this branch's HEAD,
+before this follow-up's own changes — a pre-existing drift between the
+committed `.complexity-ratchet-baseline`/`.knip-baseline` files and the
+actual repo state, not something this follow-up introduced or attempted to
+fix here).
+
+E2E spec 3 (`e2e/harness-project-versioning.spec.ts`) is un-skipped: assign a
+client via the edit page's quick-create-client flow, create a new version,
+send its quote through the trigger above, confirm SENT + the version tag,
+then confirm the live version's pricing stays unlocked after switching back.
+Same honesty note as specs 1-2 (this doc's Phase 5 section) — written and
+believed correct against the real component source, not executed against a
+live Convex deployment in this sandbox.
 
 ## What's next (later phases of #1221 — not built yet)
 
 Wiring `ServicesPanel`/Labour and Finance onto `versionId` on both the read
 AND write side (bundled together, per above — now also closes the PDF
-Services gap); gating `applySaleStockOnAdd` to the live version so Sale can
-eventually be re-enabled safely; wiring the "Move existing group to new
-category" dialogs' `versionId`; Compare (#1232), which the drift signal and
-the header pill's disabled stub are both waiting on; the UI to choose a
-version when sending a quote (Phase 6's own top deferred item, above) and
-to surface a non-live accept's conflicts list; folding the unlocked-by-a-
-person notice (state E) into `VersionStrip`; migrating the OLDER switcher's
+Services gap, and would let the version-aware Send dialog show a real
+per-version pricing preview instead of its current text note — see that
+follow-up's own "deliberately did NOT build" section); gating
+`applySaleStockOnAdd` to the live version so Sale can eventually be
+re-enabled safely; wiring the "Move existing group to new category"
+dialogs' `versionId`; Compare (#1232), which the drift signal and the
+header pill's disabled stub are both waiting on; surfacing a non-live
+accept's conflicts list (Phase 6's own remaining deferred item); folding
+the unlocked-by-a-person notice (state E) into `VersionStrip`; migrating
+the OLDER switcher's
 remaining surface (FEATUREDOCS/70) off `projectSnapshots` onto
 `projectVersions` entirely (including reconciling `quotes.version`'s
 revision-number counter with `projectVersions.number`, the two-numbering-

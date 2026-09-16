@@ -2,6 +2,7 @@
 
 > _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **APPROVED** 2026-09-16 (office-hours, decisions D1–D5) · Review quarterly (POLICY.md R-5.5)_
 
+**Tracking:** [#1240](https://github.com/TwoToned/gearflow/issues/1240) (sub-issues #1241–#1247) · **Build order:** [`work-layer-build-plan.md`](./work-layer-build-plan.md)
 **Mode:** intrapreneurship / startup (RVLT Flow is the company's own operating system and a
 sold product). **Stage:** has users (the company runs on it daily at flow.rvlt.app).
 **Binding constraint:** [`DESIGN.md`](../../DESIGN.md). **Governing policy:** [`POLICY.md`](../../POLICY.md).

@@ -129,7 +129,8 @@ workflows are solid.
 
 ### 3.1 — Project todo lists → the Work layer
 **Effort:** M (v1, ✅ shipped as [FEATUREDOCS/50](../FEATUREDOCS/50-project-tasks.md)) ·
-**XL** (program, design drafted 2026-09-15)
+**XL** (program) · **Tracking:** [#1240](https://github.com/TwoToned/gearflow/issues/1240)
+(sub-issues #1241–#1247)
 v1 added Asana-style todo/task lists to projects so project management lives in
 RVLT Flow instead of scattered across chat and email. It shipped as a per-project
 checklist and was never revisited. The follow-on program reframes it as one

@@ -42847,125 +42847,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "projectVersionsWrites.promoteRevisionNative",
-    "module": "projectVersionsWrites",
-    "fn": "promoteRevisionNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "project",
-    "action": "update",
-    "scopePairs": [
-      {
-        "resource": "project",
-        "action": "update"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "projectId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "targetRevision",
-        "optional": false,
-        "type": "number"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "7e9e6c1e98488e5b",
-    "returnsSha": "c7504c21da0eaf13",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "high",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "projectVersionsWrites.saveVersionNative",
-    "module": "projectVersionsWrites",
-    "fn": "saveVersionNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "invoice",
-    "action": "publish",
-    "scopePairs": [
-      {
-        "resource": "invoice",
-        "action": "publish"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "label",
-        "optional": true,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "projectId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "04b4167687bfce0d",
-    "returnsSha": "a1b0844cadca4f9d",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "low",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "projectWrites.archiveNative",
     "module": "projectWrites",
     "fn": "archiveNative",
@@ -43897,58 +43778,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "quotesWrites.deleteDraftNative",
-    "module": "quotesWrites",
-    "fn": "deleteDraftNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "invoice",
-    "action": "publish",
-    "scopePairs": [
-      {
-        "resource": "invoice",
-        "action": "publish"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "5cb77faf3d5db168",
-    "returnsSha": "1adb051b6395d240",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "high",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "quotesWrites.deleteRecalledNative",
     "module": "quotesWrites",
     "fn": "deleteRecalledNative",
@@ -43993,58 +43822,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "20a822a2ec3445db",
     "returnsSha": "1adb051b6395d240",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "high",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "quotesWrites.deleteVersionNative",
-    "module": "quotesWrites",
-    "fn": "deleteVersionNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "invoice",
-    "action": "publish",
-    "scopePairs": [
-      {
-        "resource": "invoice",
-        "action": "publish"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "5cb77faf3d5db168",
-    "returnsSha": "5de9f2996360adc4",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -44286,68 +44063,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "quotesWrites.repriceFromRevisionNative",
-    "module": "quotesWrites",
-    "fn": "repriceFromRevisionNative",
-    "kind": "mutation",
-    "guard": "orgPermission",
-    "resource": "invoice",
-    "action": "publish",
-    "scopePairs": [
-      {
-        "resource": "invoice",
-        "action": "publish"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "projectId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "sourceQuoteId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "3e1f2b02aceadf0c",
-    "returnsSha": "cc64da96694ae5c3",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "medium",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "quotesWrites.sendNative",
     "module": "quotesWrites",
     "fn": "sendNative",
@@ -44482,58 +44197,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "low",
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
-    "operation": "quotesWrites.setQuoteProtectedNative",
-    "module": "quotesWrites",
-    "fn": "setQuoteProtectedNative",
-    "kind": "mutation",
-    "guard": "none",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "actor",
-        "optional": false,
-        "type": "object"
-      },
-      {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "id",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "now",
-        "optional": false,
-        "type": "number"
-      },
-      {
-        "name": "organizationId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "protect",
-        "optional": false,
-        "type": "boolean"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "cedb99276e36d0dd",
-    "returnsSha": "8e94bf6bb97aa82e",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -56449,6 +56112,244 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "versions.createNative",
+    "module": "versions",
+    "fn": "createNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "fromVersionId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "label",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fcd1274ee75597f1",
+    "returnsSha": "3f7bae7656849dec",
+    "stability": "tracks-app",
+    "summary": "Copy a version's plan into a fresh, non-live version.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versions.deleteNative",
+    "module": "versions",
+    "fn": "deleteNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7e288f8b0b892119",
+    "returnsSha": "76e9166418f484d2",
+    "stability": "tracks-app",
+    "summary": "Permanently delete a non-live version and its plan rows.",
+    "danger": "high",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versions.makeLiveNative",
+    "module": "versions",
+    "fn": "makeLiveNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7e288f8b0b892119",
+    "returnsSha": "e497654c7ffad67a",
+    "stability": "tracks-app",
+    "summary": "Flip the project's live pointer to another version.",
+    "danger": "high",
+    "mcpTier": 1,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versions.setLabelNative",
+    "module": "versions",
+    "fn": "setLabelNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "label",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "30b4a5dd31e1a0dd",
+    "returnsSha": "b4b4f715234117da",
+    "stability": "tracks-app",
+    "summary": "Rename a version's internal label.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "warehouseCloses.closeOutIfNotClosed",
     "module": "warehouseCloses",
     "fn": "closeOutIfNotClosed",
@@ -61844,10 +61745,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1194,
-  agentReachable: 573,
+  total: 1192,
+  agentReachable: 572,
   queries: 424,
-  mutations: 770,
+  mutations: 768,
   agentReachableQueries: 294,
-  agentReachableMutations: 279,
+  agentReachableMutations: 278,
 } as const;

@@ -23,10 +23,10 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 424 | 294 | 128 | 1 | 1 |
-| Mutations | 770 | 279 | 482 | 0 | 9 |
-| **Total** | **1194** | **573** | **610** | **1** | **10** |
+| Mutations | 768 | 278 | 482 | 0 | 8 |
+| **Total** | **1192** | **572** | **610** | **1** | **9** |
 
-<!-- reachability-floor: 573 -->
+<!-- reachability-floor: 572 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,9 +42,9 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 93 |
-| `medium` | 142 |
-| `low` | 44 |
+| `high` | 92 |
+| `medium` | 141 |
+| `low` | 45 |
 
 ## Modules with no agent-reachable operation
 
@@ -92,6 +92,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `pendingOrgJoinRequests` | 6 |
 | `pendingSSOApprovals` | 5 |
 | `projectNumberSequences` | 7 |
+| `projectVersionsWrites` | 1 |
 | `siteSettings` | 9 |
 | `subHireGroups` | 8 |
 | `subHireItems` | 7 |

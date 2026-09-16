@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (573 agent-reachable)
+## Operations (572 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -191,16 +191,12 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `payments.listForInvoice` (query, scope: invoice:read)
 - `paymentsWrites.recordNative` (mutation, scope: invoice:record_payment)
 - `paymentsWrites.voidNative` (mutation, scope: invoice:void_payment)
-- `projectVersionsWrites.saveVersionNative` (mutation, scope: invoice:publish)
 - `quotes.listForProject` (query, scope: invoice:read)
 - `quotes.revisionStateForProject` (query, scope: invoice:read)
-- `quotesWrites.deleteDraftNative` (mutation, scope: invoice:publish)
-- `quotesWrites.deleteVersionNative` (mutation, scope: invoice:publish)
 - `quotesWrites.markAcceptedNative` (mutation, scope: invoice:publish)
 - `quotesWrites.markDeclinedNative` (mutation, scope: invoice:publish)
 - `quotesWrites.newVersionNative` (mutation, scope: invoice:publish)
 - `quotesWrites.recallNative` (mutation, scope: invoice:publish)
-- `quotesWrites.repriceFromRevisionNative` (mutation, scope: invoice:publish)
 - `quotesWrites.sendNative` (mutation, scope: invoice:publish)
 - `quotesWrites.setQuoteLabelNative` (mutation, scope: invoice:publish)
 - `quotesWrites.unacceptNative` (mutation, scope: invoice:publish)
@@ -465,7 +461,6 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectUnlockSessionsWrites.openNative` (mutation, scope: project:update)
 - `projectVersionsEquipment.bundle` (query, scope: project:read)
 - `projectVersionsRead.listVersions` (query, scope: project:read)
-- `projectVersionsWrites.promoteRevisionNative` (mutation, scope: project:update)
 - `projectWrites.archiveNative` (mutation, scope: project:update)
 - `projectWrites.createNative` (mutation, scope: project:create)
 - `projectWrites.deleteNative` (mutation, scope: project:delete)
@@ -478,6 +473,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `reservationConflicts.projectConflicts` (query, scope: project:read)
 - `reservationConflicts.swapCandidates` (query, scope: project:read)
 - `revenueAllocation.recomputeForProject` (mutation, scope: project:manage_line_items)
+- `versions.createNative` (mutation, scope: project:update)
+- `versions.deleteNative` (mutation, scope: project:update)
+- `versions.makeLiveNative` (mutation, scope: project:update)
+- `versions.setLabelNative` (mutation, scope: project:update)
 - `warehouseDetail.bundle` (query, scope: project:read)
 
 ### reports

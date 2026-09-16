@@ -61,6 +61,8 @@ async function seedLine(
     checkedOutQuantity?: number;
     returnedQuantity?: number;
     isContainerLineItem?: boolean;
+    subHireId?: string;
+    parentLineItemId?: string;
   } = {},
 ) {
   await t.run(async (ctx) => {
@@ -74,6 +76,8 @@ async function seedLine(
       ...(extra.checkedOutQuantity != null ? { checkedOutQuantity: extra.checkedOutQuantity } : {}),
       ...(extra.returnedQuantity != null ? { returnedQuantity: extra.returnedQuantity } : {}),
       ...(extra.isContainerLineItem ? { isContainerLineItem: true } : {}),
+      ...(extra.subHireId ? { subHireId: extra.subHireId } : {}),
+      ...(extra.parentLineItemId ? { parentLineItemId: extra.parentLineItemId, isKitChild: true } : {}),
       ...(prepStatus ? { prepStatus: prepStatus as never } : {}),
     });
   });
@@ -437,6 +441,25 @@ describe("ALL_CHECKED_OUT", () => {
     await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
     await seedLine(t, "case", "CONFIRMED", "PACKED", { isContainerLineItem: true });
     expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
+  });
+
+  // A sub-hire GROUP wrapper is hidden by the warehouse page (its children show
+  // individually) and is therefore never deployed itself. Backed by an indexed
+  // `by_parentLineItemId` read, so it needs a real parent/child pair to prove.
+  test("a sub-hire group wrapper doesn't hold the job back — its children carry the state", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "wrap", "CONFIRMED", undefined, { subHireId: "sh1" });
+    await seedLine(t, "shchild", "CHECKED_OUT", "PACKED", { subHireId: "sh1", parentLineItemId: "wrap" });
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBe("CHECKED_OUT");
+  });
+
+  test("…but a childless sub-hire line is ordinary gear and does hold it back", async () => {
+    const t = makeT();
+    await seedProject(t, "PREPPING");
+    await seedLine(t, "li1", "CHECKED_OUT", "PACKED");
+    await seedLine(t, "direct", "CONFIRMED", undefined, { subHireId: "sh2" });
+    expect(await advance(t, "ALL_CHECKED_OUT")).toBeNull();
   });
 
   test("a cancelled or returned line is not still in the building", async () => {

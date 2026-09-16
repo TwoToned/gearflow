@@ -176,55 +176,83 @@ export const AUTO_STATUS_RULES: Record<AutoStatusTrigger, AutoStatusRule> = {
  *     out of ten never-prepped lines flipped the whole job too.
  * Both are now positive tests — a row is out when its ordered quantity has
  * actually left — rather than the absence of a PACKED marker.
+ *
+ * The cheap field tests run first and the one test that costs a read runs last,
+ * so the overwhelming majority of rows are decided without touching the db.
  */
-function stillInBuilding(line: Doc<"projectLineItems">, hasChildren: boolean): boolean {
-  if (!isDeployableRow(line, hasChildren)) return false;
+async function isStillInBuilding(
+  ctx: MutationCtx,
+  line: Doc<"projectLineItems">,
+  orgId: string,
+): Promise<boolean> {
+  if ((line.type ?? "EQUIPMENT") !== "EQUIPMENT") return false;
+  if (line.isContainerLineItem) return false;
+  if (!hasQuantityLeftToDeploy(line)) return false;
+  return !(await isSubHireWrapper(ctx, line, orgId));
+}
+
+/** Does this row still have ordered quantity that hasn't left the building? */
+function hasQuantityLeftToDeploy(line: Doc<"projectLineItems">): boolean {
   const status = line.status ?? "";
   if (status === "CANCELLED" || status === "RETURNED") return false;
   const qty = line.quantity ?? 0;
   if (qty <= 0) return false; // exhausted original left behind by a prep-split
   if (status !== "CHECKED_OUT") return true;
-  // Absent (not zero) means no per-unit counter was ever kept for this row — a
-  // legacy deploy, or a path that patches the line straight to CHECKED_OUT. The
-  // status is all there is to go on, so take it. Prep explicitly writes `0`, so
-  // absent and zero are genuinely different here.
+  // Partially deployed. `checkedOutQuantity` ABSENT (not zero) means no per-unit
+  // counter was ever kept for this row — a legacy deploy, or a path that patches
+  // the line straight to CHECKED_OUT — so the status is all there is to go on and
+  // we take it. Prep writes an explicit `0`, so absent and zero differ here.
   const out = line.checkedOutQuantity;
   if (out == null) return false;
   return out + (line.returnedQuantity ?? 0) < qty;
 }
 
-/** Is this row the kind of thing that physically leaves the warehouse? Mirrors
- *  the warehouse page's own `equipmentItems` filter. */
-function isDeployableRow(line: Doc<"projectLineItems">, hasChildren: boolean): boolean {
-  if ((line.type ?? "EQUIPMENT") !== "EQUIPMENT") return false;
-  if (line.isContainerLineItem) return false;
-  // A sub-hire GROUP wrapper is never deployed itself — its children are.
-  return !(line.subHireId != null && !line.isKitChild && !line.kitId && hasChildren);
+/** A sub-hire GROUP wrapper — the row the warehouse page hides because its
+ *  children show individually, and which is therefore never deployed itself.
+ *  The child lookup is indexed and gated behind three free field tests, so it
+ *  only runs for the handful of rows that could be one. `by_parentLineItemId`
+ *  is a GLOBAL index — org-check the row it returns (R-8.4.3). */
+async function isSubHireWrapper(
+  ctx: MutationCtx,
+  line: Doc<"projectLineItems">,
+  orgId: string,
+): Promise<boolean> {
+  if (line.subHireId == null || line.isKitChild || line.kitId) return false;
+  const child = await ctx.db
+    .query("projectLineItems")
+    .withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", line.id))
+    .first();
+  return child != null && child.organizationId === orgId;
 }
 
-/** The whole `ALL_CHECKED_OUT` question in ONE indexed scan of the project's
- *  lines, org-filtered (`by_projectId` is a GLOBAL index — R-8.4.3).
+/**
+ * The whole `ALL_CHECKED_OUT` question in ONE indexed scan of the project's
+ * lines, org-filtered (`by_projectId` is a GLOBAL index — R-8.4.3).
  *
- *  A collect rather than a `.first()` because the sub-hire wrapper test needs to
- *  know which rows are somebody's parent, and because the predicate can't be
- *  expressed as an index range. Both halves of the condition come off the same
- *  list, so the scan happens once. */
-async function deployState(
+ * Streamed rather than collected, and it returns the moment it finds a row still
+ * in the building: at that point the trigger cannot fire whatever the remaining
+ * rows say, so reading them would be waste. Collecting the whole list here would
+ * also push the repo's whole-count ratchet over its baseline
+ * (scripts/collect-ratchet.mjs), and streaming is the better read anyway.
+ *
+ * The `anyOut` half is what stops a job with no gear on it from "finishing"
+ * deploying; it is only consulted when nothing is left in the building, which is
+ * exactly when the loop has run to completion and the flag is final.
+ */
+async function allDeployableGearIsOut(
   ctx: MutationCtx,
   orgId: string,
   projectId: string,
-): Promise<{ stillInBuilding: boolean; anyOut: boolean }> {
-  const lines = (
-    await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_projectId", (q) => q.eq("projectId", projectId))
-      .collect()
-  ).filter((l) => l.organizationId === orgId);
-  const parentIds = new Set(lines.map((l) => l.parentLineItemId).filter((id): id is string => id != null));
-  return {
-    stillInBuilding: lines.some((l) => stillInBuilding(l, parentIds.has(l.id))),
-    anyOut: lines.some((l) => l.status === "CHECKED_OUT"),
-  };
+): Promise<boolean> {
+  let anyOut = false;
+  for await (const line of ctx.db
+    .query("projectLineItems")
+    .withIndex("by_projectId", (q) => q.eq("projectId", projectId))) {
+    if (line.organizationId !== orgId) continue;
+    if (line.status === "CHECKED_OUT") anyOut = true;
+    if (await isStillInBuilding(ctx, line, orgId)) return false;
+  }
+  return anyOut;
 }
 
 /** Existence check only (never a collect) — one CHECKED_OUT line is enough. */
@@ -263,12 +291,10 @@ async function conditionMet(
       // gate the MANUAL confirm would have hit, and the automation must not be a
       // way around it.
       return await hasAcceptedQuote(ctx, orgId, projectId, now);
-    case "ALL_CHECKED_OUT": {
+    case "ALL_CHECKED_OUT":
       // Nothing deployable left in the building AND something actually went out
       // (a job with no EQUIPMENT lines at all must not "finish" deploying).
-      const state = await deployState(ctx, orgId, projectId);
-      return !state.stillInBuilding && state.anyOut;
-    }
+      return await allDeployableGearIsOut(ctx, orgId, projectId);
     case "ALL_RETURNED":
       return !(await anyCheckedOut(ctx, projectId));
   }

@@ -1,6 +1,6 @@
 # Work layer — tasks, project management, client relationships, time
 
-> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **DRAFT** (office-hours output, awaiting approval) · Review quarterly (POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Created: 2026-09-15 · Status: **APPROVED** 2026-09-16 (office-hours, decisions D1–D5) · Review quarterly (POLICY.md R-5.5)_
 
 **Mode:** intrapreneurship / startup (RVLT Flow is the company's own operating system and a
 sold product). **Stage:** has users (the company runs on it daily at flow.rvlt.app).

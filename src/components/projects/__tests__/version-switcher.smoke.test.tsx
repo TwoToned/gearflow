@@ -3,8 +3,9 @@
 // Project Versioning v2, Phase 5 (#1231, parent #1221) — the header pill.
 // Must actually OPEN (a closed-trigger render proves nothing, CLAUDE.md's
 // Select/Tooltip/DropdownMenu footguns) and offer switch/New version/
-// Compare(disabled)/Manage versions. Consumes `useProjectVersion()` from
-// context, mocked here so this doesn't need a ConvexProvider.
+// Compare (#1232 — wired to openCompare, no longer a disabled stub)/Manage
+// versions. Consumes `useProjectVersion()` from context, mocked here so
+// this doesn't need a ConvexProvider.
 import React from "react";
 import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
@@ -68,6 +69,9 @@ function baseCtx(overrides: Record<string, unknown> = {}) {
     viewingPlanFields: null,
     isLoadingViewingVersion: false,
     setViewingNumber: vi.fn(),
+    compare: null,
+    openCompare: vi.fn(),
+    closeCompare: vi.fn(),
     ...overrides,
   };
 }
@@ -120,12 +124,25 @@ describe("ProjectVersionSwitcher smoke", () => {
     await waitFor(() => expect(mockCreateVersion).toHaveBeenCalledWith({ fromVersionId: "v4" }));
   });
 
-  it("Compare is present but disabled (#1232, out of scope)", async () => {
-    mockUseProjectVersion.mockReturnValue(baseCtx());
+  it("Compare opens with live as side A and the viewed version as side B (#1232)", async () => {
+    const openCompare = vi.fn();
+    mockUseProjectVersion.mockReturnValue(baseCtx({ openCompare, isViewingVersion: true, viewingNumber: 3 }));
     render(<ProjectVersionSwitcher />);
     openMenu();
-    const compareItem = await screen.findByText(/compare/i);
-    expect(compareItem.closest('[data-disabled], [aria-disabled="true"]')).toBeTruthy();
+    const compareItem = await screen.findByText(/^compare$/i);
+    expect(compareItem.closest('[data-disabled], [aria-disabled="true"]')).toBeFalsy();
+    fireEvent.click(compareItem);
+    expect(openCompare).toHaveBeenCalledWith({ kind: "version", number: null }, { kind: "version", number: 3 });
+  });
+
+  it("Compare falls back to the most recent non-live version when viewing live", async () => {
+    const openCompare = vi.fn();
+    mockUseProjectVersion.mockReturnValue(baseCtx({ openCompare }));
+    render(<ProjectVersionSwitcher />);
+    openMenu();
+    const compareItem = await screen.findByText(/^compare$/i);
+    fireEvent.click(compareItem);
+    expect(openCompare).toHaveBeenCalledWith({ kind: "version", number: null }, { kind: "version", number: 3 });
   });
 
   it("Manage versions… opens the Versions panel", async () => {

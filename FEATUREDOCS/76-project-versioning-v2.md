@@ -1303,6 +1303,206 @@ Same honesty note as specs 1-2 (this doc's Phase 5 section) — written and
 believed correct against the real component source, not executed against a
 live Convex deployment in this sandbox.
 
+## Phase 5b (#1232, parent #1221, design §5.1 D46-D53) — Compare mode: the money bridge
+
+Phase 5b answers the question a PM actually has, not "which cells differ" but
+**"why is this version $2,880 more, and can I defend that to the client?"**
+(the tracking issue's own framing). It's the last spec'd, ready-to-build
+phase in the program — Phase 7 is post-prod cleanup, Phase 8 needs its own
+design doc.
+
+### The pure module — `convex/lib/versionCompare.ts`
+
+The row-alignment (D50, by `lineageId`) and money-bridge (D48) logic is one
+UI-free, server-only module, built and tested BEFORE any UI existed:
+
+- **`classifyCompareRows(bundleA, bundleB)`** — matches groups/lines/services
+  across two `TotalsBundle`s (Phase 2's `loadTotalsBundle`/`computeTotals`
+  split, D59 — R-3.1, no second totals read) by `lineageId` (falling back to
+  a row's own `id`, the Phase 1 backfill convention). Five states: a row
+  present only in A is `removed`, only in B is `added`, present in both with
+  a DIFFERENT `categoryId`/`groupId` is `moved` (regardless of whether it
+  ALSO repriced — `alsoRepriced` is informational, the row is still ONE
+  `CompareRow`), present in both with any other field differing is
+  `changed`, otherwise `unchanged`. Line items are narrowed to
+  `isComparableLine` first (excludes kit/accessory children, optional and
+  cancelled lines — none of them can independently move `computeTotals`'s
+  `total` on their own, see the module's own comment; a documented,
+  deliberate scope limit for the ROW TABLE, not for the bridge's exactness,
+  which the reconciliation step below proves independently of this
+  narrowing).
+- **`buildMoneyBridge(bundleA, bundleB, rows)`** — D48's segments, built by
+  **incremental substitution**: start from bundle A, walk the classified
+  changes in deterministic buckets (grouped by state + category, D49), swap
+  A's rows for B's after each bucket and re-run `computeTotals`, recording
+  the delta as that bucket's segment amount; then walk the two MONEY plan
+  fields that actually feed `total` (`discountPercent`, `taxRate`, plus a
+  client/`taxExempt` swap) the same way — this is what gives a rental-window/
+  discount-only change (no row changes at all) its own first-class segment
+  (D48's explicit "the first draft had nowhere to put that" requirement).
+  Because this is a telescoping sum over real `computeTotals` calls, `sum
+  (segments) === totalB - totalA` holds **by construction**, not by a second
+  hand-derived formula duplicating `computeTotals`'s group-bundle-price/tax-
+  contribution rules (R-3.1) — zero risk of the bridge and the totals ever
+  disagreeing. A defensive `unexplained` catch-up segment closes any residual
+  gap if classification ever misses a `computeTotals`-relevant field; every
+  fixture in `versionCompare.test.ts` asserts it's never produced.
+- **`assertBridgeIntegrity(bridge)`** — the two hard invariants, mechanically
+  checked: (1) `sum(segments) === totalB - totalA` to the cent, (2) every
+  segment's `rowKeys` is non-empty (an `unexplained` segment's empty
+  `rowKeys` is what makes it FAIL this check by design, rather than silently
+  padding the total). Runs inside `versionsRead.compareVersions` itself, not
+  just in tests — a real classification gap fails the read loudly.
+
+`convex/lib/versionCompare.test.ts` proves: all 5 row states; a
+plan-field-ONLY fixture (discount% change, zero row diffs) still bridges
+exactly; a row that moved category AND repriced contributes to the bridge
+**exactly once** (asserted directly: exactly one segment's `rowKeys`
+includes it); and `assertBridgeIntegrity` catches a hand-built broken
+fixture (a segment with empty `rowKeys`, and a segment sum that doesn't
+match `totalB - totalA`).
+
+### `versionsRead.compareVersions` — the one new Convex read, and why it's server-side
+
+Wraps the pure module against real org-checked data. Two side shapes:
+
+- `{ kind: "version", versionId }` — the general case (switcher, drift's
+  "side B", a future make-live-dialog reuse).
+- `{ kind: "quoteSnapshot", quoteId }` — the drift entry point (D53, below);
+  totals-only, `rows: null`.
+
+**Server-side, deliberately** (not client-side from two already-fetched
+version bundles): the exactness proof only holds against the SAME
+`computeTotals`/`loadTotalsBundle` every other totals path in this codebase
+already runs server-side — shipping raw rows to the browser and re-deriving
+totals there would be a second, unproven copy of that arithmetic. `total`
+also needs org-checked reads (`by_cuid`/`by_versionId` are global indexes,
+R-8.4.3) for BOTH versions plus their categories (for row/segment labels) —
+work a browser client has no business doing twice. One round trip, one place
+the exactness proof lives. Cross-tenant: both `loadVersionSide` (via
+`loadTotalsBundle`) and `loadQuoteSnapshotSide` re-check
+`organizationId`/`projectId` against the loaded row before trusting it (the
+same `by_cuid`-is-global discipline as every other reader in this file).
+
+`pnpm run api:registry && pnpm run api:docs && pnpm run api:mcp` regenerated
+and committed (`compareVersions` is agent-reachable, `danger: "low"`,
+`mcpTier: 3` — a read, not promoted to a curated/stable MCP tool this
+phase).
+
+### Why the drift entry point (D53) is totals-only, not row-level
+
+`VersionStrip`'s drift line (Phase 6) now opens Compare with side A = the
+sent quote's frozen `quotes.snapshot` (subtotal/discountAmount/taxAmount/
+total only) and side B = the version's current rows. This is DELIBERATELY
+**not** reconstructed into a full row-level diff, even though a row-capturing
+mechanism (`projectSnapshots`/`projectSnapshotEntries`, captured at
+`QUOTE_SENT` via `captureProjectSnapshot`) already exists: that mechanism is
+**LIVE-only by construction** (`collectCurrentEntries` reads `liveRows`,
+never the SENT quote's actual target version) — Phase 6 made sending a
+NON-live version's quote possible, so for a version that wasn't live at send
+time, the captured snapshot rows would describe a DIFFERENT version
+entirely. A wrong, misleadingly-precise row diff is worse than an honest
+"only totals are captured" note, so `compareVersions` renders a single
+`snapshotOnly` bridge segment (the whole delta, unattributed) and
+`CompareView` shows a plain explanatory note instead of the row table. Real,
+reliable row-level drift (matching a SENT quote's actual line items against
+current ones) needs its own per-quote row snapshot, not attempted here.
+
+### The UI — `src/components/projects/compare/compare-view.tsx`
+
+One React component tree, D46's **one scroll container** (only the row
+table's wrapper carries `overflow-y-auto` — the header strip, bridge bar and
+controls row are all fixed). Not a pixel-precise waterfall render (the
+mockup's absolute-positioned bars) — a horizontal list of clickable segment
+cards between two total pills, same substance (every segment traces to
+rows/plan-fields, sum is exact, click-to-jump), chosen over the SVG waterfall
+for time and to stay on existing DESIGN.md tokens (`intentStyles`/
+`intentBorderClass`, no new colours) rather than hand-rolled pixel math.
+
+- **D47** — editing suspended by construction: `CompareView` renders no
+  write UI at all (no forms, no add/edit affordances), and `page.tsx`
+  renders it INSTEAD OF the tabs/`VersionStrip` block when active (a MODE on
+  the page, not a route — `versionState.compare` is page-level React state,
+  never `?v=`-driven). Exit is the one "Exit compare" button.
+- **D50** — all 5 row states render, including **moved-with-ghost**: a moved
+  row renders in its NEW category with a "Moved from X" pill; its OLD
+  category gets an italic ghost line ("`<item>` moved to `<category>` —
+  counted there, not here") so the reader can see it didn't just vanish.
+  `CompareRowView`'s cells only show `old → new` for a field that actually
+  differs (D51) via `OldNewCell`.
+- **D52** — exactly three controls: the All-rows/Only-changes toggle
+  (defaults to "Only changes" above 40 rows), the `‹ n of m ›` stepper bound
+  to `n`/`p` (real keyboard FOCUS movement via a `ref` map + `.focus()` +
+  `.scrollIntoView()`, not just scroll — the explicit a11y "Done when" item),
+  and the compare-target picker (a `<Select>` with explicit `<SelectValue>`
+  children per CLAUDE.md, swapping side B between live and any non-live
+  version). Per-tab badges and the old→new totals footer are DERIVED from
+  the same query response, not separately configured.
+- Complexity: the initial draft tripped
+  `.complexity-ratchet-baseline` (+9 violations across the new module/query/
+  component) — resolved by decomposing every over-budget function into
+  small, independently-named helpers (`classifyMatchedPair`/`buildMovedRow`/
+  `buildRowSegments`/`buildMoneyFieldSegments`/`buildClientSegment` in the
+  pure module; `CompareHeaderStrip`/`MoneyBridgeBar`/`CompareControlsRow`/
+  `CompareRowsTable`/`RowLabelCell`/`RowStatePill` in the UI), not by
+  raising the baseline — POLICY.md R-3.6's stated preference. Net effect on
+  the ratchet: zero new violations.
+
+### Wiring — the switcher, the drift line, make-live (partial)
+
+- **`version-switcher.tsx`** — the header pill's "Compare" menu item is no
+  longer the disabled stub Phase 5 left; it opens Compare with side A = live,
+  side B = whatever's currently being viewed (or the most recent non-live
+  version if viewing live) — the in-Compare target picker (D52) covers
+  changing either side afterwards.
+- **`version-strip.tsx`** — the drift line (Phase 6, D53) is now a click
+  target, `onOpenDriftCompare`, wired from `page.tsx` to
+  `openCompare({kind:"quoteSnapshot", quoteId, label}, {kind:"version",
+  number})`. Omitting the prop keeps the plain-text behaviour (defensive
+  default for any caller not yet updated).
+- **Make-live dialog reuse (`finance/make-live-dialog.tsx`) — NOT done this
+  phase, flagged rather than silently skipped.** The spec's own
+  instructions rank this explicitly LOWER priority than the drift wiring
+  above and allow deferring it "if it's risky or would require redesigning
+  the dialog beyond what conflicts already show." `MakeLiveDialog` today is
+  a small, already-shipped, already-tested surface (a one-sentence "before"
+  state, a warehouse-`conflicts: string[]` list "after" — nothing money-
+  shaped at all); embedding a live money-bridge preview would mean fetching
+  `compareVersions` inside the dialog, a new loading/error state, and a
+  materially bigger component for a "nice to have" pre-flip preview — real
+  regression risk to a stable surface for a feature this phase's time budget
+  didn't allow doing carefully. Left for a follow-up.
+
+### What's deferred, honestly
+
+- **Row-level drift** (side A = a sent quote's actual line items, not just
+  its totals) — see "Why the drift entry point is totals-only" above; needs
+  a new per-quote row snapshot, not a reuse of the LIVE-only
+  `projectSnapshots` mechanism.
+- **Make-live dialog reuse** — see above; a real, scoped follow-up, not
+  abandoned.
+- **A client-facing "variation" PDF export of a Compare** — explicitly OUT
+  OF SCOPE per the issue (a new finance-document type, CLAUDE.md's #987
+  stored-bytes rule applies in full: rendered once, attached, no
+  regeneration, no overwrite — real, separate design work). Logged in
+  [`TODOS.md`](../TODOS.md) under "Project Versioning."
+- **Per-tab badges / a literal pixel waterfall** — the mockup's visual
+  polish, not attempted; the segment-list bridge carries the same substance
+  (D48's actual requirement: traceable, exact, clickable).
+
+### Testing
+
+`convex/lib/versionCompare.test.ts` (the pure module, see above),
+`convex/versionsRead.compareVersions.test.ts` (integration: version-vs-
+version rows+bridge+labels, quoteSnapshot-vs-version totals-only path,
+cross-tenant rejection on a foreign `versionId`). UI component tests
+(jsdom smoke coverage mirroring `model-roi-tab.smoke.test.tsx`'s pattern)
+were not written this phase given the time budget — flagged, not silently
+skipped; `CompareView`'s pure sub-logic (`buildCompareGroups`, the
+step/focus helpers) is straightforward to unit test in a follow-up, and the
+underlying data it renders is already proven correct by the Convex-level
+tests above.
+
 ## What's next (later phases of #1221 — not built yet)
 
 Wiring `ServicesPanel`/Labour and Finance onto `versionId` on both the read
@@ -1312,13 +1512,12 @@ per-version pricing preview instead of its current text note — see that
 follow-up's own "deliberately did NOT build" section); gating
 `applySaleStockOnAdd` to the live version so Sale can eventually be
 re-enabled safely; wiring the "Move existing group to new category"
-dialogs' `versionId`; Compare (#1232), which the drift signal and the
-header pill's disabled stub are both waiting on; surfacing a non-live
-accept's conflicts list (Phase 6's own remaining deferred item); folding
-the unlocked-by-a-person notice (state E) into `VersionStrip`; migrating
-the OLDER switcher's
-remaining surface (FEATUREDOCS/70) off `projectSnapshots` onto
-`projectVersions` entirely (including reconciling `quotes.version`'s
+dialogs' `versionId`; row-level drift and the make-live-dialog bridge reuse
+(Phase 5b's own two deferred items, above); surfacing a non-live accept's
+conflicts list (Phase 6's own remaining deferred item); folding the
+unlocked-by-a-person notice (state E) into `VersionStrip`; migrating the
+OLDER switcher's remaining surface (FEATUREDOCS/70) off `projectSnapshots`
+onto `projectVersions` entirely (including reconciling `quotes.version`'s
 revision-number counter with `projectVersions.number`, the two-numbering-
 schemes wart Phase 6 deliberately left in place rather than trying to
 unify under time pressure); narrowing `projects.liveVersionId` to required

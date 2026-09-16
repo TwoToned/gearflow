@@ -160,7 +160,7 @@ describe("VersionStrip smoke", () => {
       expect(screen.queryByText(/Quote total has moved/)).toBeNull();
     });
 
-    it("the drift line is plain text — never a link or button (Compare mode, #1232, is not built)", () => {
+    it("the drift line is plain text when no onOpenDriftCompare handler is wired (defensive default)", () => {
       render(
         <VersionStrip
           {...baseProps({
@@ -173,6 +173,26 @@ describe("VersionStrip smoke", () => {
       const driftText = screen.getByText(/Quote total has moved/);
       expect(driftText.closest("a")).toBeNull();
       expect(driftText.closest("button")).toBeNull();
+    });
+
+    // #1232 (Phase 5b, D53) — the drift line's real click target: opens
+    // Compare with side A = the sent quote's frozen money snapshot.
+    it("becomes a button that calls onOpenDriftCompare when wired", () => {
+      const onOpenDriftCompare = vi.fn();
+      render(
+        <VersionStrip
+          {...baseProps({
+            isViewingVersion: true,
+            viewingVersion: VIEWING_VERSION,
+            quoteDrift: { quoteLabel: "RVLT-2026-0087 v3", driftAmount: 1240 },
+            onOpenDriftCompare,
+          })}
+        />,
+      );
+      const driftButton = screen.getByText(/Quote total has moved/).closest("button");
+      expect(driftButton).toBeTruthy();
+      fireEvent.click(driftButton!);
+      expect(onOpenDriftCompare).toHaveBeenCalledTimes(1);
     });
   });
 });

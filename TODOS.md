@@ -500,6 +500,26 @@ Full feature doc: [FEATUREDOCS/47-cross-type-equipment-unification.md].
 **Estimate:** human ~5-6 weeks / CC ~1-2 days
 **Priority:** P3 (re-evaluate on trigger)
 
+## Project Versioning
+
+### Compare as a Client-Facing Variation PDF
+**What:** Export a Compare-mode comparison (#1232) as a client-facing "variation" document
+— the money bridge + changed rows, formatted for a client to read, not just an internal
+diff view.
+**Why:** The obvious next ask once Compare ships — a PM who's just built the bridge showing
+"why v3 costs $2,880 more" naturally wants to hand that explanation to the client instead of
+re-explaining it over email/phone.
+**Why deferred (not an oversight):** This is a NEW finance document type, so CLAUDE.md's
+stored-bytes rule (#987) applies in full — rendered once, attached to a row, no
+regeneration path, no overwrite, same as quote/invoice PDFs. That's real, separate design
+work (a new `financeArtifacts`-style attach point, a new react-pdf template, a decision on
+whether a variation is versioned itself), explicitly out of scope for #1232's Phase 5b.
+**Context:** `convex/lib/versionCompare.ts`'s row classification + money bridge already
+compute everything a variation PDF's content would need — this would be a rendering/
+storage layer on top, not new diff logic.
+**Depends on:** Compare mode (#1232, shipped this phase).
+**Priority:** P2
+
 ## Project Management
 
 ### ~~Configurable Auto-Incrementing Project Codes~~ ✅ SHIPPED

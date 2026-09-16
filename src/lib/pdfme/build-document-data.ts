@@ -40,6 +40,7 @@ import type { OrgDocumentSettings } from "@/lib/org-settings-types";
 import { computeValidUntil, resolveQuoteValidityDays } from "@/lib/quote-validity";
 import { resolvePaymentTermsDays } from "@/lib/invoice-terms";
 import { getCountry } from "@/lib/countries";
+import { composeProjectWithVersion } from "@/lib/project-version-compose";
 
 const DEFAULT_DOC_COLOR = "#0d4f4f";
 
@@ -135,6 +136,33 @@ export function resolveInvoiceAmountDue(input: {
   };
 }
 
+/**
+ * #1233 (Phase 6) — `versionsRead.getVersion`'s `planFields` are Convex-shaped
+ * (date fields are epoch-ms `number`s, matching `projectVersions`'/`projects`'
+ * own schema.ts types). `projectScalars` here is PRISMA-shaped (`ProjectRow`,
+ * `src/lib/projects-read.ts`'s `mapProject`), where the SAME fields are
+ * `Date | null` — every downstream reader in this file (`formatDate`,
+ * `getProjectWindow`, `.getTime()`) expects that shape. Composing the raw
+ * numbers straight on top of `projectScalars` (the way the CLIENT-side
+ * `composeProjectWithVersion` correctly does, since ITS consumers already
+ * expect epoch-ms) would silently hand a `number` where a `Date` is expected.
+ * This converts just the date-shaped keys before composing — the ONE place
+ * this conversion happens, so it can't drift between the two call sites that
+ * would otherwise need it.
+ */
+const PLAN_FIELD_DATE_KEYS = [
+  "rentalStartDate", "rentalEndDate", "projectStartDate", "projectEndDate",
+  "loadInDate", "eventStartDate", "eventEndDate", "loadOutDate",
+] as const;
+function toDocumentShapedPlanFields(planFields: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...planFields };
+  for (const key of PLAN_FIELD_DATE_KEYS) {
+    const v = out[key];
+    out[key] = typeof v === "number" ? new Date(v) : null;
+  }
+  return out;
+}
+
 /** Serialize Decimal fields to numbers (Prisma v6 Decimal type) */
 function serializeDecimals<T>(obj: T): T {
   return JSON.parse(
@@ -205,6 +233,24 @@ export async function buildDocumentData(
      * caller that hasn't been updated to pass one yet.
      */
     invoiceId?: string;
+    /**
+     * #1233 (Phase 6, "Project versioning v2") — the SPECIFIC quote this
+     * render represents (`docType: "quote"` only), mirroring `invoiceId`
+     * above 1:1. Without this, a quote render always reconstructed the LIVE
+     * project's equipment/groups/categories and read `project.subtotal`/
+     * `total`/etc — only ever correct when the quote being sent targets the
+     * live version. When set: the quote's OWN `versionId` (from
+     * `financeArtifacts.quoteArtifactContext`) is threaded through
+     * `buildDocumentLineItemData` so a NON-live version's quote renders THAT
+     * version's own content, and the quote's OWN frozen money snapshot
+     * (subtotal/discountPercent/discountAmount/taxAmount/total, built once at
+     * send by `buildQuoteSnapshot`) wins over the live project's figures for
+     * the totals block — the same "this specific document's money, not the
+     * live project's" pattern `invoiceId` already established. Omitted ⇒
+     * unchanged legacy behaviour (live project state) — the DRAFT PREVIEW
+     * render never sets this (there is no sent document yet to represent).
+     */
+    quoteId?: string;
   }
 ): Promise<DocumentData> {
   const expandProjectGroups = options?.expandProjectGroups ?? false;
@@ -263,6 +309,47 @@ export async function buildDocumentData(
 
   if (!projectScalars) {
     throw new Error(`Project ${projectId} not found`);
+  }
+
+  // #1233 (Phase 6) — the SPECIFIC quote's own version + frozen money
+  // snapshot, mirroring the `invoiceContext` fetch further down. Fetched
+  // early so the plan-field overlay below can run before `projectRow` is
+  // assembled — everything downstream (dates/client/location/discount/tax)
+  // reads off the (possibly overlaid) `projectScalars` from this point on.
+  const quoteContext =
+    docType === "quote" && options?.quoteId
+      ? await (
+          await getConvexClient()
+        ).query(api.financeArtifacts.quoteArtifactContext, {
+          quoteId: options.quoteId,
+          orgId: organizationId,
+        })
+      : null;
+  let effectiveProjectScalars = projectScalars;
+  if (quoteContext?.versionId) {
+    const version = await (
+      await getConvexClient()
+    ).query(api.versionsRead.getVersion, {
+      organizationId,
+      projectId,
+      versionId: quoteContext.versionId,
+    });
+    // A missing/foreign version (shouldn't happen — `quoteContext.versionId`
+    // came from an org-checked Convex row a moment ago) or the LIVE version
+    // itself (nothing to overlay — `projectScalars` already IS the live
+    // plan) leaves `projectScalars` untouched.
+    if (version && !version.isLive) {
+      // `ProjectRow` has no index signature (unlike the Convex-doc shape
+      // `composeProjectWithVersion`'s other, client-side caller passes), so
+      // it doesn't structurally satisfy the generic's `Record<string,
+      // unknown>` constraint — the overlay itself (a plain object spread) is
+      // exactly as type-safe either way; this is a shape-widening cast, not
+      // a behaviour change.
+      effectiveProjectScalars = composeProjectWithVersion(
+        projectScalars as unknown as Record<string, unknown>,
+        toDocumentShapedPlanFields(version.planFields),
+      ) as unknown as typeof projectScalars;
+    }
   }
 
   // crewAssignments (call-sheet only) are Convex-only. Re-source the same shape the
@@ -336,13 +423,13 @@ export async function buildDocumentData(
     });
   }
 
-  const projectRow = { ...projectScalars, subHires: subHireRows, crewAssignments: crewAssignmentRows };
+  const projectRow = { ...effectiveProjectScalars, subHires: subHireRows, crewAssignments: crewAssignmentRows };
 
   // The line-item tree + categories come from Convex via buildDocumentLineItemData
   // (model/supplier/kit/asset/bulkAsset + per-line category/group selects, units in
   // the SELECT shape). client / location / subHire supplier are also Convex.
   const [docData, locationMap, supplierMap, clientRaw, clientContacts] = await Promise.all([
-    buildDocumentLineItemData(projectId, organizationId),
+    buildDocumentLineItemData(projectId, organizationId, quoteContext?.versionId ?? undefined),
     getLocationMap(organizationId),
     getSupplierMap(organizationId),
     projectRow.clientId ? getClientById(projectRow.clientId) : Promise.resolve(null),
@@ -524,6 +611,18 @@ export async function buildDocumentData(
   // Skipped when rendering a DEPOSIT/BALANCE/CREDIT invoice's own summary
   // line(s) — those already ARE the whole invoice; appending the project's
   // live services here would silently show more than that invoice bills for.
+  //
+  // #1233 (Phase 6) — KNOWN, DOCUMENTED GAP: `getProjectServicesByOrg` is
+  // NOT version-aware (it predates versioning entirely and filters by
+  // `projectId` only), so a quote rendered for a NON-live version still
+  // shows the project's LIVE services here, not that version's own. This
+  // matches FEATUREDOCS/76's existing "Labour/Services were never threaded
+  // onto versionId" gap (Phase 5) — equipment/groups/categories above ARE
+  // fully version-scoped via `buildDocumentLineItemData`'s `versionId`, only
+  // this services append is not. Closing it means wiring
+  // `projectServices.listByProject`'s OWN already-version-aware `versionId`
+  // arg through here too — left for the same follow-up that wires the
+  // Labour tab, not attempted in this phase.
   if (usesLiveBreakdown) {
     const billableServices = (await getProjectServicesByOrg(organizationId))
       .filter(
@@ -951,20 +1050,22 @@ export async function buildDocumentData(
     site_contact_phone: serialized.siteContactPhone || "",
     site_contact_email: serialized.siteContactEmail || "",
 
-    // Financial — a specific invoice's own frozen snapshot wins over the
-    // live project figures (bug fix, see `invoiceId` doc above): a
-    // DEPOSIT/BALANCE/CREDIT invoice's total is a fraction of the project's,
-    // and even a FULL invoice's total is frozen at whenever it was created,
-    // which can predate a later line-item edit.
-    subtotal: invoiceContext ? invoiceContext.subtotal : Number(serialized.subtotal) || 0,
-    discount_percent: Number(serialized.discountPercent) || 0,
-    discount_amount: Number(serialized.discountAmount) || 0,
+    // Financial — a specific invoice's (or #1233 quote's) own frozen
+    // snapshot wins over the live project figures (bug fix, see `invoiceId`
+    // doc above / `quoteId` doc above): a DEPOSIT/BALANCE/CREDIT invoice's
+    // total is a fraction of the project's, a quote may target a NON-live
+    // version with its own discount/tax, and even a FULL invoice's or a
+    // LIVE-version quote's total is frozen at whenever it was created, which
+    // can predate a later line-item edit.
+    subtotal: invoiceContext ? invoiceContext.subtotal : quoteContext ? quoteContext.subtotal : Number(serialized.subtotal) || 0,
+    discount_percent: quoteContext ? quoteContext.discountPercent : Number(serialized.discountPercent) || 0,
+    discount_amount: quoteContext ? quoteContext.discountAmount : Number(serialized.discountAmount) || 0,
     tax_label: (orgSettings.taxLabel as string) || (country?.taxLabel ?? "GST"),
-    tax_amount: invoiceContext ? invoiceContext.taxAmount : Number(serialized.taxAmount) || 0,
+    tax_amount: invoiceContext ? invoiceContext.taxAmount : quoteContext ? quoteContext.taxAmount : Number(serialized.taxAmount) || 0,
     tax_status: taxStatus,
     tax_breakdown: taxBreakdown,
     tax_exempt_reason: client?.taxExemptReason || "",
-    total: invoiceContext ? invoiceContext.total : totalNum,
+    total: invoiceContext ? invoiceContext.total : quoteContext ? quoteContext.total : totalNum,
     // See `resolveInvoiceAmountDue` — a specific invoice's document states
     // its OWN amount owed; only the project-level preview deducts the
     // project's deposit figure.

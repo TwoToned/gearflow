@@ -43544,7 +43544,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "79e4edbea424c1be",
-    "returnsSha": "370ba6c1bf9c6be0",
+    "returnsSha": "ea68290261224cdb",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -43793,10 +43793,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "validityDays",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7aded01b9d5488ea",
+    "argsSha": "25d73492dc11bab2",
     "returnsSha": "ca599837ab6ba347",
     "stability": "tracks-app",
     "summary": null,

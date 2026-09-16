@@ -96,11 +96,29 @@ export const quoteArtifactContext = query({
     await requireService(ctx);
     const quote = await requireQuoteInOrg(ctx, quoteId, orgId);
     const project = await requireProjectInOrg(ctx, quote.projectId, orgId);
+    // #1233 (Phase 6) — a pre-#1233 row has no `versionId` stamped; it
+    // targeted the live version by definition of the OLDER system, so this
+    // falls back to the project's CURRENT live version for rendering. A
+    // stale fallback (if the live pointer has since moved) is the SAME
+    // "unknown, assume live" posture `quoteTargetsLiveVersion` documents.
+    const versionId = quote.versionId ?? project.liveVersionId ?? null;
+    // #1233 — the quote's OWN frozen money snapshot (built once, at send, by
+    // `buildQuoteSnapshot`), NOT the live project's current totals: this is
+    // what makes it safe to render a NON-live version's document (whose
+    // discount/tax may differ from whatever's live right now) and what makes
+    // even a LIVE-version render immune to any drift between send and this
+    // render (#987's "stored bytes" guarantee, extended to the MONEY the
+    // bytes are computed from, not just the bytes themselves).
+    const snapshot = quote.snapshot as
+      | { subtotal?: number; discountPercent?: number; discountAmount?: number; taxAmount?: number; total?: number }
+      | null
+      | undefined;
     return {
       quoteId: quote.id,
       projectId: quote.projectId,
       projectNumber: project.projectNumber,
       version: quote.version,
+      versionId,
       effectiveStatus: effectiveQuoteStatus(quote, now ?? 0),
       label: quoteLabel(project.projectNumber, quote.version),
       // #1080/#1097 — the INTERNAL custom name (distinct from `label` above,
@@ -115,6 +133,11 @@ export const quoteArtifactContext = query({
       sentAt: quote.sentAt ?? quote.publishedAt ?? null,
       quoteDate: quote.quoteDate ?? null,
       validUntil: quote.validUntil ?? null,
+      subtotal: Number(snapshot?.subtotal) || 0,
+      discountPercent: Number(snapshot?.discountPercent) || 0,
+      discountAmount: Number(snapshot?.discountAmount) || 0,
+      taxAmount: Number(snapshot?.taxAmount) || 0,
+      total: Number(snapshot?.total) || 0,
     };
   },
 });

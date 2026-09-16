@@ -77,6 +77,10 @@ export async function generateQuoteArtifact(quoteId: string): Promise<ArtifactRe
     // send (`labelOnDocument`); off by default (design §4.4's "invites the
     // obvious question" reasoning).
     versionSuffix: quote.labelOnDocument && quote.customLabel ? `v${quote.version} · ${quote.customLabel}` : `v${quote.version}`,
+    // #1233 (Phase 6) — renders THIS quote's own targeted `projectVersions`
+    // row + frozen money snapshot, not always the live project's. See
+    // `build-document-data.ts`'s `quoteId` option doc.
+    quoteId,
   });
 
   const fileName = quoteArtifactFileName(quote.projectNumber, quote.version);

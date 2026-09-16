@@ -33078,6 +33078,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "validityDays": {
                         "type": "number"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [

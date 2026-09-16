@@ -46,6 +46,14 @@ export interface ProjectPdfOptions {
    * whole project's. See `buildDocumentData`'s `invoiceId` option.
    */
   invoiceId?: string;
+  /**
+   * #1233 (Phase 6) — the SPECIFIC quote this render represents,
+   * `docType: "quote"` only. Mirrors `invoiceId` 1:1: without this, the
+   * render falls back to the live project's equipment/pricing, which is
+   * only correct when the quote being sent targets the live version. See
+   * `buildDocumentData`'s `quoteId` option.
+   */
+  quoteId?: string;
 }
 
 /**
@@ -69,6 +77,7 @@ export async function generatePdf(
     stampedDates: options?.stampedDates,
     versionSuffix: options?.versionSuffix,
     invoiceId: options?.invoiceId,
+    quoteId: options?.quoteId,
   });
 
   return renderReactPdfTemplate(docType, data, { draftPreview: options?.draftPreview });

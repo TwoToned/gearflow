@@ -837,7 +837,8 @@ function WarehouseProjectPage({
   const kitBatchOutMutation = useServerMutation<KitBatchResult, string[]>({
     mutationFn: (kitIds: string[]) => warehouseWrites.checkOutKitsBatch(projectId, kitIds),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Deployed ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },
@@ -846,7 +847,8 @@ function WarehouseProjectPage({
   const kitBatchInMutation = useServerMutation<KitBatchResult, Array<{ kitId: string; returnCondition: "GOOD" | "DAMAGED" | "MISSING" }>>({
     mutationFn: (kits) => warehouseWrites.checkInKitsBatch(projectId, kits),
     onSuccess: (res) => {
-      if (res.succeeded.length > 0) toast.success(`Returned ${res.succeeded.length} kit${res.succeeded.length === 1 ? "" : "s"}`);
+      // The success toast (with Undo) now fires from inside useWarehouseWrites
+      // (#1222) — a second one here would duplicate it.
       if (res.errors.length > 0) toast.error(`${res.errors.length} kit${res.errors.length === 1 ? "" : "s"} failed: ${res.errors[0].message}`);
       invalidate();
     },

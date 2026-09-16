@@ -1,11 +1,11 @@
 "use client";
 
 import { useMutation, useConvex } from "convex/react";
-import { toast } from "sonner";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
-import { autoStatusToast } from "@/lib/project-status-automation";
+import { useCanDo } from "@/lib/use-permissions";
+import { announceWarehouseWrite, countLabel } from "@/lib/warehouse-undo-toast";
 
 type ReturnCondition = "GOOD" | "DAMAGED" | "MISSING";
 
@@ -26,6 +26,14 @@ export function useWarehouseWrites() {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const convex = useConvex();
+
+  // #1222 — the reverse permission is NOT the forward one, in either direction:
+  // a check_out-only role can deploy but must never be offered Undo on it (the
+  // reverse needs check_in), and the mirror holds for returns. Checked once,
+  // here, so `announceWarehouseWrite()` can OMIT the toast's `action` entirely
+  // rather than show a button that errors.
+  const canUndoDeploy = useCanDo("warehouse", "check_in"); // undoes a checkOut*
+  const canUndoReturn = useCanDo("warehouse", "check_out"); // undoes a checkIn*
 
   const checkOutItemsM = useMutation(api.warehouseWrites.checkOutItems);
   const logAccessoryCheckoutOverrideM = useMutation(api.warehouseWrites.logAccessoryCheckoutOverride);
@@ -61,18 +69,20 @@ export function useWarehouseWrites() {
   };
 
   /**
-   * #1160 — surface a status the server just advanced on its own.
-   *
-   * Done HERE, once, rather than at each warehouse call site: the automation is a
-   * property of the mutation, not of the button that happened to call it, and a
-   * status must never change under an operator without the app saying so. Safe to
-   * apply blindly — `autoStatus` is only ever non-null on the ONE call that
-   * actually crossed the boundary, so a 40-item deploy toasts at most once.
+   * Best-effort kit name for the singular deploy/return toast ("Deployed kit
+   * Pelican Rack A"). The mutation itself returns ids only (no re-read
+   * waterfall — see this file's header comment), so this is a small extra
+   * query purely for toast copy; a failure (or a kit with no name, which the
+   * schema doesn't actually allow but a stale mirror might) falls back to a
+   * generic title rather than blocking or erroring the toast.
    */
-  const announce = <T extends { autoStatus?: string | null }>(res: T): T => {
-    const copy = autoStatusToast(res.autoStatus);
-    if (copy) toast(copy.title, { description: copy.description });
-    return res;
+  const fetchKitName = async (kitId: string): Promise<string | null> => {
+    try {
+      const kit = await convex.query(api.kits.getById, { id: kitId });
+      return kit?.name ?? null;
+    } catch {
+      return null;
+    }
   };
 
   return {
@@ -85,15 +95,37 @@ export function useWarehouseWrites() {
       items: Array<{ lineItemId: string; assetId?: string; quantity?: number; notes?: string; includeAccessoryIds?: string[] }>,
       includeAccessories = true,
     ): Promise<{ updatedLineIds: string[]; autoStatus: string | null }> => {
-      return announce(await checkOutItemsM({
-        orgId: requireOrg(),
+      const org = requireOrg();
+      const res = await checkOutItemsM({
+        orgId: org,
         projectId,
         items,
         includeAccessories,
         auditIds: items.map(() => createId()),
         now: Date.now(),
         actor: actor(),
-      }));
+      });
+      const n = res.updatedLineIds.length;
+      if (n === 0) return res;
+      return announceWarehouseWrite(res, {
+        doneTitle: `Deployed ${countLabel(n, "item")}`,
+        undoneTitle: `Undone — ${countLabel(n, "item")} back in Prepped`,
+        canUndo: canUndoDeploy,
+        performUndo: async () => {
+          await undeployItemsM({
+            orgId: org,
+            projectId,
+            // Reverses the same items — undeployItemsCore already reverses the
+            // accessory cascade checkoutItemsCore made (reverseAccessoryChildren);
+            // nothing extra to pass.
+            items: items.map((it) => ({ lineItemId: it.lineItemId, assetId: it.assetId, quantity: it.quantity })),
+            auditIds: items.map(() => createId()),
+            revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined,
+            now: Date.now(),
+            actor: actor(),
+          });
+        },
+      });
     },
 
     /** Records the Deploy accessory gate's override — a typed (or manager-tier
@@ -121,15 +153,34 @@ export function useWarehouseWrites() {
       projectId: string,
       kitId: string,
     ): Promise<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }> => {
-      return announce(await checkOutKitM({ orgId: requireOrg(), projectId, kitId, auditId: createId(), now: Date.now(), actor: actor() }));
+      const org = requireOrg();
+      const res = await checkOutKitM({ orgId: org, projectId, kitId, auditId: createId(), now: Date.now(), actor: actor() });
+      const kitName = await fetchKitName(kitId);
+      return announceWarehouseWrite(res, {
+        doneTitle: kitName ? `Deployed kit ${kitName}` : "Deployed kit",
+        undoneTitle: "Undone — kit back in Prepped",
+        canUndo: canUndoDeploy,
+        performUndo: async () => {
+          await undeployKitsBatchM({
+            orgId: org,
+            projectId,
+            kitIds: [kitId],
+            auditId: createId(),
+            revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined,
+            now: Date.now(),
+            actor: actor(),
+          });
+        },
+      });
     },
 
     checkOutKitsBatch: async (
       projectId: string,
       kitIds: string[],
     ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }> => {
-      return announce(await checkOutKitsBatchM({
-        orgId: requireOrg(),
+      const org = requireOrg();
+      const res = await checkOutKitsBatchM({
+        orgId: org,
         projectId,
         kitIds,
         // One audit id per input kit — the mutation dedupes and only consumes as many
@@ -137,7 +188,27 @@ export function useWarehouseWrites() {
         auditIds: kitIds.map(() => createId()),
         now: Date.now(),
         actor: actor(),
-      }));
+      });
+      if (res.succeeded.length === 0) return res;
+      return announceWarehouseWrite(res, {
+        doneTitle: `Deployed ${countLabel(res.succeeded.length, "kit")}`,
+        undoneTitle: `Undone — ${countLabel(res.succeeded.length, "kit")} back in Prepped`,
+        canUndo: canUndoDeploy,
+        performUndo: async () => {
+          // Undo the kits that actually succeeded, never the requested ids —
+          // undoing a partial batch must not attempt to reverse a kit that
+          // never moved.
+          await undeployKitsBatchM({
+            orgId: org,
+            projectId,
+            kitIds: res.succeeded,
+            auditId: createId(),
+            revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined,
+            now: Date.now(),
+            actor: actor(),
+          });
+        },
+      });
     },
 
     quickAddAndCheckOut: async (
@@ -180,14 +251,33 @@ export function useWarehouseWrites() {
       projectId: string,
       items: Array<{ lineItemId: string; assetId?: string; returnCondition: ReturnCondition; quantity?: number; notes?: string }>,
     ): Promise<{ updatedLineIds: string[]; autoStatus: string | null }> => {
-      return announce(await checkInItemsM({
-        orgId: requireOrg(),
+      const org = requireOrg();
+      const res = await checkInItemsM({
+        orgId: org,
         projectId,
         items,
         auditIds: items.map(() => createId()),
         now: Date.now(),
         actor: actor(),
-      }));
+      });
+      const n = res.updatedLineIds.length;
+      if (n === 0) return res;
+      return announceWarehouseWrite(res, {
+        doneTitle: `Checked in ${countLabel(n, "item")}`,
+        undoneTitle: `Undone — ${countLabel(n, "item")} back in Deployed`,
+        canUndo: canUndoReturn,
+        performUndo: async () => {
+          await unreturnItemsM({
+            orgId: org,
+            projectId,
+            items: items.map((it) => ({ lineItemId: it.lineItemId, assetId: it.assetId, quantity: it.quantity })),
+            auditIds: items.map(() => createId()),
+            revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined,
+            now: Date.now(),
+            actor: actor(),
+          });
+        },
+      });
     },
 
     undeployItems: async (
@@ -243,20 +333,56 @@ export function useWarehouseWrites() {
       kitId: string,
       returnCondition: ReturnCondition = "GOOD",
     ): Promise<{ kitId: string; affectedKitIds: string[]; autoStatus: string | null }> => {
-      return announce(await checkInKitM({ orgId: requireOrg(), projectId, kitId, returnCondition, auditId: createId(), now: Date.now(), actor: actor() }));
+      const org = requireOrg();
+      const res = await checkInKitM({ orgId: org, projectId, kitId, returnCondition, auditId: createId(), now: Date.now(), actor: actor() });
+      const kitName = await fetchKitName(kitId);
+      return announceWarehouseWrite(res, {
+        doneTitle: kitName ? `Checked in kit ${kitName}` : "Checked in kit",
+        undoneTitle: "Undone — kit back in Deployed",
+        canUndo: canUndoReturn,
+        performUndo: async () => {
+          await unreturnKitsBatchM({
+            orgId: org,
+            projectId,
+            kitIds: [kitId],
+            auditId: createId(),
+            revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined,
+            now: Date.now(),
+            actor: actor(),
+          });
+        },
+      });
     },
 
     checkInKitsBatch: async (
       projectId: string,
       kits: Array<{ kitId: string; returnCondition: ReturnCondition }>,
     ): Promise<{ succeeded: string[]; errors: { kitId: string; message: string }[]; autoStatus: string | null }> => {
-      return announce(await checkInKitsBatchM({
-        orgId: requireOrg(),
+      const org = requireOrg();
+      const res = await checkInKitsBatchM({
+        orgId: org,
         projectId,
         items: kits.map((k) => ({ ...k, auditId: createId() })),
         now: Date.now(),
         actor: actor(),
-      }));
+      });
+      if (res.succeeded.length === 0) return res;
+      return announceWarehouseWrite(res, {
+        doneTitle: `Checked in ${countLabel(res.succeeded.length, "kit")}`,
+        undoneTitle: `Undone — ${countLabel(res.succeeded.length, "kit")} back in Deployed`,
+        canUndo: canUndoReturn,
+        performUndo: async () => {
+          await unreturnKitsBatchM({
+            orgId: org,
+            projectId,
+            kitIds: res.succeeded,
+            auditId: createId(),
+            revertAutoAdvanceAuditId: res.autoStatusAuditId ?? undefined,
+            now: Date.now(),
+            actor: actor(),
+          });
+        },
+      });
     },
 
     clearPrepContainer: async (projectId: string, containerName: string): Promise<{ success: true }> => {

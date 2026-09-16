@@ -187,4 +187,26 @@ When a project has **no rental dates**, availability is still calculated:
 
    **Billing is the one deliberate exception** — `FinanceTabSlot`/`inclusiveCalendarDays`/`computeGroupSuggestedPrice` call sites keep reading raw rental dates, because pricing runs on the chargeable window, never the gear-committed one (see `project-dates.ts`). Regression tests: `src/lib/project-detail-reconstruct.test.ts` ("uses the gear-committed project window, not raw rental dates…") and the existing per-file Convex test suites (`convex/lineItemWrites.test.ts`, `convex/reservationConflicts.test.ts`, `convex/projectVersionsWrites.test.ts`, `convex/groupTemplatesWrites.test.ts`, `convex/projectLineItems.test.ts`), which all continued passing unchanged — this class of fix corrects which window is checked, not the pass/fail math those tests already cover with dateless/rental-only fixtures.
 
+6. **A `type: "SALE"` line is never rental demand.** Found as a live bug (2026-09):
+   every "booked" / "demand" sum across the availability + overbooking stack summed
+   ALL non-cancelled, non-sub-hire line items for a model — including `SALE` lines —
+   so adding a `NEW_STOCK` sale line (which only decrements `Model.saleStockQuantity`,
+   a wholly separate pool per WS11 #950) inflated demand against the model's *rental*
+   assets/bulk stock and could pencil a phantom overbooking that had nothing to do with
+   rental availability. A `FROM_RENTAL_STOCK` sale line has the mirror problem: the unit
+   is already removed from the rental pool at sale time (asset → `SOLD` / `bulkAsset`
+   `totalQuantity` decremented, `convex/lib/saleStock.ts`), which `effectiveStock`
+   already reflects — counting the line as booked too would double-subtract it.
+   Every "booked"/demand computation now explicitly excludes `li.type === "SALE"`
+   lines, alongside the existing `CANCELLED`/sub-hire exclusions:
+   `src/lib/overbooking-core.ts` (`sumBookingsByModel`, `relevantOverbookModelIds`,
+   `reconstructOverbookedStatus`'s `relevantItems`), `src/lib/availability.ts`
+   (`computeOverbookedStatus`'s `relevantItems`), `convex/lib/availabilityCore.ts`
+   (`computeModelAvailability`'s write-time enforcement), `src/server/line-items.ts`
+   (`checkAvailability`'s add-form pre-check), and `convex/lib/overbookingBoard.ts`
+   (`isRelevantDemandLine`, feeding the Overbookings & Gaps board's gear-shortage
+   sections — see FEATUREDOCS/65). The "Sale stock to procure" board section
+   (`computeSaleStockToProcure`) is unaffected — it already keyed off `saleMode`
+   specifically and is the correct place `NEW_STOCK` shortfalls surface.
+
 5. **`patchNative` (the ordinary edit-line-item mutation) must validate a client-supplied FK the same way every other browser-direct line-item mutation does.** Found alongside the above (2026-09): `patchNative` had NO `assertRefInOrg` calls at all — unlike `addNative`/`addLineItemSmartNative`, which org-validate `modelId`/`assetId`/`bulkAssetId`/`groupId`/`categoryId`/`supplierId` before writing them (`by_cuid` is a GLOBAL index, so an unchecked FK can point at another org's row). It also had no kit-membership/status/double-booking check when `assetId` was being reassigned to a genuinely different asset — unlike the dedicated `swapLineItemAsset` mutation, which exists specifically to run those checks. Both are now fixed directly in `patchNative`: the same `assertRefInOrg` block as `addNative`, plus an unconditional (no `allowOverbook` escape — these are hard invariants on which physical asset a line references, not soft stock-count warnings) reassignment check mirroring `swapLineItemAsset`, that only runs when the effective new `assetId` actually differs from the line's current one.

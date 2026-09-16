@@ -46,7 +46,7 @@ import {
   unsellSerializedAsset,
   type SaleActor,
 } from "./lib/saleStock";
-import { liveRows, requireLiveVersionId, resolveLiveVersionIdForProject } from "./lib/versionScope";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /** Fetch the line's parent project, org-checked — every gate site needs the
  *  project's `status` to resolve its lock tier. */
@@ -1004,12 +1004,15 @@ export const patchManyNative = mutation({
   },
 });
 
-/** Next sort order for a project's LIVE lines (replica of nextLineSort).
- *  LIVE-ONLY (#1228). */
-async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string): Promise<number> {
+/** Next sort order for a project's lines in ONE version (replica of
+ *  projectLineItems.ts's own nextLineSort). #1221 follow-up: takes an
+ *  explicit `versionId` (defaulting to live, resolved by the caller via
+ *  `resolveWriteVersionId`) instead of always resolving live itself — a new
+ *  line landing on a non-live version must be sorted among THAT version's
+ *  own siblings, not live's. */
+async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string, versionId: string): Promise<number> {
   // desc-first on by_versionId_sortOrder (1 doc) instead of collecting all the
   // version's lines to reduce the max (O(N) per add, O(N^2) across a bulk add).
-  const versionId = await resolveLiveVersionIdForProject(ctx, projectId, organizationId);
   const top = await ctx.db
     .query("projectLineItems")
     .withIndex("by_versionId_sortOrder", (q) => q.eq("versionId", versionId))
@@ -1282,21 +1285,29 @@ export const addCustomNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the version
+    // this new line lands on, defaulting to live when absent (additive-only,
+    // same "optional versionId" shape Phase 2 gave every read). Validated
+    // against `project` (same org + project) by resolveWriteVersionId — a
+    // caller can't smuggle a line onto a foreign project's version.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, actor: suppliedActor, auditId, emitSideEffects, versionId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
     await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
     const actor = await resolveActor(ctx, suppliedActor);
     const project = await requireLineProjectInOrg(ctx, projectId, organizationId); // client projectId — must be the caller's org
+    const targetVersionId = await resolveWriteVersionId(ctx, project, versionId);
 
     // Adding is structural — never gated. While pricing is locked, a new item
     // still defaults to $0 (server-enforced, not just a client suggestion — a
     // browser-direct caller must not be able to smuggle a real price into a
-    // confirmed quote).
-    const defaultToZero = defaultsToZeroOnInsert(project);
+    // confirmed quote). #1221: only the LIVE version's money is ever gated —
+    // an add targeting a non-live version keeps its real price regardless.
+    const defaultToZero = defaultsToZeroOnInsert(project, targetVersionId);
     if (defaultToZero) {
       fields.unitPrice = 0;
       fields.discount = undefined;
@@ -1323,12 +1334,12 @@ export const addCustomNative = mutation({
     const dup = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dup) throw new ConvexError("Line item already exists");
 
-    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId, targetVersionId);
     await ctx.db.insert("projectLineItems", {
       id,
       organizationId,
       projectId,
-      versionId: requireLiveVersionId(project),
+      versionId: targetVersionId,
       lineageId: id,
       type: "EQUIPMENT",
       isCustomItem: true,
@@ -1451,9 +1462,11 @@ export const addNative = mutation({
     // reaches an audit row. See `src/lib/api/privileged-args.ts`'s
     // `justification` policy row.
     justification: v.optional(v.string()),
+    // #1221 follow-up — see addCustomNative's identical note.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, accessoryPlan, allowOverbook, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, fields, includeAccessories, accessoryPlan, allowOverbook, actor: suppliedActor, auditId, versionId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1466,12 +1479,14 @@ export const addNative = mutation({
     // (stamped with their org) into ANOTHER org's project, which recalcProjectTotals
     // (collects lines by projectId, no org filter) would sweep into that org's totals.
     const addProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    const targetVersionId = await resolveWriteVersionId(ctx, addProject, versionId);
     // Gear-committed window, not raw rental dates — see project-window.ts.
     const addProjectWindow = getProjectWindow(addProject);
 
     // Adding is structural — never gated. While pricing is locked, a new line
-    // still defaults to $0 (server-enforced).
-    const defaultToZero = defaultsToZeroOnInsert(addProject);
+    // still defaults to $0 (server-enforced). #1221: never gated when the
+    // target is a non-live version (defaultsToZeroOnInsert's own gate).
+    const defaultToZero = defaultsToZeroOnInsert(addProject, targetVersionId);
     if (defaultToZero) {
       fields.unitPrice = 0;
       fields.discount = undefined;
@@ -1582,12 +1597,12 @@ export const addNative = mutation({
 
     // Mirrors createLineItem exactly (sortOrder in-mutation, no TOCTOU; permanent
     // accessories expanded as child lines atomically via the shared helper).
-    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId, targetVersionId);
     await ctx.db.insert("projectLineItems", {
       id,
       organizationId,
       projectId,
-      versionId: requireLiveVersionId(addProject),
+      versionId: targetVersionId,
       lineageId: id,
       ...fields,
       lineTotal: computedLineTotal ?? undefined,
@@ -1611,6 +1626,7 @@ export const addNative = mutation({
         organizationId,
         projectId,
         accessoryPlan: (accessoryPlan as AccessoryPlan | undefined) ?? null,
+        versionId: targetVersionId,
       });
     }
 
@@ -1713,6 +1729,10 @@ export const updateAccessoryPlanNative = mutation({
       pricingType: line.pricingType,
       organizationId,
       projectId: line.projectId,
+      // #1221 follow-up — reconciled children must stay in the SAME version
+      // as the parent line they belong to (the line's own already-stamped
+      // versionId), never re-derived from "live".
+      versionId: line.versionId,
     }, accessoryPlan);
 
     await writeActivityLog(ctx, {
@@ -1780,9 +1800,11 @@ export const addKitNative = mutation({
     // ALWAYS resolved in-mutation from orgSettings — a client value is never trusted.
     // Remove once the arg-less app image is deployed (expand-contract CONTRACT step).
     orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    // #1221 follow-up — see addCustomNative's identical note.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
-  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, discountMode, taxRate, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, organizationId, projectId, kitId, unitPrice, discount, discountMode, taxRate, pricingMode, groupName, categoryId, groupId, kitLabel, emitActivity, actor: suppliedActor, auditId, versionId, now }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, organizationId, "project", "manage_line_items");
@@ -1791,10 +1813,12 @@ export const addKitNative = mutation({
     // The client supplies projectId; verify it's the caller's org before reading it or
     // sweeping its lines (by_cuid is global) — same guard addNative applies.
     const kitProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    const targetVersionId = await resolveWriteVersionId(ctx, kitProject, versionId);
 
     // Adding is structural — never gated. While pricing is locked, a new kit
-    // still defaults to $0 (server-enforced).
-    const defaultToZero = defaultsToZeroOnInsert(kitProject);
+    // still defaults to $0 (server-enforced). #1221: never gated for a
+    // non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(kitProject, targetVersionId);
     const effectiveUnitPrice = defaultToZero ? 0 : unitPrice;
     const effectiveDiscount = defaultToZero ? undefined : discount;
     // #1012: no amount, no entry shape.
@@ -1854,6 +1878,9 @@ export const addKitNative = mutation({
       id, organizationId, projectId, kitId, unitPrice: effectiveUnitPrice, discount: effectiveDiscount,
       discountMode: effectiveDiscountMode, taxRate: effectiveTaxRate, pricingMode, groupName, categoryId, groupId, now,
       pricedUnderLock: defaultToZero,
+      // Already resolved + validated above — passed straight through so the
+      // core doesn't re-resolve (and silently fall back to live) underneath us.
+      versionId: targetVersionId,
     });
 
     // Parity with the deleted addKitLineItem: when the client can't resolve the kit
@@ -2050,11 +2077,13 @@ export const addLineItemSmartNative = mutation({
     // its own server tail still emits during the deploy window; the new app/browser
     // passes emitSideEffects:true once its tail is conditionalized off. Expand-contract.
     emitSideEffects: v.optional(v.boolean()),
+    // #1221 follow-up — see addCustomNative's identical note.
+    versionId: v.optional(v.string()),
     now: v.number(),
   },
   handler: async (ctx, {
     id, organizationId, projectId, fields, allowOverbook, forceSeparate, includeAccessories, accessoryPlan,
-    actor: suppliedActor, auditId, emitSideEffects, now,
+    actor: suppliedActor, auditId, emitSideEffects, versionId, now,
   }) => {
     await assertWritesEnabled(ctx, "lineItem");
     await enforceBrowserWriteLimit(ctx);
@@ -2067,6 +2096,7 @@ export const addLineItemSmartNative = mutation({
     // Client-supplied projectId: prove it's the caller's org before reading/sweeping its
     // lines (by_cuid + by_projectId are GLOBAL). Then bound-check the money inputs.
     const smartProject = await requireLineProjectInOrg(ctx, projectId, organizationId);
+    const targetVersionId = await resolveWriteVersionId(ctx, smartProject, versionId);
     // Gear-committed window, not raw rental dates — see project-window.ts.
     const smartProjectWindow = getProjectWindow(smartProject);
 
@@ -2076,7 +2106,8 @@ export const addLineItemSmartNative = mutation({
     // the existing line's own price) — resetting an already-priced existing line to
     // $0 just because its quantity grew would be a worse surprise than the lock is
     // meant to prevent, but accepting the override would smuggle a real price past it.
-    const defaultToZero = defaultsToZeroOnInsert(smartProject);
+    // #1221: never gated for a non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(smartProject, targetVersionId);
 
     assertLineMoneyFields(fields); // reject NaN/Infinity/out-of-range before it reaches recalc
     assertLineItemFields(fields); // description/subhireOrderNumber length bounds (R-8.6.2)
@@ -2166,8 +2197,10 @@ export const addLineItemSmartNative = mutation({
     // `type === "EQUIPMENT"`; a SALE line (any saleMode) always falls through to a fresh
     // insert below, never merging into an EQUIPMENT line or another SALE line.
     if (fields.type === "EQUIPMENT" && fields.modelId && !fields.assetId && !forceSeparate) {
-      // LIVE-ONLY (#1228) — a smart-add targets the live plan.
-      const projectLines = (await liveRows(ctx, smartProject, "projectLineItems")).filter(
+      // #1221: merge-dedup against the TARGET version's own lines (was
+      // LIVE-ONLY, #1228) — a smart-add aimed at a non-live version must
+      // merge into THAT version's matching line, never live's.
+      const projectLines = (await versionRows(ctx, "projectLineItems", targetVersionId)).filter(
         (li) => li.organizationId === organizationId,
       );
       const existing = projectLines.find(
@@ -2330,12 +2363,12 @@ export const addLineItemSmartNative = mutation({
     const dupLine = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (dupLine) throw new ConvexError("Line item already exists");
 
-    const sortOrder = await nextLineSort(ctx, projectId, organizationId);
+    const sortOrder = await nextLineSort(ctx, projectId, organizationId, targetVersionId);
     await ctx.db.insert("projectLineItems", {
       id,
       organizationId,
       projectId,
-      versionId: requireLiveVersionId(smartProject),
+      versionId: targetVersionId,
       lineageId: id,
       type: fields.type,
       saleMode: fields.type === "SALE" ? fields.saleMode : undefined,
@@ -2381,6 +2414,7 @@ export const addLineItemSmartNative = mutation({
         organizationId,
         projectId,
         accessoryPlan: (accessoryPlan as AccessoryPlan | undefined) ?? null,
+        versionId: targetVersionId,
       });
     }
 

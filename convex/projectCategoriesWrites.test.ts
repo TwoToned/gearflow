@@ -331,3 +331,59 @@ describe("projectCategoriesWrites.reorderCategoriesNative", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1221 follow-up — createCategoryNative now takes an optional `versionId`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectCategoriesWrites — #1221 versionId follow-up", () => {
+  const args = { id: "c1", orgId: ORG, projectId: "p1", name: "Audio", now: NOW, actor: ACTOR, auditId: "log1" };
+
+  async function seedSecondVersion(t: ReturnType<typeof makeT>) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: "v-p1-b", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+  }
+
+  test("defaults to the live version when versionId is absent", async () => {
+    const t = makeT();
+    await member(t, "member");
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, args);
+    expect(res.sortOrder).toBe(0);
+    const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "c1")).first());
+    expect(cat?.versionId).toBe("v-p1");
+  });
+
+  test("targets the named non-live version, sortOrder scoped to it", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedSecondVersion(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, { ...args, versionId: "v-p1-b" });
+    expect(res.sortOrder).toBe(0); // independent bucket from v-p1's own categories
+    const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "c1")).first());
+    expect(cat?.versionId).toBe("v-p1-b");
+  });
+
+  test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pOther", organizationId: "org_2", projectNumber: "PO", name: "Foreign", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW, liveVersionId: "v-other" });
+      await ctx.db.insert("projectVersions", { id: "v-other", organizationId: "org_2", projectId: "pOther", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, { ...args, versionId: "v-other" }),
+    ).rejects.toThrow();
+  });
+
+  test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "P2", name: "Other Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW, liveVersionId: "v-p2" });
+      await ctx.db.insert("projectVersions", { id: "v-p2", organizationId: ORG, projectId: "p2", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectCategoriesWrites.createCategoryNative, { ...args, versionId: "v-p2" }),
+    ).rejects.toThrow();
+  });
+});

@@ -8,7 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { recalcProjectTotals } from "./lib/recalc";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { liveRows, requireLiveVersionId } from "./lib/versionScope";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Native CROSS-TYPE CATEGORY-SLOT write mutations (Phase 3 browser-direct —
@@ -593,6 +593,15 @@ export const createCategoryAndPlaceGroup = mutation({
       projectGroupId: v.optional(v.union(v.string(), v.null())),
       subHireGroupId: v.optional(v.union(v.string(), v.null())),
     }),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the
+    // version the new category lands on, defaulting to live when absent.
+    // NOTE: no UI currently threads this (the Move-to-new-category dialogs
+    // weren't wired to a viewed version in this pass — see FEATUREDOCS/76);
+    // added for API completeness/future wiring, additive-only. Whatever it
+    // resolves to MUST match the moved group's own version (checked below) —
+    // a group can't be relocated into a category living in a different
+    // version than the group itself.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -607,6 +616,7 @@ export const createCategoryAndPlaceGroup = mutation({
 
     const project = await getProjectInOrg(ctx, a.projectId, a.orgId);
     if (!project) throw new ConvexError("Project not found");
+    const targetVersionId = await resolveWriteVersionId(ctx, project, a.versionId);
 
     const projectGroupId = a.slot.projectGroupId ?? null;
     const subHireGroupId = a.slot.subHireGroupId ?? null;
@@ -622,6 +632,12 @@ export const createCategoryAndPlaceGroup = mutation({
       projGroupDoc = await requireGroupInOrg(ctx, projectGroupId, a.orgId);
       if (projGroupDoc.projectId !== a.projectId) {
         throw new ConvexError("Project group not found in this project");
+      }
+      // A group can only be relocated within its OWN version — the category
+      // it lands in must share that version, or the group's rows and its new
+      // parent category would straddle two versions (an inconsistent tree).
+      if (projGroupDoc.versionId != null && projGroupDoc.versionId !== targetVersionId) {
+        throw new ConvexError("Project group does not belong to the target version");
       }
     } else if (subHireGroupId) {
       const { group, subHire } = await requireSubHireGroupInOrg(ctx, subHireGroupId, a.orgId);
@@ -642,14 +658,14 @@ export const createCategoryAndPlaceGroup = mutation({
       }
       sortOrder = existingCat.sortOrder ?? 0;
     } else {
-      // LIVE-ONLY (#1228).
-      const siblings = (await liveRows(ctx, project, "projectCategories")).filter((c) => c.organizationId === a.orgId);
+      // #1221: scoped to the TARGET version (was LIVE-ONLY, #1228).
+      const siblings = (await versionRows(ctx, "projectCategories", targetVersionId)).filter((c) => c.organizationId === a.orgId);
       sortOrder = siblings.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
       await ctx.db.insert("projectCategories", {
         id: a.categoryId,
         organizationId: a.orgId,
         projectId: a.projectId,
-        versionId: requireLiveVersionId(project),
+        versionId: targetVersionId,
         lineageId: a.categoryId,
         name: a.name,
         sortOrder,

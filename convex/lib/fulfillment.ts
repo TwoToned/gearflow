@@ -532,6 +532,11 @@ export async function expandAccessoriesForAsset(
   const baseChild = {
     organizationId,
     projectId: line.projectId,
+    // #1221 follow-up — inherit the PARENT's own versionId (it's already
+    // loaded above), same reasoning as expandAccessoryChildLines/
+    // accessoryChildInsertBase: an unstamped child is invisible to every
+    // by_versionId read, live or not.
+    versionId: line.versionId ?? undefined,
     type: "EQUIPMENT" as const,
     isKitChild: true,
     childKind: "ACCESSORY" as const,
@@ -549,6 +554,7 @@ export async function expandAccessoriesForAsset(
       await ctx.db.insert("projectLineItems", {
         ...baseChild,
         id: childLineId,
+        lineageId: childLineId,
         modelId: child.modelId ?? undefined,
         assetId: child.assetId,
         quantity: 1,
@@ -577,6 +583,7 @@ export async function expandAccessoriesForAsset(
       await ctx.db.insert("projectLineItems", {
         ...baseChild,
         id: childLineId,
+        lineageId: childLineId,
         modelId: bulk.modelId ?? undefined,
         bulkAssetId: bulk.bulkAssetId,
         quantity: demand,
@@ -616,6 +623,14 @@ export async function expandAccessoryChildLines(
     organizationId: string;
     projectId: string;
     accessoryPlan?: AccessoryPlan | null;
+    // #1221 follow-up — the PARENT's own resolved `versionId` (the target
+    // version the parent line was just inserted into, live or not). Every
+    // accessory child MUST land in the SAME version as its parent, or it's
+    // an orphan row: `versionId` absent matches no `by_versionId` read at
+    // all (not even the live one), so before this fix a child inserted here
+    // was invisible everywhere, not just on a non-live version — see
+    // FEATUREDOCS/76's "closing the Equipment write-side gap" note.
+    versionId: string | null | undefined;
   },
 ): Promise<void> {
   const now = Date.now();
@@ -623,6 +638,7 @@ export async function expandAccessoryChildLines(
   const base = {
     organizationId: parentLine.organizationId,
     projectId: parentLine.projectId,
+    versionId: parentLine.versionId ?? undefined,
     type: "EQUIPMENT" as const,
     isKitChild: true,
     childKind: "ACCESSORY" as const,
@@ -639,15 +655,17 @@ export async function expandAccessoryChildLines(
     const profile = await resolveLineAccessoryPlan(ctx, parentLine.organizationId, parentLine.assetId, plan);
     if (profile.serialised.length === 0 && profile.bulks.length === 0) return;
     for (const child of profile.serialised) {
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        ...base, id: createId(), modelId: child.modelId ?? undefined, assetId: child.assetId,
+        ...base, id: childId, lineageId: childId, modelId: child.modelId ?? undefined, assetId: child.assetId,
         quantity: 1, description: child.modelName ?? undefined, sortOrder: sort++,
         accessoryInclusion: "DEFAULT", createdAt: now, updatedAt: now,
       });
     }
     for (const b of profile.bulks) {
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
+        ...base, id: childId, lineageId: childId, modelId: b.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
         quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
         sortOrder: sort++, accessoryInclusion: b.inclusion, createdAt: now, updatedAt: now,
       });
@@ -671,8 +689,9 @@ export async function expandAccessoryChildLines(
       const perParent = added.get(b.bulkAssetId)?.quantityPerParent ?? b.quantity;
       const qty = perParent * Math.max(parentLine.quantity, 1);
       const name = await modelName(ctx, ba?.modelId);
+      const childId = createId();
       await ctx.db.insert("projectLineItems", {
-        ...base, id: createId(), modelId: ba?.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
+        ...base, id: childId, lineageId: childId, modelId: ba?.modelId ?? undefined, bulkAssetId: b.bulkAssetId,
         quantity: qty, description: name ? `${qty}x ${name}` : undefined, sortOrder: sort++,
         accessoryInclusion: inclusion, createdAt: now, updatedAt: now,
       });
@@ -704,6 +723,10 @@ type ReconcileParentLine = {
   pricingType: string | null | undefined;
   organizationId: string;
   projectId: string;
+  // #1221 follow-up — see the identical field on expandAccessoryChildLines'
+  // parentLine above: a reconciled child must land in the SAME version as
+  // the parent it belongs to, never unstamped.
+  versionId: string | null | undefined;
 };
 
 type WantedSet = { wantSerialised: WantedSerialised; wantBulk: WantedBulk };
@@ -809,6 +832,7 @@ function accessoryChildInsertBase(parentLine: ReconcileParentLine) {
   return {
     organizationId: parentLine.organizationId,
     projectId: parentLine.projectId,
+    versionId: parentLine.versionId ?? undefined,
     type: "EQUIPMENT" as const,
     isKitChild: true,
     childKind: "ACCESSORY" as const,
@@ -827,8 +851,9 @@ async function insertMissingSerialisedAccessories(
   const base = accessoryChildInsertBase(parentLine);
   for (const [assetId, s] of wantSerialised) {
     if (existingAssetIds.has(assetId)) continue;
+    const childId = createId();
     await ctx.db.insert("projectLineItems", {
-      ...base, id: createId(), modelId: s.modelId ?? undefined, assetId,
+      ...base, id: childId, lineageId: childId, modelId: s.modelId ?? undefined, assetId,
       quantity: 1, description: s.modelName ?? undefined, sortOrder: sort.n++,
       accessoryInclusion: s.inclusion, createdAt: now, updatedAt: now,
     });
@@ -841,8 +866,9 @@ async function insertMissingBulkAccessories(
   const base = accessoryChildInsertBase(parentLine);
   for (const [bulkAssetId, b] of wantBulk) {
     if (existingBulkIds.has(bulkAssetId)) continue;
+    const childId = createId();
     await ctx.db.insert("projectLineItems", {
-      ...base, id: createId(), modelId: b.modelId ?? undefined, bulkAssetId,
+      ...base, id: childId, lineageId: childId, modelId: b.modelId ?? undefined, bulkAssetId,
       quantity: b.quantity, description: b.modelName ? `${b.quantity}x ${b.modelName}` : undefined,
       sortOrder: sort.n++, accessoryInclusion: b.inclusion, createdAt: now, updatedAt: now,
     });

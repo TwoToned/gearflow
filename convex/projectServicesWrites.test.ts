@@ -712,3 +712,156 @@ describe("#988 previously-deferred gate sites", () => {
     expect(res.id).toBe("s1");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1221 follow-up (closes Phase 5's Equipment write-side gap, extended to
+// Labour) — createServiceNative/generateServicesNative now take an optional
+// `versionId`; convertLineItemToServiceNative always inherits the SOURCE
+// line's own version (never re-derives "live") — see projectServicesWrites.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectServicesWrites — #1221 versionId follow-up", () => {
+  async function seedSecondVersion(t: T, id = "p1", orgId = ORG) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: `v-${id}-b`, organizationId: orgId, projectId: id, number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+  }
+
+  describe("createServiceNative", () => {
+    test("defaults to the live version when versionId is absent", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s1", orgId: ORG, projectId: "p1", ...baseInput, now: NOW, actor: ACTOR, auditId: "log1",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.versionId).toBe("v-p1");
+    });
+
+    test("targets the named non-live version, sortOrder scoped to it", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s1", orgId: ORG, projectId: "p1", ...baseInput, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "log1",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.versionId).toBe("v-p1-b");
+      expect(s?.sortOrder).toBe(0);
+    });
+
+    test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedProject(t, "pX", OTHER);
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+          id: "s1", orgId: ORG, projectId: "p1", ...baseInput, versionId: "v-pX", now: NOW, actor: ACTOR, auditId: "log1",
+        }),
+      ).rejects.toThrow();
+    });
+
+    test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedProject(t, "p2", ORG);
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+          id: "s1", orgId: ORG, projectId: "p1", ...baseInput, versionId: "v-p2", now: NOW, actor: ACTOR, auditId: "log1",
+        }),
+      ).rejects.toThrow();
+    });
+
+    test("lock interaction: live + locked defaults costTotal to $0; non-live + locked keeps the real cost", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { pricingLocked: true });
+      await seedSecondVersion(t);
+
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s-live", orgId: ORG, projectId: "p1", ...baseInput, costTotal: 200, now: NOW, actor: ACTOR, auditId: "log1",
+      });
+      expect((await svcById(t, "s-live"))?.costTotal).toBe(0);
+
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
+        id: "s-nonlive", orgId: ORG, projectId: "p1", ...baseInput, costTotal: 200, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "log2",
+      });
+      expect((await svcById(t, "s-nonlive"))?.costTotal).toBe(200);
+    });
+  });
+
+  describe("generateServicesNative", () => {
+    test("targets the named non-live version", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { projectStartDate: NOW, projectEndDate: NOW });
+      await seedSecondVersion(t);
+      const res = await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
+        projectId: "p1", orgId: ORG, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "logg",
+      });
+      expect(res.created).toBeGreaterThan(0);
+      const rows = await t.run((ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1-b")).collect());
+      expect(rows.length).toBe(res.created);
+      const liveRows = await t.run((ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1")).collect());
+      expect(liveRows).toHaveLength(0);
+    });
+
+    test("lock interaction: non-live target is never gated even while live is locked", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { projectStartDate: NOW, projectEndDate: NOW, pricingLocked: true });
+      await seedSecondVersion(t);
+      // Seed a template with a real unit price so we can observe whether it's zeroed.
+      await t.run(async (ctx) => {
+        await ctx.db.insert("serviceTemplates", { id: "tpl1", organizationId: ORG, type: "MISC", title: "Rig", isActive: true, defaultUnitPrice: 75, showOnDocuments: true, isAutoAdded: true, sortOrder: 0 });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.generateServicesNative, {
+        projectId: "p1", orgId: ORG, versionId: "v-p1-b", now: NOW, actor: ACTOR, auditId: "logg",
+      });
+      const rows = await t.run((ctx) => ctx.db.query("projectServices").withIndex("by_versionId", (q) => q.eq("versionId", "v-p1-b")).collect());
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.some((r) => r.unitPrice === 75)).toBe(true); // NOT zeroed
+    });
+  });
+
+  describe("convertLineItemToServiceNative", () => {
+    test("inherits the SOURCE line's own non-live version, never live", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectLineItems", {
+          id: "li1", organizationId: ORG, projectId: "p1", versionId: "v-p1-b", lineageId: "li1",
+          type: "SERVICE", description: "Rigging", quantity: 1, lineTotal: 50, isKitChild: false, status: "CONFIRMED",
+        });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, {
+        serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logcv",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.versionId).toBe("v-p1-b");
+    });
+
+    test("lock interaction: converting a line on a non-live version is never gated even while live is locked", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t, "p1", ORG, { pricingLocked: true });
+      await seedSecondVersion(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectLineItems", {
+          id: "li1", organizationId: ORG, projectId: "p1", versionId: "v-p1-b", lineageId: "li1",
+          type: "SERVICE", description: "Rigging", quantity: 1, unitPrice: 50, lineTotal: 50, isKitChild: false, status: "CONFIRMED",
+        });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.convertLineItemToServiceNative, {
+        serviceId: "s1", lineItemId: "li1", orgId: ORG, now: NOW, actor: ACTOR, auditId: "logcv",
+      });
+      const s = await svcById(t, "s1");
+      expect(s?.unitPrice).toBe(50); // kept — the source line lives on a non-live version
+    });
+  });
+});

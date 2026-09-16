@@ -535,4 +535,67 @@ describe("categorySlotsWrites.createCategoryAndPlaceGroup", () => {
       }),
     ).rejects.toThrow(/insufficient permissions/i);
   });
+
+  // ── #1221 follow-up — optional `versionId`, default live, validated ────────
+  describe("#1221 versionId follow-up", () => {
+    async function seedSecondVersion(t: ReturnType<typeof makeT>) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectVersions", { id: `${versionIdFor("p1", ORG)}-b`, organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      });
+    }
+
+    test("defaults to the live version when versionId is absent", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1" });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" } });
+      const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "catNew")).first());
+      expect(cat?.versionId).toBe(versionIdFor("p1", ORG));
+    });
+
+    test("targets the named non-live version when the moved group already lives there", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      const nonLive = `${versionIdFor("p1", ORG)}-b`;
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: nonLive, lineageId: "g1" });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" }, versionId: nonLive });
+      const cat = await t.run((ctx) => ctx.db.query("projectCategories").withIndex("by_cuid", (q) => q.eq("id", "catNew")).first());
+      expect(cat?.versionId).toBe(nonLive);
+    });
+
+    test("rejects when the moved group lives in a DIFFERENT version than the target", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedSecondVersion(t);
+      const nonLive = `${versionIdFor("p1", ORG)}-b`;
+      await t.run(async (ctx) => {
+        // Group is on LIVE, but the caller asks for the non-live target.
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" }, versionId: nonLive }),
+      ).rejects.toThrow(/does not belong to the target version/i);
+    });
+
+    test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedProject(t);
+      await seedProject(t, "pOther", "org_2");
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectGroups", { id: "g1", organizationId: ORG, projectId: "p1", title: "Mics", sortOrder: 0, versionId: versionIdFor("p1", ORG), lineageId: "g1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.categorySlotsWrites.createCategoryAndPlaceGroup, { ...base, slot: { projectGroupId: "g1" }, versionId: versionIdFor("pOther", "org_2") }),
+      ).rejects.toThrow();
+    });
+  });
 });

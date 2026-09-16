@@ -34,12 +34,15 @@ export function useProjectCategoryWrites() {
   };
 
   return {
-    create: async (projectId: string, name: string): Promise<void> => {
+    // #1221 follow-up — `versionId` (optional) is the version this new
+    // category lands on, defaulting to live (server-side) when omitted.
+    create: async (projectId: string, name: string, versionId?: string): Promise<void> => {
       await createM({
         id: createId(),
         orgId: requireOrg(),
         projectId,
         name,
+        versionId,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

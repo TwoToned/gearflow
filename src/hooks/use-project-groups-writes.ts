@@ -42,6 +42,10 @@ export function useProjectGroupWrites() {
       projectId: string,
       categoryId: string | null,
       title: string,
+      // #1221 follow-up — the version this new group lands on, defaulting to
+      // live (server-side) when omitted. Threaded from EquipmentTab's own
+      // `versionId` prop (the version currently being viewed).
+      versionId?: string,
     ): Promise<{ id: string; sortOrder: number }> => {
       return createM({
         id: createId(),
@@ -50,6 +54,7 @@ export function useProjectGroupWrites() {
         categoryId: categoryId || undefined,
         title,
         quantity: 1,
+        versionId,
         now: Date.now(),
         actor: actor(),
         auditId: createId(),

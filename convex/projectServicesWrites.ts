@@ -18,7 +18,7 @@ import { rateInputs, assertCrewMoney } from "./crewAssignmentsWrites";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { assertPricingUnlocked, afterLockAuditMetadata, defaultsToZeroOnInsert } from "./lib/projectLocks";
-import { liveRows, requireLiveVersionId } from "./lib/versionScope";
+import { liveRows, requireLiveVersionId, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Native PROJECT-SERVICE write mutations (Phase 3 browser-direct — replaces the
@@ -440,6 +440,10 @@ export const createServiceNative = mutation({
       rateType: v.optional(enums.CrewRateType),
       estimatedHours: v.optional(v.number()),
     }))),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap, extended to
+    // Labour) — the version this new service lands on, defaulting to live
+    // when absent. Validated against `svcProject` by resolveWriteVersionId.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -452,11 +456,13 @@ export const createServiceNative = mutation({
 
     if (!a.title) throw new ConvexError("Title is required");
     const svcProject = await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    const targetVersionId = await resolveWriteVersionId(ctx, svcProject, a.versionId);
     // Adding is structural — never gated. While pricing is locked, a new
     // crew-less service still defaults costTotal to $0 (a crew-attached
     // service's cost keeps auto-deriving from the crew rate table below
-    // regardless — issue #796 single source of truth).
-    const defaultToZero = defaultsToZeroOnInsert(svcProject);
+    // regardless — issue #796 single source of truth). #1221: never gated
+    // for a non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(svcProject, targetVersionId);
     if (defaultToZero && (!a.crew || a.crew.length === 0)) {
       a.costTotal = 0;
     }
@@ -477,8 +483,9 @@ export const createServiceNative = mutation({
 
     const { fields, serviceDate, serviceEndDate } = buildServiceFields(a);
 
-    // sortOrder = max+1 among the project's existing LIVE services (#1228).
-    const projectServices = (await liveRows(ctx, svcProject, "projectServices")).filter(
+    // #1221: sortOrder = max+1 among the TARGET version's existing services
+    // (was LIVE-ONLY, #1228).
+    const projectServices = (await versionRows(ctx, "projectServices", targetVersionId)).filter(
       (s) => s.organizationId === a.orgId,
     );
     const sortOrder = projectServices.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
@@ -487,7 +494,7 @@ export const createServiceNative = mutation({
       id: a.id,
       organizationId: a.orgId,
       projectId: a.projectId,
-      versionId: requireLiveVersionId(svcProject),
+      versionId: targetVersionId,
       lineageId: a.id,
       type: fields.type as Doc<"projectServices">["type"],
       title: fields.title,
@@ -958,6 +965,8 @@ export const generateServicesNative = mutation({
   args: {
     orgId: v.string(),
     projectId: v.string(),
+    // #1221 follow-up — see createServiceNative's identical note.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -969,9 +978,11 @@ export const generateServicesNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const project = await requireProjectInOrg(ctx, a.projectId, a.orgId);
+    const targetVersionId = await resolveWriteVersionId(ctx, project, a.versionId);
     // Generating is an add (structural) — never gated. A $0-priced template
     // while locked mirrors createServiceNative's own defaultToZero handling.
-    const defaultToZero = defaultsToZeroOnInsert(project);
+    // #1221: never gated for a non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(project, targetVersionId);
     // WS2 (#941) — service generation reads the PROJECT window (falls back to
     // rental when unset), not the deprecated loadIn/loadOut/event* fields.
     const window = getProjectWindow(project);
@@ -1029,8 +1040,9 @@ export const generateServicesNative = mutation({
       }
     }
 
-    // Existing services (idempotent dedup by type:date). LIVE-ONLY (#1228).
-    const existingServices = (await liveRows(ctx, project, "projectServices")).filter(
+    // Existing services (idempotent dedup by type:date), scoped to the
+    // TARGET version (was LIVE-ONLY, #1228).
+    const existingServices = (await versionRows(ctx, "projectServices", targetVersionId)).filter(
       (s) => s.organizationId === a.orgId,
     );
     const existingKey = new Set(existingServices.map((s) => `${s.type}:${dayKeyOf(s.date ?? null)}`));
@@ -1081,7 +1093,7 @@ export const generateServicesNative = mutation({
 
     let sortOrder = existingServices.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
     let created = 0;
-    const genVersionId = requireLiveVersionId(project);
+    const genVersionId = targetVersionId;
     for (const svc of toCreate) {
       const lineTotal = svc.unitPrice != null ? calculateServiceLineTotal(svc.unitPrice, 0) : null;
       const genId = createId();
@@ -1317,9 +1329,18 @@ export const convertLineItemToServiceNative = mutation({
     const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", a.lineItemId)).first();
     if (!line || line.organizationId !== a.orgId) throw new ConvexError("Line item not found");
     const convertProject = await requireProjectInOrg(ctx, line.projectId, a.orgId);
+    // #1221 follow-up — the new service must land on the SAME version as the
+    // line it's converted from (an existing, already-versioned row), never
+    // unconditionally on live: converting a line on a non-live version used
+    // to silently move it to live. `line.versionId` is absent only for a
+    // pre-Phase-1 row that somehow survived un-backfilled; fall back to live
+    // in that edge case (the same "no versionId reads as live" convention
+    // `isLiveVersionRow` uses everywhere else).
+    const convertVersionId = line.versionId ?? requireLiveVersionId(convertProject);
     // Converting creates a new service (an add) linked to the line — never
-    // gated; its copied pricing is defaulted the same way createServiceNative's is.
-    const defaultToZero = defaultsToZeroOnInsert(convertProject);
+    // gated; its copied pricing is defaulted the same way createServiceNative's
+    // is. #1221: never gated when the source line lives on a non-live version.
+    const defaultToZero = defaultsToZeroOnInsert(convertProject, convertVersionId);
 
     const typeMap: Record<string, string> = { TRANSPORT: "DELIVERY", LABOUR: "LABOUR", SERVICE: "MISC" };
     const serviceType = typeMap[line.type ?? "EQUIPMENT"] || "MISC";
@@ -1335,8 +1356,8 @@ export const convertLineItemToServiceNative = mutation({
       return { id: a.serviceId };
     }
 
-    // LIVE-ONLY (#1228).
-    const existingForProject = (await liveRows(ctx, convertProject, "projectServices")).filter(
+    // #1221: scoped to the source line's own version (was LIVE-ONLY, #1228).
+    const existingForProject = (await versionRows(ctx, "projectServices", convertVersionId)).filter(
       (s) => s.organizationId === a.orgId,
     );
     const sortOrder = existingForProject.reduce((m, s) => Math.max(m, s.sortOrder ?? 0), -1) + 1;
@@ -1351,7 +1372,7 @@ export const convertLineItemToServiceNative = mutation({
       id: a.serviceId,
       organizationId: a.orgId,
       projectId: line.projectId,
-      versionId: requireLiveVersionId(convertProject),
+      versionId: convertVersionId,
       lineageId: a.serviceId,
       type: serviceType as Doc<"projectServices">["type"],
       title: line.description || SERVICE_TYPE_LABELS[serviceType],

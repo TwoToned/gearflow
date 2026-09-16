@@ -228,6 +228,9 @@ export function useLineItemWrites() {
         forceSeparate: boolean;
         includeAccessories: boolean;
         accessoryPlan?: AccessoryPlanInput;
+        /** #1221 follow-up — the version this new line lands on, defaulting
+         *  to live (server-side) when omitted. */
+        versionId?: string;
       },
     ): Promise<{ id: string; merged: boolean; saleWarning?: string }> => {
       try {
@@ -240,6 +243,7 @@ export function useLineItemWrites() {
           forceSeparate: opts.forceSeparate,
           includeAccessories: opts.includeAccessories,
           accessoryPlan: opts.accessoryPlan,
+          versionId: opts.versionId,
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
@@ -256,7 +260,9 @@ export function useLineItemWrites() {
     addCustom: async (
       projectId: string,
       parsed: ParsedCustomLineItem,
-      opts?: { groupName?: string },
+      // #1221 follow-up — `versionId` (optional) is the version this new
+      // line lands on, defaulting to live (server-side) when omitted.
+      opts?: { groupName?: string; versionId?: string },
     ): Promise<{ id: string }> => {
       const lineTotal = computeLineTotal(
         parsed.unitPrice,
@@ -270,6 +276,7 @@ export function useLineItemWrites() {
           organizationId: requireOrg(),
           projectId,
           fields: buildCustomAddFields(parsed, opts?.groupName, lineTotal),
+          versionId: opts?.versionId,
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
@@ -298,6 +305,9 @@ export function useLineItemWrites() {
         categoryId?: string;
         groupId?: string;
         kitLabel: string;
+        /** #1221 follow-up — the version this new kit (parent + member
+         *  children) lands on, defaulting to live (server-side) when omitted. */
+        versionId?: string;
       },
     ): Promise<{ id: string }> => {
       try {
@@ -315,6 +325,7 @@ export function useLineItemWrites() {
           categoryId: opts.categoryId || undefined,
           groupId: opts.groupId || undefined,
           kitLabel: opts.kitLabel,
+          versionId: opts.versionId,
           emitActivity: true,
           actor: actor(),
           auditId: createId(),

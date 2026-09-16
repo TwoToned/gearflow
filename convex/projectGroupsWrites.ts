@@ -14,7 +14,7 @@ import { assertStrLen } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { upsertSlotForLineItem } from "./categorySlotsWrites";
-import { liveRows, requireLiveVersionId } from "./lib/versionScope";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /**
  * Native PROJECT-GROUP write mutations (Phase 3 browser-direct — replaces the
@@ -232,6 +232,10 @@ export const createGroupNative = mutation({
     // #1012 — entry shape of the discount above ($ off vs % of `price × quantity`).
     // Display only; `discount` stays the resolved flat dollar amount.
     discountMode: v.optional(enums.DiscountMode),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the
+    // version this new group lands on, defaulting to live when absent.
+    // Validated against `project` (same org + project) by resolveWriteVersionId.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
@@ -247,11 +251,13 @@ export const createGroupNative = mutation({
     // org's/project's id, a cross-tenant dangling reference.
     const project = await getProjectInOrg(ctx, a.projectId, a.orgId, new Map());
     if (!project) throw new ConvexError("Project not found");
+    const targetVersionId = await resolveWriteVersionId(ctx, project, a.versionId);
 
     // Creating is structural — never gated (#1230: only a MONEY write against
     // the LIVE version's already-set price is gated). While pricing is locked,
     // a new group still defaults to $0/unpriced instead of any auto-price.
-    const defaultToZero = defaultsToZeroOnInsert(project);
+    // #1221: never gated for a non-live target version.
+    const defaultToZero = defaultsToZeroOnInsert(project, targetVersionId);
     if (defaultToZero) {
       a.price = undefined;
       a.discount = undefined;
@@ -278,10 +284,10 @@ export const createGroupNative = mutation({
       return { id: a.id, sortOrder: existing.sortOrder ?? 0 };
     }
 
-    // LIVE-ONLY (#1228) — max(sortOrder)+1 within the (project, category) bucket
-    // (null category is its own bucket).
+    // #1221: max(sortOrder)+1 within the (TARGET version, category) bucket
+    // (was LIVE-ONLY, #1228) — null category is its own bucket.
     const bucket = a.categoryId ?? null;
-    const siblings = (await liveRows(ctx, project, "projectGroups")).filter(
+    const siblings = (await versionRows(ctx, "projectGroups", targetVersionId)).filter(
       (g) => g.organizationId === a.orgId && (g.categoryId ?? null) === bucket,
     );
     const sortOrder = siblings.reduce((m, g) => Math.max(m, g.sortOrder ?? -1), -1) + 1;
@@ -292,7 +298,7 @@ export const createGroupNative = mutation({
       id: a.id,
       organizationId: a.orgId,
       projectId: a.projectId,
-      versionId: requireLiveVersionId(project),
+      versionId: targetVersionId,
       lineageId: a.id,
       categoryId: a.categoryId || undefined,
       title: a.title,

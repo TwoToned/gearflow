@@ -8,7 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertProjectInOrg } from "./projectLineItems";
 import * as enums from "./lib/validators";
-import { liveRows, requireLiveVersionId } from "./lib/versionScope";
+import { liveRows, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
 /** Fetch a project by cuid, confirm it's the caller's org. */
 async function requireProjectForGuard(ctx: MutationCtx, projectId: string, orgId: string) {
@@ -124,11 +124,15 @@ export const createCategoryNative = mutation({
     orgId: v.string(),
     projectId: v.string(),
     name: v.string(),
+    // #1221 follow-up (closes Phase 5's Equipment write-side gap) — the
+    // version this new category lands on, defaulting to live when absent.
+    // Validated against `catProject` (same org + project) by resolveWriteVersionId.
+    versionId: v.optional(v.string()),
     now: v.number(),
     actor: actorValidator,
     auditId: v.string(),
   },
-  handler: async (ctx, { id, orgId, projectId, name, now, actor: suppliedActor, auditId }) => {
+  handler: async (ctx, { id, orgId, projectId, name, versionId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "projectCategory");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "manage_line_items");
@@ -140,6 +144,7 @@ export const createCategoryNative = mutation({
     await assertProjectInOrg(ctx, projectId, orgId);
     // Creating a category is structural — never gated.
     const catProject = await requireProjectForGuard(ctx, projectId, orgId);
+    const targetVersionId = await resolveWriteVersionId(ctx, catProject, versionId);
 
     // Idempotent: a retried create with the same cuid short-circuits (no dup row,
     // no second audit — the by_cuid index is global so re-check org on a hit).
@@ -152,15 +157,16 @@ export const createCategoryNative = mutation({
       return { id, sortOrder: existing.sortOrder ?? 0 };
     }
 
-    // LIVE-ONLY (#1228) — org-filter before computing max(sortOrder).
-    const siblings = (await liveRows(ctx, catProject, "projectCategories")).filter((c) => c.organizationId === orgId);
+    // #1221: org-filter before computing max(sortOrder) within the TARGET
+    // version (was LIVE-ONLY, #1228).
+    const siblings = (await versionRows(ctx, "projectCategories", targetVersionId)).filter((c) => c.organizationId === orgId);
     const sortOrder = siblings.reduce((m, c) => Math.max(m, c.sortOrder ?? -1), -1) + 1;
 
     await ctx.db.insert("projectCategories", {
       id,
       organizationId: orgId,
       projectId,
-      versionId: requireLiveVersionId(catProject),
+      versionId: targetVersionId,
       lineageId: id,
       name,
       sortOrder,

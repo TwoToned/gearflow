@@ -5050,6 +5050,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "slotId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -15681,6 +15684,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "title": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -19644,6 +19650,9 @@ export const OPENAPI_DOCUMENT = {
                       "orgDefaultTaxRate": {},
                       "projectId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -19752,6 +19761,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "unitPrice": {
                         "type": "number"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -19848,6 +19860,9 @@ export const OPENAPI_DOCUMENT = {
                       "orgDefaultTaxRate": {},
                       "projectId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -19941,6 +19956,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "orgDefaultTaxRate": {},
                       "projectId": {
+                        "type": "string"
+                      },
+                      "versionId": {
                         "type": "string"
                       }
                     },
@@ -25934,6 +25952,9 @@ export const OPENAPI_DOCUMENT = {
                       },
                       "projectId": {
                         "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -26624,6 +26645,9 @@ export const OPENAPI_DOCUMENT = {
                         "type": "number"
                       },
                       "title": {
+                        "type": "string"
+                      },
+                      "versionId": {
                         "type": "string"
                       }
                     },
@@ -29738,6 +29762,9 @@ export const OPENAPI_DOCUMENT = {
                       "vehicleDescription": {
                         "type": "string"
                       },
+                      "versionId": {
+                        "type": "string"
+                      },
                       "xeroAccountCode": {
                         "type": "string"
                       },
@@ -30082,6 +30109,9 @@ export const OPENAPI_DOCUMENT = {
                     "type": "object",
                     "properties": {
                       "projectId": {
+                        "type": "string"
+                      },
+                      "versionId": {
                         "type": "string"
                       }
                     },

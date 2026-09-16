@@ -770,3 +770,81 @@ describe("projectGroupsWrites.moveLineItemsNative", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1221 follow-up — createGroupNative now takes an optional `versionId`.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("projectGroupsWrites — #1221 versionId follow-up", () => {
+  const args = { id: "g1", orgId: ORG, projectId: "p1", title: "Mics", now: NOW, actor: ACTOR, auditId: "log1" };
+
+  async function seedSecondVersion(t: ReturnType<typeof makeT>, id = "p1", orgId = ORG) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: `${versionIdFor(id, orgId)}-b`, organizationId: orgId, projectId: id, number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+  }
+
+  test("defaults to the live version when versionId is absent", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, args);
+    const g = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first());
+    expect(g?.versionId).toBe(versionIdFor("p1", ORG));
+    expect(res.sortOrder).toBe(0);
+  });
+
+  test("targets the named non-live version, sortOrder scoped to it", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedSecondVersion(t);
+    const nonLive = `${versionIdFor("p1", ORG)}-b`;
+    const res = await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, versionId: nonLive });
+    expect(res.sortOrder).toBe(0);
+    const g = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g1")).first());
+    expect(g?.versionId).toBe(nonLive);
+  });
+
+  test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedProject(t, "pOther", "org_2");
+    const foreignVersion = versionIdFor("pOther", "org_2");
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, versionId: foreignVersion }),
+    ).rejects.toThrow();
+  });
+
+  test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedProject(t, "p2", ORG);
+    await expect(
+      t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, versionId: versionIdFor("p2", ORG) }),
+    ).rejects.toThrow();
+  });
+
+  test("lock interaction: live + locked defaults price to unset; non-live + locked keeps the real price", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedSecondVersion(t);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { pricingLocked: true, pricingLockedAt: NOW, pricingLockedById: USER });
+    });
+    const nonLive = `${versionIdFor("p1", ORG)}-b`;
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, id: "g-live", price: 500 });
+    const gLive = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g-live")).first());
+    expect(gLive?.price).toBeUndefined();
+    expect(gLive?.pricedUnderLock).toBe(true);
+
+    await t.withIdentity(asUser(ORG)).mutation(api.projectGroupsWrites.createGroupNative, { ...args, id: "g-nonlive", price: 500, versionId: nonLive });
+    const gNonLive = await t.run((ctx) => ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "g-nonlive")).first());
+    expect(gNonLive?.price).toBe(500);
+    expect(gNonLive?.pricedUnderLock).toBeUndefined();
+  });
+});

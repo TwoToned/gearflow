@@ -324,6 +324,9 @@ export const MCP_CURATED_TOOLS: readonly McpToolManifestEntry[] = [
         "projectId": {
           "type": "string"
         },
+        "versionId": {
+          "type": "string"
+        },
         "idempotencyKey": {
           "type": "string",
           "minLength": 8,

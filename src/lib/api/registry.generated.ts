@@ -7134,10 +7134,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "slotId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d91d7a97c4bf69e8",
+    "argsSha": "997506bddd6005dd",
     "returnsSha": "23df8b9b6473ed03",
     "stability": "tracks-app",
     "summary": null,
@@ -20340,10 +20345,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "title",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d6aec6b55214bdbb",
+    "argsSha": "5c1ce39338ce95d9",
     "returnsSha": "d6a34739b6044ec4",
     "stability": "tracks-app",
     "summary": null,
@@ -24745,10 +24755,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "6685845ab46ba102",
+    "argsSha": "f412b44bb3472da4",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -24862,10 +24877,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "unitPrice",
         "optional": true,
         "type": "number"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "e2bcb648ac5bf538",
+    "argsSha": "efff8403a7c57e2b",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -24958,13 +24978,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [
       "allowOverbook",
       "forceSeparate"
     ],
-    "argsSha": "96444f34f45a2bf0",
+    "argsSha": "b6e5825a34468bba",
     "returnsSha": "6f1a1d586199c07b",
     "stability": "tracks-app",
     "summary": null,
@@ -25052,13 +25077,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [
       "allowOverbook",
       "justification"
     ],
-    "argsSha": "d6341d0f2d134bf5",
+    "argsSha": "b48e37fd6e151b38",
     "returnsSha": "b462b96a443b48b3",
     "stability": "stable",
     "summary": null,
@@ -34279,10 +34309,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "93f29b50ec0a7522",
+    "argsSha": "d5220da465179c08",
     "returnsSha": "e2697643f2e08227",
     "stability": "tracks-app",
     "summary": null,
@@ -35150,10 +35185,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "title",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "20b7a6ab61aea769",
+    "argsSha": "a0facb02cef47134",
     "returnsSha": "e2697643f2e08227",
     "stability": "tracks-app",
     "summary": null,
@@ -40926,6 +40966,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "xeroAccountCode",
         "optional": true,
         "type": "string"
@@ -40937,7 +40982,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "bbf061162c228975",
+    "argsSha": "81064d667a030d96",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -41192,10 +41237,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "projectId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "9faae7a468ef5dd4",
+    "argsSha": "8c4d5fddd021cb14",
     "returnsSha": "055fda7228358ed7",
     "stability": "tracks-app",
     "summary": null,

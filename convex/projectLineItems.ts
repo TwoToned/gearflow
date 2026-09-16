@@ -462,15 +462,18 @@ export const remove = mutation({
 // accessory expansion + cascade delete in one transaction.
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string): Promise<number> {
-  // Max sortOrder for the LIVE version = desc-first on by_versionId_sortOrder (1
-  // doc), instead of collecting ALL the version's lines to reduce the max (O(N)
-  // per add, O(N^2) across a bulk add). LIVE-ONLY (#1228) — this legacy CRUD
-  // layer only ever writes the live plan.
-  const versionId = await resolveLiveVersionIdForProject(ctx, projectId, organizationId);
+/** Max sortOrder within ONE version = desc-first on by_versionId_sortOrder (1
+ *  doc), instead of collecting ALL the version's lines to reduce the max
+ *  (O(N) per add, O(N^2) across a bulk add). `versionId` defaults to the
+ *  project's live version (every pre-#1221 caller's exact behaviour — this
+ *  legacy CRUD layer's own `create`/`createCustomLineItem` callers still
+ *  only ever write the live plan); `createKitLineItemCore` (#1221 follow-up)
+ *  passes an explicit target instead. */
+async function nextLineSort(ctx: MutationCtx, projectId: string, organizationId: string, versionId?: string): Promise<number> {
+  const targetVersionId = versionId ?? (await resolveLiveVersionIdForProject(ctx, projectId, organizationId));
   const top = await ctx.db
     .query("projectLineItems")
-    .withIndex("by_versionId_sortOrder", (q) => q.eq("versionId", versionId))
+    .withIndex("by_versionId_sortOrder", (q) => q.eq("versionId", targetVersionId))
     .order("desc")
     .first();
   return ((top && top.organizationId === organizationId ? top.sortOrder : undefined) ?? -1) + 1;
@@ -526,8 +529,8 @@ export const createLineItem = mutation({
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    const sortOrder = await nextLineSort(ctx, a.projectId, a.organizationId);
     const versionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+    const sortOrder = await nextLineSort(ctx, a.projectId, a.organizationId, versionId);
     await ctx.db.insert("projectLineItems", {
       id: a.id,
       organizationId: a.organizationId,
@@ -554,6 +557,7 @@ export const createLineItem = mutation({
         organizationId: a.organizationId,
         projectId: a.projectId,
         accessoryPlan: a.accessoryPlan ?? null,
+        versionId,
       });
     }
     return { id: a.id, sortOrder };
@@ -681,15 +685,20 @@ export async function createKitLineItemCore(
      *  `pricedUnderLock`). Omitted (the service-only `createKitLineItem` path,
      *  which has no lock guard of its own) leaves the row unflagged. */
     pricedUnderLock?: boolean;
+    /** #1221 follow-up — the version this kit lands on. `addKitNative`
+     *  resolves + validates this itself (it already loads the project doc)
+     *  and passes it straight through; the service-only `createKitLineItem`
+     *  path (no project doc in scope, no lock guard) omits it and gets the
+     *  old LIVE-ONLY behaviour unchanged. */
+    versionId?: string;
     now: number;
   },
 ): Promise<{ id: string }> {
     await assertProjectInOrg(ctx, a.projectId, a.organizationId);
     const kit = await getKitByCuid(ctx, a.kitId);
     if (!kit || kit.organizationId !== a.organizationId) throw new ConvexError("Kit not found");
-    let sort = await nextLineSort(ctx, a.projectId, a.organizationId);
-    // LIVE-ONLY (#1228) — a kit is always added to the live plan today.
-    const versionId = await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId);
+    const versionId = a.versionId ?? (await resolveLiveVersionIdForProject(ctx, a.projectId, a.organizationId));
+    let sort = await nextLineSort(ctx, a.projectId, a.organizationId, versionId);
 
     // Discount only means anything alongside a flat unitPrice (KIT_PRICE mode) —
     // ITEMIZED kits have no parent-row price to discount against.

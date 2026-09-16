@@ -81,16 +81,24 @@ export function isLiveVersionRow(
 }
 
 /**
- * Whether a NEW row about to be inserted (into the LIVE version, by
- * construction — nothing writes a fresh row onto a non-live version except
- * `versions.createNative`'s own `copyPlanGraph`/lineage machinery, which never
- * goes through this module) should default its price/cost fields to $0
- * instead of the normal auto-price/rate autofill. Kept as its own named
- * predicate (R-3.1) rather than inlining `project.pricingLocked === true` at
- * every add-mutation call site.
+ * Whether a NEW row about to be inserted should default its price/cost
+ * fields to $0 instead of the normal auto-price/rate autofill.
+ *
+ * #1221 follow-up (closes Phase 5's Equipment write-side gap): a CREATE
+ * mutation can now target an explicit non-live `targetVersionId`
+ * (`resolveWriteVersionId`), not just the live version by construction —
+ * `pricingLocked` applies to the LIVE version's money fields ONLY (file
+ * header), so an insert aimed at a non-live version must NEVER default to
+ * $0 just because the project's live pricing happens to be locked. Omitting
+ * `targetVersionId` (every pre-existing call site) preserves the old
+ * behaviour exactly: `isLiveVersionRow(project, undefined)` reads as live,
+ * same as before this param existed.
  */
-export function defaultsToZeroOnInsert(project: Pick<Doc<"projects">, "pricingLocked">): boolean {
-  return project.pricingLocked === true;
+export function defaultsToZeroOnInsert(
+  project: Pick<Doc<"projects">, "pricingLocked" | "liveVersionId">,
+  targetVersionId?: string | null,
+): boolean {
+  return project.pricingLocked === true && isLiveVersionRow(project, targetVersionId);
 }
 
 /** The `pricedUnderLock` field value for a fresh group/line-item insert —

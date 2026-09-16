@@ -3,6 +3,40 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 /**
+ * #1221 follow-up (closes Phase 5's "Equipment write-side gap" note,
+ * FEATUREDOCS/76) — the WRITE-side counterpart to `resolveVersionId` above.
+ * Every CREATE mutation on the four versioned plan tables (plus
+ * `categorySlots`' owning-category create) used to hard-code
+ * `versionId: requireLiveVersionId(project)`, so a new row could only ever
+ * land on the live version — even while the caller was viewing and editing a
+ * non-live one. This resolves the SAME "optional versionId, default live"
+ * shape Phase 2 established for reads, but a write can corrupt state in a way
+ * a read cannot (a line stamped onto a foreign version is a live, persisted
+ * IDOR-shaped bug, not just a wrong response), so a supplied `versionId` is
+ * ALWAYS validated against `project` before being trusted — never just
+ * defaulted through like `resolveVersionId` does for reads (see FEATUREDOCS/76
+ * Phase 2 "What's deferred" for why reads still don't do this).
+ */
+export async function resolveWriteVersionId(
+  ctx: MutationCtx,
+  project: Doc<"projects">,
+  versionId?: string,
+): Promise<string> {
+  if (versionId == null) return requireLiveVersionId(project);
+  const version = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", versionId)).first();
+  if (!version || version.organizationId !== project.organizationId || version.projectId !== project.id) {
+    throw new ConvexError(`resolveWriteVersionId: version not found or cross-org/project: ${versionId}`);
+  }
+  if (version.contentState !== "ready") {
+    throw new ConvexError({
+      code: "VERSION_NOT_READY",
+      message: `Version ${version.number} has no captured content — new rows can't be added to it.`,
+    });
+  }
+  return versionId;
+}
+
+/**
  * Project Versioning v2, Phase 2 (#1228, parent #1221,
  * docs/designs/project-versioning-v2.md §4.9) — the "deliberate breaking
  * change": `by_projectId` was DELETED from the five plan tables

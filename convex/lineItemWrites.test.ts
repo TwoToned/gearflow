@@ -1433,6 +1433,29 @@ describe("lineItemWrites.updateAccessoryPlanNative", () => {
     expect(kids.find((c) => c.bulkAssetId === "ba-opt")?.quantity).toBe(2); // 1 × line qty 2
   });
 
+  // #1221 follow-up — a pre-existing bug fixed as part of this task: reconciled
+  // accessory children now inherit the PARENT line's own versionId. Before the
+  // fix, `accessoryChildInsertBase` stamped no versionId at all — a child was
+  // invisible to every by_versionId read (live or not), not just a non-live one.
+  test("a newly-reconciled accessory child inherits the parent's versionId (was unstamped before #1221)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: "v-p1-b", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    await seed(t, { versionId: "v-p1-b" });
+    await t.run(async (ctx) => {
+      // Re-point the seeded child onto the non-live version too, so the fixture
+      // is internally consistent (the parent was moved after seed() ran).
+      const child = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "child-def")).unique();
+      await ctx.db.patch(child!._id, { versionId: "v-p1-b" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.updateAccessoryPlanNative, updateArgs({ excluded: [], added: [{ bulkAssetId: "ba-opt" }] }));
+    const kids = await children(t);
+    const newChild = kids.find((c) => c.bulkAssetId === "ba-opt");
+    expect(newChild?.versionId).toBe("v-p1-b");
+    expect(newChild?.lineageId).toBe(newChild?.id); // fresh lineage, same convention as every other insert
+  });
+
   test("the plan is saved on the line", async () => {
     const t = makeT();
     await seed(t);
@@ -1621,5 +1644,199 @@ describe("lineItemWrites.patchNative — revealPriceInRollup", () => {
     const li = await readLine(t);
     expect(li?.revealPriceInRollup).toBe(true);
     expect(li?.showInGroupOnDocs).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1221 follow-up (closes Phase 5's Equipment write-side gap, FEATUREDOCS/76):
+// addCustomNative / addNative / addKitNative / addLineItemSmartNative now take
+// an optional `versionId`, defaulting to live, validated against the project
+// (same org + project) before being trusted.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("lineItemWrites — #1221 versionId follow-up", () => {
+  /** A project with a LIVE version (v-p1) and a second, non-live version
+   *  (v-p1-b) — mirrors what `versions.createNative` produces. */
+  async function seedTwoVersions(t: ReturnType<typeof makeT>, orgId = ORG, projectId = "p1", opts: { pricingLocked?: boolean } = {}) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        liveVersionId: `v-${projectId}`, id: projectId, organizationId: orgId, projectNumber: projectId.toUpperCase(),
+        name: "Gig", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW,
+        ...(opts.pricingLocked ? { pricingLocked: true, pricingLockedAt: NOW, pricingLockedById: USER } : {}),
+      });
+      await ctx.db.insert("projectVersions", { id: `v-${projectId}`, organizationId: orgId, projectId, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectVersions", { id: `v-${projectId}-b`, organizationId: orgId, projectId, number: 2, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+  }
+
+  describe("addCustomNative", () => {
+    const cargs = { id: "cust1", organizationId: ORG, projectId: "p1", fields: { description: "Rigging labour", quantity: 1, unitPrice: 200 }, actor: ACTOR, auditId: "log1", now: NOW };
+
+    test("defaults to the live version when versionId is absent", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, cargs);
+      const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust1")).first());
+      expect(li?.versionId).toBe("v-p1");
+    });
+
+    test("targets the named non-live version when versionId is supplied", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, { ...cargs, versionId: "v-p1-b" });
+      const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust1")).first());
+      expect(li?.versionId).toBe("v-p1-b");
+      // sortOrder computed among the TARGET version's own siblings, not live's.
+      expect(li?.sortOrder).toBe(0);
+    });
+
+    test("rejects a versionId belonging to another org (cross-tenant)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projects", { liveVersionId: "v-foreign", id: "pForeign", organizationId: "org_2", projectNumber: "F1", name: "Foreign", status: "QUOTED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("projectVersions", { id: "v-foreign", organizationId: "org_2", projectId: "pForeign", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      });
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, { ...cargs, versionId: "v-foreign" }),
+      ).rejects.toThrow();
+      const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust1")).first());
+      expect(li).toBeNull();
+    });
+
+    test("rejects a versionId belonging to a different project in the SAME org (cross-project)", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await seedTwoVersions(t, ORG, "p2");
+      await expect(
+        t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, { ...cargs, versionId: "v-p2" }),
+      ).rejects.toThrow();
+    });
+
+    test("lock interaction: live + locked defaults to $0; non-live + locked keeps the real price", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t, ORG, "p1", { pricingLocked: true });
+
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, { ...cargs, id: "cust-live" });
+      const live = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust-live")).first());
+      expect(live?.unitPrice).toBe(0);
+      expect(live?.pricedUnderLock).toBe(true);
+
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addCustomNative, { ...cargs, id: "cust-nonlive", versionId: "v-p1-b" });
+      const nonLive = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "cust-nonlive")).first());
+      expect(nonLive?.unitPrice).toBe(200);
+      expect(nonLive?.pricedUnderLock).toBeUndefined();
+    });
+  });
+
+  describe("addNative", () => {
+    const aargs = { id: "new1", organizationId: ORG, projectId: "p1", fields: { type: "EQUIPMENT" as const, description: "PAR Can", quantity: 2, unitPrice: 15 }, includeAccessories: false, allowOverbook: false, actor: ACTOR, auditId: "log1", now: NOW };
+
+    test("targets the named non-live version, sortOrder scoped to it", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, { ...aargs, versionId: "v-p1-b" });
+      const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "new1")).first());
+      expect(li?.versionId).toBe("v-p1-b");
+    });
+
+    test("lock interaction: non-live target is never gated even while live is locked", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t, ORG, "p1", { pricingLocked: true });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, { ...aargs, versionId: "v-p1-b" });
+      const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "new1")).first());
+      expect(li?.unitPrice).toBe(15);
+      expect(li?.pricedUnderLock).toBeUndefined();
+    });
+
+    // #1221 follow-up — expandAccessoryChildLines (the at-add-time expansion)
+    // now also stamps versionId on every accessory child it creates (the same
+    // pre-existing gap fixed for updateAccessoryPlanNative above); this is the
+    // FIRST test to exercise addNative's includeAccessories:true path at all.
+    test("an accessory child created via includeAccessories lands on the SAME non-live version as its parent", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", assetType: "SERIALIZED" });
+        await ctx.db.insert("bulkAssets", { id: "ba-def", organizationId: ORG, modelId: "m1", assetTag: "BA-DEF", isActive: true });
+        await ctx.db.insert("modelBulkAccessories", { id: "mba-def", organizationId: ORG, modelId: "m1", bulkAssetId: "ba-def", quantity: 2, addedById: USER });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addNative, {
+        ...aargs, fields: { ...aargs.fields, modelId: "m1" }, includeAccessories: true, allowOverbook: true, versionId: "v-p1-b",
+      });
+      const parent = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "new1")).first());
+      expect(parent?.versionId).toBe("v-p1-b");
+      const kids = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "new1")).collect());
+      expect(kids).toHaveLength(1);
+      expect(kids[0].versionId).toBe("v-p1-b");
+      expect(kids[0].lineageId).toBe(kids[0].id);
+    });
+  });
+
+  describe("addKitNative", () => {
+    const kargs = { id: "kl1", organizationId: ORG, projectId: "p1", kitId: "k1", pricingMode: "KIT_PRICE" as const, unitPrice: 500, kitLabel: "KIT-1 - Lighting", emitActivity: true, actor: ACTOR, auditId: "log1", now: NOW };
+
+    test("parent + member children all land on the named non-live version", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
+      });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, { ...kargs, versionId: "v-p1-b" });
+      const parent = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "kl1")).first());
+      expect(parent?.versionId).toBe("v-p1-b");
+      const children = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_parentLineItemId", (q) => q.eq("parentLineItemId", "kl1")).collect());
+      expect(children).toHaveLength(1);
+      expect(children[0].versionId).toBe("v-p1-b");
+    });
+  });
+
+  describe("addLineItemSmartNative", () => {
+    const sargs = {
+      id: "sm1", organizationId: ORG, projectId: "p1",
+      fields: { type: "EQUIPMENT" as const, modelId: "m1", description: "PAR", quantity: 2 },
+      allowOverbook: true, forceSeparate: false, includeAccessories: false,
+      actor: ACTOR, auditId: "log1", now: NOW,
+    };
+
+    test("targets the named non-live version", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.run(async (ctx) => { await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW }); });
+      await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, { ...sargs, versionId: "v-p1-b" });
+      const li = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "sm1")).first());
+      expect(li?.versionId).toBe("v-p1-b");
+    });
+
+    test("merge-dedup only merges into a matching line on the SAME target version, not live's", async () => {
+      const t = makeT();
+      await member(t, "member");
+      await seedTwoVersions(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW });
+        // An existing matching line on LIVE — must NOT be merged into when the
+        // add targets the non-live version.
+        await ctx.db.insert("projectLineItems", {
+          id: "liveLine", organizationId: ORG, projectId: "p1", versionId: "v-p1", lineageId: "liveLine",
+          type: "EQUIPMENT", modelId: "m1", status: "CONFIRMED", isKitChild: false, quantity: 1,
+        });
+      });
+      const res = await t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addLineItemSmartNative, { ...sargs, versionId: "v-p1-b" });
+      expect(res.merged).toBe(false);
+      const liveLine = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "liveLine")).first());
+      expect(liveLine?.quantity).toBe(1); // untouched
+    });
   });
 });

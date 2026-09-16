@@ -3,8 +3,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
 const playScanFeedbackMock = vi.fn();
+const playScanHapticMock = vi.fn();
 vi.mock("@/lib/scan-feedback", () => ({
   playScanFeedback: (...args: unknown[]) => playScanFeedbackMock(...args),
+  playScanHaptic: (...args: unknown[]) => playScanHapticMock(...args),
 }));
 
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
@@ -13,6 +15,7 @@ describe("useScanFeedback", () => {
   beforeEach(() => {
     localStorage.clear();
     playScanFeedbackMock.mockClear();
+    playScanHapticMock.mockClear();
   });
 
   it("defaults to enabled when nothing is persisted", () => {
@@ -39,16 +42,19 @@ describe("useScanFeedback", () => {
     expect(second.result.current.enabled).toBe(false);
   });
 
-  it("play() calls playScanFeedback only when enabled", () => {
+  it("play() calls playScanFeedback and playScanHaptic only when enabled", () => {
     const { result } = renderHook(() => useScanFeedback());
 
     act(() => result.current.play("success"));
     expect(playScanFeedbackMock).toHaveBeenCalledWith("success");
+    expect(playScanHapticMock).toHaveBeenCalledWith("success");
 
     playScanFeedbackMock.mockClear();
+    playScanHapticMock.mockClear();
     act(() => result.current.toggle()); // -> disabled
     act(() => result.current.play("error"));
     expect(playScanFeedbackMock).not.toHaveBeenCalled();
+    expect(playScanHapticMock).not.toHaveBeenCalled();
   });
 
   it("survives malformed storage without throwing", () => {

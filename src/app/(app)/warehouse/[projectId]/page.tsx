@@ -35,7 +35,7 @@ import {
 } from "@/server/warehouse";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useScanFeedback } from "@/hooks/use-scan-feedback";
-import { ScanAudioToggle } from "@/components/scan-audio-toggle";
+import { ScanFeedbackToggle } from "@/components/scan-feedback-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -2616,7 +2616,7 @@ function WarehouseProjectPage({
         </div>
         <div className="flex gap-2">
           {/* Scan audio toggle — shared across prep/deploy/return scan verdicts */}
-          <ScanAudioToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
+          <ScanFeedbackToggle enabled={scanFeedback.enabled} onToggle={scanFeedback.toggle} />
           {/* Mobile: Pick List button shown prominently */}
           <Button variant="line" className="sm:hidden" onClick={() => setPickListOpen(true)}>
             <ClipboardList className="mr-2 h-4 w-4" />

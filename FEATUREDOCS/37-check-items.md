@@ -112,11 +112,11 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
 ### Ad-Hoc Check
 
 - **Route** (`/check/[assetTag]`): Standalone page to check any asset outside a project.
-- **Audio feedback**: Uses the shared `useScanFeedback` hook (`@/hooks/use-scan-feedback`,
-  see FEATUREDOCS/12 §"Scan Feedback (Audio)" and FEATUREDOCS/14 §"Audio / Scan Feedback")
-  with a `<ScanAudioToggle>` in the page header. `exception` plays once when the tag lookup
-  resolves and the asset isn't found (unknown tag); `submitMutation` plays `success` on save
-  and `error` on failure.
+- **Scan feedback**: Uses the shared `useScanFeedback` hook (`@/hooks/use-scan-feedback`,
+  see FEATUREDOCS/12 §"Scan Feedback (Audio + Haptics)" and FEATUREDOCS/14 §"Audio / Scan
+  Feedback") with a `<ScanFeedbackToggle>` in the page header, controlling both audio and
+  vibration. `exception` plays once when the tag lookup resolves and the asset isn't found
+  (unknown tag); `submitMutation` plays `success` on save and `error` on failure.
 
 ## Check Queue
 

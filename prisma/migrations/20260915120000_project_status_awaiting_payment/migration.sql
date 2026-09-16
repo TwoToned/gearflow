@@ -1,0 +1,18 @@
+-- #1236 — AWAITING_PAYMENT: the agreed-but-unpaid lifecycle phase.
+--
+-- `ProjectStatus` is an ORPHANED Postgres type: the `Project` model moved to
+-- Convex in the Phase 3 native decommission and no Prisma model references it
+-- any more (`discordIntegrationConfigs.channelCreateOnStatuses` aside, whose
+-- own model is likewise gone). It is kept in `prisma/schema.prisma` only so
+-- `src/generated/prisma/enums.ts` keeps exporting the TS union that
+-- `src/server/projects.ts` types its active-status list against.
+--
+-- Postgres cannot reorder an enum, so the new value is positioned with BEFORE
+-- to keep the declared order (… QUOTED, AWAITING_PAYMENT, CONFIRMED …) matching
+-- `convex/lib/validators.ts`. `IF NOT EXISTS` makes the statement idempotent
+-- for a deployment whose type was already patched by hand.
+--
+-- Safe inside Prisma's migration transaction (PG 12+): the new value is added
+-- but never USED in this same transaction, which is the only case the
+-- "unsafe use of new value" restriction covers.
+ALTER TYPE "ProjectStatus" ADD VALUE IF NOT EXISTS 'AWAITING_PAYMENT' BEFORE 'CONFIRMED';

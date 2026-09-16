@@ -9,7 +9,8 @@ import { SectionHeader } from "@/components/layout/page-layouts";
 import { getStatusColor } from "@/lib/status-colors";
 
 const projectStatusLabels: Record<string, string> = {
-  ENQUIRY: "Enquiry", QUOTING: "Quoting", QUOTED: "Quoted", CONFIRMED: "Confirmed",
+  ENQUIRY: "Enquiry", QUOTING: "Quoting", QUOTED: "Quoted",
+  AWAITING_PAYMENT: "Awaiting payment", CONFIRMED: "Confirmed",
   PREPPING: "Prepping", CHECKED_OUT: "Deployed", ON_SITE: "On site", RETURNED: "Returned",
   COMPLETED: "Completed", INVOICED: "Invoiced", CANCELLED: "Cancelled",
 };

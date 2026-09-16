@@ -1041,7 +1041,7 @@ describe("checkOutKitsBatch", () => {
     const res = await t.withIdentity(asUser(ORG)).mutation(api.warehouseWrites.checkOutKitsBatch, {
       orgId: ORG, projectId: "p1", kitIds: [], auditIds: [], now: NOW, actor: SPOOF,
     });
-    expect(res).toEqual({ succeeded: [], errors: [] });
+    expect(res).toEqual({ succeeded: [], errors: [], autoStatus: null });
   });
 
   test("viewer denied", async () => {

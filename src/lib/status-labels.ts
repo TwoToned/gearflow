@@ -36,6 +36,7 @@ export const projectStatusLabels: Record<string, string> = {
   ENQUIRY: "Enquiry",
   QUOTING: "Quoting",
   QUOTED: "Quoted",
+  AWAITING_PAYMENT: "Awaiting payment",
   CONFIRMED: "Confirmed",
   PREPPING: "Prepping",
   CHECKED_OUT: "Deployed",

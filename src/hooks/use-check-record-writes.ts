@@ -1,10 +1,12 @@
 "use client";
 
 import { useMutation } from "convex/react";
+import { toast } from "sonner";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { api } from "../../convex/_generated/api";
+import { autoStatusToast } from "@/lib/project-status-automation";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — replaces the 7 composite writes in
@@ -107,8 +109,10 @@ export function useCheckRecordWrites() {
       prepContainer?: string | null;
       includeAccessoryIds?: string[];
       checks: Check[];
-    }): Promise<{ success: true }> => {
-      return completeCheckAndPackM({
+    }): Promise<{ success: true; autoStatus: string | null }> => {
+      // #1160 — packing the first item on a CONFIRMED job moves it to Prepping.
+      // Announced here so the status never changes under the operator silently.
+      const res = await completeCheckAndPackM({
         orgId: requireOrg(),
         projectId: data.projectId,
         lineItemId: data.lineItemId,
@@ -123,6 +127,9 @@ export function useCheckRecordWrites() {
         now: Date.now(),
         actor: actor(),
       });
+      const copy = autoStatusToast(res.autoStatus);
+      if (copy) toast(copy.title, { description: copy.description });
+      return res;
     },
 
     completeCheckAndFlag: async (data: {

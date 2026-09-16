@@ -505,6 +505,73 @@ on one document — which is also why `buildFinanceLines` needs no counterpart
 (the group still bills as one line). Kit parents are excluded, and expand
 (warehouse) mode ignores the flag entirely — packers need the full list.
 
+### Project status advances itself — add a TRIGGER, never a second patch site
+`convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
+effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item
+packed → `PREPPING`, last packed item off the dock → `CHECKED_OUT`, last item back
+→ `RETURNED`. The returns station's old private `maybeAutoAdvanceProject` is gone —
+it calls in here. Three rules when you touch this:
+
+1. **Never hand-roll another "patch `projects.status` as a side effect".** Add a
+   row to `AUTO_STATUS_RULES` and call `maybeAutoAdvanceProjectStatus` ONCE at the
+   end of the mutation that did the real work — never inside a per-item loop, and
+   never before the writes it inspects have landed.
+2. **Never automate a move INTO `COMPLETED`/`INVOICED`.** Closing a job out is a
+   human's call. `CONFIRMED` has exactly ONE sanctioned rule — `PAYMENT_SETTLED`
+   (#1236): in this business payment IS the confirmation. It is safe only because
+   it re-checks the accepted-quote gate (failing CLOSED — it has nobody to collect
+   a justification from) and takes the same whole-project snapshot
+   `updateStatusNative` does. A table-level test pins it as the only rule that may
+   reach `CONFIRMED`, so a second can't inherit the exception by accident.
+3. **A new switch key goes on BOTH sides.** The rule table's `settingKey` lives in
+   `convex/lib/projectAutoStatus.ts`; `AUTO_STATUS_KEYS` + labels + toast copy live
+   in `src/lib/project-status-automation.ts` (convex can't import from `src/`).
+   `convex/projectAutoStatus.test.ts` asserts parity — absent = ON, so the stored
+   blob only ever records an opt-OUT.
+
+"Everything deployed" is a POSITIVE test — **no deployable row still has ordered
+quantity in the warehouse** (`stillInBuilding`), not "nothing is still `PACKED`".
+The absence-of-a-PACKED-marker version was wrong twice: a partially deployed bulk
+line rolls up to `{ status: CHECKED_OUT, prepStatus: PACKED }` on its FIRST unit
+out (`deriveOrderLineStatus` is a `some`), and never-prepped gear has no
+`prepStatus` at all — so one deployed item flipped a job with everything else
+still on the shelf, permanently (the `from` set stops matching, so it can't
+self-correct).
+
+Deployable mirrors the warehouse page's own `equipmentItems` filter: `type ??
+"EQUIPMENT"` is `EQUIPMENT`, not a container row, not a sub-hire GROUP wrapper.
+Scoping by type is what keeps services / labour / transport / MISC / sale lines —
+which sit at `CONFIRMED` for the life of the job — from pinning it at `PREPPING`.
+
+Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical work
+is the second way out of the money phase, for orgs that reconcile payments in Xero
+and never write a `payments` row. See FEATUREDOCS/76.
+
+### ⚠️ `AWAITING_PAYMENT` is ONE status — the sub-steps are DERIVED
+The money phase (#1236, FEATUREDOCS/77) sits between `QUOTED` and `CONFIRMED`:
+the client has agreed and/or an invoice is out, but the money hasn't landed.
+**Never add "deposit invoice sent" or "deposit paid" as statuses.** Both are
+already facts on rows that own them — an `invoices` row at `ISSUED`, and
+`invoices.paymentStatus`, itself derived from `payments` — so a copy on the
+project would be a second source of truth for whether the client's money landed
+(R-3.1), and the two WILL disagree the first time a payment is voided.
+`src/lib/project-payment-progress.ts` computes the three sub-steps on read;
+`<PaymentProgressStrip>` renders them under the stepper, only at
+`AWAITING_PAYMENT`.
+
+Two things about it that look wrong and aren't:
+- **Its lock tier is `OPEN`, not `FINANCE_LOCKED`.** #988's quote-sent input
+  already locks the pricing of anything that came through a quote, and a
+  status-driven lock here makes `newVersionNative`'s `bypassQuoteLock` (which
+  resolves from STATUS alone) unable to reach its own exit — a client asking for
+  a change after approving could never be re-quoted. The residual gap (an invoice
+  issued with no quote behind it locks nothing) is PRE-EXISTING and belongs in
+  `resolveLockTier` as a third input with its own void-and-reissue exit.
+- **It IS in `HARD_PROJECT_STATUSES`.** The gear is held from the moment the job
+  is agreed. So the two same-named `isConfirmedOrLater` helpers now disagree for
+  this one status: `availabilityCore.ts`'s (stock) says true,
+  `projectLocks.ts`'s (money) says false. They ask different questions.
+
 ### ⚠️ Quote status is DERIVED — never branch on the stored column
 A quote's `status` column is not the whole answer. `EXPIRED` is computed on read
 (`validUntil < now && status === "SENT"`) and never stored, and the deprecated

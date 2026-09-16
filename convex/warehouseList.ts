@@ -23,6 +23,12 @@ import { getProjectWindow } from "./lib/projectWindow";
 // landing shows. Querying these via the by_organizationId_status composite index
 // keeps the composite bounded (active projects only, never the whole-org history).
 const WAREHOUSE_STATUSES = [
+  // #1236 — AWAITING_PAYMENT is in HARD_PROJECT_STATUSES (the gear is held from
+  // the moment the job is agreed), so it belongs on the warehouse landing too.
+  // Leaving it out stranded every org that reconciles payments in Xero rather
+  // than recording them in Flow: the job entered the money phase and became
+  // invisible to the only screen that could move it on.
+  "AWAITING_PAYMENT",
   "CONFIRMED",
   "PREPPING",
   "CHECKED_OUT",

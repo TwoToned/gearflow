@@ -2,6 +2,23 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-31 (review quarterly — POLICY.md R-5.5)_
 
+> **#1160** — sending a quote now also advances the project to `QUOTED` by
+> itself (org-configurable, on by default). `sendNative` returns
+> `autoStatusChange` when it acted and the pre-#1160 `offerStatusChange` only
+> when the org opted out, so the two are never both set. Accept/decline are
+> unchanged: `CONFIRMED`/`CANCELLED` stay offers. See
+> [76 — Project Status Automation](./76-project-status-automation.md).
+
+> **#1236** — the finance verbs now drive the lifecycle. Accepting a quote or
+> issuing an invoice moves the project to the new `AWAITING_PAYMENT` status;
+> recording a payment that settles an invoice **in full** moves it to
+> `CONFIRMED`. `markAcceptedNative` reports `autoStatusChange` when it acted and
+> keeps the old `offerStatusChange: "CONFIRMED"` only for an opted-out org.
+> "Deposit invoice sent" and "deposit paid" are NOT statuses — they are derived
+> from these very rows. See
+> [77 — The Money Phase](./77-money-phase-lifecycle.md).
+
+
 WS1 of #934 (#940) — the finance model. **RVLT Flow owns quote + invoice
 generation; Xero owns the ledger, payment collection, and reconciliation.**
 This reverses the earlier "no Flow-side finance" stance recorded in

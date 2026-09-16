@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertStrLen, assertArrayMax } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
+import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { assertProjectInOrg } from "./projectLineItems";
 import {
   checkinItemsCore,
@@ -180,7 +181,14 @@ export const checkInItems = mutation({
       });
     }
 
-    return res; // { updatedLineIds }
+    // #1160 — the project-scoped check-in auto-advances too. Before this it was the
+    // org-wide returns station ONLY, so the same physical act closed the job out or
+    // didn't depending purely on which screen the operator happened to use.
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now,
+    });
+
+    return { ...res, autoStatus }; // { updatedLineIds, autoStatus }
   },
 });
 
@@ -511,7 +519,11 @@ export const checkInKit = mutation({
       createdAt: a.now,
     });
 
-    return res; // { kitId, affectedKitIds }
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now,
+    });
+
+    return { ...res, autoStatus }; // { kitId, affectedKitIds, autoStatus }
   },
 });
 
@@ -537,7 +549,7 @@ export const checkInKitsBatch = mutation({
     // contents each call, so returning the same kit twice would overstate availability.
     const seen = new Set<string>();
     const uniqueItems = a.items.filter((it) => (seen.has(it.kitId) ? false : (seen.add(it.kitId), true)));
-    if (uniqueItems.length === 0) return { succeeded: [] as string[], errors: [] as { kitId: string; message: string }[] };
+    if (uniqueItems.length === 0) return { succeeded: [] as string[], errors: [] as { kitId: string; message: string }[], autoStatus: null as string | null };
 
     await requireProjectInOrg(ctx, a.projectId, a.orgId);
     for (const it of uniqueItems) await requireKitInOrg(ctx, it.kitId, a.orgId);
@@ -569,7 +581,13 @@ export const checkInKitsBatch = mutation({
       });
     }
 
-    return { succeeded: res.succeeded, errors: res.errors };
+    const autoStatus = res.succeeded.length
+      ? await maybeAutoAdvanceProjectStatus(ctx, {
+          orgId: a.orgId, projectId: a.projectId, trigger: "ALL_RETURNED", actor, now: a.now,
+        })
+      : null;
+
+    return { succeeded: res.succeeded, errors: res.errors, autoStatus };
   },
 });
 
@@ -1003,7 +1021,13 @@ export const checkOutItems = mutation({
       // Never let an event break the write that produced it.
     }
 
-    return res; // { updatedLineIds }
+    // #1160 — nothing left packed on the dock ⇒ the job is out. Runs AFTER the core
+    // so it sees this deploy's own writes.
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: a.orgId, projectId: a.projectId, trigger: "ALL_CHECKED_OUT", actor, now: a.now,
+    });
+
+    return { ...res, autoStatus }; // { updatedLineIds, autoStatus }
   },
 });
 
@@ -1099,7 +1123,11 @@ export const checkOutKit = mutation({
       createdAt: a.now,
     });
 
-    return res; // { kitId, affectedKitIds }
+    const autoStatus = await maybeAutoAdvanceProjectStatus(ctx, {
+      orgId: a.orgId, projectId: a.projectId, trigger: "ALL_CHECKED_OUT", actor, now: a.now,
+    });
+
+    return { ...res, autoStatus }; // { kitId, affectedKitIds, autoStatus }
   },
 });
 
@@ -1115,7 +1143,7 @@ export const checkOutKitsBatch = mutation({
     const actor = await resolveActor(ctx, a.actor);
 
     const unique = [...new Set(a.kitIds)];
-    if (unique.length === 0) return { succeeded: [] as string[], errors: [] as { kitId: string; message: string }[] };
+    if (unique.length === 0) return { succeeded: [] as string[], errors: [] as { kitId: string; message: string }[], autoStatus: null as string | null };
 
     // Project-wide blocker gate (kit checkout has no line scope) — checked once.
     await assertNoBlockingCommentsInMutation(ctx, a.orgId, a.projectId, { actionLabel: "check out this kit" });
@@ -1149,7 +1177,13 @@ export const checkOutKitsBatch = mutation({
       });
     }
 
-    return { succeeded: res.succeeded, errors: res.errors };
+    const autoStatus = res.succeeded.length
+      ? await maybeAutoAdvanceProjectStatus(ctx, {
+          orgId: a.orgId, projectId: a.projectId, trigger: "ALL_CHECKED_OUT", actor, now: a.now,
+        })
+      : null;
+
+    return { succeeded: res.succeeded, errors: res.errors, autoStatus };
   },
 });
 

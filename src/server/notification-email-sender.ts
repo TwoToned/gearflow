@@ -224,7 +224,7 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
     .filter(
       (p) =>
         !p.isTemplate &&
-        (p.status === "CONFIRMED" || p.status === "PREPPING") &&
+        (p.status === "AWAITING_PAYMENT" || p.status === "CONFIRMED" || p.status === "PREPPING") &&
         p.rentalStartDate != null &&
         (p.rentalStartDate as number) >= now.getTime() &&
         (p.rentalStartDate as number) <= soon.getTime(),

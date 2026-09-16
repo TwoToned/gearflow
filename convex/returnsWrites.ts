@@ -9,7 +9,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
-import { bumpProjectCounters } from "./lib/counters";
+import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 import { checkinItemsCore } from "./warehouseOps";
 import { syncLineItemRollup, assetStatusFromReturnCondition } from "./lib/fulfillment";
 import { distributeReturn, type CheckInItem } from "./lib/bulkCheckin";
@@ -160,47 +160,17 @@ async function returnCore(
 }
 
 /**
- * When a project's LAST outstanding CHECKED_OUT line just returned, auto-advance
- * it to RETURNED (existing status-mutation semantics, feeds batch close-out).
- * Patches the project directly inside this warehouse-authorized transaction
- * rather than calling `projectWrites.updateStatusNative` (which separately gates
- * on `project:update` — a dedicated `warehouse` role has check_in but only
- * `project:read`, so routing through that mutation would make this side effect
- * silently fail for exactly the role this station is built for). The single
- * `warehouse:check_in` gate already checked at the top of the calling mutation is
- * the authority for every table this whole transaction touches, matching how
- * `warehouseOps` cores already write `assets`/`projectLineItems` without a
- * separate per-table permission re-check.
+ * #1160 — the returns station's last-unit-returned auto-advance, now the shared
+ * rule (`convex/lib/projectAutoStatus.ts`) rather than this file's own private
+ * copy. The rationale that copy carried still holds and lives there: the status
+ * patch happens INSIDE this warehouse-authorized transaction rather than via
+ * `projectWrites.updateStatusNative`, because a dedicated `warehouse` role has
+ * `check_in` but only `project:read` — routing through that mutation would make
+ * the side effect silently fail for exactly the role this station is built for.
  */
 async function maybeAutoAdvanceProject(ctx: MutationCtx, orgId: string, projectId: string, actor: Actor, now: number): Promise<boolean> {
-  const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
-  if (!project || project.organizationId !== orgId) return false;
-  if (project.status !== "CHECKED_OUT" && project.status !== "ON_SITE") return false;
-
-  // Existence check only (not a collect) — any remaining CHECKED_OUT line blocks
-  // the advance.
-  const stillOut = await ctx.db
-    .query("projectLineItems")
-    .withIndex("by_projectId_status", (q) => q.eq("projectId", projectId).eq("status", "CHECKED_OUT"))
-    .first();
-  if (stillOut) return false;
-
-  await ctx.db.patch(project._id, { status: "RETURNED", updatedAt: now });
-  await bumpProjectCounters(ctx, orgId, project, { ...project, status: "RETURNED" });
-  await writeActivityLog(ctx, {
-    id: createId(),
-    organizationId: orgId,
-    action: "UPDATE",
-    entityType: "project",
-    entityId: project.id,
-    entityName: project.name,
-    userId: actor.userId,
-    userName: actor.userName,
-    summary: "Auto-advanced to Returned — last outstanding item returned via the returns station",
-    projectId: project.id,
-    createdAt: now,
-  });
-  return true;
+  const to = await maybeAutoAdvanceProjectStatus(ctx, { orgId, projectId, trigger: "ALL_RETURNED", actor, now });
+  return to != null;
 }
 
 // ─── returnScanNative — single scan-and-return ──────────────────────────────

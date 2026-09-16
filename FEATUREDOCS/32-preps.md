@@ -2,6 +2,11 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
 
+> **#1160** — packing the first item on a `CONFIRMED` job moves the project to
+> `PREPPING` by itself. Org-configurable, on by default. See
+> [76 — Project Status Automation](./76-project-status-automation.md).
+
+
 ## Overview
 Prep containers provide **visual grouping** of assets during the Pick/Prep phase of warehouse operations. When a warehouse operator selects a container (a physical case, custom name, or case category asset) and then preps an asset, that asset is tagged with the container name. This grouping carries into the Deploy tab as section headers so operators can see which assets are packed together.
 

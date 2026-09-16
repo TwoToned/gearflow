@@ -3,6 +3,7 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireService } from "./lib/auth";
 import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItemRollup } from "./lib/fulfillment";
+import { maybeAutoAdvanceProjectStatus } from "./lib/projectAutoStatus";
 
 /**
  * Check-records prep/return — Convex port of the line-item/unit writes in
@@ -14,6 +15,46 @@ import { ensureBulkUnit, ensureSerialisedUnit, lineUnits, prepUnit, syncLineItem
  * generated projectLineItems.update from the server action.
  */
 type Ctx = MutationCtx;
+
+/**
+ * #1160 — who to attribute the "Auto-advanced to Prepping" audit row to.
+ *
+ * These four prep mutations are `requireService`: they run behind a server action
+ * that DOES know the operator, but never had a reason to forward them an identity
+ * (their own audit rows are written back in `src/server/check-records.ts`). The
+ * status side effect is written INSIDE the transaction, so it needs one here.
+ * Optional, and a caller that omits it is attributed to the platform rather than
+ * losing the row — a service-context prep with no operator is still a real event.
+ */
+const serviceActorValidator = v.optional(v.object({ userId: v.string(), userName: v.string() }));
+const SYSTEM_ACTOR = { userId: "", userName: "RVLT Flow" } as const;
+
+/** Advance the project to PREPPING if this is the first prep on a confirmed job. */
+async function autoAdvanceOnPrep(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; actor?: { userId: string; userName: string }; now: number },
+): Promise<void> {
+  await maybeAutoAdvanceProjectStatus(ctx, {
+    orgId: a.organizationId,
+    projectId: a.projectId,
+    trigger: "PREP_STARTED",
+    actor: a.actor ?? SYSTEM_ACTOR,
+    now: a.now,
+  });
+}
+
+/** Same, but only when the batch actually prepped something. An empty `items`
+ *  array is a no-op, not "the warehouse started prepping" — firing on it would
+ *  move the job with nothing on the bench and write a false audit row. Both
+ *  batch mutations go through here so that rule lives in ONE place. */
+async function autoAdvanceIfPrepped(
+  ctx: Ctx,
+  a: { organizationId: string; projectId: string; actor?: { userId: string; userName: string }; now: number },
+  preppedCount: number,
+): Promise<void> {
+  if (preppedCount === 0) return;
+  await autoAdvanceOnPrep(ctx, a);
+}
 
 async function lineByCuid(ctx: Ctx, id: string) {
   return await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
@@ -61,15 +102,18 @@ export const prepItem = mutation({
     assetId: v.optional(v.string()), bulkAssetId: v.optional(v.string()),
     quantity: v.optional(v.number()), prepContainer: v.optional(v.union(v.string(), v.null())),
     includeAccessoryIds: v.optional(v.array(v.string())), now: v.number(),
+    actor: serviceActorValidator,
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
-    return prepItemCore(ctx, {
+    const res = await prepItemCore(ctx, {
       organizationId: a.organizationId, projectId: a.projectId, lineItemId: a.lineItemId,
       assetId: a.assetId, bulkAssetId: a.bulkAssetId,
       quantity: a.quantity, prepContainer: a.prepContainer ?? undefined,
       includeAccessoryIds: a.includeAccessoryIds,
     });
+    await autoAdvanceOnPrep(ctx, a);
+    return res;
   },
 });
 
@@ -94,6 +138,7 @@ export const prepItems = mutation({
       }),
     ),
     now: v.number(),
+    actor: serviceActorValidator,
   },
   handler: async (ctx, a) => {
     await requireService(ctx);
@@ -117,6 +162,8 @@ export const prepItems = mutation({
       });
       touched.add(item.lineItemId);
     }
+    // Once per batch, after every unit has landed — never inside the loop.
+    await autoAdvanceIfPrepped(ctx, a, touched.size);
     return { ids: [...touched] };
   },
 });
@@ -279,12 +326,13 @@ async function setKitTreePrep(ctx: Ctx, parentLineItemId: string, organizationId
 }
 
 export const prepKitChildren = mutation({
-  args: { organizationId: v.string(), projectId: v.string(), parentLineItemId: v.string(), now: v.number() },
+  args: { organizationId: v.string(), projectId: v.string(), parentLineItemId: v.string(), now: v.number(), actor: serviceActorValidator },
   handler: async (ctx, a) => {
     await requireService(ctx);
     const parent = await lineByCuid(ctx, a.parentLineItemId);
     if (!parent || parent.projectId !== a.projectId || parent.organizationId !== a.organizationId) throw new ConvexError("Kit line item not found");
     await setKitTreePrep(ctx, a.parentLineItemId, a.organizationId, a.now, "PREP");
+    await autoAdvanceOnPrep(ctx, a);
     return { success: true };
   },
 });
@@ -300,7 +348,7 @@ export const prepKitChildren = mutation({
  * (no inventory consumption) so a valid kit's core can't fail on a resource guard.
  */
 export const prepKitsBatch = mutation({
-  args: { organizationId: v.string(), projectId: v.string(), parentLineItemIds: v.array(v.string()), now: v.number() },
+  args: { organizationId: v.string(), projectId: v.string(), parentLineItemIds: v.array(v.string()), now: v.number(), actor: serviceActorValidator },
   handler: async (ctx, a) => {
     await requireService(ctx);
     const succeeded: string[] = [];
@@ -314,6 +362,7 @@ export const prepKitsBatch = mutation({
       await setKitTreePrep(ctx, parentLineItemId, a.organizationId, a.now, "PREP");
       succeeded.push(parentLineItemId);
     }
+    await autoAdvanceIfPrepped(ctx, a, succeeded.length);
     return { succeeded, errors };
   },
 });

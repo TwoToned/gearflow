@@ -20,6 +20,7 @@ import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
 import { InvoiceNumberingSettings } from "@/components/settings/invoice-numbering-settings";
+import { StatusAutomationSettings } from "@/components/settings/status-automation-settings";
 import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -346,6 +347,27 @@ export default function GeneralSettingsPage() {
                 }
               />
             </div>
+          </SettingsSection>
+        </div>
+
+        {/* Status automation (#1160) — its own section, not a "Project defaults"
+            field: these change what the app DOES on its own, which is a different
+            kind of setting from a value new projects inherit. */}
+        <div className="border-t border-line">
+          <SettingsSection
+            title="Status automation"
+            description="Let jobs move themselves as the work actually happens, instead of someone remembering to."
+          >
+            <StatusAutomationSettings
+              value={settings.projectStatusAutomation}
+              disabled={!canEdit}
+              onChange={(next) => setSettings((prev) => ({ ...prev, projectStatusAutomation: next }))}
+            />
+            <p className="t-micro text-muted">
+              Jobs only ever move FORWARD, and never into Confirmed, Completed or Invoiced — those
+              commit stock, money or a lock, so they stay a deliberate click. Every automatic move is
+              recorded in the job&rsquo;s activity log.
+            </p>
           </SettingsSection>
         </div>
       </div>

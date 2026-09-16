@@ -1,3 +1,4 @@
+import type { ProjectStatusAutomationSettings } from "@/lib/project-status-automation";
 import type { OrgSSOSettings } from "@/lib/sso-types";
 import type { IncrementReset } from "@/lib/project-number";
 import type { OrgJoinPolicy } from "@/lib/org-join-policy";
@@ -106,4 +107,7 @@ export interface OrgSettings {
    *  via verified-domain match. Absent = `INVITE_ONLY` (see
    *  `src/lib/org-join-policy.ts` for the full policy + default). */
   joinPolicy?: OrgJoinPolicy;
+  /** #1160 — per-org opt-OUT switches for project status automation. Absent (and
+   *  every absent key inside it) means ON; see `src/lib/project-status-automation.ts`. */
+  projectStatusAutomation?: ProjectStatusAutomationSettings;
 }

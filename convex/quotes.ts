@@ -47,10 +47,10 @@ export const listForProject = query({
  * Backs the Finance tab's lock strip and, in Phase C (#988), the quote input to
  * `resolveLockTier`.
  *
- * `draftQuoteId` is scoped to `liveRevision`, not `revision` (#1085) — since
- * `saveVersionNative` shipped, a project can have a non-live `DRAFT` row left
- * behind (a saved-but-never-sent version, or a recalled one), and that row
- * must never surface as "the" open draft here.
+ * `draftQuoteId` is scoped to `liveRevision`, not `revision` (#1085) — a
+ * project can have a non-live `DRAFT` row left behind (a saved-but-never-sent
+ * version, or a recalled one), and that row must never surface as "the" open
+ * draft here.
  */
 export const revisionStateForProject = query({
   args: { orgId: v.string(), projectId: v.string(), now: v.optional(v.number()) },

@@ -207,9 +207,9 @@ function buildExpiring(
 
 /** Never sent: DRAFT revisions on active (non-template, non-cancelled)
  *  projects — work sitting unfinished. Scoped to each project's LIVE
- *  revision (#1085) — a non-live `DRAFT` (one `saveVersionNative` left
- *  behind: a saved-but-never-sent version, or a recalled one) is a version
- *  the operator deliberately moved past, not unfinished work. */
+ *  revision (#1085) — a non-live `DRAFT` (one left behind by a saved-but-
+ *  never-sent version, or a recalled one) is a version the operator
+ *  deliberately moved past, not unfinished work. */
 function buildNeverSent(
   draftQuotes: Doc<"quotes">[],
   projectDocsById: Map<string, Doc<"projects">>,

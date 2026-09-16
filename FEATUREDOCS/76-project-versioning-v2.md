@@ -1,10 +1,11 @@
-# Project Versioning v2 — Phase 1 (schema + backfill) + Phase 2 (index rename + reads)
+# Project Versioning v2 — Phase 1 (schema + backfill) + Phase 2 (index rename + reads) + Phase 3 (the verb set)
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-09-15 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-09-16 (review quarterly — POLICY.md R-5.5)_
 
 Parent #1221. Phase 1 is #1226 (below); Phase 2 is #1228 (its own section
-further down). Plan: `docs/designs/project-versioning-v2.md` §4.2, §4.9, §6,
-§7 (lives on a separate integration branch — not merged to `main` yet).
+further down); Phase 3 is #1229 (its own section at the bottom). Plan:
+`docs/designs/project-versioning-v2.md` §4.2, §4.4, §4.8, §4.9, §6, §7 (lives
+on a separate integration branch — not merged to `main` yet).
 
 ## What this is, and what it is NOT
 
@@ -292,13 +293,211 @@ this phase's own "prioritize correctness over checking every box" guidance.
 The ratchet keeps this debt visible and non-growing (CI fails on a NEW
 unmarked site) rather than hidden.
 
+## Phase 3 (#1229) — the real verb set: `convex/versions.ts`
+
+Phase 3 is the backend half of "make live + the version verbs": it replaces
+promote-as-restore with a pointer flip and collapses three overlapping
+"create a version" mutations into one, ALL on the real `projectVersions`
+table Phase 1/2 built (not the older `projects.revision`/`liveRevision` +
+`projectSnapshots` JSON-blob program, FEATUREDOCS/70, which Phase 3 leaves
+running in parallel — see "What got deleted, and what didn't" below). No UI
+in this phase — that's Phase 5, per the tracking issue's own scope.
+
+### The verb table (design §4.4)
+
+| Verb | Server | Replaces |
+|---|---|---|
+| New version | `versions.createNative({ organizationId, projectId, fromVersionId?, label? })` | `projectVersionsWrites.saveVersionNative`, `quotesWrites.repriceFromRevisionNative` (`quotesWrites.newVersionNative` itself is untouched — see below) |
+| Make live | `versions.makeLiveNative({ organizationId, projectId, versionId })` | `projectVersionsWrites.promoteRevisionNative` |
+| Rename | `versions.setLabelNative({ organizationId, projectId, versionId, label? })` | — |
+| Delete | `versions.deleteNative({ organizationId, projectId, versionId })` | `quotesWrites.deleteDraftNative`, `quotesWrites.deleteVersionNative` |
+
+`createNative` copies `fromVersionId`'s plan graph via `copyPlanGraph`
+(`convex/lib/versionGraph.ts`) into a fresh, non-live `projectVersions` row —
+the live tables/pointer are never touched, so it's safe to call from any
+state, any number of times. `fromVersionId` defaults to the project's current
+live version ("the version you're looking at"). The version-number allocator
+reads the project's current MAX existing number and adds one — per
+schema.ts's own prescription for this table (no separate persistent counter
+the way the older `projects.revision` is one) — so a number CAN be reused
+after its version is deleted; this is a deliberate consequence of that
+design, not a bug (a deleted version's number was never live and nothing
+that survives the delete still references it).
+
+### `copyPlanGraph` — the shared clone primitive
+
+`convex/lib/versionGraph.ts`'s `copyPlanGraph(ctx, {sourceVersionId,
+targetVersionId})` is the ONE row-cloning implementation (R-3.1) shared by
+`versions.createNative` and Phase 2's `materializeVersionRowsNative` (which
+now calls it too, instead of carrying its own copy of the same fresh-id/
+preserved-lineageId/FK-rewrite logic). It enforces a SIZE BUDGET
+(`MAX_CLONABLE_PLAN_ROWS = 3000`, well under Convex's 8,192-doc/16MiB
+transaction ceiling) and throws `ConvexError("VERSION_TOO_LARGE")` BEFORE
+inserting anything, rather than failing partway through — a version too
+large to clone in one transaction is refused, not partially copied.
+
+### `makeLiveNative` — a pointer flip, not a restore
+
+```
+makeLiveNative({ versionId: K })     // K ≠ liveVersionId, K.contentState === "ready"
+ 1. permission check (project:update)   // NO lock gate (D37/D39) — a pointer flip is not
+                                        // a destructive restore, so there is nothing for a
+                                        // lock to protect. danger:"high", fully logged.
+ 2. outgoing = liveVersionId; incoming = K
+ 3. carry reality by lineageId          // generalises convex/projectLineItems.ts ~L930-965
+                                        //   (units + check records; also maintenance links + threads)
+ 4. swap plan fields (§4.2) — the live version's live on `projects`, the outgoing one's
+    move onto its own projectVersions row
+ 5. liveVersionId = K
+ 6. recalcVersionTotals(K)  → writes projects.*; re-derive availability; overbooking re-check
+```
+
+(The same 6-step diagram lives as an ASCII comment block directly in
+`makeLiveNative`'s own source, per this phase's acceptance criteria.)
+
+Because nothing is overwritten, there is no auto-capture step (the older
+`PRE_PROMOTE` "Auto-saved before switching to vN" quote rows are gone along
+with `promoteRevisionNative` itself), and **making a version live is never
+blocked by an issued invoice** (D6) — the invoiced total stays whatever it
+was; the balance invoice, when issued, reads whatever is live at that moment.
+There is likewise no lifecycle-lock gate at all (D37/D39): a pointer flip
+destroys nothing, so there's nothing for a lock to protect.
+
+Step 6 reuses the EXISTING `recalcProjectTotals` (`convex/lib/recalc.ts`)
+unchanged — since step 5 already flipped `project.liveVersionId` to `K`
+before step 6 runs, the LIVE-ONLY recalc naturally reads `K`'s own rows. No
+bespoke "recalc a specific version" function was written for this (R-3.1).
+Availability/overbooking re-derivation on a moved rental window reuses the
+same `deriveDateMoveConflicts` logic the deleted `promoteRevisionNative` used
+(ported into `convex/versions.ts`, ratchet on `docs/exceptions.md`
+unaffected — this is the identical board-aggregation approach, not a new
+scanned-rows cost).
+
+**Round-trip proof.** `convex/versions.test.ts` proves make-live is
+symmetric: making v2 live then making v1 live again returns the project's
+PLAN FIELDS to a byte-identical state (`versions.makeLiveNative — make-live
+is a pointer flip — round trip v1 -> v2 -> v1 is byte-identical`). One
+caveat the test seeds around deliberately: `discountAmount` is listed as a
+PLAN FIELD on `projectVersions` (schema.ts, Phase 1) but is ALSO a
+recalc-derived output on `projects` (`subtotal × discountPercent`,
+`convex/lib/recalc.ts`) — every make-live re-derives it via
+`recalcProjectTotals`, so it only stays byte-identical across a round trip
+when the seed data was already internally consistent with the line items'
+own subtotal. This is a pre-existing Phase 1 schema shape, not something
+Phase 3 changed.
+
+### Lineage re-pointing (step 3) — `convex/lib/versionReality.ts`
+
+For each outgoing line with real-world footprint (`projectLineItemUnits`,
+`checkRecords`, `maintenanceRecords`, `commentThreads` with
+`targetType: "lineItem"`) — generalising `convex/projectLineItems.ts`'s
+`mergeGroup` mutation (~L930-965), which re-points the same two tables
+(units + check records) for the same reason (a line's identity changing
+underneath its real-world footprint):
+
+- **Match** (an incoming line shares the outgoing line's `lineageId`) →
+  re-point every reality row onto the incoming line's id.
+- **Incoming quantity < carried fulfilment** (units with
+  `status: "CHECKED_OUT"`, e.g. 2 checked out, plan says 1) → **listed as a
+  CONFLICT in the mutation's return value, never blocking** the make-live
+  (design §4.4/D6's "list, don't block" rule applies here too) — a future
+  UI phase renders `conflicts: string[]`.
+- **No match** → the reality is orphaned: nobody in the incoming version
+  planned this line at all. It stays on the job as a fresh, real
+  `projectLineItems` row on the incoming version, flagged
+  `unplanned: true` (a NEW field, `convex/schema.ts`) — the same structural-
+  write allowance an on-site add gets, priced at `unitPrice: 0` (no price was
+  ever agreed for it under the new plan) and carrying the SAME `lineageId` as
+  the line it was orphaned from (so a later version swap can still find it by
+  lineage). `projects.pricingLocked` doesn't exist yet (that's Phase 4), so
+  there's no lock-exception to wire this into yet — just the unplanned-line
+  creation itself, per this phase's own scope note.
+
+Only `projectLineItems` reality is considered — categories/groups/services
+have no real-world footprint of their own. `categorySlots` (ordering) is a
+known, documented gap shared with `materializeVersionRowsNative` (Phase 2) —
+out of scope here for the same reason.
+
+### `deleteNative`
+
+Refuses to delete the LIVE version (`VERSION_IS_LIVE` — make another version
+live first). Otherwise hard-deletes the `projectVersions` row AND every row
+it owns across the four plan tables (`VERSIONED_PLAN_TABLES`). This is safe
+by construction: reality (units/checks/maintenance/threads) only ever sits on
+the rows tagged with the CURRENT live version — `makeLiveNative`'s step 3
+re-points every bit of it the moment a version stops being live, so a
+non-live version's rows never have any live reality left to orphan by the
+time anyone deletes them. Classified `danger: "high"` per the delete/archive
+rubric (irreversible).
+
+### What got deleted, and what didn't
+
+**Deleted** (superseded by the verb table above, `agentOps` entries removed
+with them): `projectVersionsWrites.saveVersionNative`,
+`projectVersionsWrites.promoteRevisionNative` (and its `PRE_PROMOTE`
+auto-capture machinery — `assertPromotePreconditions`/
+`autoCaptureOutgoingRevision`), `quotesWrites.repriceFromRevisionNative`,
+`quotesWrites.setQuoteProtectedNative`, `quotesWrites.deleteDraftNative`,
+`quotesWrites.deleteVersionNative`. Also removed: `recallNative`'s
+un-supersede branch (it assumed send-supersedes-across-REVISIONS, which
+stops being the model once versioning moves onto the real `projectVersions`
+table — `recallNative` itself is UNCHANGED otherwise, `restoredQuoteId`
+stays in its return shape, always `null` now).
+
+**NOT deleted, still the OLDER quote-revision program** (FEATUREDOCS/70,
+unaffected by this phase — do not conflate the two):
+`quotesWrites.sendNative`/`newVersionNative`/`recallNative`/
+`markAcceptedNative`/`markDeclinedNative`/`unacceptNative`/
+`correctQuoteNative`/`deleteRecalledNative`/`setQuoteLabelNative`,
+`projectVersionsWrites.materializeVersionRowsNative` (Phase 2's SERVICE-only
+primitive — now calls `copyPlanGraph` internally, behaviour unchanged),
+`quotes.revisionStateForProject`, `projectVersionsRead.listVersions`, the
+`projects.revision`/`liveRevision` pointer pair, and the entire
+`projectSnapshots`/`projectSnapshotEntries` JSON-blob mechanism. The
+`quotes.protected` field and the checks against it in `recallNative`/
+`deleteRecalledNative`/`correctQuoteNative` are also UNCHANGED — only the
+mutation that could SET/CLEAR it (`setQuoteProtectedNative`) is gone, so a
+row protected before this phase (or by `markAcceptedNative`'s own
+auto-protect-on-accept) stays protected with no way to un-protect it through
+this API. This is a known, accepted interim gap — not something a future
+phase is tracked to fix, since the "Protect/Unprotect" verb itself is a
+**removed verb** per the phase spec.
+
+**UI callers left intentionally broken, with a clear note** (Phase 5's job to
+rewire, not silently left calling a since-deleted function):
+`src/hooks/use-project-version-writes.ts`'s `saveVersion`/`promoteRevision`
+and `src/hooks/use-quote-writes.ts`'s `repriceFromRevision`/`deleteDraft`/
+`deleteVersion`/`setProtected` now throw a clear, descriptive error instead
+of calling a Convex function that no longer exists — every call site
+(`version-switcher.tsx`'s "Add version", `promote-version-dialog.tsx`,
+`delete-version-dialog.tsx`, `reprice-from-revision-dialog.tsx`,
+`project-quote-rail.tsx`'s Protect toggle) already catches and toasts the
+mutation's error message, so this surfaces as an ordinary "temporarily
+unavailable" toast rather than a crash. The OLD system's argument shapes
+(quote revision NUMBERS) don't map 1:1 onto the new verbs' `projectVersions`
+row ids, so this isn't a mechanical rewire — real UI work for Phase 5.
+
+### Testing
+
+`convex/versions.test.ts` (all four verbs — RBAC, cross-org IDOR, template
+rejection, `contentState: "missing"` rejection, the round-trip proof, lineage
+match/no-match/conflict, D6, D37/D39), `convex/lib/versionGraph.test.ts`
+(`copyPlanGraph`'s clone shape + the `VERSION_TOO_LARGE` size-budget throw),
+`convex/quotesWrites.test.ts`/`convex/projectVersionsWrites.test.ts`/
+`convex/projectVersionsEquipment.test.ts`/`convex/projectVersionsRead.test.ts`
+updated for the deletions (several tests replaced `saveVersionNative`/
+`setQuoteProtectedNative` calls with direct DB seeding of the same end state,
+since those mutations no longer exist to call).
+
 ## What's next (later phases of #1221 — not built yet)
 
-Save/switch/promote mutations wired to a UI, a real content-capture path for
-non-live versions' PLAN FIELDS (Phase 2 only added the row-cloning primitive,
-`materializeVersionRowsNative` — no caller yet), migrating the switcher
-(FEATUREDOCS/70) off `projectSnapshots` onto `projectVersions`, narrowing
-`projects.liveVersionId` to required once the backfill is proven complete in
-prod, and closing the remaining 32 version-scope-ratchet sites above with
-real join-filtering. See `docs/designs/project-versioning-v2.md` for the
-full plan (not yet merged to `main`).
+The Phase 5 UI work called out above (wiring the version switcher, promote/
+delete dialogs and the reprice/protect actions onto the new verb set — or
+retiring them, per the new design), `projects.pricingLocked` + the
+`unplanned`-line lock-exception (Phase 4), migrating the switcher
+(FEATUREDOCS/70) off `projectSnapshots` onto `projectVersions` entirely,
+narrowing `projects.liveVersionId` to required once the backfill is proven
+complete in prod, and closing the remaining 32 version-scope-ratchet sites
+(Phase 2's "What's deferred") with real join-filtering. See
+`docs/designs/project-versioning-v2.md` for the full plan (not yet merged to
+`main`).

@@ -95,6 +95,7 @@ import { ProjectVersionSwitcher } from "@/components/projects/version-switcher";
 import { VersionStrip } from "@/components/projects/version-strip";
 import { MakeLiveDialog } from "@/components/projects/finance/make-live-dialog";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
+import { CompareView } from "@/components/projects/compare/compare-view";
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
 
 const projectStatusLabels: Record<string, string> = {
@@ -570,6 +571,28 @@ export default function ProjectDetailPage({
               and pricing checks. One place to look, and a clean project reads
               as verified rather than as a banner that failed to appear. */}
 
+          {/* Project Versioning v2, Phase 5b (#1232, design §5.1 D46/D47) —
+              Compare is a MODE on this same page, not a separate screen: it
+              REPLACES the strip + tabs area rather than living alongside
+              them, which is also what makes "editing suspended" true by
+              construction (nothing under it renders any write UI). */}
+          {!project.isTemplate && orgId && versionState.compare ? (
+            <CompareView
+              key={JSON.stringify(versionState.compare)}
+              projectId={id}
+              orgId={orgId}
+              compare={versionState.compare}
+              versions={versionState.versions}
+              liveVersion={versionState.liveVersion}
+              onChangeCompare={(next) => versionState.openCompare(next.a, next.b)}
+              onExit={versionState.closeCompare}
+              onMakeLive={(versionNumber) => {
+                const target = versionState.versions.find((v) => v.number === versionNumber) ?? null;
+                if (target) setMakeLiveTarget(target);
+              }}
+            />
+          ) : (
+            <>
           {/* Project Versioning v2, Phase 5 (#1231, design §5.2) — the ONE
               status strip, mounted once above the tabs, visible on every
               tab: absent (live+unlocked), viewing a non-live version, or
@@ -586,6 +609,15 @@ export default function ProjectDetailPage({
               lockStatus={pricingLock}
               onUnlock={pricingLock.unlock}
               quoteDrift={versionState.viewingQuoteDrift}
+              onOpenDriftCompare={
+                versionState.viewingQuoteDrift && versionState.viewingVersion
+                  ? () =>
+                      versionState.openCompare(
+                        { kind: "quoteSnapshot", quoteId: versionState.viewingQuoteDrift!.quoteId, label: versionState.viewingQuoteDrift!.quoteLabel },
+                        { kind: "version", number: versionState.viewingVersion!.number },
+                      )
+                  : undefined
+              }
             />
           )}
 
@@ -869,6 +901,8 @@ export default function ProjectDetailPage({
               </DetailSidebar>
             )}
           </DetailLayout>
+            </>
+          )}
         </div>
         </ProjectVersionProvider>
       </FadeIn>

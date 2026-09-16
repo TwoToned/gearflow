@@ -63,7 +63,7 @@ function useVersionPanelShortcut(onOpen: () => void) {
 }
 
 export function ProjectVersionSwitcher() {
-  const { projectId, versions, isLoadingVersions, liveVersion, viewingNumber, isViewingVersion, setViewingNumber } =
+  const { projectId, versions, isLoadingVersions, liveVersion, viewingNumber, isViewingVersion, setViewingNumber, openCompare } =
     useProjectVersion();
   const canPublish = useCanDo("invoice", "publish");
   const { createVersion } = useProjectVersionWrites(projectId);
@@ -132,13 +132,24 @@ export function ProjectVersionSwitcher() {
               <Plus className="h-3.5 w-3.5" /> New version{activeVersion ? ` from v${activeVersion.number}` : ""}
             </DropdownMenuItem>
           )}
-          {/* Compare is a mode on the real page — tracked separately (#1232),
-              deliberately not built here. A disabled stub keeps the menu shape
-              stable so wiring it up later doesn't move every other item. */}
-          <DropdownMenuItem disabled aria-disabled="true">
-            <GitCompare className="h-3.5 w-3.5" /> Compare
-            <span className="ml-auto text-caption text-faint">Soon</span>
-          </DropdownMenuItem>
+          {/* #1232 — Compare mode: compares whatever's currently being
+              VIEWED against live (the common case: "how does my draft differ
+              from what's live"), falling back to the two most recent
+              versions when there's nothing else to pick — the compare-target
+              picker inside Compare itself (D52) lets either side be changed
+              afterwards, so this only needs to pick a reasonable start. */}
+          {versions.length > 1 && (
+            <DropdownMenuItem
+              onClick={() =>
+                closeMenuThen(() => {
+                  const bNumber = isViewingVersion ? viewingNumber : (versions.find((v) => !v.isLive)?.number ?? null);
+                  openCompare({ kind: "version", number: null }, { kind: "version", number: bNumber });
+                })
+              }
+            >
+              <GitCompare className="h-3.5 w-3.5" /> Compare
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => closeMenuThen(() => setPanelOpen(true))}>
             <Sparkles className="h-3.5 w-3.5" /> Manage versions…
             <span className="ml-auto text-caption text-faint">V</span>

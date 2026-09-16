@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
@@ -37,6 +37,22 @@ export interface ProjectVersionSummary {
   basedOnVersionId?: string;
 }
 
+/**
+ * #1232 (Phase 5b, parent #1221, design §5.1 D46-D53) — one side of a
+ * Compare. `number: null` means "the live version" (mirrors `viewingNumber`'s
+ * own null-means-live convention). `quoteSnapshot` is the drift entry point
+ * (`VersionStrip`'s "Quote total has moved..." line, D53) — a sent quote's
+ * frozen totals, never a live `projectVersions` row.
+ */
+export type CompareSide =
+  | { kind: "version"; number: number | null }
+  | { kind: "quoteSnapshot"; quoteId: string; label: string };
+
+export interface CompareModeState {
+  a: CompareSide;
+  b: CompareSide;
+}
+
 export interface ProjectVersionContextValue {
   projectId: string;
   orgId: string | undefined;
@@ -70,6 +86,14 @@ export interface ProjectVersionContextValue {
   } | null;
   /** Updates `?v=` (preserving every other param); `null` switches back to live. */
   setViewingNumber: (number: number | null) => void;
+  /** #1232 — Compare mode is a MODE on this page, not a route (D46/D47): a
+   *  page-level toggle, not `?v=`-driven, so it never fights the browser
+   *  back button against ordinary version switching. `null` = compare is
+   *  off. Opened by the switcher's "Compare" menu item and by
+   *  `VersionStrip`'s drift line (D53). */
+  compare: CompareModeState | null;
+  openCompare: (a: CompareSide, b: CompareSide) => void;
+  closeCompare: () => void;
 }
 
 const ProjectVersionContext = createContext<ProjectVersionContextValue | null>(null);
@@ -156,6 +180,10 @@ export function useProjectVersionState(projectId: string, orgId: string | undefi
     [router, pathname, searchParams],
   );
 
+  const [compare, setCompare] = useState<CompareModeState | null>(null);
+  const openCompare = useCallback((a: CompareSide, b: CompareSide) => setCompare({ a, b }), []);
+  const closeCompare = useCallback(() => setCompare(null), []);
+
   return {
     projectId,
     orgId,
@@ -169,6 +197,9 @@ export function useProjectVersionState(projectId: string, orgId: string | undefi
     isLoadingViewingVersion,
     viewingQuoteDrift,
     setViewingNumber,
+    compare,
+    openCompare,
+    closeCompare,
   };
 }
 

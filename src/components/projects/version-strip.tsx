@@ -77,6 +77,11 @@ interface VersionStripProps {
   /** Optional — omitted or `null` renders no drift line at all (no signal,
    *  or the viewed version has never had a quote sent). */
   quoteDrift?: VersionStripQuoteDrift | null;
+  /** #1232 (Phase 5b, D53) — the drift line's click target: opens Compare
+   *  with side A = the sent quote's frozen money snapshot, side B = this
+   *  version's current rows. Omitted (no-op) is what makes the drift line
+   *  plain text again, matching Phase 6's original deferral. */
+  onOpenDriftCompare?: () => void;
 }
 
 /** Plain currency text, no `Intl` locale plumbing threaded through this far —
@@ -93,12 +98,14 @@ function NonLiveVersionStrip({
   onMakeLive,
   onBackToLive,
   quoteDrift,
+  onOpenDriftCompare,
 }: {
   viewingVersion: ProjectVersionSummary;
   liveVersion: ProjectVersionSummary | null;
   onMakeLive: () => void;
   onBackToLive: () => void;
   quoteDrift?: VersionStripQuoteDrift | null;
+  onOpenDriftCompare?: () => void;
 }) {
   return (
     <div
@@ -119,12 +126,27 @@ function NonLiveVersionStrip({
           </span>{" "}
           — a draft version, fully editable. Not live: the warehouse, availability and invoices follow
           {liveVersion ? ` v${liveVersion.number}` : " the live version"}.
-          {/* #1233 — drift is a plain text tail, never a link: Compare mode
-              (#1232) that would make sense to open here doesn't exist yet. */}
+          {/* #1232 (Phase 5b, D53) — the drift line is now a click target:
+              opens Compare with side A = the sent quote's frozen money
+              snapshot, side B = this version's current rows. Falls back to
+              plain text (Phase 6's original behaviour) when no handler is
+              wired, e.g. a caller that hasn't been updated. */}
           {quoteDrift && quoteDrift.driftAmount !== 0 && (
             <>
               {" "}
-              Quote total has moved {formatDriftAmount(quoteDrift.driftAmount)} since {quoteDrift.quoteLabel} was sent.
+              {onOpenDriftCompare ? (
+                <button
+                  type="button"
+                  onClick={onOpenDriftCompare}
+                  className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                >
+                  Quote total has moved {formatDriftAmount(quoteDrift.driftAmount)} since {quoteDrift.quoteLabel} was sent.
+                </button>
+              ) : (
+                <>
+                  Quote total has moved {formatDriftAmount(quoteDrift.driftAmount)} since {quoteDrift.quoteLabel} was sent.
+                </>
+              )}
             </>
           )}
         </span>
@@ -192,6 +214,7 @@ export function VersionStrip({
   lockStatus,
   onUnlock,
   quoteDrift,
+  onOpenDriftCompare,
 }: VersionStripProps) {
   if (isTemplate || lockStatus.loading) return null;
 
@@ -205,6 +228,7 @@ export function VersionStrip({
         onMakeLive={onMakeLive}
         onBackToLive={onBackToLive}
         quoteDrift={quoteDrift}
+        onOpenDriftCompare={onOpenDriftCompare}
       />
     );
   }

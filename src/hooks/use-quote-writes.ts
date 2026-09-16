@@ -7,14 +7,12 @@ import { generateQuoteArtifact } from "@/server/finance-documents";
 import { api } from "../../convex/_generated/api";
 import {
   quoteAcceptSchema,
-  quoteCorrectSchema,
   quoteDeclineSchema,
   quoteDeleteRecalledSchema,
   quoteRecallSchema,
   quoteSendSchema,
   quoteSetLabelSchema,
   type QuoteAcceptValues,
-  type QuoteCorrectValues,
   type QuoteDeclineValues,
   type QuoteDeleteRecalledValues,
   type QuoteRecallValues,
@@ -42,11 +40,9 @@ export function useQuoteWrites() {
   const recallM = useMutation(api.quotesWrites.recallNative);
   const newVersionM = useMutation(api.quotesWrites.newVersionNative);
   const acceptM = useMutation(api.quotesWrites.markAcceptedNative);
-  const unacceptM = useMutation(api.quotesWrites.unacceptNative);
   const declineM = useMutation(api.quotesWrites.markDeclinedNative);
   const deleteRecalledM = useMutation(api.quotesWrites.deleteRecalledNative);
   const setLabelM = useMutation(api.quotesWrites.setQuoteLabelNative);
-  const correctM = useMutation(api.quotesWrites.correctQuoteNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -151,22 +147,6 @@ export function useQuoteWrites() {
       });
     },
 
-    /** Unapprove (#1032) — the reverse of `markAccepted`: `ACCEPTED → SENT`,
-     *  clearing the acceptance fields and the protected flag Accept auto-set,
-     *  in one step. Same `invoice:publish` audience as accept itself; no
-     *  reason is collected (it undoes the same action, not a separate
-     *  business decision the way recall/decline are). */
-    unaccept: async (quoteId: string): Promise<{ id: string; version: number }> => {
-      const org = requireOrg();
-      return await unacceptM({
-        id: quoteId,
-        organizationId: org,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-    },
-
     markDeclined: async (
       quoteId: string,
       data: QuoteDeclineValues,
@@ -260,62 +240,10 @@ export function useQuoteWrites() {
       });
     },
 
-    /**
-     * #1229 Phase 3 note: Protect/Unprotect (`setQuoteProtectedNative`) was a
-     * "Removed verb" per the phase spec — deleted, no replacement. The
-     * `protected` field and the checks against it in Recall/Correction/
-     * recall-then-delete are UNCHANGED (still enforced on any row that
-     * already has it set), so a row protected before this phase — or by
-     * `markAcceptedNative`'s own auto-protect-on-accept — stays protected;
-     * there is just no longer a way to toggle it through this API. Left as a
-     * clear, throwing stub so `project-quote-rail.tsx`'s protect toggle still
-     * compiles — see `repriceFromRevision`'s comment above for the pattern.
-     */
-    setProtected: async (_quoteId: string, _protect: boolean): Promise<{ id: string; version: number; protected: boolean }> => {
-      throw new Error(
-        "Protecting/unprotecting a quote is no longer available — this verb was retired in #1229 Phase 3. An accepted quote's protection clears automatically when it's unaccepted.",
-      );
-    },
-
-    /** Correction (#1031) — an audited fix to the date PRINTED on a SENT/
-     *  ACCEPTED revision. No version bump, no price change, `sentAt` (the
-     *  system's true send record) is never touched. Owner-only, blocked while
-     *  protected. Clears the attached artifact so the next document render is
-     *  forced fresh, then renders it immediately — same `artifactReady`
-     *  never-throws shape as `send`, so a render failure doesn't undo the
-     *  already-committed date fix. No visible marker distinguishes a
-     *  corrected document from an original one on the page itself; the
-     *  record of the correction lives in the activity log and
-     *  `correctedAt`/`correctedById`, not on the PDF. */
-    correct: async (
-      quoteId: string,
-      data: QuoteCorrectValues,
-    ): Promise<{
-      id: string;
-      version: number;
-      quoteDate: number;
-      validUntil: number;
-      artifactReady: boolean;
-    }> => {
-      const org = requireOrg();
-      const parsed = quoteCorrectSchema.parse(data);
-      const result = await correctM({
-        id: quoteId,
-        organizationId: org,
-        quoteDate: parsed.quoteDate.getTime(),
-        validityDays: parsed.validityDays,
-        actor: actor(),
-        auditId: createId(),
-        now: Date.now(),
-      });
-
-      let artifactReady = true;
-      try {
-        await generateQuoteArtifact(result.id);
-      } catch {
-        artifactReady = false;
-      }
-      return { ...result, artifactReady };
-    },
+    // #1230 note: Protect/Unprotect (already a removed verb, #1229 Phase 3)
+    // and Correction (`correctQuoteNative`) are DELETED — the whole
+    // protect/unprotect mechanism is gone, so there is nothing left to gate
+    // a "correct a sent quote's date" verb on. `quotes.protected` itself is
+    // schema-deprecated (never read/written by any code path anymore).
   };
 }

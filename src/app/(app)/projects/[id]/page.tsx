@@ -90,10 +90,7 @@ import { FadeIn } from "@/components/ui/motion";
 import { ProjectLifecycle } from "@/components/projects/project-lifecycle";
 import { useCanDo } from "@/lib/use-permissions";
 import { formatCurrency } from "@/lib/formatters";
-import { useProjectLockStatus, useUnlockSession } from "@/hooks/use-project-lock";
-import { UnlockSessionDialog } from "@/components/projects/unlock-session-dialog";
-import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
-import { JustificationDialog } from "@/components/projects/justification-dialog";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { ProjectVersionProvider, useProjectVersion } from "@/components/projects/project-version-context";
 import { ProjectVersionSwitcher } from "@/components/projects/version-switcher";
 import { VersionReadOnlyBar } from "@/components/projects/version-readonly-bar";
@@ -210,15 +207,12 @@ export default function ProjectDetailPage({
   // plain ref) so EquipmentTab re-renders its portal once the node mounts.
   const [equipmentAddSlot, setEquipmentAddSlot] = useState<HTMLDivElement | null>(null);
 
-  // #957 lifecycle lock — reactive tier/session status and the unlock-session
-  // open action. `lockNow` is frozen at mount (like `project-quote-rail.tsx`'s
-  // own `now`) — it only drives derived display (elapsed-session timers,
-  // EXPIRED resolution), not query identity.
+  // #1230 pricing lock — reactive `pricingLocked` status + lock/unlock actions.
+  const pricingLock = useProjectPricingLock(id, orgId);
+  // Frozen at mount (like `project-quote-rail.tsx`'s own `now`) — drives only
+  // derived display (e.g. quote EXPIRED resolution inside the version
+  // provider), never query identity.
   const [lockNow] = useState(() => Date.now());
-  const lockStatus = useProjectLockStatus(id, orgId, lockNow);
-  const unlockSession = useUnlockSession(id, orgId);
-  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
-  const [unlockPending, setUnlockPending] = useState(false);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
@@ -236,24 +230,13 @@ export default function ProjectDetailPage({
   const statusBrowser = useNativeProjectStatus(orgId);
   const projectWrites = useProjectWrites(orgId);
 
-  // #792: a status change can require a justification (reverting out of
-  // HARD_LOCKED, or confirming with no accepted quote) — `useJustifiedMutation`
-  // catches the server's `JUSTIFICATION_REQUIRED` and prompts via
-  // `JustificationDialog` instead of dead-ending on a toast. `lockStatus.tier` is
-  // never `"JUSTIFY"` for either gated transition here, so this always takes the
-  // reactive (try once, prompt on rejection) path — an OPEN FULL unlock session
-  // still short-circuits the server-side check entirely, so nothing prompts at
-  // all in that case (same "unlocked in one place = unlocked" behaviour every
-  // other locked write already has via `assertLifecycleGuard`).
-  const justifiedStatusChange = useJustifiedMutation(
-    (args: { status: string; justification?: string }) =>
-      statusBrowser.updateStatus(id, args.status, args.justification),
-    lockStatus,
-  );
-
+  // #1230: confirming with no accepted quote now needs only `canUnlockPricing`
+  // permission (owner/admin/manager/PM) server-side, no freeform justification
+  // — a rejection surfaces as an ordinary `FORBIDDEN_UNLOCK_PRICING` toast via
+  // `mapNativeWriteError`, no dialog needed.
   const statusMutation = useServerMutation({
     mutationFn: async (nextStatus: string) => {
-      await justifiedStatusChange.run({ status: nextStatus });
+      await statusBrowser.updateStatus(id, nextStatus);
     },
     onSuccess: () => {
       toast.success("Status updated");
@@ -382,9 +365,9 @@ export default function ProjectDetailPage({
                     />
                   )}
                   {!project.isTemplate && <OpenIssuesBadge orgId={orgId} projectId={id} />}
-                  {/* #990 (Phase E) surface 1 — always-mounted header chip, the
-                      same `lockStatus` subscription the strip below renders from. */}
-                  {!project.isTemplate && <ProjectLockChip status={lockStatus} now={lockNow} />}
+                  {/* #1230 — always-mounted header chip, the same
+                      `pricingLock` subscription the strip below renders from. */}
+                  {!project.isTemplate && <ProjectLockChip status={pricingLock} />}
                   {/* Phase 3 (#1080/#1093) — project-wide, so it lives here
                       rather than inside any one tab. Extended (CLAUDE.md
                       "fine-tune versioning") into the header's full version
@@ -587,18 +570,11 @@ export default function ProjectDetailPage({
               and pricing checks. One place to look, and a clean project reads
               as verified rather than as a banner that failed to appear. */}
 
-          {/* #990 (Phase E) surface 2 — the shared lock strip, mounted ONCE at
-              the top of the project detail (not inside a tab). Replaces the
-              Finance-tab-only `QuoteLockStrip` (Phase D) + the inline
-              locked-banner block that used to live only in the Finance tab. */}
+          {/* #1230 — the shared lock strip, mounted ONCE at the top of the
+              project detail (not inside a tab). Renders nothing while pricing
+              is open. */}
           {!project.isTemplate && orgId && (
-            <ProjectLockStrip
-              projectId={id}
-              orgId={orgId}
-              status={lockStatus}
-              now={lockNow}
-              onOpenUnlock={() => setUnlockDialogOpen(true)}
-            />
+            <ProjectLockStrip status={pricingLock} onUnlock={pricingLock.unlock} />
           )}
 
           {/* Phase 3 (#1080/#1093) — mounted once above the tabs, visible on
@@ -921,29 +897,6 @@ export default function ProjectDetailPage({
         }}
         pending={archiveMutation.isPending}
       />
-      <JustificationDialog {...justifiedStatusChange.dialogProps} status={project.status ?? undefined} />
-      {orgId && (
-        <>
-          <UnlockSessionDialog
-            open={unlockDialogOpen}
-            onOpenChange={setUnlockDialogOpen}
-            scope={lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL"}
-            pending={unlockPending}
-            onConfirm={async (justification) => {
-              setUnlockPending(true);
-              try {
-                await unlockSession.open(lockStatus.tier === "HARD_LOCKED" ? "FULL" : "FINANCIAL", justification);
-                setUnlockDialogOpen(false);
-                toast.success("Unlocked");
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Failed to unlock");
-              } finally {
-                setUnlockPending(false);
-              }
-            }}
-          />
-        </>
-      )}
     </RequirePermission>
   );
 }

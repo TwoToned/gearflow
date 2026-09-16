@@ -109,29 +109,24 @@ export function useProjectGroupWrites() {
       });
     },
 
-    /** `justification` (#990) — forwarded to `deleteGroupNative`, required once
-     *  the project is ON_SITE+ with no open unlock session. */
-    remove: async (groupId: string, justification?: string): Promise<void> => {
+    /** Structural — never gated by pricingLocked (#1230). */
+    remove: async (groupId: string): Promise<void> => {
       await deleteM({
         id: groupId,
         orgId: requireOrg(),
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification,
       });
     },
 
-    /** `justification` — required once a touched project is JUSTIFY+ with no
-     *  open unlock session (drag-and-drop reorder routes this through
-     *  useJustifiedMutation). */
-    reorder: async (args: { orderedIds: string[]; justification?: string }): Promise<void> => {
+    /** Structural — never gated by pricingLocked (#1230). */
+    reorder: async (args: { orderedIds: string[] }): Promise<void> => {
       await reorderM({
         orgId: requireOrg(),
         orderedIds: args.orderedIds,
         now: Date.now(),
         actor: actor(),
-        justification: args.justification,
       });
     },
 
@@ -139,7 +134,6 @@ export function useProjectGroupWrites() {
       lineItemId: string;
       targetGroupId: string | null;
       targetCategoryId: string | null;
-      justification?: string;
     }): Promise<void> => {
       await moveM({
         lineItemId: args.lineItemId,
@@ -149,7 +143,6 @@ export function useProjectGroupWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification: args.justification,
       });
     },
 

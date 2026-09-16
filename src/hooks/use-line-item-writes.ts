@@ -429,10 +429,8 @@ export function useLineItemWrites() {
     },
 
     /** Remove a line — child-guard + cascade (children + units) + recalc + audit +
-     *  collab, atomic. `justification` (#990) — forwarded to `removeNative`,
-     *  required once the project is ON_SITE+ with no open unlock session
-     *  (`useJustifiedMutation` supplies it after prompting). */
-    remove: async (id: string, justification?: string): Promise<{ projectId: string }> => {
+     *  collab, atomic. Structural — never gated by pricingLocked (#1230). */
+    remove: async (id: string): Promise<{ projectId: string }> => {
       try {
         return await removeM({
           id,
@@ -440,7 +438,6 @@ export function useLineItemWrites() {
           actor: actor(),
           auditId: createId(),
           emitSideEffects: true,
-          justification,
           now: Date.now(),
         });
       } catch (e) {
@@ -469,9 +466,8 @@ export function useLineItemWrites() {
     /** Bulk remove — one atomic backend-local pass: child-guard + cascade (children +
      *  units) per row + ONE aggregate DELETE audit + recalc-per-project. Returns
      *  `{ removed, skipped }` (children/cross-org rows counted as skipped).
-     *  `justification` (#990) — one reason applied to every affected row's audit
-     *  entry, checked once per distinct project the selection touches. */
-    removeMany: async (ids: string[], justification?: string): Promise<{ removed: number; skipped: number }> => {
+     *  Structural — never gated by pricingLocked (#1230). */
+    removeMany: async (ids: string[]): Promise<{ removed: number; skipped: number }> => {
       if (!enabled) throw new Error("Not ready — try again in a moment.");
       try {
         return await removeManyM({
@@ -479,7 +475,6 @@ export function useLineItemWrites() {
           orgId: requireOrg(),
           actor: actor(),
           auditId: createId(),
-          justification,
           now: Date.now(),
         });
       } catch (e) {
@@ -511,15 +506,12 @@ export function useLineItemWrites() {
 
     /** Reorder line items (+ optional per-row groupName change). Builds the same
      *  `items` payload as reorderLineItems (src/server/line-items.ts ~1350-1361). No
-     *  emit signal — reorder folds no collab event. `justification` (#988) —
-     *  forwarded to `reorderNative`, required once a touched project is JUSTIFY+
-     *  with no open unlock session (drag-and-drop reorder routes this through
-     *  useJustifiedMutation; see use-equipment-dnd.ts). */
+     *  emit signal — reorder folds no collab event. Structural — never gated by
+     *  pricingLocked (#1230). */
     reorder: async (
       _projectId: string,
       itemIds: string[],
       groupUpdates?: { id: string; groupName: string | null }[],
-      justification?: string,
     ): Promise<{ ok: boolean }> => {
       const groupNameById = new Map((groupUpdates ?? []).map((g) => [g.id, g.groupName]));
       const orderedSet = new Set(itemIds);
@@ -535,7 +527,7 @@ export function useLineItemWrites() {
         if (orderedSet.has(id)) continue;
         items.push({ id, sortOrder: extraSort++, groupName: groupName || undefined });
       }
-      return reorderM({ orgId: requireOrg(), items, now: Date.now(), justification });
+      return reorderM({ orgId: requireOrg(), items, now: Date.now() });
     },
   };
 }

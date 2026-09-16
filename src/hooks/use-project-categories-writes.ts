@@ -62,7 +62,6 @@ export function useProjectCategoryWrites() {
     setPricingDisplay: async (
       categoryId: string,
       pricingDisplay: CategoryPricingDisplay,
-      opts: { justification?: string } = {},
     ): Promise<void> => {
       await updateM({
         id: categoryId,
@@ -71,7 +70,6 @@ export function useProjectCategoryWrites() {
         now: Date.now(),
         actor: actor(),
         auditId: createId(),
-        justification: opts.justification,
       });
     },
     remove: async (categoryId: string): Promise<void> => {
@@ -83,16 +81,13 @@ export function useProjectCategoryWrites() {
         auditId: createId(),
       });
     },
-    /** `justification` — required once a touched project is JUSTIFY+ with no
-     *  open unlock session (drag-and-drop reorder routes this through
-     *  useJustifiedMutation). */
-    reorder: async (args: { orderedIds: string[]; justification?: string }): Promise<void> => {
+    /** Structural — never gated by pricingLocked (#1230). */
+    reorder: async (args: { orderedIds: string[] }): Promise<void> => {
       await reorderM({
         orgId: requireOrg(),
         orderedIds: args.orderedIds,
         now: Date.now(),
         actor: actor(),
-        justification: args.justification,
       });
     },
   };

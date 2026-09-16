@@ -9,14 +9,11 @@ import {
   Eye,
   FileText,
   History,
-  Lock,
   Pencil,
-  RotateCcw,
   Send,
   Sparkles,
   Trash2,
   Undo2,
-  Unlock,
   XCircle,
 } from "lucide-react";
 
@@ -40,7 +37,6 @@ import { CanDo } from "@/components/auth/permission-gate";
 import { SendQuoteDialog } from "@/components/projects/finance/send-quote-dialog";
 import { DeleteVersionDialog } from "@/components/projects/finance/delete-version-dialog";
 import { AcceptQuoteDialog } from "@/components/projects/finance/accept-quote-dialog";
-import { CorrectQuoteDialog } from "@/components/projects/finance/correct-quote-dialog";
 import { DeleteRecalledDialog } from "@/components/projects/finance/delete-recalled-dialog";
 import { QuoteRevisionViewerDialog } from "@/components/projects/finance/quote-revision-viewer-dialog";
 import { RepriceFromRevisionDialog } from "@/components/projects/finance/reprice-from-revision-dialog";
@@ -83,10 +79,6 @@ interface QuoteRevisionDoc {
    *  given. Null on a never-sent draft, and on a sent revision whose render
    *  failed (which is what the retry action is for). */
   pdfFileId?: string;
-  /** Soft lock (#1030) — while true, Recall/Correction/recall-then-delete all
-   *  refuse server-side; the row hides those actions rather than offering a
-   *  button that will just error. */
-  protected?: boolean;
   /** #1080/#1097 — internal name for the version, editable from the row.
    *  Printed on the document only when `labelOnDocument` was stamped at send. */
   label?: string;
@@ -147,12 +139,10 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
   const [reasonTarget, setReasonTarget] = useState<ReasonTarget | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [acceptTarget, setAcceptTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [unacceptTarget, setUnacceptTarget] = useState<QuoteRevisionDoc | null>(null);
   const [viewerTarget, setViewerTarget] = useState<QuoteRevisionDoc | null>(null);
   const [repriceTarget, setRepriceTarget] = useState<QuoteRevisionDoc | null>(null);
   const [deleteDraftTarget, setDeleteDraftTarget] = useState<QuoteRevisionDoc | null>(null);
   const [deleteRecalledTarget, setDeleteRecalledTarget] = useState<QuoteRevisionDoc | null>(null);
-  const [correctTarget, setCorrectTarget] = useState<QuoteRevisionDoc | null>(null);
   const [labelTarget, setLabelTarget] = useState<QuoteRevisionDoc | null>(null);
   const [promoteTarget, setPromoteTarget] = useState<QuoteRevisionDoc | null>(null);
   const [promoteResult, setPromoteResult] = useState<PromoteRevisionResult | null>(null);
@@ -220,13 +210,11 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         projectId={projectId}
         now={now}
         onAccept={setAcceptTarget}
-        onUnaccept={setUnacceptTarget}
         onDecline={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
         onRecall={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
         onView={setViewerTarget}
         onDeleteDraft={setDeleteDraftTarget}
         onDeleteRecalled={setDeleteRecalledTarget}
-        onCorrect={setCorrectTarget}
         onEditLabel={setLabelTarget}
         onPromote={setPromoteTarget}
       />
@@ -234,8 +222,6 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
       <UnacceptedLiveQuoteNotice liveQuote={liveQuote} hasAcceptedQuote={hasAcceptedQuote} />
 
       <ReasonDialog target={reasonTarget} onClose={() => setReasonTarget(null)} />
-
-      <UnacceptDialog target={unacceptTarget} onClose={() => setUnacceptTarget(null)} />
 
       <DeleteVersionDialog target={deleteDraftTarget} liveRevision={liveRevision} onClose={() => setDeleteDraftTarget(null)} />
 
@@ -260,17 +246,6 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
           onOpenChange={(open) => !open && setDeleteRecalledTarget(null)}
           quoteId={deleteRecalledTarget.id}
           label={`${projectNumber} v${deleteRecalledTarget.version}`}
-        />
-      )}
-
-      {correctTarget && (
-        <CorrectQuoteDialog
-          open={!!correctTarget}
-          onOpenChange={(open) => !open && setCorrectTarget(null)}
-          quoteId={correctTarget.id}
-          version={correctTarget.version}
-          currentQuoteDate={correctTarget.quoteDate}
-          currentValidityDays={correctTarget.validityDays}
         />
       )}
 
@@ -423,13 +398,11 @@ function QuoteRevisionList({
   projectId,
   now,
   onAccept,
-  onUnaccept,
   onDecline,
   onRecall,
   onView,
   onDeleteDraft,
   onDeleteRecalled,
-  onCorrect,
   onEditLabel,
   onPromote,
 }: {
@@ -444,13 +417,11 @@ function QuoteRevisionList({
   projectId: string;
   now: number;
   onAccept: (quote: QuoteRevisionDoc) => void;
-  onUnaccept: (quote: QuoteRevisionDoc) => void;
   onDecline: (quote: QuoteRevisionDoc) => void;
   onRecall: (quote: QuoteRevisionDoc) => void;
   onView: (quote: QuoteRevisionDoc) => void;
   onDeleteDraft: (quote: QuoteRevisionDoc) => void;
   onDeleteRecalled: (quote: QuoteRevisionDoc) => void;
-  onCorrect: (quote: QuoteRevisionDoc) => void;
   onEditLabel: (quote: QuoteRevisionDoc) => void;
   onPromote: (quote: QuoteRevisionDoc) => void;
 }) {
@@ -468,13 +439,11 @@ function QuoteRevisionList({
             invoicesForVersion={invoices?.filter((inv) => inv.sourceRevision === quote.version) ?? []}
             projectId={projectId}
             onAccept={() => onAccept(quote)}
-            onUnaccept={() => onUnaccept(quote)}
             onDecline={() => onDecline(quote)}
             onRecall={() => onRecall(quote)}
             onView={() => onView(quote)}
             onDeleteDraft={() => onDeleteDraft(quote)}
             onDeleteRecalled={() => onDeleteRecalled(quote)}
-            onCorrect={() => onCorrect(quote)}
             onEditLabel={() => onEditLabel(quote)}
             onPromote={() => onPromote(quote)}
             now={now}
@@ -598,72 +567,60 @@ export function quoteRowFlags(quote: QuoteRevisionDoc) {
   // A sent-or-expired revision is the one the client is holding: it can be
   // recalled or declined. Only a still-valid one can be accepted.
   const isHeldByClient = isSent || quote.effectiveStatus === "EXPIRED";
-  const isProtected = !!quote.protected;
   const everSent = quote.sentAt != null || quote.publishedAt != null;
   // A DRAFT with send history is sitting here because of a Recall (#1027) —
   // it needs the stricter recall-then-delete flow (#1029), not the ordinary
   // never-sent draft delete (#1028).
   const isRecalledDraft = quote.effectiveStatus === "DRAFT" && everSent;
   const isNeverSentDraft = quote.effectiveStatus === "DRAFT" && !everSent;
-  return { isSent, isAccepted, isHeldByClient, isProtected, isRecalledDraft, isNeverSentDraft };
+  return { isSent, isAccepted, isHeldByClient, isRecalledDraft, isNeverSentDraft };
 }
 
 /**
  * Every state-transition action for a revision, collapsed into ONE overflow
- * menu (#1038) instead of a wall of pill buttons that wrapped across 2-3
- * lines on mobile with a sent-and-unprotected row (Mark accepted / Declined /
- * Recall could join Correct date / Protect, all as separate buttons). Same
- * two audiences as before — `invoice:publish` (`useCanDo`, mirrors `<CanDo>`)
- * for the standard cluster, owner-only (`useIsOwner`) for protect/correct/
- * delete-permanently — just read as booleans up front so both clusters can
- * merge into one action list instead of two side-by-side button groups.
- * `requireQuoteOwnerOnly`/the `invoice:publish` permission check are still the
- * real server-side gates; this is UX only.
+ * menu (#1038) instead of a wall of pill buttons. Same two audiences as
+ * before — `invoice:publish` (`useCanDo`, mirrors `<CanDo>`) for the standard
+ * cluster, owner-only (`useIsOwner`) for delete-permanently — read as
+ * booleans up front so both clusters can merge into one action list instead
+ * of two side-by-side button groups. `requireQuoteOwnerOnly`/the
+ * `invoice:publish` permission check are still the real server-side gates;
+ * this is UX only.
+ *
+ * #1230 note: Unapprove (`unacceptNative`), Correct date (`correctQuoteNative`)
+ * and Protect/Unprotect are DELETED — the whole protect/unprotect mechanism
+ * (and its lock-tier plumbing) is gone. Recall (`recallNative`) survives
+ * unchanged and is no longer gated on a `protected` check.
  */
 /** The `invoice:publish` cluster's actions — accept/decline/recall/delete-draft. */
 export function standardQuoteRowActions(
   flags: ReturnType<typeof quoteRowFlags>,
   handlers: {
     onAccept: () => void;
-    onUnaccept: () => void;
     onDecline: () => void;
     onRecall: () => void;
     onDeleteDraft: () => void;
     onEditLabel: () => void;
   },
 ): RowAction[] {
-  const { isSent, isAccepted, isHeldByClient, isProtected, isNeverSentDraft } = flags;
+  const { isSent, isHeldByClient, isNeverSentDraft } = flags;
   const actions: RowAction[] = [];
   actions.push({ key: "rename", label: "Rename version", icon: Pencil, onClick: handlers.onEditLabel });
   if (isSent) actions.push({ key: "accept", label: "Mark accepted", icon: CheckCircle2, onClick: handlers.onAccept });
-  if (isAccepted) actions.push({ key: "unaccept", label: "Unapprove", icon: RotateCcw, onClick: handlers.onUnaccept });
   if (isHeldByClient) actions.push({ key: "decline", label: "Declined", icon: XCircle, onClick: handlers.onDecline });
-  if (isHeldByClient && !isProtected) actions.push({ key: "recall", label: "Recall", icon: Undo2, onClick: handlers.onRecall });
+  if (isHeldByClient) actions.push({ key: "recall", label: "Recall", icon: Undo2, onClick: handlers.onRecall });
   if (isNeverSentDraft) actions.push({ key: "delete-draft", label: "Delete draft", icon: Trash2, onClick: handlers.onDeleteDraft, destructive: true });
   return actions;
 }
 
-/** The owner-only cluster's actions (#1026 follow-up program) —
- *  protect/unprotect, correct-date, recall-then-delete. */
+/** The owner-only cluster's actions — recall-then-delete (#1029) survives;
+ *  protect/unprotect and correct-date are deleted (#1230). */
 export function ownerOnlyQuoteRowActions(
   flags: ReturnType<typeof quoteRowFlags>,
-  handlers: { onCorrect: () => void; onDeleteRecalled: () => void; onToggleProtect: () => void; protectPending: boolean },
+  handlers: { onDeleteRecalled: () => void },
 ): RowAction[] {
-  const { isSent, isAccepted, isProtected, isRecalledDraft } = flags;
+  const { isRecalledDraft } = flags;
   const actions: RowAction[] = [];
-  if ((isSent || isAccepted) && !isProtected) {
-    actions.push({ key: "correct", label: "Correct date", icon: Pencil, onClick: handlers.onCorrect });
-  }
-  if (isSent || isAccepted) {
-    actions.push({
-      key: "protect",
-      label: isProtected ? "Unprotect" : "Protect",
-      icon: isProtected ? Unlock : Lock,
-      onClick: handlers.onToggleProtect,
-      loading: handlers.protectPending,
-    });
-  }
-  if (isRecalledDraft && !isProtected) {
+  if (isRecalledDraft) {
     actions.push({ key: "delete-recalled", label: "Delete permanently", icon: Trash2, onClick: handlers.onDeleteRecalled, destructive: true });
   }
   return actions;
@@ -673,44 +630,27 @@ function QuoteRowActions({
   quote,
   flags,
   onAccept,
-  onUnaccept,
   onDecline,
   onRecall,
   onDeleteDraft,
   onDeleteRecalled,
-  onCorrect,
   onEditLabel,
 }: {
   quote: QuoteRevisionDoc;
   flags: ReturnType<typeof quoteRowFlags>;
   onAccept: () => void;
-  onUnaccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
   onDeleteDraft: () => void;
   onDeleteRecalled: () => void;
-  onCorrect: () => void;
   onEditLabel: () => void;
 }) {
   const canPublish = useCanDo("invoice", "publish");
   const isOwner = useIsOwner();
-  const quoteWrites = useQuoteWrites();
-  const protectMutation = useServerMutation({
-    mutationFn: (next: boolean) => quoteWrites.setProtected(quote.id, next),
-    onSuccess: (r) => toast.success(r.protected ? `Protected v${quote.version}` : `Unprotected v${quote.version}`),
-    onError: (e) => toast.error(e.message),
-  });
 
   const actions: RowAction[] = [
-    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onUnaccept, onDecline, onRecall, onDeleteDraft, onEditLabel }) : []),
-    ...(isOwner
-      ? ownerOnlyQuoteRowActions(flags, {
-          onCorrect,
-          onDeleteRecalled,
-          onToggleProtect: () => protectMutation.mutate(!flags.isProtected),
-          protectPending: protectMutation.isPending,
-        })
-      : []),
+    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onDecline, onRecall, onDeleteDraft, onEditLabel }) : []),
+    ...(isOwner ? ownerOnlyQuoteRowActions(flags, { onDeleteRecalled }) : []),
   ];
 
   return <RowActionsMenu actions={actions} label={`v${quote.version} actions`} />;
@@ -722,13 +662,11 @@ function QuoteRevisionRow({
   invoicesForVersion,
   projectId,
   onAccept,
-  onUnaccept,
   onDecline,
   onRecall,
   onView,
   onDeleteDraft,
   onDeleteRecalled,
-  onCorrect,
   onEditLabel,
   onPromote,
   now,
@@ -738,13 +676,11 @@ function QuoteRevisionRow({
   invoicesForVersion: InvoiceLineageDoc[];
   projectId: string;
   onAccept: () => void;
-  onUnaccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
   onView: () => void;
   onDeleteDraft: () => void;
   onDeleteRecalled: () => void;
-  onCorrect: () => void;
   onEditLabel: () => void;
   onPromote: () => void;
   now: number;
@@ -776,12 +712,10 @@ function QuoteRevisionRow({
             quote={quote}
             flags={flags}
             onAccept={onAccept}
-            onUnaccept={onUnaccept}
             onDecline={onDecline}
             onRecall={onRecall}
             onDeleteDraft={onDeleteDraft}
             onDeleteRecalled={onDeleteRecalled}
-            onCorrect={onCorrect}
             onEditLabel={onEditLabel}
           />
         </div>
@@ -963,61 +897,11 @@ function EditLabelDialogContent({ target, onClose }: { target: QuoteRevisionDoc;
   );
 }
 
-/** Unapprove (#1032) — the reverse of "Mark accepted". A plain confirm, no
- *  reason field: unlike Recall/Decline, this reverses the SAME action Accept
- *  just took rather than recording a separate business decision, so there's
- *  nothing new to justify. Clears the acceptance fields and the `protected`
- *  flag Accept auto-set, in one step (server-side, `unacceptNative`). Real
- *  `Dialog`, not a bare click — this is still a high-danger reversal (CLAUDE.md
- *  §"Danger classification"), so it gets the same "are you sure" beat as
- *  `DeleteDraftDialog`. */
-function UnacceptDialog({ target, onClose }: { target: QuoteRevisionDoc | null; onClose: () => void }) {
-  const quoteWrites = useQuoteWrites();
-  const [pending, setPending] = useState(false);
-
-  async function confirm() {
-    if (!target) return;
-    setPending(true);
-    try {
-      await quoteWrites.unaccept(target.id);
-      toast.success(`Unapproved v${target.version} — it's back to sent`);
-      onClose();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to unapprove");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!target} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Unapprove v{target?.version}</DialogTitle>
-          <DialogDescription>
-            Reverses the acceptance — this revision goes back to sent, and the project loses its
-            confirm-eligibility on this quote until it&rsquo;s re-accepted. The document already sent to
-            the client is unaffected.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button type="button" variant="line" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button type="button" loading={pending} onClick={() => void confirm()}>
-            Unapprove
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /** Recall and decline both take a bounded reason, so both route through ONE
  *  Dialog rather than two near-identical ones. (Radix `Dialog` — there is no
- *  `AlertDialog` in this codebase.) Row-scoped only — the top-level lock
- *  strip's own recall exit is `<RecallToEditDialog>` (#1080/#1100, Phase 5),
- *  a one-click confirm rather than this free-text reason form. */
+ *  `AlertDialog` in this codebase.) #1230 deleted the top-level lock strip's
+ *  own one-click "Recall to edit" exit (the quote-derived lock it existed for
+ *  is gone) — this row-scoped reason form is now the only recall path. */
 function ReasonDialog({ target, onClose }: { target: ReasonTarget | null; onClose: () => void }) {
   const [reason, setReason] = useState("");
   const quoteWrites = useQuoteWrites();

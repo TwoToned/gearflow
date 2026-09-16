@@ -53,10 +53,8 @@ import {
 import { useActiveOrganization } from "@/lib/auth-client";
 import { formatCurrency } from "@/lib/formatters";
 import { cn, focusRing } from "@/lib/utils";
-import { useProjectLockStatus } from "@/hooks/use-project-lock";
+import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
-import { useJustifiedMutation } from "@/hooks/use-justified-mutation";
-import { JustificationDialog } from "./justification-dialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { CategoryCardHeading } from "./equipment-cards";
 import { CanDo } from "@/components/auth/permission-gate";
@@ -135,13 +133,11 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
   // a crew booking on this project.
   useProjectCrewLiveSync(projectId, orgId);
 
-  // #990 — rate/rateType/estimatedHours are LOCKED_CREW_ASSIGNMENT_FIELDS
-  // (convex/lib/projectLocks.ts); locked whenever the tier is anything but
-  // OPEN and no unlock session is open (the same `defaultToZero` condition).
-  const [lockNow] = useState(() => Date.now());
-  const lockStatus = useProjectLockStatus(projectId, orgId, lockNow);
-  const rateLocked = !lockStatus.loading && lockStatus.tier !== "OPEN" && !lockStatus.hasOpenSession;
-  const rateLockReason = resolveLockCopy(lockStatus, lockNow).oneLiner;
+  // #1230 — rate/rateType/estimatedHours are LOCKED_CREW_FIELDS
+  // (convex/lib/projectLocks.ts); locked whenever `pricingLocked` is set.
+  const lockStatus = useProjectPricingLock(projectId, orgId);
+  const rateLocked = lockStatus.pricingLocked;
+  const rateLockReason = resolveLockCopy(lockStatus).oneLiner;
 
   const [editId, setEditId] = useState<string | null>(null);
   const [messageOpen, setMessageOpen] = useState(false);
@@ -177,18 +173,11 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     enabled: !!orgId && cpTopAuthed && conflictRangeStartMs != null && conflictRangeEndMs != null,
   });
 
-  // #990 — prompts for a reason at ON_SITE+ with no open unlock session.
-  const justifiedRemoveAssignment = useJustifiedMutation(
-    (args: { id: string; justification?: string }) => asgWrites.remove(args.id, args.justification),
-    lockStatus,
-  );
-  const justifiedBulkRemoveAssignments = useJustifiedMutation(
-    (args: { ids: string[]; justification?: string }) => asgWrites.bulkDelete(args.ids, args.justification),
-    lockStatus,
-  );
+  // #1230: removing a crew assignment is structural — never gated by the
+  // pricing lock, so no justification wrapper is needed.
 
   const deleteMutation = useServerMutation({
-    mutationFn: (id: string) => justifiedRemoveAssignment.run({ id }),
+    mutationFn: (id: string) => asgWrites.remove(id),
     onSuccess: () => {
       toast.success("Crew member removed");
       refreshProjectCrew(projectId);
@@ -234,7 +223,7 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
     allAssignmentIds.length > 0 && selectedAssignmentIds.length === allAssignmentIds.length;
 
   const bulkDeleteMut = useServerMutation({
-    mutationFn: (ids: string[]) => justifiedBulkRemoveAssignments.run({ ids }),
+    mutationFn: (ids: string[]) => asgWrites.bulkDelete(ids),
     onSuccess: (r: { deleted: number; skipped: number }) => {
       toast.success(`Removed ${r.deleted} assignment${r.deleted === 1 ? "" : "s"}`);
       selection.clearSelection();
@@ -405,10 +394,6 @@ export function CrewPanel({ projectId }: CrewPanelProps) {
         pending={bulkDeleteMut.isPending}
         onConfirm={() => bulkDeleteMut.mutate(selectedAssignmentIds)}
       />
-
-      {/* #990 — justification prompts backing deleteMutation/bulkDeleteMut above. */}
-      <JustificationDialog {...justifiedRemoveAssignment.dialogProps} />
-      <JustificationDialog {...justifiedBulkRemoveAssignments.dialogProps} />
 
       {/* Assignments table */}
       {(!assignments || assignments.length === 0) ? (

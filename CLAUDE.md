@@ -121,6 +121,13 @@ suite runs Convex functions in-memory (`convex-test`, 164 files) and
 `ci.yml` does (`NEXT_PUBLIC_CONVEX_URL: https://dummy-e2e.convex.cloud`).
 Verify a Convex change with `pnpm test`, not by pushing it somewhere.
 
+`pnpm build` is the one that's picky, and about Postgres rather than Convex:
+page-data collection reaches the database, so a `DATABASE_URL` pointing at a
+remote it can't reach fails the build with a bare `Failed to collect page data
+for /_not-found` that names Prisma but not the cause. A dummy
+(`postgresql://dummy:dummy@localhost:5432/dummy`, what `ci.yml` uses) builds
+clean; a live remote URL from a sandbox often doesn't.
+
 This matters most when several agent sessions / worktrees run at once: a push is
 shared mutable state. `convex dev --once` targets the **shared dev deployment**
 that the PR previews run against, so two branches pushing divergent schemas

@@ -35,9 +35,13 @@ too, which it previously did not (see "What changed for check-in" below).
 ## Where it lives
 
 ```
-convex/lib/projectAutoStatus.ts    — the rule table + the ONE advance function + the revert
+convex/lib/projectAutoStatus.ts    — the rule table + the ONE advance function + the three reverts
 convex/lib/orgSettings.ts          — resolveAutoStatusEnabled (the org opt-out, read in-mutation)
 src/lib/project-status-automation.ts — the shared vocabulary: switch keys, labels, toast copy
+src/lib/warehouse-undo-toast.ts    — #1222: the Undo-toast builder (folds this module's status
+                                      copy into the same toast, never a second one)
+src/hooks/use-warehouse-writes.ts  — #1222: where the six reverse mappings + revertAutoAdvanceAuditId
+                                      plumbing live
 src/components/settings/status-automation-settings.tsx — the four switches
 convex/projectAutoStatus.test.ts   — rule-table invariants + every trigger against a seeded DB
 ```
@@ -180,6 +184,12 @@ announced where the person who caused it is looking:
   is a property of the mutation, not of the button that happened to call it.
   `autoStatus` is only ever non-null on the ONE call that actually crossed the
   boundary, so a 40-item deploy toasts at most once.
+  On the six browser-direct warehouse writes (#1222 — see "Undo" below), this
+  toast and the new Undo toast are the SAME toast: when a call both advances the
+  status and is undoable, the status text folds into the undo toast's title
+  (`Deployed 12 items · job moved to Deployed`) instead of firing twice.
+  `src/lib/warehouse-undo-toast.ts`'s `announceWarehouseWrite` is the one place
+  that decides.
 - **Activity log** — a `STATUS_CHANGE` row with `metadata.autoAdvanceTrigger`, so
   "who moved this job?" is answerable and the automation is filterable.
 
@@ -217,6 +227,21 @@ payment confirms the job permanently (the void unwinds the money, but
 a no-op). It stands down when another non-CREDIT invoice on the project is still
 `PAID` — that invoice is its own reason for the job to be confirmed.
 
+`revertAutoAdvanceByAuditId` (#1222) is the third shape — driven by a specific
+audit row **id** a caller already holds, rather than by re-deriving "which row"
+from an operator pick (`revertAutoAdvance`'s original caller) or an event
+(`revertAutoAdvanceByTrigger`). `maybeAutoAdvanceProjectStatus` returns
+`{ status, auditId } | null` precisely so a forward call can capture that id and
+hand it straight back later. The warehouse Undo toast is the caller: `undeployItems`
+/ `unreturnItems` / `undeployKitsBatch` / `unreturnKitsBatch` accept an optional
+`revertAutoAdvanceAuditId` arg (deliberately outside the CI-gated privileged-arg
+prefixes — it softens no gate, since the mutation's own RBAC check runs first and
+`revertAutoAdvanceByAuditId` refuses anything it did not itself write). It
+org-checks the row before trusting it (`activityLogs.by_cuid` is a GLOBAL index,
+R-8.4.3) and additionally checks the row's own `projectId` matches the caller's —
+without that second check, an audit id from a DIFFERENT project in the same org
+would apply that project's `statusFrom`/`statusTo` values to this one.
+
 ## What changed for check-in
 
 `warehouseWrites.checkInItems` / `checkInKit` / `checkInKitsBatch` now auto-advance
@@ -232,19 +257,24 @@ which screen the operator happened to use.
   lifecycle stepper already labels `CHECKED_OUT` and `ON_SITE` as one "On site"
   stage, so the automation reaching `CHECKED_OUT` moves the stepper anyway.
 - **`CONFIRMED` / `COMPLETED` / `INVOICED`** — see property 2 above.
-- **De-prep / undeploy / unreturn.** Reversing gear does NOT reverse the status.
-  A partial undeploy mid-job is a correction, not a lifecycle step backwards, and
-  a job bouncing between Prepping and Deployed as an operator fixes a mis-scan
-  would be worse than a slightly stale status. The one exception is
-  `revertAutoAdvance`, which is a whole-window agent revert, not an operator fix.
+- **De-prep / undeploy / unreturn, called on their own.** Reversing gear does NOT
+  reverse the status. A partial undeploy mid-job is a correction, not a
+  lifecycle step backwards, and a job bouncing between Prepping and Deployed as
+  an operator fixes a mis-scan would be worse than a slightly stale status.
+  Two sanctioned exceptions revert the status alongside the gear: `agentRevert`'s
+  whole-window agent revert (`revertAutoAdvance`), and the warehouse **Undo**
+  toast (#1222, `revertAutoAdvanceAuditId` — see "Reverting" above), which reverts
+  ONLY the specific move its own forward call made, on an explicit operator tap.
+  A plain "Move to Prepped" / "Move to Deployed" click — the pre-existing manual
+  reverse buttons — still never touches status; only the Undo path does.
 
 
-> **Follow-ons.** Four more QOL changes in the same "the app should do the obvious
-> thing, and tell you it did" track are specced in
+> **Follow-ons.** #1222 (undo on warehouse actions, above) has shipped. Three more
+> QOL changes in the same "the app should do the obvious thing, and tell you it
+> did" track are specced in
 > [`docs/designs/qol-sweep-2026-09.md`](../docs/designs/qol-sweep-2026-09.md) —
-> undo on warehouse actions (which reuses `revertAutoAdvance` and closes the
-> prep-toast gap noted above), quote follow-up nudges, a date-move impact
-> preview, and scan haptics + a scan history strip.
+> quote follow-up nudges, a date-move impact preview, and the scan history strip
+> (haptics, #1220, has also shipped — see FEATUREDOCS/12).
 
 ## Related
 

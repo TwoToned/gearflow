@@ -75,6 +75,27 @@ pool's quantity (matches how bulk deploy/return create whole unit rows). Legacy 
 lines (deployed via `checkOutDeployWholeLine`) restore their line counters directly and skip
 the unit rollup (which would otherwise zero them).
 
+#### Undo (#1222) — a second, faster path to the same reverses
+The Move-back buttons above are a deliberate, menu-driven correction. **Undo** is
+the same reverses (`undeployItems`/`undeployKitsBatch` for a deploy,
+`unreturnItems`/`unreturnKitsBatch` for a return), offered from the toast the
+moment a deploy/return happens — no menu, no navigating to find the row. Added
+once in `src/hooks/use-warehouse-writes.ts` (D2 of
+`docs/designs/qol-sweep-2026-09.md`: reversibility is a property of the
+mutation, not of the button), so every one of the six browser-direct warehouse
+writes (`checkOutItems`, `checkOutKit`, `checkOutKitsBatch`, `checkInItems`,
+`checkInKit`, `checkInKitsBatch`) now shows a `toast.success("Deployed 12
+items", { action: { label: "Undo", … } })`-style toast, 10 seconds, with the
+action **omitted** (not disabled) when the operator lacks the REVERSE
+permission — a `check_out`-only role can deploy but is never offered Undo on
+it, since undoing a deploy needs `check_in` (and the mirror for returns).
+
+The one behavioural difference from a plain Move-back click: **Undo also
+reverts the auto-advance** (#1160) the forward call made, via
+`revertAutoAdvanceAuditId` — see
+[76 — Project Status Automation](./76-project-status-automation.md#reverting).
+A manual Move-back click still never touches status.
+
 **Footgun (fixed, gearflow#797): a RETURNED unit's `prepStatus` is stale history, never
 "live" state.** Returning a unit (`returnLineUnits`) flips its `status` to `RETURNED` but
 deliberately leaves `prepStatus` untouched (still `PACKED` from prep) — that field is kept

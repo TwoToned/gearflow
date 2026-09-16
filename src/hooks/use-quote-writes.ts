@@ -163,45 +163,6 @@ export function useQuoteWrites() {
       });
     },
 
-    /**
-     * #1229 Phase 3 note: "reprice from revision" was one of the three
-     * overlapping "create a version" mutations (`repriceFromRevisionNative`)
-     * collapsed into `versions.createNative` on the real `projectVersions`
-     * table (`convex/versions.ts`) — this quote-row-based verb no longer
-     * exists server-side. Left as a clear, throwing stub (rather than a
-     * removed method + broken call site) so `reprice-from-revision-dialog.tsx`
-     * still compiles: it already catches and toasts this error. Rewiring the
-     * dialog onto `versions.createNative` is Phase 5's UI work.
-     */
-    repriceFromRevision: async (
-      _projectId: string,
-      _sourceQuoteId: string,
-    ): Promise<{ id: string; version: number; sourceVersion: number }> => {
-      throw new Error(
-        "Reprice from revision is temporarily unavailable — project versioning has moved to the new versions.* mutations (#1229) and this action's UI hasn't been rebuilt on them yet.",
-      );
-    },
-
-    /**
-     * #1229 Phase 3 note: `deleteDraftNative`/`deleteVersionNative` (the
-     * quote-row-based "delete a version" verbs) were deleted, replaced by
-     * `versions.deleteNative` on the real `projectVersions` table. Left as
-     * clear, throwing stubs — see `repriceFromRevision`'s comment above for
-     * why — so `delete-version-dialog.tsx` still compiles.
-     */
-    deleteDraft: async (_quoteId: string): Promise<{ id: string; deletedVersion: number; revision: number }> => {
-      throw new Error(
-        "Deleting a draft version is temporarily unavailable — project versioning has moved to the new versions.* mutations (#1229) and this action's UI hasn't been rebuilt on them yet.",
-      );
-    },
-
-    /** See `deleteDraft`'s comment immediately above. */
-    deleteVersion: async (_quoteId: string): Promise<{ id: string; deletedVersion: number }> => {
-      throw new Error(
-        "Deleting a saved version is temporarily unavailable — project versioning has moved to the new versions.* mutations (#1229) and this action's UI hasn't been rebuilt on them yet.",
-      );
-    },
-
     /** Rename a version's internal label from the row (#1080/#1097) — never a
      *  behavioural switch, reachable on any revision. */
     setLabel: async (
